@@ -51,10 +51,6 @@ class OrderUtilsHandler:
         # Handler-specific callback
         self._build_order_summary = build_order_summary
 
-    def set_store_info(self, store_info: dict | None) -> None:
-        """Set the store info for tax calculations (legacy method)."""
-        self._store_info = store_info or {}
-
     def set_context(self, ctx: "OrderContext") -> None:
         """Set context from unified OrderContext."""
         self._store_info = ctx.store_info

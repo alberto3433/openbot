@@ -1124,90 +1124,90 @@ class TestOrderStatusPatternDetection:
 
 
 # =============================================================================
-# Notes Extraction Tests
+# Special Instructions Extraction Tests
 # =============================================================================
 
-class TestNotesExtraction:
-    """Tests for extract_notes_from_input function."""
+class TestSpecialInstructionsExtraction:
+    """Tests for extract_special_instructions_from_input function."""
 
     def test_light_on_the_cream_cheese(self):
         """Test 'light on the cream cheese' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("plain bagel with light on the cream cheese")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("plain bagel with light on the cream cheese")
         assert "light cream cheese" in notes
 
     def test_light_cream_cheese_short_form(self):
         """Test 'light cream cheese' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("bagel with light cream cheese")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("bagel with light cream cheese")
         assert "light cream cheese" in notes
 
     def test_extra_bacon(self):
         """Test 'extra bacon' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("egg and cheese bagel with extra bacon")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("egg and cheese bagel with extra bacon")
         assert "extra bacon" in notes
 
     def test_lots_of_cream_cheese(self):
         """Test 'lots of cream cheese' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("bagel with lots of cream cheese")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("bagel with lots of cream cheese")
         assert "extra cream cheese" in notes
 
     def test_splash_of_milk(self):
         """Test 'a splash of milk' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("coffee with a splash of milk")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("coffee with a splash of milk")
         assert "a splash of milk" in notes
 
     def test_go_easy_on_the_mayo(self):
         """Test 'go easy on the mayo' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("sandwich with go easy on the mayo")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("sandwich with go easy on the mayo")
         assert "light mayo" in notes
 
     def test_little_bit_of_sugar(self):
         """Test 'a little sugar' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("coffee with a little sugar")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("coffee with a little sugar")
         assert "a little sugar" in notes
 
     def test_no_onions(self):
         """Test 'no onions' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("bagel with no onions")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("bagel with no onions")
         assert "no onions" in notes
 
     def test_hold_the_tomato(self):
         """Test 'hold the tomato' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("sandwich hold the tomato")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("sandwich hold the tomato")
         assert "no tomato" in notes
 
     def test_multiple_notes(self):
         """Test multiple qualifier phrases extract correctly."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("bagel with light cream cheese and extra bacon")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("bagel with light cream cheese and extra bacon")
         assert "light cream cheese" in notes
         assert "extra bacon" in notes
 
     def test_no_notes_for_regular_order(self):
         """Test that regular orders without qualifiers have no notes."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("plain bagel with cream cheese")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("plain bagel with cream cheese")
         assert len(notes) == 0
 
     def test_heavy_on_the_cheese(self):
         """Test 'heavy on the cheese' extracts as extra."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
-        notes = extract_notes_from_input("bagel heavy on the cheese")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        notes = extract_special_instructions_from_input("bagel heavy on the cheese")
         assert "extra cheese" in notes
 
     def test_multi_item_notes_separated_coffee_only(self):
         """Test that coffee notes filter only includes coffee-related notes."""
-        from orderbot.tasks.state_machine import extract_notes_from_input
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
-        notes = extract_notes_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
+        notes = extract_special_instructions_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
         # Should extract both notes separately
         assert "a splash of milk" in notes
         assert "extra cream cheese" in notes

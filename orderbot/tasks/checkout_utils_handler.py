@@ -53,11 +53,6 @@ class CheckoutUtilsHandler:
         self._is_repeat_order: bool = False
         self._last_order_type: str | None = None
 
-    def set_repeat_order_info(self, is_repeat: bool, last_order_type: str | None) -> None:
-        """Set repeat order info for personalized delivery question (legacy method)."""
-        self._is_repeat_order = is_repeat
-        self._last_order_type = last_order_type
-
     def set_context(self, ctx: "OrderContext") -> None:
         """Set context from unified OrderContext."""
         self._is_repeat_order = ctx.is_repeat_order

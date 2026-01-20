@@ -34,7 +34,6 @@ from .deterministic import (
     # Attribute/modifier extraction (data-driven)
     extract_attribute_values,  # Generic data-driven extractor returning dict
     extract_special_instructions_from_input,
-    extract_notes_from_input,  # Backwards compatibility alias
     # Generic item builder
     build_parsed_item,
     # Internal helpers (needed by state_machine)
@@ -68,13 +67,11 @@ from .constants import (
     WORD_TO_NUM,
     # Signature items (loaded from database via dynamic function)
     get_signature_item_aliases,
-    # Generic unit type item lookup (data-driven, replaces find_by_pound_item)
+    # Generic unit type item lookup (data-driven)
     find_item_by_unit_type,
-    # Legacy alias for backward compatibility (DEPRECATED: use find_item_by_unit_type instead)
-    find_by_pound_item,
     # Note: get_spreads(), get_spread_types(), get_bagel_spreads() were removed - dead code
     # - use menu_cache.get_global_attribute_options("spread") instead
-    # Note: get_by_pound_items(), get_by_pound_category_names(), find_by_pound_item() were removed
+    # Note: get_by_pound_items(), get_by_pound_category_names() were removed
     # - use menu_cache.get_menu_items_by_unit_type() or find_item_by_unit_type() instead
     # Note: get_proteins(), get_cheeses(), get_toppings() were removed
     # - use menu_cache.get_ingredients("protein"), etc. instead
@@ -101,7 +98,6 @@ from .constants import (
     DELIVERY_ZONE_PATTERNS,
     # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
     # Recommendation patterns
-    RECOMMENDATION_PATTERNS,
     RECOMMENDATION_GENERAL_PATTERNS,
     RECOMMENDATION_TERM_PATTERNS,
     # Item description patterns
@@ -131,7 +127,6 @@ __all__ = [
     # Deterministic parsers - Attribute/modifier extraction (data-driven)
     "extract_attribute_values",  # Generic data-driven extractor returning dict
     "extract_special_instructions_from_input",
-    "extract_notes_from_input",  # Backwards compatibility alias
     # Generic item builder
     "build_parsed_item",
     # Deterministic parsers - Internal helpers
@@ -162,10 +157,8 @@ __all__ = [
     "get_signature_item_aliases",
     # Constants - Generic unit type item lookup (data-driven)
     "find_item_by_unit_type",
-    # Constants - Legacy alias (DEPRECATED: use find_item_by_unit_type instead)
-    "find_by_pound_item",
     # Note: get_spreads(), get_spread_types(), get_bagel_spreads() were removed - dead code
-    # Note: get_by_pound_items(), get_by_pound_category_names(), find_by_pound_item() were removed
+    # Note: get_by_pound_items(), get_by_pound_category_names() were removed
     # Note: get_proteins(), get_cheeses(), get_toppings() were removed - dead code
     # - use menu_cache or find_item_by_unit_type() instead for all of these
     # Note: MODIFIER_NORMALIZATIONS was moved to the database - use menu_cache.normalize_modifier()
@@ -189,7 +182,6 @@ __all__ = [
     "DELIVERY_ZONE_PATTERNS",
     # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
     # Constants - Recommendation patterns
-    "RECOMMENDATION_PATTERNS",
     "RECOMMENDATION_GENERAL_PATTERNS",
     "RECOMMENDATION_TERM_PATTERNS",
     # Constants - Item description patterns

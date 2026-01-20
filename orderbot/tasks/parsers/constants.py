@@ -400,20 +400,6 @@ RECOMMENDATION_TERM_PATTERNS = [
     re.compile(r"what\s+(.+?)\s+is\s+(?:popular|good|best)", re.IGNORECASE),
 ]
 
-# DEPRECATED: Legacy combined list for backward compatibility
-# Use RECOMMENDATION_GENERAL_PATTERNS and RECOMMENDATION_TERM_PATTERNS instead
-RECOMMENDATION_PATTERNS = [
-    # Keep the general patterns with "general" tag for backward compatibility
-    (re.compile(r"what\s+(?:do\s+you|would\s+you|should\s+i|can\s+you)\s+recommend\??$", re.IGNORECASE), "general"),
-    (re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular|the\s+best)\??$", re.IGNORECASE), "general"),
-    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:most\s+)?popular\??$", re.IGNORECASE), "general"),
-    (re.compile(r"what\s+(?:are\s+)?(?:your\s+)?(?:best|most\s+popular)\s+(?:sellers?|items?)", re.IGNORECASE), "general"),
-    (re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?most\s+popular\s+item", re.IGNORECASE), "general"),
-    (re.compile(r"(?:any|have\s+any|got\s+any|do\s+you\s+have\s+any)\s+recommendations?\??", re.IGNORECASE), "general"),
-    (re.compile(r"(?:suggest|recommend)\s+(?:something|anything)", re.IGNORECASE), "general"),
-    (re.compile(r"what\s+sells\s+best", re.IGNORECASE), "general"),
-]
-
 # =============================================================================
 # Item Description Inquiry Patterns
 # =============================================================================
@@ -682,19 +668,6 @@ def find_item_by_unit_type(item_name: str, unit_type: str) -> tuple[str, str] | 
     return None
 
 
-def find_by_pound_item(item_name: str) -> tuple[str, str] | None:
-    """
-    Find a by-pound item and its category by name or alias.
-
-    DEPRECATED: Use find_item_by_unit_type(item_name, "by_weight") instead.
-
-    Args:
-        item_name: Item name or alias to look up (e.g., "lox", "nova", "whitefish salad")
-
-    Returns:
-        Tuple of (canonical_name, category) if found, None otherwise.
-    """
-    return find_item_by_unit_type(item_name, "by_weight")
 
 
 def resolve_soda_alias(name: str) -> str:

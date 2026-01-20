@@ -76,7 +76,7 @@ from .parsers import (
     _get_configurable_item_pattern,
     ORDERING_LANGUAGE_PATTERN,
     # Deterministic parsers - Modifier extraction
-    extract_notes_from_input,
+    extract_special_instructions_from_input,
     # Deterministic parsers - Internal helpers
     parse_open_input_deterministic,
     _parse_multi_item_order,

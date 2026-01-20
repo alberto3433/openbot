@@ -39,10 +39,6 @@ class Selection(BaseModel):
     display_name: str | None = None  # Human-readable name (populated from cache if not provided)
 
 
-# Backward compatibility alias - will be removed after migration
-QuantifiedModifier = Selection
-
-
 class QualifierConflict(BaseModel):
     """A conflict between two qualifiers for the same modifier."""
     modifier: str  # The modifier with conflicting qualifiers (e.g., "mayo")
@@ -233,11 +229,6 @@ class AttributeChoiceResponse(BaseModel):
         default=False,
         description="User wants to cancel this item or the order"
     )
-    # For compound attributes (deprecated - all attributes are now atomic)
-    sub_values: dict = Field(
-        default_factory=dict,
-        description="Additional sub-values (deprecated)"
-    )
 
 class OpenInputResponse(BaseModel):
     """Parser output when open for new items (not configuring a specific item).
@@ -314,10 +305,6 @@ class OpenInputResponse(BaseModel):
     asks_recommendation: bool = Field(
         default=False,
         description="User is asking for recommendations (e.g., 'what do you recommend?', 'what's popular?', 'what's your best bagel?')"
-    )
-    recommendation_category: str | None = Field(
-        default=None,
-        description="DEPRECATED: Use recommendation_match_type instead. Category of recommendation asked."
     )
     recommendation_match_type: str | None = Field(
         default=None,

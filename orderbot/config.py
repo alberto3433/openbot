@@ -72,15 +72,6 @@ DEFAULT_STORE_IDS: List[str] = [
     "zuckers_bryantpark",
 ]
 
-# Legacy store ID to name mapping (for backwards compatibility)
-# New stores should be created via the admin API and stored in the database
-STORE_NAMES = {
-    "store_eb_001": "Sammy's Subs East Brunswick",
-    "store_nb_002": "Sammy's Subs New Brunswick",
-    "store_pr_003": "Sammy's Subs Princeton",
-}
-
-
 def get_random_store_id() -> str:
     """
     Get a random store ID for session/order assignment.

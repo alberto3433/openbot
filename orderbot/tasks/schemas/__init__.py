@@ -9,8 +9,6 @@ from .phases import OrderPhase
 from .parser_responses import (
     # Selection model for unified customizations
     Selection,
-    # Backward compatibility alias
-    QuantifiedModifier,
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
@@ -33,8 +31,6 @@ __all__ = [
     "OrderPhase",
     # Selection model for unified customizations
     "Selection",
-    # Backward compatibility alias
-    "QuantifiedModifier",
     # Qualifier conflict model
     "QualifierConflict",
     # ParsedItem types for multi-item handling

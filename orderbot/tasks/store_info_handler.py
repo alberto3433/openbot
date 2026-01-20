@@ -47,10 +47,6 @@ class StoreInfoHandler(MenuDataMixin):
         self._menu_data = menu_data or {}
         self._store_info: dict | None = None
 
-    def set_store_info(self, store_info: dict | None) -> None:
-        """Set the store info for this request (legacy method)."""
-        self._store_info = store_info
-
     def set_context(self, ctx: "OrderContext") -> None:
         """Set context from unified OrderContext."""
         self._store_info = ctx.store_info

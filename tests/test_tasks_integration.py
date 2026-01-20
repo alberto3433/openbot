@@ -2567,13 +2567,14 @@ class TestTaxAndOrderStatus:
         """Test tax calculation with configured rates."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
         from tests.helpers import BagelItemTask
 
         sm = OrderStateMachine()
-        sm.order_utils_handler.set_store_info({
+        sm.order_utils_handler.set_context(OrderContext(store_info={
             "city_tax_rate": 0.045,  # 4.5%
             "state_tax_rate": 0.04,  # 4%
-        })
+        }))
 
         order = OrderTask()
         bagel = BagelItemTask(bagel_type="plain", unit_price=3.00)
@@ -2591,10 +2592,11 @@ class TestTaxAndOrderStatus:
         """Test tax question when no tax rates configured."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
         from tests.helpers import BagelItemTask
 
         sm = OrderStateMachine()
-        sm.order_utils_handler.set_store_info({})  # No tax rates
+        sm.order_utils_handler.set_context(OrderContext(store_info={}))  # No tax rates
 
         order = OrderTask()
         bagel = BagelItemTask(bagel_type="plain", unit_price=5.00)
@@ -2794,11 +2796,12 @@ class TestCustomerServiceInquiries:
                 "feedback_form_url": "https://example.com/feedback",
             }
         })
+        from orderbot.tasks.context import OrderContext
         store_info = {
             "phone": "212-555-1234",
             "name": "Test Location",
         }
-        sm.store_info_handler.set_store_info(store_info)
+        sm.store_info_handler.set_context(OrderContext(store_info=store_info))
 
         order = OrderTask()
         result = sm.store_info_handler.handle_customer_service_inquiry(order)
@@ -2810,9 +2813,10 @@ class TestCustomerServiceInquiries:
         """Test customer service handler with minimal contact info."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
 
         sm = OrderStateMachine(menu_data={})
-        sm.store_info_handler.set_store_info({})
+        sm.store_info_handler.set_context(OrderContext(store_info={}))
 
         order = OrderTask()
         result = sm.store_info_handler.handle_customer_service_inquiry(order)

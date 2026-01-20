@@ -105,34 +105,13 @@ class CheckoutHandler(BaseHandler):
         """Get item keyword to item type slug mapping from menu data."""
         return self._menu_data.get("item_keywords", {})
 
-    def set_context(
-        self,
-        ctx: "OrderContext | None" = None,
-        # Legacy kwargs for backward compatibility
-        store_info: dict | None = None,
-        returning_customer: dict | None = None,
-        is_repeat_order: bool = False,
-        last_order_type: str | None = None,
-        menu_data: dict | None = None,
-    ) -> None:
-        """Set per-request context for checkout handling.
-
-        Accepts either a unified OrderContext or individual parameters (legacy).
-        """
-        if ctx is not None:
-            # Use unified context
-            self._store_info = ctx.store_info
-            self._returning_customer = ctx.returning_customer
-            self._is_repeat_order = ctx.is_repeat_order
-            self._last_order_type = ctx.last_order_type
-            self._menu_data = ctx.menu_data
-        else:
-            # Legacy: individual parameters
-            self._store_info = store_info
-            self._returning_customer = returning_customer
-            self._is_repeat_order = is_repeat_order
-            self._last_order_type = last_order_type
-            self._menu_data = menu_data or {}
+    def set_context(self, ctx: "OrderContext") -> None:
+        """Set per-request context for checkout handling."""
+        self._store_info = ctx.store_info
+        self._returning_customer = ctx.returning_customer
+        self._is_repeat_order = ctx.is_repeat_order
+        self._last_order_type = ctx.last_order_type
+        self._menu_data = ctx.menu_data
 
     def handle_delivery(
         self,

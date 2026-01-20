@@ -13,9 +13,8 @@ from orderbot.menu_data_cache import menu_cache, singularize
 
 from ..schemas import (
     OpenInputResponse,
-    # Selection model for unified customizations (QuantifiedModifier is alias)
+    # Selection model for unified customizations
     Selection,
-    QuantifiedModifier,  # Alias for Selection, used for modifiers
     # Qualifier conflict model
     QualifierConflict,
     # ParsedItem types for multi-item handling
@@ -37,7 +36,6 @@ from .constants import (
     STORE_LOCATION_PATTERNS,
     DELIVERY_ZONE_PATTERNS,
     # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
-    RECOMMENDATION_PATTERNS,
     RECOMMENDATION_GENERAL_PATTERNS,
     RECOMMENDATION_TERM_PATTERNS,
     ITEM_DESCRIPTION_PATTERNS,
@@ -647,10 +645,6 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
                 logger.debug(f"Extracted standalone instruction: '{instruction}' from input")
 
     return instructions
-
-
-# Backwards compatibility alias
-extract_notes_from_input = extract_special_instructions_from_input
 
 
 # =============================================================================
@@ -1297,7 +1291,7 @@ def _parse_item_generic(
 
         for item in sweetener_items:
             if isinstance(item, dict):
-                sweeteners.append(QuantifiedModifier(
+                sweeteners.append(Selection(
                     slug=item.get("slug", ""),
                     category=item.get("category") or "",
                     quantity=item.get("quantity", 1)
@@ -1318,7 +1312,7 @@ def _parse_item_generic(
 
         for item in syrup_items:
             if isinstance(item, dict):
-                syrups.append(QuantifiedModifier(
+                syrups.append(Selection(
                     slug=item.get("slug", ""),
                     category=item.get("category") or "",
                     quantity=item.get("quantity", 1)
@@ -1379,25 +1373,25 @@ def _parse_item_generic(
 
     # Build unified modifiers list with category
     # modifiers is list[str] from _extract_modifiers_generic
-    # sweeteners/syrups are already list[QuantifiedModifier]
-    unified_modifiers: list[QuantifiedModifier] = []
+    # sweeteners/syrups are already list[Selection]
+    unified_modifiers: list[Selection] = []
 
     # Add food modifiers (proteins, cheeses, toppings)
     for mod in modifiers:
         category = menu_cache.get_ingredient_category(mod)
-        unified_modifiers.append(QuantifiedModifier(
+        unified_modifiers.append(Selection(
             slug=mod, category=category, quantity=1
         ))
 
     # Add sweeteners with category from database
     for sw in sweeteners:
-        unified_modifiers.append(QuantifiedModifier(
+        unified_modifiers.append(Selection(
             slug=sw.slug, category=sw.category, quantity=sw.quantity
         ))
 
     # Add syrups with category from database
     for sy in syrups:
-        unified_modifiers.append(QuantifiedModifier(
+        unified_modifiers.append(Selection(
             slug=sy.slug, category=sy.category, quantity=sy.quantity
         ))
 
@@ -2763,7 +2757,6 @@ def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
             return OpenInputResponse(
                 asks_recommendation=True,
                 recommendation_match_type="general",
-                recommendation_category="general",  # Backward compat
             )
 
     # 2. Check term-extracting patterns
@@ -2802,7 +2795,6 @@ def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
                     asks_recommendation=True,
                     recommendation_match_type="menu_items",
                     recommendation_menu_item_ids=menu_item_ids,
-                    recommendation_category=term_singular,  # Backward compat
                 )
 
             # 3b. Fallback: Search item types
@@ -2816,7 +2808,6 @@ def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
                     asks_recommendation=True,
                     recommendation_match_type="item_type",
                     recommendation_item_type_slug=item_type_slug,
-                    recommendation_category=item_type_slug,  # Backward compat
                 )
 
             # No matches found, but it's still a recommendation question - return general
@@ -2827,7 +2818,6 @@ def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
             return OpenInputResponse(
                 asks_recommendation=True,
                 recommendation_match_type="general",
-                recommendation_category="general",  # Backward compat
             )
 
     return None
@@ -4199,14 +4189,14 @@ def parse_open_input_deterministic(
             modifications = _extract_menu_item_modifications(text, item_type_for_mods)
             logger.info("EARLY MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, list(attr_values.keys()), modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
-            from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
-            # Convert structured modifications to QuantifiedModifier objects
+            from orderbot.tasks.schemas.parser_responses import Selection
+            # Convert structured modifications to Selection objects
             mod_list = []
             for add in modifications.get("additions", []):
-                mod_list.append(QuantifiedModifier(slug=add["slug"], category=add.get("category")))
+                mod_list.append(Selection(slug=add["slug"], category=add.get("category")))
             for rem in modifications.get("removals", []):
                 # Prefix with "no_" to indicate removal
-                mod_list.append(QuantifiedModifier(slug=f"no_{rem['slug']}", category=rem.get("category")))
+                mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
             early_parsed_items = [
                 build_parsed_item(
                     item_type="menu_item",
@@ -4314,14 +4304,14 @@ def parse_open_input_deterministic(
             modifications = _extract_menu_item_modifications(text, item_type_for_mods)
             logger.info("DETERMINISTIC MENU ITEM (early): matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, menu_item_attrs, modifications)
             # Phase 4: Only use parsed_items (deprecated fields removed)
-            from orderbot.tasks.schemas.parser_responses import QuantifiedModifier
-            # Convert structured modifications to QuantifiedModifier objects
+            from orderbot.tasks.schemas.parser_responses import Selection
+            # Convert structured modifications to Selection objects
             mod_list = []
             for add in modifications.get("additions", []):
-                mod_list.append(QuantifiedModifier(slug=add["slug"], category=add.get("category")))
+                mod_list.append(Selection(slug=add["slug"], category=add.get("category")))
             for rem in modifications.get("removals", []):
                 # Prefix with "no_" to indicate removal
-                mod_list.append(QuantifiedModifier(slug=f"no_{rem['slug']}", category=rem.get("category")))
+                mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
             menu_item_parsed_items = [
                 build_parsed_item(
                     item_type="menu_item",

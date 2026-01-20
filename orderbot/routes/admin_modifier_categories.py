@@ -36,14 +36,11 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-import logging
-from typing import List
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import verify_admin_credentials
-from ..db import get_db
 from ..models import ModifierCategory, ModifierCategoryAlias
 from ..schemas.modifiers import (
     ModifierCategoryOut,
@@ -51,18 +48,14 @@ from ..schemas.modifiers import (
     ModifierCategoryUpdate,
 )
 from ..services.helpers import validate_aliases
+from .crud_factory import CRUDRouterFactory
 
 
-logger = logging.getLogger(__name__)
-
-# Router definition
-admin_modifier_categories_router = APIRouter(
-    prefix="/admin/modifier-categories",
-    tags=["Admin - Modifier Categories"]
-)
-
-
-def _set_modifier_category_aliases(db: Session, category: ModifierCategory, aliases_str: str | None) -> None:
+def _set_modifier_category_aliases(
+    db: Session,
+    category: ModifierCategory,
+    aliases_str: str | None,
+) -> None:
     """
     Set modifier category aliases from a comma-separated string.
     Clears existing aliases and creates new ones from the input string.
@@ -94,131 +87,65 @@ def _set_modifier_category_aliases(db: Session, category: ModifierCategory, alia
             db.add(ModifierCategoryAlias(modifier_category=category, alias=alias))
 
 
-# =============================================================================
-# Modifier Category Endpoints
-# =============================================================================
-
-@admin_modifier_categories_router.get("", response_model=List[ModifierCategoryOut])
-def list_modifier_categories(
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> List[ModifierCategoryOut]:
-    """List all modifier categories."""
-    categories = db.query(ModifierCategory).order_by(ModifierCategory.slug).all()
-    return [ModifierCategoryOut.model_validate(cat) for cat in categories]
+def _build_create_kwargs(payload: ModifierCategoryCreate, db: Session) -> dict[str, Any]:
+    """Build model kwargs from create payload."""
+    return {
+        "slug": payload.slug,
+        "display_name": payload.display_name,
+        "description": payload.description,
+        "prompt_suffix": payload.prompt_suffix,
+        "loads_from_ingredients": payload.loads_from_ingredients,
+        "ingredient_category": payload.ingredient_category,
+    }
 
 
-@admin_modifier_categories_router.post("", response_model=ModifierCategoryOut, status_code=201)
-def create_modifier_category(
+def _handle_create_pre_commit(
+    item: ModifierCategory,
     payload: ModifierCategoryCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ModifierCategoryOut:
-    """Create a new modifier category."""
-    # Check for duplicate slug
-    existing = db.query(ModifierCategory).filter(
-        ModifierCategory.slug == payload.slug
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Modifier category with slug '{payload.slug}' already exists"
-        )
-
-    category = ModifierCategory(
-        slug=payload.slug,
-        display_name=payload.display_name,
-        description=payload.description,
-        prompt_suffix=payload.prompt_suffix,
-        loads_from_ingredients=payload.loads_from_ingredients,
-        ingredient_category=payload.ingredient_category,
-    )
-    db.add(category)
-    db.flush()  # Get the category ID before adding child records
-
-    # Add aliases through child table
-    _set_modifier_category_aliases(db, category, payload.aliases)
-
-    db.commit()
-    db.refresh(category)
-    logger.info("Created modifier category: %s (id=%d)", category.slug, category.id)
-    return ModifierCategoryOut.model_validate(category)
-
-
-@admin_modifier_categories_router.get("/{category_id}", response_model=ModifierCategoryOut)
-def get_modifier_category(
-    category_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ModifierCategoryOut:
-    """Get a specific modifier category by ID."""
-    category = db.query(ModifierCategory).filter(
-        ModifierCategory.id == category_id
-    ).first()
-    if not category:
-        raise HTTPException(status_code=404, detail="Modifier category not found")
-    return ModifierCategoryOut.model_validate(category)
-
-
-@admin_modifier_categories_router.put("/{category_id}", response_model=ModifierCategoryOut)
-def update_modifier_category(
-    category_id: int,
-    payload: ModifierCategoryUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ModifierCategoryOut:
-    """Update a modifier category."""
-    category = db.query(ModifierCategory).filter(
-        ModifierCategory.id == category_id
-    ).first()
-    if not category:
-        raise HTTPException(status_code=404, detail="Modifier category not found")
-
-    # Check for slug uniqueness if updating slug
-    if payload.slug is not None and payload.slug != category.slug:
-        existing = db.query(ModifierCategory).filter(
-            ModifierCategory.slug == payload.slug
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Modifier category with slug '{payload.slug}' already exists"
-            )
-        category.slug = payload.slug
-
-    if payload.display_name is not None:
-        category.display_name = payload.display_name
-    if payload.aliases is not None:
-        _set_modifier_category_aliases(db, category, payload.aliases)
-    if payload.description is not None:
-        category.description = payload.description
-    if payload.prompt_suffix is not None:
-        category.prompt_suffix = payload.prompt_suffix
-    if payload.loads_from_ingredients is not None:
-        category.loads_from_ingredients = payload.loads_from_ingredients
-    if payload.ingredient_category is not None:
-        category.ingredient_category = payload.ingredient_category
-
-    db.commit()
-    db.refresh(category)
-    logger.info("Updated modifier category: %s (id=%d)", category.slug, category.id)
-    return ModifierCategoryOut.model_validate(category)
-
-
-@admin_modifier_categories_router.delete("/{category_id}", status_code=204)
-def delete_modifier_category(
-    category_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
+    db: Session,
 ) -> None:
-    """Delete a modifier category."""
-    category = db.query(ModifierCategory).filter(
-        ModifierCategory.id == category_id
-    ).first()
-    if not category:
-        raise HTTPException(status_code=404, detail="Modifier category not found")
+    """Add aliases after item has ID but before commit."""
+    _set_modifier_category_aliases(db, item, payload.aliases)
 
-    logger.info("Deleting modifier category: %s (id=%d)", category.slug, category.id)
-    db.delete(category)
-    db.commit()
-    return None
+
+def _handle_before_update(
+    item: ModifierCategory,
+    payload: ModifierCategoryUpdate,
+    db: Session,
+) -> None:
+    """Apply update payload to item with custom alias handling."""
+    if payload.slug is not None:
+        item.slug = payload.slug
+    if payload.display_name is not None:
+        item.display_name = payload.display_name
+    if payload.aliases is not None:
+        _set_modifier_category_aliases(db, item, payload.aliases)
+    if payload.description is not None:
+        item.description = payload.description
+    if payload.prompt_suffix is not None:
+        item.prompt_suffix = payload.prompt_suffix
+    if payload.loads_from_ingredients is not None:
+        item.loads_from_ingredients = payload.loads_from_ingredients
+    if payload.ingredient_category is not None:
+        item.ingredient_category = payload.ingredient_category
+
+
+# Create the CRUD router using the factory
+_crud = CRUDRouterFactory(
+    model=ModifierCategory,
+    create_schema=ModifierCategoryCreate,
+    update_schema=ModifierCategoryUpdate,
+    response_schema=ModifierCategoryOut,
+    prefix="/admin/modifier-categories",
+    tags=["Admin - Modifier Categories"],
+    id_param="category_id",
+    not_found_message="Modifier category not found",
+    unique_fields=["slug"],
+    order_by=["slug"],
+    on_before_create=_build_create_kwargs,
+    on_create_pre_commit=_handle_create_pre_commit,
+    on_before_update=_handle_before_update,
+)
+
+# Export the router
+admin_modifier_categories_router = _crud.router

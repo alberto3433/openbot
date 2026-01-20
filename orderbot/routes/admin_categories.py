@@ -17,31 +17,13 @@ Endpoints:
 Authentication:
 ---------------
 All endpoints require admin authentication via HTTP Basic Auth.
-
-Usage:
-------
-    # Add a new category
-    POST /admin/categories
-    {
-        "name": "Dessert",
-        "slug": "dessert",
-        "description": "Sweet treats and pastries"
-    }
-
-    # Update a category
-    PUT /admin/categories/3
-    {
-        "description": "Updated description"
-    }
 """
 
-import logging
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from ..auth import verify_admin_credentials
-from ..db import get_db
 from ..models import Category, MenuItemCategory
 from ..schemas.categories import (
     CategoryCreate,
@@ -49,15 +31,7 @@ from ..schemas.categories import (
     CategoryOut,
     CategoryList,
 )
-
-
-logger = logging.getLogger(__name__)
-
-# Router definition
-admin_categories_router = APIRouter(
-    prefix="/admin/categories",
-    tags=["Admin - Categories"]
-)
+from .crud_factory import CRUDRouterFactory
 
 
 def _category_to_out(category: Category, db: Session) -> CategoryOut:
@@ -76,42 +50,12 @@ def _category_to_out(category: Category, db: Session) -> CategoryOut:
     )
 
 
-# =============================================================================
-# Category Endpoints
-# =============================================================================
-
-@admin_categories_router.get("", response_model=CategoryList)
-def list_categories(
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> CategoryList:
-    """List all menu item categories."""
-    categories = db.query(Category).order_by(Category.name).all()
-
-    return CategoryList(
-        categories=[_category_to_out(c, db) for c in categories],
-        total=len(categories)
-    )
-
-
-@admin_categories_router.post("", response_model=CategoryOut, status_code=201)
-def create_category(
-    payload: CategoryCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> CategoryOut:
-    """Create a new category."""
-    # Check for duplicate slug
+def _build_create_kwargs(payload: CategoryCreate, db: Session) -> dict[str, Any]:
+    """Build model kwargs from create payload with normalization."""
     slug = payload.slug.lower().strip()
-    existing = db.query(Category).filter(Category.slug == slug).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"A category with slug '{slug}' already exists"
-        )
-
-    # Check for duplicate name
     name = payload.name.strip()
+
+    # Check for duplicate name (factory only handles slug)
     existing_name = db.query(Category).filter(Category.name == name).first()
     if existing_name:
         raise HTTPException(
@@ -119,111 +63,80 @@ def create_category(
             detail=f"A category with name '{name}' already exists"
         )
 
-    category = Category(
-        name=name,
-        slug=slug,
-        description=payload.description.strip() if payload.description else None,
-    )
-    db.add(category)
-    db.commit()
-    db.refresh(category)
-
-    logger.info("Created category: %s (%s)", category.name, category.slug)
-    return _category_to_out(category, db)
+    return {
+        "name": name,
+        "slug": slug,
+        "description": payload.description.strip() if payload.description else None,
+    }
 
 
-@admin_categories_router.get("/{category_id}", response_model=CategoryOut)
-def get_category(
-    category_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> CategoryOut:
-    """Get a specific category by ID."""
-    category = db.query(Category).filter(Category.id == category_id).first()
-
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
-
-    return _category_to_out(category, db)
-
-
-@admin_categories_router.put("/{category_id}", response_model=CategoryOut)
-def update_category(
-    category_id: int,
+def _handle_before_update(
+    item: Category,
     payload: CategoryUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> CategoryOut:
-    """Update a category."""
-    category = db.query(Category).filter(Category.id == category_id).first()
-
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
-
-    # Update fields if provided
+    db: Session,
+) -> None:
+    """Apply update payload to item with custom validation."""
     if payload.slug is not None:
-        new_slug = payload.slug.lower().strip()
-        # Check for duplicate slug (excluding self)
-        existing = db.query(Category).filter(
-            Category.slug == new_slug,
-            Category.id != category_id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"A category with slug '{new_slug}' already exists"
-            )
-        category.slug = new_slug
+        item.slug = payload.slug.lower().strip()
 
     if payload.name is not None:
         new_name = payload.name.strip()
         # Check for duplicate name (excluding self)
         existing = db.query(Category).filter(
             Category.name == new_name,
-            Category.id != category_id
+            Category.id != item.id
         ).first()
         if existing:
             raise HTTPException(
                 status_code=400,
                 detail=f"A category with name '{new_name}' already exists"
             )
-        category.name = new_name
+        item.name = new_name
 
     if payload.description is not None:
-        category.description = payload.description.strip() if payload.description else None
-
-    db.commit()
-    db.refresh(category)
-
-    logger.info("Updated category %d: %s (%s)", category.id, category.name, category.slug)
-    return _category_to_out(category, db)
+        item.description = payload.description.strip() if payload.description else None
 
 
-@admin_categories_router.delete("/{category_id}", status_code=204)
-def delete_category(
-    category_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete a category."""
-    category = db.query(Category).filter(Category.id == category_id).first()
-
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found")
-
-    # Check if category has menu items
+def _handle_before_delete(item: Category, db: Session) -> None:
+    """Check if category can be deleted."""
     menu_item_count = db.query(MenuItemCategory).filter(
-        MenuItemCategory.category_id == category_id
+        MenuItemCategory.category_id == item.id
     ).count()
 
     if menu_item_count > 0:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete category '{category.name}' - it has {menu_item_count} menu items assigned"
+            detail=f"Cannot delete category '{item.name}' - it has {menu_item_count} menu items assigned"
         )
 
-    name = category.name
-    db.delete(category)
-    db.commit()
 
-    logger.info("Deleted category: %s", name)
+def _build_list_response(
+    items: list[CategoryOut],
+    total: int,
+) -> CategoryList:
+    """Build list response wrapper."""
+    return CategoryList(categories=items, total=total)
+
+
+# Create the CRUD router using the factory
+_crud = CRUDRouterFactory(
+    model=Category,
+    create_schema=CategoryCreate,
+    update_schema=CategoryUpdate,
+    response_schema=CategoryOut,
+    prefix="/admin/categories",
+    tags=["Admin - Categories"],
+    id_param="category_id",
+    not_found_message="Category not found",
+    unique_fields=["slug"],
+    order_by=["name"],
+    to_response=_category_to_out,
+    on_before_create=_build_create_kwargs,
+    on_before_update=_handle_before_update,
+    on_before_delete=_handle_before_delete,
+    list_response_schema=CategoryList,
+    list_response_builder=_build_list_response,
+)
+
+# Export the router
+admin_categories_router = _crud.router

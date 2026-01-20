@@ -8,6 +8,18 @@ from sqlalchemy.orm import sessionmaker
 # Load environment variables from .env file
 load_dotenv()
 
+
+def create_test_engine(database_url: str):
+    """Create a database engine with conservative pool settings for tests."""
+    return create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_size=2,
+        max_overflow=3,
+        pool_timeout=10,
+        pool_recycle=300,
+    )
+
 # Test admin credentials
 TEST_ADMIN_USERNAME = "testadmin"
 TEST_ADMIN_PASSWORD = "testpassword123"
@@ -40,7 +52,7 @@ def _app_client_session():
     config_mod.ADMIN_USERNAME = TEST_ADMIN_USERNAME
     config_mod.ADMIN_PASSWORD = TEST_ADMIN_PASSWORD
 
-    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    engine = create_test_engine(TEST_DATABASE_URL)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     # Patch the db module used by the app
@@ -177,7 +189,7 @@ def menu_cache_loaded():
     from orderbot.menu_index_builder import build_menu_index
     from orderbot.tasks.state_machine import set_global_menu_data
 
-    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    engine = create_test_engine(TEST_DATABASE_URL)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     db = TestingSessionLocal()

@@ -1952,6 +1952,10 @@ class MenuItemConfigHandler(BaseHandler):
             current_attr.get("slug"), item_type, item.attribute_values
         )
 
+        # Recalculate price after each attribute answer (data-driven pricing)
+        # This handles variant pricing (size), upcharges, and any pricing model
+        self._recalculate_item_price(item)
+
         # Check if we're in mandatory phase or optional phase
         if current_attr.get("ask_in_conversation", True):
             # Just answered a mandatory question, check for more

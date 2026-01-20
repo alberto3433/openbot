@@ -1430,7 +1430,7 @@ def _extract_boolean_global_attribute(text: str, attr_slug: str) -> bool | None:
 
     Args:
         text: User input text
-        attr_slug: The attribute slug (e.g., "toasted", "scooped", "decaf")
+        attr_slug: The attribute slug
 
     Returns:
         True if matched to true option, False if matched to false option, None if no match.
@@ -3107,7 +3107,11 @@ def _parse_ingredient_search(
             # or a modification/removal command ("remove the bacon", "cancel the ham")
             # or an add-modifier command ("add bacon", "extra cheese")
             order_signals = _get_order_signals()
-            has_order_signal = any(signal in text_lower for signal in order_signals)
+            # Exclude the ingredient itself from the signal check - if "chicken" is both
+            # a trigger and an ingredient, we should allow searching when it's standalone
+            # e.g., "chicken" alone should search, "chicken sandwich" should order
+            other_signals = [s for s in order_signals if s != potential_ingredient]
+            has_order_signal = any(signal in text_lower for signal in other_signals)
 
             if not has_order_signal:
                 matches = ingredient_to_items[potential_ingredient]
@@ -4146,7 +4150,14 @@ def parse_open_input_deterministic(
     if split_qty_result:
         return split_qty_result
 
-    # Data-driven menu item lookup - runs BEFORE configurable item parsing
+    # Check for configurable items using data-driven patterns FIRST
+    # This ensures "bagel with cream cheese" goes to bagel parser, not cream cheese menu item
+    # Also prevents "with bacon and egg" from being interpreted as multiple items
+    configurable_item_result = _parse_configurable_item(text)
+    if configurable_item_result:
+        return configurable_item_result
+
+    # Data-driven menu item lookup - runs AFTER configurable item parsing
     # This matches direct menu items from the database (known_menu_items already excludes
     # configurable items, so no additional filtering needed)
     menu_item, qty = _extract_menu_item_from_text(text)
@@ -4158,7 +4169,9 @@ def parse_open_input_deterministic(
         if item_type_for_mods:
             attr_values = extract_attribute_values(text, item_type_for_mods)
         modifications = _extract_menu_item_modifications(text, item_type_for_mods)
-        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, list(attr_values.keys()), modifications)
+        # Look up is_signature from database (data-driven, no special handling)
+        is_sig = menu_cache.is_signature_item(menu_item)
+        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s, is_signature=%s)", text[:50], menu_item, qty, list(attr_values.keys()), modifications, is_sig)
         from orderbot.tasks.schemas.parser_responses import Selection
         # Convert structured modifications to Selection objects
         mod_list = []
@@ -4173,17 +4186,11 @@ def parse_open_input_deterministic(
                 quantity=1,
                 attribute_values=attr_values,
                 modifiers=mod_list,
+                is_signature=is_sig,
             )
             for _ in range(qty)
         ]
         return OpenInputResponse(parsed_items=menu_item_parsed_items)
-
-    # Check for configurable items using data-driven patterns
-    # This MUST run BEFORE multi-item parsing to prevent "with bacon and egg" from being
-    # interpreted as multiple items. Also prevents "bacon" from matching as a side item.
-    configurable_item_result = _parse_configurable_item(text)
-    if configurable_item_result:
-        return configurable_item_result
 
     # Check for multi-item orders
     # Must be checked before single-item parsers to handle "X and Y" patterns

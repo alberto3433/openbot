@@ -3506,6 +3506,29 @@ class MenuDataCache:
         self._ensure_loaded()
         return self._signature_item_aliases.copy()
 
+    def is_signature_item(self, menu_item_name: str) -> bool:
+        """Check if a menu item is a signature item.
+
+        Signature items have the is_signature=True flag set in the database.
+        They are pre-configured items with default ingredients.
+
+        Args:
+            menu_item_name: The menu item name to check (case-insensitive)
+
+        Returns:
+            True if the item is a signature item, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        # Check if this menu item is in the signature item types mapping
+        # or if it's a value in the signature item aliases
+        return (
+            menu_item_name in self._signature_item_types
+            or menu_item_name in self._signature_item_aliases.values()
+        )
+
     def get_item_type_for_menu_item(self, menu_item_name: str) -> str | None:
         """Get the item type slug for a menu item.
 
@@ -5048,6 +5071,10 @@ class MenuDataCache:
         For example, "coffee cake" should match "Russian Coffee Cake" instead of
         being parsed as a coffee beverage.
 
+        Uses word boundary matching to prevent partial matches:
+        - "3 bagel" should NOT match "3 bagels" (different request)
+        - "coffee cake" SHOULD match "I want coffee cake"
+
         Args:
             text: User input text to check
 
@@ -5061,8 +5088,12 @@ class MenuDataCache:
         text_lower = text.lower()
         for item_name, phrases_str in self._items_with_required_phrases.items():
             phrases = [p.strip().lower() for p in phrases_str.split(",")]
-            if any(phrase in text_lower for phrase in phrases):
-                return True
+            for phrase in phrases:
+                # Use word boundary matching to avoid partial matches
+                # e.g., "3 bagel" should not match "3 bagels"
+                pattern = rf'\b{re.escape(phrase)}\b'
+                if re.search(pattern, text_lower):
+                    return True
         return False
 
     def get_menu_items_by_unit_type(self, unit_type: str) -> set[str]:

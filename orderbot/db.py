@@ -32,6 +32,10 @@ if not DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
+    pool_size=2,           # Keep pool small per process
+    max_overflow=3,        # Limited overflow connections
+    pool_timeout=10,       # Fail fast if no connection available
+    pool_recycle=300,      # Recycle connections every 5 min
     echo=False,
 )
 

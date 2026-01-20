@@ -165,13 +165,13 @@ def create_coffee_task(
     # Temperature (iced/hot) stored as "temperature" attribute with value "iced" or "hot"
     if iced is not None:
         coffee["temperature"] = "iced" if iced else "hot"
-    # Milk is now stored via get_modifiers_by_category("milk"), but for test setup
-    # we can add it as a modifier
+    # Milk is now stored via get_selections_by_category("milk"), but for test setup
+    # we can add it as a selection
     if milk:
-        coffee.add_modifier(category="milk", slug=milk)
+        coffee.add_selection(slug=milk, category="milk")
     if sweeteners:
         for sweetener in sweeteners:
-            coffee.add_modifier(category="sweetener", slug=sweetener)
+            coffee.add_selection(slug=sweetener, category="sweetener")
     if extra_shots:
         coffee["extra_shots"] = extra_shots
     return coffee
@@ -503,11 +503,9 @@ class TestItemSlotOrchestrator:
         """Coffee is complete when size is specified (temperature is in name)."""
         # Note: Temperature (iced/hot) is now part of the menu item name itself
         # (e.g., "Iced Latte" vs "Hot Latte"), but the mock still requires it as an attribute.
-        coffee = create_coffee_task(drink_type="Iced Latte", size="medium")
-        # Set temperature explicitly (in real flow this would be parsed from "Iced" in name)
-        coffee.attribute_values["temperature"] = "iced"
-        # Set milk_sweetener_syrup as answered (even with no selection)
-        coffee.attribute_values["milk_sweetener_syrup"] = None
+        coffee = create_coffee_task(drink_type="Iced Latte", size="medium", iced=True)
+        # Mark milk_sweetener_syrup as answered (even with no selection) using selections API
+        coffee.add_selection("none", "milk_sweetener_syrup")
         orch = ItemSlotOrchestrator(coffee)
 
         assert orch.is_complete()
@@ -517,8 +515,8 @@ class TestItemSlotOrchestrator:
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
         )
-        # Set via dict-style access
-        item["requires_side_choice"] = True
+        # Set via selections API
+        item.add_selection("yes", "requires_side_choice")
         orch = ItemSlotOrchestrator(item)
         slot = orch.get_next_slot()
 
@@ -530,9 +528,9 @@ class TestItemSlotOrchestrator:
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
         )
-        # Set via dict-style access
-        item["requires_side_choice"] = True
-        item["side_choice"] = "bagel"
+        # Set via selections API
+        item.add_selection("yes", "requires_side_choice")
+        item.add_selection("bagel", "side_choice")
         orch = ItemSlotOrchestrator(item)
         slot = orch.get_next_slot()
 
@@ -544,12 +542,12 @@ class TestItemSlotOrchestrator:
             menu_item_name="Chipotle Omelette",
             menu_item_type="omelette",
         )
-        # Set via dict-style access
-        item["requires_side_choice"] = True
-        item["side_choice"] = "fruit_salad"
+        # Set via selections API
+        item.add_selection("yes", "requires_side_choice")
+        item.add_selection("fruit_salad", "side_choice")
         # Set bagel_choice (even though fruit salad doesn't need it,
         # the mock marks it as required so we need to fill it)
-        item["bagel_choice"] = "none"
+        item.add_selection("none", "bagel_choice")
         orch = ItemSlotOrchestrator(item)
 
         assert orch.is_complete()

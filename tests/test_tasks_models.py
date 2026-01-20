@@ -81,13 +81,13 @@ def create_coffee_task(
     if size:
         coffee["size"] = size
     if milk:
-        coffee.add_modifier(category="milk", slug=milk)
+        coffee.add_selection(slug=milk, category="milk")
     if sweeteners:
         for s in sweeteners:
             if isinstance(s, dict):
-                coffee.add_modifier(category="sweetener", slug=s.get("slug", ""), quantity=s.get("quantity", 1))
+                coffee.add_selection(slug=s.get("slug", ""), category="sweetener", quantity=s.get("quantity", 1))
             else:
-                coffee.add_modifier(category="sweetener", slug=str(s))
+                coffee.add_selection(slug=str(s), category="sweetener")
     if extra_shots:
         coffee["extra_shots"] = extra_shots
     if decaf:
@@ -311,8 +311,8 @@ class TestCoffeeItemTask:
         assert coffee.menu_item_type == "sized_beverage"
         assert coffee["size"] is None
         # Note: temperature (iced/hot) is now part of menu_item_name, not a separate attribute
-        # Milk is stored in modifiers, not attribute_values
-        milk_mods = coffee.get_modifiers_by_category("milk")
+        # Milk is stored in selections, not attribute_values
+        milk_mods = coffee.get_selections("milk")
         assert len(milk_mods) == 0
         assert coffee.get("extra_shots", 0) == 0
 

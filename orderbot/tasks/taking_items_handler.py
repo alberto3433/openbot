@@ -204,7 +204,7 @@ def _add_modifier_to_item(
 ) -> bool:
     """Add a modifier to an item using the unified storage model.
 
-    Uses the unified 'modifiers' list on MenuItemTask for all modifiers.
+    Uses the unified 'selections' list on MenuItemTask for all modifiers.
     Format: {"slug": ..., "category": ..., "quantity": ..., "display_name": ...}
     Works for any item type and modifier category.
 
@@ -218,26 +218,26 @@ def _add_modifier_to_item(
     Returns:
         True if modifier was added, False if already present
     """
-    # Get current modifiers (unified storage)
-    current_modifiers = item.modifiers or []
+    # Get current selections (unified storage)
+    current_selections = item.selections or []
 
     # Check if already present (by slug)
-    existing_slugs = [m.get("slug") for m in current_modifiers]
+    existing_slugs = [m.get("slug") for m in current_selections]
     if slug in existing_slugs:
         return False
 
-    # Build the modifier entry
-    modifier_entry = {
+    # Build the selection entry
+    selection_entry = {
         "slug": slug,
         "display_name": display_name,
         "quantity": quantity,
     }
     if category:
-        modifier_entry["category"] = category
+        selection_entry["category"] = category
 
-    # Add to unified modifiers list
-    current_modifiers.append(modifier_entry)
-    item.modifiers = current_modifiers
+    # Add to unified selections list
+    current_selections.append(selection_entry)
+    item.selections = current_selections
 
     logger.info(
         "Added %s modifier: %s (qty=%d) to %s",
@@ -361,7 +361,7 @@ def _remove_modifiers_by_category(
 ) -> bool:
     """Remove all modifiers of a specific category from an item.
 
-    Uses the unified modifiers list. Works for any item type and category.
+    Uses the unified selections list. Works for any item type and category.
 
     Args:
         item: The MenuItemTask to modify
@@ -370,18 +370,18 @@ def _remove_modifiers_by_category(
     Returns:
         True if any modifiers were removed, False otherwise.
     """
-    current_modifiers = item.modifiers or []
-    if not current_modifiers:
+    current_selections = item.selections or []
+    if not current_selections:
         return False
 
-    # Filter out modifiers of the specified category
-    new_modifiers = [m for m in current_modifiers if m.get("category") != category]
+    # Filter out selections of the specified category
+    new_selections = [m for m in current_selections if m.get("category") != category]
 
-    if len(new_modifiers) < len(current_modifiers):
-        item.modifiers = new_modifiers
+    if len(new_selections) < len(current_selections):
+        item.selections = new_selections
         logger.info(
             "Removed %d %s modifier(s) from %s",
-            len(current_modifiers) - len(new_modifiers),
+            len(current_selections) - len(new_selections),
             category,
             item.menu_item_name or item.menu_item_type
         )
@@ -1201,10 +1201,10 @@ class TakingItemsHandler:
                             # Determine category from database lookup
                             category = modifier_to_category.get(base_modifier, "topping")
 
-                            # Add to unified modifiers list
-                            target_item.add_modifier(
-                                category=category,
+                            # Add to unified selections list
+                            target_item.add_selection(
                                 slug=modifier_slug,
+                                category=category,
                                 display_name=modifier.title(),
                             )
                             logger.info("MODIFY ADD: Added '%s' (category=%s) to item", modifier, category)
@@ -1307,16 +1307,16 @@ class TakingItemsHandler:
                                     selections.append(Selection(slug=value, category=attr_slug))
 
                         if selections:
-                            # Clear existing modifiers and apply new ones using unified storage
+                            # Clear existing selections and apply new ones using unified storage
                             categories = {sel.category for sel in selections}
                             logger.info("Replacement: applying selections to item from categories: %s", categories)
-                            last_item.modifiers = []  # Clear existing modifiers
+                            last_item.selections = []  # Clear existing selections
 
                             # Apply all selections
                             for sel in selections:
-                                last_item.add_modifier(
-                                    category=sel.category,
+                                last_item.add_selection(
                                     slug=sel.slug,
+                                    category=sel.category,
                                     display_name=sel.slug.replace("_", " ").title(),
                                 )
 

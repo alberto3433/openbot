@@ -239,7 +239,7 @@ class UnifiedItemConverter:
             "menu_item_name", "menu_item_id", "modifications", "removed_ingredients",
             "special_instructions", "notes", "modifiers", "free_details", "base_price",
             "line_total", "item_config", "attribute_values", "customization_offered",
-            "display_name",
+            "display_name", "item_modifiers",  # item_modifiers handled separately
         }
         for source in (item_dict, item_config):
             for key, value in source.items():
@@ -265,6 +265,67 @@ class UnifiedItemConverter:
         # Restore modifiers from item_config
         stored_modifiers = item_config.get("item_modifiers") or []
 
+        # Convert attribute_values to selections format
+        selections = []
+        for category, value in attribute_values.items():
+            # Skip price/upcharge companion keys
+            if category.endswith(("_price", "_upcharge", "_selections")):
+                continue
+            if value is None:
+                continue
+
+            if isinstance(value, bool):
+                # Boolean attributes: store as "yes"/"no" slug
+                slug = "yes" if value else "no"
+                display_name = category.replace("_", " ").title() if value else f"Not {category.replace('_', ' ').title()}"
+            elif isinstance(value, list):
+                # Multi-select: each item becomes a selection
+                for v in value:
+                    if isinstance(v, dict):
+                        # Already in selection format
+                        selections.append(v)
+                    else:
+                        selections.append({
+                            "slug": str(v),
+                            "category": category,
+                            "quantity": 1,
+                            "price": 0,
+                            "display_name": str(v).replace("_", " ").title(),
+                        })
+                continue
+            else:
+                slug = str(value)
+                display_name = str(value).replace("_", " ").title()
+
+            # Look up price from companion key if present
+            price = attribute_values.get(f"{category}_price", 0) or attribute_values.get(f"{category}_upcharge", 0) or 0
+
+            selections.append({
+                "slug": slug,
+                "category": category,
+                "quantity": 1,
+                "price": price,
+                "display_name": display_name,
+            })
+
+        # Add stored_modifiers (already in selections format), avoiding duplicates
+        existing_keys = {(s.get("slug"), s.get("category")) for s in selections}
+        for mod in stored_modifiers:
+            if isinstance(mod, dict):
+                slug = mod.get("slug", "")
+                category = mod.get("category", "")
+                # Skip if already present from attribute_values
+                if (slug, category) in existing_keys:
+                    continue
+                existing_keys.add((slug, category))
+                selections.append({
+                    "slug": slug,
+                    "category": category,
+                    "quantity": mod.get("quantity", 1),
+                    "price": mod.get("price", 0),
+                    "display_name": mod.get("display_name", slug.replace("_", " ").title()),
+                })
+
         menu_item = MenuItemTask(
             menu_item_name=item_dict.get("menu_item_name") or "Unknown",
             menu_item_id=item_dict.get("menu_item_id"),
@@ -273,8 +334,7 @@ class UnifiedItemConverter:
             removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
             quantity=item_dict.get("quantity", 1),
             special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
-            attribute_values=attribute_values,
-            modifiers=stored_modifiers,
+            selections=selections,
             customization_offered=item_dict.get("customization_offered", False),
         )
         self._restore_common_fields(menu_item, item_dict)

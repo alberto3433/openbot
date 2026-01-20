@@ -233,11 +233,18 @@ class TestEspressoParsingIntegration:
         coffee = get_coffee_item(result)
         assert coffee is not None
         assert coffee.item_name == "Espresso", f"Coffee type should be 'Espresso', got '{coffee.item_name}'"
-        # Milk can be in modifiers list OR in attribute_values (milk_sweetener_syrup or milk field)
-        milk_mods = coffee.get_modifiers_by_category("milk")
-        milk_in_attrs = coffee.attribute_values.get("milk_sweetener_syrup", []) or coffee.attribute_values.get("milk", [])
+        # Check for oat milk in selections or attribute_values
+        milk_mods = coffee.get_selections("milk")
+        milk_in_attrs = coffee.attribute_values.get("milk_sweetener_syrup") or coffee.attribute_values.get("milk")
         has_oat_milk = (
-            any(m.get("slug") == "oat" or m.slug == "oat" for m in milk_mods if hasattr(m, 'slug') or isinstance(m, dict)) or
-            any(m.get("slug", "").startswith("oat") for m in milk_in_attrs if isinstance(m, dict))
+            # Check selections (returns list of dicts)
+            any(m.get("slug", "").startswith("oat") for m in milk_mods if isinstance(m, dict)) or
+            # Check attribute_values (can be string or list)
+            (isinstance(milk_in_attrs, str) and "oat" in milk_in_attrs.lower()) or
+            (isinstance(milk_in_attrs, list) and any(
+                (isinstance(m, dict) and "oat" in m.get("slug", "").lower()) or
+                (isinstance(m, str) and "oat" in m.lower())
+                for m in milk_in_attrs
+            ))
         )
         assert has_oat_milk, f"Milk should be oat-based, got modifiers: {milk_mods}, attrs: {milk_in_attrs}"

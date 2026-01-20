@@ -3271,7 +3271,7 @@ class TestCoffeeStyle:
         result = sm.configuring_item_handler.handle_configuring_item("hot with 2 sugars", order)
 
         assert coffee["temperature"] == "hot"
-        sweeteners = coffee.get_modifiers_by_category("sweetener")
+        sweeteners = coffee.get_selections("sweetener")
         assert len(sweeteners) == 1
         assert sweeteners[0]["slug"] == "sugar"
         assert sweeteners[0]["quantity"] == 2
@@ -3294,7 +3294,7 @@ class TestCoffeeStyle:
         result = sm.configuring_item_handler.handle_configuring_item("iced with vanilla", order)
 
         assert coffee["temperature"] == "iced"
-        syrups = coffee.get_modifiers_by_category("syrup")
+        syrups = coffee.get_selections("syrup")
         assert len(syrups) == 1
         assert syrups[0]["slug"] == "vanilla"
 
@@ -3535,7 +3535,7 @@ class TestCoffeeModifierRemoval:
         assert len(result.order.items.get_active_items()) == 1
         # Get the coffee from result order
         result_coffee = result.order.items.get_active_items()[0]
-        milk_modifiers = result_coffee.get_modifiers_by_category("milk")
+        milk_modifiers = result_coffee.get_selections("milk")
         assert len(milk_modifiers) == 0
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
 
@@ -3561,7 +3561,7 @@ class TestCoffeeModifierRemoval:
         assert len(result.order.items.get_active_items()) == 1
         # Get the coffee from result order
         result_coffee = result.order.items.get_active_items()[0]
-        sweeteners = result_coffee.get_modifiers_by_category("sweetener")
+        sweeteners = result_coffee.get_selections("sweetener")
         assert len(sweeteners) == 0
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
 
@@ -3587,7 +3587,7 @@ class TestCoffeeModifierRemoval:
         assert len(result.order.items.get_active_items()) == 1
         # Get the coffee from result order
         result_coffee = result.order.items.get_active_items()[0]
-        syrups = result_coffee.get_modifiers_by_category("syrup")
+        syrups = result_coffee.get_selections("syrup")
         assert len(syrups) == 0
         assert "removed" in result.message.lower() or "changed" in result.message.lower()
 

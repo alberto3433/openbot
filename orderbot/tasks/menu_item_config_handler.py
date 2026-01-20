@@ -966,8 +966,8 @@ class MenuItemConfigHandler(BaseHandler):
                     sel.slug, item_type, sel.category
                 ) or 0.0
 
-            # Use generic add_modifier for unified storage
-            item.add_modifier(sel.category, sel.slug, sel.quantity, price)
+            # Use add_selection for unified storage
+            item.add_selection(sel.slug, sel.category, sel.quantity, price)
 
             # Build display name for acknowledgment using database lookup
             display_name = sel.display_name or menu_cache.get_ingredient_display_name(sel.slug)
@@ -1493,9 +1493,9 @@ class MenuItemConfigHandler(BaseHandler):
             is_multi_select = field_config.get("is_multi_select", False) if field_config else False
 
             if is_multi_select:
-                # Multi-select: use add_modifier with quantity
+                # Multi-select: use add_selection with quantity
                 quantity = modifiers.get(f"{key}{quantity_suffix}", 1)
-                item.add_modifier(normalized_key, value, quantity, 0.0)
+                item.add_selection(value, normalized_key, quantity, 0.0)
             else:
                 # Single-select or boolean: use dict-style access
                 item[normalized_key] = value

@@ -152,20 +152,20 @@ def CoffeeItemTask(
         selections=selections,
     )
 
-    # Add modifiers
+    # Add selections (modifiers)
     if milk:
-        item.add_modifier(category="milk", slug=milk)
+        item.add_selection(slug=milk, category="milk")
     if sweeteners:
         for s in sweeteners:
             if isinstance(s, dict):
-                item.add_modifier(category="sweetener", slug=s.get("slug", ""), quantity=s.get("quantity", 1))
+                item.add_selection(slug=s.get("slug", ""), category="sweetener", quantity=s.get("quantity", 1))
             else:
-                item.add_modifier(category="sweetener", slug=str(s))
+                item.add_selection(slug=str(s), category="sweetener")
     if flavor_syrups:
         for s in flavor_syrups:
             if isinstance(s, dict):
-                item.add_modifier(category="syrup", slug=s.get("slug", ""), quantity=s.get("quantity", 1))
+                item.add_selection(slug=s.get("slug", ""), category="syrup", quantity=s.get("quantity", 1))
             else:
-                item.add_modifier(category="syrup", slug=str(s))
+                item.add_selection(slug=str(s), category="syrup")
 
     return item

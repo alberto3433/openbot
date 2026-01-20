@@ -329,13 +329,11 @@ class TestGlutenFreeSpeedMenuE2E:
             menu_item_id=123,  # Integer ID
             is_signature=True,
             unit_price=10.80,  # $10.00 base + $0.80 gluten free
-            attribute_values={
-                "toasted": True,
-                "bagel_choice": "gluten free",
-                "bagel_choice_upcharge": 0.80,
-                "cheese": "american",
-            },
         )
+        # Set attributes via selections API (Pydantic doesn't call property setters during __init__)
+        item.add_selection("yes", "toasted")
+        item.add_selection("gluten free", "bagel_choice", price=0.80)
+        item.add_selection("american", "cheese")
         item.mark_complete()
         order.items.add_item(item)
 

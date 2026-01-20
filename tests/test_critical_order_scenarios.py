@@ -665,8 +665,8 @@ class TestCriticalOrderScenarios:
         if coffees:
             coffee = coffees[0]
             print(f"Coffee: name={coffee.menu_item_name}, size={coffee['size']}, temperature={coffee['temperature']}")
-            milk_mods = coffee.get_modifiers_by_category("milk")
-            syrup_mods = coffee.get_modifiers_by_category("syrup")
+            milk_mods = coffee.get_selections("milk")
+            syrup_mods = coffee.get_selections("syrup")
             print(f"Milk: {milk_mods}, Syrups: {syrup_mods}")
 
             # Check configuration

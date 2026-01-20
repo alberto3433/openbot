@@ -26,28 +26,53 @@ def create_bagel_task(
     bagel_type_upcharge: float = 0.0,
     toasted: bool = None,
     spread: str = None,
+    spread_price: float = 0.0,
     extras: list = None,
+    proteins: list = None,
     quantity: int = 1,
     unit_price: float = 0.0,
+    base_price: float = 2.20,
 ) -> MenuItemTask:
-    """Create a MenuItemTask configured as a bagel."""
+    """Create a MenuItemTask configured as a bagel.
+
+    Args:
+        bagel_type: Type of bagel (plain, everything, sesame, etc.)
+        bagel_type_upcharge: Price modifier for bagel type
+        toasted: Whether bagel is toasted
+        spread: Spread type (cream cheese, butter, etc.)
+        spread_price: Price modifier for spread
+        extras: List of toppings (tomato, onion, capers)
+        proteins: List of protein modifiers with prices (e.g., [("nova scotia salmon", 6.00)])
+        quantity: Number of bagels
+        unit_price: Final price per bagel (if 0, will be calculated from base + selections)
+        base_price: Base bagel price before modifiers (default $2.20)
+    """
     bagel = MenuItemTask(
         menu_item_name="Bagel",
         menu_item_type="bagel",
         quantity=quantity,
-        unit_price=unit_price,
+        unit_price=base_price,  # Start with base, add_selection will add modifier prices
+        base_price=base_price,
     )
-    # Set properties via dict-style access (stored in attribute_values)
+    # Set properties via selections API (each add_selection with price adds to unit_price)
     if toasted is not None:
-        bagel["toasted"] = toasted
+        bagel.add_selection("yes" if toasted else "no", "toasted")
     if spread:
-        bagel["spread"] = spread
+        bagel.add_selection(spread, "spread", price=spread_price)
     if bagel_type:
-        bagel["bread"] = bagel_type
-    if bagel_type_upcharge:
-        bagel["bread_upcharge"] = bagel_type_upcharge
+        bagel.add_selection(bagel_type, "bread", price=bagel_type_upcharge)
     if extras:
-        bagel["toppings"] = extras
+        for extra in extras:
+            bagel.add_selection(extra, "toppings")
+    if proteins:
+        for protein in proteins:
+            if isinstance(protein, tuple):
+                bagel.add_selection(protein[0], "protein", price=protein[1])
+            else:
+                bagel.add_selection(protein, "protein")
+    # If explicit unit_price was provided and differs from calculated, use it
+    if unit_price > 0 and unit_price != bagel.unit_price:
+        bagel.unit_price = unit_price
     return bagel
 
 
@@ -70,22 +95,23 @@ def create_coffee_task(
         quantity=quantity,
         unit_price=unit_price,
     )
+    # Set properties via selections API
     if size:
-        coffee["size"] = size
+        coffee.add_selection(size, "size")
     if iced is not None:
-        coffee["temperature"] = "iced" if iced else "hot"
+        coffee.add_selection("iced" if iced else "hot", "temperature")
     if decaf:
-        coffee["decaf"] = decaf
+        coffee.add_selection("yes" if decaf else "no", "decaf")
     if milk:
-        coffee.add_modifier(category="milk", slug=milk, price=milk_upcharge)
+        coffee.add_selection(slug=milk, category="milk", price=milk_upcharge)
     if sweeteners:
         for s in sweeteners:
             if isinstance(s, dict):
-                coffee.add_modifier(category="sweetener", slug=s.get("slug", ""), quantity=s.get("quantity", 1))
+                coffee.add_selection(slug=s.get("slug", ""), category="sweetener", quantity=s.get("quantity", 1))
             else:
-                coffee.add_modifier(category="sweetener", slug=str(s))
+                coffee.add_selection(slug=str(s), category="sweetener")
     if extra_shots:
-        coffee["extra_shots"] = extra_shots
+        coffee.add_selection(str(extra_shots), "extra_shots")
     return coffee
 
 
@@ -317,12 +343,12 @@ class TestDictToOrderTask:
         assert item.menu_item_name == "iced latte"  # drink_type stored as menu_item_name
         assert item["size"] == "large"
         assert item["temperature"] == "iced"
-        # Milk and sweeteners stored as modifiers
-        milk_mods = item.get_modifiers_by_category("milk")
+        # Milk and sweeteners stored as selections
+        milk_mods = item.get_selections("milk")
         assert len(milk_mods) == 1
         assert milk_mods[0]["slug"] == "oat"
         # Sweeteners use unified storage format
-        sweetener_mods = item.get_modifiers_by_category("sweetener")
+        sweetener_mods = item.get_selections("sweetener")
         assert len(sweetener_mods) == 1
         assert sweetener_mods[0]["slug"] == "sugar"
         assert sweetener_mods[0]["quantity"] == 2
@@ -424,7 +450,7 @@ class TestOrderTaskToDict:
         assert item["attribute_values"]["bread"] == "sesame"  # Check in attribute_values
         assert item["attribute_values"]["toasted"] is True
         assert item["attribute_values"]["spread"] == "butter"  # spread attribute uses slug 'spread'
-        assert item["attribute_values"]["toppings"] == ["tomato"]  # Bagels store extras as toppings internally
+        assert item["attribute_values"]["toppings"] == "tomato"  # Single value returned as string
         assert item["quantity"] == 1
         assert item["unit_price"] == 4.99
 
@@ -615,7 +641,8 @@ class TestModifiersConsistency:
             bagel_type="multigrain",
             toasted=True,
             spread="cream cheese",
-            extras=["nova scotia salmon"],
+            spread_price=1.50,
+            proteins=[("nova scotia salmon", 6.00)],
             unit_price=11.75,  # bagel + lox + cream cheese
         )
         order.items.add_item(bagel)
@@ -755,8 +782,8 @@ class TestModifiersConsistency:
                 "spread_type": "cream cheese",
             },
         )
-        # Add spread as a modifier with price
-        item.add_modifier(category="spread", slug="cream cheese", price=1.50)
+        # Add spread as a selection with price
+        item.add_selection(slug="cream cheese", category="spread", price=1.50)
         order.items.add_item(item)
 
         result = order_task_to_dict(order, pricing=create_test_pricing())
@@ -851,8 +878,9 @@ class TestModifiersConsistency:
         bagel = create_bagel_task(
             bagel_type="multigrain",
             toasted=True,
-            extras=["nova scotia salmon"],
+            proteins=[("nova scotia salmon", 6.00)],
             spread="cream cheese",
+            spread_price=1.50,
             unit_price=9.70,
         )
         order.items.add_item(bagel)
@@ -891,6 +919,7 @@ class TestModifiersConsistency:
             bagel_type_upcharge=0.80,  # Gluten free upcharge
             toasted=True,
             spread="cream cheese",
+            spread_price=1.50,  # Cream cheese upcharge
             unit_price=4.50,  # $2.20 base + $0.80 gluten free + $1.50 cream cheese
         )
         order.items.add_item(bagel)

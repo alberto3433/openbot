@@ -105,7 +105,7 @@ class TestReplacementModificationScenarios:
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
-        milk_mods = updated_coffee.get_modifiers_by_category("milk")
+        milk_mods = updated_coffee.get_selections("milk")
         assert len(milk_mods) == 1 and milk_mods[0]["slug"] == "oat", f"Milk should be oat, got: {milk_mods}"
         assert updated_coffee["size"] == "medium", "Size should be preserved"
         assert updated_coffee.menu_item_name == "latte", "Drink type should be preserved"

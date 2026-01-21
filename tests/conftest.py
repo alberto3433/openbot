@@ -4,17 +4,26 @@ from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
 
 # Load environment variables from .env file
 load_dotenv()
 
 
 def create_test_engine(database_url: str):
-    """Create a database engine - use NullPool for serverless Neon."""
+    """Create a database engine with connection pooling for better performance.
+
+    Uses QueuePool with small pool size to reuse connections across queries,
+    significantly reducing latency with remote Neon PostgreSQL (~50-100ms per connection).
+    """
+    from sqlalchemy.pool import QueuePool
     return create_engine(
         database_url,
-        poolclass=NullPool,  # Fresh connection per query - no stale connections
+        poolclass=QueuePool,
+        pool_size=2,        # Small pool for tests
+        max_overflow=3,     # Limited overflow
+        pool_timeout=10,    # Fail fast if no connection
+        pool_recycle=300,   # Recycle every 5 min
+        pool_pre_ping=True,  # Verify connection is alive
     )
 
 # Test admin credentials

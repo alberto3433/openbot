@@ -50,43 +50,43 @@ class LoaderMixin:
                 # Bulk load all tables first to eliminate N+1 queries
                 bulk_data = self._bulk_load_all_tables(db)
 
-                # Load each category (some use bulk_data, some still use db)
-                self._load_known_menu_items(db)
-                self._load_signature_item_aliases(db)
-                self._load_modifier_aliases(db)
-                self._load_side_items(db)
-                self._load_category_keywords(db)
-                self._load_abbreviations(db)
-                self._load_item_type_fields(db)
-                self._load_response_patterns(db)
-                self._load_modifier_qualifiers(db)
+                # All loaders now use bulk_data to avoid duplicate queries
+                self._load_known_menu_items_from_bulk(bulk_data)
+                self._load_signature_item_aliases_from_bulk(bulk_data)
+                self._load_modifier_aliases_from_bulk(bulk_data)
+                self._load_side_items_from_bulk(bulk_data)
+                self._load_category_keywords_from_bulk(bulk_data)
+                self._load_abbreviations_from_bulk(bulk_data)
+                self._load_item_type_fields_from_bulk(bulk_data)
+                self._load_response_patterns_from_bulk(bulk_data)
+                self._load_modifier_qualifiers_from_bulk(bulk_data)
                 self._load_global_attribute_options_from_bulk(bulk_data)
-                self._load_global_attribute_aliases(db)
-                self._load_item_type_metadata(db)
-                self._load_menu_index(db)
+                self._load_global_attribute_aliases_from_bulk(bulk_data)
+                self._load_item_type_metadata_from_bulk(bulk_data)
+                self._load_menu_index(db)  # Uses build_menu_index which queries DB
 
                 # Data-driven parsing support loaders
-                self._load_compound_phrases(db)
+                self._load_compound_phrases_from_bulk(bulk_data)
                 self._load_item_type_triggers_from_bulk(bulk_data)
-                self._load_configurable_item_types(db)
-                self._load_items_with_required_phrases(db)
-                self._load_by_unit_type_items(db)
+                self._load_configurable_item_types_from_bulk(bulk_data)
+                self._load_items_with_required_phrases_from_bulk(bulk_data)
+                self._load_by_unit_type_items_from_bulk(bulk_data)
 
                 # Generic data-driven loaders (replace domain-specific functions)
-                self._load_generic_item_names(db)
-                self._load_generic_ingredients(db)
-                self._load_generic_ingredients_for_item_types(db)
-                self._load_ingredient_category_metadata(db)
+                self._load_generic_item_names_from_bulk(bulk_data)
+                self._load_generic_ingredients_from_bulk(bulk_data)
+                self._load_generic_ingredients_for_item_types_from_bulk(bulk_data)
+                self._load_ingredient_category_metadata_from_bulk(bulk_data)
 
                 # Load menu item categories (drink, food, etc.)
-                self._load_menu_item_categories(db)
+                self._load_menu_item_categories_from_bulk(bulk_data)
 
                 # Load modifier categories (toppings, proteins, milks, etc.)
-                self._load_modifier_categories(db)
+                self._load_modifier_categories_from_bulk(bulk_data)
 
                 # Price inquiry support (pre-compute resolved prices)
                 self._load_priced_attributes_from_bulk(bulk_data)
-                self._load_resolved_item_prices(db)
+                self._load_resolved_item_prices_from_bulk(bulk_data)
                 self._load_ingredient_price_contexts_from_bulk(bulk_data)
 
                 # Pre-load ALL item type attributes at startup (eliminates runtime lazy loading)
@@ -96,7 +96,7 @@ class LoaderMixin:
                 self._build_keyword_indices()
 
                 # Recommendation search support (includes ALL menu items)
-                self._load_recommendation_search_data(db)
+                self._load_recommendation_search_data_from_bulk(bulk_data)
 
                 self._last_refresh = datetime.now()
                 self._is_loaded = True
@@ -133,10 +133,19 @@ class LoaderMixin:
             - ingredients: List of Ingredient with aliases loaded
             - type_ingredients: List of ItemTypeIngredient with relationships
             - global_attr_options: List of GlobalAttributeOption (all)
+            - categories: List of Category
+            - menu_item_categories: List of MenuItemCategory with relationships
+            - response_patterns: List of ResponsePattern
+            - modifier_qualifiers: List of ModifierQualifier
+            - modifier_categories: List of ModifierCategory
+            - ingredient_categories: List of IngredientCategory
+            - global_attr_aliases: List of GlobalAttributeAlias
         """
         from ..models import (
             GlobalAttribute, GlobalAttributeOption, Ingredient,
             ItemType, ItemTypeGlobalAttribute, MenuItem, ItemTypeIngredient,
+            Category, MenuItemCategory, ResponsePattern, ModifierQualifier,
+            ModifierCategory, IngredientCategory, GlobalAttributeAlias,
         )
 
         start_time = time.time()
@@ -170,12 +179,14 @@ class LoaderMixin:
             .all()
         )
 
-        # 3. Load MenuItem with aliases and item_type
+        # 3. Load MenuItem with aliases, item_type, and size_prices
+        # Note: size_prices is needed because base_price property accesses it
         menu_items = (
             db.query(MenuItem)
             .options(
                 selectinload(MenuItem.alias_records),
                 joinedload(MenuItem.item_type),
+                selectinload(MenuItem.size_prices),
             )
             .all()
         )
@@ -207,16 +218,56 @@ class LoaderMixin:
             .all()
         )
 
+        # 7. Load Categories
+        categories = db.query(Category).all()
+
+        # 8. Load MenuItemCategory with relationships for side items lookup
+        menu_item_categories = (
+            db.query(MenuItemCategory)
+            .options(
+                joinedload(MenuItemCategory.menu_item).selectinload(MenuItem.alias_records),
+                joinedload(MenuItemCategory.category),
+            )
+            .all()
+        )
+
+        # 9. Load response patterns
+        response_patterns = db.query(ResponsePattern).all()
+
+        # 10. Load modifier qualifiers
+        try:
+            modifier_qualifiers = (
+                db.query(ModifierQualifier)
+                .filter(ModifierQualifier.is_active == True)  # noqa: E712
+                .all()
+            )
+        except Exception:
+            modifier_qualifiers = []
+
+        # 11. Load modifier categories
+        modifier_categories_list = db.query(ModifierCategory).all()
+
+        # 12. Load ingredient categories
+        ingredient_categories = db.query(IngredientCategory).all()
+
+        # 13. Load global attribute aliases
+        global_attr_aliases = (
+            db.query(GlobalAttributeAlias)
+            .options(joinedload(GlobalAttributeAlias.global_attribute))
+            .all()
+        )
+
         elapsed = time.time() - start_time
         logger.info(
             "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
-            "%d menu_items, %d ingredients, %d type_ingredients",
+            "%d menu_items, %d ingredients, %d type_ingredients, %d categories",
             elapsed,
             len(global_attrs),
             len(item_types),
             len(menu_items),
             len(ingredients),
             len(type_ingredients),
+            len(categories),
         )
 
         return {
@@ -226,6 +277,13 @@ class LoaderMixin:
             "ingredients": ingredients,
             "type_ingredients": type_ingredients,
             "global_attr_options": global_attr_options,
+            "categories": categories,
+            "menu_item_categories": menu_item_categories,
+            "response_patterns": response_patterns,
+            "modifier_qualifiers": modifier_qualifiers,
+            "modifier_categories": modifier_categories_list,
+            "ingredient_categories": ingredient_categories,
+            "global_attr_aliases": global_attr_aliases,
         }
 
     def _load_known_menu_items(self, db: Session) -> None:
@@ -1782,6 +1840,7 @@ class LoaderMixin:
                     "display_name": attr.display_name,
                     "input_type": attr.input_type,
                     "is_required": link.is_required,
+                    "allow_none": link.allow_none,
                     "ask_in_conversation": link.ask_in_conversation,
                     "display_order": link.display_order,
                     "question_text": link.question_text,
@@ -1796,4 +1855,800 @@ class LoaderMixin:
         logger.debug(
             "Pre-loaded attributes for %d item types (from bulk)",
             len(self._item_type_attributes),
+        )
+
+    # ========================================================================
+    # Bulk-only loaders (no database queries - use pre-loaded data)
+    # ========================================================================
+
+    def _load_known_menu_items_from_bulk(self, bulk_data: dict) -> None:
+        """Load all menu item names and aliases for recognition (from bulk data)."""
+        menu_items_list = bulk_data["menu_items"]
+        item_types = bulk_data["item_types"]
+
+        menu_items = set()
+        alias_to_canonical: dict[str, str] = {}
+        menu_items_cache: dict[str, dict] = {}
+
+        # Build set of item_type_ids that have askable attributes
+        exclude_type_ids = set()
+        for item_type in item_types:
+            for link in item_type.global_attribute_links:
+                if link.ask_in_conversation:
+                    exclude_type_ids.add(item_type.id)
+                    break
+
+        for item in menu_items_list:
+            # Build menu items cache for get_items_by_item_type
+            item_type_slug = item.item_type.slug if item.item_type else None
+            menu_items_cache[item.name.lower()] = {
+                "id": item.id,
+                "name": item.name,
+                "item_type": item_type_slug,
+                "base_price": float(item.base_price) if item.base_price else 0.0,
+            }
+
+            # Skip items that have their own configuration flows
+            # BUT always include signature items
+            if item.item_type_id in exclude_type_ids and not item.is_signature:
+                continue
+
+            canonical_name = item.name
+            name_lower = item.name.lower()
+
+            menu_items.add(name_lower)
+            alias_to_canonical[name_lower] = canonical_name
+
+            if name_lower.startswith("the "):
+                without_the = name_lower[4:]
+                menu_items.add(without_the)
+                alias_to_canonical[without_the] = canonical_name
+
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    menu_items.add(alias)
+                    alias_to_canonical[alias] = canonical_name
+
+        self._known_menu_items = menu_items
+        self._menu_item_alias_to_canonical = alias_to_canonical
+        self._menu_items = menu_items_cache
+
+        logger.debug(
+            "Loaded %d known menu items with %d alias mappings (from bulk)",
+            len(menu_items),
+            len(alias_to_canonical),
+        )
+
+    def _load_signature_item_aliases_from_bulk(self, bulk_data: dict) -> None:
+        """Load signature item aliases from bulk data."""
+        menu_items = bulk_data["menu_items"]
+
+        signature_item_aliases: dict[str, str] = {}
+        signature_item_types: dict[str, str] = {}
+
+        for item in menu_items:
+            if not item.is_signature:
+                continue
+
+            canonical_name = item.name
+
+            if item.item_type:
+                signature_item_types[canonical_name] = item.item_type.slug
+
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    signature_item_aliases[alias] = canonical_name
+
+            name_lower = item.name.lower()
+            signature_item_aliases[name_lower] = canonical_name
+
+            if name_lower.startswith("the "):
+                signature_item_aliases[name_lower[4:]] = canonical_name
+
+        self._signature_item_aliases = signature_item_aliases
+        self._signature_item_types = signature_item_types
+
+        logger.debug(
+            "Loaded %d signature item aliases (from bulk)",
+            len(signature_item_aliases),
+        )
+
+    def _load_modifier_aliases_from_bulk(self, bulk_data: dict) -> None:
+        """Load modifier alias mappings from bulk data."""
+        ingredients = bulk_data["ingredients"]
+
+        modifier_aliases: dict[str, str] = {}
+
+        for ing in ingredients:
+            canonical_name = ing.name
+
+            for alias in ing.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    modifier_aliases[alias] = canonical_name
+
+            name_lower = ing.name.lower()
+            modifier_aliases[name_lower] = canonical_name
+
+        self._modifier_aliases = modifier_aliases
+
+        logger.debug(
+            "Loaded %d modifier aliases (from bulk)",
+            len(modifier_aliases),
+        )
+
+    def _load_side_items_from_bulk(self, bulk_data: dict) -> None:
+        """Load side items and their aliases from bulk data."""
+        menu_item_categories = bulk_data["menu_item_categories"]
+
+        side_items: set[str] = set()
+        alias_to_canonical: dict[str, str] = {}
+
+        for mic in menu_item_categories:
+            if mic.category and mic.category.slug == "side":
+                item = mic.menu_item
+                if not item:
+                    continue
+
+                canonical_name = item.name
+                name_lower = canonical_name.lower()
+
+                side_items.add(name_lower)
+                alias_to_canonical[name_lower] = canonical_name
+
+                for alias in item.aliases:
+                    alias = alias.strip().lower()
+                    if alias:
+                        side_items.add(alias)
+                        alias_to_canonical[alias] = canonical_name
+
+        self._side_items = side_items
+        self._side_alias_to_canonical = alias_to_canonical
+
+        logger.debug(
+            "Loaded %d side item aliases (from bulk)",
+            len(alias_to_canonical),
+        )
+
+    def _load_category_keywords_from_bulk(self, bulk_data: dict) -> None:
+        """Load category keyword mappings from bulk data."""
+        item_types = bulk_data["item_types"]
+        categories = bulk_data["categories"]
+
+        category_keywords: dict[str, dict] = {}
+
+        # 1. Load ItemTypes
+        for item_type in item_types:
+            slug = item_type.slug
+            display_name = item_type.display_name
+            display_name_plural = item_type.display_name_plural or f"{display_name}s"
+
+            category_info = {
+                "slug": slug,
+                "display_name": display_name,
+                "display_name_plural": display_name_plural,
+                "lookup_type": "item_type",
+            }
+
+            category_keywords[slug] = category_info
+
+            for alias in item_type.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    category_keywords[alias] = category_info
+
+        # 2. Load Categories
+        for category in categories:
+            slug = category.slug
+            display_name = category.name
+            display_name_plural = f"{display_name}s" if not display_name.endswith('s') else display_name
+
+            category_info = {
+                "slug": slug,
+                "category_id": category.id,
+                "display_name": display_name,
+                "display_name_plural": display_name_plural,
+                "lookup_type": "category",
+            }
+
+            category_keywords[slug] = category_info
+
+            name_lower = display_name.lower()
+            if name_lower != slug:
+                category_keywords[name_lower] = category_info
+            plural_lower = display_name_plural.lower()
+            if plural_lower != slug and plural_lower != name_lower:
+                category_keywords[plural_lower] = category_info
+
+        if not category_keywords:
+            raise RuntimeError(
+                "No category keywords found in database. Run migrations to populate "
+                "item_types and categories tables."
+            )
+
+        self._category_keywords = category_keywords
+
+        logger.debug(
+            "Loaded %d category keywords (from bulk)",
+            len(category_keywords),
+        )
+
+    def _load_abbreviations_from_bulk(self, bulk_data: dict) -> None:
+        """Load abbreviations from bulk data."""
+        ingredients = bulk_data["ingredients"]
+        menu_items = bulk_data["menu_items"]
+
+        abbreviations: dict[str, str] = {}
+
+        for ingredient in ingredients:
+            if ingredient.abbreviation:
+                abbrev = ingredient.abbreviation.strip().lower()
+                canonical = ingredient.name.lower()
+                if abbrev and canonical:
+                    abbreviations[abbrev] = canonical
+
+        for item in menu_items:
+            if item.abbreviation:
+                abbrev = item.abbreviation.strip().lower()
+                canonical = item.name.lower()
+                if abbrev and canonical:
+                    abbreviations[abbrev] = canonical
+
+        self._abbreviations = abbreviations
+
+        logger.debug(
+            "Loaded %d abbreviations (from bulk)",
+            len(abbreviations),
+        )
+
+    def _load_item_type_fields_from_bulk(self, bulk_data: dict) -> None:
+        """Load item type attribute configurations from bulk data."""
+        item_types = bulk_data["item_types"]
+        global_attrs = bulk_data["global_attrs"]
+
+        item_type_fields: dict[str, list[dict]] = {}
+
+        # Build global_attr_id -> GlobalAttribute for quick lookup
+        global_attrs_by_id = {attr.id: attr for attr in global_attrs}
+
+        for item_type in item_types:
+            slug = item_type.slug
+            if slug not in item_type_fields:
+                item_type_fields[slug] = []
+
+            sorted_links = sorted(item_type.global_attribute_links, key=lambda l: l.display_order)
+
+            for link in sorted_links:
+                global_attr = global_attrs_by_id.get(link.global_attribute_id)
+                if not global_attr:
+                    continue
+
+                item_type_fields[slug].append({
+                    "field_name": global_attr.slug,
+                    "display_order": link.display_order,
+                    "required": link.is_required,
+                    "ask": link.ask_in_conversation,
+                    "question_text": link.question_text,
+                    "input_type": global_attr.input_type,
+                    "display_name": global_attr.display_name,
+                })
+
+        self._item_type_fields = item_type_fields
+
+        logger.debug(
+            "Loaded item type fields for %d item types (from bulk)",
+            len(item_type_fields),
+        )
+
+    def _load_response_patterns_from_bulk(self, bulk_data: dict) -> None:
+        """Load response patterns from bulk data."""
+        patterns_list = bulk_data["response_patterns"]
+
+        response_patterns: dict[str, set[str]] = {}
+        regex_patterns: dict[str, list[str]] = {}
+
+        for pattern in patterns_list:
+            pattern_type = pattern.pattern_type
+            if pattern.is_regex:
+                if pattern_type not in regex_patterns:
+                    regex_patterns[pattern_type] = []
+                regex_patterns[pattern_type].append(pattern.pattern)
+            else:
+                if pattern_type not in response_patterns:
+                    response_patterns[pattern_type] = set()
+                response_patterns[pattern_type].add(pattern.pattern.lower())
+
+        self._response_patterns = response_patterns
+        self._response_regex_raw = regex_patterns
+
+        # Build combined regex for each type
+        all_types = set(response_patterns.keys()) | set(regex_patterns.keys())
+        response_regex_compiled: dict[str, re.Pattern | None] = {}
+
+        for pattern_type in all_types:
+            pattern_parts = []
+
+            exact = response_patterns.get(pattern_type, set())
+            if exact:
+                escaped = [re.escape(p) for p in exact]
+                pattern_parts.extend(escaped)
+
+            regex_list = regex_patterns.get(pattern_type, [])
+            pattern_parts.extend(regex_list)
+
+            if pattern_parts:
+                combined = "|".join(f"({p})" for p in pattern_parts)
+                full_pattern = f"^({combined})[\\s!.,]*$"
+                try:
+                    response_regex_compiled[pattern_type] = re.compile(full_pattern, re.IGNORECASE)
+                except re.error as e:
+                    logger.error("Failed to compile regex for %s: %s", pattern_type, e)
+                    response_regex_compiled[pattern_type] = None
+            else:
+                response_regex_compiled[pattern_type] = None
+
+        self._response_regex_compiled = response_regex_compiled
+
+        logger.debug(
+            "Loaded response patterns (from bulk): %d types",
+            len(all_types),
+        )
+
+    def _load_modifier_qualifiers_from_bulk(self, bulk_data: dict) -> None:
+        """Load modifier qualifier patterns from bulk data."""
+        qualifiers = bulk_data.get("modifier_qualifiers", [])
+
+        modifier_qualifiers: dict[str, dict] = {}
+        qualifier_patterns_by_category: dict[str, set[str]] = {}
+
+        for qualifier in qualifiers:
+            pattern = qualifier.pattern.lower()
+            category = qualifier.category
+
+            modifier_qualifiers[pattern] = {
+                "normalized_form": qualifier.normalized_form,
+                "category": category,
+            }
+
+            if category not in qualifier_patterns_by_category:
+                qualifier_patterns_by_category[category] = set()
+            qualifier_patterns_by_category[category].add(pattern)
+
+        self._modifier_qualifiers = modifier_qualifiers
+        self._qualifier_patterns_by_category = qualifier_patterns_by_category
+
+        logger.debug(
+            "Loaded %d modifier qualifiers (from bulk)",
+            len(modifier_qualifiers),
+        )
+
+    def _load_global_attribute_aliases_from_bulk(self, bulk_data: dict) -> None:
+        """Load global attribute aliases from bulk data."""
+        aliases = bulk_data.get("global_attr_aliases", [])
+
+        global_attribute_aliases: dict[str, str] = {}
+
+        for alias_record in aliases:
+            alias_lower = alias_record.alias.lower()
+            attr_slug = alias_record.global_attribute.slug
+            global_attribute_aliases[alias_lower] = attr_slug
+
+        self._global_attribute_aliases = global_attribute_aliases
+
+        logger.debug(
+            "Loaded %d global attribute aliases (from bulk)",
+            len(global_attribute_aliases),
+        )
+
+    def _load_item_type_metadata_from_bulk(self, bulk_data: dict) -> None:
+        """Load item type metadata from bulk data."""
+        item_types = bulk_data["item_types"]
+        menu_items = bulk_data["menu_items"]
+
+        modifier_categories: dict[str, str | None] = {}
+        item_keywords: set[str] = set()
+        configurable_types: set[str] = set()
+        side_choice_config: dict[str, dict] = {}
+
+        for item_type in item_types:
+            slug = item_type.slug
+            if item_type.item_type_category:
+                modifier_categories[slug] = item_type.item_type_category.slug
+            else:
+                modifier_categories[slug] = None
+
+            side_choice_config[slug] = {
+                "has_side_choice": item_type.has_side_choice,
+            }
+
+            item_keywords.add(slug.lower())
+
+            for alias in item_type.aliases:
+                item_keywords.add(alias.lower())
+
+            # Check if this item type has configurable attributes
+            if item_type.global_attribute_links:
+                configurable_types.add(slug)
+
+        for item in menu_items:
+            name = item.name
+            item_keywords.add(name.lower())
+            words = name.lower().split()
+            for word in words:
+                if len(word) > 2:
+                    item_keywords.add(word)
+
+        self._item_type_modifier_categories = modifier_categories
+        self._item_keywords = item_keywords
+        self._configurable_item_types = configurable_types
+        self._item_type_side_choice = side_choice_config
+
+        logger.debug(
+            "Loaded item type metadata (from bulk): %d modifier_categories, %d keywords",
+            len(modifier_categories),
+            len(item_keywords),
+        )
+
+    def _load_compound_phrases_from_bulk(self, bulk_data: dict) -> None:
+        """Load compound phrases from bulk data."""
+        menu_items = bulk_data["menu_items"]
+        ingredients = bulk_data["ingredients"]
+
+        compound_phrases: set[str] = set()
+
+        for item in menu_items:
+            if " and " in item.name.lower():
+                compound_phrases.add(item.name.lower())
+            for alias in item.aliases:
+                if " and " in alias.lower():
+                    compound_phrases.add(alias.lower())
+
+        for ing in ingredients:
+            if " and " in ing.name.lower():
+                compound_phrases.add(ing.name.lower())
+            for alias in ing.aliases:
+                if " and " in alias.lower():
+                    compound_phrases.add(alias.lower())
+
+        self._compound_phrases = compound_phrases
+        logger.debug("Loaded %d compound phrases (from bulk)", len(compound_phrases))
+
+    def _load_configurable_item_types_from_bulk(self, bulk_data: dict) -> None:
+        """Load slugs of item types that have askable attributes (from bulk)."""
+        item_types = bulk_data["item_types"]
+
+        configurable_slugs: set[str] = set()
+
+        for item_type in item_types:
+            for link in item_type.global_attribute_links:
+                if link.ask_in_conversation:
+                    configurable_slugs.add(item_type.slug)
+                    break
+
+        self._configurable_item_type_slugs = configurable_slugs
+        logger.debug(
+            "Loaded %d configurable item type slugs (from bulk): %s",
+            len(configurable_slugs), configurable_slugs
+        )
+
+    def _load_items_with_required_phrases_from_bulk(self, bulk_data: dict) -> None:
+        """Load menu items that have required_match_phrases set (from bulk)."""
+        menu_items = bulk_data["menu_items"]
+
+        items_with_phrases: dict[str, str] = {}
+
+        for item in menu_items:
+            if item.required_match_phrases:
+                items_with_phrases[item.name.lower()] = item.required_match_phrases
+
+        self._items_with_required_phrases = items_with_phrases
+        logger.debug(
+            "Loaded %d items with required_match_phrases (from bulk)",
+            len(items_with_phrases)
+        )
+
+    def _load_by_unit_type_items_from_bulk(self, bulk_data: dict) -> None:
+        """Load menu items grouped by unit_type (from bulk)."""
+        menu_items = bulk_data["menu_items"]
+
+        by_unit_type: dict[str, set[str]] = {}
+        unit_type_aliases: dict[str, dict[str, tuple[str, str]]] = {}
+
+        seen_base_names: dict[str, set[str]] = {}
+
+        for item in menu_items:
+            unit_type = item.unit_type or "each"
+            item_type_slug = item.item_type.slug if item.item_type else "unknown"
+            name = item.name
+
+            base_name = re.sub(r'\s*\([^)]*\)\s*$', '', name).strip()
+            base_name_lower = base_name.lower()
+
+            if unit_type not in by_unit_type:
+                by_unit_type[unit_type] = set()
+            if unit_type not in unit_type_aliases:
+                unit_type_aliases[unit_type] = {}
+            if unit_type not in seen_base_names:
+                seen_base_names[unit_type] = set()
+
+            by_unit_type[unit_type].add(base_name_lower)
+
+            if base_name_lower in seen_base_names[unit_type]:
+                continue
+            seen_base_names[unit_type].add(base_name_lower)
+
+            unit_type_aliases[unit_type][base_name_lower] = (base_name, item_type_slug)
+
+            for alias in item.aliases:
+                alias = alias.strip().lower()
+                if alias:
+                    unit_type_aliases[unit_type][alias] = (base_name, item_type_slug)
+
+        self._by_unit_type_items = by_unit_type
+        self._unit_type_aliases = unit_type_aliases
+
+        logger.debug(
+            "Loaded items by unit_type (from bulk): %s",
+            {k: len(v) for k, v in by_unit_type.items()},
+        )
+
+    def _load_generic_item_names_from_bulk(self, bulk_data: dict) -> None:
+        """Load all item names grouped by ItemType slug (from bulk)."""
+        menu_items = bulk_data["menu_items"]
+
+        item_names_by_type: dict[str, set[str]] = {}
+        alias_to_canonical_by_type: dict[str, dict[str, str]] = {}
+
+        for item in menu_items:
+            if not item.item_type:
+                continue
+
+            item_type_slug = item.item_type.slug
+            canonical_name = item.name
+
+            if item_type_slug not in item_names_by_type:
+                item_names_by_type[item_type_slug] = set()
+                alias_to_canonical_by_type[item_type_slug] = {}
+
+            name_lower = canonical_name.lower()
+            item_names_by_type[item_type_slug].add(name_lower)
+            alias_to_canonical_by_type[item_type_slug][name_lower] = canonical_name
+
+            for alias in item.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    item_names_by_type[item_type_slug].add(alias_lower)
+                    alias_to_canonical_by_type[item_type_slug][alias_lower] = canonical_name
+
+        self._item_names_by_type = item_names_by_type
+        self._item_alias_to_canonical_by_type = alias_to_canonical_by_type
+
+        logger.debug(
+            "Loaded generic item names (from bulk) for %d item types",
+            len(item_names_by_type),
+        )
+
+    def _load_generic_ingredients_from_bulk(self, bulk_data: dict) -> None:
+        """Load all ingredients grouped by category (from bulk)."""
+        ingredients = bulk_data["ingredients"]
+
+        ingredients_by_category: dict[str, set[str]] = {}
+        ingredient_details_by_category: dict[str, list[dict]] = {}
+
+        for ing in ingredients:
+            category = ing.category
+            if not category:
+                continue
+
+            if category not in ingredients_by_category:
+                ingredients_by_category[category] = set()
+                ingredient_details_by_category[category] = []
+
+            name_lower = ing.name.lower()
+            ingredients_by_category[category].add(name_lower)
+
+            patterns = [name_lower]
+            for alias in ing.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    ingredients_by_category[category].add(alias_lower)
+                    patterns.append(alias_lower)
+
+            ingredient_details_by_category[category].append({
+                "slug": ing.slug,
+                "name": ing.name,
+                "patterns": patterns,
+            })
+
+        self._ingredients_by_category = ingredients_by_category
+        self._ingredient_details_by_category = ingredient_details_by_category
+
+        logger.debug(
+            "Loaded generic ingredients (from bulk) for %d categories",
+            len(ingredients_by_category),
+        )
+
+    def _load_generic_ingredients_for_item_types_from_bulk(self, bulk_data: dict) -> None:
+        """Load ingredients valid for each ItemType (from bulk)."""
+        type_ingredients = bulk_data["type_ingredients"]
+
+        ingredients_for_item_type: dict[str, dict[str, set[str]]] = {}
+
+        for ti in type_ingredients:
+            if not ti.item_type or not ti.ingredient:
+                continue
+
+            item_type_slug = ti.item_type.slug
+            category = ti.ingredient.category or "uncategorized"
+
+            if item_type_slug not in ingredients_for_item_type:
+                ingredients_for_item_type[item_type_slug] = {}
+            if category not in ingredients_for_item_type[item_type_slug]:
+                ingredients_for_item_type[item_type_slug][category] = set()
+
+            ingredients_for_item_type[item_type_slug][category].add(ti.ingredient.name.lower())
+
+            for alias in ti.ingredient.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    ingredients_for_item_type[item_type_slug][category].add(alias_lower)
+
+        self._ingredients_for_item_type = ingredients_for_item_type
+
+        logger.debug(
+            "Loaded ingredients for %d item types (from bulk)",
+            len(ingredients_for_item_type)
+        )
+
+    def _load_ingredient_category_metadata_from_bulk(self, bulk_data: dict) -> None:
+        """Load ingredient category metadata (from bulk)."""
+        categories = bulk_data.get("ingredient_categories", [])
+
+        categories_by_modifier_type: dict[str, set[str]] = {}
+        category_field_config: dict[str, dict] = {}
+        category_order: dict[str, int] = {}
+
+        for cat in categories:
+            if cat.modifier_type:
+                if cat.modifier_type not in categories_by_modifier_type:
+                    categories_by_modifier_type[cat.modifier_type] = set()
+                categories_by_modifier_type[cat.modifier_type].add(cat.slug)
+
+            category_field_config[cat.slug] = {
+                "code_field_name": cat.code_field_name or cat.slug,
+                "is_multi_select": cat.is_multi_select or False,
+                "display_name": cat.display_name,
+            }
+
+            category_order[cat.slug] = cat.display_order or 999
+
+        self._ingredient_categories_by_modifier_type = categories_by_modifier_type
+        self._ingredient_category_field_config = category_field_config
+        self._ingredient_category_order = category_order
+
+        logger.debug(
+            "Loaded ingredient category metadata (from bulk): %d configs",
+            len(category_field_config)
+        )
+
+    def _load_menu_item_categories_from_bulk(self, bulk_data: dict) -> None:
+        """Load menu item categories (from bulk)."""
+        from sqlalchemy import func
+
+        categories = bulk_data["categories"]
+        menu_item_categories = bulk_data["menu_item_categories"]
+        item_types = bulk_data["item_types"]
+
+        available_categories: dict[str, str] = {}
+        menu_items_by_category: dict[str, list[dict]] = {}
+
+        for cat in categories:
+            available_categories[cat.slug] = cat.name
+            menu_items_by_category[cat.slug] = []
+
+        # Build item_type_id -> slug map
+        item_type_slugs = {it.id: it.slug for it in item_types}
+
+        for mic in menu_item_categories:
+            if not mic.menu_item or not mic.category:
+                continue
+
+            item = mic.menu_item
+            cat_slug = mic.category.slug
+
+            item_type_slug = item_type_slugs.get(item.item_type_id)
+            item_dict = {
+                "id": item.id,
+                "name": item.name,
+                "base_price": float(item.base_price) if item.base_price else 0.0,
+                "item_type": item_type_slug,
+            }
+
+            if cat_slug in menu_items_by_category:
+                menu_items_by_category[cat_slug].append(item_dict)
+
+        self._available_categories = available_categories
+        self._menu_items_by_category_slug = menu_items_by_category
+
+        logger.debug(
+            "Loaded menu item categories (from bulk): %d categories",
+            len(available_categories),
+        )
+
+    def _load_modifier_categories_from_bulk(self, bulk_data: dict) -> None:
+        """Load modifier categories (from bulk)."""
+        categories = bulk_data.get("modifier_categories", [])
+
+        modifier_categories: dict[str, dict] = {}
+
+        for cat in categories:
+            modifier_categories[cat.slug] = {
+                "display_name": cat.display_name,
+                "loads_from_ingredients": cat.loads_from_ingredients,
+                "ingredient_category": cat.ingredient_category,
+                "description": cat.description,
+                "prompt_suffix": cat.prompt_suffix,
+            }
+
+        self._modifier_categories = modifier_categories
+
+        logger.debug(
+            "Loaded modifier categories (from bulk): %d categories",
+            len(modifier_categories),
+        )
+
+    def _load_resolved_item_prices_from_bulk(self, bulk_data: dict) -> None:
+        """Pre-compute resolved prices for menu items (from bulk)."""
+        menu_items = bulk_data["menu_items"]
+
+        self._resolved_item_prices = {}
+
+        for item in menu_items:
+            if not item.item_type:
+                continue
+
+            self._resolved_item_prices[item.name.lower()] = float(item.base_price or 0)
+
+        logger.debug("Pre-loaded %d resolved item prices (from bulk)", len(self._resolved_item_prices))
+
+    def _load_recommendation_search_data_from_bulk(self, bulk_data: dict) -> None:
+        """Load ALL menu items for recommendation search (from bulk)."""
+        menu_items = bulk_data["menu_items"]
+
+        all_items: dict[str, dict] = {}
+        keyword_index: dict[str, list[str]] = defaultdict(list)
+
+        for item in menu_items:
+            canonical_name = item.name
+            name_lower = canonical_name.lower()
+            item_type_slug = item.item_type.slug if item.item_type else None
+
+            item_data = {
+                "id": item.id,
+                "name": canonical_name,
+                "item_type_slug": item_type_slug,
+            }
+            all_items[name_lower] = item_data
+
+            for word in name_lower.split():
+                if len(word) >= 3 and word not in {"the", "and", "with"}:
+                    keyword_index[word].append(name_lower)
+
+            for alias in item.aliases:
+                alias_lower = alias.lower().strip()
+                if alias_lower:
+                    all_items[alias_lower] = item_data
+                    for word in alias_lower.split():
+                        if len(word) >= 3 and word not in {"the", "and", "with"}:
+                            keyword_index[word].append(name_lower)
+
+        self._all_menu_items_by_name = all_items
+        self._recommendation_keyword_index = dict(keyword_index)
+
+        logger.debug(
+            "Loaded recommendation search data (from bulk): %d items, %d keywords",
+            len(all_items),
+            len(keyword_index),
         )

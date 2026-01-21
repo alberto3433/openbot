@@ -336,7 +336,7 @@ class UnifiedItemConverter:
             modifications=item_dict.get("modifications") or [],
             removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
             quantity=item_dict.get("quantity", 1),
-            selections=selections,
+            modifiers=selections,
             customization_offered=item_dict.get("customization_offered", False),
         )
         self._restore_common_fields(menu_item, item_dict)

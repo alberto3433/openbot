@@ -237,11 +237,26 @@ class UnifiedItemConverter:
                 if attr_val == mod_name and f"{attr_slug}_price" not in attribute_values:
                     attribute_values[f"{attr_slug}_price"] = mod["price"]
 
-        # Restore modifiers from item_config
+        # Restore modifiers from item_config (source of truth for quantity/price)
         stored_modifiers = item_config.get("item_modifiers") or []
 
-        # Convert attribute_values to selections format
+        # Start with stored_modifiers as the base (they have correct quantity/price)
         selections = []
+        stored_keys = set()
+        for mod in stored_modifiers:
+            if isinstance(mod, dict):
+                slug = mod.get("slug", "")
+                category = mod.get("category", "")
+                stored_keys.add((slug, category))
+                selections.append({
+                    "slug": slug,
+                    "category": category,
+                    "quantity": mod.get("quantity", 1),
+                    "price": mod.get("price", 0),
+                    "display_name": mod.get("display_name", slug.replace("_", " ").title()),
+                })
+
+        # Add from attribute_values only if NOT already in stored_modifiers
         for category, value in attribute_values.items():
             # Skip price/upcharge companion keys
             if category.endswith(("_price", "_upcharge")):
@@ -253,53 +268,48 @@ class UnifiedItemConverter:
                 # Boolean attributes: store as "yes"/"no" slug
                 slug = "yes" if value else "no"
                 display_name = category.replace("_", " ").title() if value else f"Not {category.replace('_', ' ').title()}"
+                if (slug, category) not in stored_keys:
+                    selections.append({
+                        "slug": slug,
+                        "category": category,
+                        "quantity": 1,
+                        "price": attribute_values.get(f"{category}_price", 0) or 0,
+                        "display_name": display_name,
+                    })
+                    stored_keys.add((slug, category))
             elif isinstance(value, list):
                 # Multi-select: each item becomes a selection
                 for v in value:
                     if isinstance(v, dict):
-                        # Already in selection format
-                        selections.append(v)
+                        v_slug = v.get("slug", "")
+                        v_cat = v.get("category", category)
+                        if (v_slug, v_cat) not in stored_keys:
+                            selections.append(v)
+                            stored_keys.add((v_slug, v_cat))
                     else:
-                        selections.append({
-                            "slug": str(v),
-                            "category": category,
-                            "quantity": 1,
-                            "price": 0,
-                            "display_name": str(v).replace("_", " ").title(),
-                        })
-                continue
+                        v_slug = str(v)
+                        if (v_slug, category) not in stored_keys:
+                            selections.append({
+                                "slug": v_slug,
+                                "category": category,
+                                "quantity": 1,
+                                "price": 0,
+                                "display_name": str(v).replace("_", " ").title(),
+                            })
+                            stored_keys.add((v_slug, category))
             else:
                 slug = str(value)
-                display_name = str(value).replace("_", " ").title()
-
-            # Look up price from companion key if present
-            price = attribute_values.get(f"{category}_price", 0) or attribute_values.get(f"{category}_upcharge", 0) or 0
-
-            selections.append({
-                "slug": slug,
-                "category": category,
-                "quantity": 1,
-                "price": price,
-                "display_name": display_name,
-            })
-
-        # Add stored_modifiers (already in selections format), avoiding duplicates
-        existing_keys = {(s.get("slug"), s.get("category")) for s in selections}
-        for mod in stored_modifiers:
-            if isinstance(mod, dict):
-                slug = mod.get("slug", "")
-                category = mod.get("category", "")
-                # Skip if already present from attribute_values
-                if (slug, category) in existing_keys:
-                    continue
-                existing_keys.add((slug, category))
-                selections.append({
-                    "slug": slug,
-                    "category": category,
-                    "quantity": mod.get("quantity", 1),
-                    "price": mod.get("price", 0),
-                    "display_name": mod.get("display_name", slug.replace("_", " ").title()),
-                })
+                if (slug, category) not in stored_keys:
+                    display_name = str(value).replace("_", " ").title()
+                    price = attribute_values.get(f"{category}_price", 0) or attribute_values.get(f"{category}_upcharge", 0) or 0
+                    selections.append({
+                        "slug": slug,
+                        "category": category,
+                        "quantity": 1,
+                        "price": price,
+                        "display_name": display_name,
+                    })
+                    stored_keys.add((slug, category))
 
         menu_item = MenuItemTask(
             menu_item_name=item_dict.get("menu_item_name") or "Unknown",

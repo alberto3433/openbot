@@ -443,7 +443,7 @@ class PricingEngine(MenuDataMixin):
         # 2. Process attribute_values generically (no hardcoded attribute names)
         # =====================================================================
 
-        skip_suffixes = ("_price", "_upcharge", "_selections", "_choice")
+        skip_suffixes = ("_price", "_upcharge", "_choice")
 
         for attr_slug, attr_value in attr_values.items():
             # Skip metadata/computed fields

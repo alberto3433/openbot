@@ -115,25 +115,13 @@ class UnifiedItemConverter:
         """Process attribute_values into modifiers/free_details lists."""
         skip_slugs = skip_slugs or set()
         total_upcharges = 0.0
-        processed_selections = set()
 
         for attr_slug, attr_value in attribute_values.items():
             # Skip metadata and internal keys
-            if (attr_slug.endswith(("_price", "_upcharge", "_selections")) or
+            if (attr_slug.endswith(("_price", "_upcharge")) or
                 attr_slug.startswith("pending_") or attr_slug in skip_slugs):
                 continue
             if attr_value is None or attr_value is False or attr_value == "" or attr_value == []:
-                continue
-
-            # Handle multi-select with _selections data
-            selections = attribute_values.get(f"{attr_slug}_selections")
-            if selections and isinstance(selections, list):
-                processed_selections.add(f"{attr_slug}_selections")
-                for sel in selections:
-                    total_upcharges += self._process_selection_item(
-                        sel, attr_slug, modifiers, free_details,
-                        pricing, price_lookup_fn, include_free_in_modifiers, item_type
-                    )
                 continue
 
             # Get price from stored values
@@ -177,22 +165,6 @@ class UnifiedItemConverter:
                 modifiers.append({"name": display_name, "price": 0})
             else:
                 free_details.append(display_name)
-
-        # Process orphan _selections keys
-        for attr_slug, attr_value in attribute_values.items():
-            if not attr_slug.endswith("_selections") or attr_slug in processed_selections:
-                continue
-            if not isinstance(attr_value, list) or not attr_value:
-                continue
-            parent_slug = attr_slug[:-11]  # e.g., "bread_selections" -> "bread"
-            # Skip if parent was in skip_slugs (prevents duplicates when parent is manually handled)
-            if parent_slug in skip_slugs:
-                continue
-            for sel in attr_value:
-                total_upcharges += self._process_selection_item(
-                    sel, parent_slug, modifiers, free_details,
-                    pricing, price_lookup_fn, include_free_in_modifiers, item_type
-                )
 
         return total_upcharges
 
@@ -249,7 +221,7 @@ class UnifiedItemConverter:
                 if key in attribute_values or key in structural_keys:
                     continue
                 # Skip metadata suffix keys (handled with their parent)
-                if key.endswith(("_price", "_upcharge", "_selections")):
+                if key.endswith(("_price", "_upcharge")):
                     continue
                 if value is not None:
                     attribute_values[key] = value
@@ -272,7 +244,7 @@ class UnifiedItemConverter:
         selections = []
         for category, value in attribute_values.items():
             # Skip price/upcharge companion keys
-            if category.endswith(("_price", "_upcharge", "_selections")):
+            if category.endswith(("_price", "_upcharge")):
                 continue
             if value is None:
                 continue
@@ -390,17 +362,6 @@ class UnifiedItemConverter:
 
             if mod_display:
                 modifiers.append({"name": mod_display, "price": mod_price})
-
-        # Convert DB-driven attribute_values to modifiers for cart display
-        # This handles ALL attributes generically (no special cases)
-        self._process_attribute_values_to_modifiers(
-            attribute_values=attribute_values,
-            modifiers=modifiers,
-            free_details=[],
-            pricing=pricing,
-            include_free_in_modifiers=True,
-            item_type=menu_item_type,
-        )
 
         customization_offered = getattr(item, 'customization_offered', False)
 

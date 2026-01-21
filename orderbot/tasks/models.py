@@ -409,12 +409,6 @@ class MenuItemTask(ItemTask):
                 else:
                     result[category] = slug
 
-            # Store _selections for display name lookup (backward compat)
-            selections_key = f"{category}_selections"
-            if selections_key not in result:
-                result[selections_key] = []
-            result[selections_key].append({"slug": slug, "display_name": display_name})
-
             # Store price
             if price > 0:
                 result[f"{category}_price"] = price
@@ -428,7 +422,7 @@ class MenuItemTask(ItemTask):
         # This is for backward compat when code sets attribute_values directly
         for key, val in value.items():
             # Skip metadata keys
-            if key.endswith("_selections") or key.endswith("_price") or key.endswith("_upcharge"):
+            if key.endswith("_price") or key.endswith("_upcharge"):
                 continue
 
             # Remove existing selections for this category

@@ -42,8 +42,8 @@ class MenuItemConfigHandler(BaseHandler):
     #
     # NOTE: All legacy attribute aliases have been eliminated:
     # - Parsers now use canonical keys (bread, spread, etc.)
-    # - Properties (toasted, scooped, decaf, spread) now use attribute_values as backing store
-    # - milk_sweetener_syrup uses unified storage with milk_sweetener_syrup_selections
+    # - Properties (toasted, scooped, decaf, spread) now use the unified modifiers list as backing store
+    # - All customizations are stored in the unified modifiers list with category, slug, quantity, price
 
     # Note: MODIFIER_EXTRACTION_TYPE is now stored in the item_type_categories table
     # and queried via menu_cache.get_modifier_category(item_type_slug).

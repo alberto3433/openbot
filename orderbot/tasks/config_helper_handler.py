@@ -141,7 +141,7 @@ class ConfigHelperHandler:
         removable_modifiers = _get_removable_modifiers()
 
         # Handle modifier removal for MenuItemTask
-        # Supports both modern _selections format AND legacy direct attribute values
+        # Uses the unified modifiers list for storage
         if cancel_desc in removable_modifiers and isinstance(current_item, MenuItemTask):
             modifier_removed = False
             removed_modifier_name = cancel_desc

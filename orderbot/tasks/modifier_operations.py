@@ -265,40 +265,9 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
             # Get singular/plural variants for matching (e.g., "eggs" -> ["eggs", "egg"])
             input_variants = _get_singular_plural_variants(normalized_input)
 
-            # First, check _selections keys which have structured data with display_name
-            # This is more reliable than checking raw attribute values
             for attr_key, attr_value in attribute_values.items():
-                if attr_key.endswith("_selections") and isinstance(attr_value, list):
-                    base_attr_key = attr_key.replace("_selections", "")
-                    for sel in attr_value:
-                        if isinstance(sel, dict):
-                            sel_display = (sel.get("display_name") or "").lower()
-                            sel_slug = (sel.get("slug") or "").lower()
-
-                            # Check if any input variant matches the display_name or slug
-                            for variant in input_variants:
-                                if variant in sel_display or variant in sel_slug:
-                                    logger.info(
-                                        "Found modifier match in %s: variant '%s' matches selection '%s'",
-                                        attr_key, variant, sel.get("display_name")
-                                    )
-                                    synthetic_field = ModifierField(
-                                        field_name="attribute_values",
-                                        display_name=sel.get("display_name", attr_key.replace("_", " ")),
-                                        aliases=[],
-                                        is_list=True,
-                                    )
-                                    return ModifierMatch(
-                                        field=synthetic_field,
-                                        matched_value=sel.get("display_name") or str(sel),
-                                        item=item,
-                                        attribute_key=base_attr_key,
-                                    )
-
-            # Fallback: check non-selections attributes
-            for attr_key, attr_value in attribute_values.items():
-                # Skip metadata fields (already checked _selections above)
-                if attr_key.endswith("_selections") or attr_key.endswith("_price"):
+                # Skip metadata fields
+                if attr_key.endswith("_price"):
                     continue
 
                 if isinstance(attr_value, list):
@@ -364,65 +333,6 @@ def remove_modifier_from_item(
                 message=f"There's no {field.display_name} to remove."
             )
 
-        # Handle _selections format (e.g., add_egg_selections)
-        selections_key = f"{match.attribute_key}_selections"
-        if selections_key in attribute_values:
-            selections = attribute_values[selections_key]
-            if isinstance(selections, list) and match.matched_value:
-                # Find and remove the matching selection
-                new_selections = []
-                removed_display_name = match.matched_value
-                found = False
-
-                for sel in selections:
-                    if isinstance(sel, dict):
-                        sel_display = sel.get("display_name", "")
-                        # Match by display_name (case-insensitive)
-                        if sel_display.lower() == match.matched_value.lower():
-                            found = True
-                            removed_display_name = sel_display
-                            logger.info(
-                                "Removed selection '%s' from attribute_values['%s'] for MenuItemTask",
-                                sel_display, selections_key
-                            )
-                        else:
-                            new_selections.append(sel)
-                    else:
-                        # Non-dict item, keep it unless it matches
-                        if str(sel).lower() != match.matched_value.lower():
-                            new_selections.append(sel)
-                        else:
-                            found = True
-
-                if found:
-                    # Update selections
-                    if new_selections:
-                        attribute_values[selections_key] = new_selections
-                        # Also update the base attribute (for compatibility)
-                        attribute_values[match.attribute_key] = [s.get("slug") if isinstance(s, dict) else s for s in new_selections]
-                    else:
-                        # No selections left - clear both
-                        del attribute_values[selections_key]
-                        if match.attribute_key in attribute_values:
-                            del attribute_values[match.attribute_key]
-                        # Also clear the price if it exists
-                        price_key = f"{match.attribute_key}_price"
-                        if price_key in attribute_values:
-                            del attribute_values[price_key]
-
-                    return ModifierRemovalResult(
-                        success=True,
-                        removed_value=removed_display_name,
-                        message=f"OK, I've removed the {removed_display_name}."
-                    )
-                else:
-                    return ModifierRemovalResult(
-                        success=False,
-                        removed_value=None,
-                        message=f"I couldn't find {match.matched_value} to remove."
-                    )
-
-        # Fallback: handle non-_selections format
         if match.attribute_key not in attribute_values:
             return ModifierRemovalResult(
                 success=False,
@@ -466,9 +376,7 @@ def remove_modifier_from_item(
             # Single value - remove it
             removed_value = str(attr_value)
             attribute_values[match.attribute_key] = None
-            # Also clear the _selections and _price if they exist
-            if selections_key in attribute_values:
-                del attribute_values[selections_key]
+            # Also clear the _price if it exists
             price_key = f"{match.attribute_key}_price"
             if price_key in attribute_values:
                 del attribute_values[price_key]

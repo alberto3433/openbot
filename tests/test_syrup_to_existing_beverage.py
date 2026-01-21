@@ -145,7 +145,7 @@ class TestSyrupToExistingBeverage:
 
         Note: Espresso is now created as MenuItemTask with menu_item_type="espresso"
         to use the data-driven configuration flow. Syrups during config are stored in
-        attribute_values["milk_sweetener_syrup_selections"] with quantity.
+        the unified modifiers list with quantity.
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -176,11 +176,9 @@ class TestSyrupToExistingBeverage:
         espresso = result.order.items.items[0]
         assert isinstance(espresso, MenuItemTask)
 
-        # Config flow stores modifiers in attribute_values["milk_sweetener_syrup_selections"]
-        # (will be unified to item.modifiers in future phases)
-        selections = espresso.attribute_values.get("milk_sweetener_syrup_selections", [])
-        vanilla_sels = [s for s in selections if "vanilla" in s.get("slug", "").lower()]
-        assert len(vanilla_sels) == 1, f"Expected 1 vanilla selection, got: {selections}"
+        # Config flow stores modifiers in the unified modifiers list
+        vanilla_sels = [s for s in espresso.modifiers if "vanilla" in s.get("slug", "").lower()]
+        assert len(vanilla_sels) == 1, f"Expected 1 vanilla selection, got: {espresso.modifiers}"
 
         vanilla_sel = vanilla_sels[0]
         assert vanilla_sel.get("quantity") == 2, f"Expected quantity 2, got {vanilla_sel.get('quantity')}"

@@ -550,7 +550,7 @@ def _build_item_summary(item: ParsedItemEntry) -> str:
     attr_displays = []
     for key, value in item.attribute_values.items():
         # Skip internal storage fields
-        if key.endswith("_price") or key.endswith("_selections") or key.endswith("_upcharge"):
+        if key.endswith("_price") or key.endswith("_upcharge"):
             continue
 
         if value is True:

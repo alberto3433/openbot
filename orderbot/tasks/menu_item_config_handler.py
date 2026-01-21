@@ -2006,16 +2006,37 @@ class MenuItemConfigHandler(BaseHandler):
         matched_attrs = self._match_attribute_from_input(user_input, unanswered)
 
         if matched_attrs:
-            # User specified one or more attributes
-            if len(matched_attrs) == 1:
-                # Single attribute, ask for its options
-                attr = matched_attrs[0]
-                return self._ask_optional_attribute(item, order, attr)
-            else:
-                # Multiple attributes mentioned - configure first one
-                # Store the rest in a queue (or just handle first for now)
-                attr = matched_attrs[0]
-                return self._ask_optional_attribute(item, order, attr)
+            attr = matched_attrs[0]
+
+            # For boolean attributes, set value directly without asking
+            if attr.get("input_type") == "boolean":
+                attr_slug = attr.get("slug")
+                # Check for negation patterns ("no decaf", "not sliced", "without decaf")
+                negation_pattern = rf"\b(no|not|without|skip)\s+{re.escape(attr_slug)}\b"
+                is_negated = bool(re.search(negation_pattern, user_lower, re.IGNORECASE))
+                item.attribute_values[attr_slug] = not is_negated
+
+                # Recalculate price and check if more to configure
+                self._recalculate_item_price(item)
+                remaining = self._get_unanswered_optional(item, item_type)
+                if remaining:
+                    return self._ask_customization_checkpoint(item, order, remaining)
+
+                # No more optional attributes - complete the item
+                item.mark_complete()
+                order.clear_pending()
+                if self._get_next_question:
+                    next_result = self._get_next_question(order)
+                    if next_result and next_result.order.pending_field:
+                        return next_result
+                order.phase = OrderPhase.TAKING_ITEMS.value
+                return StateMachineResult(
+                    message=f"Got it, {item.get_summary()}. Anything else?",
+                    order=order,
+                )
+
+            # Non-boolean attribute - ask for its options
+            return self._ask_optional_attribute(item, order, attr)
 
         # Try to match option values directly (e.g., "add a little mayo" -> mayo in condiments)
         # This allows users to specify options without naming the attribute

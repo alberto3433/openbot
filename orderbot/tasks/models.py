@@ -378,6 +378,11 @@ class MenuItemTask(ItemTask):
             display_name = sel.get("display_name")
             price = sel.get("price", 0)
 
+            # Handle declined attributes (user said "no" to optional question)
+            if slug == "_declined":
+                result[category] = None
+                continue
+
             # For boolean categories, convert yes/no to True/False
             if slug == "yes":
                 result[category] = True
@@ -439,7 +444,15 @@ class MenuItemTask(ItemTask):
         self.remove_selection(key)
 
         if value is None:
-            return  # Just remove, don't add
+            # Mark as explicitly declined (so it's considered "answered")
+            self.selections.append({
+                "slug": "_declined",
+                "category": key,
+                "quantity": 0,
+                "price": 0,
+                "display_name": "None",
+            })
+            return
 
         # Add new selection
         if isinstance(value, bool):

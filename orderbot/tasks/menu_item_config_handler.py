@@ -1541,7 +1541,9 @@ class MenuItemConfigHandler(BaseHandler):
         quantity, _ = self._extract_quantity_from_input(user_input)
 
         # Check for "none" / "no" / "skip"
-        if attr.get("allow_none", False):
+        # Accept negative responses for non-required attributes or when allow_none=True
+        can_skip = not attr.get("is_required", True) or attr.get("allow_none", False)
+        if can_skip:
             skip_patterns = menu_cache.get_response_patterns("negative")
             if any(user_lower == p or user_lower.startswith(p + " ") for p in skip_patterns):
                 item[attr_slug] = None
@@ -1960,9 +1962,13 @@ class MenuItemConfigHandler(BaseHandler):
         user_lower = user_input.lower().strip()
         item_type = item.menu_item_type
 
-        # Check for "no" - user doesn't want to customize
+        # Check for "no" or "done" - user doesn't want to customize further
         no_patterns = menu_cache.get_response_patterns("negative")
-        if any(user_lower == p or user_lower.startswith(p) for p in no_patterns):
+        is_declining = (
+            any(user_lower == p or user_lower.startswith(p) for p in no_patterns)
+            or menu_cache.is_done(user_lower)
+        )
+        if is_declining:
             # Recalculate price and complete
             self._recalculate_item_price(item)
             item.mark_complete()

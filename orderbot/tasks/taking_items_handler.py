@@ -710,8 +710,8 @@ class TakingItemsHandler(MenuDataMixin):
         # User might have ordered something directly - pass the already parsed result
         # Selections are already extracted in the parsed items during parsing
         extracted_selections: list[Selection] | None = None
-        if parsed.parsed_items and parsed.parsed_items[0].selections:
-            extracted_selections = list(parsed.parsed_items[0].selections)
+        if parsed.parsed_items and parsed.parsed_items[0].modifiers:
+            extracted_selections = list(parsed.parsed_items[0].modifiers)
             if extracted_selections:
                 logger.info("Selections from greeting input: %s", extracted_selections)
 
@@ -848,8 +848,8 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Selections are already extracted in the parsed items during parsing
         extracted_selections: list[Selection] | None = None
-        if parsed.parsed_items and parsed.parsed_items[0].selections:
-            extracted_selections = list(parsed.parsed_items[0].selections)
+        if parsed.parsed_items and parsed.parsed_items[0].modifiers:
+            extracted_selections = list(parsed.parsed_items[0].modifiers)
             if extracted_selections:
                 logger.info("Selections from input: %s", extracted_selections)
 

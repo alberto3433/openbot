@@ -47,9 +47,9 @@ class TestSyrupToExistingBeverage:
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
 
         # Check that vanilla syrup was added with quantity 2 (unified selections list)
-        syrup_mods = [m for m in (item.selections or []) if m.get("category") == "syrup"]
+        syrup_mods = [m for m in (item.modifiers or []) if m.get("category") == "syrup"]
         vanilla_mods = [m for m in syrup_mods if "vanilla" in m.get("slug", "").lower()]
-        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found in selections: {item.selections}"
+        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found in selections: {item.modifiers}"
 
         vanilla_mod = vanilla_mods[0]
         assert vanilla_mod.get("quantity") == 2, f"Expected quantity 2, got {vanilla_mod.get('quantity')}"
@@ -92,10 +92,10 @@ class TestSyrupToExistingBeverage:
         assert item.has_attribute('size'), "Expected is_sized_beverage to be True"
 
         # Check that vanilla syrup was added (unified selections list)
-        syrup_modifiers = [m for m in (item.selections or []) if m.get("category") == "syrup"]
+        syrup_modifiers = [m for m in (item.modifiers or []) if m.get("category") == "syrup"]
         syrup_slugs = [m.get("slug") for m in syrup_modifiers]
         # Slug is "vanilla_syrup" from database, check for substring match
-        assert any("vanilla" in slug for slug in syrup_slugs), f"Vanilla syrup not found in selections: {item.selections}"
+        assert any("vanilla" in slug for slug in syrup_slugs), f"Vanilla syrup not found in selections: {item.modifiers}"
 
     def test_add_sweetener_to_espresso(self):
         """
@@ -129,9 +129,9 @@ class TestSyrupToExistingBeverage:
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
 
         # Check that sweetener was added (unified selections list)
-        sweetener_mods = [m for m in (item.selections or []) if m.get("category") == "sweetener"]
+        sweetener_mods = [m for m in (item.modifiers or []) if m.get("category") == "sweetener"]
         sweetener_slugs = [m.get("slug") for m in sweetener_mods]
-        assert "sweet_n_low" in sweetener_slugs, f"Sweet N Low not found in selections: {item.selections}"
+        assert "sweet_n_low" in sweetener_slugs, f"Sweet N Low not found in selections: {item.modifiers}"
 
     def test_two_vanilla_syrups_word_quantity_in_config(self):
         """

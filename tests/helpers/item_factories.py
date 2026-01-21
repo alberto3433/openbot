@@ -95,7 +95,7 @@ def BagelItemTask(
         menu_item_type="bagel",
         quantity=quantity,
         unit_price=unit_price,
-        selections=selections,
+        modifiers=selections,
     )
 
 
@@ -149,7 +149,7 @@ def CoffeeItemTask(
         menu_item_type="sized_beverage",
         quantity=quantity,
         unit_price=unit_price,
-        selections=selections,
+        modifiers=selections,
     )
 
     # Add selections (modifiers)

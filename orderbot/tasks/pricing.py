@@ -404,8 +404,8 @@ class PricingEngine(MenuDataMixin):
             )
 
         # Get attribute values and modifiers from the item
-        attr_values = getattr(item, 'attribute_values', {}) or {}
-        item_modifiers = getattr(item, 'modifiers', []) or []
+        attr_values = item.attribute_values or {}
+        item_modifiers = item.modifiers or []
 
         # =====================================================================
         # 1. Determine base price (respecting variant-based pricing and sides)

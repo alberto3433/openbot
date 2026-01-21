@@ -154,7 +154,7 @@ class ConfigHelperHandler:
 
             # Check all selections for ones that match the cancel description
             selections_to_remove = []
-            for sel in current_item.selections:
+            for sel in current_item.modifiers:
                 sel_display = sel.get("display_name", "").lower()
                 sel_slug = sel.get("slug", "").lower()
                 sel_category = sel.get("category", "")

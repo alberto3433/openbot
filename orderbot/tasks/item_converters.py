@@ -376,7 +376,7 @@ class UnifiedItemConverter:
             modifiers.append({"name": mod, "price": 0})
 
         # Process modifiers from the unified modifiers field
-        item_modifiers = getattr(item, 'modifiers', []) or []
+        item_modifiers = item.modifiers or []
         for mod in item_modifiers:
             mod_slug = mod.get("slug", "")
             mod_display = mod.get("display_name") or mod_slug.replace("_", " ").title()

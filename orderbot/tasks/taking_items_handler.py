@@ -906,6 +906,10 @@ class TakingItemsHandler(MenuDataMixin):
                 if desc:
                     msg += f" ({desc})"
                 msg += ". Would you like one?"
+
+                # Store context so "yes" / "give me one" adds this item
+                order.pending_suggested_item = item_name
+                order.pending_field = "confirm_suggested_item"
             else:
                 # Multiple items - list them (cap at 6 for initial display)
                 display_count = min(6, len(matches))

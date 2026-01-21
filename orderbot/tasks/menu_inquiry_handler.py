@@ -713,12 +713,18 @@ class MenuInquiryHandler(MenuDataMixin):
 
         # Try to find an exact match or close match in descriptions
         description = item_descriptions.get(item_query_lower)
+        found_item_name = None  # Track the actual item name found
+
+        if description:
+            # Exact match - the key is the item name
+            found_item_name = item_query_lower
 
         if not description:
             # Try partial matching - look for item_query in keys
             for key, desc in item_descriptions.items():
                 if item_query_lower in key or key in item_query_lower:
                     description = desc
+                    found_item_name = key  # Capture the actual key (item name)
                     break
 
         if not description:
@@ -729,6 +735,8 @@ class MenuInquiryHandler(MenuDataMixin):
                     for item in items:
                         item_name = item.get("name", "").lower()
                         if item_query_lower in item_name or item_name in item_query_lower:
+                            # Capture the actual item name from menu data
+                            found_item_name = item.get("name", "")
                             # Check if item has a description directly
                             description = item.get("description")
                             if not description:
@@ -740,11 +748,12 @@ class MenuInquiryHandler(MenuDataMixin):
                         break
 
         if description:
-            # Format with proper capitalization
-            formatted_name = item_query.title()
+            # Use the actual item name found, or fall back to user query
+            formatted_name = found_item_name.title() if found_item_name else item_query.title()
             message = f"{formatted_name} has {description}. Would you like to order one?"
 
             # Store context so "yes" / "give me one" adds this item
+            # Use the actual item name, not the user's query
             order.pending_suggested_item = formatted_name
             order.pending_field = "confirm_suggested_item"
         else:

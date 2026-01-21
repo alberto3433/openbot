@@ -21,13 +21,11 @@ NEGATION_PATTERNS = frozenset({
 })
 
 
-# Shot quantity normalizations (coffee domain, but data-driven through aliases)
-SHOT_NORMALIZATIONS: dict[str, str] = {
-    "1": "single", "one": "single",
-    "2": "double", "two": "double",
-    "3": "triple", "three": "triple",
-    "4": "quad", "four": "quad",
-}
+# Note: Shot normalization was removed when shots moved to quantity-based system.
+# Instead of discrete options (single/double/triple/quad), shots now use
+# numeric quantities like syrups (e.g., "2 shots" → quantity=2).
+# The extraction code in parsers/deterministic/extraction.py handles
+# "double" → 2, "triple" → 3 conversions at parse time.
 
 
 def normalize_for_option_match(text: str) -> str:
@@ -35,9 +33,12 @@ def normalize_for_option_match(text: str) -> str:
     Normalize user input for option matching.
 
     Handles common patterns users type when ordering:
-    - Shot quantities: "two shots" → "double", "3 shots" → "triple"
     - Leading quantities: "2 scrambled eggs" → "scrambled eggs"
     - Plural forms: "scrambled eggs" → "scrambled egg"
+
+    Note: Shot quantities ("two shots" → "double") are no longer normalized here
+    since shots now use a quantity-based system like syrups. The extraction code
+    handles "double" → 2, "triple" → 3 conversions at parse time.
 
     Args:
         text: Raw user input
@@ -46,14 +47,6 @@ def normalize_for_option_match(text: str) -> str:
         Normalized text suitable for option matching
     """
     text = text.lower().strip()
-
-    # Handle "X shot(s)" pattern FIRST before stripping quantities:
-    # "two shots" → "double", "3 shots" → "triple", "one shot" → "single"
-    shot_pattern = re.match(r'^(\w+)\s+shots?$', text)
-    if shot_pattern:
-        num_word = shot_pattern.group(1)
-        if num_word in SHOT_NORMALIZATIONS:
-            return SHOT_NORMALIZATIONS[num_word]
 
     # Strip leading quantity patterns (numbers like "2", "2x", words like "two")
     text = re.sub(r'^(\d+x?\s+)', '', text)  # "2 ", "2x ", "10 "
@@ -67,10 +60,6 @@ def normalize_for_option_match(text: str) -> str:
     # "eggs" → "egg", "bagels" → "bagel", "syrups" → "syrup", etc.
     words = text.split()
     text = " ".join(singularize(word) for word in words)
-
-    # Also handle exact matches: "two" → "double", "3" → "triple"
-    if text in SHOT_NORMALIZATIONS:
-        text = SHOT_NORMALIZATIONS[text]
 
     return text.strip()
 

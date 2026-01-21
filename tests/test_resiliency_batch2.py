@@ -153,12 +153,14 @@ class TestAmbiguousItemOrders:
         Scenario:
         - User says: "coffee"
         - Expected: System asks for size or adds with default and asks to confirm
+
+        Uses real database via menu_cache_loaded fixture (autouse).
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        menu_data = create_menu_data()
-        sm = OrderStateMachine(menu_data=menu_data)
+        # Use global menu_data from menu_cache_loaded fixture (no mock data)
+        sm = OrderStateMachine()
         result = sm.process("coffee", order)
 
         # Should have a response
@@ -170,7 +172,8 @@ class TestAmbiguousItemOrders:
         if coffees:
             # Coffee was added - check if it's asking for configuration
             coffee = coffees[0]
-            needs_config = coffee["size"] is None or coffee["temperature"] is None
+            attr_vals = coffee.attribute_values or {}
+            needs_config = attr_vals.get("size") is None or attr_vals.get("iced") is None
             if needs_config:
                 # Should be asking about size or hot/iced
                 assert any(word in result.message.lower() for word in [

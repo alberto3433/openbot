@@ -149,15 +149,15 @@ class MenuItemTask(ItemTask):
     """Task for a menu item ordered by name (e.g., 'The Chipotle Egg Omelette').
 
     All customizations (attribute choices and modifier add-ons) are stored in
-    a unified `selections` list using the Selection format.
+    a unified `modifiers` list using the standard modifier format.
 
     Access methods:
-    - get_selection(category): Get first selection for a category
-    - get_selections(category): Get all selections for a category
-    - get_selection_value(category): Get slug of first selection
-    - has_selection(category): Check if any selection exists
-    - add_selection(...): Add a new selection
-    - remove_selection(...): Remove selection(s)
+    - get_selection(category): Get first modifier for a category
+    - get_selections(category): Get all modifiers for a category
+    - get_selection_value(category): Get slug of first modifier
+    - has_selection(category): Check if any modifier exists
+    - add_selection(...): Add a new modifier
+    - remove_selection(...): Remove modifier(s)
 
     Examples:
         item.add_selection("everything", "bread", display_name="Everything")
@@ -179,9 +179,19 @@ class MenuItemTask(ItemTask):
 
     is_signature: bool = False  # Whether this is a signature/featured menu item
 
-    # Unified selections list - all customizations (attributes and modifiers)
-    # Import Selection type for type hint
-    selections: list[dict] = Field(default_factory=list)  # list[Selection] but stored as dict for serialization
+    # Unified modifiers list - all customizations (attributes and modifiers)
+    modifiers: list[dict] = Field(default_factory=list)  # Stored as dict for serialization
+
+    # Deprecated: use `modifiers` instead
+    @property
+    def selections(self) -> list[dict]:
+        """Deprecated: Use modifiers instead."""
+        return self.modifiers
+
+    @selections.setter
+    def selections(self, value: list[dict]) -> None:
+        """Deprecated: Use modifiers instead."""
+        self.modifiers = value
 
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
@@ -211,7 +221,7 @@ class MenuItemTask(ItemTask):
         Returns:
             Selection dict or None if not found
         """
-        for sel in self.selections:
+        for sel in self.modifiers:
             if sel.get("category") == category:
                 return sel
         return None
@@ -225,7 +235,7 @@ class MenuItemTask(ItemTask):
         Returns:
             List of Selection dicts matching the category
         """
-        return [sel for sel in self.selections if sel.get("category") == category]
+        return [sel for sel in self.modifiers if sel.get("category") == category]
 
     def get_selection_value(self, category: str) -> str | None:
         """Get the slug of the first selection for a category.
@@ -250,7 +260,7 @@ class MenuItemTask(ItemTask):
         Returns:
             True if at least one selection exists for this category
         """
-        return any(sel.get("category") == category for sel in self.selections)
+        return any(sel.get("category") == category for sel in self.modifiers)
 
     def add_selection(
         self,
@@ -270,7 +280,7 @@ class MenuItemTask(ItemTask):
             display_name: Human-readable name (looked up from cache if not provided)
         """
         # Check if already present (same slug and category)
-        if any(s.get("slug") == slug and s.get("category") == category for s in self.selections):
+        if any(s.get("slug") == slug and s.get("category") == category for s in self.modifiers):
             return
 
         # Look up display name from database if not provided
@@ -304,7 +314,7 @@ class MenuItemTask(ItemTask):
             "display_name": display_name,
         }
 
-        self.selections.append(selection)
+        self.modifiers.append(selection)
 
         # Update unit_price if selection has a price
         if price > 0:
@@ -323,11 +333,11 @@ class MenuItemTask(ItemTask):
         """
         removed_any = False
         i = 0
-        while i < len(self.selections):
-            sel = self.selections[i]
+        while i < len(self.modifiers):
+            sel = self.modifiers[i]
             if sel.get("category") == category:
                 if slug is None or sel.get("slug") == slug:
-                    removed = self.selections.pop(i)
+                    removed = self.modifiers.pop(i)
                     # Subtract price from unit_price
                     price = removed.get("price", 0)
                     if price > 0:
@@ -348,7 +358,7 @@ class MenuItemTask(ItemTask):
         Returns:
             True if found and updated, False otherwise
         """
-        for sel in self.selections:
+        for sel in self.modifiers:
             if sel.get("category") == category and sel.get("slug") == slug:
                 old_quantity = sel.get("quantity", 1)
                 price = sel.get("price", 0)
@@ -372,7 +382,7 @@ class MenuItemTask(ItemTask):
         backward compatibility with code that reads attribute_values.
         """
         result: dict[str, Any] = {}
-        for sel in self.selections:
+        for sel in self.modifiers:
             category = sel.get("category", "")
             slug = sel.get("slug", "")
             display_name = sel.get("display_name")
@@ -445,7 +455,7 @@ class MenuItemTask(ItemTask):
 
         if value is None:
             # Mark as explicitly declined (so it's considered "answered")
-            self.selections.append({
+            self.modifiers.append({
                 "slug": "_declined",
                 "category": key,
                 "quantity": 0,
@@ -532,7 +542,7 @@ class MenuItemTask(ItemTask):
 
         # Collect display names from selections
         displays = []
-        for sel in self.selections:
+        for sel in self.modifiers:
             slug = sel.get("slug", "")
             display_name = sel.get("display_name", "")
             quantity = sel.get("quantity", 1)

@@ -202,7 +202,7 @@ def _add_modifier_to_item(
         True if modifier was added, False if already present
     """
     # Get current selections (unified storage)
-    current_selections = item.selections or []
+    current_selections = item.modifiers or []
 
     # Check if already present (by slug)
     existing_slugs = [m.get("slug") for m in current_selections]
@@ -220,7 +220,7 @@ def _add_modifier_to_item(
 
     # Add to unified selections list
     current_selections.append(selection_entry)
-    item.selections = current_selections
+    item.modifiers = current_selections
 
     logger.info(
         "Added %s modifier: %s (qty=%d) to %s",
@@ -353,7 +353,7 @@ def _remove_modifiers_by_category(
     Returns:
         True if any modifiers were removed, False otherwise.
     """
-    current_selections = item.selections or []
+    current_selections = item.modifiers or []
     if not current_selections:
         return False
 
@@ -361,7 +361,7 @@ def _remove_modifiers_by_category(
     new_selections = [m for m in current_selections if m.get("category") != category]
 
     if len(new_selections) < len(current_selections):
-        item.selections = new_selections
+        item.modifiers = new_selections
         logger.info(
             "Removed %d %s modifier(s) from %s",
             len(current_selections) - len(new_selections),
@@ -518,7 +518,7 @@ def _get_selections_from_parsed_item(item: ParsedItemEntry) -> list[Selection]:
     Returns:
         List of Selection objects from the item
     """
-    return list(item.selections)
+    return list(item.modifiers)
 
 
 def _build_item_summary(item: ParsedItemEntry) -> str:
@@ -1283,7 +1283,7 @@ class TakingItemsHandler(MenuDataMixin):
                             # Clear existing selections and apply new ones using unified storage
                             categories = {sel.category for sel in selections}
                             logger.info("Replacement: applying selections to item from categories: %s", categories)
-                            last_item.selections = []  # Clear existing selections
+                            last_item.modifiers = []  # Clear existing selections
 
                             # Apply all selections
                             for sel in selections:

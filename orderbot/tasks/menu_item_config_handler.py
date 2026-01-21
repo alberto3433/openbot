@@ -996,7 +996,7 @@ class MenuItemConfigHandler(BaseHandler):
         total = base_price
 
         # Sum up prices from selections
-        for sel in item.selections:
+        for sel in item.modifiers:
             price = sel.get("price", 0) or 0
             qty = sel.get("quantity", 1) or 1
             total += price * qty
@@ -1047,7 +1047,7 @@ class MenuItemConfigHandler(BaseHandler):
         # Fallback: calculate from current price minus selections
         if item.unit_price:
             selections_total = 0.0
-            for sel in item.selections:
+            for sel in item.modifiers:
                 price = sel.get("price", 0) or 0
                 qty = sel.get("quantity", 1) or 1
                 selections_total += price * qty
@@ -1630,7 +1630,7 @@ class MenuItemConfigHandler(BaseHandler):
                 all_slugs = [sel.get("slug") for sel in all_selections]
                 logger.info(
                     "STORED multi_select: %s = %s, selections count: %d",
-                    attr_slug, all_slugs, len(item.selections)
+                    attr_slug, all_slugs, len(item.modifiers)
                 )
 
                 # Build acknowledgment text with quantity and qualifier
@@ -1776,12 +1776,23 @@ class MenuItemConfigHandler(BaseHandler):
         if partial_result:
             return partial_result
 
-        # No match at all - ask again WITHOUT listing options
-        attr_name = attr["display_name"].lower()
-        return StateMachineResult(
-            message=f"Sorry, I didn't catch that. What kind of {attr_name} would you like? You can ask 'what options?' to see choices.",
-            order=order,
-        )
+        # No match at all - show available options directly (if few enough)
+        available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
+        if available and len(available) <= 4:
+            # Format as "Would you like it X or Y?" or "Would you like it X, Y, or Z?"
+            if len(available) == 1:
+                options_str = available[0]
+            elif len(available) == 2:
+                options_str = f"{available[0]} or {available[1]}"
+            else:
+                options_str = ", ".join(available[:-1]) + f", or {available[-1]}"
+            message = f"Would you like it {options_str}?"
+        else:
+            # Too many options or none available - use generic message
+            attr_name = attr["display_name"].lower()
+            message = f"Sorry, I didn't catch that. What kind of {attr_name} would you like? You can ask 'what options?' to see choices."
+
+        return StateMachineResult(message=message, order=order)
 
     def _check_partial_match(
         self,
@@ -2014,13 +2025,13 @@ class MenuItemConfigHandler(BaseHandler):
                 # Check for negation patterns ("no decaf", "not sliced", "without decaf")
                 negation_pattern = rf"\b(no|not|without|skip)\s+{re.escape(attr_slug)}\b"
                 is_negated = bool(re.search(negation_pattern, user_lower, re.IGNORECASE))
-                item.attribute_values[attr_slug] = not is_negated
+                item[attr_slug] = not is_negated
 
                 # Recalculate price and check if more to configure
                 self._recalculate_item_price(item)
                 remaining = self._get_unanswered_optional(item, item_type)
                 if remaining:
-                    return self._ask_customization_checkpoint(item, order, remaining)
+                    return self._ask_customization_checkpoint(item, order)
 
                 # No more optional attributes - complete the item
                 item.mark_complete()

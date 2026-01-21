@@ -184,3 +184,20 @@ def get_attribute_display_name(attr_slug: str) -> str:
         return attr_info.get("display_name", attr_slug)
     # Fallback: convert slug to readable form
     return attr_slug.replace("_", " ").title()
+
+
+def normalize_for_match(s: str) -> str:
+    """
+    Normalize a string for fuzzy matching.
+
+    Handles variations like:
+    - "blue berry" matching "blueberry"
+    - "black and white" matching "black & white"
+
+    Args:
+        s: The string to normalize
+
+    Returns:
+        Normalized string with spaces removed and & converted to "and"
+    """
+    return s.replace("&", "and").replace(" ", "")

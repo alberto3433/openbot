@@ -29,7 +29,7 @@ from .schemas import (
     ParsedItemEntry,
     ParsedItem,
 )
-from .parsers import parse_open_input, extract_attribute_values
+from .parsers import parse_open_input, extract_attribute_values, extract_special_instructions_from_input
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -853,6 +853,16 @@ class TakingItemsHandler(MenuDataMixin):
             if extracted_selections:
                 logger.info("Selections from input: %s", extracted_selections)
 
+        # Extract order-level special instructions from user input
+        instructions_list = extract_special_instructions_from_input(user_input)
+        if instructions_list:
+            new_instructions = "; ".join(instructions_list)
+            if order.special_instructions:
+                order.special_instructions += f"; {new_instructions}"
+            else:
+                order.special_instructions = new_instructions
+            logger.info("Order-level special instructions: %s", order.special_instructions)
+
         return self.handle_taking_items_with_parsed(parsed, order, extracted_selections, user_input)
 
     def handle_taking_items_with_parsed(
@@ -1258,8 +1268,6 @@ class TakingItemsHandler(MenuDataMixin):
                         selections: list[Selection] = []
                         if attr_values:
                             for attr_slug, value in attr_values.items():
-                                if attr_slug == "special_instructions":
-                                    continue
                                 if isinstance(value, list):
                                     for item in value:
                                         if isinstance(item, dict) and item.get("slug"):

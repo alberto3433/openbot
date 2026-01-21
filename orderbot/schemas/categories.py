@@ -20,10 +20,11 @@ Categories enable generic item searches like "I want a drink" to return
 all items in the "drink" category for disambiguation.
 """
 
-from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+from .base import TimestampedModel
 
 
 class CategoryBase(BaseModel):
@@ -78,13 +79,9 @@ class CategoryUpdate(BaseModel):
     )
 
 
-class CategoryOut(CategoryBase):
+class CategoryOut(CategoryBase, TimestampedModel):
     """Response model for a category."""
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    created_at: datetime
     menu_item_count: int = Field(
         default=0,
         description="Number of menu items in this category"

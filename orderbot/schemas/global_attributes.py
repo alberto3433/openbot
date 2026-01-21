@@ -36,7 +36,6 @@ class GlobalAttributeOptionOut(BaseModel):
     slug: str
     display_name: str
     price_modifier: float = 0.0
-    iced_price_modifier: float = 0.0
     is_default: bool = False
     is_available: bool = True
     display_order: int = 0
@@ -55,7 +54,6 @@ class GlobalAttributeOptionCreate(BaseModel):
     slug: str
     display_name: str
     price_modifier: float = 0.0
-    iced_price_modifier: float = 0.0
     is_default: bool = False
     is_available: bool = True
     display_order: int = 0
@@ -70,7 +68,6 @@ class GlobalAttributeOptionUpdate(BaseModel):
     slug: Optional[str] = None
     display_name: Optional[str] = None
     price_modifier: Optional[float] = None
-    iced_price_modifier: Optional[float] = None
     is_default: Optional[bool] = None
     is_available: Optional[bool] = None
     display_order: Optional[int] = None

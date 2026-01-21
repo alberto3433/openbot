@@ -46,6 +46,10 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
     if order_dict.get("db_order_id"):
         order.db_order_id = order_dict["db_order_id"]
 
+    # Restore order-level special instructions
+    if order_dict.get("special_instructions"):
+        order.special_instructions = order_dict["special_instructions"]
+
     # Convert customer info
     customer = order_dict.get("customer", {})
     if customer.get("name"):
@@ -197,6 +201,7 @@ def order_task_to_dict(
             "email": order.customer_info.email,
             "pickup_time": None,
         },
+        "special_instructions": order.special_instructions,
     }
 
     # Preserve database order ID if present

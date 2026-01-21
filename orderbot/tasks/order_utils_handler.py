@@ -156,7 +156,6 @@ class OrderUtilsHandler:
                     unit_price=template_item.unit_price,
                     modifications=list(template_item.modifications) if template_item.modifications else [],
                     removed_ingredients=list(template_item.removed_ingredients) if template_item.removed_ingredients else [],
-                    special_instructions=template_item.special_instructions,
                     selections=copied_selections,
                     customization_offered=template_item.customization_offered,
                 )

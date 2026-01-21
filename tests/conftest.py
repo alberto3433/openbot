@@ -4,20 +4,17 @@ from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 # Load environment variables from .env file
 load_dotenv()
 
 
 def create_test_engine(database_url: str):
-    """Create a database engine with conservative pool settings for tests."""
+    """Create a database engine - use NullPool for serverless Neon."""
     return create_engine(
         database_url,
-        pool_pre_ping=True,
-        pool_size=2,
-        max_overflow=3,
-        pool_timeout=10,
-        pool_recycle=300,
+        poolclass=NullPool,  # Fresh connection per query - no stale connections
     )
 
 # Test admin credentials

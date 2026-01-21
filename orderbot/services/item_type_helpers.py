@@ -62,6 +62,7 @@ def has_linked_attributes(item_type_id: int, db: Session) -> bool:
     count = db.query(ItemTypeGlobalAttribute).filter(
         ItemTypeGlobalAttribute.item_type_id == item_type_id
     ).count()
+
     return count > 0
 
 
@@ -87,6 +88,7 @@ def has_askable_attributes(item_type_id: int, db: Session) -> bool:
         ItemTypeGlobalAttribute.item_type_id == item_type_id,
         ItemTypeGlobalAttribute.ask_in_conversation == True  # noqa: E712
     ).count()
+
     return count > 0
 
 

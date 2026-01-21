@@ -386,21 +386,6 @@ class MenuQueryMixin:
         self._ensure_loaded()
         return self._menu_index
 
-    def get_item_type_fields(self, item_type_slug: str) -> list[dict]:
-        """Get all field configurations for an item type.
-
-        Args:
-            item_type_slug: The item type slug (e.g., "bagel", "sized_beverage")
-
-        Returns:
-            List of field config dicts, ordered by display_order.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._item_type_fields.get(item_type_slug, [])
-
     def get_question_for_field(self, item_type_slug: str, field_name: str) -> str | None:
         """Get the question text for a specific field of an item type.
 

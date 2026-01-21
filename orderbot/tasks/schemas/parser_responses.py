@@ -116,9 +116,6 @@ class ParsedItemEntry(BaseModel):
     # Unified selections list - all customizations (attributes and modifiers)
     selections: list[Selection] = Field(default_factory=list)
 
-    # Special instructions text
-    special_instructions: str | None = None
-
     # Original text (for context preservation in disambiguation)
     original_text: str | None = None
 
@@ -220,10 +217,6 @@ class AttributeChoiceResponse(BaseModel):
     unclear: bool = Field(
         default=False,
         description="Set to true if the value couldn't be determined"
-    )
-    special_instructions: str | None = Field(
-        default=None,
-        description="Special instructions (e.g., 'light', 'extra', 'on the side')"
     )
     wants_cancel: bool = Field(
         default=False,

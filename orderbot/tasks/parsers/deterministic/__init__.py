@@ -1,0 +1,203 @@
+"""
+Deterministic Parser Package.
+
+This package contains all deterministic (non-LLM) parsing functions for user input.
+All exports maintain backward compatibility with the original deterministic.py module.
+
+Modules:
+- patterns: Compiled regex patterns and pattern utilities
+- extraction: Attribute/modifier extraction from text
+- item_parsing: Single item order parsing (configurable items, sodas, by-pound)
+- inquiry_parsing: Non-order queries (price, menu, recommendations, store info)
+- modification_parsing: Modifications to existing items
+- tokenization: Multi-item order tokenization and parsing
+- core: Main entry point orchestrating all sub-parsers
+"""
+
+# =============================================================================
+# Patterns Module Exports
+# =============================================================================
+from .patterns import (
+    # Main patterns used by state machine and handlers
+    REPLACE_ITEM_PATTERN,
+    CANCEL_ITEM_PATTERN,
+    TAX_QUESTION_PATTERN,
+    ORDER_STATUS_PATTERN,
+    ORDERING_LANGUAGE_PATTERN,
+    MAKE_IT_N_PATTERN,
+    DUPLICATE_ALL_PATTERN,
+    # Internal patterns (may be used by tests)
+    FILLER_WORDS_PATTERN,
+    REDUCE_TO_ONE_PATTERN,
+    ONE_MORE_PATTERN,
+    ANOTHER_ITEM_PATTERN,
+    ADD_MORE_PATTERN,
+    # Pattern utilities
+    strip_filler_words,
+    _get_configurable_item_pattern,
+)
+
+# =============================================================================
+# Extraction Module Exports
+# =============================================================================
+from .extraction import (
+    # Main extraction functions
+    extract_attribute_values,
+    extract_special_instructions_from_input,
+    extract_modifiers_with_qualifiers,
+    # Internal helpers (used by tests)
+    _extract_quantity,
+    _extract_by_pound_info,
+    _slug_to_display,
+    _extract_attribute_value,
+    _extract_modifiers_generic,
+    _extract_boolean_global_attribute,
+    _extract_single_select_global_attribute,
+    _extract_side_item,
+)
+
+# =============================================================================
+# Item Parsing Module Exports
+# =============================================================================
+from .item_parsing import (
+    # Generic item builder
+    build_parsed_item,
+    # Item type detection
+    _detect_item_type,
+    _is_modifier_chain,
+    _detect_configurable_item_type,
+    # Main item parsers
+    _parse_item_generic,
+    _parse_configurable_item,
+    _parse_soda_deterministic,
+    _parse_split_quantity_items,
+    _parse_by_pound_order,
+    # Internal helpers
+    _match_menu_item_name_for_type,
+    _count_split_indicators,
+    _get_initial_part,
+    _split_into_parts,
+    _find_by_weight_item,
+    BY_POUND_PATTERN,
+)
+
+# =============================================================================
+# Inquiry Parsing Module Exports
+# =============================================================================
+from .inquiry_parsing import (
+    _parse_price_inquiry_deterministic,
+    _parse_menu_query_deterministic,
+    _parse_recommendation_inquiry,
+    _parse_store_info_inquiry,
+    _parse_item_description_inquiry,
+    _parse_modifier_inquiry,
+    _parse_more_menu_items,
+    _parse_ingredient_search,
+    _get_order_signals,
+)
+
+# =============================================================================
+# Modification Parsing Module Exports
+# =============================================================================
+from .modification_parsing import (
+    _extract_menu_item_modifications,
+    _parse_modify_existing_item,
+    _parse_add_modifier_to_item,
+    _extract_menu_item_from_text,
+    _parse_add_more_request,
+)
+
+# =============================================================================
+# Tokenization Module Exports
+# =============================================================================
+from .tokenization import (
+    _parse_multi_item_order,
+    # Internal tokenization helpers
+    _extract_leading_quantity,
+    _has_item_indicator,
+    _is_modifier_only,
+    _classify_token,
+    _smart_split_and_tokenize,
+    _recombine_tokens,
+)
+
+# =============================================================================
+# Core Module Exports
+# =============================================================================
+from .core import parse_open_input_deterministic
+
+
+# =============================================================================
+# Public API
+# =============================================================================
+__all__ = [
+    # Main entry point
+    "parse_open_input_deterministic",
+    # Patterns
+    "REPLACE_ITEM_PATTERN",
+    "CANCEL_ITEM_PATTERN",
+    "TAX_QUESTION_PATTERN",
+    "ORDER_STATUS_PATTERN",
+    "ORDERING_LANGUAGE_PATTERN",
+    "MAKE_IT_N_PATTERN",
+    "DUPLICATE_ALL_PATTERN",
+    "FILLER_WORDS_PATTERN",
+    "REDUCE_TO_ONE_PATTERN",
+    "ONE_MORE_PATTERN",
+    "ANOTHER_ITEM_PATTERN",
+    "ADD_MORE_PATTERN",
+    "strip_filler_words",
+    "_get_configurable_item_pattern",
+    # Extraction
+    "extract_attribute_values",
+    "extract_special_instructions_from_input",
+    "extract_modifiers_with_qualifiers",
+    "_extract_quantity",
+    "_extract_by_pound_info",
+    "_slug_to_display",
+    "_extract_attribute_value",
+    "_extract_modifiers_generic",
+    "_extract_boolean_global_attribute",
+    "_extract_single_select_global_attribute",
+    "_extract_side_item",
+    # Item parsing
+    "build_parsed_item",
+    "_detect_item_type",
+    "_is_modifier_chain",
+    "_detect_configurable_item_type",
+    "_parse_item_generic",
+    "_parse_configurable_item",
+    "_parse_soda_deterministic",
+    "_parse_split_quantity_items",
+    "_parse_by_pound_order",
+    "_match_menu_item_name_for_type",
+    "_count_split_indicators",
+    "_get_initial_part",
+    "_split_into_parts",
+    "_find_by_weight_item",
+    "BY_POUND_PATTERN",
+    # Inquiry parsing
+    "_parse_price_inquiry_deterministic",
+    "_parse_menu_query_deterministic",
+    "_parse_recommendation_inquiry",
+    "_parse_store_info_inquiry",
+    "_parse_item_description_inquiry",
+    "_parse_modifier_inquiry",
+    "_parse_more_menu_items",
+    "_parse_ingredient_search",
+    "_get_order_signals",
+    # Modification parsing
+    "_extract_menu_item_modifications",
+    "_parse_modify_existing_item",
+    "_parse_add_modifier_to_item",
+    "_extract_menu_item_from_text",
+    "_parse_add_more_request",
+    # Tokenization
+    "_parse_multi_item_order",
+    "_extract_leading_quantity",
+    "_has_item_indicator",
+    "_is_modifier_only",
+    "_classify_token",
+    "_smart_split_and_tokenize",
+    "_recombine_tokens",
+]

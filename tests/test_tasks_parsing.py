@@ -1213,62 +1213,68 @@ class TestSpecialInstructionsExtraction:
         assert "extra cream cheese" in notes
 
     def test_multi_item_coffee_with_milk_and_special_instructions(self):
-        """Test that multi-item parser extracts milk and special instructions for coffee.
+        """Test that multi-item parser extracts items and special instructions are captured at order level.
 
-        Note: The 'splash of milk' phrase is captured as special_instructions.
-        For milk to be extracted as an attribute, the database needs to have
-        'milk' configured as an alias for 'whole_milk' in the milk options.
+        Note: The 'splash of milk' phrase is captured as order-level special_instructions.
+        Special instructions are no longer stored per-item but at the order level.
         """
-        from orderbot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.state_machine import _parse_multi_item_order, extract_special_instructions_from_input
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
-        result = _parse_multi_item_order("a coffee with a splash of milk and a bagel with a lot of cream cheese")
+        user_input = "a coffee with a splash of milk and a bagel with a lot of cream cheese"
+        result = _parse_multi_item_order(user_input)
         assert result is not None
         assert has_coffee(result)
         assert has_bagel(result)
-        # Check parsed_items has a coffee with special instructions
+        # Check parsed_items has a coffee
         coffee = get_coffee_item(result)
         assert coffee is not None
-        # 'splash of milk' is captured in special_instructions (data-driven - no hardcoded milk patterns)
-        assert coffee.special_instructions is not None
-        assert "splash" in coffee.special_instructions.lower() or "milk" in coffee.special_instructions.lower()
+        # Special instructions are now extracted at order level, not per-item
+        instructions = extract_special_instructions_from_input(user_input)
+        assert any("splash" in i.lower() or "milk" in i.lower() for i in instructions)
 
     def test_coffee_with_sugar_on_the_side(self):
-        """Test that 'sugar on the side' is captured in special_instructions."""
+        """Test that 'sugar on the side' is captured in order-level special_instructions."""
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
-        result = parse_open_input_deterministic("large coffee iced sugar on the side")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        user_input = "large coffee iced sugar on the side"
+        result = parse_open_input_deterministic(user_input)
         assert result is not None
         coffee = get_coffee_item(result)
         assert coffee is not None, f"No coffee found. All items: {[(i.item_type, i.item_name) for i in result.parsed_items]}"
-        # Sugar on the side should be in special_instructions
+        # Sugar on the side should be in order-level special_instructions
         # TODO: Future enhancement - extract sugar as sweetener modifier for pricing
-        assert coffee.special_instructions is not None
-        assert "sugar on the side" in coffee.special_instructions.lower()
+        instructions = extract_special_instructions_from_input(user_input)
+        assert any("sugar on the side" in i.lower() for i in instructions)
 
     def test_coffee_with_cream_on_the_side(self):
-        """Test that 'cream on the side' is captured in special_instructions."""
+        """Test that 'cream on the side' is captured in order-level special_instructions."""
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
-        result = parse_open_input_deterministic("large coffee cream on the side")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        user_input = "large coffee cream on the side"
+        result = parse_open_input_deterministic(user_input)
         assert result is not None
         coffee = get_coffee_item(result)
         assert coffee is not None
-        # Cream on the side should be in special_instructions
+        # Cream on the side should be in order-level special_instructions
         # TODO: Future enhancement - extract cream as milk attribute for pricing
-        assert coffee.special_instructions is not None
-        assert "cream on the side" in coffee.special_instructions.lower()
+        instructions = extract_special_instructions_from_input(user_input)
+        assert any("cream on the side" in i.lower() for i in instructions)
 
     @pytest.mark.xfail(reason="Milk extraction from 'milk on the side' not yet implemented - requires enhanced attribute extraction")
     def test_coffee_with_milk_on_the_side(self):
-        """Test that 'milk on the side' adds milk AND to special_instructions."""
+        """Test that 'milk on the side' adds milk AND to order-level special_instructions."""
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
-        result = parse_open_input_deterministic("coffee milk on the side")
+        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        user_input = "coffee milk on the side"
+        result = parse_open_input_deterministic(user_input)
         assert result is not None
         coffee = get_coffee_item(result)
         assert coffee is not None
         # Milk SHOULD be extracted (defaults to whole when just "milk" is mentioned)
         assert coffee.attribute_values.get("milk") == "whole"
-        # Milk on the side should ALSO be in special_instructions
-        assert coffee.special_instructions is not None
-        assert "milk on the side" in coffee.special_instructions.lower()
+        # Milk on the side should ALSO be in order-level special_instructions
+        instructions = extract_special_instructions_from_input(user_input)
+        assert any("milk on the side" in i.lower() for i in instructions)
 
     # -------------------------------------------------------------------------
     # Standalone Special Instruction Patterns

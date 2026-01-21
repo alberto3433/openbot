@@ -1,0 +1,168 @@
+# Domain-specific terms that should not be hardcoded in production code
+# These terms indicate food-domain knowledge that should come from the database
+#
+# The test scans for these terms as whole words (case-insensitive)
+# Multi-word terms are matched before single-word terms
+
+food_items:
+  # Bagels and bread
+  - bagel
+  - bagels
+  - bialy
+  - bialys
+  - croissant
+  - muffin
+  - toast
+
+  # Spreads and toppings
+  - cream cheese
+  - schmear
+  - butter
+  - lox
+  - nova
+  - nova scotia
+  - salmon
+  - whitefish
+  - tuna
+  - hummus
+  - avocado
+
+  # Beverages
+  - coffee
+  - espresso
+  - latte
+  - cappuccino
+  - americano
+  - macchiato
+  - mocha
+  - tea
+  - matcha
+  - chai
+  - cold brew
+  - iced coffee
+  - hot chocolate
+  - smoothie
+  - juice
+  - orange juice
+  - soda
+
+  # Sandwiches and meals
+  - sandwich
+  - omelette
+  - omelet
+  - egg sandwich
+  - bacon
+  - sausage
+  - ham
+  - turkey
+
+  # Sides and extras
+  - fruit
+  - yogurt
+  - granola
+  - cookie
+  - brownie
+  - pastry
+
+bagel_types:
+  - plain
+  - everything
+  - sesame
+  - poppy
+  - pumpernickel
+  - onion
+  - garlic
+  - salt
+  - cinnamon raisin
+  - whole wheat
+  - multigrain
+  - asiago
+  - jalapeno
+  - blueberry
+  - french toast
+
+ingredients:
+  # Milks
+  - oat milk
+  - almond milk
+  - soy milk
+  - coconut milk
+  - whole milk
+  - skim milk
+  - half and half
+  - half & half
+  - heavy cream
+
+  # Sweeteners
+  - sugar
+  - splenda
+  - stevia
+  - honey
+  - agave
+  - sweet n low
+  - equal
+
+  # Syrups
+  - vanilla
+  - caramel
+  - hazelnut
+  - mocha syrup
+  - pumpkin spice
+  - lavender
+
+  # Other ingredients
+  - lettuce
+  - tomato
+  - onions
+  - pickles
+  - mayo
+  - mayonnaise
+  - mustard
+  - ketchup
+  - salt
+  - pepper
+
+modifiers:
+  # Preparation styles
+  - toasted
+  - scooped
+  - iced
+  - hot
+  - decaf
+  - half-caf
+  - extra shot
+  - double shot
+  - light ice
+  - no ice
+  - extra hot
+  - lukewarm
+
+  # Sizes (when used as food modifiers)
+  - small
+  - medium
+  - large
+  - extra large
+  - tall
+  - grande
+  - venti
+
+menu_categories:
+  # These are flagged only when used as string literals
+  # to check item types or categories
+  - beverage
+  - beverages
+  - side
+  - sides
+  - snack
+  - snacks
+  - dessert
+  - desserts
+  - breakfast
+  - lunch
+
+# Item type slugs that shouldn't be hardcoded
+item_type_slugs:
+  - sized_beverage
+  - sized_hot_beverage
+  - spread_container
+  - bagel_sandwich

@@ -386,23 +386,6 @@ def clean_extracted_text(text: str) -> str:
     return re.sub(r'[.!?,]+$', '', text).strip()
 
 
-def normalize_for_match(s: str) -> str:
-    """
-    Normalize a string for fuzzy matching.
-
-    Handles variations like:
-    - "blue berry" matching "blueberry"
-    - "black and white" matching "black & white"
-
-    Args:
-        s: The string to normalize
-
-    Returns:
-        Normalized string with spaces removed and & converted to "and"
-    """
-    return s.replace("&", "and").replace(" ", "")
-
-
 # =============================================================================
 # Item Type Display Names
 # =============================================================================

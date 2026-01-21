@@ -849,6 +849,31 @@
       text-align: center;
     }
 
+    .order-special-instructions {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-light);
+      font-size: 13px;
+    }
+
+    .order-special-instructions-header {
+      display: flex;
+      gap: 10px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .order-special-instructions-header .icon {
+      width: 18px;
+      text-align: center;
+    }
+
+    .order-special-instructions-text {
+      font-style: italic;
+      color: var(--text-tertiary);
+      padding-left: 28px;
+    }
+
     /* =====================================================
        Mobile Styles
        ===================================================== */
@@ -1198,6 +1223,13 @@
             <span class="icon">📍</span>
             <span id="customer-address"></span>
           </div>
+        </div>
+        <div class="order-special-instructions" id="order-special-instructions" style="display: none;">
+          <div class="order-special-instructions-header">
+            <span class="icon">📝</span>
+            <span>Special Instructions</span>
+          </div>
+          <div class="order-special-instructions-text" id="order-special-instructions-text"></div>
         </div>
       </div>
     </div>
@@ -1948,6 +1980,8 @@
     const customerPhoneRow = document.getElementById("customer-phone-row");
     const customerAddressEl = document.getElementById("customer-address");
     const customerAddressRow = document.getElementById("customer-address-row");
+    const orderSpecialInstructions = document.getElementById("order-special-instructions");
+    const orderSpecialInstructionsText = document.getElementById("order-special-instructions-text");
 
     const orderPanelCollapsed = document.getElementById("order-panel-collapsed");
     const orderPanelExpanded = document.getElementById("order-panel-expanded");
@@ -2011,10 +2045,6 @@
         html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(price)}</span></div>`;
       }
 
-      // Special instructions (universal)
-      if (item.special_instructions) {
-        html += `<div class="order-item-note">"${item.special_instructions}"</div>`;
-      }
       div.innerHTML = html;
       return div;
     }
@@ -2089,6 +2119,14 @@
         customerAddressEl.textContent = state.delivery_address || "";
       } else {
         orderCustomer.style.display = "none";
+      }
+
+      // Display order-level special instructions
+      if (state.special_instructions) {
+        orderSpecialInstructions.style.display = "block";
+        orderSpecialInstructionsText.textContent = state.special_instructions;
+      } else {
+        orderSpecialInstructions.style.display = "none";
       }
 
       mobileCartSummary.textContent = `${items.length} item${items.length !== 1 ? "s" : ""}`;

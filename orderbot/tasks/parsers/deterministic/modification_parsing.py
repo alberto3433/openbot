@@ -1,0 +1,555 @@
+"""
+Modification Parsing Functions for Deterministic Parsing.
+
+This module contains functions for parsing modifications to existing items,
+including adding modifiers, extracting modifications, and "add more" requests.
+"""
+
+import re
+import logging
+
+from orderbot.menu_data_cache import menu_cache
+
+from ...schemas import (
+    OpenInputResponse,
+    QualifierConflict,
+)
+
+from ..constants import (
+    WORD_TO_NUM,
+    get_known_menu_items,
+    clean_extracted_text,
+)
+
+from .extraction import extract_modifiers_with_qualifiers, extract_attribute_values
+from .patterns import ADD_MORE_PATTERN
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Menu Item Modifications Extraction
+# =============================================================================
+
+def _extract_menu_item_modifications(
+    text: str, item_type: str | None = None
+) -> dict[str, list[dict[str, str]]]:
+    """Extract modifications like 'with mayo and mustard' or 'no onions' from text.
+
+    This is the data-driven version that only accepts ingredients explicitly
+    linked to the item type in the database.
+
+    Args:
+        text: The user input text
+        item_type: The item type slug (e.g., "sandwich", "salad"). If None,
+            returns empty result.
+
+    Returns:
+        Dict with 'additions' and 'removals' lists. Each entry is a dict with:
+        - slug: The ingredient slug (lowercase, normalized)
+        - category: The ingredient category (e.g., "topping", "protein")
+
+    Examples:
+        >>> _extract_menu_item_modifications("with mayo and lettuce", "sandwich")
+        {"additions": [{"slug": "mayo", "category": "condiment"}, {"slug": "lettuce", "category": "topping"}], "removals": []}
+
+        >>> _extract_menu_item_modifications("no onions please", "sandwich")
+        {"additions": [], "removals": [{"slug": "onion", "category": "topping"}]}
+    """
+    result: dict[str, list[dict[str, str]]] = {"additions": [], "removals": []}
+
+    if not item_type:
+        logger.debug("No item_type provided, returning empty modifications")
+        return result
+
+    text_lower = text.lower()
+
+    # Get valid ingredients for this item type, organized by category
+    # This is the data-driven lookup that replaces hardcoded known_additions
+    ingredients_by_category = menu_cache.get_ingredients_by_category_for_item_type(item_type)
+    if not ingredients_by_category:
+        logger.debug("No ingredients defined for item type '%s'", item_type)
+        return result
+
+    # Build reverse lookup: ingredient name -> category
+    ingredient_to_category: dict[str, str] = {}
+    for category, ingredients in ingredients_by_category.items():
+        for ingredient in ingredients:
+            ingredient_to_category[ingredient.lower()] = category
+
+    def match_ingredient(term: str) -> dict[str, str] | None:
+        """Try to match a term against valid ingredients for the item type."""
+        term = term.strip().lower()
+        if not term:
+            return None
+
+        # Handle "extra X" by stripping the "extra" prefix
+        if term.startswith("extra "):
+            term = term[6:].strip()
+
+        # Direct match
+        if term in ingredient_to_category:
+            return {"slug": term, "category": ingredient_to_category[term]}
+
+        # Try singular form (remove trailing 's')
+        if term.endswith("s") and len(term) > 2:
+            singular = term[:-1]
+            if singular in ingredient_to_category:
+                return {"slug": singular, "category": ingredient_to_category[singular]}
+
+        # Try with 's' added (in case user said singular but DB has plural)
+        plural = term + "s"
+        if plural in ingredient_to_category:
+            return {"slug": plural, "category": ingredient_to_category[plural]}
+
+        return None
+
+    # Pattern for "with X and Y" or "with X, Y, and Z"
+    with_pattern = re.search(
+        r'\bwith\s+(.+?)(?:\s*(?:please|thanks|toasted)|\s*$)',
+        text_lower,
+        re.IGNORECASE
+    )
+
+    if with_pattern:
+        with_text = with_pattern.group(1).strip()
+        # Remove trailing punctuation
+        with_text = clean_extracted_text(with_text)
+
+        # Split by "and" and commas
+        parts = re.split(r'\s*(?:,\s*|\s+and\s+)\s*', with_text)
+        for part in parts:
+            part = part.strip()
+            # Exclude common non-modifier words
+            skip_words = {'a', 'an', 'the', 'please', 'thanks', 'it', 'that'}
+            if part in skip_words:
+                continue
+
+            matched = match_ingredient(part)
+            if matched:
+                result["additions"].append(matched)
+
+    # Pattern for "no X" modifications
+    no_pattern = re.findall(r'\bno\s+(\w+(?:\s+\w+)?)', text_lower)
+    for item in no_pattern:
+        item = item.strip()
+        # Skip common false positives (language patterns, not food)
+        skip_items = {'thanks', 'problem', 'worries', 'that', 'more', 'need'}
+        if item in skip_items:
+            continue
+
+        matched = match_ingredient(item)
+        if matched:
+            result["removals"].append(matched)
+
+    logger.debug("Extracted modifications from '%s' for item_type '%s': %s", text[:50], item_type, result)
+    return result
+
+
+# =============================================================================
+# Modify Existing Item Parsing
+# =============================================================================
+
+def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
+    """Detect requests to modify an existing cart item with a modifier.
+
+    Catches patterns like:
+    - "can I have cream cheese on the cinnamon raisin bagel"
+    - "put butter on the plain bagel"
+    - "add mayo to the sandwich"
+    - "make the bagel with scallion cream cheese"
+    - "make it with butter"
+
+    Item type names are loaded dynamically from the database, so this function
+    works with any item types.
+
+    This must be called BEFORE menu item matching to prevent modifiers like
+    "scallion cream cheese" from being matched to menu items.
+
+    Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
+    """
+    text_lower = text.lower().strip()
+
+    # Build dynamic item type pattern from database
+    item_type_names = menu_cache.get_item_type_names_for_regex()
+    if not item_type_names:
+        return None
+
+    # Build regex alternation:
+    # Names are sorted by length (longest first) so "deli sandwich" matches before "sandwich"
+    item_type_pattern = "(?:" + "|".join(re.escape(name) for name in item_type_names) + ")"
+
+    modifier_part = None
+    target_description = None
+
+    # === Pattern Group 1: MODIFIER preposition TARGET item_type ===
+    # These patterns have modifier BEFORE the target item type
+    # Group 1: modifier, Group 2: item description (e.g., "plain", "cinnamon raisin")
+    modifier_before_target_patterns = [
+        # "can I have X on the Y {item_type}"
+        rf"(?:can\s+i\s+(?:have|get)|i(?:'d|\s+would)\s+like)\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+        # "put X on the Y {item_type}"
+        rf"(?:put|add)\s+(.+?)\s+(?:on|to)\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+        # "X on the Y {item_type}" (simple form)
+        rf"^(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}$",
+        # "i want X on the Y {item_type}"
+        rf"i\s+want\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+    ]
+
+    for pattern in modifier_before_target_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            modifier_part = match.group(1).strip()
+            target_description = match.group(2).strip()
+            break
+
+    # === Pattern Group 2: TARGET item_type with MODIFIER ===
+    # These patterns have target BEFORE the modifier (reversed order)
+    # "make the plain {item_type} with X" - Group 1: item description, Group 2: modifier
+    if not modifier_part:
+        pattern = rf"make\s+(?:the|my)\s+(.+?)\s+{item_type_pattern}\s+with\s+(.+?)(?:\s+(?:please|thanks))?$"
+        match = re.search(pattern, text_lower)
+        if match:
+            target_description = match.group(1).strip()
+            modifier_part = match.group(2).strip()
+
+    # === Pattern Group 3: Implicit target (IT or generic item type) ===
+    # "make it with X", "make the bagel with X", "put X on it"
+    # target_description stays None to indicate "find any/last item"
+    if not modifier_part:
+        # First try patterns with generic item type (no specific description)
+        generic_patterns = [
+            # "make the {item_type} with X" - no specific description
+            rf"make\s+(?:the|my)\s+{item_type_pattern}\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+        ]
+        for pattern in generic_patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                modifier_part = match.group(1).strip()
+                target_description = None
+                break
+
+        # Then try implicit "it" patterns
+        if not modifier_part:
+            implicit_target_patterns = [
+                # "make it with X"
+                r"make\s+it\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+                # "put X on it"
+                r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+it\b",
+                # "i want X on it"
+                r"i\s+want\s+(.+?)\s+(?:on|to)\s+it\b",
+                # "can I have X on it"
+                r"(?:can\s+i\s+(?:have|get))\s+(.+?)\s+(?:on|to)\s+it\b",
+            ]
+            for pattern in implicit_target_patterns:
+                match = re.search(pattern, text_lower)
+                if match:
+                    modifier_part = match.group(1).strip()
+                    target_description = None
+                    break
+
+    # No pattern matched
+    if not modifier_part:
+        return None
+
+    # Clean up modifier_part - remove trailing "please/thanks"
+    modifier_part = re.sub(r"\s+(?:please|thanks)$", "", modifier_part).strip()
+
+    # Skip if modifier_part is empty or too short
+    if not modifier_part or len(modifier_part) < 2:
+        return None
+
+    logger.info(
+        "MODIFY EXISTING ITEM: '%s' -> modifier=%s, target=%s",
+        text[:50], modifier_part, target_description
+    )
+
+    return OpenInputResponse(
+        modify_existing_item=True,
+        modify_target_description=target_description,
+        modify_add_modifiers=[modifier_part],
+    )
+
+
+# =============================================================================
+# Add Modifier to Item Parsing
+# =============================================================================
+
+def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
+    """Detect requests to add modifiers to an existing item.
+
+    Catches patterns like:
+    - "add X" - add single modifier to current/last item
+    - "add X and Y" - add multiple modifiers
+    - "add X to the Y" - add modifier to specific item
+    - "extra X" / "more X" - alternative action words
+    - "put X on it" - implicit target
+
+    Does NOT catch patterns where the modifier text matches a known menu item
+    (e.g., if "bacon egg and cheese" is a menu item alias, "add bacon egg and cheese"
+    will be treated as a menu item order, not a modifier-add request).
+
+    Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
+    """
+    text_lower = text.lower().strip()
+
+    # Get known modifiers from all food categories (database-driven)
+    all_modifiers: set[str] = set()
+    for category in menu_cache.get_ordered_ingredient_categories("food"):
+        ingredients = menu_cache.get_ingredients(category)
+        all_modifiers.update(ingredients)
+
+    # === Pattern Group 1: "add/put/extra/more MODIFIER to the TARGET" ===
+    # Captures: modifier(s) and target item
+    target_patterns = [
+        # "add bacon to the bagel" / "add bacon to the plain bagel"
+        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the|my)\s+(.+?)$",
+        # "add bacon to the omelette" / "add bacon to my omelette"
+        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the|my)\s+(.+?)$",
+    ]
+
+    modifier_text = None
+    target_item = None
+
+    for pattern in target_patterns:
+        match = re.match(pattern, text_lower)
+        if match:
+            modifier_text = match.group(1).strip()
+            target_item = match.group(2).strip()
+            break
+
+    # === Pattern Group 2: "add/extra/more/put MODIFIER" (no explicit target) ===
+    if not modifier_text:
+        no_target_patterns = [
+            # "add bacon" / "add bacon and cheese"
+            r"^(?:add|put)\s+(.+?)(?:\s+please)?$",
+            # "extra bacon" / "extra cheese"
+            r"^extra\s+(.+?)(?:\s+please)?$",
+            # "more bacon" / "more cheese"
+            r"^more\s+(.+?)(?:\s+please)?$",
+        ]
+
+        for pattern in no_target_patterns:
+            match = re.match(pattern, text_lower)
+            if match:
+                modifier_text = match.group(1).strip()
+                target_item = None  # Implicit - apply to last/current item
+                break
+
+    # === Pattern Group 3: "put MODIFIER on it" ===
+    if not modifier_text:
+        match = re.match(r"^put\s+(.+?)\s+on\s+it(?:\s+please)?$", text_lower)
+        if match:
+            modifier_text = match.group(1).strip()
+            target_item = None  # "it" means last/current item
+
+    # No pattern matched
+    if not modifier_text:
+        return None
+
+    # Check if modifier_text matches a known menu item (e.g., "bacon egg and cheese")
+    # If so, this is likely a menu item order, not a modifier-add request.
+    # Only skip if the menu item match covers most of the modifier_text - we don't want
+    # to skip "add bacon and cheese" just because "bacon" is also a menu item.
+    if len(modifier_text.split()) > 1:
+        menu_item, _ = _extract_menu_item_from_text(modifier_text)
+        if menu_item:
+            # Only skip if the menu item name covers most of the modifier text
+            # This prevents "bacon and cheese" from being skipped because "bacon" matches
+            menu_item_lower = menu_item.lower()
+            modifier_text_lower = modifier_text.lower()
+            # Check if menu item name is a significant portion of the modifier text
+            if len(menu_item_lower) >= len(modifier_text_lower) * 0.7:
+                logger.debug("ADD MODIFIER: '%s' matches menu item '%s', skipping", modifier_text, menu_item)
+                return None
+
+    # === Parse modifier_text to extract individual modifiers with qualifiers ===
+    # Handle "extra bacon and cheese on the side", "bacon, cheese, and tomato", etc.
+
+    # Extract modifiers with qualifiers (e.g., "extra mayo" -> "mayo (extra)")
+    modifiers_found, conflicts = extract_modifiers_with_qualifiers(
+        modifier_text.lower(),
+        all_modifiers
+    )
+
+    # Also check for category names (e.g., "cheese" in "add bacon and cheese")
+    # This handles cases where "cheese" is a category name, not a specific ingredient
+    all_food_categories = menu_cache.get_ordered_ingredient_categories("food")
+    modifier_words = modifier_text.lower().split()
+    for word in modifier_words:
+        word_clean = word.strip(",;").strip()
+        if word_clean in all_food_categories:
+            # Found a category name - add it to modifiers if not already there
+            category_title = word_clean.title()
+            if category_title not in modifiers_found:
+                modifiers_found.append(category_title)
+                logger.debug("ADD MODIFIER: added category '%s' to modifiers", category_title)
+
+    # If no known modifiers found (including categories), this isn't a modify request
+    if not modifiers_found:
+        return None
+
+    # Clean up target_item if present (remove trailing "please", "thanks", etc.)
+    if target_item:
+        target_item = re.sub(r"\s*(please|thanks|thank you)$", "", target_item).strip()
+
+    logger.info(
+        "ADD MODIFIER TO ITEM: '%s' -> modifiers=%s, target=%s, conflicts=%s",
+        text[:50], modifiers_found, target_item, conflicts
+    )
+
+    # Convert conflict tuples to QualifierConflict objects
+    conflict_objects = None
+    if conflicts:
+        conflict_objects = [
+            QualifierConflict(modifier=mod, qualifier1=q1, qualifier2=q2)
+            for mod, q1, q2 in conflicts
+        ]
+
+    return OpenInputResponse(
+        modify_existing_item=True,
+        modify_target_description=target_item,
+        modify_add_modifiers=modifiers_found,
+        modify_qualifier_conflicts=conflict_objects,
+    )
+
+
+# =============================================================================
+# Menu Item Extraction from Text
+# =============================================================================
+
+def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
+    """Try to extract a known menu item from text."""
+    text_lower = text.lower().strip()
+
+    text_lower = re.sub(r'^(i\s+want\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)', '', text_lower)
+    text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
+
+    quantity = 1
+    qty_match = re.match(r'^(\d+|one|two|three|four|five)\s+', text_lower)
+    if qty_match:
+        qty_str = qty_match.group(1)
+        text_lower = text_lower[qty_match.end():]
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    for item in sorted(get_known_menu_items(), key=len, reverse=True):
+        # Use word boundary check to prevent partial matches (e.g., "ham" matching "hamburger")
+        # The item should appear as complete words in the text
+        pattern = rf'\b{re.escape(item)}\b'
+        if re.search(pattern, text_lower):
+            # Use database lookup to get canonical name
+            canonical = menu_cache.resolve_menu_item_alias(item)
+            if canonical is None:
+                # Item not found in database - skip this match and try next
+                continue
+            return canonical, quantity
+
+    return None, 0
+
+
+# =============================================================================
+# Add More Request Parsing
+# =============================================================================
+
+def _parse_add_more_request(text: str) -> OpenInputResponse | None:
+    """
+    Parse "add more" requests like "add a third orange juice", "add another coffee".
+
+    These phrases mean "add 1 more" - ordinals like "third" mean "one more to make 3 total",
+    NOT "add 3 items".
+
+    Returns OpenInputResponse with quantity=1 for the item, or None if no match.
+    """
+    match = ADD_MORE_PATTERN.match(text.strip())
+    if not match:
+        return None
+
+    item_text = match.group(1)
+    if item_text:
+        item_text = item_text.strip()
+        # Clean up trailing punctuation
+        item_text = clean_extracted_text(item_text)
+
+    logger.info("ADD MORE REQUEST: detected in '%s', item_text='%s'", text[:50], item_text)
+
+    # If no item specified, we can't parse deterministically - need context
+    # The state machine will need to infer from the last item type
+    if not item_text:
+        # Return a special marker that indicates "add 1 more of whatever was last ordered"
+        # For now, return None and let it fall through to LLM or state machine handling
+        logger.debug("ADD MORE: no item specified, needs context")
+        return None
+
+    # Import here to avoid circular imports
+    from .item_parsing import (
+        _parse_soda_deterministic,
+        _parse_configurable_item,
+        _detect_configurable_item_type,
+        build_parsed_item,
+    )
+
+    # Try to parse the item text as a specific item type
+    # Soda/bottled drinks first (more specific names like "Snapple Iced Tea")
+    # then coffee/sized beverages (more generic names like "iced tea")
+    # Phase 4: Use parsed_items instead of deprecated fields
+    soda_result = _parse_soda_deterministic(item_text)
+    if soda_result and soda_result.parsed_items:
+        # Set quantity to 1 for "add another"
+        for item in soda_result.parsed_items:
+            item.quantity = 1
+        item_name = soda_result.parsed_items[0].item_name if hasattr(soda_result.parsed_items[0], 'item_name') else "soda"
+        logger.info("ADD MORE: parsed as soda '%s' (qty=1)", item_name)
+        return soda_result
+
+    # Try configurable item types using data-driven parser
+    configurable_result = _parse_configurable_item(item_text)
+    if configurable_result and configurable_result.parsed_items:
+        # Set quantity to 1 for "add another"
+        for item in configurable_result.parsed_items:
+            item.quantity = 1
+        item_type = configurable_result.parsed_items[0].item_type if hasattr(configurable_result.parsed_items[0], 'item_type') else "item"
+        logger.info("ADD MORE: parsed as configurable item '%s' (qty=1)", item_type)
+        return configurable_result
+
+    # Try menu item (includes signature items)
+    menu_item, _ = _extract_menu_item_from_text(item_text)
+    if menu_item:
+        logger.info("ADD MORE: parsed as menu item '%s' (qty=1)", menu_item)
+        return OpenInputResponse(
+            parsed_items=[build_parsed_item(item_type="menu_item", item_name=menu_item, quantity=1)],
+        )
+
+    # Try to detect any configurable item type using data-driven triggers
+    # This replaces hardcoded bagel detection
+    detected_type, _ = _detect_configurable_item_type(item_text)
+    if detected_type:
+        # Extract attributes using data-driven extraction
+        attr_values = extract_attribute_values(item_text, detected_type)
+        logger.info("ADD MORE: parsed as %s (qty=1), attrs=%s", detected_type, list(attr_values.keys()))
+        return OpenInputResponse(
+            parsed_items=[build_parsed_item(
+                item_type=detected_type,
+                attribute_values=attr_values,
+            )],
+        )
+
+    # Try to resolve item via menu alias lookup (data-driven, replaces hardcoded drink_shorthands)
+    resolved_item = menu_cache.resolve_menu_item_alias(item_text)
+    if resolved_item:
+        # Look up item type for the resolved item
+        resolved_item_type = menu_cache.get_item_type_for_menu_item(resolved_item)
+        logger.info("ADD MORE: resolved alias '%s' -> '%s' (type=%s, qty=1)", item_text[:30], resolved_item, resolved_item_type)
+        return OpenInputResponse(
+            parsed_items=[build_parsed_item(
+                item_type=resolved_item_type or "menu_item",
+                item_name=resolved_item,
+                quantity=1,
+            )],
+        )
+
+    # Couldn't parse the item - fall back to LLM
+    logger.debug("ADD MORE: couldn't parse item '%s', falling back", item_text)
+    return None

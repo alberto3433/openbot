@@ -19,7 +19,6 @@ from .models import (
     ItemType,
     ModifierCategory,
     NeighborhoodZipCode,
-    ItemTypeAttribute,
     ItemTypeIngredient,
     Company,
     GlobalAttributeOption,
@@ -38,6 +37,9 @@ def _preload_item_type_config_status(db: Session) -> Dict[int, Dict[str, Any]]:
     This replaces the N+1 query pattern where we called has_linked_attributes()
     and has_askable_attributes() for each item type.
 
+    Uses ItemTypeGlobalAttribute (links to GlobalAttribute) to determine
+    which item types have configurable attributes.
+
     Returns:
         Dict mapping item_type_id -> {
             "has_linked_attrs": bool,
@@ -54,10 +56,10 @@ def _preload_item_type_config_status(db: Session) -> Dict[int, Dict[str, Any]]:
         .all()
     )
 
-    # Group by item_type_id
-    attrs_by_type: Dict[int, List] = defaultdict(list)
+    # Group global attrs by item_type_id
+    global_attrs_by_type: Dict[int, List] = defaultdict(list)
     for attr in all_global_attrs:
-        attrs_by_type[attr.item_type_id].append(attr)
+        global_attrs_by_type[attr.item_type_id].append(attr)
 
     # Build config status for each item type
     result: Dict[int, Dict[str, Any]] = {}
@@ -66,16 +68,20 @@ def _preload_item_type_config_status(db: Session) -> Dict[int, Dict[str, Any]]:
     all_type_ids = db.query(ItemType.id).all()
 
     for (type_id,) in all_type_ids:
-        attrs = attrs_by_type.get(type_id, [])
-        has_linked = len(attrs) > 0
-        has_askable = any(attr.ask_in_conversation for attr in attrs) if has_linked else False
+        global_attrs = global_attrs_by_type.get(type_id, [])
+
+        # Has linked attrs if global attributes exist
+        has_linked = len(global_attrs) > 0
+
+        # Has askable attrs if ANY attr has ask_in_conversation=True
+        has_askable = any(attr.ask_in_conversation for attr in global_attrs)
 
         result[type_id] = {
             "has_linked_attrs": has_linked,
             "has_askable_attrs": has_askable,
             "is_configurable": has_linked,
             "skip_config": not has_askable,
-            "global_attrs": attrs,
+            "global_attrs": global_attrs,
         }
 
     return result
@@ -98,26 +104,6 @@ def _preload_all_ingredients(db: Session) -> Dict[str, List[Ingredient]]:
             by_category[ing.category].append(ing)
 
     return by_category
-
-
-def _preload_item_type_attributes(db: Session) -> Dict[int, List]:
-    """
-    Pre-load all item type attributes in a single query.
-
-    Returns:
-        Dict mapping item_type_id -> List[ItemTypeAttribute]
-    """
-    all_attrs = (
-        db.query(ItemTypeAttribute)
-        .order_by(ItemTypeAttribute.item_type_id, ItemTypeAttribute.display_order)
-        .all()
-    )
-
-    by_type: Dict[int, List] = defaultdict(list)
-    for attr in all_attrs:
-        by_type[attr.item_type_id].append(attr)
-
-    return by_type
 
 
 def _preload_global_attribute_options(db: Session) -> Dict[int, List]:
@@ -407,7 +393,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     index["unavailable_menu_items"] = unavailable_menu_items
 
     # Pre-load attribute and option data for _build_item_types_data
-    preloaded_type_attrs = _preload_item_type_attributes(db)
     preloaded_global_options = _preload_global_attribute_options(db)
     preloaded_type_ingredients = _preload_item_type_ingredients(db)
 
@@ -416,7 +401,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         db,
         store_id,
         preloaded_config_status,
-        preloaded_type_attrs,
         preloaded_global_options,
         preloaded_type_ingredients,
     )
@@ -574,7 +558,6 @@ def _build_item_types_data(
     db: Session,
     store_id: Optional[str] = None,
     preloaded_config_status: Optional[Dict[int, Dict[str, Any]]] = None,
-    preloaded_type_attrs: Optional[Dict[int, List]] = None,
     preloaded_global_options: Optional[Dict[int, List]] = None,
     preloaded_type_ingredients: Optional[Dict[tuple, List]] = None,
 ) -> Dict[str, Any]:
@@ -584,14 +567,13 @@ def _build_item_types_data(
     This provides the LLM with structured information about configurable items
     that goes beyond the hardcoded sandwich attributes.
 
-    Uses the item_type_attributes table (consolidated schema) and global
-    attributes for configuring item type options.
+    Uses ItemTypeGlobalAttribute (links to GlobalAttribute) for configuring
+    item type options.
 
     Args:
         db: Database session
         store_id: Optional store ID for availability filtering
         preloaded_config_status: Pre-loaded config status from _preload_item_type_config_status()
-        preloaded_type_attrs: Pre-loaded item type attributes from _preload_item_type_attributes()
         preloaded_global_options: Pre-loaded global options from _preload_global_attribute_options()
         preloaded_type_ingredients: Pre-loaded type ingredients from _preload_item_type_ingredients()
 
@@ -603,22 +585,10 @@ def _build_item_types_data(
     # Use pre-loaded data if available, otherwise load (for backward compatibility)
     if preloaded_config_status is None:
         preloaded_config_status = _preload_item_type_config_status(db)
-    if preloaded_type_attrs is None:
-        preloaded_type_attrs = _preload_item_type_attributes(db)
     if preloaded_global_options is None:
         preloaded_global_options = _preload_global_attribute_options(db)
     if preloaded_type_ingredients is None:
         preloaded_type_ingredients = _preload_item_type_ingredients(db)
-
-    # Pre-fetch ingredient prices from GlobalAttributeOption (source of truth for pricing)
-    ingredient_prices = {}
-    global_price_options = (
-        db.query(GlobalAttributeOption.ingredient_id, GlobalAttributeOption.price_modifier)
-        .filter(GlobalAttributeOption.ingredient_id.isnot(None))
-        .all()
-    )
-    for opt in global_price_options:
-        ingredient_prices[opt.ingredient_id] = float(opt.price_modifier or 0)
 
     item_types = db.query(ItemType).all()
     for it in item_types:
@@ -637,64 +607,7 @@ def _build_item_types_data(
             }
             continue
 
-        # Get item type attributes from pre-loaded data
-        item_type_attrs = preloaded_type_attrs.get(it.id, [])
-
         attributes = []
-
-        if item_type_attrs:
-            # Use new consolidated table
-            for ita in item_type_attrs:
-                # Check if this attribute loads from ingredients table
-                if ita.loads_from_ingredients and ita.ingredient_group:
-                    # Get ingredient links from pre-loaded data
-                    key = (it.id, ita.ingredient_group)
-                    ingredient_links = preloaded_type_ingredients.get(key, [])
-
-                    attr_data = {
-                        "slug": ita.slug,
-                        "display_name": ita.display_name,
-                        "input_type": ita.input_type,
-                        "is_required": ita.is_required,
-                        "allow_none": ita.allow_none,
-                        "ask_in_conversation": ita.ask_in_conversation,
-                        "question_text": ita.question_text,
-                        "loads_from_ingredients": True,
-                        "ingredient_group": ita.ingredient_group,
-                        "options": [
-                            {
-                                "slug": link.ingredient.slug,  # Use ingredient slug column
-                                "display_name": link.display_name_override or link.ingredient.name,
-                                "ingredient_id": link.ingredient_id,
-                                "ingredient_name": link.ingredient.name,
-                                # Look up price from GlobalAttributeOption (source of truth)
-                                "price_modifier": ingredient_prices.get(link.ingredient_id, 0.0),
-                                "iced_price_modifier": 0.0,  # No iced modifier for ingredients (handled elsewhere)
-                                "is_default": link.is_default,
-                            }
-                            for link in ingredient_links
-                        ],
-                    }
-                else:
-                    # For ItemTypeAttribute entries that don't load from ingredients
-                    # (e.g., boolean types like "toasted"), options are not applicable.
-                    # Select-type attributes should use GlobalAttribute via ItemTypeGlobalAttribute.
-                    attr_data = {
-                        "slug": ita.slug,
-                        "display_name": ita.display_name,
-                        "input_type": ita.input_type,
-                        "is_required": ita.is_required,
-                        "allow_none": ita.allow_none,
-                        "ask_in_conversation": ita.ask_in_conversation,
-                        "question_text": ita.question_text,
-                        "options": [],  # No local options; use global attributes for select types
-                    }
-
-                if ita.input_type == "multi_select":
-                    attr_data["min_selections"] = ita.min_selections
-                    attr_data["max_selections"] = ita.max_selections
-
-                attributes.append(attr_data)
 
         # Get global attributes from pre-loaded config status (already loaded with joinedload)
         # Global attributes are shared across item types with normalized options
@@ -725,7 +638,6 @@ def _build_item_types_data(
                         "slug": opt.slug,
                         "display_name": opt.display_name,
                         "price_modifier": opt.price_modifier,
-                        "iced_price_modifier": opt.iced_price_modifier or 0.0,
                         "is_default": opt.is_default,
                     }
                     for opt in options

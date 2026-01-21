@@ -97,7 +97,6 @@ from .routes import (
     admin_modifiers_router,
     admin_modifier_categories_router,
     admin_testing_router,
-    admin_item_type_attributes_router,
     admin_response_patterns_router,
     admin_modifier_qualifiers_router,
     admin_ingredient_categories_router,
@@ -335,7 +334,6 @@ api_v1_router.include_router(admin_company_router)
 api_v1_router.include_router(admin_modifiers_router)
 api_v1_router.include_router(admin_modifier_categories_router)
 api_v1_router.include_router(admin_testing_router)
-api_v1_router.include_router(admin_item_type_attributes_router)
 api_v1_router.include_router(admin_response_patterns_router)
 api_v1_router.include_router(admin_modifier_qualifiers_router)
 api_v1_router.include_router(admin_ingredient_categories_router)

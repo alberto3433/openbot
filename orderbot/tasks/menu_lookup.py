@@ -9,7 +9,7 @@ Extracted from state_machine.py for better separation of concerns.
 
 import logging
 
-from .parsers.constants import normalize_for_match
+from .normalization import normalize_for_match
 from .mixins import MenuDataMixin
 from orderbot.menu_data_cache import menu_cache
 

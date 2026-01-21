@@ -250,11 +250,12 @@ class BaseCacheMixin:
 
     def _build_keyword_indices(self) -> None:
         """Build keyword-to-item indices for partial matching."""
-        # Words to skip in keyword indexing
-        skip_words = {
-            "cream", "cheese", "bagel", "sandwich", "the", "a", "an",
-            "with", "and", "or", "on", "in",
-        }
+        # English stop words / union words (language-specific, not domain-specific)
+        # These have special semantic meaning:
+        # - "a", "an", "the" often signify count
+        # - "and", "with" are union words joining items or modifiers
+        # - "or", "on", "in" are prepositions
+        skip_words = {"the", "a", "an", "with", "and", "or", "on", "in"}
 
         # Build menu item keyword index
         self._menu_item_keyword_index = self._build_index(self._known_menu_items, skip_words)

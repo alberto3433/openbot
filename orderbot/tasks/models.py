@@ -136,9 +136,6 @@ class ItemTask(BaseTask):
     quantity: int = 1
     unit_price: float = 0.0
 
-    # Free-form special instructions that don't fit standard modifiers
-    special_instructions: str | None = None
-
     def get_display_name(self) -> str:
         """Get display name for this item."""
         raise NotImplementedError
@@ -552,10 +549,6 @@ class MenuItemTask(ItemTask):
             removed_parts = [f"no {ing}" for ing in self.removed_ingredients]
             summary += f" ({', '.join(removed_parts)})"
 
-        # Add special instructions
-        if self.special_instructions:
-            summary += f" (Special Instructions: {self.special_instructions})"
-
         return summary
 
     def get_missing_customizations(self) -> list[str]:
@@ -793,6 +786,9 @@ class OrderTask(BaseTask):
     customer_info: CustomerInfoTask = Field(default_factory=CustomerInfoTask)
     checkout: CheckoutTask = Field(default_factory=CheckoutTask)
     payment: PaymentTask = Field(default_factory=PaymentTask)
+
+    # Order-level special instructions (extracted once per message, not per-item)
+    special_instructions: str | None = None
 
     # Conversation tracking
     conversation_history: list[dict] = Field(default_factory=list)

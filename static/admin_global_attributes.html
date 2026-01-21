@@ -691,11 +691,6 @@
               <input type="number" id="optionPrice" step="0.01" value="0.00" />
               <div class="hint">Extra charge for this option</div>
             </div>
-            <div class="form-group">
-              <label for="optionIcedPrice">Iced Price Modifier ($)</label>
-              <input type="number" id="optionIcedPrice" step="0.01" value="0.00" />
-              <div class="hint">Extra charge when iced (drinks)</div>
-            </div>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -1095,7 +1090,6 @@
         document.getElementById("optionSlug").value = opt.slug;
         document.getElementById("optionDisplayName").value = opt.display_name;
         document.getElementById("optionPrice").value = opt.price_modifier || 0;
-        document.getElementById("optionIcedPrice").value = opt.iced_price_modifier || 0;
         document.getElementById("optionOrder").value = opt.display_order || 0;
         document.getElementById("optionIsDefault").checked = opt.is_default || false;
         document.getElementById("optionIsAvailable").checked = opt.is_available !== false;
@@ -1125,7 +1119,6 @@
       const slug = document.getElementById("optionSlug").value.trim().toLowerCase();
       const displayName = document.getElementById("optionDisplayName").value.trim();
       const priceModifier = parseFloat(document.getElementById("optionPrice").value) || 0;
-      const icedPriceModifier = parseFloat(document.getElementById("optionIcedPrice").value) || 0;
       const displayOrder = parseInt(document.getElementById("optionOrder").value) || 0;
       const isDefault = document.getElementById("optionIsDefault").checked;
       const isAvailable = document.getElementById("optionIsAvailable").checked;
@@ -1146,7 +1139,6 @@
         slug,
         display_name: displayName,
         price_modifier: priceModifier,
-        iced_price_modifier: icedPriceModifier,
         display_order: displayOrder,
         is_default: isDefault,
         is_available: isAvailable,

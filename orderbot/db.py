@@ -36,6 +36,10 @@ engine = create_engine(
     max_overflow=3,        # Limited overflow connections
     pool_timeout=10,       # Fail fast if no connection available
     pool_recycle=300,      # Recycle connections every 5 min
+    connect_args={
+        "connect_timeout": 10,  # 10 second connection timeout
+        # NOTE: statement_timeout not supported by Neon's connection pooler
+    },
     echo=False,
 )
 
@@ -45,8 +49,9 @@ SessionLocal = sessionmaker(
     bind=engine,
 )
 
-# Create tables on module load
-Base.metadata.create_all(bind=engine)
+# NOTE: Tables are created via alembic migrations, not on module import.
+# This avoids blocking database connections during import.
+# Use init_legacy_db() if you need to create tables programmatically.
 
 
 def get_db() -> Generator[Session, None, None]:

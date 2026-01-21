@@ -106,7 +106,6 @@ def migrate_attributes():
                     slug=opt.slug,
                     display_name=opt.display_name,
                     price_modifier=opt.price_modifier,
-                    iced_price_modifier=opt.iced_price_modifier,
                     is_default=opt.is_default,
                     is_available=opt.is_available,
                     display_order=opt.display_order,

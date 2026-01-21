@@ -20,6 +20,7 @@ routes provides several benefits:
 
 Schema Organization:
 --------------------
+- **base.py**: Base classes for schema inheritance (OrmModel, TimestampedModel, ListResponse)
 - **chat.py**: Chat session and message schemas
 - **menu.py**: Menu item CRUD schemas
 - **orders.py**: Order and order item schemas
@@ -39,8 +40,8 @@ Naming Conventions:
 
 Pydantic Configuration:
 -----------------------
-Most response models use `model_config = ConfigDict(from_attributes=True)`
-which allows them to be created directly from SQLAlchemy ORM objects:
+Response models should inherit from base.OrmModel or base.TimestampedModel
+which configure from_attributes=True for SQLAlchemy compatibility:
 
     item = db.query(MenuItem).first()
     return MenuItemOut.model_validate(item)
@@ -56,6 +57,15 @@ Or import from the package:
 
     from orderbot.schemas import ChatMessageRequest, MenuItemOut
 """
+
+# Base classes for schema inheritance
+from .base import (
+    OrmModel,
+    TimestampedModel,
+    FullTimestampedModel,
+    ListResponse,
+    AvailabilityUpdate,
+)
 
 # Chat schemas
 from .chat import (
@@ -124,6 +134,12 @@ from .modifiers import (
 )
 
 __all__ = [
+    # Base classes
+    "OrmModel",
+    "TimestampedModel",
+    "FullTimestampedModel",
+    "ListResponse",
+    "AvailabilityUpdate",
     # Chat
     "ReturningCustomerInfo",
     "ChatStartResponse",

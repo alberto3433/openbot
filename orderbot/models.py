@@ -72,22 +72,9 @@ class ItemType(Base):
 
     # Side choice: some items (e.g., omelettes) prompt for a side dish
     has_side_choice = Column(Boolean, nullable=False, default=False)
-    side_choice_attribute_id = Column(Integer, ForeignKey("item_type_attributes.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
     menu_items = relationship("MenuItem", back_populates="item_type")
-    type_attributes = relationship(
-        "ItemTypeAttribute",
-        back_populates="item_type",
-        cascade="all, delete-orphan",
-        foreign_keys="[ItemTypeAttribute.item_type_id]",
-    )
-    # Side choice attribute reference (does NOT cascade delete - just a reference)
-    side_choice_attribute = relationship(
-        "ItemTypeAttribute",
-        foreign_keys="[ItemType.side_choice_attribute_id]",
-        uselist=False,
-    )
     type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type", cascade="all, delete-orphan")
     global_attribute_links = relationship("ItemTypeGlobalAttribute", back_populates="item_type", cascade="all, delete-orphan")
     alias_records = relationship("ItemTypeAlias", back_populates="item_type", cascade="all, delete-orphan")
@@ -183,70 +170,6 @@ class ModifierCategoryAlias(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     modifier_category = relationship("ModifierCategory", back_populates="alias_records")
-
-
-class ItemTypeAttribute(Base):
-    """
-    Consolidated attribute definition for item types.
-
-    Merges the functionality of item_type_field (conversation flow) and
-    attribute_definitions (UI configuration) into a single table.
-
-    Each attribute can have:
-    - Options (via global_attribute_options linked through item_type_global_attributes)
-    - A question_text for conversational prompts
-    - Required/optional status for order completion
-    """
-    __tablename__ = "item_type_attributes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    # Identity
-    slug = Column(String(50), nullable=False)
-    display_name = Column(String(100), nullable=True)
-
-    # Type and validation (from attribute_definitions)
-    input_type = Column(String(20), nullable=False, default="single_select")
-    # "single_select": Pick exactly one
-    # "multi_select": Pick multiple
-    # "boolean": Yes/no
-    # "text": Free text input
-
-    is_required = Column(Boolean, nullable=False, default=False)  # Must be specified for complete order
-    allow_none = Column(Boolean, nullable=False, default=True)  # Can select "none" option
-    min_selections = Column(Integer, nullable=True)  # For multi_select: minimum selections
-    max_selections = Column(Integer, nullable=True)  # For multi_select: maximum selections
-
-    # Conversational flow (from item_type_field)
-    display_order = Column(Integer, nullable=False, default=0)  # Order in which to ask questions
-    ask_in_conversation = Column(Boolean, nullable=False, default=True)  # Should prompt user for this
-    question_text = Column(Text, nullable=True)  # Question to ask user for this field
-
-    # Ingredient integration - when True, options come from item_type_ingredients table
-    # instead of attribute_options, filtered by ingredient_group
-    loads_from_ingredients = Column(Boolean, nullable=False, default=False)
-    ingredient_group = Column(String(50), nullable=True)  # Links to ItemTypeIngredient.ingredient_group
-
-    # Default value for this attribute (JSON-encoded string)
-    # Used by field_config to determine initial values without hardcoded Python constants
-    default_value = Column(Text, nullable=True)
-
-    # Timestamps
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    # Unique constraint: one attribute per slug per item type
-    __table_args__ = (
-        UniqueConstraint("item_type_id", "slug", name="uq_item_type_attributes_type_slug"),
-    )
-
-    # Relationships
-    item_type = relationship(
-        "ItemType",
-        back_populates="type_attributes",
-        foreign_keys="[ItemTypeAttribute.item_type_id]",
-    )
 
 
 # =============================================================================
@@ -347,7 +270,6 @@ class GlobalAttributeOption(Base):
     modifier_category_id = Column(Integer, ForeignKey("modifier_categories.id", ondelete="SET NULL"), nullable=True, index=True)
 
     price_modifier = Column(Float, nullable=False, default=0.0)  # +/- to base price
-    iced_price_modifier = Column(Float, nullable=False, default=0.0)  # Additional upcharge when iced
     is_default = Column(Boolean, nullable=False, default=False)  # Pre-selected by default
     is_available = Column(Boolean, nullable=False, default=True)  # False = 86'd
 
@@ -440,6 +362,9 @@ class Order(Base):
     payment_status = Column(String, nullable=False, default="unpaid")  # "unpaid", "pending_payment", "paid"
     payment_method = Column(String, nullable=True)  # "cash", "card_in_store", "card_phone", "card_link"
 
+    # Order-level special instructions (e.g., "light on the cream cheese", "extra crispy")
+    special_instructions = Column(Text, nullable=True)
+
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 
     # Composite index for common query pattern: filtering by status and sorting by date
@@ -466,10 +391,6 @@ class OrderItem(Base):
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Float, nullable=False)
     line_total = Column(Float, nullable=False)
-
-    # Free-form notes for special instructions that don't fit standard modifiers
-    # e.g., "light on the cream cheese", "extra crispy", "a splash of milk"
-    notes = Column(String, nullable=True)
 
     order = relationship("Order", back_populates="items")
     menu_item = relationship("MenuItem", back_populates="order_items")

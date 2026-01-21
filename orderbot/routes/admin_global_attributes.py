@@ -88,7 +88,6 @@ def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
         slug=opt.slug,
         display_name=opt.display_name,
         price_modifier=float(opt.price_modifier or 0),
-        iced_price_modifier=float(opt.iced_price_modifier or 0),
         is_default=opt.is_default,
         is_available=opt.is_available,
         display_order=opt.display_order,
@@ -295,7 +294,6 @@ def create_global_attribute_with_options(
             slug=opt_data.slug,
             display_name=opt_data.display_name,
             price_modifier=opt_data.price_modifier,
-            iced_price_modifier=opt_data.iced_price_modifier,
             is_default=opt_data.is_default,
             is_available=opt_data.is_available,
             display_order=opt_data.display_order if opt_data.display_order else i,
@@ -478,7 +476,6 @@ def create_global_attribute_option(
         slug=payload.slug,
         display_name=payload.display_name,
         price_modifier=payload.price_modifier,
-        iced_price_modifier=payload.iced_price_modifier,
         is_default=payload.is_default,
         is_available=payload.is_available,
         display_order=payload.display_order,
@@ -542,8 +539,6 @@ def update_global_attribute_option(
         option.display_name = payload.display_name
     if payload.price_modifier is not None:
         option.price_modifier = payload.price_modifier
-    if payload.iced_price_modifier is not None:
-        option.iced_price_modifier = payload.iced_price_modifier
     if payload.is_default is not None:
         option.is_default = payload.is_default
     if payload.is_available is not None:

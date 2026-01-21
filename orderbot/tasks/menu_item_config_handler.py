@@ -842,10 +842,6 @@ class MenuItemConfigHandler(BaseHandler):
         selections: list[Selection] = []
 
         for attr_slug, value in attr_values.items():
-            if attr_slug == "special_instructions":
-                # Special instructions stored separately, skip here
-                continue
-
             if isinstance(value, list):
                 # Multi-select attribute: list of {slug, quantity, display_name, ...}
                 for item in value:

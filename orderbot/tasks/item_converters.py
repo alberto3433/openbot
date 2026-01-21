@@ -54,7 +54,6 @@ class UnifiedItemConverter:
             "quantity": item.quantity,
             "unit_price": item.unit_price,
             "line_total": (item.unit_price or 0) * item.quantity,
-            "special_instructions": getattr(item, 'special_instructions', None),
         }
 
     def _process_selection_item(
@@ -66,6 +65,7 @@ class UnifiedItemConverter:
         pricing,
         price_lookup_fn,
         include_free_in_modifiers: bool,
+        item_type: str | None = None,
     ) -> float:
         """Process a single selection item and return its price contribution."""
         sel_slug = sel.get("slug") or ""
@@ -76,6 +76,9 @@ class UnifiedItemConverter:
         # Try custom price lookup if price not set
         if sel_price == 0 and price_lookup_fn and pricing:
             sel_price = price_lookup_fn(attr_slug, sel_slug, pricing) or 0.0
+        # Fallback to pricing.lookup_modifier_price if no custom lookup provided
+        elif sel_price == 0 and pricing and item_type and hasattr(pricing, 'lookup_modifier_price'):
+            sel_price = pricing.lookup_modifier_price(sel_slug, item_type) or 0.0
 
         # Build display with qualifier
         if sel.get("qualifier"):
@@ -129,7 +132,7 @@ class UnifiedItemConverter:
                 for sel in selections:
                     total_upcharges += self._process_selection_item(
                         sel, attr_slug, modifiers, free_details,
-                        pricing, price_lookup_fn, include_free_in_modifiers
+                        pricing, price_lookup_fn, include_free_in_modifiers, item_type
                     )
                 continue
 
@@ -188,7 +191,7 @@ class UnifiedItemConverter:
             for sel in attr_value:
                 total_upcharges += self._process_selection_item(
                     sel, parent_slug, modifiers, free_details,
-                    pricing, price_lookup_fn, include_free_in_modifiers
+                    pricing, price_lookup_fn, include_free_in_modifiers, item_type
                 )
 
         return total_upcharges
@@ -237,7 +240,7 @@ class UnifiedItemConverter:
         structural_keys = {
             "id", "status", "quantity", "unit_price", "item_type", "menu_item_type",
             "menu_item_name", "menu_item_id", "modifications", "removed_ingredients",
-            "special_instructions", "notes", "modifiers", "free_details", "base_price",
+            "modifiers", "free_details", "base_price",
             "line_total", "item_config", "attribute_values", "customization_offered",
             "display_name", "item_modifiers",  # item_modifiers handled separately
         }
@@ -333,7 +336,6 @@ class UnifiedItemConverter:
             modifications=item_dict.get("modifications") or [],
             removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
             quantity=item_dict.get("quantity", 1),
-            special_instructions=item_dict.get("special_instructions") or item_dict.get("notes"),
             selections=selections,
             customization_offered=item_dict.get("customization_offered", False),
         )

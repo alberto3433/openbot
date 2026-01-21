@@ -274,6 +274,7 @@ def persist_pending_order(
         delivery_address=order_state.get("delivery_address"),
         payment_status="pending",
         payment_method=order_state.get("payment_method"),
+        special_instructions=order_state.get("special_instructions"),
     )
     db.add(order)
     db.flush()
@@ -357,6 +358,7 @@ def persist_confirmed_order(
         order.order_type = order_type
         order.delivery_address = order_state.get("delivery_address")
         order.payment_method = order_state.get("payment_method")
+        order.special_instructions = order_state.get("special_instructions")
     else:
         # Create new order
         order = Order(
@@ -374,6 +376,7 @@ def persist_confirmed_order(
             order_type=order_type,
             delivery_address=order_state.get("delivery_address"),
             payment_method=order_state.get("payment_method"),
+            special_instructions=order_state.get("special_instructions"),
         )
         db.add(order)
         db.flush()
@@ -430,6 +433,5 @@ def _add_order_items(db: Session, order: Order, items: list) -> None:
             unit_price=unit_price,
             line_total=line_total,
             item_config=item_config,  # SQLAlchemy JSON column handles serialization
-            notes=it.get("notes"),
         )
         db.add(order_item)

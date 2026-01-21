@@ -104,8 +104,10 @@ from .constants import (
     ITEM_DESCRIPTION_PATTERNS,
     # String normalization utilities
     clean_extracted_text,
-    normalize_for_match,
 )
+
+# Import normalize_for_match from the correct location (normalization module)
+from ..normalization import normalize_for_match
 
 __all__ = [
     # Validators

@@ -179,8 +179,8 @@ def create_test_menu_data():
                     {
                         "slug": "size",
                         "options": [
-                            {"slug": "small", "display_name": "Small", "price_modifier": 0.0, "iced_price_modifier": 1.65},
-                            {"slug": "large", "display_name": "Large", "price_modifier": 0.90, "iced_price_modifier": 1.10},
+                            {"slug": "small", "display_name": "Small", "price_modifier": 0.0},
+                            {"slug": "large", "display_name": "Large", "price_modifier": 0.90},
                         ]
                     },
                     {

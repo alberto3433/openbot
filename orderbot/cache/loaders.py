@@ -10,7 +10,7 @@ import time
 from collections import defaultdict
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,10 @@ class LoaderMixin:
             try:
                 logger.info("Loading menu data cache from database...")
 
-                # Load each category
+                # Bulk load all tables first to eliminate N+1 queries
+                bulk_data = self._bulk_load_all_tables(db)
+
+                # Load each category (some use bulk_data, some still use db)
                 self._load_known_menu_items(db)
                 self._load_signature_item_aliases(db)
                 self._load_modifier_aliases(db)
@@ -57,14 +60,14 @@ class LoaderMixin:
                 self._load_item_type_fields(db)
                 self._load_response_patterns(db)
                 self._load_modifier_qualifiers(db)
-                self._load_global_attribute_options(db)
+                self._load_global_attribute_options_from_bulk(bulk_data)
                 self._load_global_attribute_aliases(db)
                 self._load_item_type_metadata(db)
                 self._load_menu_index(db)
 
                 # Data-driven parsing support loaders
                 self._load_compound_phrases(db)
-                self._load_item_type_triggers(db)
+                self._load_item_type_triggers_from_bulk(bulk_data)
                 self._load_configurable_item_types(db)
                 self._load_items_with_required_phrases(db)
                 self._load_by_unit_type_items(db)
@@ -82,9 +85,12 @@ class LoaderMixin:
                 self._load_modifier_categories(db)
 
                 # Price inquiry support (pre-compute resolved prices)
-                self._load_priced_attributes(db)
+                self._load_priced_attributes_from_bulk(bulk_data)
                 self._load_resolved_item_prices(db)
-                self._load_ingredient_price_contexts(db)
+                self._load_ingredient_price_contexts_from_bulk(bulk_data)
+
+                # Pre-load ALL item type attributes at startup (eliminates runtime lazy loading)
+                self._preload_all_item_type_attributes(bulk_data)
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -112,6 +118,115 @@ class LoaderMixin:
                 if fail_on_error:
                     raise RuntimeError(f"Failed to load menu data cache: {e}") from e
                 # Keep existing cache if available
+
+    def _bulk_load_all_tables(self, db: Session) -> dict:
+        """Load ALL tables needed for cache in minimal queries using eager loading.
+
+        This eliminates N+1 query patterns by loading all related data upfront
+        with selectinload/joinedload, then processing in memory.
+
+        Returns:
+            Dict with pre-loaded data for use by other loader methods:
+            - global_attrs: List of GlobalAttribute with options eagerly loaded
+            - item_types: List of ItemType with global_attribute_links loaded
+            - menu_items: List of MenuItem with aliases loaded
+            - ingredients: List of Ingredient with aliases loaded
+            - type_ingredients: List of ItemTypeIngredient with relationships
+            - global_attr_options: List of GlobalAttributeOption (all)
+        """
+        from ..models import (
+            GlobalAttribute, GlobalAttributeOption, Ingredient,
+            ItemType, ItemTypeGlobalAttribute, MenuItem, ItemTypeIngredient,
+        )
+
+        start_time = time.time()
+
+        # 1. Load GlobalAttribute with all options and their ingredients
+        global_attrs = (
+            db.query(GlobalAttribute)
+            .options(
+                selectinload(GlobalAttribute.options)
+                    .selectinload(GlobalAttributeOption.ingredient)
+                    .selectinload(Ingredient.alias_records),
+                selectinload(GlobalAttribute.options)
+                    .selectinload(GlobalAttributeOption.ingredient)
+                    .selectinload(Ingredient.must_match_records),
+                selectinload(GlobalAttribute.options)
+                    .selectinload(GlobalAttributeOption.modifier_category),
+            )
+            .all()
+        )
+
+        # 2. Load ItemType with all global attribute links
+        item_types = (
+            db.query(ItemType)
+            .options(
+                selectinload(ItemType.alias_records),
+                joinedload(ItemType.item_type_category),
+                selectinload(ItemType.global_attribute_links)
+                    .selectinload(ItemTypeGlobalAttribute.global_attribute)
+                    .selectinload(GlobalAttribute.options),
+            )
+            .all()
+        )
+
+        # 3. Load MenuItem with aliases and item_type
+        menu_items = (
+            db.query(MenuItem)
+            .options(
+                selectinload(MenuItem.alias_records),
+                joinedload(MenuItem.item_type),
+            )
+            .all()
+        )
+
+        # 4. Load Ingredient with aliases
+        ingredients = (
+            db.query(Ingredient)
+            .options(
+                selectinload(Ingredient.alias_records),
+                selectinload(Ingredient.must_match_records),
+            )
+            .all()
+        )
+
+        # 5. Load ItemTypeIngredient links
+        type_ingredients = (
+            db.query(ItemTypeIngredient)
+            .options(
+                joinedload(ItemTypeIngredient.item_type),
+                joinedload(ItemTypeIngredient.ingredient)
+                    .selectinload(Ingredient.alias_records),
+            )
+            .all()
+        )
+
+        # 6. Load all GlobalAttributeOption for price lookups
+        global_attr_options = (
+            db.query(GlobalAttributeOption)
+            .all()
+        )
+
+        elapsed = time.time() - start_time
+        logger.info(
+            "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
+            "%d menu_items, %d ingredients, %d type_ingredients",
+            elapsed,
+            len(global_attrs),
+            len(item_types),
+            len(menu_items),
+            len(ingredients),
+            len(type_ingredients),
+        )
+
+        return {
+            "global_attrs": global_attrs,
+            "item_types": item_types,
+            "menu_items": menu_items,
+            "ingredients": ingredients,
+            "type_ingredients": type_ingredients,
+            "global_attr_options": global_attr_options,
+        }
 
     def _load_known_menu_items(self, db: Session) -> None:
         """Load all menu item names and aliases for recognition."""
@@ -373,7 +488,7 @@ class LoaderMixin:
 
     def _load_item_type_metadata(self, db: Session) -> None:
         """Load item type metadata: modifier_category, item_keywords, and configurable types."""
-        from ..models import ItemType, MenuItem, ItemTypeAttribute, ItemTypeGlobalAttribute
+        from ..models import ItemType, MenuItem, ItemTypeGlobalAttribute
 
         modifier_categories: dict[str, str | None] = {}
         item_keywords: set[str] = set()
@@ -385,7 +500,6 @@ class LoaderMixin:
             .options(
                 joinedload(ItemType.alias_records),
                 joinedload(ItemType.item_type_category),
-                joinedload(ItemType.side_choice_attribute),
             )
             .all()
         )
@@ -398,31 +512,15 @@ class LoaderMixin:
 
             side_choice_config[slug] = {
                 "has_side_choice": item_type.has_side_choice,
-                "side_choice_attribute_id": item_type.side_choice_attribute_id,
-                "side_choice_attribute": None,
             }
-            if item_type.has_side_choice and item_type.side_choice_attribute:
-                attr = item_type.side_choice_attribute
-                side_choice_config[slug]["side_choice_attribute"] = {
-                    "slug": attr.slug,
-                    "question_text": attr.question_text,
-                    "display_name": attr.display_name,
-                }
 
             item_keywords.add(slug.lower())
 
             for alias in item_type.aliases:
                 item_keywords.add(alias.lower())
 
+        # Find item types that have configurable attributes
         types_with_attrs = set()
-
-        attr_types = (
-            db.query(ItemTypeAttribute.item_type_id)
-            .distinct()
-            .all()
-        )
-        types_with_attrs.update(t[0] for t in attr_types)
-
         global_attr_types = (
             db.query(ItemTypeGlobalAttribute.item_type_id)
             .distinct()
@@ -498,30 +596,32 @@ class LoaderMixin:
 
     def _load_item_type_fields(self, db: Session) -> None:
         """Load item type attribute configurations from the database."""
-        from ..models import ItemType, ItemTypeAttribute
+        from ..models import ItemType, ItemTypeGlobalAttribute, GlobalAttribute
 
         item_type_fields: dict[str, list[dict]] = {}
 
-        attributes = (
-            db.query(ItemTypeAttribute)
-            .join(ItemType, ItemTypeAttribute.item_type_id == ItemType.id)
-            .order_by(ItemType.slug, ItemTypeAttribute.display_order)
+        # Query ItemTypeGlobalAttribute joined with GlobalAttribute for the attribute details
+        links = (
+            db.query(ItemTypeGlobalAttribute, GlobalAttribute, ItemType)
+            .join(GlobalAttribute, ItemTypeGlobalAttribute.global_attribute_id == GlobalAttribute.id)
+            .join(ItemType, ItemTypeGlobalAttribute.item_type_id == ItemType.id)
+            .order_by(ItemType.slug, ItemTypeGlobalAttribute.display_order)
             .all()
         )
 
-        for attr in attributes:
-            slug = attr.item_type.slug
+        for link, global_attr, item_type in links:
+            slug = item_type.slug
             if slug not in item_type_fields:
                 item_type_fields[slug] = []
 
             item_type_fields[slug].append({
-                "field_name": attr.slug,
-                "display_order": attr.display_order,
-                "required": attr.is_required,
-                "ask": attr.ask_in_conversation,
-                "question_text": attr.question_text,
-                "input_type": attr.input_type,
-                "display_name": attr.display_name,
+                "field_name": global_attr.slug,
+                "display_order": link.display_order,
+                "required": link.is_required,
+                "ask": link.ask_in_conversation,
+                "question_text": link.question_text,  # question_text is on the link, not global attr
+                "input_type": global_attr.input_type,
+                "display_name": global_attr.display_name,
             })
 
         self._item_type_fields = item_type_fields
@@ -723,13 +823,60 @@ class LoaderMixin:
             "slug": opt.slug,
             "display_name": opt.display_name,
             "price_modifier": opt.price_modifier,
-            "iced_price_modifier": opt.iced_price_modifier,
             "is_default": opt.is_default,
             "is_available": opt.is_available,
             "aliases": aliases,
             "must_match": must_match,
             "modifier_category": modifier_category_slug,
         }
+
+    def _load_global_attribute_options_from_bulk(self, bulk_data: dict) -> None:
+        """Load global attribute options from pre-loaded bulk data (no N+1 queries).
+
+        Uses bulk_data["global_attrs"] which has options eagerly loaded.
+        """
+        global_attrs = bulk_data["global_attrs"]
+
+        global_attribute_options: dict[str, list[dict]] = {}
+        property_names: dict[str, str] = {}
+        global_attribute_metadata: dict[str, dict] = {}
+        modifier_category_to_attrs: dict[str, set[str]] = {}
+
+        for attr in global_attrs:
+            # Options are already loaded via selectinload - no query here
+            sorted_options = sorted(attr.options, key=lambda o: o.display_order)
+            global_attribute_options[attr.slug] = [
+                self._build_global_option_dict(opt)
+                for opt in sorted_options
+            ]
+
+            if attr.property_name:
+                property_names[attr.slug] = attr.property_name
+
+            global_attribute_metadata[attr.slug] = {
+                "display_name": attr.display_name,
+                "input_type": attr.input_type,
+            }
+
+        # Build modifier_category -> attrs index
+        for attr_slug, options in global_attribute_options.items():
+            for opt in options:
+                mod_cat = opt.get("modifier_category")
+                if mod_cat:
+                    if mod_cat not in modifier_category_to_attrs:
+                        modifier_category_to_attrs[mod_cat] = set()
+                    modifier_category_to_attrs[mod_cat].add(attr_slug)
+
+        self._global_attribute_options = global_attribute_options
+        self._global_attribute_property_names = property_names
+        self._global_attribute_metadata = global_attribute_metadata
+        self._modifier_category_to_attrs = modifier_category_to_attrs
+
+        logger.debug(
+            "Loaded global attribute options (from bulk) for %d attributes, %d modifier categories",
+            len(global_attribute_options),
+            len(modifier_category_to_attrs),
+        )
 
     def _load_global_attribute_aliases(self, db: Session) -> None:
         """Load global attribute aliases from the database."""
@@ -822,6 +969,13 @@ class LoaderMixin:
 
         item_types = db.query(ItemType).all()
 
+        # Pre-compute all item type display names as suffixes (data-driven)
+        all_type_suffixes = {
+            " " + it.display_name.lower()
+            for it in item_types
+            if it.display_name
+        }
+
         for item_type in item_types:
             triggers: set[str] = set()
 
@@ -843,7 +997,7 @@ class LoaderMixin:
                 name_lower = item.name.lower()
                 triggers.add(name_lower)
 
-                for suffix in [" sandwich", " bagel", " omelette", " salad"]:
+                for suffix in all_type_suffixes:
                     if name_lower.endswith(suffix):
                         triggers.add(name_lower[:-len(suffix)])
 
@@ -865,24 +1019,95 @@ class LoaderMixin:
             {k: len(v) for k, v in item_type_triggers.items()}
         )
 
+    def _load_item_type_triggers_from_bulk(self, bulk_data: dict) -> None:
+        """Load item type trigger keywords from bulk data (no N+1 queries).
+
+        Uses bulk_data["item_types"] and bulk_data["menu_items"] which have
+        aliases already eagerly loaded.
+        """
+        item_types = bulk_data["item_types"]
+        menu_items = bulk_data["menu_items"]
+
+        item_type_triggers: dict[str, set[str]] = {}
+
+        # Pre-compute all item type display names as suffixes (data-driven)
+        all_type_suffixes = {
+            " " + it.display_name.lower()
+            for it in item_types
+            if it.display_name
+        }
+
+        # Build menu items index by item_type_id for O(1) lookup
+        menu_items_by_type_id: dict[int, list] = {}
+        for item in menu_items:
+            if item.item_type_id:
+                if item.item_type_id not in menu_items_by_type_id:
+                    menu_items_by_type_id[item.item_type_id] = []
+                menu_items_by_type_id[item.item_type_id].append(item)
+
+        for item_type in item_types:
+            triggers: set[str] = set()
+
+            triggers.add(item_type.slug.lower())
+
+            if item_type.display_name:
+                triggers.add(item_type.display_name.lower())
+                if item_type.display_name.lower().endswith("s"):
+                    triggers.add(item_type.display_name.lower()[:-1])
+
+            # Use pre-built index instead of per-item-type query
+            type_menu_items = menu_items_by_type_id.get(item_type.id, [])
+
+            for item in type_menu_items:
+                name_lower = item.name.lower()
+                triggers.add(name_lower)
+
+                for suffix in all_type_suffixes:
+                    if name_lower.endswith(suffix):
+                        triggers.add(name_lower[:-len(suffix)])
+
+                words = name_lower.split()
+                if len(words) > 1:
+                    triggers.add(words[0])
+
+                # Aliases are already loaded via selectinload
+                for alias in item.aliases:
+                    alias_lower = alias.strip().lower()
+                    if alias_lower:
+                        triggers.add(alias_lower)
+
+            if triggers:
+                item_type_triggers[item_type.slug] = triggers
+
+        self._item_type_triggers = item_type_triggers
+        logger.debug(
+            "Loaded item type triggers (from bulk): %s",
+            {k: len(v) for k, v in item_type_triggers.items()}
+        )
+
     def _load_configurable_item_types(self, db: Session) -> None:
-        """Load slugs of item types that have askable attributes."""
+        """Load slugs of item types that have askable attributes.
+
+        Uses ItemTypeGlobalAttribute (links to GlobalAttribute) to determine
+        which item types need configuration questions asked.
+        """
         from ..models import ItemType, ItemTypeGlobalAttribute
 
         configurable_slugs: set[str] = set()
 
+        # Get item types with ask_in_conversation=True global attributes
         item_type_ids = (
             db.query(ItemTypeGlobalAttribute.item_type_id)
             .filter(ItemTypeGlobalAttribute.ask_in_conversation == True)  # noqa: E712
             .distinct()
             .all()
         )
-        item_type_ids = {row[0] for row in item_type_ids}
+        item_type_id_set = {row[0] for row in item_type_ids}
 
-        if item_type_ids:
+        if item_type_id_set:
             item_types = (
                 db.query(ItemType)
-                .filter(ItemType.id.in_(item_type_ids))
+                .filter(ItemType.id.in_(item_type_id_set))
                 .all()
             )
             for it in item_types:
@@ -1219,8 +1444,8 @@ class LoaderMixin:
     def _load_priced_attributes(self, db: Session) -> None:
         """Load item types that have priced attributes."""
         from ..models import (
-            ItemType, ItemTypeAttribute, GlobalAttributeOption,
-            ItemTypeGlobalAttribute, GlobalAttribute, ItemTypeIngredient,
+            ItemType, GlobalAttributeOption,
+            ItemTypeGlobalAttribute, GlobalAttribute,
         )
 
         self._item_type_priced_attribute = {}
@@ -1251,36 +1476,6 @@ class LoaderMixin:
                     if attr:
                         priced_attr = attr.slug
                         break
-
-            if not priced_attr:
-                local_attrs = (
-                    db.query(ItemTypeAttribute)
-                    .filter(ItemTypeAttribute.item_type_id == it.id)
-                    .all()
-                )
-                for attr in local_attrs:
-                    if attr.loads_from_ingredients and attr.ingredient_group:
-                        ingredient_ids = [
-                            link.ingredient_id for link in
-                            db.query(ItemTypeIngredient.ingredient_id)
-                            .filter(
-                                ItemTypeIngredient.item_type_id == it.id,
-                                ItemTypeIngredient.ingredient_group == attr.ingredient_group,
-                            )
-                            .all()
-                        ]
-                        if ingredient_ids:
-                            has_priced_ing = (
-                                db.query(GlobalAttributeOption)
-                                .filter(
-                                    GlobalAttributeOption.ingredient_id.in_(ingredient_ids),
-                                    GlobalAttributeOption.price_modifier > 0,
-                                )
-                                .first()
-                            )
-                            if has_priced_ing:
-                                priced_attr = attr.slug
-                                break
 
             self._item_type_priced_attribute[it.slug] = priced_attr
 
@@ -1427,4 +1622,178 @@ class LoaderMixin:
             "Loaded recommendation search data: %d items, %d keywords",
             len(all_items),
             len(keyword_index),
+        )
+
+    def _load_priced_attributes_from_bulk(self, bulk_data: dict) -> None:
+        """Load item types that have priced attributes (from bulk data).
+
+        Uses bulk_data to avoid N+1 queries for global attribute links and options.
+        """
+        item_types = bulk_data["item_types"]
+        global_attrs = bulk_data["global_attrs"]
+
+        self._item_type_priced_attribute = {}
+
+        # Build index: global_attr_id -> has_priced_options
+        global_attr_has_priced: dict[int, bool] = {}
+        global_attr_slug: dict[int, str] = {}
+        for attr in global_attrs:
+            global_attr_slug[attr.id] = attr.slug
+            has_priced = any(opt.price_modifier and opt.price_modifier > 0 for opt in attr.options)
+            global_attr_has_priced[attr.id] = has_priced
+
+        for it in item_types:
+            priced_attr = None
+
+            # global_attribute_links is already loaded via selectinload
+            for link in it.global_attribute_links:
+                if global_attr_has_priced.get(link.global_attribute_id, False):
+                    priced_attr = global_attr_slug.get(link.global_attribute_id)
+                    if priced_attr:
+                        break
+
+            self._item_type_priced_attribute[it.slug] = priced_attr
+
+        logger.debug(
+            "Loaded priced attributes (from bulk) for %d item types",
+            len([k for k, v in self._item_type_priced_attribute.items() if v]),
+        )
+
+    def _load_ingredient_price_contexts_from_bulk(self, bulk_data: dict) -> None:
+        """Load ingredient price contexts from bulk data (no N+1 queries).
+
+        Uses bulk_data for ingredients, type_ingredients, menu_items, and global_attr_options.
+        """
+        ingredients = bulk_data["ingredients"]
+        type_ingredients = bulk_data["type_ingredients"]
+        menu_items = bulk_data["menu_items"]
+        global_attr_options = bulk_data["global_attr_options"]
+
+        self._ingredient_price_contexts = {}
+
+        # Build ingredient_id -> price from GlobalAttributeOption
+        ingredient_prices: dict[int, float] = {}
+        for opt in global_attr_options:
+            if opt.ingredient_id is not None:
+                ingredient_prices[opt.ingredient_id] = float(opt.price_modifier or 0)
+
+        # Build ingredient_id -> list of (item_type_slug, item_type_display_name)
+        type_ingredient_index: dict[int, list[tuple]] = {}
+        for ti in type_ingredients:
+            if ti.ingredient and ti.item_type:
+                if ti.ingredient_id not in type_ingredient_index:
+                    type_ingredient_index[ti.ingredient_id] = []
+                type_ingredient_index[ti.ingredient_id].append(
+                    (ti.item_type.slug, ti.item_type.display_name)
+                )
+
+        # Build list of by_weight menu items with their names (lowercase)
+        by_weight_items = [
+            item for item in menu_items
+            if item.unit_type == "by_weight"
+        ]
+
+        for ing in ingredients:
+            contexts = []
+            ing_name_lower = ing.name.lower()
+
+            # Get price for this ingredient
+            ing_price = ingredient_prices.get(ing.id, 0.0)
+
+            # Get item type links from pre-built index
+            for item_type_slug, item_type_display in type_ingredient_index.get(ing.id, []):
+                contexts.append({
+                    "context_type": "modifier",
+                    "item_type_slug": item_type_slug,
+                    "label": f"{item_type_display} topping",
+                    "price": ing_price,
+                })
+
+            # Find by_weight items that contain this ingredient name
+            for item in by_weight_items:
+                if ing.name.lower() in item.name.lower():
+                    contexts.append({
+                        "context_type": "standalone",
+                        "item_type_slug": item.item_type.slug if item.item_type else None,
+                        "label": "by the pound",
+                        "price": float(item.base_price) if item.base_price else 0.0,
+                        "unit": "lb",
+                        "menu_item_name": item.name,
+                    })
+
+            if contexts:
+                self._ingredient_price_contexts[ing_name_lower] = contexts
+                # Aliases are already loaded via selectinload
+                for alias in ing.aliases:
+                    alias_lower = alias.lower().strip()
+                    if alias_lower and alias_lower != ing_name_lower:
+                        self._ingredient_price_contexts[alias_lower] = contexts
+
+        logger.debug(
+            "Loaded price contexts (from bulk) for %d ingredients",
+            len(self._ingredient_price_contexts),
+        )
+
+    def _preload_all_item_type_attributes(self, bulk_data: dict) -> None:
+        """Pre-load ALL item type attributes at startup (eliminates runtime lazy loading).
+
+        Uses bulk_data["item_types"] which has global_attribute_links eagerly loaded
+        with the full GlobalAttribute and its options.
+        """
+        item_types = bulk_data["item_types"]
+        global_attrs = bulk_data["global_attrs"]
+
+        # Build global_attr_id -> GlobalAttribute for quick lookup
+        global_attrs_by_id: dict[int, object] = {attr.id: attr for attr in global_attrs}
+
+        for item_type in item_types:
+            result = {}
+            field_to_slug_map = {}
+
+            # global_attribute_links is eagerly loaded
+            sorted_links = sorted(item_type.global_attribute_links, key=lambda l: l.display_order)
+
+            for link in sorted_links:
+                attr = global_attrs_by_id.get(link.global_attribute_id)
+                if not attr:
+                    continue
+
+                # Build options list from eagerly loaded options
+                options = []
+                for opt in sorted(attr.options, key=lambda o: o.display_order):
+                    aliases = None
+                    must_match = None
+                    if opt.ingredient:
+                        aliases = opt.ingredient.aliases
+                        must_match = opt.ingredient.must_match
+
+                    options.append({
+                        "slug": opt.slug,
+                        "display_name": opt.display_name,
+                        "price_modifier": float(opt.price_modifier or 0),
+                        "is_default": opt.is_default,
+                        "is_available": opt.is_available,
+                        "aliases": aliases,
+                        "must_match": must_match,
+                    })
+
+                result[attr.slug] = {
+                    "slug": attr.slug,
+                    "display_name": attr.display_name,
+                    "input_type": attr.input_type,
+                    "is_required": link.is_required,
+                    "ask_in_conversation": link.ask_in_conversation,
+                    "display_order": link.display_order,
+                    "question_text": link.question_text,
+                    "options": options,
+                    "source": "global",
+                }
+                field_to_slug_map[attr.slug] = attr.slug
+
+            self._item_type_attributes[item_type.slug] = result
+            self._field_to_slug_map[item_type.slug] = field_to_slug_map
+
+        logger.debug(
+            "Pre-loaded attributes for %d item types (from bulk)",
+            len(self._item_type_attributes),
         )

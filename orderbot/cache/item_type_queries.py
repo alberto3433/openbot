@@ -257,6 +257,9 @@ class ItemTypeQueryMixin:
     def get_item_type_attributes(self, item_type_slug: str) -> dict:
         """Get all attribute configurations for an item type.
 
+        All attributes are pre-loaded at startup via _preload_all_item_type_attributes().
+        No lazy loading or runtime database queries are needed.
+
         Args:
             item_type_slug: The item type slug
 
@@ -267,8 +270,6 @@ class ItemTypeQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        if item_type_slug not in self._item_type_attributes:
-            self._item_type_attributes[item_type_slug] = self._load_item_type_attributes_from_db(item_type_slug)
         return self._item_type_attributes.get(item_type_slug, {})
 
     def item_type_has_attribute(self, item_type_slug: str, attribute_slug: str) -> bool:
@@ -303,7 +304,7 @@ class ItemTypeQueryMixin:
         self._ensure_loaded()
         attrs = self.get_item_type_attributes(item_type_slug)
         for attr_config in attrs.values():
-            if attr_config.get("ask", False):
+            if attr_config.get("ask_in_conversation", False):
                 return True
         return False
 
@@ -346,10 +347,13 @@ class ItemTypeQueryMixin:
         return None
 
     def _load_item_type_attributes_from_db(self, item_type_slug: str) -> dict:
-        """Load attribute configuration from database for an item type.
+        """[DEPRECATED] Load attribute configuration from database for an item type.
 
-        This is called lazily when get_item_type_attributes is first called
-        for an item type.
+        NOTE: This method is deprecated and no longer called. All item type attributes
+        are now pre-loaded at startup via _preload_all_item_type_attributes() in loaders.py.
+        This eliminates runtime database queries and N+1 query patterns.
+
+        Kept for backwards compatibility in case any external code references it.
 
         Args:
             item_type_slug: The item type slug
@@ -359,8 +363,7 @@ class ItemTypeQueryMixin:
         """
         from ..models import (
             ItemType, ItemTypeGlobalAttribute, GlobalAttribute,
-            GlobalAttributeOption, Ingredient, ItemTypeAttribute,
-            ItemTypeIngredient,
+            GlobalAttributeOption, Ingredient,
         )
         from ..db import get_db
 
@@ -403,63 +406,6 @@ class ItemTypeQueryMixin:
                         "source": "global",
                     }
                     field_to_slug_map[attr.slug] = attr.slug
-
-                # Load item type-specific attributes
-                local_attrs = (
-                    db.query(ItemTypeAttribute)
-                    .filter(ItemTypeAttribute.item_type_id == item_type.id)
-                    .order_by(ItemTypeAttribute.display_order)
-                    .all()
-                )
-
-                for attr in local_attrs:
-                    options = []
-
-                    if attr.loads_from_ingredients and attr.ingredient_group:
-                        # Load options from ItemTypeIngredient
-                        type_ings = (
-                            db.query(ItemTypeIngredient)
-                            .filter(
-                                ItemTypeIngredient.item_type_id == item_type.id,
-                                ItemTypeIngredient.ingredient_group == attr.ingredient_group,
-                            )
-                            .all()
-                        )
-                        for ti in type_ings:
-                            ing = db.query(Ingredient).filter(Ingredient.id == ti.ingredient_id).first()
-                            if ing:
-                                # Look up price from GlobalAttributeOption if linked
-                                price_modifier = 0.0
-                                gao = db.query(GlobalAttributeOption).filter(
-                                    GlobalAttributeOption.ingredient_id == ing.id
-                                ).first()
-                                if gao:
-                                    price_modifier = float(gao.price_modifier or 0)
-
-                                options.append({
-                                    "slug": ing.slug,
-                                    "display_name": ing.name,
-                                    "price_modifier": price_modifier,
-                                    "is_default": ti.is_default,
-                                    "is_available": ing.is_available,
-                                })
-
-                    result[attr.slug] = {
-                        "slug": attr.slug,
-                        "display_name": attr.display_name,
-                        "input_type": attr.input_type,
-                        "is_required": attr.is_required,
-                        "ask": attr.ask_in_conversation,
-                        "display_order": attr.display_order,
-                        "question_text": attr.question_text,
-                        "options": options,
-                        "source": "local",
-                        "loads_from_ingredients": attr.loads_from_ingredients,
-                        "ingredient_group": attr.ingredient_group,
-                    }
-                    field_to_slug_map[attr.slug] = attr.slug
-                    if attr.ingredient_group:
-                        field_to_slug_map[attr.ingredient_group] = attr.slug
 
                 self._field_to_slug_map[item_type_slug] = field_to_slug_map
 
@@ -508,7 +454,6 @@ class ItemTypeQueryMixin:
                 "slug": opt.slug,
                 "display_name": opt.display_name,
                 "price_modifier": float(opt.price_modifier or 0),
-                "iced_price_modifier": float(opt.iced_price_modifier or 0) if opt.iced_price_modifier else None,
                 "is_default": opt.is_default,
                 "is_available": opt.is_available,
                 "aliases": aliases,

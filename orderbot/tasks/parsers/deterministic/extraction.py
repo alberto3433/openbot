@@ -268,11 +268,25 @@ def extract_attribute_values(
         return 1
 
     def check_must_match(option: dict, text: str) -> bool:
-        """Check if all must_match patterns are present in text."""
-        must_match = option.get("must_match", [])
-        if not must_match:
+        """Check if must_match patterns are present in text.
+
+        Handles both string and list formats for must_match.
+        If must_match is set, ALL patterns must be present.
+        """
+        must_match_raw = option.get("must_match")
+        if not must_match_raw:
             return True  # No must_match requirement
-        return all(pattern.lower() in text for pattern in must_match)
+
+        # Normalize to list (handle string or list format)
+        if isinstance(must_match_raw, str):
+            must_match_list = [m.strip().lower() for m in must_match_raw.split(",") if m.strip()]
+        else:
+            must_match_list = [str(m).lower() for m in must_match_raw]
+
+        if not must_match_list:
+            return True
+
+        return all(pattern in text for pattern in must_match_list)
 
     # Phase 1: Handle boolean attributes first (they don't overlap with option matches)
     for attr_slug, attr_config in attributes.items():
@@ -380,6 +394,67 @@ def extract_attribute_values(
             "Extracted attribute value: '%s' -> '%s' (qty=%d, attr=%s)",
             cand.pattern, slug, quantity, cand.attr_slug
         )
+
+    # Phase 5: Reverse matching - user token appears in option name
+    # E.g., "milk" (user token) in "Whole Milk" (option display_name)
+    # This handles cases where user says "coffee with milk" but database has
+    # options like "Whole Milk", "Oat Milk" etc.
+    #
+    # Only applies to multi_select attributes when NO direct matches were found.
+    # Uses must_match to filter: "oat_milk" requires "oat" in input, but "whole_milk"
+    # (with no must_match) matches just "milk".
+    input_tokens = [w for w in re.findall(r'\b\w+\b', input_lower) if len(w) >= 3]
+
+    for attr_slug, attr_config in attributes.items():
+        # Only apply Phase 5 to multi_select attributes
+        input_type = attr_config.get("input_type", "single_select")
+        if input_type != "multi_select":
+            continue
+
+        # Skip if any matches were already found for this attribute
+        if attr_slug in matched_options_per_attr and matched_options_per_attr[attr_slug]:
+            continue
+        if attr_slug in result:
+            continue
+
+        options = attr_config.get("options", [])
+        if not options:
+            continue
+
+        for opt in options:
+            slug = opt.get("slug", "")
+            if slug in matched_options_per_attr.get(attr_slug, set()):
+                continue
+
+            # Check must_match constraint
+            if not check_must_match(opt, input_lower):
+                continue
+
+            display_lower = opt.get("display_name", "").lower()
+            slug_readable = slug.replace("_", " ").lower()
+
+            for token in input_tokens:
+                matched = False
+                if re.search(rf'\b{re.escape(token)}\b', display_lower):
+                    matched = True
+                elif re.search(rf'\b{re.escape(token)}\b', slug_readable):
+                    matched = True
+
+                if matched:
+                    quantity = extract_quantity_before(input_lower, input_lower.find(token))
+                    result.setdefault(attr_slug, []).append({
+                        "slug": slug,
+                        "display_name": opt.get("display_name", slug),
+                        "quantity": quantity,
+                        "price": opt.get("price_modifier", 0),
+                        "category": opt.get("category"),
+                    })
+                    matched_options_per_attr.setdefault(attr_slug, set()).add(slug)
+                    logger.debug(
+                        "Phase 5 reverse match: token '%s' in option '%s' for attr '%s'",
+                        token, display_lower or slug_readable, attr_slug
+                    )
+                    break
 
     logger.debug(
         "Extracted attribute values for %s: %s",

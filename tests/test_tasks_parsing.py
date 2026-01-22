@@ -295,7 +295,7 @@ class TestDeterministicParserBagelOrders:
     def test_bagel_with_comma_separated_modifiers(self):
         """Test bagel with modifiers separated by commas - regression test.
 
-        Note: Butter is in the toppings category in the database, not spread.
+        Note: Butter is in the spread category in the database (not toppings).
         """
         # This case was being incorrectly split by multi-item parser
         result = parse_open_input_deterministic("pumpernickel bagel, butter, not toasted please")
@@ -303,9 +303,9 @@ class TestDeterministicParserBagelOrders:
         bagel = get_bagel_item(result)
         assert bagel is not None
         assert bagel.attribute_values.get("bread") == "pumpernickel"
-        # Butter is a topping, not a spread, in the database
-        toppings = bagel.attribute_values.get("toppings")
-        assert toppings == "butter", f"Expected toppings='butter', got {toppings}"
+        # Butter is a spread in the database
+        spread = bagel.attribute_values.get("spread")
+        assert spread == "butter", f"Expected spread='butter', got {spread}"
         assert bagel.attribute_values.get("toasted") is False
 
     @pytest.mark.parametrize("text,expected_toasted", [
@@ -1807,10 +1807,10 @@ class TestSplitQuantityBagelParsing:
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 3
-        # Butter is categorized as a topping in the database, not spread
-        assert bagels[0].attribute_values.get("toppings") == "butter"
-        assert bagels[1].attribute_values.get("toppings") is None  # plain = no topping
-        # Plain cream cheese is in the spread category
+        # Butter is categorized as a spread in the database
+        assert bagels[0].attribute_values.get("spread") == "butter"
+        assert bagels[1].attribute_values.get("spread") is None  # plain = no spread
+        # Plain cream cheese is also in the spread category
         assert bagels[2].attribute_values.get("spread") == "plain_cc"
 
     def test_numeric_quantity(self):
@@ -1872,9 +1872,9 @@ class TestSplitQuantityBagelParsing:
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
-        # First bagel: butter (topping)
+        # First bagel: butter (spread)
         assert bagels[0].attribute_values.get("bread") == "plain"
-        assert bagels[0].attribute_values.get("toppings") == "butter"
+        assert bagels[0].attribute_values.get("spread") == "butter"
         # Second bagel: plain cream cheese (spread)
         assert bagels[1].attribute_values.get("bread") == "plain"
         assert bagels[1].attribute_values.get("spread") == "plain_cc"
@@ -1912,8 +1912,8 @@ class TestSplitQuantityBagelParsing:
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
-        # First bagel: butter (topping in database)
-        assert bagels[0].attribute_values.get("toppings") == "butter"
+        # First bagel: butter (spread in database)
+        assert bagels[0].attribute_values.get("spread") == "butter"
         # Second bagel: plain cream cheese (spread)
         assert bagels[1].attribute_values.get("spread") == "plain_cc"
 

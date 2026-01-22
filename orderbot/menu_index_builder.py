@@ -478,19 +478,11 @@ def _build_ingredient_to_items(
     for item in all_items:
         item_name = (item.get("name") or "").lower()
         item_desc = (item.get("description") or "").lower()
-        default_config = item.get("default_config") or {}
 
-        # Build searchable text from default_config values
-        config_text = " ".join(
-            str(v).lower() for v in default_config.values()
-            if isinstance(v, str)
-        )
-        # Also check list values in config (e.g., {"extras": ["Bacon", "Tomato"]})
-        for v in default_config.values():
-            if isinstance(v, list):
-                config_text += " " + " ".join(str(x).lower() for x in v)
-
-        combined_text = f"{item_name} {item_desc} {config_text}"
+        # NOTE: We intentionally exclude default_config from searchable text.
+        # default_config represents customization options (e.g., what bread the
+        # item comes on by default), not the item's inherent composition.
+        combined_text = f"{item_name} {item_desc}"
 
         for ingredient in searchable_ingredients:
             # Use word boundary to avoid partial matches (e.g., "ham" in "shamrock")

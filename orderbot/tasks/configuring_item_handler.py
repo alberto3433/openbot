@@ -10,7 +10,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 import re
 
-from .models import OrderTask, MenuItemTask
+from .models import OrderTask, MenuItemTask, parse_pending_field
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
 from orderbot.menu_data_cache import menu_cache
@@ -85,28 +85,6 @@ def _get_cached_config_answers() -> set[str]:
     return _cached_config_answers
 
 
-def _parse_pending_field(pending_field: str | None) -> tuple[str | None, str | None]:
-    """Parse pending_field to extract item_type and attribute slug.
-
-    The pending_field format is "item_type:attr_slug" (e.g., "bagel:spread").
-    For flow-control fields without a colon, returns (None, pending_field).
-
-    Args:
-        pending_field: The pending field string (e.g., "bagel:spread" or "drink_selection")
-
-    Returns:
-        Tuple of (item_type_slug, attr_slug). Both may be None if pending_field is None.
-        For flow-control fields (no colon), item_type_slug will be None.
-
-    """
-    if not pending_field:
-        return None, None
-    if ":" in pending_field:
-        parts = pending_field.split(":", 1)
-        return parts[0], parts[1]
-    return None, pending_field
-
-
 def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> bool:
     """Check if user input is an off-topic request during configuration.
 
@@ -142,7 +120,7 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
     # Check if the question is RELEVANT to the current config question
     if pending_field:
         # Parse the pending_field to get item_type and attr_slug
-        item_type_slug, attr_slug = _parse_pending_field(pending_field)
+        item_type_slug, attr_slug = parse_pending_field(pending_field)
 
         # Generic "what do you have?" / "what kind do you have?" / "what are my options?"
         # These are always relevant when asked during configuration (truly universal patterns)
@@ -169,9 +147,8 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
                 )
                 if any(kw in input_lower for kw in relevant_keywords):
                     return False  # Question is relevant to the current attribute
-            except Exception:
-                # If DB lookup fails, fall through to off-topic check
-                pass
+            except Exception as e:
+                logger.debug("Keyword lookup failed for %s.%s: %s", item_type_slug, attr_slug, e)
 
             # Also allow templatized questions: "what {attr} do you have?"
             # e.g., "what spreads do you have?" when configuring spread
@@ -198,15 +175,15 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
                             opt_name = opt.get("display_name", "").lower()
                             if opt_name and opt_name in input_lower:
                                 return False
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Customization options lookup failed for %s: %s", item_type_slug, e)
             # Allow ingredient category names (data-driven from database)
             try:
                 category_names = menu_cache.get_all_ingredient_categories()
                 if any(cat in input_lower for cat in category_names):
                     return False
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Ingredient category lookup failed: %s", e)
 
     # Check if it matches any off-topic pattern
     for pattern in OFF_TOPIC_PATTERNS:
@@ -338,7 +315,7 @@ class ConfiguringItemHandler:
 
         # Data-driven routing: pending_field format is "item_type:attr_slug"
         # Parse the pending_field and route to the appropriate handler
-        item_type_slug, attr_slug = _parse_pending_field(order.pending_field)
+        item_type_slug, attr_slug = parse_pending_field(order.pending_field)
         if item_type_slug and attr_slug and isinstance(item, MenuItemTask) and self.menu_item_handler:
             logger.debug(
                 "Routing '%s' through unified handler for %s attr=%s",
@@ -480,7 +457,7 @@ class ConfiguringItemHandler:
                 else f"Would you like a bagel or fruit salad with your {selected_name}?"
             )
             # Set state to wait for side choice
-            order.phase = OrderPhase.CONFIGURING_ITEM.value
+            order.set_phase(OrderPhase.CONFIGURING_ITEM)
             order.pending_item_id = first_item.id
             order.pending_field = "side_choice"
             return StateMachineResult(
@@ -489,7 +466,7 @@ class ConfiguringItemHandler:
             )
 
         # Return to taking items phase for items not requiring side choice
-        order.phase = OrderPhase.TAKING_ITEMS.value
+        order.set_phase(OrderPhase.TAKING_ITEMS)
         return StateMachineResult(
             message=f"Got it, {quantity} {selected_name}{'s' if quantity > 1 and not selected_name.endswith('s') else ''}. Anything else?",
             order=order,

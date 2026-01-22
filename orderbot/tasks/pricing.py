@@ -11,8 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-import re
-from typing import Any, Callable
+from typing import Callable
 
 from .mixins import MenuDataMixin
 

@@ -76,6 +76,37 @@ def _passes_required_match_filter(item: dict, user_input: str) -> bool:
     return any(phrase in user_input_lower for phrase in phrases)
 
 
+def _build_ingredient_search_response(
+    ingredient: str,
+    matches: list[dict],
+    user_input: str,
+    pattern_name: str,
+) -> OpenInputResponse | None:
+    """Build ingredient search response with required_match_phrases filtering.
+
+    Args:
+        ingredient: The ingredient that was matched
+        matches: List of menu items containing the ingredient
+        user_input: Original user input text (for filtering and logging)
+        pattern_name: Name of pattern for logging (e.g., "standalone", "with_pattern")
+
+    Returns:
+        OpenInputResponse if matches exist after filtering, None otherwise.
+    """
+    filtered = [m for m in matches if _passes_required_match_filter(m, user_input)]
+    if not filtered:
+        return None
+
+    logger.info(
+        "INGREDIENT SEARCH (%s): '%s' -> found %d items with '%s'",
+        pattern_name, user_input[:50], len(filtered), ingredient
+    )
+    return OpenInputResponse(
+        ingredient_search_query=ingredient,
+        ingredient_search_matches=filtered,
+    )
+
+
 # =============================================================================
 # Price Inquiry Parsing
 # =============================================================================
@@ -553,21 +584,11 @@ def _parse_ingredient_search(
     if with_pattern:
         ingredient = with_pattern.group(1)
         if ingredient in ingredient_to_items:
-            matches = ingredient_to_items[ingredient]
-            # Filter out items where required_match_phrases doesn't match the search term
-            matches = [
-                item for item in matches
-                if _passes_required_match_filter(item, text_lower)
-            ]
-            if matches:
-                logger.info(
-                    "INGREDIENT SEARCH: '%s' -> found %d items with '%s'",
-                    text[:50], len(matches), ingredient
-                )
-                return OpenInputResponse(
-                    ingredient_search_query=ingredient,
-                    ingredient_search_matches=matches,
-                )
+            result = _build_ingredient_search_response(
+                ingredient, ingredient_to_items[ingredient], text_lower, "with_pattern"
+            )
+            if result:
+                return result
 
     # Pattern 2: "what has [ingredient]" / "what contains [ingredient]"
     what_has_pattern = re.match(
@@ -577,21 +598,11 @@ def _parse_ingredient_search(
     if what_has_pattern:
         ingredient = what_has_pattern.group(1)
         if ingredient in ingredient_to_items:
-            matches = ingredient_to_items[ingredient]
-            # Filter out items where required_match_phrases doesn't match the search term
-            matches = [
-                item for item in matches
-                if _passes_required_match_filter(item, text_lower)
-            ]
-            if matches:
-                logger.info(
-                    "INGREDIENT SEARCH (what has): '%s' -> found %d items with '%s'",
-                    text[:50], len(matches), ingredient
-                )
-                return OpenInputResponse(
-                    ingredient_search_query=ingredient,
-                    ingredient_search_matches=matches,
-                )
+            result = _build_ingredient_search_response(
+                ingredient, ingredient_to_items[ingredient], text_lower, "what_has"
+            )
+            if result:
+                return result
 
     # Pattern 3: Standalone ingredient name (e.g., just "chicken")
     # Only trigger if it's a short phrase (1-3 words) ending with an ingredient
@@ -623,20 +634,13 @@ def _parse_ingredient_search(
             has_order_signal = any(signal in text_lower for signal in other_signals)
 
             if not has_order_signal:
-                matches = ingredient_to_items[potential_ingredient]
-                # Filter out items where required_match_phrases doesn't match the search term
-                matches = [
-                    item for item in matches
-                    if _passes_required_match_filter(item, text_lower)
-                ]
-                if matches:
-                    logger.info(
-                        "INGREDIENT SEARCH (standalone): '%s' -> found %d items with '%s'",
-                        text[:50], len(matches), potential_ingredient
-                    )
-                    return OpenInputResponse(
-                        ingredient_search_query=potential_ingredient,
-                        ingredient_search_matches=matches,
-                    )
+                result = _build_ingredient_search_response(
+                    potential_ingredient,
+                    ingredient_to_items[potential_ingredient],
+                    text_lower,
+                    "standalone"
+                )
+                if result:
+                    return result
 
     return None

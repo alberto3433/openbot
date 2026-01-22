@@ -160,7 +160,13 @@ def _infer_actions_from_result(
     if len(new_items) > len(old_items):
         for i in range(len(old_items), len(new_items)):
             item = new_items[i]
-            item_type = item.get("item_type", "sandwich")
+            item_type = item.get("item_type")
+            if not item_type:
+                logger.error(
+                    "Item missing item_type in _infer_actions_from_result: %s",
+                    {k: v for k, v in item.items() if k != "item_config"}
+                )
+                item_type = "unknown"  # Generic placeholder for logging/debugging only
 
             # All items are already handled by the state machine.
             # Use "conversation" intent to prevent duplicate processing by order_logic.

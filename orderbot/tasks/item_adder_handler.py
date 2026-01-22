@@ -404,6 +404,60 @@ class ItemAdderHandler(MenuDataMixin):
             modifications=modifications,
         )
 
+    def add_orderable_ingredient(
+        self,
+        ingredient: dict,
+        quantity: int,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Add a standalone orderable ingredient to the order.
+
+        Orderable ingredients (sugar, milk) can be ordered without configuring
+        a menu item. They don't require any configuration and are added directly.
+
+        Args:
+            ingredient: Dict with {id, name, slug, category, price}
+            quantity: Number of items to add
+            order: Current order task
+
+        Returns:
+            StateMachineResult with confirmation message
+        """
+        quantity = max(1, quantity)
+        ingredient_name = ingredient.get("name", "Unknown")
+        ingredient_price = float(ingredient.get("price", 0.0))
+
+        logger.info(
+            "ADD_ORDERABLE_INGREDIENT: Adding %dx '%s' at $%.2f",
+            quantity, ingredient_name, ingredient_price
+        )
+
+        # Create MenuItemTask for the ingredient (no configuration needed)
+        for _ in range(quantity):
+            item = MenuItemTask(
+                menu_item_name=ingredient_name,
+                menu_item_id=None,  # No menu item ID for standalone ingredients
+                unit_price=ingredient_price,
+                menu_item_type=None,  # No configuration
+            )
+            item.mark_complete()  # No configuration needed
+            order.items.add_item(item)
+
+        # Ensure we're in TAKING_ITEMS phase
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # Build confirmation message
+        price_str = f" (${ingredient_price:.2f})" if ingredient_price > 0 else ""
+        if quantity > 1:
+            msg = f"Got it, {quantity} {ingredient_name}s{price_str}. Anything else?"
+        else:
+            msg = f"Got it, {ingredient_name}{price_str}. Anything else?"
+
+        return StateMachineResult(
+            message=msg,
+            order=order,
+        )
+
     def _create_menu_item_from_lookup(
         self,
         menu_item: dict,
@@ -839,7 +893,9 @@ class ItemAdderHandler(MenuDataMixin):
                     item_name_db = item.get("name", "").lower()
                     for term in search_terms:
                         if term in item_name_db:
-                            matching_items.append(item)
+                            # Apply required_match_phrases filter
+                            if self.menu_lookup._passes_match_filter(item, item_name):
+                                matching_items.append(item)
                             break
             if matching_items:
                 logger.info("Direct items_by_type search for %s: found %d items",

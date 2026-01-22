@@ -42,6 +42,41 @@ _ORDER_SIGNALS_CACHE: list[str] | None = None
 
 
 # =============================================================================
+# Helper for required_match_phrases filtering
+# =============================================================================
+
+def _passes_required_match_filter(item: dict, user_input: str) -> bool:
+    """Check if item passes required_match_phrases filter.
+
+    If the item has required_match_phrases set, the user's input must contain
+    at least ONE of the comma-separated phrases for the item to match.
+
+    Args:
+        item: Menu item dict (may have 'required_match_phrases' key)
+        user_input: The user's search input
+
+    Returns:
+        True if the item passes the filter (or has no filter), False otherwise.
+
+    Example:
+        Item: "Bagel Chips - Salt" with required_match_phrases="bagel chips, chips"
+        - user_input="bagel" -> False (doesn't contain "bagel chips" OR "chips")
+        - user_input="bagel chips" -> True (contains "bagel chips")
+    """
+    required_phrases = item.get("required_match_phrases")
+
+    # No filter set - item passes
+    if not required_phrases:
+        return True
+
+    user_input_lower = user_input.lower()
+
+    # Parse comma-separated phrases and check if user input contains at least one
+    phrases = [p.strip().lower() for p in required_phrases.split(",") if p.strip()]
+    return any(phrase in user_input_lower for phrase in phrases)
+
+
+# =============================================================================
 # Price Inquiry Parsing
 # =============================================================================
 
@@ -519,14 +554,20 @@ def _parse_ingredient_search(
         ingredient = with_pattern.group(1)
         if ingredient in ingredient_to_items:
             matches = ingredient_to_items[ingredient]
-            logger.info(
-                "INGREDIENT SEARCH: '%s' -> found %d items with '%s'",
-                text[:50], len(matches), ingredient
-            )
-            return OpenInputResponse(
-                ingredient_search_query=ingredient,
-                ingredient_search_matches=matches,
-            )
+            # Filter out items where required_match_phrases doesn't match the search term
+            matches = [
+                item for item in matches
+                if _passes_required_match_filter(item, text_lower)
+            ]
+            if matches:
+                logger.info(
+                    "INGREDIENT SEARCH: '%s' -> found %d items with '%s'",
+                    text[:50], len(matches), ingredient
+                )
+                return OpenInputResponse(
+                    ingredient_search_query=ingredient,
+                    ingredient_search_matches=matches,
+                )
 
     # Pattern 2: "what has [ingredient]" / "what contains [ingredient]"
     what_has_pattern = re.match(
@@ -537,14 +578,20 @@ def _parse_ingredient_search(
         ingredient = what_has_pattern.group(1)
         if ingredient in ingredient_to_items:
             matches = ingredient_to_items[ingredient]
-            logger.info(
-                "INGREDIENT SEARCH (what has): '%s' -> found %d items with '%s'",
-                text[:50], len(matches), ingredient
-            )
-            return OpenInputResponse(
-                ingredient_search_query=ingredient,
-                ingredient_search_matches=matches,
-            )
+            # Filter out items where required_match_phrases doesn't match the search term
+            matches = [
+                item for item in matches
+                if _passes_required_match_filter(item, text_lower)
+            ]
+            if matches:
+                logger.info(
+                    "INGREDIENT SEARCH (what has): '%s' -> found %d items with '%s'",
+                    text[:50], len(matches), ingredient
+                )
+                return OpenInputResponse(
+                    ingredient_search_query=ingredient,
+                    ingredient_search_matches=matches,
+                )
 
     # Pattern 3: Standalone ingredient name (e.g., just "chicken")
     # Only trigger if it's a short phrase (1-3 words) ending with an ingredient
@@ -554,6 +601,16 @@ def _parse_ingredient_search(
         # Check if the last word is a known ingredient
         potential_ingredient = words[-1].rstrip('?.,!')
         if potential_ingredient in ingredient_to_items:
+            # Skip ingredient search if this term is also a menu item name
+            # e.g., "bagel" should order a bagel, not search for items with bagel
+            known_items = menu_cache.get_known_menu_items()
+            if potential_ingredient in known_items:
+                logger.debug(
+                    "INGREDIENT SEARCH: skipping '%s' - also a menu item name",
+                    potential_ingredient
+                )
+                return None
+
             # Make sure it's not part of an obvious order ("chicken sandwich", "bacon egg")
             # or a modification/removal command ("remove the bacon", "cancel the ham")
             # or an add-modifier command ("add bacon", "extra cheese")
@@ -566,13 +623,19 @@ def _parse_ingredient_search(
 
             if not has_order_signal:
                 matches = ingredient_to_items[potential_ingredient]
-                logger.info(
-                    "INGREDIENT SEARCH (standalone): '%s' -> found %d items with '%s'",
-                    text[:50], len(matches), potential_ingredient
-                )
-                return OpenInputResponse(
-                    ingredient_search_query=potential_ingredient,
-                    ingredient_search_matches=matches,
-                )
+                # Filter out items where required_match_phrases doesn't match the search term
+                matches = [
+                    item for item in matches
+                    if _passes_required_match_filter(item, text_lower)
+                ]
+                if matches:
+                    logger.info(
+                        "INGREDIENT SEARCH (standalone): '%s' -> found %d items with '%s'",
+                        text[:50], len(matches), potential_ingredient
+                    )
+                    return OpenInputResponse(
+                        ingredient_search_query=potential_ingredient,
+                        ingredient_search_matches=matches,
+                    )
 
     return None

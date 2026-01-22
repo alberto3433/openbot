@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus
+from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending_field
 from .schemas import OrderPhase, StateMachineResult
 from ..menu_data_cache import menu_cache
 
@@ -80,10 +80,7 @@ class CheckoutUtilsHandler:
         """
         # Extract attribute from pending_field
         # Format should be "item_type:attribute" (set by handlers) or just "attribute"
-        if ":" in pending_field:
-            _, attr_name = pending_field.split(":", 1)
-        else:
-            attr_name = pending_field
+        _, attr_name = parse_pending_field(pending_field)
 
         # Try to get question from database if we have an item type
         db_question = None
@@ -141,7 +138,7 @@ class CheckoutUtilsHandler:
             if item_type == "item_disambiguation" and order.pending_item_options:
                 logger.info("Processing queued item disambiguation")
                 order.pending_field = "item_selection"
-                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                order.set_phase(OrderPhase.CONFIGURING_ITEM)
                 # Build the clarification message
                 option_list = []
                 for i, option_item in enumerate(order.pending_item_options, 1):
@@ -175,7 +172,7 @@ class CheckoutUtilsHandler:
             if item_name and pending_field:
                 order.pending_item_id = item_id
                 order.pending_field = pending_field
-                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                order.set_phase(OrderPhase.CONFIGURING_ITEM)
 
                 # Get item type for database lookup
                 item_type_slug = None
@@ -214,7 +211,7 @@ class CheckoutUtilsHandler:
             else:
                 summary = f"Great, {config_names[0]} added."
 
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message=f"{summary} Anything else?",
                 order=order,
@@ -241,7 +238,7 @@ class CheckoutUtilsHandler:
                 summary = last_summary
 
             # Explicitly set to TAKING_ITEMS - we're asking for more items
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message=f"Got it, {summary}. Anything else?",
                 order=order,

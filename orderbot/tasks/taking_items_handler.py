@@ -743,10 +743,7 @@ class TakingItemsHandler(MenuDataMixin):
                         added_count = target_qty - 1
 
                         for _ in range(added_count):
-                            new_item = last_item.model_copy(deep=True)
-                            new_item.id = str(uuid.uuid4())
-                            new_item.mark_complete()
-                            order.items.add_item(new_item)
+                            order.items.add_item(last_item.duplicate())
 
                         logger.info("TAKING_ITEMS: Added %d more of '%s'", added_count, last_item_name)
 
@@ -1712,10 +1709,7 @@ class TakingItemsHandler(MenuDataMixin):
 
                 # Add copies of the last item
                 for _ in range(added_count):
-                    new_item = last_item.model_copy(deep=True)
-                    new_item.id = str(uuid.uuid4())
-                    new_item.mark_complete()
-                    order.items.add_item(new_item)
+                    order.items.add_item(last_item.duplicate())
 
                 if added_count == 1:
                     logger.info("Added 1 more of '%s' to order", last_item_name)
@@ -1822,10 +1816,7 @@ class TakingItemsHandler(MenuDataMixin):
                 if len(active_items) == 1:
                     last_item = active_items[-1]
                     last_item_name = last_item.get_summary()
-                    new_item = last_item.model_copy(deep=True)
-                    new_item.id = str(uuid.uuid4())
-                    new_item.mark_complete()
-                    order.items.add_item(new_item)
+                    order.items.add_item(last_item.duplicate())
                     logger.info("'Same thing' with single cart item: duplicated '%s'", last_item_name)
                     return StateMachineResult(
                         message=f"I've added another {last_item_name}. Anything else?",
@@ -2116,7 +2107,7 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Fallback if handler not available
         order.pending_item_id = first_item_id
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
         return StateMachineResult(
             message=f"Got it, {first_item_name}! Any preferences?",
             order=order,
@@ -2238,10 +2229,7 @@ class TakingItemsHandler(MenuDataMixin):
         # Duplicate the item
         item_name = item_to_duplicate.get_summary()
         for _ in range(count):
-            new_item = item_to_duplicate.model_copy(deep=True)
-            new_item.id = str(uuid.uuid4())
-            new_item.mark_complete()
-            order.items.add_item(new_item)
+            order.items.add_item(item_to_duplicate.duplicate())
 
         if count == 1:
             logger.info("Added 1 more of '%s' to order (from clarification)", item_name)
@@ -2314,10 +2302,7 @@ class TakingItemsHandler(MenuDataMixin):
         for item in active_items:
             qty = item.quantity
             for _ in range(qty):
-                new_item = item.model_copy(deep=True)
-                new_item.id = str(uuid.uuid4())
-                new_item.mark_complete()
-                order.items.add_item(new_item)
+                order.items.add_item(item.duplicate())
                 total_added += 1
 
         logger.info("Duplicated all items in cart, added %d items total", total_added)
@@ -2389,10 +2374,7 @@ class TakingItemsHandler(MenuDataMixin):
                 # Single item - duplicate it
                 last_item = active_items[-1]
                 last_item_name = last_item.get_summary()
-                new_item = last_item.model_copy(deep=True)
-                new_item.id = str(uuid.uuid4())
-                new_item.mark_complete()
-                order.items.add_item(new_item)
+                order.items.add_item(last_item.duplicate())
                 logger.info("'Same thing' clarified: duplicated single cart item '%s'", last_item_name)
                 return StateMachineResult(
                     message=f"I've added another {last_item_name}. Anything else?",
@@ -2441,10 +2423,7 @@ class TakingItemsHandler(MenuDataMixin):
 
             if item_to_duplicate:
                 item_name = item_to_duplicate.get_summary()
-                new_item = item_to_duplicate.model_copy(deep=True)
-                new_item.id = str(uuid.uuid4())
-                new_item.mark_complete()
-                order.items.add_item(new_item)
+                order.items.add_item(item_to_duplicate.duplicate())
                 logger.info("'Same thing' clarified: duplicated specific item '%s'", item_name)
                 return StateMachineResult(
                     message=f"I've added another {item_name}. Anything else?",

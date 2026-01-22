@@ -123,7 +123,7 @@ class ConfigHelperHandler:
             item_name = current_item.get_summary()
             current_item.mark_skipped()
             order.clear_pending()
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             remaining = order.items.get_active_items()
             if remaining:
                 return StateMachineResult(
@@ -211,7 +211,7 @@ class ConfigHelperHandler:
 
                 # Clear pending state since we're leaving config phase
                 order.clear_pending()
-                order.phase = OrderPhase.TAKING_ITEMS.value
+                order.set_phase(OrderPhase.TAKING_ITEMS)
 
                 logger.info(
                     "Removed %s #%d during config: %s",
@@ -301,7 +301,7 @@ class ConfigHelperHandler:
 
             # Clear pending state since we're leaving config phase
             order.clear_pending()
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
 
             # Build response message
             remaining = order.items.get_active_items()
@@ -581,7 +581,7 @@ class ConfigHelperHandler:
         if parsed.wants_cancel:
             item.mark_skipped()
             order.clear_pending()
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message="No problem, I've removed that. Anything else?",
                 order=order,

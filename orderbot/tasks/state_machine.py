@@ -463,10 +463,7 @@ class OrderStateMachine:
                             return StateMachineResult(message=msg, order=order)
 
                         for _ in range(added_count):
-                            new_item = last_item.model_copy(deep=True)
-                            new_item.id = str(uuid.uuid4())
-                            new_item.mark_complete()
-                            order.items.add_item(new_item)
+                            order.items.add_item(last_item.duplicate())
 
                         logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
 

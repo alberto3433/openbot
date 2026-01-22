@@ -66,14 +66,20 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    # Check if using Neon pooled connection (statement_timeout not supported)
+    db_url = config.get_main_option("sqlalchemy.url") or ""
+    is_pooled = "-pooler" in db_url
+
+    connect_args = {"connect_timeout": 10}  # 10 second connection timeout
+    if not is_pooled:
+        # Only set statement_timeout for non-pooled connections
+        connect_args["options"] = "-c statement_timeout=60000"  # 60 sec query timeout
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        connect_args={
-            "connect_timeout": 10,  # 10 second connection timeout
-            "options": "-c statement_timeout=60000"  # 60 sec query timeout for migrations
-        },
+        connect_args=connect_args,
     )
 
     with connectable.connect() as connection:

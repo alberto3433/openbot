@@ -601,12 +601,13 @@ def _parse_ingredient_search(
         # Check if the last word is a known ingredient
         potential_ingredient = words[-1].rstrip('?.,!')
         if potential_ingredient in ingredient_to_items:
-            # Skip ingredient search if this term is also a menu item name
+            # Skip ingredient search if this term is a configurable item type slug
             # e.g., "bagel" should order a bagel, not search for items with bagel
-            known_items = menu_cache.get_known_menu_items()
-            if potential_ingredient in known_items:
+            # Only check against item type slugs (not full triggers which include first words)
+            configurable_slugs = menu_cache.get_configurable_item_type_slugs()
+            if potential_ingredient in configurable_slugs:
                 logger.debug(
-                    "INGREDIENT SEARCH: skipping '%s' - also a menu item name",
+                    "INGREDIENT SEARCH: skipping '%s' - configurable item type slug",
                     potential_ingredient
                 )
                 return None

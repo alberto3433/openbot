@@ -17,6 +17,33 @@ from pydantic import BaseModel, Field
 import uuid
 
 
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+def parse_pending_field(pending_field: str | None) -> tuple[str | None, str | None]:
+    """Parse pending_field format 'item_type:attr_slug' into components.
+
+    Args:
+        pending_field: The pending field string (e.g., "bagel:toasted" or just "toasted")
+
+    Returns:
+        Tuple of (item_type, attr_slug). If no colon present, item_type is None.
+        If pending_field is None or empty, returns (None, None).
+
+    Examples:
+        parse_pending_field("bagel:toasted") -> ("bagel", "toasted")
+        parse_pending_field("toasted") -> (None, "toasted")
+        parse_pending_field(None) -> (None, None)
+    """
+    if not pending_field:
+        return None, None
+    if ":" in pending_field:
+        parts = pending_field.split(":", 1)
+        return parts[0], parts[1]
+    return None, pending_field
+
+
 class TaskStatus(str, Enum):
     """Status of a task in the hierarchy."""
     PENDING = "pending"  # Not started, waiting for prerequisites
@@ -158,6 +185,7 @@ class MenuItemTask(ItemTask):
     - has_selection(category): Check if any modifier exists
     - add_selection(...): Add a new modifier
     - remove_selection(...): Remove modifier(s)
+    - duplicate(): Create a deep copy with a new UUID
 
     Examples:
         item.add_selection("everything", "bread", display_name="Everything")
@@ -166,6 +194,9 @@ class MenuItemTask(ItemTask):
 
         bread = item.get_selection_value("bread")  # "everything"
         is_toasted = item.get_selection_value("toasted") == "yes"
+
+        # Duplicate an item
+        new_item = item.duplicate()
     """
 
     item_type: Literal["menu_item"] = "menu_item"
@@ -207,6 +238,21 @@ class MenuItemTask(ItemTask):
     def is_side(self) -> bool:
         """Check if this item is a side of another item."""
         return self.side_of_item_id is not None
+
+    def duplicate(self, mark_complete: bool = True) -> "MenuItemTask":
+        """Create a deep copy of this item with a new UUID.
+
+        Args:
+            mark_complete: If True, mark the new item as complete (default True)
+
+        Returns:
+            A new MenuItemTask with the same data but a unique ID
+        """
+        new_item = self.model_copy(deep=True)
+        new_item.id = str(uuid.uuid4())
+        if mark_complete:
+            new_item.mark_complete()
+        return new_item
 
     # -------------------------------------------------------------------------
     # Selection access methods
@@ -944,6 +990,14 @@ class OrderTask(BaseTask):
         self.pending_suggested_item = None
         self.pending_item_modifiers = {}
         self.pending_attr_disambiguation = None
+
+    def set_phase(self, phase: "OrderPhase") -> None:
+        """Set the order phase from an OrderPhase enum.
+
+        Args:
+            phase: The OrderPhase enum value to set
+        """
+        self.phase = phase.value
 
     def clear_menu_pagination(self):
         """Clear menu query pagination state."""

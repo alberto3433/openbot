@@ -139,7 +139,7 @@ class DisambiguationHandler:
         order.pending_item_options = matching_items[:self.MAX_OPTIONS]
         order.pending_item_quantity = quantity
         order.pending_field = pending_field
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
 
         # Store modifiers if provided (for beverages)
         if modifiers:

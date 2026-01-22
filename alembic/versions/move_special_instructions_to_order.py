@@ -22,11 +22,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add special_instructions column to orders table
-    op.add_column('orders', sa.Column('special_instructions', sa.Text(), nullable=True))
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
 
-    # Drop notes column from order_items table
-    op.drop_column('order_items', 'notes')
+    # Add special_instructions column to orders table (if not exists)
+    orders_columns = [col['name'] for col in inspector.get_columns('orders')]
+    if 'special_instructions' not in orders_columns:
+        op.add_column('orders', sa.Column('special_instructions', sa.Text(), nullable=True))
+
+    # Drop notes column from order_items table (if exists)
+    order_items_columns = [col['name'] for col in inspector.get_columns('order_items')]
+    if 'notes' in order_items_columns:
+        op.drop_column('order_items', 'notes')
 
 
 def downgrade() -> None:

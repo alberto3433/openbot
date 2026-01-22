@@ -194,7 +194,7 @@ class ItemAdderHandler(MenuDataMixin):
                 # Unknown item - mark for error handling
                 order.pending_field = "item_selection"
                 order.unknown_item_request = item_name
-                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                order.set_phase(OrderPhase.CONFIGURING_ITEM)
                 return StateMachineResult(message="", order=order)
 
         # Build menu_item dict (unified lookup for all item types)
@@ -444,7 +444,7 @@ class ItemAdderHandler(MenuDataMixin):
             order.items.add_item(item)
 
         # Ensure we're in TAKING_ITEMS phase
-        order.phase = OrderPhase.TAKING_ITEMS.value
+        order.set_phase(OrderPhase.TAKING_ITEMS)
 
         # Build confirmation message
         price_str = f" (${ingredient_price:.2f})" if ingredient_price > 0 else ""
@@ -638,7 +638,7 @@ class ItemAdderHandler(MenuDataMixin):
         else:
             item_display = canonical_name
 
-        order.phase = OrderPhase.TAKING_ITEMS.value
+        order.set_phase(OrderPhase.TAKING_ITEMS)
         return StateMachineResult(
             message=f"I've added {item_display} to your order. Anything else?",
             order=order,

@@ -21,8 +21,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Drop the iced_price_modifier column."""
-    op.drop_column('global_attribute_options', 'iced_price_modifier')
+    """Drop the iced_price_modifier column if it exists."""
+    conn = op.get_bind()
+    # Check if column exists before dropping
+    result = conn.execute(sa.text("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'global_attribute_options' AND column_name = 'iced_price_modifier'
+    """))
+    if result.fetchone():
+        op.drop_column('global_attribute_options', 'iced_price_modifier')
+    else:
+        print("iced_price_modifier column does not exist, skipping")
 
 
 def downgrade() -> None:

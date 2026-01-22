@@ -770,7 +770,7 @@ class MenuItemConfigHandler(BaseHandler):
         if is_first_question:
             question = f"Got it, {item.menu_item_name}. {question}"
 
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
         order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
         # Reset options page when asking a new attribute question
@@ -790,7 +790,7 @@ class MenuItemConfigHandler(BaseHandler):
             item.customization_offered = True
             self._recalculate_item_price(item)
             item.mark_complete()
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             order.clear_pending()
             return StateMachineResult(
                 message=f"Got it, {item.get_summary()}. Anything else?",
@@ -800,7 +800,7 @@ class MenuItemConfigHandler(BaseHandler):
         # Mark that we've reached the checkpoint
         item.customization_offered = True
 
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
         order.pending_field = "customization_checkpoint"
 
@@ -1135,7 +1135,7 @@ class MenuItemConfigHandler(BaseHandler):
             if unanswered:
                 # Ask the first unanswered mandatory question
                 first_attr = unanswered[0]
-                order.phase = OrderPhase.CONFIGURING_ITEM.value
+                order.set_phase(OrderPhase.CONFIGURING_ITEM)
                 order.pending_item_id = item.id
                 order.pending_field = f"{item_type_slug}:{first_attr['slug']}"
                 order.config_options_page = 0
@@ -1188,7 +1188,7 @@ class MenuItemConfigHandler(BaseHandler):
                 summary = f"{count} {summary}s" if not summary.endswith("s") else f"{count} {summary}"
 
             order.clear_pending()
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
 
             return StateMachineResult(
                 message=f"Got it, {summary}. Anything else?",
@@ -1869,7 +1869,7 @@ class MenuItemConfigHandler(BaseHandler):
         options_text = self._format_options_list(matching_options)
 
         # Stay in same pending state to handle the follow-up answer
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
         order.pending_field = f"{item.menu_item_type}:{attr_slug}"
 
@@ -1947,7 +1947,7 @@ class MenuItemConfigHandler(BaseHandler):
             # No more options, recalculate price and complete
             self._recalculate_item_price(item)
             item.mark_complete()
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             order.clear_pending()
             return StateMachineResult(
                 message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?",
@@ -1957,7 +1957,7 @@ class MenuItemConfigHandler(BaseHandler):
         # List remaining options
         options_list = self._format_attributes_list(unanswered)
 
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
         order.pending_field = "customization_checkpoint"
 
@@ -1993,7 +1993,7 @@ class MenuItemConfigHandler(BaseHandler):
                     return next_result
 
             # No more items to configure - go back to taking items
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message=f"Got it, {item.get_summary()}. Anything else?",
                 order=order,
@@ -2040,7 +2040,7 @@ class MenuItemConfigHandler(BaseHandler):
                     next_result = self._get_next_question(order)
                     if next_result and next_result.order.pending_field:
                         return next_result
-                order.phase = OrderPhase.TAKING_ITEMS.value
+                order.set_phase(OrderPhase.TAKING_ITEMS)
                 return StateMachineResult(
                     message=f"Got it, {item.get_summary()}. Anything else?",
                     order=order,
@@ -2084,7 +2084,7 @@ class MenuItemConfigHandler(BaseHandler):
         else:
             question = attr.get("question_text") or f"What {attr['display_name']}?"
 
-        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
         order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
 

@@ -270,7 +270,7 @@ class CheckoutHandler(BaseHandler):
 
         # If we already have the customer name, skip to confirmation
         if order.customer_info.name:
-            order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+            order.set_phase(OrderPhase.CHECKOUT_CONFIRM)
             summary = self.message_builder.build_order_summary(order)
             return StateMachineResult(
                 message=f"{summary}\n\nDoes that look right?",
@@ -301,7 +301,7 @@ class CheckoutHandler(BaseHandler):
             self._transition_to_next_slot(order)
 
         # After collecting name, show order summary and ask for confirmation
-        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.set_phase(OrderPhase.CHECKOUT_CONFIRM)
         summary = self.message_builder.build_order_summary(order)
         return StateMachineResult(
             message=f"{summary}\n\nDoes that look right?",
@@ -368,7 +368,7 @@ class CheckoutHandler(BaseHandler):
                 if error_message:
                     logger.info("Email validation failed for '%s': %s", parsed.email_address, error_message)
                     # Ask for email again with the error message
-                    order.phase = OrderPhase.CHECKOUT_EMAIL.value
+                    order.set_phase(OrderPhase.CHECKOUT_EMAIL)
                     return StateMachineResult(
                         message=error_message,
                         order=order,
@@ -389,7 +389,7 @@ class CheckoutHandler(BaseHandler):
             else:
                 # Need to ask for email - explicitly set CHECKOUT_EMAIL phase
                 # (orchestrator maps NOTIFICATION to CHECKOUT_PHONE by default)
-                order.phase = OrderPhase.CHECKOUT_EMAIL.value
+                order.set_phase(OrderPhase.CHECKOUT_EMAIL)
                 return StateMachineResult(
                     message=CheckoutMessages.EMAIL_FOR_SEND,
                     order=order,
@@ -554,10 +554,7 @@ class CheckoutHandler(BaseHandler):
         added_count = target_qty - 1
 
         for _ in range(added_count):
-            new_item = last_item.model_copy(deep=True)
-            new_item.id = str(uuid.uuid4())
-            new_item.mark_complete()
-            order.items.add_item(new_item)
+            order.items.add_item(last_item.duplicate())
 
         logger.info("CONFIRMATION: Added %d more of '%s'", added_count, last_item_name)
 
@@ -765,7 +762,7 @@ class CheckoutHandler(BaseHandler):
         # Build confirmation message
         if items_added:
             items_str = ", ".join(items_added)
-            order.phase = OrderPhase.TAKING_ITEMS.value
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message=f"Got it, I've added your previous order: {items_str}. Anything else?",
                 order=order,
@@ -835,11 +832,9 @@ class CheckoutHandler(BaseHandler):
                     item[key] = value
 
         # Mark complete and add to order
-        item.status = TaskStatus.COMPLETE
+        item.mark_complete()
         for _ in range(quantity):
-            new_item = item.model_copy(deep=True)
-            new_item.id = str(uuid.uuid4())[:8]
-            order.items.add_item(new_item)
+            order.items.add_item(item.duplicate())
 
         # Build description using the item's data-driven get_summary() method
         items_added.append(f"{qty_word} {item.get_summary()}")

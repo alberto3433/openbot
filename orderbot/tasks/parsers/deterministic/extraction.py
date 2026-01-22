@@ -400,10 +400,19 @@ def extract_attribute_values(
     # This handles cases where user says "coffee with milk" but database has
     # options like "Whole Milk", "Oat Milk" etc.
     #
-    # Only applies to multi_select attributes when NO direct matches were found.
+    # Only applies to multi_select attributes. Adds to existing matches (e.g., Phase 4
+    # found "sugar", Phase 5 can still add "milk" → "Whole Milk").
     # Uses must_match to filter: "oat_milk" requires "oat" in input, but "whole_milk"
     # (with no must_match) matches just "milk".
-    input_tokens = [w for w in re.findall(r'\b\w+\b', input_lower) if len(w) >= 3]
+    #
+    # Important: Filter out tokens that fall within spans already matched in Phase 4.
+    # This prevents "cream" from matching "Veggie Cream Cheese" when "plain cream cheese"
+    # was already matched by Phase 4.
+    input_token_matches = [(m.group(), m.start(), m.end())
+                           for m in re.finditer(r'\b\w+\b', input_lower)
+                           if len(m.group()) >= 3]
+    input_tokens = [(word, start, end) for word, start, end in input_token_matches
+                    if not spans_overlap(start, end)]
 
     for attr_slug, attr_config in attributes.items():
         # Only apply Phase 5 to multi_select attributes
@@ -411,11 +420,8 @@ def extract_attribute_values(
         if input_type != "multi_select":
             continue
 
-        # Skip if any matches were already found for this attribute
-        if attr_slug in matched_options_per_attr and matched_options_per_attr[attr_slug]:
-            continue
-        if attr_slug in result:
-            continue
+        # Note: Don't skip if matches exist - Phase 5 adds ADDITIONAL
+        # reverse matches. The per-option guard below prevents duplicates.
 
         options = attr_config.get("options", [])
         if not options:
@@ -433,7 +439,7 @@ def extract_attribute_values(
             display_lower = opt.get("display_name", "").lower()
             slug_readable = slug.replace("_", " ").lower()
 
-            for token in input_tokens:
+            for token, token_start, token_end in input_tokens:
                 matched = False
                 if re.search(rf'\b{re.escape(token)}\b', display_lower):
                     matched = True
@@ -441,7 +447,7 @@ def extract_attribute_values(
                     matched = True
 
                 if matched:
-                    quantity = extract_quantity_before(input_lower, input_lower.find(token))
+                    quantity = extract_quantity_before(input_lower, token_start)
                     result.setdefault(attr_slug, []).append({
                         "slug": slug,
                         "display_name": opt.get("display_name", slug),

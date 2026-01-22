@@ -262,31 +262,13 @@ def _update_item(state, slots, menu_index):
 def apply_intent_to_order_state(order_state, intent, slots, menu_index=None, returning_customer=None):
     state = deepcopy(order_state)
 
-    # Generic item handling - route all add/update intents to generic handlers
-    if intent == "add_item":
+    # Generic item handlers - work for ANY item type (data-driven)
+    # Matches: add_item, add_sandwich, add_pizza, add_drink, add_sushi, etc.
+    if intent.startswith("add_"):
         return _add_item(state, slots, menu_index)
 
-    if intent == "update_item":
-        return _update_item(state, slots, menu_index)
-
-    # Backward-compatible aliases for specific item types
-    # These all route to the generic handlers
-    if intent == "add_sandwich":
-        return _add_item(state, slots, menu_index)
-
-    if intent == "add_pizza":
-        return _add_item(state, slots, menu_index)
-
-    if intent in ("add_drink", "add_coffee", "add_sized_beverage", "add_beverage"):
-        return _add_item(state, slots, menu_index)
-
-    if intent == "add_side":
-        return _add_item(state, slots, menu_index)
-
-    if intent == "update_sandwich":
-        return _update_item(state, slots, menu_index)
-
-    if intent == "update_pizza":
+    # Matches: update_item, update_sandwich, update_pizza, update_sushi, etc.
+    if intent.startswith("update_"):
         return _update_item(state, slots, menu_index)
 
     if intent == "remove_item":

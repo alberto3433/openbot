@@ -182,3 +182,64 @@ class TestSyrupToExistingBeverage:
 
         vanilla_sel = vanilla_sels[0]
         assert vanilla_sel.get("quantity") == 2, f"Expected quantity 2, got {vanilla_sel.get('quantity')}"
+
+    def test_syrup_disambiguation_then_quantity(self):
+        """
+        Scenario (the bug that was fixed):
+        - User orders: latte
+        - Bot: asks about size
+        - User: large
+        - Bot: asks about iced
+        - User: iced
+        - Bot: asks about milk/sweetener/syrup
+        - User: "syrup" (ambiguous - triggers disambiguation)
+        - Bot: asks "Which syrup?" listing options
+        - User: "2 hazelnut syrups"
+        - Expected: 2 hazelnut syrups added (quantity=2, not 1)
+
+        Bug was: when disambiguation was triggered, quantity was captured at THAT moment
+        (quantity=1 for "syrup"), and when resolved with "2 hazelnut syrups", the stored
+        quantity was used instead of re-extracting from the resolution input.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Start by ordering a latte
+        result = sm.process("latte", order)
+        assert len(result.order.items.items) == 1
+        item = result.order.items.items[0]
+        assert isinstance(item, MenuItemTask)
+
+        # Answer size question (use "large" which is a valid size)
+        result = sm.process("large", result.order)
+
+        # Answer iced question
+        result = sm.process("iced", result.order)
+
+        # Should now ask about milk/sweetener/syrup
+        assert any(word in result.message.lower() for word in ["milk", "sweetener", "syrup"]), \
+            f"Expected milk/sweetener/syrup question, got: {result.message}"
+
+        # Say just "syrup" to trigger disambiguation
+        result = sm.process("syrup", result.order)
+
+        # Should trigger disambiguation - bot asks which syrup
+        assert result.order.pending_attr_disambiguation is not None or "which" in result.message.lower(), \
+            f"Expected disambiguation, got: {result.message}"
+
+        # Resolve with "2 hazelnut syrups"
+        result = sm.process("2 hazelnut syrups", result.order)
+
+        # Check the latte has hazelnut syrup with quantity 2
+        latte = result.order.items.items[0]
+        assert isinstance(latte, MenuItemTask)
+
+        # Find hazelnut syrup in modifiers
+        hazelnut_sels = [s for s in latte.modifiers if "hazelnut" in s.get("slug", "").lower()]
+        assert len(hazelnut_sels) == 1, f"Expected 1 hazelnut selection, got: {latte.modifiers}"
+
+        hazelnut_sel = hazelnut_sels[0]
+        assert hazelnut_sel.get("quantity") == 2, \
+            f"Expected quantity 2, got {hazelnut_sel.get('quantity')}. Full modifier: {hazelnut_sel}"

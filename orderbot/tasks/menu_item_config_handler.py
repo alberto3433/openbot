@@ -1344,8 +1344,14 @@ class MenuItemConfigHandler(BaseHandler):
         attrs = self._get_item_type_attributes(item_type)
         attr = attrs.get(attr_slug, {})
 
-        # Store the selected value
-        quantity = stored_modifiers.pop("_quantity", 1)
+        # Re-extract quantity from user's clarification input (not stored value)
+        # This handles cases like "2 hazelnut syrups" after disambiguation
+        user_lower = user_input.lower()
+        quantity = extract_quantity(user_lower, selected["display_name"].lower())
+        if quantity == 1:
+            quantity = extract_quantity(user_lower, selected["slug"].replace("_", " "))
+        # Remove stored quantity (no longer needed)
+        stored_modifiers.pop("_quantity", None)
         qualifier = self._extract_qualifier_for_option(user_input, selected["display_name"])
 
         opt_price = selected.get("price") or selected.get("price_modifier") or 0
@@ -1776,21 +1782,21 @@ class MenuItemConfigHandler(BaseHandler):
         if partial_result:
             return partial_result
 
-        # No match at all - show available options directly (if few enough)
+        # No match at all - inform user we don't have what they asked for
+        attr_name = attr["display_name"].lower()
         available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
         if available and len(available) <= 4:
-            # Format as "Would you like it X or Y?" or "Would you like it X, Y, or Z?"
+            # Format as comma-separated list with "or" before last
             if len(available) == 1:
                 options_str = available[0]
             elif len(available) == 2:
                 options_str = f"{available[0]} or {available[1]}"
             else:
                 options_str = ", ".join(available[:-1]) + f", or {available[-1]}"
-            message = f"Would you like it {options_str}?"
+            message = f"Sorry, we don't have {user_input}. Our {attr_name} options are: {options_str}."
         else:
-            # Too many options or none available - use generic message
-            attr_name = attr["display_name"].lower()
-            message = f"Sorry, I didn't catch that. What kind of {attr_name} would you like? You can ask 'what options?' to see choices."
+            # Too many options - direct to asking for options list
+            message = f"Sorry, we don't have {user_input}. You can ask 'what options?' to see our {attr_name} choices."
 
         return StateMachineResult(message=message, order=order)
 
@@ -2055,10 +2061,10 @@ class MenuItemConfigHandler(BaseHandler):
         if result:
             return result
 
-        # Couldn't understand, list options again
+        # Couldn't match - inform user we don't have what they asked for
         options_list = self._format_attributes_list(unanswered)
         return StateMachineResult(
-            message=f"Sorry, I didn't catch that. You can add: {options_list}. What would you like?",
+            message=f"Sorry, we don't have {user_input}. You can add: {options_list}. What would you like?",
             order=order,
         )
 

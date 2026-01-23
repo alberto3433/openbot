@@ -74,51 +74,33 @@ def _app_client_session():
     test_menu_items = [
         {
             "name": "Turkey Club",
-            "category": "sandwich",
             "is_signature": True,
-            "base_price": 8.0,
             "available_qty": 5,
-            "extra_metadata": "{}",
         },
         {
             "name": "Veggie Delight",
-            "category": "sandwich",
             "is_signature": True,
-            "base_price": 7.99,
             "available_qty": 10,
-            "extra_metadata": "{}",
         },
         {
             "name": "Italian Stallion",
-            "category": "sandwich",
             "is_signature": True,
-            "base_price": 9.49,
             "available_qty": 10,
-            "extra_metadata": "{}",
         },
         {
             "name": "Custom Sandwich",
-            "category": "sandwich",
             "is_signature": False,
-            "base_price": 5.99,
             "available_qty": 100,
-            "extra_metadata": '{"is_custom": true}',
         },
         {
             "name": "soda",
-            "category": "drink",
             "is_signature": False,
-            "base_price": 2.5,
             "available_qty": 10,
-            "extra_metadata": "{}",
         },
         {
             "name": "Chips",
-            "category": "side",
             "is_signature": False,
-            "base_price": 1.29,
             "available_qty": 40,
-            "extra_metadata": "{}",
         },
     ]
 

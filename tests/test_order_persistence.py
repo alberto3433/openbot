@@ -27,11 +27,8 @@ def test_persist_confirmed_order_creates_order_and_items():
     if not m:
         m = MenuItem(
             name="Turkey Club",
-            category="sandwich",
             is_signature=True,
-            base_price=8.0,
             available_qty=5,
-            extra_metadata="{}",
         )
         db.add(m)
         db.commit()

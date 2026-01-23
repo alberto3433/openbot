@@ -419,6 +419,72 @@
       border: 1px solid #ccc;
       font-size: 13px;
     }
+    /* Tab styles */
+    .detail-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 2px solid #e0e0e0;
+      margin: 0 0 16px 0;
+      padding: 0 20px;
+    }
+    .detail-tab {
+      padding: 12px 24px;
+      border: none;
+      background: transparent;
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+    }
+    .detail-tab:hover { color: #1976d2; }
+    .detail-tab.active {
+      color: #1976d2;
+      border-bottom-color: #1976d2;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* Ingredient list styles */
+    .ingredient-list { margin-top: 12px; }
+    .ingredient-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      background: #f9f9f9;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    .ingredient-name { flex: 1; font-size: 14px; }
+    .ingredient-category { color: #888; font-size: 12px; }
+    .quantity-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .quantity-btn {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #ccc;
+      background: #fff;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .quantity-btn:hover { background: #f0f0f0; }
+    .quantity-value {
+      min-width: 20px;
+      text-align: center;
+      font-size: 14px;
+    }
+    .remove-btn {
+      color: #d32f2f;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+    }
   </style>
 </head>
 <body>
@@ -474,7 +540,14 @@
         </div>
       </div>
 
+      <div class="detail-tabs" id="detailTabs">
+        <button class="detail-tab active" data-tab="details">Details</button>
+        <button class="detail-tab" data-tab="ingredients">Ingredients</button>
+      </div>
+
       <div id="detailBody" style="flex: 1; overflow-y: auto;">
+        <!-- Details Tab -->
+        <div class="tab-panel active" id="tabDetails">
         <div class="field-row">
           <div class="field">
             <label for="itemId">ID</label>
@@ -546,6 +619,24 @@
           </div>
           <small style="color: #666; font-size: 0.8em;">If set, user input must contain one of these phrases to match this item (prevents "Russian Coffee Cake" from matching just "coffee")</small>
         </div>
+        </div>
+
+        <!-- Ingredients Tab -->
+        <div class="tab-panel" id="tabIngredients">
+          <div class="field">
+            <label>Add Ingredient</label>
+            <div style="position: relative;">
+              <input id="ingredientSearchInput" type="text" placeholder="Search ingredients..." autocomplete="off" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 13px;" />
+              <div class="autocomplete-dropdown" id="ingredientDropdown"></div>
+            </div>
+          </div>
+          <div class="field">
+            <label>Default Ingredients</label>
+            <div id="ingredientList" class="ingredient-list">
+              <div class="empty-state">No ingredients added</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="detail-footer">
@@ -568,6 +659,8 @@
     let itemTypes = []; // Store item types for dropdown
     let allCategories = []; // Store categories for multi-select
     let sizeCategories = []; // Store size categories with their sizes
+    let allIngredients = []; // All ingredients from API
+    let itemIngredients = []; // Current item's ingredients [{ingredient_id, quantity, ingredient_name, ingredient_category}, ...]
 
     const menuListEl = document.getElementById("menuList");
     const categoryFilterEl = document.getElementById("categoryFilter");
@@ -779,6 +872,114 @@
       // When changing category, pass empty prices to start fresh
       renderSizePrices(categoryId ? parseInt(categoryId) : null, []);
     });
+
+    // Tab switching
+    function switchTab(tabName) {
+      document.querySelectorAll('.detail-tab').forEach(t =>
+        t.classList.toggle('active', t.dataset.tab === tabName)
+      );
+      document.getElementById('tabDetails').classList.toggle('active', tabName === 'details');
+      document.getElementById('tabIngredients').classList.toggle('active', tabName === 'ingredients');
+    }
+
+    // Fetch all ingredients on page load
+    async function loadAllIngredients() {
+      try {
+        const resp = await fetch(`${API_BASE}/admin/ingredients`, { credentials: 'include' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        allIngredients = await resp.json();
+      } catch (err) {
+        console.error("Error loading ingredients:", err);
+        allIngredients = [];
+      }
+    }
+
+    // Render ingredient list
+    function renderIngredientList() {
+      const container = document.getElementById('ingredientList');
+      if (!itemIngredients.length) {
+        container.innerHTML = '<div class="empty-state">No ingredients added</div>';
+        return;
+      }
+      container.innerHTML = itemIngredients.map((ing, idx) => `
+        <div class="ingredient-row">
+          <div class="ingredient-name">
+            ${escapeHtml(ing.ingredient_name)}
+            <span class="ingredient-category">(${escapeHtml(ing.ingredient_category)})</span>
+          </div>
+          <div class="quantity-controls">
+            <button class="quantity-btn" onclick="changeQuantity(${idx}, -1)">−</button>
+            <span class="quantity-value">${ing.quantity}</span>
+            <button class="quantity-btn" onclick="changeQuantity(${idx}, 1)">+</button>
+          </div>
+          <button class="remove-btn" onclick="removeIngredient(${idx})">×</button>
+        </div>
+      `).join('');
+    }
+
+    // Quantity controls
+    function changeQuantity(idx, delta) {
+      itemIngredients[idx].quantity = Math.max(1, itemIngredients[idx].quantity + delta);
+      renderIngredientList();
+    }
+
+    function removeIngredient(idx) {
+      itemIngredients.splice(idx, 1);
+      renderIngredientList();
+    }
+
+    // Setup ingredient autocomplete
+    function setupIngredientAutocomplete() {
+      const input = document.getElementById('ingredientSearchInput');
+      const dropdown = document.getElementById('ingredientDropdown');
+
+      input.addEventListener('input', () => {
+        const query = input.value.toLowerCase().trim();
+        if (!query) {
+          dropdown.style.display = 'none';
+          return;
+        }
+
+        // Filter ingredients not already added
+        const existingIds = new Set(itemIngredients.map(i => i.ingredient_id));
+        const matches = allIngredients
+          .filter(i => !existingIds.has(i.id) &&
+            (i.name.toLowerCase().includes(query) || i.category.toLowerCase().includes(query)))
+          .slice(0, 10);
+
+        if (!matches.length) {
+          dropdown.style.display = 'none';
+          return;
+        }
+
+        dropdown.innerHTML = matches.map(i => `
+          <div class="autocomplete-item" data-id="${i.id}" data-name="${escapeHtml(i.name)}" data-category="${escapeHtml(i.category)}">
+            ${escapeHtml(i.name)} <span style="color:#888">(${escapeHtml(i.category)})</span>
+          </div>
+        `).join('');
+        dropdown.style.display = 'block';
+      });
+
+      dropdown.addEventListener('click', (e) => {
+        const item = e.target.closest('.autocomplete-item');
+        if (!item) return;
+
+        itemIngredients.push({
+          ingredient_id: parseInt(item.dataset.id),
+          ingredient_name: item.dataset.name,
+          ingredient_category: item.dataset.category,
+          quantity: 1,
+        });
+        renderIngredientList();
+        input.value = '';
+        dropdown.style.display = 'none';
+      });
+
+      // Hide dropdown on blur
+      input.addEventListener('blur', () => {
+        setTimeout(() => dropdown.style.display = 'none', 200);
+      });
+    }
 
     // Setup category autocomplete functionality
     function setupCategoryAutocomplete() {
@@ -1051,6 +1252,11 @@
       // Reset size pricing to single price
       sizeCategorySelectEl.value = "";
       renderSizePrices(null, []);
+
+      // Reset ingredients
+      itemIngredients = [];
+      renderIngredientList();
+      switchTab('details'); // Reset to details tab
     }
 
     function selectItemByIndex(idx, newItem = false) {
@@ -1086,6 +1292,16 @@
       // Set size category and render prices
       sizeCategorySelectEl.value = item.size_category_id || "";
       renderSizePrices(item.size_category_id, item.size_prices || []);
+
+      // Load item's ingredients
+      itemIngredients = (item.ingredients || []).map(i => ({
+        ingredient_id: i.ingredient_id,
+        ingredient_name: i.ingredient_name,
+        ingredient_category: i.ingredient_category,
+        quantity: i.quantity,
+      }));
+      renderIngredientList();
+      switchTab('details'); // Reset to details tab
     }
 
     // Collect size prices from the form
@@ -1154,7 +1370,11 @@
         required_match_phrases: requiredPhraseValues.join(","),
         category_ids: selectedCategoryIds,
         size_category_id: sizeCategoryId,
-        size_prices: sizePrices
+        size_prices: sizePrices,
+        ingredients: itemIngredients.map(i => ({
+          ingredient_id: i.ingredient_id,
+          quantity: i.quantity,
+        })),
       };
 
       if (!payload.name) {
@@ -1231,8 +1451,16 @@
 
     // Initialize: load item types, categories, and size categories first, then menu items
     async function init() {
-      await Promise.all([loadItemTypes(), loadCategories(), loadSizeCategories()]);
+      await Promise.all([loadItemTypes(), loadCategories(), loadSizeCategories(), loadAllIngredients()]);
       await loadMenuItems();
+
+      // Setup tab event listeners
+      document.querySelectorAll('.detail-tab').forEach(tab => {
+        tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+      });
+
+      // Setup ingredient autocomplete
+      setupIngredientAutocomplete();
     }
     init();
   </script>

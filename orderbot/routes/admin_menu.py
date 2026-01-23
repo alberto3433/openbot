@@ -25,16 +25,8 @@ Menu items have:
 - category: Grouping (sandwiches, drinks, sides)
 - is_signature: Pre-configured items on the speed menu
 - base_price: Starting price before modifiers
-- metadata: Additional data (description, defaults, allergens)
 - item_type_id: Links to ItemType for configuration options
-
-Metadata Field:
----------------
-The metadata field stores JSON data including:
-- description: Item description for display
-- default_config: Default selections for signature items
-- allergens: List of allergen warnings
-- calories: Nutritional information
+- ingredients: Default ingredients via menu_item_ingredients junction table
 
 Usage:
 ------
@@ -42,17 +34,16 @@ Usage:
     POST /admin/menu
     {
         "name": "The Italian",
-        "category": "sandwiches",
+        "category_ids": [1],
         "is_signature": true,
         "base_price": 12.99,
-        "metadata": {
-            "description": "Salami, capicola, and provolone",
-            "default_config": {"bread": "italian", "toasted": true}
-        }
+        "ingredients": [
+            {"ingredient_id": 1, "quantity": 1},
+            {"ingredient_id": 2, "quantity": 1}
+        ]
     }
 """
 
-import json
 import logging
 from typing import Any, Dict, List
 
@@ -271,10 +262,8 @@ def _set_menu_item_ingredients(
 
 def serialize_menu_item(item: MenuItem, db: Session) -> MenuItemOut:
     """Convert MenuItem model to response schema."""
-    try:
-        meta = json.loads(item.extra_metadata) if item.extra_metadata else {}
-    except (json.JSONDecodeError, TypeError):
-        meta = {}
+    # extra_metadata deprecated - ingredients now in junction table
+    meta = {}
 
     # Get category IDs from the category_records relationship
     category_ids = [cr.category_id for cr in item.category_records] if item.category_records else []
@@ -359,7 +348,7 @@ def create_menu_item(
         # Note: category column removed - use category_ids for categorization
         is_signature=payload.is_signature,
         available_qty=payload.available_qty,
-        extra_metadata=json.dumps(payload.metadata or {}),
+        # Note: extra_metadata deprecated - use ingredients junction table
         item_type_id=payload.item_type_id,
         abbreviation=payload.abbreviation,
         required_match_phrases=payload.required_match_phrases,
@@ -444,8 +433,7 @@ def update_menu_item(
                 item.size_category_id = 3  # Quantity category
     if payload.available_qty is not None:
         item.available_qty = payload.available_qty
-    if payload.metadata is not None:
-        item.extra_metadata = json.dumps(payload.metadata)
+    # Note: payload.metadata is ignored - extra_metadata deprecated, use ingredients junction table
     if payload.item_type_id is not None:
         item.item_type_id = payload.item_type_id
     if payload.aliases is not None:
@@ -459,6 +447,10 @@ def update_menu_item(
 
     # Update size pricing
     _set_menu_item_size_prices(db, item, payload.size_category_id, payload.size_prices)
+
+    # Update ingredients
+    if payload.ingredients is not None:
+        _set_menu_item_ingredients(db, item, [ing.model_dump() for ing in payload.ingredients])
 
     db.commit()
     db.refresh(item)

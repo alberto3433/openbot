@@ -523,7 +523,7 @@ def find_default_ingredient_match(
     """
     Find if user input matches a default ingredient of a menu item.
 
-    This checks the default_config in the menu item's extra_metadata for
+    This queries the menu_item_ingredients junction table to find
     ingredients that are part of the menu item's default configuration.
 
     Args:

@@ -408,7 +408,8 @@ class MenuItem(Base):
     # Note: base_price column removed - use menu_item_size_prices instead
     available_qty = Column(Integer, default=0, nullable=False)
 
-    extra_metadata = Column(Text, nullable=True)
+    # Note: extra_metadata column removed - default ingredients now stored
+    # in menu_item_ingredients junction table (via ingredient_links relationship)
 
     # Link to generic item type system (optional - for migration compatibility)
     item_type_id = Column(Integer, ForeignKey("item_types.id"), nullable=True, index=True)

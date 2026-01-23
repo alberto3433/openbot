@@ -1005,15 +1005,19 @@ def populate_menu_items(db: Session):
     ]
 
     added = 0
+    # Keys that are not columns on MenuItem (default_config is now in junction table)
+    non_column_keys = {"default_config", "category"}
     for item_data in items:
+        # Remove non-column keys before creating/updating MenuItem
+        clean_data = {k: v for k, v in item_data.items() if k not in non_column_keys}
         existing = db.query(MenuItem).filter(MenuItem.name == item_data["name"]).first()
         if not existing:
-            menu_item = MenuItem(**item_data)
+            menu_item = MenuItem(**clean_data)
             db.add(menu_item)
             added += 1
         else:
             # Update existing item
-            for key, value in item_data.items():
+            for key, value in clean_data.items():
                 setattr(existing, key, value)
 
     db.commit()

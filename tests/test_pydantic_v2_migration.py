@@ -83,11 +83,8 @@ class TestPydanticV2ModelValidate:
         if not menu_item:
             menu_item = MenuItem(
                 name="Test Sandwich Pydantic",
-                category="sandwich",
                 is_signature=True,
-                base_price=9.99,
                 available_qty=10,
-                extra_metadata="{}",
             )
             db_session.add(menu_item)
             db_session.commit()

@@ -260,8 +260,14 @@ def _set_menu_item_ingredients(
         ))
 
 
-def serialize_menu_item(item: MenuItem, db: Session) -> MenuItemOut:
-    """Convert MenuItem model to response schema."""
+def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool = True) -> MenuItemOut:
+    """Convert MenuItem model to response schema.
+
+    Args:
+        item: The MenuItem to serialize
+        db: Database session
+        include_ingredients: Whether to include ingredients (set False for list endpoints to avoid N+1)
+    """
     # extra_metadata deprecated - ingredients now in junction table
     meta = {}
 
@@ -278,9 +284,9 @@ def serialize_menu_item(item: MenuItem, db: Session) -> MenuItemOut:
                 price=float(sp.price),
             ))
 
-    # Get ingredients
+    # Get ingredients (skip for list endpoints to avoid N+1 queries)
     ingredients = []
-    if item.ingredient_links:
+    if include_ingredients and item.ingredient_links:
         for link in item.ingredient_links:
             ingredients.append(MenuItemIngredientOut(
                 ingredient_id=link.ingredient_id,
@@ -328,11 +334,13 @@ def admin_menu(
             joinedload(MenuItem.alias_records),
             joinedload(MenuItem.category_records),
             joinedload(MenuItem.size_prices).joinedload(MenuItemSizePrice.size),
+            joinedload(MenuItem.item_type),  # For category display name
         )
         .order_by(MenuItem.id.asc())
         .all()
     )
-    return [serialize_menu_item(m, db) for m in items]
+    # Skip ingredients in list to avoid N+1 queries - fetch on single item GET
+    return [serialize_menu_item(m, db, include_ingredients=False) for m in items]
 
 
 @admin_menu_router.post("", response_model=MenuItemOut)
@@ -391,6 +399,10 @@ def get_menu_item(
         db.query(MenuItem)
         .options(
             joinedload(MenuItem.size_prices).joinedload(MenuItemSizePrice.size),
+            joinedload(MenuItem.ingredient_links).joinedload(MenuItemIngredient.ingredient),
+            joinedload(MenuItem.item_type),
+            joinedload(MenuItem.alias_records),
+            joinedload(MenuItem.category_records),
         )
         .filter(MenuItem.id == item_id)
         .first()

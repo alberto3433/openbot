@@ -1177,13 +1177,23 @@ class TakingItemsHandler(MenuDataMixin):
                             # Determine category from database lookup
                             category = modifier_to_category.get(base_modifier, "topping")
 
+                            # Extract quantity from original user input
+                            # Handles "double bacon", "triple syrup", "extra bacon", "2 bacon"
+                            quantity = 1
+                            if raw_user_input:
+                                quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
+                                # Also check if modifier has "(extra)" qualifier - treat as qty=2
+                                if quantity == 1 and "(extra)" in modifier_lower:
+                                    quantity = 2
+
                             # Add to unified selections list
                             target_item.add_selection(
                                 slug=modifier_slug,
                                 category=category,
                                 display_name=modifier.title(),
+                                quantity=quantity,
                             )
-                            logger.info("MODIFY ADD: Added '%s' (category=%s) to item", modifier, category)
+                            logger.info("MODIFY ADD: Added '%s' (category=%s, qty=%d) to item", modifier, category, quantity)
 
                     # Recalculate price
                     self.pricing.recalculate_item_price(target_item)

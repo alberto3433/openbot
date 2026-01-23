@@ -172,8 +172,11 @@ attribute_options
 menu_items
 ├── id, name, base_price
 ├── item_type_id → item_types
-├── aliases (recognition patterns)
-└── extra_metadata (JSON: default_config for signature items)
+└── aliases (recognition patterns)
+
+menu_item_ingredients (junction table for signature item defaults)
+├── menu_item_id → menu_items
+└── ingredient_id → ingredients
 ```
 
 ### Recognition & Parsing
@@ -434,5 +437,5 @@ All menu data and attribute definitions are cached at startup in `MenuDataCache`
 
 1. Insert into `menu_items` with item_type_id
 2. Add aliases for recognition
-3. For signature items, set default_config in `extra_metadata` JSON
+3. For signature items, add default ingredients to `menu_item_ingredients` junction table
 4. **No code changes required**

@@ -2571,3 +2571,44 @@ class TestAddModifierToItem:
             modifiers_lower = [m.lower() for m in result.modify_add_modifiers]
             assert "american cheese" not in modifiers_lower, \
                 f"American Cheese should not match 'cc' (cream cheese): {result.modify_add_modifiers}"
+
+
+class TestExtractQuantityForPattern:
+    """Unit tests for extract_quantity_for_pattern() function."""
+
+    def test_numeric_quantity(self):
+        """Test numeric quantities like '2 bacon'."""
+        from orderbot.tasks.parsers.quantity_utils import extract_quantity_for_pattern
+        assert extract_quantity_for_pattern("2 bacon", "bacon") == 2
+        assert extract_quantity_for_pattern("3 vanilla syrups", "vanilla") == 3
+
+    def test_word_quantity(self):
+        """Test word quantities like 'two bacon'."""
+        from orderbot.tasks.parsers.quantity_utils import extract_quantity_for_pattern
+        assert extract_quantity_for_pattern("two bacon", "bacon") == 2
+        assert extract_quantity_for_pattern("three vanilla", "vanilla") == 3
+
+    def test_double_triple_quad(self):
+        """Test 'double', 'triple', 'quad' prefixes."""
+        from orderbot.tasks.parsers.quantity_utils import extract_quantity_for_pattern
+        assert extract_quantity_for_pattern("double bacon", "bacon") == 2
+        assert extract_quantity_for_pattern("triple shot", "shot") == 3
+        assert extract_quantity_for_pattern("quad espresso", "espresso") == 4
+
+    def test_extra_as_quantity_2(self):
+        """Test 'extra' is treated as quantity=2."""
+        from orderbot.tasks.parsers.quantity_utils import extract_quantity_for_pattern
+        assert extract_quantity_for_pattern("extra bacon", "bacon") == 2
+        assert extract_quantity_for_pattern("add extra cheese", "cheese") == 2
+
+    def test_no_quantity_defaults_to_1(self):
+        """Test that no quantity prefix defaults to 1."""
+        from orderbot.tasks.parsers.quantity_utils import extract_quantity_for_pattern
+        assert extract_quantity_for_pattern("add bacon", "bacon") == 1
+        assert extract_quantity_for_pattern("vanilla syrup", "vanilla") == 1
+
+    def test_case_insensitive(self):
+        """Test that matching is case insensitive."""
+        from orderbot.tasks.parsers.quantity_utils import extract_quantity_for_pattern
+        assert extract_quantity_for_pattern("DOUBLE BACON", "bacon") == 2
+        assert extract_quantity_for_pattern("Extra Cheese", "cheese") == 2

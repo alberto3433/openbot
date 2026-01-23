@@ -484,6 +484,11 @@
       border: none;
       cursor: pointer;
       font-size: 18px;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    .remove-btn:hover {
+      background: #ffebee;
     }
   </style>
 </head>
@@ -528,7 +533,9 @@
         </select>
         <button id="newItemBtn">+ New</button>
       </div>
-      <div id="menuList" class="list"></div>
+      <div id="menuList" class="list">
+        <div class="empty-state">Loading menu items...</div>
+      </div>
     </div>
 
     <div class="detail">
@@ -873,23 +880,46 @@
       renderSizePrices(categoryId ? parseInt(categoryId) : null, []);
     });
 
-    // Tab switching
-    function switchTab(tabName) {
+    // Tab switching (with lazy loading of ingredients)
+    let ingredientsLoaded = false;
+    async function switchTab(tabName) {
       document.querySelectorAll('.detail-tab').forEach(t =>
         t.classList.toggle('active', t.dataset.tab === tabName)
       );
       document.getElementById('tabDetails').classList.toggle('active', tabName === 'details');
       document.getElementById('tabIngredients').classList.toggle('active', tabName === 'ingredients');
+
+      // Lazy load ingredients when tab is first clicked
+      if (tabName === 'ingredients' && !ingredientsLoaded) {
+        await loadAllIngredients();
+      }
     }
 
-    // Fetch all ingredients on page load
+    // Fetch all ingredients (lazy loaded on Ingredients tab click)
     async function loadAllIngredients() {
+      if (ingredientsLoaded) return;
+      const searchInput = document.getElementById('ingredientSearchInput');
+      const originalPlaceholder = searchInput.placeholder;
+
+      // Show loading state
+      setStatus("Loading ingredients...");
+      searchInput.disabled = true;
+      searchInput.placeholder = "Loading ingredients...";
+
       try {
-        const resp = await fetch(`${API_BASE}/admin/ingredients`, { credentials: 'include' });
+        // Use the lightweight /list endpoint - returns only id, name, category
+        const resp = await fetch(`${API_BASE}/admin/ingredients/list`, { credentials: 'include' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         allIngredients = await resp.json();
+        ingredientsLoaded = true;
+        setStatus(`Loaded ${allIngredients.length} ingredients.`);
+        searchInput.placeholder = originalPlaceholder;
+        searchInput.disabled = false;
       } catch (err) {
         console.error("Error loading ingredients:", err);
+        setStatus("Error loading ingredients. See console.", true);
+        searchInput.placeholder = "Error loading ingredients";
+        searchInput.disabled = true;
         allIngredients = [];
       }
     }
@@ -917,9 +947,10 @@
       `).join('');
     }
 
-    // Quantity controls
+    // Quantity controls (min: 1, max: 20)
     function changeQuantity(idx, delta) {
-      itemIngredients[idx].quantity = Math.max(1, itemIngredients[idx].quantity + delta);
+      const newQty = itemIngredients[idx].quantity + delta;
+      itemIngredients[idx].quantity = Math.min(20, Math.max(1, newQty));
       renderIngredientList();
     }
 
@@ -1259,7 +1290,7 @@
       switchTab('details'); // Reset to details tab
     }
 
-    function selectItemByIndex(idx, newItem = false) {
+    async function selectItemByIndex(idx, newItem = false) {
       currentIndex = idx;
       document.querySelectorAll(".item-row").forEach((row, i) => {
         row.classList.toggle("active", i === currentIndex);
@@ -1275,7 +1306,20 @@
         return;
       }
 
-      const item = filteredItems[currentIndex];
+      const listItem = filteredItems[currentIndex];
+
+      // Fetch full item details including ingredients
+      let item = listItem;
+      try {
+        const resp = await fetch(`${API_BASE}/admin/menu/${listItem.id}`, { credentials: 'include' });
+        if (resp.ok) {
+          item = await resp.json();
+        }
+      } catch (err) {
+        console.error("Error fetching item details:", err);
+        // Fall back to list data (without ingredients)
+      }
+
       detailTitleEl.textContent = item.name || "Menu item";
       itemIdEl.value = item.id || "";
       itemNameEl.value = item.name || "";
@@ -1450,8 +1494,9 @@
     }
 
     // Initialize: load item types, categories, and size categories first, then menu items
+    // Note: ingredients are lazy-loaded when Ingredients tab is clicked
     async function init() {
-      await Promise.all([loadItemTypes(), loadCategories(), loadSizeCategories(), loadAllIngredients()]);
+      await Promise.all([loadItemTypes(), loadCategories(), loadSizeCategories()]);
       await loadMenuItems();
 
       // Setup tab event listeners

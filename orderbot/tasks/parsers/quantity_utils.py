@@ -42,7 +42,7 @@ WORD_TO_NUM: dict[str, int] = {
 BASIC_WORD_TO_NUM: dict[str, int] = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "double": 2, "triple": 3,
+    "double": 2, "triple": 3, "quad": 4, "quadruple": 4,
 }
 
 
@@ -130,7 +130,7 @@ def extract_quantity_for_pattern(user_input: str, pattern: str) -> int:
     """Extract quantity from user input for a given pattern.
 
     Handles both numeric ("2 vanilla") and word ("two vanilla") quantities
-    appearing before a modifier pattern.
+    appearing before a modifier pattern. Also treats "extra" as quantity=2.
 
     Args:
         user_input: The user's input string (will be lowercased)
@@ -144,6 +144,8 @@ def extract_quantity_for_pattern(user_input: str, pattern: str) -> int:
         2
         >>> extract_quantity_for_pattern("triple espresso", "espresso")
         3
+        >>> extract_quantity_for_pattern("extra bacon", "bacon")
+        2
         >>> extract_quantity_for_pattern("add vanilla", "vanilla")
         1
     """
@@ -155,14 +157,18 @@ def extract_quantity_for_pattern(user_input: str, pattern: str) -> int:
     if digit_match:
         return int(digit_match.group(1))
 
-    # Try word match: "two vanilla syrups", "double shot", "triple espresso"
+    # Try word match: "two vanilla syrups", "double shot", "triple espresso", "extra bacon"
+    # Note: "extra" is treated as quantity=2 for modifiers
     word_pattern = (
         r'(one|two|three|four|five|six|seven|eight|nine|ten|'
-        r'double|triple|quad|quadruple)\s+' + escaped_pattern + r's?'
+        r'double|triple|quad|quadruple|extra)\s+' + escaped_pattern + r's?'
     )
     word_match = re.search(word_pattern, user_input)
     if word_match:
-        return BASIC_WORD_TO_NUM.get(word_match.group(1).lower(), 1)
+        word = word_match.group(1).lower()
+        if word == "extra":
+            return 2
+        return BASIC_WORD_TO_NUM.get(word, 1)
 
     return 1
 

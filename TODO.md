@@ -23,9 +23,9 @@ Cleanup, rationalization, and simplification opportunities identified 2026-01-11
   - Migration: `d6e7f8g9h0i1_drop_unused_columns.py`
   - Dropped index `ix_menu_items_classifier` and column
 
-- [~] **`MenuItem.extra_metadata` column** - STILL IN USE
-  - Used in: `menu_index_builder.py`, seed files, admin routes
-  - Keep for now - not actually unused
+- [x] **`MenuItem.extra_metadata` column** - REMOVED ✓
+  - Migrated default ingredients to `menu_item_ingredients` junction table
+  - Column dropped via `drop_extra_metadata_column` migration
 
 - [~] **`MenuItem.default_config` column** - STILL IN USE
   - Referenced in multiple places

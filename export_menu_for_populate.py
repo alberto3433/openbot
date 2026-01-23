@@ -131,7 +131,6 @@ def check_lexington():
     print(f"Item Type ID: {lexington.item_type_id}")
     print(f"Description: {lexington.description}")
     print(f"Default Config: {json.dumps(lexington.default_config, indent=2) if lexington.default_config else 'None'}")
-    print(f"Extra Metadata: {lexington.extra_metadata}")
     print(f"Aliases: {lexington.aliases}")
     print(f"Recipe ID: {lexington.recipe_id}")
 

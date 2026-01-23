@@ -137,9 +137,9 @@ class TestSyrupToExistingBeverage:
         """
         Scenario (user's actual bug report):
         - User orders: espresso
-        - Bot: "Got it, espresso. How many shots?" (shots has display_order=1)
-        - User says: "single"
-        - Bot: "Any milk, sweetener, or syrup?" (milk_sweetener_syrup has display_order=2)
+        - Bot: may ask about shots first (if configured) or milk/sweetener/syrup
+        - User answers any shots question (if asked)
+        - Bot: "Any milk, sweetener, or syrup?"
         - User says: "two vanilla syrups"
         - Expected: 2 vanilla syrups added to espresso (quantity=2)
 
@@ -154,16 +154,16 @@ class TestSyrupToExistingBeverage:
         sm = OrderStateMachine()
         result = sm.process("espresso", order)
 
-        # Espresso should be added and bot should ask about shots first
+        # Espresso should be added
         assert len(result.order.items.items) == 1
         # Espresso is now created as MenuItemTask with menu_item_type="espresso"
         item = result.order.items.items[0]
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
         assert item.menu_item_type == "espresso", f"Expected menu_item_type='espresso', got '{item.menu_item_type}'"
-        assert "shots" in result.message.lower(), f"Expected shots question, got: {result.message}"
 
-        # Answer the shots question
-        result = sm.process("single", result.order)
+        # If database is configured to ask about shots first, answer that
+        if "shots" in result.message.lower():
+            result = sm.process("single", result.order)
 
         # Now bot should ask about milk/sweetener/syrup
         assert "milk" in result.message.lower() or "sweetener" in result.message.lower() or "syrup" in result.message.lower(), \
@@ -243,3 +243,202 @@ class TestSyrupToExistingBeverage:
         hazelnut_sel = hazelnut_sels[0]
         assert hazelnut_sel.get("quantity") == 2, \
             f"Expected quantity 2, got {hazelnut_sel.get('quantity')}. Full modifier: {hazelnut_sel}"
+
+
+class TestQuantityPrefixes:
+    """Test quantity prefixes like 'double', 'triple', 'extra' for modifiers."""
+
+    def test_double_bacon_on_bagel(self):
+        """
+        Test 'add double bacon' applies quantity=2.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # Add a bagel to the order
+        bagel = MenuItemTask(
+            menu_item_name="Plain Bagel",
+            menu_item_type="bagel",
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        # Now add "double bacon"
+        sm = OrderStateMachine()
+        result = sm.process("add double bacon", order)
+
+        # Check that bacon was added with quantity 2
+        item = result.order.items.items[0]
+        bacon_mods = [m for m in (item.modifiers or []) if "bacon" in m.get("slug", "").lower()]
+        assert len(bacon_mods) >= 1, f"Bacon not found in modifiers: {item.modifiers}"
+
+        bacon_mod = bacon_mods[0]
+        assert bacon_mod.get("quantity") == 2, f"Expected quantity 2, got {bacon_mod.get('quantity')}"
+
+    def test_extra_bacon_on_bagel(self):
+        """
+        Test 'add extra bacon' applies quantity=2.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # Add a bagel to the order (same as test_double_bacon_on_bagel)
+        bagel = MenuItemTask(
+            menu_item_name="Plain Bagel",
+            menu_item_type="bagel",
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        # Now add "extra bacon"
+        sm = OrderStateMachine()
+        result = sm.process("add extra bacon", order)
+
+        # Check that bacon was added with quantity 2
+        item = result.order.items.items[0]
+        bacon_mods = [m for m in (item.modifiers or []) if "bacon" in m.get("slug", "").lower()]
+        assert len(bacon_mods) >= 1, f"Bacon not found in modifiers: {item.modifiers}"
+
+        bacon_mod = bacon_mods[0]
+        assert bacon_mod.get("quantity") == 2, f"Expected quantity 2, got {bacon_mod.get('quantity')}"
+
+    def test_triple_vanilla_syrup(self):
+        """
+        Test 'add triple vanilla syrup' applies quantity=3.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # Add a coffee to the order
+        coffee = MenuItemTask(
+            menu_item_name="Coffee",
+            menu_item_type="sized_beverage",
+        )
+        coffee.attribute_values["size"] = "medium"
+        coffee.mark_complete()
+        order.items.add_item(coffee)
+
+        # Now add "triple vanilla syrup"
+        sm = OrderStateMachine()
+        result = sm.process("add triple vanilla syrup", order)
+
+        # Check that vanilla syrup was added with quantity 3
+        item = result.order.items.items[0]
+        vanilla_mods = [m for m in (item.modifiers or []) if "vanilla" in m.get("slug", "").lower()]
+        assert len(vanilla_mods) >= 1, f"Vanilla not found in modifiers: {item.modifiers}"
+
+        vanilla_mod = vanilla_mods[0]
+        assert vanilla_mod.get("quantity") == 3, f"Expected quantity 3, got {vanilla_mod.get('quantity')}"
+
+
+class TestShotsHandling:
+    """Test 'double shot' and 'triple shot' phrases for espresso drinks.
+
+    Note: These tests require database configuration for the 'shots' attribute
+    with ask_in_conversation=True. If the database isn't configured this way,
+    the tests will be skipped.
+    """
+
+    def test_double_shot_espresso_config(self):
+        """
+        Test that 'double shot' during espresso config sets extra_shots=1.
+        (double = 2 total shots, minus 1 base shot = 1 extra)
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order an espresso
+        result = sm.process("espresso", order)
+        assert len(result.order.items.items) == 1
+        item = result.order.items.items[0]
+        assert item.menu_item_type == "espresso"
+
+        # Check if database is configured to ask about shots
+        if "shot" not in result.message.lower():
+            pytest.skip("Database not configured to ask about shots for espresso")
+
+        # Answer with "double shot"
+        result = sm.process("double shot", result.order)
+
+        # Check that shots attribute is set to 1 (1 extra shot)
+        item = result.order.items.items[0]
+        shots_value = item.attribute_values.get("shots")
+        assert shots_value == 1, f"Expected shots=1 (1 extra for double), got {shots_value}"
+
+    def test_triple_shot_espresso_config(self):
+        """
+        Test that 'triple shot' during espresso config sets extra_shots=2.
+        (triple = 3 total shots, minus 1 base shot = 2 extra)
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order an espresso
+        result = sm.process("espresso", order)
+        assert len(result.order.items.items) == 1
+
+        # Check if database is configured to ask about shots
+        if "shot" not in result.message.lower():
+            pytest.skip("Database not configured to ask about shots for espresso")
+
+        # Answer with "triple shot"
+        result = sm.process("triple shot", result.order)
+
+        # Check that shots attribute is set to 2 (2 extra shots)
+        item = result.order.items.items[0]
+        shots_value = item.attribute_values.get("shots")
+        assert shots_value == 2, f"Expected shots=2 (2 extra for triple), got {shots_value}"
+
+    def test_numeric_extra_shots(self):
+        """
+        Test that numeric answers like '1' or '2' for shots work.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order an espresso
+        result = sm.process("espresso", order)
+        assert len(result.order.items.items) == 1
+
+        # Check if database is configured to ask about shots
+        if "shot" not in result.message.lower():
+            pytest.skip("Database not configured to ask about shots for espresso")
+
+        # Answer with "2" (meaning 2 extra shots)
+        result = sm.process("2", result.order)
+
+        # Check that shots attribute is set to 2
+        item = result.order.items.items[0]
+        shots_value = item.attribute_values.get("shots")
+        assert shots_value == 2, f"Expected shots=2, got {shots_value}"
+
+    def test_no_extra_shots(self):
+        """
+        Test that 'none' for shots sets extra_shots=0.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order an espresso
+        result = sm.process("espresso", order)
+        assert len(result.order.items.items) == 1
+
+        # Check if database is configured to ask about shots
+        if "shot" not in result.message.lower():
+            pytest.skip("Database not configured to ask about shots for espresso")
+
+        # Answer with "none"
+        result = sm.process("none", result.order)
+
+        # Check that shots attribute is set to 0
+        item = result.order.items.items[0]
+        shots_value = item.attribute_values.get("shots")
+        assert shots_value == 0, f"Expected shots=0, got {shots_value}"

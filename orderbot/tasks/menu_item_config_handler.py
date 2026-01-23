@@ -1535,6 +1535,32 @@ class MenuItemConfigHandler(BaseHandler):
 
         return self._advance_to_next_question(item, order, attr)
 
+    def _parse_shots_from_input(self, user_lower: str) -> int | None:
+        """Parse shots value from user input.
+
+        Converts "double shot", "triple shot" phrases to extra shots count.
+        Since espresso already includes 1 shot, we subtract 1 from the total.
+        - "double shot" = 2 total = 1 extra shot
+        - "triple shot" = 3 total = 2 extra shots
+        - "quad shot" = 4 total = 3 extra shots
+
+        Args:
+            user_lower: Lowercase user input
+
+        Returns:
+            int: Number of extra shots (0+), or None if not a shots expression
+        """
+        # Check for "double shot" / "triple shot" patterns - these are TOTAL shots
+        # so we subtract 1 for the base shot
+        if "double" in user_lower or "2 shot" in user_lower:
+            return 1  # 2 total - 1 base = 1 extra
+        elif "triple" in user_lower or "3 shot" in user_lower:
+            return 2  # 3 total - 1 base = 2 extra
+        elif "quad" in user_lower or "4 shot" in user_lower:
+            return 3  # 4 total - 1 base = 3 extra
+
+        return None
+
     def _handle_shots_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask, attr: dict
     ) -> StateMachineResult:
@@ -1560,27 +1586,24 @@ class MenuItemConfigHandler(BaseHandler):
         # Check for "none", "no", "skip" - user doesn't want extra shots
         if any(p in user_lower for p in ["none", "no extra", "no shots", "skip", "that's it"]):
             extra_shots = 0
-        # Check for "double shot" / "triple shot" patterns - these are TOTAL shots
-        # so we subtract 1 for the base shot
-        elif "double" in user_lower or "2 shot" in user_lower:
-            extra_shots = 1  # 2 total - 1 base = 1 extra
-        elif "triple" in user_lower or "3 shot" in user_lower:
-            extra_shots = 2  # 3 total - 1 base = 2 extra
-        elif "quad" in user_lower or "4 shot" in user_lower:
-            extra_shots = 3  # 4 total - 1 base = 3 extra
         else:
-            # Try to extract a raw number (user is likely specifying EXTRA shots directly)
-            # "1", "one", "2", "two" etc.
-            digit_match = re.search(r'\b(\d+)\b', user_lower)
-            if digit_match:
-                extra_shots = int(digit_match.group(1))
+            # Try the shot pattern helper first
+            parsed_shots = self._parse_shots_from_input(user_lower)
+            if parsed_shots is not None:
+                extra_shots = parsed_shots
             else:
-                # Check for word numbers
-                from .parsers.quantity_utils import WORD_TO_NUM
-                for word, num in sorted(WORD_TO_NUM.items(), key=lambda x: -len(x[0])):
-                    if word in user_lower.split():
-                        extra_shots = num
-                        break
+                # Try to extract a raw number (user is likely specifying EXTRA shots directly)
+                # "1", "one", "2", "two" etc.
+                digit_match = re.search(r'\b(\d+)\b', user_lower)
+                if digit_match:
+                    extra_shots = int(digit_match.group(1))
+                else:
+                    # Check for word numbers
+                    from .parsers.quantity_utils import WORD_TO_NUM
+                    for word, num in sorted(WORD_TO_NUM.items(), key=lambda x: -len(x[0])):
+                        if word in user_lower.split():
+                            extra_shots = num
+                            break
 
         # Store the extra shots value
         item[attr_slug] = extra_shots
@@ -2184,12 +2207,30 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Try to match against options in each unanswered attribute
         for attr in unanswered:
+            attr_slug = attr["slug"]
+
+            # Special handling for numeric "shots" attribute
+            # "double shot" = 1 extra, "triple shot" = 2 extra, etc.
+            if attr_slug == "shots":
+                shots_value = self._parse_shots_from_input(user_clean)
+                if shots_value is not None:
+                    item[attr_slug] = shots_value
+                    logger.info(
+                        "CHECKPOINT: Set shots=%d from input '%s'",
+                        shots_value, user_input
+                    )
+                    order.pending_field = "customization_checkpoint"
+                    return StateMachineResult(
+                        message=f"Okay, {shots_value} extra shot{'s' if shots_value != 1 else ''} added. Anything else to customize?",
+                        order=order,
+                    )
+                continue  # shots has no options, skip normal option matching
+
             options = attr.get("options", [])
             if not options:
                 continue
 
             input_type = attr.get("input_type", "single_select")
-            attr_slug = attr["slug"]
 
             if input_type == "multi_select":
                 # For multi_select, try to match multiple options

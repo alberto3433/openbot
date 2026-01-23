@@ -72,6 +72,7 @@ from ..models import (
     IngredientAlias,
     IngredientMustMatch,
     IngredientStoreAvailability,
+    IngredientUnit,
     MenuItem,
     MenuItemStoreAvailability,
 )
@@ -174,6 +175,20 @@ def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> i
 
 
 # =============================================================================
+# Ingredient Unit Endpoints
+# =============================================================================
+
+@admin_ingredients_router.get("/units", response_model=List[str])
+def list_ingredient_units(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[str]:
+    """List all available ingredient units for dropdown selection."""
+    units = db.query(IngredientUnit).order_by(IngredientUnit.name).all()
+    return [u.name for u in units]
+
+
+# =============================================================================
 # Ingredient Endpoints
 # =============================================================================
 
@@ -254,11 +269,16 @@ def create_ingredient(
     if existing:
         raise HTTPException(status_code=400, detail=f"Ingredient '{payload.name}' already exists")
 
+    # Look up unit_id from unit name
+    unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
+    if not unit_obj:
+        raise HTTPException(status_code=400, detail=f"Invalid unit: {payload.unit}")
+
     ingredient = Ingredient(
         name=payload.name,
         slug=payload.name.lower().replace(" ", "_"),
         category=payload.category.lower(),
-        unit=payload.unit,
+        unit_id=unit_obj.id,
         track_inventory=payload.track_inventory,
         is_available=payload.is_available,
         abbreviation=payload.abbreviation,
@@ -452,7 +472,10 @@ def update_ingredient(
     if payload.category is not None:
         ingredient.category = payload.category.lower()
     if payload.unit is not None:
-        ingredient.unit = payload.unit
+        unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
+        if not unit_obj:
+            raise HTTPException(status_code=400, detail=f"Invalid unit: {payload.unit}")
+        ingredient.unit_id = unit_obj.id
     if payload.track_inventory is not None:
         ingredient.track_inventory = payload.track_inventory
     if payload.is_available is not None:

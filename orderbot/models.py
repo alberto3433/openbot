@@ -590,7 +590,20 @@ class MenuItemStoreAvailability(Base):
     menu_item = relationship("MenuItem", back_populates="store_availability")
 
 
-# --- New Ingredient model ---
+# --- Ingredient Unit model ---
+
+class IngredientUnit(Base):
+    """Unit of measurement for ingredients (e.g., slice, pump, ounce)."""
+    __tablename__ = "ingredient_units"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), unique=True, nullable=False)  # 'serving', 'ounce', etc.
+
+    # Relationship
+    ingredients = relationship("Ingredient", back_populates="unit_rel")
+
+
+# --- Ingredient model ---
 
 class Ingredient(Base):
     __tablename__ = "ingredients"
@@ -599,7 +612,7 @@ class Ingredient(Base):
     name = Column(String, unique=True, nullable=False)
     slug = Column(String(100), unique=True, nullable=False, index=True)  # Canonical identifier
     category = Column(String, nullable=False)
-    unit = Column(String, nullable=False)       # 'slice', 'piece', 'oz', 'bag', 'ml', etc.
+    unit_id = Column(Integer, ForeignKey("ingredient_units.id"), nullable=False)
     track_inventory = Column(Boolean, nullable=False, default=True)
     # NOTE: Pricing for ingredients is managed via GlobalAttributeOption.price_modifier,
     # not in this table. See the data model documentation for details.
@@ -629,6 +642,8 @@ class Ingredient(Base):
     must_match_records = relationship("IngredientMustMatch", back_populates="ingredient", cascade="all, delete-orphan")
     # Menu items that contain this ingredient by default
     menu_item_links = relationship("MenuItemIngredient", back_populates="ingredient", cascade="all, delete-orphan")
+    # Unit relationship
+    unit_rel = relationship("IngredientUnit", back_populates="ingredients")
 
     @property
     def aliases(self) -> list[str]:
@@ -640,6 +655,10 @@ class Ingredient(Base):
         """Get list of must_match strings from child table."""
         return [m.must_match for m in self.must_match_records]
 
+    @property
+    def unit(self) -> str:
+        """Get unit name from relationship (backward compatibility)."""
+        return self.unit_rel.name if self.unit_rel else "serving"
 
 
 class IngredientAlias(Base):

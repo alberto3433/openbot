@@ -141,7 +141,7 @@ class IngredientCreate(BaseModel):
     """
     name: str
     category: str
-    unit: str = "piece"
+    unit: str = "serving"
     track_inventory: bool = False
     is_available: bool = True
     aliases: Optional[str] = None

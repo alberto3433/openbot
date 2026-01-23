@@ -590,7 +590,9 @@
 
         <div class="field">
           <label for="ingredientUnit">Unit</label>
-          <input type="text" id="ingredientUnit" placeholder="e.g., piece, slice, oz" />
+          <select id="ingredientUnit">
+            <!-- Populated dynamically from API -->
+          </select>
           <div class="hint">Unit of measurement</div>
         </div>
 
@@ -813,6 +815,35 @@
       }
     }
 
+    // Load ingredient units for dropdown
+    async function loadUnits() {
+      const unitSelect = document.getElementById("ingredientUnit");
+      try {
+        const resp = await authFetch(`${API_BASE}/units`);
+        if (resp.ok) {
+          const units = await resp.json();
+          unitSelect.innerHTML = "";
+          units.forEach(unit => {
+            const opt = document.createElement("option");
+            opt.value = unit;
+            opt.textContent = unit.charAt(0).toUpperCase() + unit.slice(1);
+            unitSelect.appendChild(opt);
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load units:", err);
+        // Fallback to hardcoded options if API fails
+        unitSelect.innerHTML = `
+          <option value="serving">Serving</option>
+          <option value="ounce">Ounce</option>
+          <option value="slice">Slice</option>
+          <option value="packet">Packet</option>
+          <option value="pump">Pump</option>
+          <option value="shot">Shot</option>
+        `;
+      }
+    }
+
     // Load ingredients (lightweight list)
     async function loadIngredients() {
       const storeId = getCurrentStoreId();
@@ -923,7 +954,7 @@
       document.getElementById("ingredientId").value = "";
       document.getElementById("ingredientName").value = "";
       document.getElementById("ingredientCategory").value = "topping";
-      document.getElementById("ingredientUnit").value = "piece";
+      document.getElementById("ingredientUnit").value = "serving";
       clearTags(aliasesContainer, aliasInput);
       clearTags(mustMatchContainer, mustMatchInput);
       updateAvailabilityButton(true);
@@ -1218,6 +1249,7 @@
     // Initial load
     async function init() {
       await loadStores();
+      await loadUnits();
       loadIngredients();
     }
     init();

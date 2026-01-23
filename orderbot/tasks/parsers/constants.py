@@ -164,8 +164,10 @@ CHANGE_REQUEST_PATTERNS = [
     # "actually X instead" / "actually make it X"
     # Negative lookahead excludes cancellation keywords so "actually cancel that" is NOT a change request
     (re.compile(r"actually\s+(?!cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)(?:make\s+it\s+)?(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
-    # "I meant X" / "I want X instead"
-    (re.compile(r"(?:i\s+meant|i\s+want(?:ed)?)\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "I meant X" - clearly signals correction
+    (re.compile(r"i\s+meant\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "I want X instead" - requires "instead" to signal change (without "instead", treat as answer)
+    (re.compile(r"i\s+want(?:ed)?\s+(.+?)\s+instead(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "no wait, X" / "wait, X instead"
     (re.compile(r"(?:no\s+)?wait[,.]?\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
 ]

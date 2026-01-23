@@ -18,6 +18,16 @@ import uuid
 
 
 # =============================================================================
+# Constants
+# =============================================================================
+
+# Categories whose ingredient display name should replace the base menu item name.
+# For example, a "Bagel" with bread="garlic_bagel" should display as "Garlic Bagel"
+# instead of "Bagel, Garlic Bagel".
+NAME_FORMING_CATEGORIES = {"bread"}
+
+
+# =============================================================================
 # Utility Functions
 # =============================================================================
 
@@ -333,11 +343,11 @@ class MenuItemTask(ItemTask):
         if not display_name:
             try:
                 from orderbot.menu_data_cache import menu_cache
-                # Try ingredient lookup first
-                display_name = menu_cache.get_ingredient_display_name(slug)
+                # Try global attribute option lookup first (for bread, size, etc.)
+                display_name = menu_cache.get_global_option_display_name(category, slug)
                 if not display_name:
-                    # Try attribute option lookup
-                    display_name = menu_cache.get_attribute_option_display_name(category, slug)
+                    # Fall back to ingredient lookup
+                    display_name = menu_cache.get_ingredient_display_name(slug)
             except Exception:
                 pass
 
@@ -562,7 +572,32 @@ class MenuItemTask(ItemTask):
     # -------------------------------------------------------------------------
 
     def get_display_name(self) -> str:
-        """Get display name for this menu item."""
+        """Get display name for this menu item.
+
+        For items with name-forming modifiers (like bread type), uses the
+        ingredient's display name instead of the generic menu item name.
+
+        Example: A "Bagel" with bread="garlic_bagel" returns "Garlic Bagel"
+        """
+        # Check for name-forming category modifiers (e.g., bread type)
+        for sel in self.modifiers:
+            category = sel.get("category", "")
+            if category in NAME_FORMING_CATEGORIES:
+                # Use the ingredient's display name if available
+                display_name = sel.get("display_name")
+                if display_name:
+                    return display_name
+                # Fall back to looking up from cache
+                slug = sel.get("slug", "")
+                if slug:
+                    try:
+                        from orderbot.menu_data_cache import menu_cache
+                        ingredient_name = menu_cache.get_ingredient_display_name(slug)
+                        if ingredient_name:
+                            return ingredient_name
+                    except Exception:
+                        pass
+        # Default to menu item name
         return self.menu_item_name
 
     def get_summary(self) -> str:
@@ -584,11 +619,16 @@ class MenuItemTask(ItemTask):
         displays = []
         for sel in self.modifiers:
             slug = sel.get("slug", "")
+            category = sel.get("category", "")
             display_name = sel.get("display_name", "")
             quantity = sel.get("quantity", 1)
 
             # Skip "no" selections (user declined)
             if slug == "no":
+                continue
+
+            # Skip name-forming categories (already part of base name)
+            if category in NAME_FORMING_CATEGORIES:
                 continue
 
             if display_name:

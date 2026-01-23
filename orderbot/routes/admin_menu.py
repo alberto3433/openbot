@@ -268,9 +268,6 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
         db: Database session
         include_ingredients: Whether to include ingredients (set False for list endpoints to avoid N+1)
     """
-    # extra_metadata deprecated - ingredients now in junction table
-    meta = {}
-
     # Get category IDs from the category_records relationship
     category_ids = [cr.category_id for cr in item.category_records] if item.category_records else []
 
@@ -306,7 +303,6 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
         is_signature=item.is_signature,
         base_price=float(item.base_price),
         available_qty=item.available_qty,
-        metadata=meta,
         item_type_id=item.item_type_id,
         aliases=item.aliases,
         abbreviation=item.abbreviation,
@@ -356,7 +352,6 @@ def create_menu_item(
         # Note: category column removed - use category_ids for categorization
         is_signature=payload.is_signature,
         available_qty=payload.available_qty,
-        # Note: extra_metadata deprecated - use ingredients junction table
         item_type_id=payload.item_type_id,
         abbreviation=payload.abbreviation,
         required_match_phrases=payload.required_match_phrases,
@@ -445,7 +440,6 @@ def update_menu_item(
                 item.size_category_id = 3  # Quantity category
     if payload.available_qty is not None:
         item.available_qty = payload.available_qty
-    # Note: payload.metadata is ignored - extra_metadata deprecated, use ingredients junction table
     if payload.item_type_id is not None:
         item.item_type_id = payload.item_type_id
     if payload.aliases is not None:

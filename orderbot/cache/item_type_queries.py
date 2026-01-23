@@ -190,6 +190,27 @@ class ItemTypeQueryMixin:
         metadata = self._global_attribute_metadata.get(attr_slug, {})
         return metadata.get("display_name", attr_slug)
 
+    def get_global_option_display_name(self, attr_slug: str, option_slug: str) -> str | None:
+        """Get the display name for a specific option within a global attribute.
+
+        Args:
+            attr_slug: The attribute slug (e.g., "bread", "size")
+            option_slug: The option slug (e.g., "garlic", "large")
+
+        Returns:
+            The option's display name if found, None otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        options = self._global_attribute_options.get(attr_slug, [])
+        option_slug_lower = option_slug.lower()
+        for opt in options:
+            if opt.get("slug", "").lower() == option_slug_lower:
+                return opt.get("display_name")
+        return None
+
     def is_boolean_attribute(self, attr_slug: str) -> bool:
         """Check if an attribute is a boolean type.
 

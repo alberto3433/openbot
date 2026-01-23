@@ -47,6 +47,101 @@ OFF_TOPIC_PATTERNS = [
     re.compile(r"^make\s+it\s+(?:with\s+)?\w+", re.IGNORECASE),
 ]
 
+# Patterns to strip common ordering prefixes to extract the actual value
+# e.g., "I want avocado" -> "avocado", "give me tomatoes" -> "tomatoes"
+_ORDERING_PREFIX_PATTERN = re.compile(
+    r"^(?:i(?:'?d)?\s*(?:want|like|need|have)|"
+    r"(?:can\s+i\s+(?:get|have))|"
+    r"(?:give\s+me)|"
+    r"(?:let(?:'?s)?\s+(?:do|go\s+with))|"
+    r"(?:i(?:'?ll)?\s+(?:take|have|get)))\s+",
+    re.IGNORECASE
+)
+
+
+def _extract_answer_value(user_input: str) -> str:
+    """Extract the actual answer value by stripping common ordering prefixes.
+
+    Args:
+        user_input: The user's raw input
+
+    Returns:
+        The input with ordering prefixes stripped, or the original if no prefix found
+    """
+    stripped = _ORDERING_PREFIX_PATTERN.sub("", user_input.strip())
+    # Also strip trailing "please"
+    stripped = re.sub(r"\s+please\s*$", "", stripped, flags=re.IGNORECASE)
+    return stripped.strip()
+
+
+def _is_valid_answer_for_pending_field(user_input: str, pending_field: str | None) -> bool:
+    """Check if user input could be a valid answer to the current configuration question.
+
+    This is used to prevent false positive change request detection. If the user says
+    "I want avocado" when asked about toppings, we should treat it as an answer,
+    not as a modifier change request.
+
+    Args:
+        user_input: The user's input text
+        pending_field: The current configuration field in "item_type:attr_slug" format
+
+    Returns:
+        True if the input appears to be a valid answer for the pending field
+    """
+    if not pending_field:
+        return False
+
+    # Extract the potential answer value
+    answer_value = _extract_answer_value(user_input).lower()
+    if not answer_value:
+        return False
+
+    # Parse the pending_field to get item_type and attr_slug
+    item_type_slug, attr_slug = parse_pending_field(pending_field)
+
+    # Handle customization_checkpoint and customization_selection specially
+    # These are open-ended fields where any valid ingredient is a valid answer
+    if attr_slug in ("customization_checkpoint", "customization_selection"):
+        # Check if this is a known ingredient (toppings, proteins, cheeses, etc.)
+        try:
+            if menu_cache.is_known_modifier(answer_value):
+                logger.debug("Found known modifier '%s' during customization", answer_value)
+                return True
+        except Exception as e:
+            logger.debug("Error checking ingredient for customization: %s", e)
+        return False
+
+    # For standard "item_type:attr_slug" format, need both parts
+    if not item_type_slug or not attr_slug:
+        return False
+
+    # Check if this value is valid for the current attribute
+    try:
+        # Get the valid options for this attribute
+        attrs = menu_cache.get_item_type_attributes(item_type_slug)
+        if attr_slug in attrs:
+            attr_config = attrs[attr_slug]
+            # Check if the value matches any option
+            for opt in attr_config.get("options", []):
+                opt_name = opt.get("display_name", "").lower()
+                opt_slug = opt.get("slug", "").lower()
+                if answer_value == opt_name or answer_value == opt_slug:
+                    return True
+                # Also check if answer_value is contained in option name
+                if opt_name and answer_value in opt_name:
+                    return True
+
+            # For ingredient-based attributes, check against ingredients
+            if attr_config.get("loads_from_ingredients"):
+                # Check if this is a known ingredient
+                if menu_cache.is_known_modifier(answer_value):
+                    return True
+    except Exception as e:
+        logger.debug("Error checking valid answer for %s: %s", pending_field, e)
+
+    return False
+
+
 def _get_valid_config_answers() -> set[str]:
     """Get the set of valid configuration answers from the database.
 
@@ -162,6 +257,9 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
         # During customization_checkpoint or customization_selection, "add X" commands are valid
         # The bot is specifically offering options like "Add Egg, Extra Cheese, Toppings"
         if attr_slug in ("customization_checkpoint", "customization_selection"):
+            # Allow "what X do you have?" questions - user is asking about offered options
+            if re.search(r"what \w+ do you have", input_lower):
+                return False
             # Allow "add X" commands since the bot offered these as valid choices
             if input_lower.startswith("add "):
                 return False
@@ -275,9 +373,16 @@ class ConfiguringItemHandler:
         if cancel_result:
             return cancel_result
 
+        # Context-aware check: if input could be a valid answer to the current question,
+        # skip change request and off-topic detection. This prevents "I want avocado" from
+        # being misinterpreted as a change request or off-topic when asked about toppings.
+        is_valid_answer = _is_valid_answer_for_pending_field(user_input, order.pending_field)
+        if is_valid_answer:
+            logger.debug("Input is valid answer for %s - skipping change/off-topic detection", order.pending_field)
+
         # Check for modifier change requests during configuration
         # If detected, tell user to wait until config is complete
-        change_request = self.modifier_change_handler.detect_change_request(user_input)
+        change_request = None if is_valid_answer else self.modifier_change_handler.detect_change_request(user_input)
         if change_request:
             logger.info("CHANGE REQUEST: Detected during config, deferring: %s", change_request)
             msg = self.modifier_change_handler.generate_mid_config_message()
@@ -290,7 +395,8 @@ class ConfiguringItemHandler:
         # Check for off-topic requests during configuration (e.g., "what syrups do you have?", "add vanilla syrup")
         # If detected, politely redirect back to the current configuration question
         # Note: Questions relevant to the current config (e.g., "what cream cheese do you have?" when asked about spread) are allowed
-        if _is_off_topic_request(user_input, order.pending_field):
+        # Skip this check if we already determined the input is a valid answer
+        if not is_valid_answer and _is_off_topic_request(user_input, order.pending_field):
             logger.info("OFF-TOPIC REQUEST: Detected during config: '%s'", user_input[:50])
             # Get a friendly description of the item being configured
             item_name = item.get_summary() if hasattr(item, 'get_summary') else "your item"

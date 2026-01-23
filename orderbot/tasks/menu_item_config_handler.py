@@ -675,7 +675,7 @@ class MenuItemConfigHandler(BaseHandler):
             if has_more:
                 return f"We also have {options_str}, and more."
             else:
-                return f"We also have {options_str}."
+                return f"And finally, {options_str}. That's all of them."
 
     def _handle_options_inquiry(
         self,
@@ -768,7 +768,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Add acknowledgment for first question
         if is_first_question:
-            question = f"Got it, {item.menu_item_name}. {question}"
+            question = f"Got it, {item.get_display_name()}. {question}"
 
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
@@ -1535,6 +1535,32 @@ class MenuItemConfigHandler(BaseHandler):
 
         return self._advance_to_next_question(item, order, attr)
 
+    def _get_shot_price(self, item_type: str) -> float:
+        """Look up per-shot price for an item type.
+
+        Returns the price per shot from global_attribute_options or 0.0 if not found.
+        """
+        from orderbot.menu_data_cache import menu_cache
+
+        # Try to get from global attribute options for "shots"
+        options = menu_cache.get_global_attribute_options("shots")
+        for opt in options:
+            slug = opt.get("slug", "")
+            if slug in ("shot", "extra_shot", "espresso_shot"):
+                price = opt.get("price_modifier", 0.0)
+                if price > 0:
+                    return price
+
+        # Fallback: try ingredient price context
+        contexts = menu_cache.get_ingredient_price_contexts("shot")
+        for ctx in contexts:
+            if ctx.get("item_type_slug") == item_type:
+                price = ctx.get("price", 0.0)
+                if price > 0:
+                    return price
+
+        return 0.0
+
     def _parse_shots_from_input(self, user_lower: str) -> int | None:
         """Parse shots value from user input.
 
@@ -1956,8 +1982,15 @@ class MenuItemConfigHandler(BaseHandler):
         # Multiple options match - list them for user
         options_text = self._format_options_list(matching_options)
 
-        # Stay in same pending state to handle the follow-up answer
+        # Store disambiguation state so _handle_disambiguation_response() can resolve it
+        order.pending_attr_disambiguation = {
+            "options": matching_options,
+            "attr_slug": attr_slug,
+            "modifiers": {},
+            "item_id": item.id,
+        }
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
+        # Also set routing state so configuring_item_handler can find the item
         order.pending_item_id = item.id
         order.pending_field = f"{item.menu_item_type}:{attr_slug}"
 
@@ -2107,6 +2140,16 @@ class MenuItemConfigHandler(BaseHandler):
         if matched_attrs:
             attr = matched_attrs[0]
 
+            # Check if user is asking about options ("what condiments do you have?")
+            # rather than selecting an attribute to configure
+            if self._is_options_inquiry(user_input, topic=attr.get("display_name", "")):
+                options = attr.get("options", [])
+                if options:
+                    # Set pending_field to this attribute so "what else?" goes through
+                    # _handle_attribute_answer() which has show-more pagination logic
+                    order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
+                    return self._handle_options_inquiry(item, order, attr, options, is_show_more=False)
+
             # For boolean attributes, set value directly without asking
             if attr.get("input_type") == "boolean":
                 attr_slug = attr.get("slug")
@@ -2214,10 +2257,18 @@ class MenuItemConfigHandler(BaseHandler):
             if attr_slug == "shots":
                 shots_value = self._parse_shots_from_input(user_clean)
                 if shots_value is not None:
-                    item[attr_slug] = shots_value
+                    # Look up per-shot price and store as modifier with price
+                    shot_price = self._get_shot_price(item.menu_item_type)
+                    item.add_selection(
+                        slug="shot",
+                        category="shots",
+                        quantity=shots_value,
+                        price=shot_price,
+                        display_name="Extra Shot" if shots_value == 1 else "Extra Shots",
+                    )
                     logger.info(
-                        "CHECKPOINT: Set shots=%d from input '%s'",
-                        shots_value, user_input
+                        "CHECKPOINT: Set shots=%d (price=$%.2f each) from input '%s'",
+                        shots_value, shot_price, user_input
                     )
                     order.pending_field = "customization_checkpoint"
                     return StateMachineResult(

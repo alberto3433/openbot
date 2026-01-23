@@ -820,27 +820,22 @@
       const unitSelect = document.getElementById("ingredientUnit");
       try {
         const resp = await authFetch(`${API_BASE}/units`);
-        if (resp.ok) {
-          const units = await resp.json();
-          unitSelect.innerHTML = "";
-          units.forEach(unit => {
-            const opt = document.createElement("option");
-            opt.value = unit;
-            opt.textContent = unit.charAt(0).toUpperCase() + unit.slice(1);
-            unitSelect.appendChild(opt);
-          });
+        if (!resp.ok) {
+          const errorText = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${errorText}`);
         }
+        const units = await resp.json();
+        console.log("Loaded units:", units);
+        unitSelect.innerHTML = "";
+        units.forEach(unit => {
+          const opt = document.createElement("option");
+          opt.value = unit;
+          opt.textContent = unit.charAt(0).toUpperCase() + unit.slice(1);
+          unitSelect.appendChild(opt);
+        });
       } catch (err) {
         console.error("Failed to load units:", err);
-        // Fallback to hardcoded options if API fails
-        unitSelect.innerHTML = `
-          <option value="serving">Serving</option>
-          <option value="ounce">Ounce</option>
-          <option value="slice">Slice</option>
-          <option value="packet">Packet</option>
-          <option value="pump">Pump</option>
-          <option value="shot">Shot</option>
-        `;
+        showToast(`Failed to load units: ${err.message}`, "error");
       }
     }
 
@@ -999,7 +994,16 @@
       document.getElementById("ingredientId").value = ingredient.id;
       document.getElementById("ingredientName").value = ingredient.name;
       document.getElementById("ingredientCategory").value = ingredient.category;
-      document.getElementById("ingredientUnit").value = ingredient.unit || "piece";
+
+      // Set unit dropdown value
+      const unitSelect = document.getElementById("ingredientUnit");
+      const unitValue = ingredient.unit || "serving";
+      unitSelect.value = unitValue;
+      // If the value wasn't set (option doesn't exist), log a warning
+      if (unitSelect.value !== unitValue) {
+        console.warn(`Unit "${unitValue}" not found in dropdown options. Available:`,
+          [...unitSelect.options].map(o => o.value));
+      }
 
       // Set aliases
       setTags(aliasesContainer, aliasInput, ingredient.aliases || []);

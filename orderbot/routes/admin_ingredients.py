@@ -449,7 +449,10 @@ def get_ingredient(
     _admin: str = Depends(verify_admin_credentials),
 ) -> IngredientOut:
     """Get a specific ingredient by ID."""
-    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+    from sqlalchemy.orm import joinedload
+    ingredient = db.query(Ingredient).options(
+        joinedload(Ingredient.unit_rel)
+    ).filter(Ingredient.id == ingredient_id).first()
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
     return IngredientOut.model_validate(ingredient)

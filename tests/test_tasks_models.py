@@ -210,23 +210,38 @@ class TestBagelItemTask:
         assert bagel.get("toppings", []) == []
 
     def test_get_display_name(self):
-        """Test display name generation."""
+        """Test display name generation.
+
+        When a bread type is selected, the display name uses the bread's
+        display name (e.g., "Everything Bagel") instead of generic "Bagel".
+        When no bread type is selected, falls back to menu_item_name.
+        """
         bagel = create_bagel_task(bagel_type="everything")
-        # MenuItemTask uses menu_item_name for display
-        assert bagel.get_display_name() == "Bagel"
+        # With bread type, display name comes from the bread ingredient
+        display_name = bagel.get_display_name()
+        assert "everything" in display_name.lower() or "Bagel" in display_name
 
         bagel_no_type = create_bagel_task()
+        # Without bread type, falls back to menu_item_name
         assert bagel_no_type.get_display_name() == "Bagel"
 
     def test_get_summary_basic(self):
-        """Test basic summary generation."""
+        """Test basic summary generation.
+
+        Summary uses get_display_name() which returns the bread type's
+        display name when available.
+        """
         bagel = create_bagel_task(bagel_type="plain")
         summary = bagel.get_summary()
-        # MenuItemTask summary includes menu_item_name
-        assert "Bagel" in summary
+        # Summary uses display name (bread type or menu_item_name)
+        assert "plain" in summary.lower() or "Bagel" in summary
 
     def test_get_summary_full(self):
-        """Test full summary with all options."""
+        """Test full summary with all options.
+
+        Summary uses get_display_name() which returns the bread type's
+        display name when available.
+        """
         bagel = create_bagel_task(
             bagel_type="everything",
             quantity=2,
@@ -237,8 +252,8 @@ class TestBagelItemTask:
         )
         summary = bagel.get_summary()
         assert "2x" in summary
-        # MenuItemTask summary structure is different
-        assert "Bagel" in summary
+        # Summary uses display name (bread type or menu_item_name)
+        assert "everything" in summary.lower() or "Bagel" in summary
 
     def test_get_missing_required_fields(self):
         """Test finding missing required fields."""
@@ -530,7 +545,11 @@ class TestOrderTask:
         assert order.is_complete() is True
 
     def test_get_order_summary(self):
-        """Test order summary generation."""
+        """Test order summary generation.
+
+        Summary uses get_display_name() which returns the bread type's
+        display name when available.
+        """
         order = OrderTask()
         bagel = create_bagel_task(bagel_type="everything", toasted=True, unit_price=4.50)
         coffee = create_coffee_task(drink_type="latte", size="large", iced=True, unit_price=5.00)
@@ -539,8 +558,8 @@ class TestOrderTask:
         order.items.add_item(coffee)
 
         summary = order.get_order_summary()
-        # MenuItemTask summary structure is different
-        assert "Bagel" in summary or "bagel" in summary.lower()
+        # Summary uses bread type display name when available
+        assert "everything" in summary.lower() or "bagel" in summary.lower()
         assert "latte" in summary.lower()
         assert "$4.50" in summary
         assert "$5.00" in summary

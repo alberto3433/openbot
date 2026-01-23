@@ -16,6 +16,7 @@ from .models import (
     TaskStatus,
     ItemTask,
     MenuItemTask,
+    NAME_FORMING_CATEGORIES,
 )
 from orderbot.menu_data_cache import menu_cache
 
@@ -341,8 +342,9 @@ class UnifiedItemConverter:
         # Get DB-driven attribute values (source of truth for all customizations)
         attribute_values = getattr(item, 'attribute_values', {}) or {}
 
-        # Build display name (simple: just the menu item name)
-        display_name = menu_item_name
+        # Build display name using the item's get_display_name() method
+        # which handles name-forming categories (e.g., bread type for bagels)
+        display_name = item.get_display_name()
 
         # Add "(side)" suffix for items that are sides of another item
         is_side_item = getattr(item, 'side_of_item_id', None) is not None
@@ -360,6 +362,11 @@ class UnifiedItemConverter:
         # Process modifiers from the unified modifiers field
         item_modifiers = item.modifiers or []
         for mod in item_modifiers:
+            # Skip name-forming categories (e.g., bread) - already in display name
+            mod_category = mod.get("category", "")
+            if mod_category in NAME_FORMING_CATEGORIES:
+                continue
+
             mod_slug = mod.get("slug", "")
             mod_display = mod.get("display_name") or mod_slug.replace("_", " ").title()
             mod_price = mod.get("price", 0) or 0.0

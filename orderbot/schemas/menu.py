@@ -27,8 +27,8 @@ Menu Item Concepts:
 4. **Base Price**: Starting price before any modifiers. Actual price may vary
    based on size, add-ons, and other attribute selections.
 
-5. **Metadata**: Flexible JSON field for additional item data like description,
-   default configuration, allergen info, etc.
+5. **Ingredients**: Default ingredients stored via menu_item_ingredients
+   junction table (e.g., a BEC sandwich has bacon, egg, cheese).
 
 6. **Available Qty**: Legacy inventory field (kept for compatibility).
    Modern inventory uses the "86" system via Ingredient.is_available.
@@ -44,17 +44,17 @@ Usage:
     # Create a new menu item
     item_data = MenuItemCreate(
         name="Turkey Club",
-        category="sandwiches",
         is_signature=True,
         base_price=12.99,
-        metadata={"description": "Triple-decker turkey sandwich"}
+        item_type_id=3,
+        category_ids=[1, 2]
     )
 
     # Response will include the generated ID
     new_item = MenuItemOut.model_validate(db_item)
 """
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -94,11 +94,11 @@ class MenuItemOut(BaseModel):
         is_signature: Whether this is a pre-configured signature item
         base_price: Starting price in dollars
         available_qty: Legacy inventory count (use 86 system instead)
-        metadata: Additional item data (description, defaults, etc.)
         item_type_id: Foreign key to ItemType for configuration options
         aliases: List of synonyms for matching (e.g., ["coke", "coca cola"])
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
         category_ids: List of category IDs this item belongs to (e.g., [1, 2] for drink & food)
+        ingredients: Default ingredients via menu_item_ingredients junction table
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -109,7 +109,6 @@ class MenuItemOut(BaseModel):
     is_signature: bool
     base_price: float
     available_qty: int
-    metadata: Dict[str, Any]
     item_type_id: Optional[int] = None
     aliases: list[str] = []
     abbreviation: Optional[str] = None
@@ -139,7 +138,6 @@ class MenuItemCreate(BaseModel):
         is_signature: Whether this is a signature item (default: False)
         base_price: Starting price in dollars (required if no size_prices)
         available_qty: Legacy inventory count (default: 0)
-        metadata: Additional item data (default: empty dict)
         item_type_id: Link to ItemType for configuration (recommended)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
@@ -160,7 +158,6 @@ class MenuItemCreate(BaseModel):
     is_signature: bool = False
     base_price: Optional[float] = None
     available_qty: int = 0
-    metadata: Dict[str, Any] = {}
     item_type_id: Optional[int] = None
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
@@ -183,7 +180,6 @@ class MenuItemUpdate(BaseModel):
         is_signature: Update signature status (optional)
         base_price: New base price (optional)
         available_qty: Update inventory count (optional)
-        metadata: Replace metadata dict (optional, replaces entire dict)
         item_type_id: Change linked ItemType (optional)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
@@ -206,7 +202,6 @@ class MenuItemUpdate(BaseModel):
     is_signature: Optional[bool] = None
     base_price: Optional[float] = None
     available_qty: Optional[int] = None
-    metadata: Optional[Dict[str, Any]] = None
     item_type_id: Optional[int] = None
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None

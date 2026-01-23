@@ -319,7 +319,6 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
         is_signature=item.is_signature,
         base_price=item.base_price,
         available_qty=item.available_qty,
-        metadata={},  # extra_metadata column deprecated, ingredients now in junction table
         item_type_id=item.item_type_id,
     )
 

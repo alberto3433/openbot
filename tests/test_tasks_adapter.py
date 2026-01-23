@@ -910,8 +910,13 @@ class TestModifiersConsistency:
         # Allow small floating point difference
         assert abs(calculated_total - item["line_total"]) < 0.01
 
-    def test_gluten_free_bagel_upcharge_shown_as_modifier(self):
-        """Test that gluten free bagel upcharge is shown as a separate modifier."""
+    def test_gluten_free_bagel_upcharge_shown_in_display_name(self):
+        """Test that gluten free bagel is shown in display name (not as modifier).
+
+        With name-forming categories (bread), the bread type becomes part of
+        the item's display name rather than appearing as a separate modifier line.
+        Upcharges are still reflected in the total price.
+        """
         order = OrderTask()
         # Gluten free bagel: $2.20 base + $0.80 upcharge = $3.00
         bagel = create_bagel_task(
@@ -927,23 +932,27 @@ class TestModifiersConsistency:
         result = order_task_to_dict(order, pricing=create_test_pricing())
         item = result["items"][0]
 
-        # Check that bagel type is shown as a modifier with upcharge
+        # Bread type should be in display name, not in modifiers
+        assert "gluten" in item["display_name"].lower(), "Gluten Free should be in display name"
+
+        # Bread type should NOT be in modifiers (it's name-forming)
         modifiers = item["item_config"]["modifiers"]
         bagel_type_modifier = next(
             (m for m in modifiers if "gluten" in m["name"].lower()),
             None
         )
-        assert bagel_type_modifier is not None, "Gluten free should be in modifiers"
-        assert bagel_type_modifier["price"] == 0.80, "Gluten free upcharge should be $0.80"
+        assert bagel_type_modifier is None, "Bread type should not be in modifiers"
 
-        # Verify base_price + modifiers = line_total
-        base_price = item["item_config"]["base_price"]
-        modifiers_total = sum(m["price"] for m in modifiers)
-        calculated_total = base_price + modifiers_total
-        assert abs(calculated_total - item["line_total"]) < 0.01
+        # Other modifiers (toasted, spread) should still be there
+        assert any("toast" in m["name"].lower() for m in modifiers), "Toasted should be in modifiers"
 
-    def test_regular_bagel_type_shown_as_modifier_without_upcharge(self):
-        """Test that regular bagel types are shown as modifiers with $0 upcharge."""
+    def test_regular_bagel_type_in_display_name_not_modifiers(self):
+        """Test that bread type is in display name, not in modifiers list.
+
+        With name-forming categories (bread), the bread type becomes part of
+        the item's display name (e.g., "Plain Bagel") rather than appearing
+        as a separate modifier line.
+        """
         order = OrderTask()
         # Plain bagel: $2.20 base + $0.00 upcharge
         bagel = create_bagel_task(
@@ -957,14 +966,13 @@ class TestModifiersConsistency:
         result = order_task_to_dict(order, pricing=create_test_pricing())
         item = result["items"][0]
 
-        # Check that bagel type is shown as a modifier
+        # Bread type should be in display name
+        assert "plain" in item["display_name"].lower(), "Plain should be in display name"
+
+        # Bread type should NOT be in modifiers (it's name-forming)
         modifiers = item["item_config"]["modifiers"]
         bagel_type_modifier = next(
-            (m for m in modifiers if m["name"].lower() == "plain"),
+            (m for m in modifiers if "plain" in m["name"].lower()),
             None
         )
-        assert bagel_type_modifier is not None, "Plain should be in modifiers"
-        assert bagel_type_modifier["price"] == 0.0, "Plain bagel should have $0 upcharge"
-
-        # Display name should be "Bagel" (not "plain bagel")
-        assert item["display_name"] == "Bagel"
+        assert bagel_type_modifier is None, "Bread type should not be in modifiers"

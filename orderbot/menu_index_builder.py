@@ -25,6 +25,7 @@ from .models import (
     ItemTypeGlobalAttribute,
     MenuItemSize,
     MenuItemSizePrice,
+    MenuItemIngredient,
 )
 # Note: We no longer import has_linked_attributes, has_askable_attributes, should_skip_config
 # These caused N+1 queries. Instead, we pre-load all ItemTypeGlobalAttribute data.
@@ -209,6 +210,35 @@ def _preload_size_prices(db: Session) -> Dict[int, Dict[str, Any]]:
     return by_menu_item
 
 
+def _preload_menu_item_ingredients(db: Session) -> Dict[int, List[Dict[str, Any]]]:
+    """
+    Pre-load all menu item ingredient links in a single query.
+
+    Returns:
+        Dict mapping menu_item_id -> [
+            {"ingredient_id": int, "ingredient_name": str, "quantity": int},
+            ...
+        ]
+    """
+    all_links = (
+        db.query(MenuItemIngredient)
+        .options(joinedload(MenuItemIngredient.ingredient))
+        .all()
+    )
+
+    by_menu_item: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+    for link in all_links:
+        if link.ingredient:
+            by_menu_item[link.menu_item_id].append({
+                "ingredient_id": link.ingredient_id,
+                "ingredient_name": link.ingredient.name,
+                "ingredient_slug": link.ingredient.slug,
+                "quantity": link.quantity,
+            })
+
+    return dict(by_menu_item)
+
+
 def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Build a rich, LLM-friendly menu JSON structure. Example shape:
@@ -271,15 +301,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     }
 
     for item in items:
-        # Get default_config from extra_metadata JSON field
-        default_config = None
-        if item.extra_metadata:
-            try:
-                meta = json.loads(item.extra_metadata)
-                default_config = meta.get("default_config")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
         # Get item type info if available
         item_type_slug = None
         item_type_display_name = None
@@ -299,7 +320,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             "is_signature": bool(item.is_signature),
             "skip_config": item_type_skip_config,  # Skip configuration questions (from item type, e.g., sodas)
             "base_price": float(item.base_price),
-            "default_config": default_config,  # Contains bread, protein, cheese, toppings, sauces, toasted
             "item_type": item_type_slug,  # Generic item type (e.g., "sandwich", "drink")
             "required_match_phrases": item.required_match_phrases,  # Comma-separated phrases for match filtering
         }
@@ -419,9 +439,14 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Maps normalized item names to descriptions
     index["item_descriptions"] = _build_item_descriptions(db)
 
+    # Pre-load menu item ingredients for ingredient-based search
+    preloaded_menu_item_ingredients = _preload_menu_item_ingredients(db)
+
     # Build ingredient-to-items mapping for ingredient-based search
     # When user says "something with chicken", this index helps find matching items
-    index["ingredient_to_items"] = _build_ingredient_to_items(index, preloaded_ingredients)
+    index["ingredient_to_items"] = _build_ingredient_to_items(
+        index, preloaded_ingredients, preloaded_menu_item_ingredients
+    )
 
     # Build company info for customer service inquiries
     index["company_info"] = _build_company_info(db)
@@ -432,18 +457,19 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
 def _build_ingredient_to_items(
     menu_index: Dict[str, Any],
     preloaded_ingredients: Dict[str, List[Any]],
+    preloaded_menu_item_ingredients: Dict[int, List[Dict[str, Any]]],
 ) -> Dict[str, list[Dict[str, Any]]]:
     """
     Build a mapping of ingredients to menu items that contain them by default.
 
-    Scans menu items for ingredients in:
-    - Item names (e.g., "Chicken Salad Sandwich")
-    - Item descriptions (e.g., "Grilled Chicken, Bacon, Tomato...")
-    - default_config values (e.g., {"protein": "Chicken Salad"})
+    Uses two data sources for comprehensive coverage:
+    1. Junction table (menu_item_ingredients) - explicit ingredient links
+    2. Text matching on names/descriptions - implicit ingredient references
 
     Args:
         menu_index: The menu index being built
-        preloaded_ingredients: Dict mapping category -> List[Ingredient] from _preload_all_ingredients()
+        preloaded_ingredients: Dict mapping category -> List[Ingredient]
+        preloaded_menu_item_ingredients: Dict mapping menu_item_id -> List[ingredient info]
 
     Returns:
         Dict mapping lowercase ingredient names to lists of matching menu items.
@@ -451,70 +477,83 @@ def _build_ingredient_to_items(
     """
     import re
 
-    # Get searchable ingredients from all categories (data-driven from database)
-    searchable_ingredients: set[str] = set()
+    ingredient_to_items: Dict[str, list[Dict[str, Any]]] = defaultdict(list)
 
-    for category, ingredients in preloaded_ingredients.items():
-        for ing in ingredients:
-            ing_name = ing.name.lower()
-            # Add full name
-            searchable_ingredients.add(ing_name)
-            # Also add individual words (e.g., "chicken salad" -> "chicken", "salad")
-            for word in ing_name.split():
-                if len(word) > 2:  # Skip short words like "of", "a"
-                    searchable_ingredients.add(word)
-
-    ingredient_to_items: Dict[str, list[Dict[str, Any]]] = {
-        ing: [] for ing in searchable_ingredients
-    }
-
-    # Collect all menu items from items_by_type (data-driven from database)
-    all_items: list[Dict[str, Any]] = []
+    # Build menu_item_id -> item_json lookup from the menu index
+    item_by_id: Dict[int, Dict[str, Any]] = {}
     if "items_by_type" in menu_index:
         for type_slug, items in menu_index["items_by_type"].items():
             if isinstance(items, list):
-                all_items.extend(items)
+                for item in items:
+                    item_id = item.get("id")
+                    if item_id:
+                        item_by_id[item_id] = item
 
-    for item in all_items:
-        item_name = (item.get("name") or "").lower()
-        item_desc = (item.get("description") or "").lower()
-
-        # NOTE: We intentionally exclude default_config from searchable text.
-        # default_config represents customization options (e.g., what bread the
-        # item comes on by default), not the item's inherent composition.
-        combined_text = f"{item_name} {item_desc}"
-
-        for ingredient in searchable_ingredients:
-            # Use word boundary to avoid partial matches (e.g., "ham" in "shamrock")
-            if re.search(rf'\b{re.escape(ingredient)}\b', combined_text):
-                # Avoid duplicates
-                if item not in ingredient_to_items[ingredient]:
-                    ingredient_to_items[ingredient].append(item)
-
-    # Remove empty entries
-    ingredient_to_items = {k: v for k, v in ingredient_to_items.items() if v}
-
-    # Merge results for ingredient aliases (data-driven from preloaded data)
-    # If "lox" is an alias for "nova scotia salmon", share results between them
-    # Build alias -> canonical mapping from preloaded ingredients
+    # Build alias -> canonical name mapping for ingredients
     alias_to_canonical: Dict[str, str] = {}
     for category_ingredients in preloaded_ingredients.values():
         for ing in category_ingredients:
             canonical_name = ing.name.lower()
-            # Add aliases from the ingredient's alias records
             for alias in ing.aliases:
                 alias_to_canonical[alias.lower()] = canonical_name
 
+    # ========================================
+    # SOURCE 1: Junction table (explicit links)
+    # ========================================
+    for menu_item_id, ingredients in preloaded_menu_item_ingredients.items():
+        item_json = item_by_id.get(menu_item_id)
+        if not item_json:
+            continue
+
+        for ing_info in ingredients:
+            ing_name = ing_info["ingredient_name"].lower()
+
+            # Add to results for canonical name
+            if item_json not in ingredient_to_items[ing_name]:
+                ingredient_to_items[ing_name].append(item_json)
+
+            # Also add individual words from multi-word ingredients
+            for word in ing_name.split():
+                if len(word) > 2:
+                    if item_json not in ingredient_to_items[word]:
+                        ingredient_to_items[word].append(item_json)
+
+    # ========================================
+    # SOURCE 2: Text matching (implicit references)
+    # ========================================
+    # Get searchable ingredients from all categories
+    searchable_ingredients: set[str] = set()
+    for category_ingredients in preloaded_ingredients.values():
+        for ing in category_ingredients:
+            ing_name = ing.name.lower()
+            searchable_ingredients.add(ing_name)
+            for word in ing_name.split():
+                if len(word) > 2:
+                    searchable_ingredients.add(word)
+
+    # Scan menu items for ingredient mentions in name/description
+    for item in item_by_id.values():
+        item_name = (item.get("name") or "").lower()
+        item_desc = (item.get("description") or "").lower()
+        combined_text = f"{item_name} {item_desc}"
+
+        for ingredient in searchable_ingredients:
+            # Use word boundary to avoid partial matches
+            if re.search(rf'\b{re.escape(ingredient)}\b', combined_text):
+                if item not in ingredient_to_items[ingredient]:
+                    ingredient_to_items[ingredient].append(item)
+
+    # ========================================
     # Share results between aliases and canonical names
+    # ========================================
     for alias, canonical in alias_to_canonical.items():
-        # If we have results for the canonical name, share with alias
         if canonical in ingredient_to_items and alias not in ingredient_to_items:
             ingredient_to_items[alias] = ingredient_to_items[canonical]
-        # If we have results for the alias, share with canonical
         elif alias in ingredient_to_items and canonical not in ingredient_to_items:
             ingredient_to_items[canonical] = ingredient_to_items[alias]
 
-    return ingredient_to_items
+    # Remove empty entries and convert to regular dict
+    return {k: v for k, v in ingredient_to_items.items() if v}
 
 
 def _build_item_keywords(db: Session) -> Dict[str, str]:

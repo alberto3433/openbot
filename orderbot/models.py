@@ -451,6 +451,7 @@ class MenuItem(Base):
     store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item", cascade="all, delete-orphan")
     alias_records = relationship("MenuItemAlias", back_populates="menu_item", cascade="all, delete-orphan")
     category_records = relationship("MenuItemCategory", back_populates="menu_item", cascade="all, delete-orphan")
+    ingredient_links = relationship("MenuItemIngredient", back_populates="menu_item", cascade="all, delete-orphan")
 
     # Size-based pricing (variant pricing)
     size_category_id = Column(Integer, ForeignKey("menu_item_size_categories.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -536,6 +537,38 @@ class MenuItemCategory(Base):
     category = relationship("Category", back_populates="menu_item_categories")
 
 
+class MenuItemIngredient(Base):
+    """
+    Junction table linking menu items to their default ingredients.
+
+    This replaces the JSON-based approach of storing ingredients in
+    extra_metadata.default_config with proper relational integrity.
+
+    Benefits:
+    - FK constraints ensure valid ingredient references
+    - Accurate ingredient-based search (no text matching)
+    - Easier to update and query ingredient associations
+    """
+    __tablename__ = "menu_item_ingredients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("menu_item_id", "ingredient_id", name="uq_menu_item_ingredient"),
+        Index("idx_menu_item_ingredients_menu_item", "menu_item_id"),
+        Index("idx_menu_item_ingredients_ingredient", "ingredient_id"),
+    )
+
+    # Relationships
+    menu_item = relationship("MenuItem", back_populates="ingredient_links")
+    ingredient = relationship("Ingredient", back_populates="menu_item_links")
+
+
 # --- Per-store menu item availability (86 system) ---
 
 class MenuItemStoreAvailability(Base):
@@ -593,6 +626,8 @@ class Ingredient(Base):
     # Alias and must_match child tables
     alias_records = relationship("IngredientAlias", back_populates="ingredient", cascade="all, delete-orphan")
     must_match_records = relationship("IngredientMustMatch", back_populates="ingredient", cascade="all, delete-orphan")
+    # Menu items that contain this ingredient by default
+    menu_item_links = relationship("MenuItemIngredient", back_populates="ingredient", cascade="all, delete-orphan")
 
     @property
     def aliases(self) -> list[str]:

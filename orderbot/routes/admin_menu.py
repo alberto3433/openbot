@@ -65,12 +65,20 @@ from ..models import (
     MenuItem,
     MenuItemAlias,
     MenuItemCategory,
+    MenuItemIngredient,
     MenuItemSizePrice,
     MenuItemSize,
     MenuItemSizeCategory,
     Category,
+    Ingredient,
 )
-from ..schemas.menu import MenuItemOut, MenuItemCreate, MenuItemUpdate, SizePriceOut
+from ..schemas.menu import (
+    MenuItemOut,
+    MenuItemCreate,
+    MenuItemUpdate,
+    SizePriceOut,
+    MenuItemIngredientOut,
+)
 from ..services.helpers import validate_aliases
 from ..menu_data_cache import menu_cache
 
@@ -216,6 +224,51 @@ def _set_menu_item_size_prices(
             ))
 
 
+def _set_menu_item_ingredients(
+    db: Session,
+    item: MenuItem,
+    ingredients: Optional[List[dict]],
+) -> None:
+    """
+    Set menu item ingredients from a list of ingredient dicts.
+    Clears existing ingredients and creates new ones from the input list.
+
+    Args:
+        db: Database session
+        item: The menu item to update
+        ingredients: List of {"ingredient_id": int, "quantity": int} dicts (None means don't change)
+
+    Raises:
+        HTTPException: If any ingredient ID is invalid
+    """
+    if ingredients is None:
+        return
+
+    # Clear existing ingredient links
+    for link in list(item.ingredient_links):
+        db.delete(link)
+    db.flush()
+
+    # Add new ingredient links
+    for ing_data in ingredients:
+        ingredient_id = ing_data.get("ingredient_id")
+        quantity = ing_data.get("quantity", 1)
+
+        # Verify ingredient exists
+        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+        if not ingredient:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ingredient with ID {ingredient_id} not found"
+            )
+
+        db.add(MenuItemIngredient(
+            menu_item_id=item.id,
+            ingredient_id=ingredient_id,
+            quantity=quantity,
+        ))
+
+
 def serialize_menu_item(item: MenuItem, db: Session) -> MenuItemOut:
     """Convert MenuItem model to response schema."""
     try:
@@ -234,6 +287,17 @@ def serialize_menu_item(item: MenuItem, db: Session) -> MenuItemOut:
                 size_id=sp.size_id,
                 size_name=sp.size.name if sp.size else "Unknown",
                 price=float(sp.price),
+            ))
+
+    # Get ingredients
+    ingredients = []
+    if item.ingredient_links:
+        for link in item.ingredient_links:
+            ingredients.append(MenuItemIngredientOut(
+                ingredient_id=link.ingredient_id,
+                ingredient_name=link.ingredient.name if link.ingredient else "Unknown",
+                ingredient_category=link.ingredient.category if link.ingredient else "Unknown",
+                quantity=link.quantity,
             ))
 
     # Derive category from item_type for backward compatibility
@@ -255,6 +319,7 @@ def serialize_menu_item(item: MenuItem, db: Session) -> MenuItemOut:
         category_ids=category_ids,
         size_category_id=item.size_category_id,
         size_prices=size_prices,
+        ingredients=ingredients,
     )
 
 

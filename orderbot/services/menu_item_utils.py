@@ -5,7 +5,6 @@ This module provides utility functions for working with menu items,
 including looking up default ingredients/attributes for signature items.
 """
 
-import json
 import logging
 from typing import Optional
 
@@ -13,17 +12,16 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
-from ..menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
 
 def get_menu_item_default_ingredients(menu_item_id: int, db: Optional[Session] = None) -> list[dict]:
     """
-    Get the default ingredients/attributes for a menu item.
+    Get the default ingredients for a menu item from the junction table.
 
-    This looks up the default_config in the menu item's extra_metadata JSON field
-    and returns the ingredient names as a list of dicts.
+    This queries the menu_item_ingredients junction table to find all
+    ingredients linked to the menu item.
 
     Args:
         menu_item_id: The ID of the menu item
@@ -32,8 +30,7 @@ def get_menu_item_default_ingredients(menu_item_id: int, db: Optional[Session] =
     Returns:
         List of dicts with keys:
         - name: Display name of the ingredient (e.g., "Applewood Smoked Bacon")
-        - attribute_slug: The attribute slug (e.g., "protein", "cheese", "toppings")
-        - attribute_name: The attribute display name
+        - attribute_slug: The ingredient category (e.g., "protein", "cheese")
         - price: Always 0.0 (defaults are included in base price)
         - is_default: Always True for these (they're menu item defaults)
     """
@@ -44,51 +41,24 @@ def get_menu_item_default_ingredients(menu_item_id: int, db: Optional[Session] =
 
     try:
         result = db.execute(
-            text("SELECT extra_metadata FROM menu_items WHERE id = :menu_item_id"),
+            text("""
+                SELECT i.name, i.category as attribute_slug
+                FROM menu_item_ingredients mii
+                JOIN ingredients i ON mii.ingredient_id = i.id
+                WHERE mii.menu_item_id = :menu_item_id
+            """),
             {"menu_item_id": menu_item_id}
         )
-        row = result.fetchone()
 
-        if not row or not row.extra_metadata:
-            return []
-
-        try:
-            meta = json.loads(row.extra_metadata)
-        except (json.JSONDecodeError, TypeError):
-            return []
-
-        default_config = meta.get("default_config", {})
-        if not default_config:
-            return []
-
-        ingredients = []
-
-        for attr_slug, value in default_config.items():
-            # Skip boolean attributes (e.g., toasted, scooped) - they're not ingredients
-            if menu_cache.is_boolean_attribute(attr_slug):
-                continue
-
-            attr_name = menu_cache.get_attribute_display_name(attr_slug)
-
-            if isinstance(value, list):
-                # Multi-value attributes like toppings
-                for item in value:
-                    ingredients.append({
-                        "name": str(item),
-                        "attribute_slug": attr_slug,
-                        "attribute_name": attr_name,
-                        "price": 0.0,
-                        "is_default": True,
-                    })
-            elif isinstance(value, str) and value:
-                # Single-value attributes like bread, protein
-                ingredients.append({
-                    "name": value,
-                    "attribute_slug": attr_slug,
-                    "attribute_name": attr_name,
-                    "price": 0.0,
-                    "is_default": True,
-                })
+        ingredients = [
+            {
+                "name": row.name,
+                "attribute_slug": row.attribute_slug,
+                "price": 0.0,
+                "is_default": True,
+            }
+            for row in result
+        ]
 
         logger.debug(
             "Found %d default ingredients for menu_item_id=%d: %s",

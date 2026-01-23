@@ -45,11 +45,9 @@ to identify returning customers. It handles various phone formats:
 Menu Item Serialization:
 ------------------------
 serialize_menu_item handles the conversion of MenuItem ORM objects to
-the API response format, properly parsing the extra_metadata JSON field
-and merging with default_config for the generic item type system.
+the API response format.
 """
 
-import json
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -305,28 +303,12 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
     """
     Convert a MenuItem ORM instance into MenuItemOut response model.
 
-    Handles the metadata field which can be stored as JSON string or dict.
-    The extra_metadata field may contain a default_config dict for signature items.
-
     Args:
         item: MenuItem ORM instance
 
     Returns:
         MenuItemOut Pydantic model ready for API response
     """
-    # Parse extra_metadata (contains default_config for signature items)
-    raw_meta = getattr(item, "extra_metadata", None)
-
-    if isinstance(raw_meta, dict):
-        meta = raw_meta
-    elif isinstance(raw_meta, str) and raw_meta.strip():
-        try:
-            meta = json.loads(raw_meta)
-        except json.JSONDecodeError:
-            meta = {}
-    else:
-        meta = {}
-
     # Derive category from item_type
     category = item.item_type.display_name if item.item_type else None
 
@@ -337,7 +319,7 @@ def serialize_menu_item(item: MenuItem) -> MenuItemOut:
         is_signature=item.is_signature,
         base_price=item.base_price,
         available_qty=item.available_qty,
-        metadata=meta,
+        metadata={},  # extra_metadata column deprecated, ingredients now in junction table
         item_type_id=item.item_type_id,
     )
 

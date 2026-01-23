@@ -66,6 +66,20 @@ class SizePriceOut(BaseModel):
     price: float
 
 
+class MenuItemIngredientOut(BaseModel):
+    """Ingredient entry for a menu item."""
+    ingredient_id: int
+    ingredient_name: str
+    ingredient_category: str
+    quantity: int
+
+
+class MenuItemIngredientInput(BaseModel):
+    """Ingredient entry for creating/updating a menu item."""
+    ingredient_id: int
+    quantity: int = 1
+
+
 class MenuItemOut(BaseModel):
     """
     Response model for menu item data.
@@ -103,6 +117,7 @@ class MenuItemOut(BaseModel):
     category_ids: List[int] = []
     size_category_id: Optional[int] = None
     size_prices: List[SizePriceOut] = []
+    ingredients: List[MenuItemIngredientOut] = []
 
 
 class SizePriceInput(BaseModel):
@@ -173,6 +188,7 @@ class MenuItemUpdate(BaseModel):
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
         category_ids: List of category IDs to assign (replaces existing)
+        ingredients: List of ingredient entries to assign (replaces existing)
 
     Example:
         # Update only the price
@@ -198,3 +214,4 @@ class MenuItemUpdate(BaseModel):
     category_ids: Optional[List[int]] = None
     size_category_id: Optional[int] = None
     size_prices: Optional[List[SizePriceInput]] = None
+    ingredients: Optional[List[MenuItemIngredientInput]] = None

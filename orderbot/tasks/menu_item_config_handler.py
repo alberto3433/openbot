@@ -2301,10 +2301,56 @@ class MenuItemConfigHandler(BaseHandler):
                     order=order,
                 )
 
-            # Non-boolean attribute - ask for its options
-            # Extract and store quantity from user input (e.g., "2 eggs" → quantity=2)
-            # so it can be applied when user answers "scrambled"
+            # Non-boolean attribute - check if user also specified an option value
+            # e.g., "american cheese" should apply "american" directly, not ask "What kind?"
+            attr_slug = attr["slug"]
+            options = attr.get("options", [])
+            input_type = attr.get("input_type", "single_select")
             quantity, _ = self._extract_quantity_from_input(user_input)
+
+            if options:
+                user_clean = user_input.lower().strip()
+                if user_clean.startswith("add "):
+                    user_clean = user_clean[4:].strip()
+
+                if input_type == "multi_select":
+                    matched_opts = self._match_multiple_options_from_input(user_clean, options)
+                    if matched_opts:
+                        # Apply matched options directly
+                        display_parts = []
+                        for opt in matched_opts:
+                            opt_name = opt["display_name"]
+                            opt_quantity = extract_quantity(user_clean, opt_name.lower())
+                            if opt_quantity == 1:
+                                opt_quantity = extract_quantity(user_clean, opt["slug"].replace("_", " "))
+                            if opt_quantity == 1 and quantity > 1:
+                                opt_quantity = quantity
+                            opt_price = opt.get("price") or opt.get("price_modifier") or 0
+                            item.add_selection(
+                                opt["slug"], attr_slug,
+                                quantity=opt_quantity, price=opt_price,
+                                display_name=opt_name,
+                            )
+                            display = f"{opt_quantity} {opt_name}" if opt_quantity > 1 else opt_name
+                            display_parts.append(display)
+                        display_text = ", ".join(display_parts)
+                        return self._ask_more_customizations(item, order, f"{display_text} added")
+                else:
+                    # single_select
+                    matched_opt, _ = self._match_option_from_input(user_clean, options)
+                    if matched_opt:
+                        opt_name = matched_opt["display_name"]
+                        opt_price = matched_opt.get("price") or matched_opt.get("price_modifier") or 0
+                        item.add_selection(
+                            matched_opt["slug"], attr_slug,
+                            quantity=quantity, price=opt_price,
+                            display_name=opt_name,
+                        )
+                        display = f"{quantity} {opt_name}" if quantity > 1 else opt_name
+                        return self._ask_more_customizations(item, order, f"{display} added")
+
+            # No option matched - ask for the option
+            # Store quantity so it can be applied when user answers
             if quantity > 1:
                 order.pending_modifier_quantity = quantity
             return self._ask_optional_attribute(item, order, attr)

@@ -1,59 +1,47 @@
-# Plan: Fix "That's It" Not Recognized During Item Configuration
+# Fix: "salt and pepper" Matching Wrong Attribute
 
 ## Problem
 
-When asked "Any more changes?" during item configuration, responding "that's it" is not recognized:
+User says `"salt and pepper"` in response to "Any more changes?"
 
-```
-Bot: Any more changes to that? You can change Style, Shots, or Decaf.
-User: that's it
-Bot: Sorry, I didn't catch that. You can add: Style, Shots, or Decaf. What would you like?
-```
+**Expected:** Salt + Black Pepper added (from Condiments)
+**Actual:** Onion, Pepper & Caper Relish added (from Toppings)
 
 ## Root Cause
 
-**File:** `orderbot/tasks/menu_item_config_handler.py`
-**Method:** `handle_customization_checkpoint()` (line 1958)
+Two different code paths exist:
 
-The method only checks for "negative" patterns (no, nope, nothing) at line 1966-1967:
-```python
-no_patterns = menu_cache.get_response_patterns("negative")
-if any(user_lower == p or user_lower.startswith(p) for p in no_patterns):
-```
+| Path | Used When | Result for "salt and pepper" |
+|------|-----------|------------------------------|
+| `extract_attribute_values()` | Initial order parsing | ✅ Correct: `{condiments: [salt, black_pepper]}` |
+| `_match_multiple_options_from_input()` | Checkpoint responses | ❌ Wrong: matches relish in Toppings |
 
-It does **not** check for "done" patterns (that's it, that's all, I'm done).
+The checkpoint handler uses `_try_direct_option_match()` which iterates attributes and returns on FIRST match. "pepper" matches "Onion, Pepper & Caper Relish" via reverse matching before Condiments is checked.
 
 ## Solution
 
-Add `menu_cache.is_done()` check alongside the negative pattern check.
+**Use `extract_attribute_values()` in the checkpoint handler** instead of the per-attribute matching loop.
 
-### Change
+This is the cleanest fix because:
+1. Already works correctly for "salt and pepper"
+2. Consistent behavior between initial parsing and checkpoint responses
+3. Has proper longest-match-first logic and must_match handling
 
-**File:** `orderbot/tasks/menu_item_config_handler.py`
-**Lines:** 1965-1967
+## Implementation
 
-**Current:**
-```python
-# Check for "no" - user doesn't want to customize
-no_patterns = menu_cache.get_response_patterns("negative")
-if any(user_lower == p or user_lower.startswith(p) for p in no_patterns):
-```
+**File:** `menu_item_config_handler.py`
+**Method:** `_try_direct_option_match()` (line ~2347)
 
-**New:**
-```python
-# Check for "no" or "done" - user doesn't want to customize
-if menu_cache.is_negative(user_lower) or menu_cache.is_done(user_lower):
-```
-
-This:
-1. Uses the cleaner `is_negative()` helper (handles regex patterns)
-2. Adds `is_done()` check for "that's it", "that's all", "I'm done", etc.
-3. Both methods already exist and work correctly elsewhere in the codebase
+Replace the per-attribute loop with:
+1. Call `extract_attribute_values(user_input, item_type)`
+2. Apply any matched attributes to the item
+3. Return result if matches found
 
 ## Testing
 
-```bash
-python -m pytest tests/ -v -k "config"
 ```
-
-Manual test: Order coffee, when asked about changes, say "that's it" - should complete the item.
+User: plain bagel toasted not scooped no spread
+Bot: Any more changes to that? You can add Egg, Cheese, Meat, Toppings, or Condiments.
+User: salt and pepper
+Bot: Okay, Salt and Black Pepper added. Any more changes to that?
+```

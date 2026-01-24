@@ -81,7 +81,14 @@ def build_parsed_item(
     # Backward compat: convert attribute_values dict to selections
     if attribute_values:
         for category, value in attribute_values.items():
-            if isinstance(value, bool):
+            if value is None:
+                # Explicitly declined: create _declined marker so orchestrator won't ask
+                final_selections.append(Selection(
+                    slug="_declined",
+                    category=category,
+                    quantity=0,
+                ))
+            elif isinstance(value, bool):
                 # Boolean attribute: use yes/no slugs
                 final_selections.append(Selection(
                     slug="yes" if value else "no",
@@ -727,11 +734,10 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
         # Extract part-specific attributes (item-type-specific)
         part_attrs = extract_attribute_values(part_text, item_type)
 
-        # Merge: part overrides base (only for non-None values)
+        # Merge: part overrides base (None means "explicitly declined" and should override)
         merged_attrs = {**base_attrs}
         for k, v in part_attrs.items():
-            if v is not None:
-                merged_attrs[k] = v
+            merged_attrs[k] = v
 
         # Create items for this part (build_parsed_item converts attrs to selections)
         items_to_create = min(part_qty, total_quantity - item_count)
@@ -740,7 +746,7 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
                 item_type=item_type,
                 item_name=base_item_name,
                 quantity=1,
-                attribute_values={k: v for k, v in merged_attrs.items() if v is not None},
+                attribute_values=merged_attrs,  # Keep None values (explicit decline)
                 original_text=text,
             ))
             item_count += 1
@@ -755,7 +761,7 @@ def _parse_split_quantity_items(text: str) -> OpenInputResponse | None:
             item_type=item_type,
             item_name=base_item_name,
             quantity=1,
-            attribute_values={k: v for k, v in base_attrs.items() if v is not None},
+            attribute_values=base_attrs,  # Keep None values (explicit decline)
             original_text=text,
         ))
 

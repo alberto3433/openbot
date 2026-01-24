@@ -575,14 +575,7 @@
           <div class="field">
             <label for="ingredientCategory">Category *</label>
             <select id="ingredientCategory">
-              <option value="bread">Bread</option>
-              <option value="protein">Protein</option>
-              <option value="cheese">Cheese</option>
-              <option value="topping">Topping</option>
-              <option value="sauce">Sauce</option>
-              <option value="spread">Spread</option>
-              <option value="bagel">Bagel</option>
-              <option value="drink">Drink</option>
+              <!-- Populated dynamically from API -->
             </select>
             <div class="hint">Type of ingredient for grouping</div>
           </div>
@@ -839,6 +832,31 @@
       }
     }
 
+    // Load ingredient categories for dropdown
+    async function loadCategories() {
+      const categorySelect = document.getElementById("ingredientCategory");
+      try {
+        const resp = await authFetch("/api/v1/admin/ingredient-categories");
+        if (!resp.ok) {
+          const errorText = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${errorText}`);
+        }
+        const data = await resp.json();
+        const categories = data.categories || data;
+        console.log("Loaded categories:", categories);
+        categorySelect.innerHTML = "";
+        categories.forEach(cat => {
+          const opt = document.createElement("option");
+          opt.value = cat.slug;
+          opt.textContent = cat.display_name;
+          categorySelect.appendChild(opt);
+        });
+      } catch (err) {
+        console.error("Failed to load categories:", err);
+        showToast(`Failed to load categories: ${err.message}`, "error");
+      }
+    }
+
     // Load ingredients (lightweight list)
     async function loadIngredients() {
       const storeId = getCurrentStoreId();
@@ -948,7 +966,11 @@
       detailTitle.textContent = "New Ingredient";
       document.getElementById("ingredientId").value = "";
       document.getElementById("ingredientName").value = "";
-      document.getElementById("ingredientCategory").value = "topping";
+      // Select first available category from dropdown
+      const categorySelect = document.getElementById("ingredientCategory");
+      if (categorySelect.options.length > 0) {
+        categorySelect.selectedIndex = 0;
+      }
       document.getElementById("ingredientUnit").value = "serving";
       clearTags(aliasesContainer, aliasInput);
       clearTags(mustMatchContainer, mustMatchInput);
@@ -1254,6 +1276,7 @@
     async function init() {
       await loadStores();
       await loadUnits();
+      await loadCategories();
       loadIngredients();
     }
     init();

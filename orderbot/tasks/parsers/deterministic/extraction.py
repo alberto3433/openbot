@@ -247,15 +247,15 @@ def extract_attribute_values(
         # Match patterns like "no spread", "without spread", "skip spread"
         negation_pattern = rf'\b(?:no|without|skip)\s+{re.escape(attr_display)}\b'
         if re.search(negation_pattern, input_lower, re.IGNORECASE):
-            # For multi_select, set to empty list; for others, set to None
-            if attr_config.get("input_type") == "multi_select":
-                result[attr_slug] = []
-            else:
-                result[attr_slug] = None
+            # Set to None for ALL attribute types when explicitly negated.
+            # This follows the codebase convention where None triggers the
+            # "_declined" marker in MenuItemTask.__setitem__, which marks
+            # the attribute as "answered" so the slot orchestrator won't ask.
+            result[attr_slug] = None
             negated_attrs.add(attr_slug)
             logger.debug(
-                "Negation detected for attribute '%s': setting to %s",
-                attr_slug, result[attr_slug]
+                "Negation detected for attribute '%s': setting to None (declined)",
+                attr_slug
             )
 
     def is_word_boundary(text: str, start: int, end: int) -> bool:

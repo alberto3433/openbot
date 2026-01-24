@@ -142,15 +142,21 @@ def _set_menu_item_categories(db: Session, item: MenuItem, category_ids: Optiona
     # Flush deletes before inserting new records to avoid unique constraint violations
     db.flush()
 
+    if not category_ids:
+        return
+
+    # Batch-fetch all categories in one query to avoid N+1
+    categories = db.query(Category).filter(Category.id.in_(category_ids)).all()
+    found_ids = {c.id for c in categories}
+    missing_ids = set(category_ids) - found_ids
+    if missing_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Category IDs not found: {sorted(missing_ids)}"
+        )
+
     # Add new category assignments
     for cat_id in category_ids:
-        # Verify category exists
-        category = db.query(Category).filter(Category.id == cat_id).first()
-        if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Category with ID {cat_id} not found"
-            )
         db.add(MenuItemCategory(menu_item_id=item.id, category_id=cat_id))
 
 

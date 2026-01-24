@@ -236,6 +236,28 @@ def extract_attribute_values(
         logger.debug("No attributes found for item type '%s'", item_type)
         return result
 
+    # ==========================================================================
+    # Pre-Phase: Detect "no {attribute}" negation patterns for ALL attributes
+    # This must run BEFORE any option matching to prevent false positives.
+    # E.g., "no spread" should set spread=None and skip all spread matching.
+    # ==========================================================================
+    negated_attrs: set[str] = set()
+    for attr_slug, attr_config in attributes.items():
+        attr_display = attr_config.get("display_name", attr_slug).lower()
+        # Match patterns like "no spread", "without spread", "skip spread"
+        negation_pattern = rf'\b(?:no|without|skip)\s+{re.escape(attr_display)}\b'
+        if re.search(negation_pattern, input_lower, re.IGNORECASE):
+            # For multi_select, set to empty list; for others, set to None
+            if attr_config.get("input_type") == "multi_select":
+                result[attr_slug] = []
+            else:
+                result[attr_slug] = None
+            negated_attrs.add(attr_slug)
+            logger.debug(
+                "Negation detected for attribute '%s': setting to %s",
+                attr_slug, result[attr_slug]
+            )
+
     def is_word_boundary(text: str, start: int, end: int) -> bool:
         """Check if the match is at word boundaries."""
         before_ok = start == 0 or not text[start - 1].isalnum()
@@ -290,6 +312,8 @@ def extract_attribute_values(
 
     # Phase 1: Handle boolean attributes first (they don't overlap with option matches)
     for attr_slug, attr_config in attributes.items():
+        if attr_slug in negated_attrs:
+            continue  # Skip - user explicitly said "no {attribute}"
         if attr_config.get("input_type") == "boolean":
             display_name = attr_config.get("display_name", attr_slug).lower()
             # Check for negative patterns FIRST (before positive check)
@@ -308,6 +332,8 @@ def extract_attribute_values(
     candidates: list[CandidateMatch] = []
 
     for attr_slug, attr_config in attributes.items():
+        if attr_slug in negated_attrs:
+            continue  # Skip - user explicitly said "no {attribute}"
         if attr_config.get("input_type") == "boolean":
             continue  # Already handled in Phase 1
 
@@ -415,6 +441,8 @@ def extract_attribute_values(
                     if not spans_overlap(start, end)]
 
     for attr_slug, attr_config in attributes.items():
+        if attr_slug in negated_attrs:
+            continue  # Skip - user explicitly said "no {attribute}"
         # Only apply Phase 5 to multi_select attributes
         input_type = attr_config.get("input_type", "single_select")
         if input_type != "multi_select":

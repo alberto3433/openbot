@@ -138,6 +138,8 @@ def _set_ingredient_must_match(db: Session, ingredient: Ingredient, must_match_s
     # Clear existing must_match
     for mm in list(ingredient.must_match_records):
         db.delete(mm)
+    # Flush deletes before inserting to avoid unique constraint violations
+    db.flush()
 
     # Add new must_match entries if provided
     if must_match_str:

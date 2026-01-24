@@ -1690,7 +1690,13 @@ class MenuItemConfigHandler(BaseHandler):
         input_type = attr.get("input_type", "single_select")
 
         # Extract quantity from input (e.g., "2 scrambled eggs" → quantity=2)
+        # Also check pending_modifier_quantity which was stored when asking the question
+        # (e.g., user said "2 eggs" → we stored 2, now user says "scrambled" → apply qty=2)
         quantity, _ = self._extract_quantity_from_input(user_input)
+        if quantity == 1 and order.pending_modifier_quantity:
+            quantity = order.pending_modifier_quantity
+        # Clear pending quantity after extracting it
+        order.pending_modifier_quantity = None
 
         # Check for "none" / "no" / "skip"
         # Accept negative responses for non-required attributes or when allow_none=True
@@ -2296,6 +2302,11 @@ class MenuItemConfigHandler(BaseHandler):
                 )
 
             # Non-boolean attribute - ask for its options
+            # Extract and store quantity from user input (e.g., "2 eggs" → quantity=2)
+            # so it can be applied when user answers "scrambled"
+            quantity, _ = self._extract_quantity_from_input(user_input)
+            if quantity > 1:
+                order.pending_modifier_quantity = quantity
             return self._ask_optional_attribute(item, order, attr)
 
         # Try to match option values directly (e.g., "add a little mayo" -> mayo in condiments)

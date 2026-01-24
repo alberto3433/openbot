@@ -368,6 +368,13 @@ class UnifiedItemConverter:
                 continue
 
             mod_slug = mod.get("slug", "")
+
+            # Skip declined/negative selections - only show positive selections
+            if mod_slug == "_declined":
+                continue
+            if mod_slug == "no":
+                continue
+
             mod_display = mod.get("display_name") or mod_slug.replace("_", " ").title()
             mod_price = mod.get("price", 0) or 0.0
             mod_quantity = mod.get("quantity", 1) or 1

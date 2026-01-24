@@ -36,6 +36,10 @@ def singularize(word: str) -> str:
         'drink'
         >>> singularize("glass")
         'glass'
+        >>> singularize("tomatoes")
+        'tomato'
+        >>> singularize("potatoes")
+        'potato'
     """
     word = word.lower().strip()
     if not word:
@@ -47,6 +51,9 @@ def singularize(word: str) -> str:
     # -ies -> -y (pastries -> pastry, cookies -> cookie)
     if word.endswith("ies"):
         return word[:-3] + "y"
+    # -oes -> -o (tomatoes -> tomato, potatoes -> potato, heroes -> hero)
+    if word.endswith("oes"):
+        return word[:-2]
     # -es after s, sh, ch, x, z -> remove -es (boxes -> box, dishes -> dish)
     if word.endswith("es") and len(word) > 2:
         if word[-3] in "shxz" or word[-4:-2] == "ch":

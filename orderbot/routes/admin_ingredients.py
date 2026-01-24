@@ -203,16 +203,18 @@ def list_ingredients_minimal(
     """Lightweight list for sidebar - minimal fields for fast loading."""
     ingredients = db.query(Ingredient).order_by(Ingredient.category, Ingredient.name).all()
 
+    # Batch-load store availability in ONE query instead of N+1 queries
+    store_avail_map: dict[int, bool] = {}
+    if store_id:
+        store_avails = db.query(IngredientStoreAvailability).filter(
+            IngredientStoreAvailability.store_id == store_id
+        ).all()
+        store_avail_map = {sa.ingredient_id: sa.is_available for sa in store_avails}
+
     result = []
     for ing in ingredients:
-        is_available = ing.is_available
-        if store_id:
-            store_avail = db.query(IngredientStoreAvailability).filter(
-                IngredientStoreAvailability.ingredient_id == ing.id,
-                IngredientStoreAvailability.store_id == store_id
-            ).first()
-            if store_avail:
-                is_available = store_avail.is_available
+        # O(1) dict lookup instead of database query
+        is_available = store_avail_map.get(ing.id, ing.is_available) if store_id else ing.is_available
 
         result.append(IngredientListOut(
             id=ing.id,
@@ -236,16 +238,18 @@ def list_ingredients(
         query = query.filter(Ingredient.category == category.lower())
     ingredients = query.order_by(Ingredient.category, Ingredient.name).all()
 
+    # Batch-load store availability in ONE query instead of N+1 queries
+    store_avail_map: dict[int, bool] = {}
+    if store_id:
+        store_avails = db.query(IngredientStoreAvailability).filter(
+            IngredientStoreAvailability.store_id == store_id
+        ).all()
+        store_avail_map = {sa.ingredient_id: sa.is_available for sa in store_avails}
+
     result = []
     for ing in ingredients:
-        is_available = ing.is_available
-        if store_id:
-            store_avail = db.query(IngredientStoreAvailability).filter(
-                IngredientStoreAvailability.ingredient_id == ing.id,
-                IngredientStoreAvailability.store_id == store_id
-            ).first()
-            if store_avail:
-                is_available = store_avail.is_available
+        # O(1) dict lookup instead of database query
+        is_available = store_avail_map.get(ing.id, ing.is_available) if store_id else ing.is_available
 
         result.append(IngredientStoreAvailabilityOut(
             id=ing.id,
@@ -344,16 +348,18 @@ def list_menu_items_availability(
     from sqlalchemy.orm import joinedload
     items = db.query(MenuItem).options(joinedload(MenuItem.item_type)).order_by(MenuItem.name).all()
 
+    # Batch-load store availability in ONE query instead of N+1 queries
+    store_avail_map: dict[int, bool] = {}
+    if store_id:
+        store_avails = db.query(MenuItemStoreAvailability).filter(
+            MenuItemStoreAvailability.store_id == store_id
+        ).all()
+        store_avail_map = {sa.menu_item_id: sa.is_available for sa in store_avails}
+
     result = []
     for item in items:
-        is_available = True
-        if store_id:
-            store_avail = db.query(MenuItemStoreAvailability).filter(
-                MenuItemStoreAvailability.menu_item_id == item.id,
-                MenuItemStoreAvailability.store_id == store_id
-            ).first()
-            if store_avail:
-                is_available = store_avail.is_available
+        # O(1) dict lookup instead of database query (default to True if no override)
+        is_available = store_avail_map.get(item.id, True) if store_id else True
 
         # Derive category from item_type
         category = item.item_type.display_name if item.item_type else None

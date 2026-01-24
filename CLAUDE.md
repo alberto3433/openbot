@@ -146,7 +146,7 @@ if attr_values.get("toasted") is None:        # Assuming specific field
 
 **CORRECT:**
 ```python
-item_category = menu_cache.get_item_type_category(item.menu_item_type)
+overall_category = menu_cache.get_overall_category(item.menu_item_type)
 required_attrs = menu_cache.get_required_attributes(item.menu_item_type)
 missing = [attr for attr in required_attrs if attr not in item.attribute_values]
 ```

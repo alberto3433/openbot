@@ -15,8 +15,8 @@ Item Types:
 - PUT /admin/modifiers/item-types/{id}: Update item type
 - DELETE /admin/modifiers/item-types/{id}: Delete item type
 
-Item Type Categories:
-- GET /admin/modifiers/item-type-categories: List all categories
+Overall Categories:
+- GET /admin/modifiers/overall-categories: List all categories
 
 Authentication:
 ---------------
@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ItemType, ItemTypeAlias, MenuItem, ItemTypeGlobalAttribute, ItemTypeCategory, GlobalAttribute
+from ..models import ItemType, ItemTypeAlias, MenuItem, ItemTypeGlobalAttribute, OverallCategory, GlobalAttribute
 from ..services.item_type_helpers import has_linked_attributes, has_askable_attributes
 from ..services.helpers import validate_aliases
 from ..schemas.modifiers import (
@@ -47,7 +47,7 @@ from ..schemas.modifiers import (
     ItemTypeOut,
     ItemTypeCreate,
     ItemTypeUpdate,
-    ItemTypeCategoryOut,
+    OverallCategoryOut,
 )
 from .crud_factory import CRUDRouterFactory
 
@@ -90,8 +90,8 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
 
     # Get category name if set
     category_name = None
-    if item_type.item_type_category:
-        category_name = item_type.item_type_category.display_name
+    if item_type.overall_category:
+        category_name = item_type.overall_category.display_name
 
     return ItemTypeOut(
         id=item_type.id,
@@ -99,8 +99,8 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         display_name=item_type.display_name,
         is_configurable=is_configurable,
         skip_config=skip_config,
-        item_type_category_id=item_type.item_type_category_id,
-        item_type_category_name=category_name,
+        overall_category_id=item_type.overall_category_id,
+        overall_category_name=category_name,
         menu_item_count=menu_item_count,
         global_attribute_count=global_attribute_count,
         global_attributes=global_attributes,
@@ -143,20 +143,20 @@ def _set_item_type_aliases(db: Session, item_type: ItemType, aliases_str: str | 
 def _build_create_kwargs(payload: ItemTypeCreate, db: Session) -> dict[str, Any]:
     """Build model kwargs from create payload."""
     # Validate category ID if provided
-    if payload.item_type_category_id is not None:
-        category = db.query(ItemTypeCategory).filter(
-            ItemTypeCategory.id == payload.item_type_category_id
+    if payload.overall_category_id is not None:
+        category = db.query(OverallCategory).filter(
+            OverallCategory.id == payload.overall_category_id
         ).first()
         if not category:
             raise HTTPException(
                 status_code=400,
-                detail=f"Item type category with id {payload.item_type_category_id} not found"
+                detail=f"Overall category with id {payload.overall_category_id} not found"
             )
 
     return {
         "slug": payload.slug,
         "display_name": payload.display_name,
-        "item_type_category_id": payload.item_type_category_id,
+        "overall_category_id": payload.overall_category_id,
     }
 
 
@@ -180,17 +180,17 @@ def _handle_before_update(
         item.slug = payload.slug
     if payload.display_name is not None:
         item.display_name = payload.display_name
-    if payload.item_type_category_id is not None:
+    if payload.overall_category_id is not None:
         # Validate category ID
-        category = db.query(ItemTypeCategory).filter(
-            ItemTypeCategory.id == payload.item_type_category_id
+        category = db.query(OverallCategory).filter(
+            OverallCategory.id == payload.overall_category_id
         ).first()
         if not category:
             raise HTTPException(
                 status_code=400,
-                detail=f"Item type category with id {payload.item_type_category_id} not found"
+                detail=f"Overall category with id {payload.overall_category_id} not found"
             )
-        item.item_type_category_id = payload.item_type_category_id
+        item.overall_category_id = payload.overall_category_id
     if payload.aliases is not None:
         _set_item_type_aliases(db, item, payload.aliases)
 
@@ -241,14 +241,14 @@ _item_type_crud = CRUDRouterFactory(
 # Additional Endpoints (not covered by factory)
 # =============================================================================
 
-@admin_modifiers_router.get("/item-type-categories", response_model=List[ItemTypeCategoryOut])
-def list_item_type_categories(
+@admin_modifiers_router.get("/overall-categories", response_model=List[OverallCategoryOut])
+def list_overall_categories(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[ItemTypeCategoryOut]:
-    """List all item type categories (e.g., Food, Beverage)."""
-    categories = db.query(ItemTypeCategory).order_by(ItemTypeCategory.display_name).all()
-    return [ItemTypeCategoryOut.model_validate(c) for c in categories]
+) -> List[OverallCategoryOut]:
+    """List all overall categories (e.g., Food, Beverage)."""
+    categories = db.query(OverallCategory).order_by(OverallCategory.display_name).all()
+    return [OverallCategoryOut.model_validate(c) for c in categories]
 
 
 @admin_modifiers_router.get("/item-types/list", response_model=List[ItemTypeListOut])

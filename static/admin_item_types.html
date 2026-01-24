@@ -671,7 +671,6 @@
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <a href="/static/admin_modifiers.html">Modifiers</a>
       <a href="/static/admin_item_types.html"><strong>Item Types</strong></a>
-      <a href="/static/admin_categories.html">Item Cats</a>
       <span class="nav-group">
         <span class="nav-group-label">Config &#9662;</span>
         <div class="nav-dropdown">
@@ -680,6 +679,7 @@
           <a href="/static/admin_modifier_categories.html">Modifier Categories</a>
           <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
           <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
+          <a href="/static/admin_overall_categories.html">Overall Categories</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
           <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
         </div>
@@ -918,7 +918,7 @@
     const API_BASE = "/api/v1/admin/modifiers/item-types";
     const GLOBAL_ATTRS_API = "/api/v1/admin/global-attributes";
     const ITEM_TYPE_GLOBAL_ATTRS_API = "/api/v1/admin/item-types";
-    const CATEGORIES_API = "/api/v1/admin/modifiers/item-type-categories";
+    const CATEGORIES_API = "/api/v1/admin/modifiers/overall-categories";
 
     // Auth credentials storage
     let authCredentials = null;
@@ -1271,7 +1271,7 @@
           // Populate aliases from full details
           document.getElementById("aliases").value = (fullDetails.aliases || []).join(", ");
           // Set category dropdown
-          document.getElementById("itemTypeCategory").value = fullDetails.item_type_category_id || "";
+          document.getElementById("itemTypeCategory").value = fullDetails.overall_category_id || "";
         }
       } catch (error) {
         console.error("Failed to load full item type details:", error);
@@ -1330,7 +1330,7 @@
         display_name: displayName,
         slug: slug,
         aliases: aliases,  // Empty string clears aliases, null means don't update
-        item_type_category_id: categoryId
+        overall_category_id: categoryId
       };
 
       setSaveButtonState(saveBtn, "saving");

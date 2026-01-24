@@ -210,14 +210,14 @@ class GlobalAttributeRef(BaseModel):
 
 
 # =============================================================================
-# Item Type Category Schemas
+# Overall Category Schemas
 # =============================================================================
 
-class ItemTypeCategoryOut(BaseModel):
+class OverallCategoryOut(BaseModel):
     """
-    Response model for an item type category.
+    Response model for an overall category.
 
-    Categories group item types by modifier extraction rules
+    Categories group item types and ingredient categories by modifier extraction rules
     (e.g., "food" vs "beverage").
 
     Attributes:
@@ -268,8 +268,8 @@ class ItemTypeOut(BaseModel):
         display_name: Human-readable name (e.g., "Bagel")
         is_configurable: Whether items need configuration
         skip_config: Skip configuration dialog
-        item_type_category_id: FK to item_type_categories table
-        item_type_category_name: Display name of the category (e.g., "Food")
+        overall_category_id: FK to overall_categories table
+        overall_category_name: Display name of the category (e.g., "Food")
         menu_item_count: Number of menu items using this type
         global_attribute_count: Number of linked global attributes
         global_attributes: List of linked global attributes (slug and display_name)
@@ -282,8 +282,8 @@ class ItemTypeOut(BaseModel):
     display_name: str
     is_configurable: bool
     skip_config: bool = False
-    item_type_category_id: Optional[int] = None
-    item_type_category_name: Optional[str] = None
+    overall_category_id: Optional[int] = None
+    overall_category_name: Optional[str] = None
     menu_item_count: int = 0
     global_attribute_count: int = 0
     global_attributes: List[GlobalAttributeRef] = []
@@ -300,20 +300,20 @@ class ItemTypeCreate(BaseModel):
     Attributes:
         slug: URL-safe identifier (required)
         display_name: Human-readable name (required)
-        item_type_category_id: FK to item_type_categories table (optional)
+        overall_category_id: FK to overall_categories table (optional)
         aliases: Comma-separated synonyms for matching (optional)
 
     Example:
         {
             "slug": "specialty_drink",
             "display_name": "Specialty Drink",
-            "item_type_category_id": 2,
+            "overall_category_id": 2,
             "aliases": "fancy drink, gourmet beverage"
         }
     """
     slug: str
     display_name: str
-    item_type_category_id: Optional[int] = None
+    overall_category_id: Optional[int] = None
     aliases: Optional[str] = None  # Comma-separated aliases
 
 
@@ -329,12 +329,12 @@ class ItemTypeUpdate(BaseModel):
     Attributes:
         slug: New slug
         display_name: New display name
-        item_type_category_id: FK to item_type_categories table
+        overall_category_id: FK to overall_categories table
         aliases: Comma-separated synonyms for matching
     """
     slug: Optional[str] = None
     display_name: Optional[str] = None
-    item_type_category_id: Optional[int] = None
+    overall_category_id: Optional[int] = None
     aliases: Optional[str] = None  # Comma-separated aliases
 
 

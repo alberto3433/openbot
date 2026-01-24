@@ -173,7 +173,7 @@ class LoaderMixin:
             db.query(ItemType)
             .options(
                 selectinload(ItemType.alias_records),
-                joinedload(ItemType.item_type_category),
+                joinedload(ItemType.overall_category),
                 selectinload(ItemType.global_attribute_links)
                     .selectinload(ItemTypeGlobalAttribute.global_attribute)
                     .selectinload(GlobalAttribute.options),
@@ -559,14 +559,14 @@ class LoaderMixin:
             db.query(ItemType)
             .options(
                 joinedload(ItemType.alias_records),
-                joinedload(ItemType.item_type_category),
+                joinedload(ItemType.overall_category),
             )
             .all()
         )
         for item_type in item_types:
             slug = item_type.slug
-            if item_type.item_type_category:
-                modifier_categories[slug] = item_type.item_type_category.slug
+            if item_type.overall_category:
+                modifier_categories[slug] = item_type.overall_category.slug
             else:
                 modifier_categories[slug] = None
 
@@ -2270,8 +2270,8 @@ class LoaderMixin:
 
         for item_type in item_types:
             slug = item_type.slug
-            if item_type.item_type_category:
-                modifier_categories[slug] = item_type.item_type_category.slug
+            if item_type.overall_category:
+                modifier_categories[slug] = item_type.overall_category.slug
             else:
                 modifier_categories[slug] = None
 

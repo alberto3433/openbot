@@ -512,6 +512,27 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    /* Disabled-derived state for ingredient-linked options */
+    .disabled-derived {
+      background-color: #f0f0f0 !important;
+      color: #888 !important;
+      cursor: not-allowed;
+    }
+    .disabled-derived-hint {
+      font-size: 10px;
+      color: #1976d2;
+      font-style: italic;
+      margin-top: 2px;
+    }
+    /* Ingredient link badge in options list */
+    .option-ingredient {
+      font-size: 10px;
+      background: #e8f5e9;
+      color: #2e7d32;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: help;
+    }
   </style>
 </head>
 <body>
@@ -526,7 +547,6 @@
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <a href="/static/admin_modifiers.html">Modifiers</a>
       <a href="/static/admin_item_types.html">Item Types</a>
-      <a href="/static/admin_categories.html">Item Cats</a>
       <span class="nav-group">
         <span class="nav-group-label">Config &#9662;</span>
         <div class="nav-dropdown">
@@ -535,6 +555,7 @@
           <a href="/static/admin_modifier_categories.html">Modifier Categories</a>
           <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
           <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
+          <a href="/static/admin_overall_categories.html">Overall Categories</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
           <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
         </div>
@@ -678,14 +699,25 @@
       <div class="modal-body">
         <form id="optionForm">
           <input type="hidden" id="optionId" />
+          <!-- Ingredient Link (controls slug/display_name behavior) -->
+          <div class="form-group">
+            <label for="optionIngredient">Linked Ingredient</label>
+            <select id="optionIngredient" onchange="onIngredientSelectionChange()">
+              <option value="">(None - enter slug/name manually)</option>
+              <!-- Populated dynamically with optgroups by category -->
+            </select>
+            <div class="hint">Select to derive slug/display name from ingredient. Leave empty for non-ingredient options (sizes, temperatures).</div>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label for="optionSlug">Slug *</label>
               <input type="text" id="optionSlug" required placeholder="e.g., plain_cc" pattern="[a-z0-9_]+" />
+              <div class="disabled-derived-hint" id="slugDerivedHint" style="display: none;">Derived from ingredient</div>
             </div>
             <div class="form-group">
               <label for="optionDisplayName">Display Name *</label>
               <input type="text" id="optionDisplayName" required placeholder="e.g., Plain Cream Cheese" />
+              <div class="disabled-derived-hint" id="displayNameDerivedHint" style="display: none;">Derived from ingredient</div>
             </div>
           </div>
           <div class="form-row">
@@ -839,6 +871,7 @@
     let editingOptionId = null;
     let modifierCategories = [];
     let unlinkedIngredients = [];
+    let ingredientsCache = [];  // All ingredients for option edit dropdown
 
     // Auth fetch helper
     async function authFetch(url, options = {}) {
@@ -984,6 +1017,7 @@
               ${opt.price_modifier > 0 ? `<span class="option-price">+$${opt.price_modifier.toFixed(2)}</span>` : ''}
               ${opt.is_default ? '<span class="option-default">default</span>' : ''}
               ${opt.modifier_category_name ? `<span class="option-category" title="Modifier Category">${escapeHtml(opt.modifier_category_name)}</span>` : ''}
+              ${opt.ingredient_id ? `<span class="option-ingredient" title="Linked to ingredient - slug/name derived">🔗</span>` : ''}
               ${opt.aliases ? `<span class="option-slug" title="Aliases" style="margin-left: 8px;">aliases: ${escapeHtml(opt.aliases)}</span>` : ''}
             </div>
             <div class="option-actions">
@@ -1155,6 +1189,82 @@
     }
 
     // ==================
+    // Ingredient Loading for Option Edit
+    // ==================
+
+    // Load all ingredients for the option edit dropdown
+    async function loadIngredientsForOptionEdit() {
+      try {
+        const response = await authFetch('/api/v1/admin/ingredients');
+        if (!response.ok) throw new Error('Failed to load ingredients');
+        ingredientsCache = await response.json();
+        populateIngredientDropdownForOption();
+      } catch (err) {
+        console.error('Error loading ingredients for option edit:', err);
+      }
+    }
+
+    // Populate the ingredient dropdown in option edit modal
+    function populateIngredientDropdownForOption() {
+      const select = document.getElementById('optionIngredient');
+      select.innerHTML = '<option value="">(None - enter slug/name manually)</option>';
+
+      // Group by category
+      const byCategory = {};
+      ingredientsCache.forEach(ing => {
+        const cat = ing.category || 'other';
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(ing);
+      });
+
+      Object.keys(byCategory).sort().forEach(category => {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = category.charAt(0).toUpperCase() + category.slice(1);
+        byCategory[category].sort((a, b) => a.name.localeCompare(b.name)).forEach(ing => {
+          const opt = document.createElement('option');
+          opt.value = ing.id;
+          opt.textContent = ing.name;
+          opt.dataset.slug = ing.slug;
+          opt.dataset.name = ing.name;
+          optgroup.appendChild(opt);
+        });
+        select.appendChild(optgroup);
+      });
+    }
+
+    // Handle ingredient selection change - enable/disable slug/display_name fields
+    function onIngredientSelectionChange() {
+      const ingredientId = document.getElementById('optionIngredient').value;
+      const slugInput = document.getElementById('optionSlug');
+      const displayNameInput = document.getElementById('optionDisplayName');
+      const slugHint = document.getElementById('slugDerivedHint');
+      const displayNameHint = document.getElementById('displayNameDerivedHint');
+
+      if (ingredientId) {
+        // Ingredient selected → derive slug/display_name from ingredient
+        const ingredient = ingredientsCache.find(i => i.id === parseInt(ingredientId));
+        if (ingredient) {
+          slugInput.value = ingredient.slug;
+          displayNameInput.value = ingredient.name;
+        }
+        slugInput.disabled = true;
+        displayNameInput.disabled = true;
+        slugInput.classList.add('disabled-derived');
+        displayNameInput.classList.add('disabled-derived');
+        slugHint.style.display = 'block';
+        displayNameHint.style.display = 'block';
+      } else {
+        // No ingredient → enable manual entry
+        slugInput.disabled = false;
+        displayNameInput.disabled = false;
+        slugInput.classList.remove('disabled-derived');
+        displayNameInput.classList.remove('disabled-derived');
+        slugHint.style.display = 'none';
+        displayNameHint.style.display = 'none';
+      }
+    }
+
+    // ==================
     // Option Modal
     // ==================
 
@@ -1171,6 +1281,13 @@
       // Ensure dropdown is populated
       populateModifierCategoryDropdown();
 
+      // Load ingredients for linking if not loaded yet
+      if (ingredientsCache.length === 0) {
+        await loadIngredientsForOptionEdit();
+      } else {
+        populateIngredientDropdownForOption();
+      }
+
       if (opt) {
         document.getElementById("optionModalTitle").textContent = "Edit Option";
         document.getElementById("optionId").value = opt.id;
@@ -1184,6 +1301,9 @@
         document.getElementById("optionAliases").value = opt.aliases || "";
         document.getElementById("optionDeleteBtn").style.display = "inline-block";
         editingOptionId = opt.id;
+        // Set ingredient dropdown and apply enable/disable state
+        document.getElementById("optionIngredient").value = opt.ingredient_id || "";
+        onIngredientSelectionChange();
       } else {
         document.getElementById("optionModalTitle").textContent = "Add Option";
         document.getElementById("optionId").value = "";
@@ -1191,6 +1311,9 @@
         document.getElementById("optionModifierCategory").value = "";
         document.getElementById("optionAliases").value = "";
         document.getElementById("optionDeleteBtn").style.display = "none";
+        // Reset ingredient dropdown and enable fields
+        document.getElementById("optionIngredient").value = "";
+        onIngredientSelectionChange();
       }
 
       modal.classList.add("active");
@@ -1205,14 +1328,32 @@
       if (!selectedAttrId) return;
 
       const id = document.getElementById("optionId").value;
-      const slug = document.getElementById("optionSlug").value.trim().toLowerCase();
-      const displayName = document.getElementById("optionDisplayName").value.trim();
       const priceModifier = parseFloat(document.getElementById("optionPrice").value) || 0;
       const displayOrder = parseInt(document.getElementById("optionOrder").value) || 0;
       const isDefault = document.getElementById("optionIsDefault").checked;
       const isAvailable = document.getElementById("optionIsAvailable").checked;
       const modifierCategoryValue = document.getElementById("optionModifierCategory").value;
       const modifierCategoryId = modifierCategoryValue ? parseInt(modifierCategoryValue) : null;
+
+      // Get ingredient_id and derive slug/display_name if linked
+      const ingredientVal = document.getElementById("optionIngredient").value;
+      const ingredientId = ingredientVal ? parseInt(ingredientVal) : null;
+
+      let slug, displayName;
+      if (ingredientId) {
+        // Derive from ingredient - this ensures consistency
+        const ingredient = ingredientsCache.find(i => i.id === ingredientId);
+        if (!ingredient) {
+          showToast("Selected ingredient not found", "error");
+          return;
+        }
+        slug = ingredient.slug;
+        displayName = ingredient.name;
+      } else {
+        // Use manual values from form
+        slug = document.getElementById("optionSlug").value.trim().toLowerCase();
+        displayName = document.getElementById("optionDisplayName").value.trim();
+      }
 
       if (!slug || !displayName) {
         showToast("Slug and display name are required", "error");
@@ -1234,6 +1375,7 @@
         is_default: isDefault,
         is_available: isAvailable,
         modifier_category_id: modifierCategoryId,
+        ingredient_id: ingredientId,
         aliases: aliases || null
       };
 

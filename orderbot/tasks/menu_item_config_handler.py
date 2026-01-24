@@ -917,18 +917,34 @@ class MenuItemConfigHandler(BaseHandler):
     def _ask_customization_checkpoint(
         self, item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
-        """Complete the item after mandatory attributes are answered.
+        """Ask if user wants to customize with optional attributes."""
+        item_type = item.menu_item_type
+        unanswered_optional = self._get_unanswered_optional(item, item_type)
 
-        Previously offered optional attributes here, but now we just complete
-        the item. Users can still add customizations proactively.
-        """
+        if not unanswered_optional:
+            # No optional attributes available, recalculate price and complete
+            item.customization_offered = True
+            self._recalculate_item_price(item)
+            item.mark_complete()
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+            order.clear_pending()
+            return StateMachineResult(
+                message=f"Got it, {item.get_summary()}. Anything else?",
+                order=order,
+            )
+
+        # Mark that we've reached the checkpoint
         item.customization_offered = True
-        self._recalculate_item_price(item)
-        item.mark_complete()
-        order.set_phase(OrderPhase.TAKING_ITEMS)
-        order.clear_pending()
+
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
+        order.pending_item_id = item.id
+        order.pending_field = "customization_checkpoint"
+
+        # List available customization options
+        options_list = self._format_attributes_list(unanswered_optional)
+
         return StateMachineResult(
-            message=f"Got it, {item.get_summary()}. Anything else?",
+            message=f"Any more changes to that? You can add {options_list}.",
             order=order,
         )
 
@@ -2153,23 +2169,39 @@ class MenuItemConfigHandler(BaseHandler):
     def _ask_more_customizations(
         self, item: MenuItemTask, order: OrderTask, matched_choice: str | None = None
     ) -> StateMachineResult:
-        """Complete item after an optional customization is added.
+        """Ask if user wants more customizations after completing one.
 
         Args:
             item: The menu item being configured
             order: The current order
             matched_choice: The display name of the choice just made (for acknowledgment)
         """
+        item_type = item.menu_item_type
+        unanswered = self._get_unanswered_optional(item, item_type)
+
         # Build acknowledgment prefix if we have a choice to acknowledge
         ack_prefix = f"Okay, {matched_choice}. " if matched_choice else ""
 
-        # Complete the item - no longer re-offer checkpoint
-        self._recalculate_item_price(item)
-        item.mark_complete()
-        order.set_phase(OrderPhase.TAKING_ITEMS)
-        order.clear_pending()
+        if not unanswered:
+            # No more options, recalculate price and complete
+            self._recalculate_item_price(item)
+            item.mark_complete()
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+            order.clear_pending()
+            return StateMachineResult(
+                message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?",
+                order=order,
+            )
+
+        # List remaining options
+        options_list = self._format_attributes_list(unanswered)
+
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
+        order.pending_item_id = item.id
+        order.pending_field = "customization_checkpoint"
+
         return StateMachineResult(
-            message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?",
+            message=f"{ack_prefix}Any more changes to that? You can add {options_list}.",
             order=order,
         )
 
@@ -2395,16 +2427,9 @@ class MenuItemConfigHandler(BaseHandler):
                             [opt["slug"] for opt in matched], attr_slug, item.id
                         )
 
-                        # Complete item after adding customization
+                        # Check for remaining options and re-offer or complete
                         display_text = ", ".join(display_parts)
-                        self._recalculate_item_price(item)
-                        item.mark_complete()
-                        order.set_phase(OrderPhase.TAKING_ITEMS)
-                        order.clear_pending()
-                        return StateMachineResult(
-                            message=f"Okay, {display_text} added. Got it, {item.get_summary()}. Anything else?",
-                            order=order,
-                        )
+                        return self._ask_more_customizations(item, order, f"{display_text} added")
             else:
                 # For single_select, match one option
                 matched_opt, _ = self._match_option_from_input(user_clean, options)
@@ -2430,15 +2455,8 @@ class MenuItemConfigHandler(BaseHandler):
                         attr_slug, matched_opt["slug"], item.id
                     )
 
-                    # Complete item after adding customization
-                    self._recalculate_item_price(item)
-                    item.mark_complete()
-                    order.set_phase(OrderPhase.TAKING_ITEMS)
-                    order.clear_pending()
-                    return StateMachineResult(
-                        message=f"Okay, {display} added. Got it, {item.get_summary()}. Anything else?",
-                        order=order,
-                    )
+                    # Check for remaining options and re-offer or complete
+                    return self._ask_more_customizations(item, order, f"{display} added")
 
                 # Try numeric matching for options with numeric slugs (e.g., shots: "1", "2", "3")
                 numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}
@@ -2461,15 +2479,8 @@ class MenuItemConfigHandler(BaseHandler):
                                     "CHECKPOINT NUMERIC: %s=%s (price=$%.2f) from input '%s'",
                                     attr_slug, opt["slug"], opt_price, user_input
                                 )
-                                # Complete item after adding customization
-                                self._recalculate_item_price(item)
-                                item.mark_complete()
-                                order.set_phase(OrderPhase.TAKING_ITEMS)
-                                order.clear_pending()
-                                return StateMachineResult(
-                                    message=f"Okay, {display_name} added. Got it, {item.get_summary()}. Anything else?",
-                                    order=order,
-                                )
+                                # Check for remaining options and re-offer or complete
+                                return self._ask_more_customizations(item, order, f"{display_name} added")
 
         return None
 

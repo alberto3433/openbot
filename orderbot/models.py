@@ -25,22 +25,24 @@ Base = declarative_base()
 
 # --- Generic Item Type System ---
 
-class ItemTypeCategory(Base):
+class OverallCategory(Base):
     """
     Defines a category for item types (e.g., "food" vs "beverage").
 
     This determines which modifier extraction rules apply to items of this type.
     Food items use food modifiers (proteins, cheeses, toppings).
     Beverage items use beverage modifiers (milk, sweetener, syrup).
+
+    Also governs ingredient classification via IngredientCategory.modifier_type.
     """
-    __tablename__ = "item_type_categories"
+    __tablename__ = "overall_categories"
 
     id = Column(Integer, primary_key=True, index=True)
     slug = Column(String(50), unique=True, nullable=False, index=True)  # "food", "beverage"
     display_name = Column(String(100), nullable=False)  # "Food", "Beverage"
 
     # Relationships
-    item_types = relationship("ItemType", back_populates="item_type_category")
+    item_types = relationship("ItemType", back_populates="overall_category")
 
 
 class ItemType(Base):
@@ -63,9 +65,9 @@ class ItemType(Base):
     display_name = Column(String, nullable=False)  # e.g., "Sandwich", "Pizza", "Drink"
     display_name_plural = Column(String, nullable=True)  # e.g., "coffees and teas" for sized_beverage (if irregular)
 
-    # Item type category: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
-    item_type_category_id = Column(Integer, ForeignKey("item_type_categories.id", ondelete="SET NULL"), nullable=True, index=True)
-    item_type_category = relationship("ItemTypeCategory", back_populates="item_types")
+    # Overall category: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
+    overall_category_id = Column(Integer, ForeignKey("overall_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    overall_category = relationship("OverallCategory", back_populates="item_types")
 
     # Note: is_by_pound column was removed - use MenuItem.unit_type instead
     # Items sold by weight have unit_type="by_weight" on the MenuItem level

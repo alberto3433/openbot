@@ -183,5 +183,5 @@ ADMIN_PAGES = {
     "ingredient_categories": "admin_ingredient_categories.html",
     "size_categories": "admin_size_categories.html",
     "response_patterns": "admin_response_patterns.html",
-    "categories": "admin_categories.html",
+    "overall_categories": "admin_overall_categories.html",
 }

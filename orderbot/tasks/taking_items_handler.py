@@ -1175,7 +1175,13 @@ class TakingItemsHandler(MenuDataMixin):
                             modifier_slug = modifier_lower.replace(" ", "_")
 
                             # Determine category from database lookup
-                            category = modifier_to_category.get(base_modifier, "topping")
+                            category = modifier_to_category.get(base_modifier)
+                            if not category:
+                                logger.warning(
+                                    "MODIFY ADD: Skipping modifier '%s' - category not found in database",
+                                    modifier,
+                                )
+                                continue
 
                             # Extract quantity from original user input
                             # Handles "double bacon", "triple syrup", "extra bacon", "2 bacon"

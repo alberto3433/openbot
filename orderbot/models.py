@@ -250,8 +250,11 @@ class GlobalAttributeOption(Base):
     For example, "Plain Cream Cheese", "Scallion Cream Cheese" are options
     for the "spread" global attribute.
 
-    Aliases and must_match values are stored on the linked Ingredient record,
-    not on this table. Use ingredient.aliases and ingredient.must_match.
+    Aliases can come from:
+    1. This option's own alias_records (GlobalAttributeOptionAlias)
+    2. The linked Ingredient's alias_records (IngredientAlias)
+
+    The cache loader merges both sources when building the options dict.
     """
     __tablename__ = "global_attribute_options"
 
@@ -289,6 +292,43 @@ class GlobalAttributeOption(Base):
     attribute = relationship("GlobalAttribute", back_populates="options")
     ingredient = relationship("Ingredient", backref="global_attribute_options")
     modifier_category = relationship("ModifierCategory", backref="global_attribute_options")
+    alias_records = relationship(
+        "GlobalAttributeOptionAlias",
+        back_populates="option",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    @property
+    def aliases(self) -> list[str]:
+        """Return list of alias strings from this option's alias_records."""
+        return [ar.alias for ar in self.alias_records]
+
+
+class GlobalAttributeOptionAlias(Base):
+    """
+    Child table for global attribute option aliases.
+
+    Aliases are globally unique across all alias tables to prevent
+    ambiguous lookups during parsing.
+
+    Examples:
+    - "2 shots" -> double_shot option
+    - "triple" -> triple_shot option
+    """
+    __tablename__ = "global_attribute_option_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    global_attribute_option_id = Column(
+        Integer,
+        ForeignKey("global_attribute_options.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    alias = Column(String(100), nullable=False, unique=True)  # Globally unique
+    created_at = Column(DateTime, server_default=func.now())
+
+    option = relationship("GlobalAttributeOption", back_populates="alias_records")
 
 
 class ItemTypeGlobalAttribute(Base):

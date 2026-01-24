@@ -58,6 +58,13 @@ _ORDERING_PREFIX_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# Pattern to detect modifier inquiries like "what toppings do you have?"
+# Captures the category (e.g., "toppings", "sweeteners", "spreads")
+_MODIFIER_INQUIRY_PATTERN = re.compile(
+    r"what (\w+(?:\s+\w+)?)\s+do\s+you\s+(?:have|offer|carry)",
+    re.IGNORECASE
+)
+
 
 def _extract_answer_value(user_input: str) -> str:
     """Extract the actual answer value by stripping common ordering prefixes.
@@ -72,6 +79,23 @@ def _extract_answer_value(user_input: str) -> str:
     # Also strip trailing "please"
     stripped = re.sub(r"\s+please\s*$", "", stripped, flags=re.IGNORECASE)
     return stripped.strip()
+
+
+def _detect_modifier_inquiry(user_input: str) -> str | None:
+    """Detect modifier inquiry requests like 'what toppings do you have?'
+
+    Args:
+        user_input: The user's input text
+
+    Returns:
+        The extracted category (e.g., "toppings", "sweeteners") or None if not a modifier inquiry
+    """
+    match = _MODIFIER_INQUIRY_PATTERN.search(user_input)
+    if match:
+        category = match.group(1).strip().lower()
+        logger.debug("Detected modifier inquiry for category: %s", category)
+        return category
+    return None
 
 
 def _is_valid_answer_for_pending_field(user_input: str, pending_field: str | None) -> bool:
@@ -232,6 +256,11 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
         ]
         if any(pattern in input_lower for pattern in generic_option_patterns):
             return False  # Let them ask about options
+
+        # Allow "what X do you have?" for any ingredient category (e.g., "what toppings do you have?")
+        # This allows users to inquire about menu options even during item configuration
+        if re.search(r"what \w+ do you have", input_lower):
+            return False  # Let them ask about any category
 
         # Data-driven keyword matching: if this is an attribute config field,
         # get relevant keywords from the database
@@ -406,6 +435,25 @@ class ConfiguringItemHandler:
             else:
                 msg = f"Let's finish with your {item_name} first."
             return StateMachineResult(message=msg, order=order)
+
+        # Check for modifier inquiries like "what toppings do you have?" that passed the off-topic check
+        # These should be routed to the store_info_handler for proper pagination support
+        # EXCEPT when at customization_checkpoint or in attribute configuration (item_type:attr_slug)
+        # - customization_checkpoint: handle_customization_checkpoint() has proper options inquiry handling
+        # - item_type:attr_slug: handle_attribute_input() has _detect_different_attribute_inquiry()
+        modifier_category = _detect_modifier_inquiry(user_input)
+        pending_is_attr_config = order.pending_field and ":" in order.pending_field
+        if (modifier_category
+            and self.taking_items_handler
+            and self.taking_items_handler.store_info_handler
+            and order.pending_field != "customization_checkpoint"
+            and not pending_is_attr_config):
+            logger.info("MODIFIER INQUIRY during config: category='%s'", modifier_category)
+            return self.taking_items_handler.store_info_handler.handle_modifier_inquiry(
+                None,  # item_type - not specified
+                modifier_category,  # category extracted from query
+                order,
+            )
 
         # Route to field-specific handler
         if order.pending_field == "side_choice":

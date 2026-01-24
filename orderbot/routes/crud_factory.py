@@ -316,30 +316,36 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
     def _make_get_handler(self) -> Callable:
         """Create the get handler with proper signature."""
+        import inspect
+
         model = self.model
         not_found_message = self.not_found_message
         to_response = self._model_to_response
+        id_param_name = self.id_param  # Capture in closure
 
         async def get_item(
-            item_id: int,
             db: Session = Depends(get_db),
             _admin: str = Depends(verify_admin_credentials),
+            **path_params,
         ):
+            item_id = path_params.get(id_param_name)
             item = db.query(model).filter(model.id == item_id).first()
             if not item:
                 raise HTTPException(status_code=404, detail=not_found_message)
             return to_response(item, db)
 
-        # Rename parameter to match id_param
-        import inspect
+        # Build proper signature with the correct parameter name for FastAPI
         sig = inspect.signature(get_item)
-        new_params = []
-        for name, param in sig.parameters.items():
-            if name == "item_id":
-                new_params.append(param.replace(name=self.id_param))
-            else:
-                new_params.append(param)
-        get_item.__signature__ = sig.replace(parameters=new_params)
+        params = list(sig.parameters.values())
+        # Remove **path_params and add the explicit id parameter
+        params = [p for p in params if p.kind != inspect.Parameter.VAR_KEYWORD]
+        id_param = inspect.Parameter(
+            id_param_name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=int,
+        )
+        params.insert(0, id_param)
+        get_item.__signature__ = sig.replace(parameters=params)
 
         return get_item
 
@@ -356,6 +362,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
     def _make_update_handler(self) -> Callable:
         """Create the update handler with proper signature."""
+        import inspect
+
         model = self.model
         update_schema = self.update_schema
         not_found_message = self.not_found_message
@@ -366,13 +374,15 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         to_response = self._model_to_response
         logger = self.logger
         model_name = self._get_model_name()
+        id_param_name = self.id_param  # Capture in closure
 
         async def update_item(
-            item_id: int,
             payload: update_schema,
             db: Session = Depends(get_db),
             _admin: str = Depends(verify_admin_credentials),
+            **path_params,
         ):
+            item_id = path_params.get(id_param_name)
             item = db.query(model).filter(model.id == item_id).first()
             if not item:
                 raise HTTPException(status_code=404, detail=not_found_message)
@@ -419,16 +429,18 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
             return to_response(item, db)
 
-        # Rename parameter to match id_param
-        import inspect
+        # Build proper signature with the correct parameter name for FastAPI
         sig = inspect.signature(update_item)
-        new_params = []
-        for name, param in sig.parameters.items():
-            if name == "item_id":
-                new_params.append(param.replace(name=self.id_param))
-            else:
-                new_params.append(param)
-        update_item.__signature__ = sig.replace(parameters=new_params)
+        params = list(sig.parameters.values())
+        # Remove **path_params and add the explicit id parameter
+        params = [p for p in params if p.kind != inspect.Parameter.VAR_KEYWORD]
+        id_param = inspect.Parameter(
+            id_param_name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=int,
+        )
+        params.insert(0, id_param)
+        update_item.__signature__ = sig.replace(parameters=params)
 
         return update_item
 
@@ -445,17 +457,21 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
     def _make_delete_handler(self) -> Callable:
         """Create the delete handler with proper signature."""
+        import inspect
+
         model = self.model
         not_found_message = self.not_found_message
         on_before_delete = self.on_before_delete
         logger = self.logger
         model_name = self._get_model_name()
+        id_param_name = self.id_param  # Capture in closure
 
         async def delete_item(
-            item_id: int,
             db: Session = Depends(get_db),
             _admin: str = Depends(verify_admin_credentials),
+            **path_params,
         ):
+            item_id = path_params.get(id_param_name)
             item = db.query(model).filter(model.id == item_id).first()
             if not item:
                 raise HTTPException(status_code=404, detail=not_found_message)
@@ -473,15 +489,17 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             db.commit()
             return None
 
-        # Rename parameter to match id_param
-        import inspect
+        # Build proper signature with the correct parameter name for FastAPI
         sig = inspect.signature(delete_item)
-        new_params = []
-        for name, param in sig.parameters.items():
-            if name == "item_id":
-                new_params.append(param.replace(name=self.id_param))
-            else:
-                new_params.append(param)
-        delete_item.__signature__ = sig.replace(parameters=new_params)
+        params = list(sig.parameters.values())
+        # Remove **path_params and add the explicit id parameter
+        params = [p for p in params if p.kind != inspect.Parameter.VAR_KEYWORD]
+        id_param = inspect.Parameter(
+            id_param_name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=int,
+        )
+        params.insert(0, id_param)
+        delete_item.__signature__ = sig.replace(parameters=params)
 
         return delete_item

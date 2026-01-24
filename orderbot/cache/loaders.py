@@ -155,6 +155,8 @@ class LoaderMixin:
             db.query(GlobalAttribute)
             .options(
                 selectinload(GlobalAttribute.options)
+                    .selectinload(GlobalAttributeOption.alias_records),
+                selectinload(GlobalAttribute.options)
                     .selectinload(GlobalAttributeOption.ingredient)
                     .selectinload(Ingredient.alias_records),
                 selectinload(GlobalAttribute.options)
@@ -810,6 +812,7 @@ class LoaderMixin:
                 options = (
                     db.query(GlobalAttributeOption)
                     .options(
+                        joinedload(GlobalAttributeOption.alias_records),
                         joinedload(GlobalAttributeOption.ingredient)
                         .joinedload(Ingredient.alias_records),
                         joinedload(GlobalAttributeOption.ingredient)
@@ -865,13 +868,26 @@ class LoaderMixin:
             self._modifier_category_to_attrs = {}
 
     def _build_global_option_dict(self, opt) -> dict:
-        """Build option dict, reading aliases/must_match ONLY from linked Ingredient."""
+        """Build option dict with aliases from both option and linked ingredient.
+
+        Aliases are merged from two sources:
+        1. Option's own alias_records (GlobalAttributeOptionAlias)
+        2. Linked Ingredient's alias_records (IngredientAlias)
+
+        This allows options like "double_shot" to have aliases like "2 shots"
+        without requiring a linked ingredient.
+        """
+        # Start with option's own aliases
+        aliases = list(opt.aliases) if opt.aliases else []
+
+        # Add linked ingredient aliases (if any)
+        must_match = None
         if opt.ingredient:
-            aliases = opt.ingredient.aliases
+            if opt.ingredient.aliases:
+                for ing_alias in opt.ingredient.aliases:
+                    if ing_alias not in aliases:
+                        aliases.append(ing_alias)
             must_match = opt.ingredient.must_match
-        else:
-            aliases = None
-            must_match = None
 
         modifier_category_slug = None
         if opt.modifier_category:
@@ -883,7 +899,7 @@ class LoaderMixin:
             "price_modifier": opt.price_modifier,
             "is_default": opt.is_default,
             "is_available": opt.is_available,
-            "aliases": aliases,
+            "aliases": aliases if aliases else None,
             "must_match": must_match,
             "modifier_category": modifier_category_slug,
         }

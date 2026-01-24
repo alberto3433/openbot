@@ -169,6 +169,36 @@ class MenuItemConfigHandler(BaseHandler):
         quantity, remaining = extract_leading_quantity(user_input)
         return (quantity or 1, remaining)
 
+    def _parse_numeric_input(self, user_input: str) -> int | None:
+        """
+        Parse numeric value from user input. Domain-agnostic.
+
+        Handles both raw digits and word numbers. Used for attributes with
+        numeric option slugs (e.g., shots with options "1", "2", "3", "4").
+
+        Args:
+            user_input: User's input string (e.g., "3", "three", "triple")
+
+        Returns:
+            Integer value if found, None otherwise.
+        """
+        from .parsers.quantity_utils import WORD_TO_NUM
+
+        user_lower = user_input.lower().strip()
+
+        # Try raw digit match first: "3", "2 shots", etc.
+        digit_match = re.search(r'\b(\d+)\b', user_lower)
+        if digit_match:
+            return int(digit_match.group(1))
+
+        # Try word number match: "three", "triple", etc.
+        # Sort by length descending to match longer phrases first
+        for word, num in sorted(WORD_TO_NUM.items(), key=lambda x: -len(x[0])):
+            if word in user_lower.split():
+                return num
+
+        return None
+
     def _normalize_for_matching(self, text: str) -> str:
         """
         Normalize user input for option matching.
@@ -620,6 +650,58 @@ class MenuItemConfigHandler(BaseHandler):
                     return True
 
         return False
+
+    def _detect_different_attribute_inquiry(
+        self, user_input: str, item_type: str, current_attr_slug: str
+    ) -> dict | None:
+        """Detect if user is asking about a DIFFERENT attribute's options.
+
+        When we're asking about one attribute (e.g., condiments) but the user asks
+        "what toppings do you have?", we should switch to showing toppings options.
+
+        Args:
+            user_input: The user's input
+            item_type: The item type slug (e.g., "bagel")
+            current_attr_slug: The attribute we're currently asking about
+
+        Returns:
+            The different attribute config dict if found, None otherwise
+        """
+        input_lower = user_input.lower().strip()
+
+        # Pattern to extract attribute name from "what X do you have?" type questions
+        patterns = [
+            r"what\s+(\w+)\s+do\s+you\s+have",
+            r"what\s+(\w+)\s+options",
+            r"what\s+kinds?\s+of\s+(\w+)",
+            r"list\s+(?:the\s+)?(\w+)",
+        ]
+
+        # Get all optional attributes for this item type
+        all_attrs = self._get_optional_attributes(item_type)
+
+        for pattern in patterns:
+            match = re.search(pattern, input_lower)
+            if match:
+                asked_attr = match.group(1).rstrip("s")  # Remove trailing 's' for matching
+
+                # Check if this matches a different attribute
+                for attr in all_attrs:
+                    attr_slug = attr.get("slug", "")
+                    attr_name = attr.get("display_name", "").lower()
+
+                    # Skip the current attribute
+                    if attr_slug == current_attr_slug:
+                        continue
+
+                    # Check if the asked attribute matches this one
+                    if (asked_attr == attr_slug or
+                        asked_attr == attr_slug.rstrip("s") or
+                        asked_attr in attr_name or
+                        attr_name.startswith(asked_attr)):
+                        return attr
+
+        return None
 
     def _is_show_more_request(self, user_input: str) -> bool:
         """Check if user is asking to see more options."""
@@ -1478,6 +1560,16 @@ class MenuItemConfigHandler(BaseHandler):
             if self._is_options_inquiry(user_input, topic=topic):
                 return self._handle_options_inquiry(item, order, attr, options, is_show_more=False)
 
+        # Check if user is asking about a DIFFERENT attribute's options
+        # e.g., "what toppings do you have?" while being asked about condiments
+        different_attr = self._detect_different_attribute_inquiry(user_input, item_type, attr_slug)
+        if different_attr:
+            diff_options = different_attr.get("options", [])
+            if diff_options:
+                # Switch to showing the different attribute's options
+                order.pending_field = f"{item_type}:{different_attr['slug']}"
+                return self._handle_options_inquiry(item, order, different_attr, diff_options, is_show_more=False)
+
         # Reset options page when user provides an actual answer
         order.config_options_page = 0
 
@@ -1488,11 +1580,6 @@ class MenuItemConfigHandler(BaseHandler):
         # Handle single/multi select
         if input_type in ("single_select", "multi_select"):
             return self._handle_select_input(user_input, item, order, attr, options)
-
-        # Handle numeric "shots" attribute for espresso drinks
-        # "double shot" = 1 extra shot, "triple shot" = 2 extra shots
-        if attr_slug == "shots":
-            return self._handle_shots_input(user_input, item, order, attr)
 
         # Default: store raw input
         item[attr_slug] = user_input.strip()
@@ -1532,109 +1619,6 @@ class MenuItemConfigHandler(BaseHandler):
         # Extract and apply any additional selections from the input
         # (e.g., "yes with bacon" -> captures the boolean AND the bacon selection)
         self._extract_and_apply_selections(user_input, item)
-
-        return self._advance_to_next_question(item, order, attr)
-
-    def _get_shot_price(self, item_type: str) -> float:
-        """Look up per-shot price for an item type.
-
-        Returns the price per shot from global_attribute_options or 0.0 if not found.
-        """
-        from orderbot.menu_data_cache import menu_cache
-
-        # Try to get from global attribute options for "shots"
-        options = menu_cache.get_global_attribute_options("shots")
-        for opt in options:
-            slug = opt.get("slug", "")
-            if slug in ("shot", "extra_shot", "espresso_shot"):
-                price = opt.get("price_modifier", 0.0)
-                if price > 0:
-                    return price
-
-        # Fallback: try ingredient price context
-        contexts = menu_cache.get_ingredient_price_contexts("shot")
-        for ctx in contexts:
-            if ctx.get("item_type_slug") == item_type:
-                price = ctx.get("price", 0.0)
-                if price > 0:
-                    return price
-
-        return 0.0
-
-    def _parse_shots_from_input(self, user_lower: str) -> int | None:
-        """Parse shots value from user input.
-
-        Converts "double shot", "triple shot" phrases to extra shots count.
-        Since espresso already includes 1 shot, we subtract 1 from the total.
-        - "double shot" = 2 total = 1 extra shot
-        - "triple shot" = 3 total = 2 extra shots
-        - "quad shot" = 4 total = 3 extra shots
-
-        Args:
-            user_lower: Lowercase user input
-
-        Returns:
-            int: Number of extra shots (0+), or None if not a shots expression
-        """
-        # Check for "double shot" / "triple shot" patterns - these are TOTAL shots
-        # so we subtract 1 for the base shot
-        if "double" in user_lower or "2 shot" in user_lower:
-            return 1  # 2 total - 1 base = 1 extra
-        elif "triple" in user_lower or "3 shot" in user_lower:
-            return 2  # 3 total - 1 base = 2 extra
-        elif "quad" in user_lower or "4 shot" in user_lower:
-            return 3  # 4 total - 1 base = 3 extra
-
-        return None
-
-    def _handle_shots_input(
-        self, user_input: str, item: MenuItemTask, order: OrderTask, attr: dict
-    ) -> StateMachineResult:
-        """Handle espresso shots input.
-
-        Converts "double shot", "triple shot" phrases to extra shots count.
-        Since espresso already includes 1 shot, we subtract 1 from the total.
-        - "double shot" = 2 total = 1 extra shot
-        - "triple shot" = 3 total = 2 extra shots
-        - "1" or "one" = 1 extra shot (user is specifying extra shots directly)
-        - "none" or "0" = 0 extra shots
-
-        Args:
-            user_input: User's response to "How many extra shots?"
-            item: The MenuItemTask being configured
-            order: The current OrderTask
-            attr: The shots attribute configuration
-        """
-        user_lower = user_input.lower().strip()
-        attr_slug = attr["slug"]
-        extra_shots = 0
-
-        # Check for "none", "no", "skip" - user doesn't want extra shots
-        if any(p in user_lower for p in ["none", "no extra", "no shots", "skip", "that's it"]):
-            extra_shots = 0
-        else:
-            # Try the shot pattern helper first
-            parsed_shots = self._parse_shots_from_input(user_lower)
-            if parsed_shots is not None:
-                extra_shots = parsed_shots
-            else:
-                # Try to extract a raw number (user is likely specifying EXTRA shots directly)
-                # "1", "one", "2", "two" etc.
-                digit_match = re.search(r'\b(\d+)\b', user_lower)
-                if digit_match:
-                    extra_shots = int(digit_match.group(1))
-                else:
-                    # Check for word numbers
-                    from .parsers.quantity_utils import WORD_TO_NUM
-                    for word, num in sorted(WORD_TO_NUM.items(), key=lambda x: -len(x[0])):
-                        if word in user_lower.split():
-                            extra_shots = num
-                            break
-
-        # Store the extra shots value
-        item[attr_slug] = extra_shots
-        logger.info("SHOTS: Set %s=%d for item %s (input: '%s')",
-                   attr_slug, extra_shots, item.menu_item_name, user_input)
 
         return self._advance_to_next_question(item, order, attr)
 
@@ -1890,6 +1874,12 @@ class MenuItemConfigHandler(BaseHandler):
         if partial_result:
             return partial_result
 
+        # Try generic numeric matching for attributes with numeric option slugs
+        # This handles inputs like "3", "three", "double shot" (via alias), etc.
+        numeric_match = self._try_numeric_option_match(user_input, options, item, order, attr, attr_slug)
+        if numeric_match:
+            return numeric_match
+
         # No match at all - inform user we don't have what they asked for
         attr_name = attr["display_name"].lower()
         available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
@@ -1907,6 +1897,80 @@ class MenuItemConfigHandler(BaseHandler):
             message = f"Sorry, we don't have {user_input}. You can ask 'what options?' to see our {attr_name} choices."
 
         return StateMachineResult(message=message, order=order)
+
+    def _try_numeric_option_match(
+        self,
+        user_input: str,
+        options: list[dict],
+        item: MenuItemTask,
+        order: OrderTask,
+        attr: dict,
+        attr_slug: str,
+    ) -> StateMachineResult | None:
+        """
+        Try to match user input to options with numeric slugs.
+
+        This enables data-driven handling of numeric attributes like "shots"
+        where options have slugs like "1", "2", "3", "4".
+
+        Matching flow:
+        1. Check if any options have numeric slugs (e.g., "1", "2", "3")
+        2. Parse numeric value from user input using _parse_numeric_input()
+        3. Match to option with that numeric slug
+        4. If found, add the selection with the option's price_modifier
+
+        Args:
+            user_input: User's input string (e.g., "3", "three", "triple shot")
+            options: List of option dicts from the attribute
+            item: The MenuItemTask being configured
+            order: The current OrderTask
+            attr: The attribute configuration dict
+            attr_slug: The attribute slug (e.g., "shots")
+
+        Returns:
+            StateMachineResult if a numeric match was found, None otherwise.
+        """
+        # Check if any options have numeric slugs
+        numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}
+        if not numeric_slugs:
+            return None  # No numeric options, skip this handler
+
+        # Parse numeric value from user input
+        parsed_num = self._parse_numeric_input(user_input)
+        if parsed_num is None:
+            return None  # Couldn't parse a number
+
+        # Find option with matching numeric slug
+        target_slug = str(parsed_num)
+        matched_option = None
+        for opt in options:
+            if opt["slug"] == target_slug:
+                matched_option = opt
+                break
+
+        if not matched_option:
+            # Number parsed but no matching option (e.g., user said "10" but max is "4")
+            # Let the caller handle "no match" response
+            return None
+
+        # Found a match - add the selection
+        opt_price = matched_option.get("price") or matched_option.get("price_modifier") or 0.0
+        display_name = matched_option.get("display_name", f"{parsed_num}")
+
+        item.add_selection(
+            matched_option["slug"],
+            attr_slug,
+            quantity=1,
+            price=opt_price,
+            display_name=display_name,
+        )
+
+        logger.info(
+            "NUMERIC_MATCH: %s=%s (price=$%.2f) from input '%s'",
+            attr_slug, matched_option["slug"], opt_price, user_input
+        )
+
+        return self._advance_to_next_question(item, order, attr, display_name)
 
     def _check_partial_match(
         self,
@@ -2210,8 +2274,13 @@ class MenuItemConfigHandler(BaseHandler):
             # For boolean, just confirm
             question = attr.get("question_text") or f"{attr['display_name']}?"
         elif options:
-            options_text = self._format_options_list(options)
-            question = f"What kind of {attr['display_name'].lower()}? ({options_text})"
+            # Only list options if there are few enough to be helpful
+            if len(options) <= DEFAULT_PAGINATION_SIZE:
+                options_text = self._format_options_list(options)
+                question = f"What kind of {attr['display_name'].lower()}? ({options_text})"
+            else:
+                # Too many options - just ask, user can say "what do you have?" to see list
+                question = f"What kind of {attr['display_name'].lower()}?"
         else:
             question = attr.get("question_text") or f"What {attr['display_name']}?"
 
@@ -2251,32 +2320,6 @@ class MenuItemConfigHandler(BaseHandler):
         # Try to match against options in each unanswered attribute
         for attr in unanswered:
             attr_slug = attr["slug"]
-
-            # Special handling for numeric "shots" attribute
-            # "double shot" = 1 extra, "triple shot" = 2 extra, etc.
-            if attr_slug == "shots":
-                shots_value = self._parse_shots_from_input(user_clean)
-                if shots_value is not None:
-                    # Look up per-shot price and store as modifier with price
-                    shot_price = self._get_shot_price(item.menu_item_type)
-                    item.add_selection(
-                        slug="shot",
-                        category="shots",
-                        quantity=shots_value,
-                        price=shot_price,
-                        display_name="Extra Shot" if shots_value == 1 else "Extra Shots",
-                    )
-                    logger.info(
-                        "CHECKPOINT: Set shots=%d (price=$%.2f each) from input '%s'",
-                        shots_value, shot_price, user_input
-                    )
-                    order.pending_field = "customization_checkpoint"
-                    return StateMachineResult(
-                        message=f"Okay, {shots_value} extra shot{'s' if shots_value != 1 else ''} added. Anything else to customize?",
-                        order=order,
-                    )
-                continue  # shots has no options, skip normal option matching
-
             options = attr.get("options", [])
             if not options:
                 continue
@@ -2367,6 +2410,33 @@ class MenuItemConfigHandler(BaseHandler):
                         message=f"Okay, {display} added. Anything else to customize?",
                         order=order,
                     )
+
+                # Try numeric matching for options with numeric slugs (e.g., shots: "1", "2", "3")
+                numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}
+                if numeric_slugs:
+                    parsed_num = self._parse_numeric_input(user_clean)
+                    if parsed_num is not None:
+                        target_slug = str(parsed_num)
+                        for opt in options:
+                            if opt["slug"] == target_slug:
+                                opt_price = opt.get("price") or opt.get("price_modifier") or 0.0
+                                display_name = opt.get("display_name", f"{parsed_num}")
+                                item.add_selection(
+                                    opt["slug"],
+                                    attr_slug,
+                                    quantity=1,
+                                    price=opt_price,
+                                    display_name=display_name,
+                                )
+                                logger.info(
+                                    "CHECKPOINT NUMERIC: %s=%s (price=$%.2f) from input '%s'",
+                                    attr_slug, opt["slug"], opt_price, user_input
+                                )
+                                order.pending_field = "customization_checkpoint"
+                                return StateMachineResult(
+                                    message=f"Okay, {display_name} added. Anything else to customize?",
+                                    order=order,
+                                )
 
         return None
 

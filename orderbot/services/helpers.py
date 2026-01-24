@@ -56,6 +56,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..models import (
     Company,
+    GlobalAttributeOptionAlias,
     IngredientAlias,
     ItemType,
     ItemTypeAlias,
@@ -330,12 +331,13 @@ def check_alias_uniqueness(
     exclude_menu_item_id: int | None = None,
     exclude_modifier_category_id: int | None = None,
     exclude_ingredient_id: int | None = None,
+    exclude_global_attr_option_id: int | None = None,
 ) -> tuple[bool, str | None]:
     """
     Check if an alias is globally unique across all alias tables.
 
     Aliases must be unique across all entity types (ItemType, MenuItem,
-    ModifierCategory, Ingredient) to prevent ambiguous lookups.
+    ModifierCategory, Ingredient, GlobalAttributeOption) to prevent ambiguous lookups.
 
     Args:
         db: Database session
@@ -344,6 +346,7 @@ def check_alias_uniqueness(
         exclude_menu_item_id: MenuItem ID to exclude (for updates)
         exclude_modifier_category_id: ModifierCategory ID to exclude (for updates)
         exclude_ingredient_id: Ingredient ID to exclude (for updates)
+        exclude_global_attr_option_id: GlobalAttributeOption ID to exclude (for updates)
 
     Returns:
         Tuple of (is_unique, conflict_message)
@@ -394,6 +397,18 @@ def check_alias_uniqueness(
     if existing:
         return False, f"Alias '{alias}' already exists on Ingredient '{existing.ingredient.name}'"
 
+    # Check GlobalAttributeOptionAlias
+    query = db.query(GlobalAttributeOptionAlias).filter(
+        func.lower(GlobalAttributeOptionAlias.alias) == alias_lower
+    )
+    if exclude_global_attr_option_id:
+        query = query.filter(
+            GlobalAttributeOptionAlias.global_attribute_option_id != exclude_global_attr_option_id
+        )
+    existing = query.first()
+    if existing:
+        return False, f"Alias '{alias}' already exists on GlobalAttributeOption '{existing.option.display_name}'"
+
     return True, None
 
 
@@ -404,6 +419,7 @@ def validate_aliases(
     exclude_menu_item_id: int | None = None,
     exclude_modifier_category_id: int | None = None,
     exclude_ingredient_id: int | None = None,
+    exclude_global_attr_option_id: int | None = None,
 ) -> list[str]:
     """
     Validate and return list of globally unique aliases.
@@ -419,6 +435,7 @@ def validate_aliases(
         exclude_menu_item_id: MenuItem ID to exclude (for updates)
         exclude_modifier_category_id: ModifierCategory ID to exclude (for updates)
         exclude_ingredient_id: Ingredient ID to exclude (for updates)
+        exclude_global_attr_option_id: GlobalAttributeOption ID to exclude (for updates)
 
     Returns:
         List of validated aliases
@@ -443,6 +460,7 @@ def validate_aliases(
             exclude_menu_item_id=exclude_menu_item_id,
             exclude_modifier_category_id=exclude_modifier_category_id,
             exclude_ingredient_id=exclude_ingredient_id,
+            exclude_global_attr_option_id=exclude_global_attr_option_id,
         )
         if not is_unique:
             errors.append(error_msg)

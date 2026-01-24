@@ -42,11 +42,13 @@ from ..db import get_db
 from ..models import (
     GlobalAttribute,
     GlobalAttributeOption,
+    GlobalAttributeOptionAlias,
     Ingredient,
     ItemType,
     ItemTypeGlobalAttribute,
     ModifierCategory,
 )
+from ..services.helpers import validate_aliases
 from ..schemas.global_attributes import (
     GlobalAttributeOut,
     GlobalAttributeListOut,
@@ -55,6 +57,7 @@ from ..schemas.global_attributes import (
     GlobalAttributeOptionOut,
     GlobalAttributeOptionCreate,
     GlobalAttributeOptionUpdate,
+    GlobalAttributeOptionFromIngredientCreate,
     ItemTypeGlobalAttributeOut,
     ItemTypeGlobalAttributeLinkCreate,
     ItemTypeGlobalAttributeLinkUpdate,
@@ -83,6 +86,9 @@ admin_item_type_global_attrs_router = APIRouter(
 
 def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
     """Convert GlobalAttributeOption model to response schema."""
+    # Get aliases from the option's alias_records
+    aliases_str = ", ".join(opt.aliases) if opt.aliases else None
+
     return GlobalAttributeOptionOut(
         id=opt.id,
         slug=opt.slug,
@@ -95,9 +101,41 @@ def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
         ingredient_name=opt.ingredient.name if opt.ingredient else None,
         modifier_category_id=opt.modifier_category_id,
         modifier_category_name=opt.modifier_category.display_name if opt.modifier_category else None,
+        aliases=aliases_str,
         created_at=opt.created_at,
         updated_at=opt.updated_at,
     )
+
+
+def _sync_option_aliases(
+    db: Session,
+    option: GlobalAttributeOption,
+    aliases_str: Optional[str],
+) -> None:
+    """
+    Sync option aliases from comma-separated string to GlobalAttributeOptionAlias records.
+
+    Validates global uniqueness of each alias and replaces existing aliases.
+    """
+    # Parse and validate aliases
+    validated_aliases = validate_aliases(
+        db,
+        aliases_str,
+        exclude_global_attr_option_id=option.id,
+    )
+
+    # Delete existing aliases
+    db.query(GlobalAttributeOptionAlias).filter(
+        GlobalAttributeOptionAlias.global_attribute_option_id == option.id
+    ).delete()
+
+    # Create new aliases
+    for alias in validated_aliases:
+        alias_record = GlobalAttributeOptionAlias(
+            global_attribute_option_id=option.id,
+            alias=alias,
+        )
+        db.add(alias_record)
 
 
 def _serialize_attribute(attr: GlobalAttribute, db: Session) -> GlobalAttributeOut:
@@ -483,6 +521,16 @@ def create_global_attribute_option(
         modifier_category_id=modifier_category_id,
     )
     db.add(option)
+    db.flush()  # Get the ID before syncing aliases
+
+    # Handle aliases if provided
+    if payload.aliases is not None:
+        try:
+            _sync_option_aliases(db, option, payload.aliases)
+        except ValueError as e:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=str(e))
+
     db.commit()
     db.refresh(option)
 
@@ -571,6 +619,14 @@ def update_global_attribute_option(
                     detail=f"Modifier category with id {payload.modifier_category_id} not found"
                 )
         option.modifier_category_id = payload.modifier_category_id
+
+    # Handle aliases - check model_fields_set to distinguish None from not provided
+    if "aliases" in payload.model_fields_set:
+        try:
+            _sync_option_aliases(db, option, payload.aliases)
+        except ValueError as e:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=str(e))
 
     db.commit()
     db.refresh(option)
@@ -678,6 +734,141 @@ def auto_link_options_to_ingredients(
         "linked": linked,
         "unmatched": unmatched,
     }
+
+
+@admin_global_attributes_router.post(
+    "/{attr_id}/options/from-ingredient/{ingredient_id}",
+    response_model=GlobalAttributeOptionOut,
+    status_code=201,
+    summary="Create option from ingredient"
+)
+def create_option_from_ingredient(
+    attr_id: int,
+    ingredient_id: int,
+    payload: GlobalAttributeOptionFromIngredientCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> GlobalAttributeOptionOut:
+    """
+    Create a new option from an existing ingredient.
+
+    This reduces duplicate data entry by auto-populating:
+    - slug from ingredient.slug
+    - display_name from ingredient.name
+    - ingredient_id link
+
+    User only needs to specify price_modifier and display_order.
+    """
+    # Verify attribute exists
+    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Global attribute not found")
+
+    # Verify ingredient exists
+    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+
+    # Check if option with this slug already exists
+    existing = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.global_attribute_id == attr_id,
+        GlobalAttributeOption.slug == ingredient.slug
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Option with slug '{ingredient.slug}' already exists for this attribute"
+        )
+
+    # Check if this ingredient is already linked to an option for this attribute
+    already_linked = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.global_attribute_id == attr_id,
+        GlobalAttributeOption.ingredient_id == ingredient_id
+    ).first()
+    if already_linked:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ingredient '{ingredient.name}' is already linked to option '{already_linked.display_name}'"
+        )
+
+    # Validate modifier_category_id if provided
+    if payload.modifier_category_id is not None:
+        category = db.query(ModifierCategory).filter(
+            ModifierCategory.id == payload.modifier_category_id
+        ).first()
+        if not category:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Modifier category with id {payload.modifier_category_id} not found"
+            )
+
+    # Create the option with auto-populated fields from ingredient
+    option = GlobalAttributeOption(
+        global_attribute_id=attr_id,
+        slug=ingredient.slug,
+        display_name=ingredient.name,
+        price_modifier=payload.price_modifier,
+        is_default=payload.is_default,
+        is_available=payload.is_available,
+        display_order=payload.display_order,
+        ingredient_id=ingredient_id,
+        modifier_category_id=payload.modifier_category_id,
+    )
+    db.add(option)
+    db.commit()
+    db.refresh(option)
+
+    logger.info(
+        "Created option '%s' from ingredient '%s' for attribute %s (option_id=%d)",
+        option.slug,
+        ingredient.name,
+        attr.slug,
+        option.id,
+    )
+    return _serialize_option(option)
+
+
+@admin_global_attributes_router.get(
+    "/{attr_id}/unlinked-ingredients",
+    summary="List ingredients not yet linked to this attribute"
+)
+def list_unlinked_ingredients(
+    attr_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[dict]:
+    """
+    List all ingredients that are NOT yet linked to options for this attribute.
+
+    Useful for the "Create from Ingredient" dropdown in the UI.
+    Returns ingredients sorted by name.
+    """
+    # Verify attribute exists
+    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Global attribute not found")
+
+    # Get IDs of already-linked ingredients
+    linked_ingredient_ids = db.query(GlobalAttributeOption.ingredient_id).filter(
+        GlobalAttributeOption.global_attribute_id == attr_id,
+        GlobalAttributeOption.ingredient_id.isnot(None)
+    ).all()
+    linked_ids = {row[0] for row in linked_ingredient_ids}
+
+    # Get all ingredients not in the linked set
+    ingredients = db.query(Ingredient).filter(
+        ~Ingredient.id.in_(linked_ids) if linked_ids else True
+    ).order_by(Ingredient.name).all()
+
+    return [
+        {
+            "id": ing.id,
+            "slug": ing.slug,
+            "name": ing.name,
+            "category": ing.category,
+        }
+        for ing in ingredients
+    ]
 
 
 # =============================================================================

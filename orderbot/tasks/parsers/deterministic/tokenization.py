@@ -159,9 +159,6 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     # Get modifiers and attribute options for deprioritizing modifier-based triggers
     all_modifiers = menu_cache.get_all_modifier_words()
     all_attr_options = menu_cache.get_all_attribute_option_words()
-    # Get configurable item names - these are primary triggers for item types with askable attributes
-    configurable_item_names = menu_cache.get_configurable_item_names()
-    configurable_item_names_lower = {c.lower() for c in configurable_item_names}
 
     # Item type priority: prefer specific types over generic ones
     # When trigger is the same word for multiple types, prefer the type
@@ -172,10 +169,11 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
         # Best: item type matches the trigger word (bagel -> bagel)
         if item_type.lower() == trigger_lower:
             return 0
-        # Also best: trigger is a known configurable item name and item_type is the matching type
-        # e.g., "latte" -> sized_beverage should have high priority
-        # Use data-driven check based on configurable item names
-        if trigger_lower in configurable_item_names_lower and menu_cache.get_modifier_category(item_type) == "beverage":
+        # Also best: trigger is a known item name for this specific item_type
+        # e.g., "latte" is in sized_beverage's item names, so sized_beverage gets high priority
+        # This is fully data-driven - works for any item type, not just beverages
+        item_type_names = menu_cache.get_item_names_by_type(item_type)
+        if trigger_lower in {n.lower() for n in item_type_names}:
             return 1
         # Also best: trigger matches another item type name exactly
         # This means the trigger is likely targeting that specific type, not this one

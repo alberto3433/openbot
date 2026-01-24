@@ -173,10 +173,6 @@ def _add_item(state, slots, menu_index):
             if key not in item and val is not None:
                 item[key] = val
 
-    # Handle sauce → sauces normalization
-    if "sauce" in slots and slots["sauce"] and "sauces" not in item:
-        item["sauces"] = [slots["sauce"]]
-
     # Calculate price using generic data-driven approach
     extras = _calculate_item_extras_generic(item, menu_item, menu_index)
     unit_price = base_price + extras

@@ -45,6 +45,8 @@ class GlobalAttributeOptionOut(BaseModel):
     # Link to modifier category for sub-categorization within an attribute
     modifier_category_id: Optional[int] = None
     modifier_category_name: Optional[str] = None  # Display name from linked category
+    # Option aliases (comma-separated for display, stored in global_attribute_option_aliases table)
+    aliases: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -61,6 +63,8 @@ class GlobalAttributeOptionCreate(BaseModel):
     ingredient_id: Optional[int] = None
     # Link to modifier category for sub-categorization (e.g., milks within coffee_additions)
     modifier_category_id: Optional[int] = None
+    # Option aliases (comma-separated string) - stored in global_attribute_option_aliases table
+    aliases: Optional[str] = None
 
 
 class GlobalAttributeOptionUpdate(BaseModel):
@@ -77,6 +81,8 @@ class GlobalAttributeOptionUpdate(BaseModel):
     # Link to modifier category for sub-categorization
     # Set to null to unlink
     modifier_category_id: Optional[int] = None
+    # Option aliases (comma-separated string) - replaces existing aliases
+    aliases: Optional[str] = None
 
 
 # =============================================================================
@@ -220,3 +226,22 @@ class GlobalAttributeWithOptionsCreate(BaseModel):
     input_type: str = "single_select"
     description: Optional[str] = None
     options: List[GlobalAttributeOptionCreate] = []
+
+
+# =============================================================================
+# Create Option from Ingredient Schema
+# =============================================================================
+
+class GlobalAttributeOptionFromIngredientCreate(BaseModel):
+    """
+    Request model for creating an option from an existing ingredient.
+
+    This reduces duplicate data entry - slug and display_name are auto-populated
+    from the ingredient, and the ingredient_id link is set automatically.
+    User only needs to specify price and display order.
+    """
+    price_modifier: float = 0.0
+    display_order: int = 0
+    is_default: bool = False
+    is_available: bool = True
+    modifier_category_id: Optional[int] = None

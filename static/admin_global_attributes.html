@@ -604,7 +604,10 @@
             <div class="detail-section">
               <div class="detail-section-title">
                 <span>Options</span>
-                <button class="add-btn" id="addOptionBtn" style="padding: 6px 12px; font-size: 12px;">+ Add Option</button>
+                <div style="display: flex; gap: 8px;">
+                  <button class="add-btn" id="addFromIngredientBtn" style="padding: 6px 12px; font-size: 12px; background: #1976d2;">+ From Ingredient</button>
+                  <button class="add-btn" id="addOptionBtn" style="padding: 6px 12px; font-size: 12px;">+ Add Option</button>
+                </div>
               </div>
               <div class="options-list" id="optionsList">
                 <div class="empty-options">No options defined</div>
@@ -715,6 +718,11 @@
             </select>
             <div class="hint">Sub-categorize options within this attribute (e.g., "Milk" for milks in coffee_additions)</div>
           </div>
+          <div class="form-group">
+            <label for="optionAliases">Aliases</label>
+            <input type="text" id="optionAliases" placeholder="e.g., 2 shots, two shots, double" />
+            <div class="hint">Comma-separated alternative names for matching user input</div>
+          </div>
         </form>
       </div>
       <div class="modal-footer">
@@ -743,6 +751,83 @@
     </div>
   </div>
 
+  <!-- Create from Ingredient Modal -->
+  <div class="modal-overlay" id="fromIngredientModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Create Option from Ingredient</h2>
+        <button class="modal-close" id="fromIngredientModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+          Select an ingredient to auto-populate slug and display name. You only need to set the price.
+        </p>
+        <form id="fromIngredientForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="ingredientCategoryFilter">Filter by Category</label>
+              <select id="ingredientCategoryFilter">
+                <option value="">All Categories</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="ingredientSearch">Search</label>
+              <input type="text" id="ingredientSearch" placeholder="Type to filter..." autocomplete="off" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="ingredientSelect">Ingredient * <span id="ingredientCount" style="font-weight: normal; color: #888;"></span></label>
+            <select id="ingredientSelect" required size="8" style="height: auto;">
+              <option value="">-- Select an ingredient --</option>
+            </select>
+            <div class="hint">Only shows ingredients not yet linked to this attribute</div>
+          </div>
+          <div id="ingredientPreview" style="display: none; background: #f5f5f5; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Will create option:</div>
+            <div><strong id="previewName">--</strong></div>
+            <div style="font-size: 12px; color: #888; font-family: monospace;" id="previewSlug">--</div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fromIngPrice">Price Modifier ($)</label>
+              <input type="number" id="fromIngPrice" step="0.01" value="0.00" />
+              <div class="hint">Extra charge for this option</div>
+            </div>
+            <div class="form-group">
+              <label for="fromIngOrder">Display Order</label>
+              <input type="number" id="fromIngOrder" value="0" min="0" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <div class="checkbox-row">
+                <input type="checkbox" id="fromIngIsDefault" />
+                <label for="fromIngIsDefault">Default Option</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="checkbox-row">
+                <input type="checkbox" id="fromIngIsAvailable" checked />
+                <label for="fromIngIsAvailable">Available</label>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="fromIngModifierCategory">Modifier Category</label>
+            <select id="fromIngModifierCategory">
+              <option value="">(None)</option>
+            </select>
+            <div class="hint">Sub-categorize within this attribute</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="fromIngredientCancelBtn">Cancel</button>
+        <button type="button" class="btn primary" id="fromIngredientSaveBtn">Create Option</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const API_BASE = "/api/v1/admin/global-attributes";
     const MODIFIER_CATEGORIES_API = "/api/v1/admin/modifier-categories";
@@ -753,6 +838,7 @@
     let selectedAttrId = null;
     let editingOptionId = null;
     let modifierCategories = [];
+    let unlinkedIngredients = [];
 
     // Auth fetch helper
     async function authFetch(url, options = {}) {
@@ -898,6 +984,7 @@
               ${opt.price_modifier > 0 ? `<span class="option-price">+$${opt.price_modifier.toFixed(2)}</span>` : ''}
               ${opt.is_default ? '<span class="option-default">default</span>' : ''}
               ${opt.modifier_category_name ? `<span class="option-category" title="Modifier Category">${escapeHtml(opt.modifier_category_name)}</span>` : ''}
+              ${opt.aliases ? `<span class="option-slug" title="Aliases" style="margin-left: 8px;">aliases: ${escapeHtml(opt.aliases)}</span>` : ''}
             </div>
             <div class="option-actions">
               <button class="btn-sm edit-option-btn" data-id="${opt.id}">Edit</button>
@@ -1094,6 +1181,7 @@
         document.getElementById("optionIsDefault").checked = opt.is_default || false;
         document.getElementById("optionIsAvailable").checked = opt.is_available !== false;
         document.getElementById("optionModifierCategory").value = opt.modifier_category_id || "";
+        document.getElementById("optionAliases").value = opt.aliases || "";
         document.getElementById("optionDeleteBtn").style.display = "inline-block";
         editingOptionId = opt.id;
       } else {
@@ -1101,6 +1189,7 @@
         document.getElementById("optionId").value = "";
         document.getElementById("optionIsAvailable").checked = true;
         document.getElementById("optionModifierCategory").value = "";
+        document.getElementById("optionAliases").value = "";
         document.getElementById("optionDeleteBtn").style.display = "none";
       }
 
@@ -1135,6 +1224,8 @@
         return;
       }
 
+      const aliases = document.getElementById("optionAliases").value.trim();
+
       const payload = {
         slug,
         display_name: displayName,
@@ -1142,7 +1233,8 @@
         display_order: displayOrder,
         is_default: isDefault,
         is_available: isAvailable,
-        modifier_category_id: modifierCategoryId
+        modifier_category_id: modifierCategoryId,
+        aliases: aliases || null
       };
 
       const saveBtn = document.getElementById("optionSaveBtn");
@@ -1201,6 +1293,190 @@
     }
 
     // ==================
+    // Create from Ingredient Modal
+    // ==================
+
+    async function loadUnlinkedIngredients() {
+      if (!selectedAttrId) return;
+
+      try {
+        const response = await authFetch(`${API_BASE}/${selectedAttrId}/unlinked-ingredients`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        unlinkedIngredients = await response.json();
+        populateIngredientDropdown();
+      } catch (error) {
+        console.error("Failed to load unlinked ingredients:", error);
+        showToast("Failed to load ingredients", "error");
+      }
+    }
+
+    function populateIngredientCategoryFilter() {
+      // Extract unique categories from ingredients
+      const categories = [...new Set(unlinkedIngredients.map(ing => ing.category || 'uncategorized'))].sort();
+      const select = document.getElementById("ingredientCategoryFilter");
+      select.innerHTML = '<option value="">All Categories</option>' +
+        categories.map(cat =>
+          `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`
+        ).join("");
+    }
+
+    function filterAndPopulateIngredients() {
+      const categoryFilter = document.getElementById("ingredientCategoryFilter").value.toLowerCase();
+      const searchFilter = document.getElementById("ingredientSearch").value.toLowerCase().trim();
+
+      // Filter ingredients based on category and search
+      const filtered = unlinkedIngredients.filter(ing => {
+        const category = (ing.category || 'uncategorized').toLowerCase();
+        const name = ing.name.toLowerCase();
+        const slug = ing.slug.toLowerCase();
+
+        const matchesCategory = !categoryFilter || category === categoryFilter;
+        const matchesSearch = !searchFilter ||
+          name.includes(searchFilter) ||
+          slug.includes(searchFilter);
+
+        return matchesCategory && matchesSearch;
+      });
+
+      // Update ingredient count
+      document.getElementById("ingredientCount").textContent = `(${filtered.length} of ${unlinkedIngredients.length})`;
+
+      // Populate the select
+      const select = document.getElementById("ingredientSelect");
+      if (filtered.length === 0) {
+        select.innerHTML = '<option value="">-- No matching ingredients --</option>';
+      } else {
+        select.innerHTML = filtered.map(ing =>
+          `<option value="${ing.id}" data-name="${escapeHtml(ing.name)}" data-slug="${escapeHtml(ing.slug)}">${escapeHtml(ing.name)} (${escapeHtml(ing.category || 'uncategorized')})</option>`
+        ).join("");
+      }
+
+      // Clear preview when list changes
+      document.getElementById("ingredientPreview").style.display = "none";
+    }
+
+    function populateIngredientDropdown() {
+      populateIngredientCategoryFilter();
+      filterAndPopulateIngredients();
+    }
+
+    function populateFromIngModifierCategoryDropdown() {
+      const select = document.getElementById("fromIngModifierCategory");
+      select.innerHTML = '<option value="">(None)</option>' +
+        modifierCategories.map(cat =>
+          `<option value="${cat.id}">${escapeHtml(cat.display_name)}</option>`
+        ).join("");
+    }
+
+    async function openFromIngredientModal() {
+      if (!selectedAttrId) {
+        showToast("Please select an attribute first", "error");
+        return;
+      }
+
+      const modal = document.getElementById("fromIngredientModal");
+      const form = document.getElementById("fromIngredientForm");
+      form.reset();
+
+      // Reset preview and filters
+      document.getElementById("ingredientPreview").style.display = "none";
+      document.getElementById("fromIngIsAvailable").checked = true;
+      document.getElementById("ingredientCategoryFilter").value = "";
+      document.getElementById("ingredientSearch").value = "";
+
+      // Load unlinked ingredients
+      await loadUnlinkedIngredients();
+
+      // Load modifier categories if needed
+      if (modifierCategories.length === 0) {
+        await loadModifierCategories();
+      }
+      populateFromIngModifierCategoryDropdown();
+
+      if (unlinkedIngredients.length === 0) {
+        showToast("All ingredients are already linked to this attribute", "info");
+        return;
+      }
+
+      modal.classList.add("active");
+    }
+
+    function closeFromIngredientModal() {
+      document.getElementById("fromIngredientModal").classList.remove("active");
+    }
+
+    function updateIngredientPreview() {
+      const select = document.getElementById("ingredientSelect");
+      const preview = document.getElementById("ingredientPreview");
+      const selectedOption = select.options[select.selectedIndex];
+
+      if (select.value) {
+        const name = selectedOption.dataset.name;
+        const slug = selectedOption.dataset.slug;
+        document.getElementById("previewName").textContent = name;
+        document.getElementById("previewSlug").textContent = slug;
+        preview.style.display = "block";
+      } else {
+        preview.style.display = "none";
+      }
+    }
+
+    async function saveFromIngredient() {
+      if (!selectedAttrId) return;
+
+      const ingredientId = document.getElementById("ingredientSelect").value;
+      if (!ingredientId) {
+        showToast("Please select an ingredient", "error");
+        return;
+      }
+
+      const priceModifier = parseFloat(document.getElementById("fromIngPrice").value) || 0;
+      const displayOrder = parseInt(document.getElementById("fromIngOrder").value) || 0;
+      const isDefault = document.getElementById("fromIngIsDefault").checked;
+      const isAvailable = document.getElementById("fromIngIsAvailable").checked;
+      const modifierCategoryValue = document.getElementById("fromIngModifierCategory").value;
+      const modifierCategoryId = modifierCategoryValue ? parseInt(modifierCategoryValue) : null;
+
+      const payload = {
+        price_modifier: priceModifier,
+        display_order: displayOrder,
+        is_default: isDefault,
+        is_available: isAvailable,
+        modifier_category_id: modifierCategoryId
+      };
+
+      const saveBtn = document.getElementById("fromIngredientSaveBtn");
+      saveBtn.classList.add("saving");
+      saveBtn.disabled = true;
+
+      try {
+        const response = await authFetch(
+          `${API_BASE}/${selectedAttrId}/options/from-ingredient/${ingredientId}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          }
+        );
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        const created = await response.json();
+        showToast(`Option "${created.display_name}" created from ingredient`, "success");
+        closeFromIngredientModal();
+        selectAttribute(selectedAttrId);
+      } catch (error) {
+        showToast(`Failed to create: ${error.message}`, "error");
+      } finally {
+        saveBtn.classList.remove("saving");
+        saveBtn.disabled = false;
+      }
+    }
+
+    // ==================
     // Event Listeners
     // ==================
 
@@ -1226,6 +1502,15 @@
       if (editingOptionId) deleteOption(editingOptionId);
     });
 
+    // Create from Ingredient modal event listeners
+    document.getElementById("addFromIngredientBtn").addEventListener("click", () => openFromIngredientModal());
+    document.getElementById("fromIngredientModalClose").addEventListener("click", closeFromIngredientModal);
+    document.getElementById("fromIngredientCancelBtn").addEventListener("click", closeFromIngredientModal);
+    document.getElementById("fromIngredientSaveBtn").addEventListener("click", saveFromIngredient);
+    document.getElementById("ingredientSelect").addEventListener("change", updateIngredientPreview);
+    document.getElementById("ingredientCategoryFilter").addEventListener("change", filterAndPopulateIngredients);
+    document.getElementById("ingredientSearch").addEventListener("input", filterAndPopulateIngredients);
+
     // Close modals on overlay click
     document.getElementById("attrModal").addEventListener("click", (e) => {
       if (e.target.id === "attrModal") closeAttrModal();
@@ -1236,6 +1521,9 @@
     document.getElementById("deleteModal").addEventListener("click", (e) => {
       if (e.target.id === "deleteModal") closeDeleteModal();
     });
+    document.getElementById("fromIngredientModal").addEventListener("click", (e) => {
+      if (e.target.id === "fromIngredientModal") closeFromIngredientModal();
+    });
 
     // Escape key closes modals
     document.addEventListener("keydown", (e) => {
@@ -1243,6 +1531,7 @@
         closeAttrModal();
         closeOptionModal();
         closeDeleteModal();
+        closeFromIngredientModal();
       }
     });
 

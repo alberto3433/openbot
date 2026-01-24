@@ -976,6 +976,11 @@ class OrderTask(BaseTask):
     #   - item_id: str - the item being configured
     pending_attr_disambiguation: dict | None = None
 
+    # Modifier disambiguation state (stores which item to add modifier to)
+    # Used when "cream cheese" matches multiple options (Plain, Scallion, etc.)
+    pending_modifier_target_item_index: int | None = None
+    pending_modifier_quantity: int | None = None
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -1012,6 +1017,9 @@ class OrderTask(BaseTask):
             return True
         # Handle suggested item confirmation ("Would you like to order one?" -> "yes")
         if self.pending_field == "confirm_suggested_item":
+            return True
+        # Handle modifier selection (disambiguation like "cream cheese" matching multiple options)
+        if self.pending_field == "modifier_selection":
             return True
         # Handle attribute disambiguation (e.g., "walnut" -> "honey walnut" or "maple raisin walnut")
         if self.pending_attr_disambiguation is not None:

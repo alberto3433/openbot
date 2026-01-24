@@ -376,6 +376,10 @@ class ConfiguringItemHandler:
         if order.pending_field == "item_selection":
             return self._handle_item_selection(user_input, order)
 
+        # Handle modifier selection (disambiguation for modifiers like "cream cheese")
+        if order.pending_field == "modifier_selection":
+            return self._handle_modifier_selection(user_input, order)
+
         # Handle duplicate selection when user said "another one" with multiple items in cart
         if order.pending_field == "duplicate_selection":
             return self.taking_items_handler.handle_duplicate_selection(user_input, order)
@@ -623,5 +627,74 @@ class ConfiguringItemHandler:
         order.set_phase(OrderPhase.TAKING_ITEMS)
         return StateMachineResult(
             message=f"Got it, {quantity} {selected_name}{'s' if quantity > 1 and not selected_name.endswith('s') else ''}. Anything else?",
+            order=order,
+        )
+
+    def _handle_modifier_selection(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user selecting from multiple modifier options (e.g., cream cheese types)."""
+        if not order.pending_item_options:
+            order.clear_pending()
+            order.pending_modifier_target_item_index = None
+            order.pending_modifier_quantity = None
+            return StateMachineResult(
+                message="What would you like to order?",
+                order=order,
+            )
+
+        # Get the disambiguation handler through taking_items_handler
+        disambiguation = self.taking_items_handler.item_adder_handler.disambiguation_handler
+
+        # Use existing disambiguation resolution
+        selected = disambiguation.resolve_disambiguation(user_input, order)
+
+        if not selected:
+            # Couldn't match - re-ask
+            return StateMachineResult(
+                message=disambiguation.get_reask_message(order, show_prices=True),
+                order=order,
+            )
+
+        # Get the target item and add the modifier
+        target_idx = order.pending_modifier_target_item_index
+        if target_idx is None or target_idx >= len(order.items.items):
+            disambiguation.clear_disambiguation_state(order)
+            order.pending_modifier_target_item_index = None
+            order.pending_modifier_quantity = None
+            return StateMachineResult(
+                message="Something went wrong. What else can I help with?",
+                order=order,
+            )
+
+        target_item = order.items.items[target_idx]
+        quantity = order.pending_modifier_quantity or 1
+
+        # Add the selected modifier to the item
+        if isinstance(target_item, MenuItemTask):
+            target_item.add_selection(
+                slug=selected["slug"],
+                category=selected["category"],
+                display_name=selected["name"],
+                quantity=quantity,
+            )
+
+            # Recalculate price
+            if self.taking_items_handler and self.taking_items_handler.pricing:
+                self.taking_items_handler.pricing.recalculate_item_price(target_item)
+
+        # Clear disambiguation state
+        disambiguation.clear_disambiguation_state(order)
+        order.pending_modifier_target_item_index = None
+        order.pending_modifier_quantity = None
+
+        logger.info("MODIFIER SELECTION: User chose '%s', added to item", selected["name"])
+
+        # Return to taking items phase
+        order.set_phase(OrderPhase.TAKING_ITEMS)
+        return StateMachineResult(
+            message=f"Added {selected['name']}. Anything else?",
             order=order,
         )

@@ -1172,34 +1172,78 @@ class TakingItemsHandler(MenuDataMixin):
                             # Handle qualified modifiers: "mayo (extra)" -> base="mayo"
                             modifier_lower = modifier.lower()
                             base_modifier = modifier_lower.split(" (")[0].strip()
-                            modifier_slug = modifier_lower.replace(" ", "_")
 
-                            # Determine category from database lookup
-                            category = modifier_to_category.get(base_modifier)
-                            if not category:
-                                logger.warning(
-                                    "MODIFY ADD: Skipping modifier '%s' - category not found in database",
-                                    modifier,
+                            # Check for multiple matching ingredients (disambiguation)
+                            matches = menu_cache.find_matching_ingredients(base_modifier)
+
+                            if len(matches) == 0:
+                                # Fall back to category lookup for generic modifiers
+                                category = modifier_to_category.get(base_modifier)
+                                if not category:
+                                    logger.warning(
+                                        "MODIFY ADD: Skipping modifier '%s' - not found in database",
+                                        modifier,
+                                    )
+                                    continue
+
+                                # Extract quantity
+                                quantity = 1
+                                if raw_user_input:
+                                    quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
+                                    if quantity == 1 and "(extra)" in modifier_lower:
+                                        quantity = 2
+
+                                modifier_slug = modifier_lower.replace(" ", "_")
+                                target_item.add_selection(
+                                    slug=modifier_slug,
+                                    category=category,
+                                    display_name=modifier.title(),
+                                    quantity=quantity,
                                 )
-                                continue
+                                logger.info("MODIFY ADD: Added '%s' (category=%s, qty=%d) to item", modifier, category, quantity)
 
-                            # Extract quantity from original user input
-                            # Handles "double bacon", "triple syrup", "extra bacon", "2 bacon"
-                            quantity = 1
-                            if raw_user_input:
-                                quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
-                                # Also check if modifier has "(extra)" qualifier - treat as qty=2
-                                if quantity == 1 and "(extra)" in modifier_lower:
-                                    quantity = 2
+                            elif len(matches) == 1:
+                                # Single match - add it directly
+                                match = matches[0]
+                                quantity = 1
+                                if raw_user_input:
+                                    quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
+                                    if quantity == 1 and "(extra)" in modifier_lower:
+                                        quantity = 2
 
-                            # Add to unified selections list
-                            target_item.add_selection(
-                                slug=modifier_slug,
-                                category=category,
-                                display_name=modifier.title(),
-                                quantity=quantity,
-                            )
-                            logger.info("MODIFY ADD: Added '%s' (category=%s, qty=%d) to item", modifier, category, quantity)
+                                target_item.add_selection(
+                                    slug=match["slug"],
+                                    category=match["category"],
+                                    display_name=match["name"],
+                                    quantity=quantity,
+                                )
+                                logger.info("MODIFY ADD: Added '%s' (category=%s, qty=%d)", match["name"], match["category"], quantity)
+
+                            else:
+                                # Multiple matches - trigger disambiguation
+                                logger.info(
+                                    "MODIFY ADD: Multiple matches for '%s' (%d options), triggering disambiguation",
+                                    modifier, len(matches)
+                                )
+
+                                # Store context for when disambiguation resolves
+                                target_item_index = order.items.items.index(target_item)
+                                order.pending_modifier_target_item_index = target_item_index
+                                quantity = 1
+                                if raw_user_input:
+                                    quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
+                                    if quantity == 1 and "(extra)" in modifier_lower:
+                                        quantity = 2
+                                order.pending_modifier_quantity = quantity
+
+                                # Use existing disambiguation handler
+                                return self.item_adder_handler.disambiguation_handler.start_disambiguation(
+                                    item_name=modifier,
+                                    matching_items=matches,
+                                    order=order,
+                                    pending_field="modifier_selection",
+                                    show_prices=True,
+                                )
 
                     # Recalculate price
                     self.pricing.recalculate_item_price(target_item)

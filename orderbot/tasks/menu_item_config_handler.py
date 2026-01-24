@@ -231,6 +231,8 @@ class MenuItemConfigHandler(BaseHandler):
         # Normalize input to handle quantities and plurals
         # e.g., "2 scrambled eggs" → "scrambled egg"
         user_lower = self._normalize_for_matching(user_input)
+        # Also keep raw lowercase for initial exact match check
+        user_raw_lower = user_input.lower().strip()
 
         def get_aliases(opt: dict) -> list[str]:
             aliases_raw = opt.get("aliases", [])
@@ -241,18 +243,39 @@ class MenuItemConfigHandler(BaseHandler):
                 return [a.strip() for a in aliases_raw.split(",") if a.strip()]
             return aliases_raw or []
 
-        # Phase 1: Exact matches (highest priority)
+        # Phase 0: Try exact match with raw (un-normalized) input first
+        # This catches cases like "tomatoes" matching option "tomatoes" before
+        # normalization converts it to "tomato"
+        for opt in options:
+            if not self._passes_must_match(user_input, opt):
+                continue
+            display_lower = opt["display_name"].lower()
+            if display_lower == user_raw_lower:
+                return (opt, [])
+            slug_readable = opt["slug"].replace("_", " ")
+            if slug_readable == user_raw_lower:
+                return (opt, [])
+            for alias in get_aliases(opt):
+                if alias.lower() == user_raw_lower:
+                    return (opt, [])
+
+        # Phase 1: Exact matches with normalized input (highest priority after raw)
+        # Normalize option names too so "tomatoes" (normalized to "tomato")
+        # matches option "tomatoes" (also normalized to "tomato")
         for opt in options:
             if not self._passes_must_match(user_input, opt):
                 continue  # Skip options that don't pass must_match
             display_lower = opt["display_name"].lower()
-            if display_lower == user_lower:
+            display_normalized = self._normalize_for_matching(display_lower)
+            if display_normalized == user_lower:
                 return (opt, [])
             slug_readable = opt["slug"].replace("_", " ")
-            if slug_readable == user_lower:
+            slug_normalized = self._normalize_for_matching(slug_readable)
+            if slug_normalized == user_lower:
                 return (opt, [])
             for alias in get_aliases(opt):
-                if alias.lower() == user_lower:
+                alias_normalized = self._normalize_for_matching(alias)
+                if alias_normalized == user_lower:
                     return (opt, [])
 
         # Phase 2: User input is contained in option name (partial match)
@@ -348,6 +371,8 @@ class MenuItemConfigHandler(BaseHandler):
         """
         # Normalize input to handle quantities and plurals
         user_lower = self._normalize_for_matching(user_input)
+        # Also keep raw lowercase for exact match check
+        user_raw_lower = user_input.lower().strip()
         matched = []
         matched_slugs = set()  # Track slugs to avoid duplicates
 
@@ -370,8 +395,15 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Tokenize input for compound inputs like "milk and sugar"
         tokens = self._tokenize_multi_input(user_input)
-        # Also include the full input for single-item matching
-        all_inputs = [user_lower] + [self._normalize_for_matching(t) for t in tokens if t.lower() != user_lower]
+        # Raw tokens for exact matching
+        raw_tokens = [t.lower().strip() for t in tokens]
+        # Normalized tokens for fuzzy matching
+        normalized_tokens = [self._normalize_for_matching(t) for t in tokens]
+        # All inputs includes both raw and normalized for comprehensive matching
+        all_inputs = [user_raw_lower, user_lower] + raw_tokens + normalized_tokens
+        # Remove duplicates while preserving order
+        seen = set()
+        all_inputs = [x for x in all_inputs if x and x not in seen and not seen.add(x)]
 
         # Log which options have must_match for debugging
         opts_with_must_match = [
@@ -399,13 +431,35 @@ class MenuItemConfigHandler(BaseHandler):
 
             display_lower = opt["display_name"].lower()
             slug_readable = opt["slug"].replace("_", " ")
+            # Also normalize option names for fuzzy matching
+            display_normalized = self._normalize_for_matching(display_lower)
+            slug_normalized = self._normalize_for_matching(slug_readable)
+
+            # === Phase 0: Exact match with raw input ===
+            # E.g., "tomatoes" exactly matches option "Tomatoes"
+            if display_lower == user_raw_lower or slug_readable == user_raw_lower:
+                add_match(opt)
+                continue
+            # Check raw tokens for exact match
+            if display_lower in raw_tokens or slug_readable in raw_tokens:
+                add_match(opt)
+                continue
+
+            # === Phase 1: Exact match with normalized input ===
+            # E.g., "tomato" (normalized from "tomatoes") matches normalized "tomato"
+            if display_normalized == user_lower or slug_normalized == user_lower:
+                add_match(opt)
+                continue
+            if display_normalized in normalized_tokens or slug_normalized in normalized_tokens:
+                add_match(opt)
+                continue
 
             # === Direction 1: Option name/alias appears in user input ===
             # E.g., "sugar" (option) in "milk and sugar" (input)
-            if self._is_whole_word_match(display_lower, user_lower):
+            if self._is_whole_word_match(display_lower, user_raw_lower):
                 add_match(opt)
                 continue
-            if self._is_whole_word_match(slug_readable, user_lower):
+            if self._is_whole_word_match(slug_readable, user_raw_lower):
                 add_match(opt)
                 continue
 
@@ -413,7 +467,7 @@ class MenuItemConfigHandler(BaseHandler):
             alias_matched = False
             for alias in get_aliases(opt):
                 alias_lower = alias.lower()
-                if len(alias_lower) >= 2 and self._is_whole_word_match(alias_lower, user_lower):
+                if len(alias_lower) >= 2 and self._is_whole_word_match(alias_lower, user_raw_lower):
                     add_match(opt)
                     alias_matched = True
                     break
@@ -863,34 +917,18 @@ class MenuItemConfigHandler(BaseHandler):
     def _ask_customization_checkpoint(
         self, item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
-        """Ask if user wants to customize with optional attributes."""
-        item_type = item.menu_item_type
-        unanswered_optional = self._get_unanswered_optional(item, item_type)
+        """Complete the item after mandatory attributes are answered.
 
-        if not unanswered_optional:
-            # No optional attributes available, recalculate price and complete
-            item.customization_offered = True
-            self._recalculate_item_price(item)
-            item.mark_complete()
-            order.set_phase(OrderPhase.TAKING_ITEMS)
-            order.clear_pending()
-            return StateMachineResult(
-                message=f"Got it, {item.get_summary()}. Anything else?",
-                order=order,
-            )
-
-        # Mark that we've reached the checkpoint
+        Previously offered optional attributes here, but now we just complete
+        the item. Users can still add customizations proactively.
+        """
         item.customization_offered = True
-
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = "customization_checkpoint"
-
-        # List available customization options
-        options_list = self._format_attributes_list(unanswered_optional)
-
+        self._recalculate_item_price(item)
+        item.mark_complete()
+        order.set_phase(OrderPhase.TAKING_ITEMS)
+        order.clear_pending()
         return StateMachineResult(
-            message=f"Any more changes to that? You can change {options_list}.",
+            message=f"Got it, {item.get_summary()}. Anything else?",
             order=order,
         )
 
@@ -2115,39 +2153,23 @@ class MenuItemConfigHandler(BaseHandler):
     def _ask_more_customizations(
         self, item: MenuItemTask, order: OrderTask, matched_choice: str | None = None
     ) -> StateMachineResult:
-        """Ask if user wants more customizations after completing one.
+        """Complete item after an optional customization is added.
 
         Args:
             item: The menu item being configured
             order: The current order
             matched_choice: The display name of the choice just made (for acknowledgment)
         """
-        item_type = item.menu_item_type
-        unanswered = self._get_unanswered_optional(item, item_type)
-
         # Build acknowledgment prefix if we have a choice to acknowledge
         ack_prefix = f"Okay, {matched_choice}. " if matched_choice else ""
 
-        if not unanswered:
-            # No more options, recalculate price and complete
-            self._recalculate_item_price(item)
-            item.mark_complete()
-            order.set_phase(OrderPhase.TAKING_ITEMS)
-            order.clear_pending()
-            return StateMachineResult(
-                message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?",
-                order=order,
-            )
-
-        # List remaining options
-        options_list = self._format_attributes_list(unanswered)
-
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = "customization_checkpoint"
-
+        # Complete the item - no longer re-offer checkpoint
+        self._recalculate_item_price(item)
+        item.mark_complete()
+        order.set_phase(OrderPhase.TAKING_ITEMS)
+        order.clear_pending()
         return StateMachineResult(
-            message=f"{ack_prefix}Any more changes to that? You can change {options_list}.",
+            message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?",
             order=order,
         )
 
@@ -2373,11 +2395,14 @@ class MenuItemConfigHandler(BaseHandler):
                             [opt["slug"] for opt in matched], attr_slug, item.id
                         )
 
-                        # Confirm and stay at checkpoint for more customizations
+                        # Complete item after adding customization
                         display_text = ", ".join(display_parts)
-                        order.pending_field = "customization_checkpoint"
+                        self._recalculate_item_price(item)
+                        item.mark_complete()
+                        order.set_phase(OrderPhase.TAKING_ITEMS)
+                        order.clear_pending()
                         return StateMachineResult(
-                            message=f"Okay, {display_text} added. Anything else to customize?",
+                            message=f"Okay, {display_text} added. Got it, {item.get_summary()}. Anything else?",
                             order=order,
                         )
             else:
@@ -2405,9 +2430,13 @@ class MenuItemConfigHandler(BaseHandler):
                         attr_slug, matched_opt["slug"], item.id
                     )
 
-                    order.pending_field = "customization_checkpoint"
+                    # Complete item after adding customization
+                    self._recalculate_item_price(item)
+                    item.mark_complete()
+                    order.set_phase(OrderPhase.TAKING_ITEMS)
+                    order.clear_pending()
                     return StateMachineResult(
-                        message=f"Okay, {display} added. Anything else to customize?",
+                        message=f"Okay, {display} added. Got it, {item.get_summary()}. Anything else?",
                         order=order,
                     )
 
@@ -2432,9 +2461,13 @@ class MenuItemConfigHandler(BaseHandler):
                                     "CHECKPOINT NUMERIC: %s=%s (price=$%.2f) from input '%s'",
                                     attr_slug, opt["slug"], opt_price, user_input
                                 )
-                                order.pending_field = "customization_checkpoint"
+                                # Complete item after adding customization
+                                self._recalculate_item_price(item)
+                                item.mark_complete()
+                                order.set_phase(OrderPhase.TAKING_ITEMS)
+                                order.clear_pending()
                                 return StateMachineResult(
-                                    message=f"Okay, {display_name} added. Anything else to customize?",
+                                    message=f"Okay, {display_name} added. Got it, {item.get_summary()}. Anything else?",
                                     order=order,
                                 )
 

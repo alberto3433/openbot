@@ -465,3 +465,46 @@ class IngredientQueryMixin:
             result = re.sub(pattern, canonical, result, flags=re.IGNORECASE)
 
         return result
+
+    def find_matching_ingredients(self, term: str) -> list[dict]:
+        """Find all ingredients whose name or aliases contain the search term.
+
+        This enables disambiguation when a generic term like "cream cheese"
+        matches multiple specific ingredients.
+
+        Args:
+            term: Search term (e.g., "cream cheese", "syrup")
+
+        Returns:
+            List of matching ingredient dicts with name, slug, category, base_price.
+            Empty list if no matches. Format matches what start_disambiguation() expects.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        term_lower = term.lower().strip()
+        matches = []
+        seen_slugs = set()
+
+        for category, details_list in self._ingredient_details_by_category.items():
+            for detail in details_list:
+                slug = detail.get("slug", "")
+                if slug in seen_slugs:
+                    continue
+
+                name = detail.get("name", "").lower()
+                aliases = [a.lower() for a in detail.get("aliases", [])]
+
+                # Check if term matches name or any alias (substring match)
+                all_terms = [name] + aliases
+                if any(term_lower in t or t in term_lower for t in all_terms):
+                    seen_slugs.add(slug)
+                    matches.append({
+                        "slug": slug,
+                        "name": detail.get("name"),  # Key expected by start_disambiguation()
+                        "category": category,
+                        "base_price": detail.get("price_modifier", 0.0),
+                    })
+
+        return matches

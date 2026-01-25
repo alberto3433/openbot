@@ -760,6 +760,9 @@ class IngredientCategory(Base):
     # is_multi_select: True if this category supports multiple selections (e.g., toppings, sweeteners)
     # If NULL, defaults to False (single selection)
     is_multi_select = Column(Boolean, nullable=True, default=False)
+    # is_name_forming: True if ingredient display name should replace menu item name
+    # e.g., bread category - "Garlic Bagel" instead of "Bagel, Garlic Bagel"
+    is_name_forming = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

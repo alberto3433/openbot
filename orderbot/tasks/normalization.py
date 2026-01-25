@@ -14,11 +14,13 @@ import re
 from orderbot.menu_data_cache import menu_cache, singularize
 
 
-# Negation patterns that indicate user wants to remove/clear an attribute
-NEGATION_PATTERNS = frozenset({
-    "no", "none", "nothing", "without", "remove", "black",
-    "skip", "pass", "na", "n/a", "plain", "regular",
-})
+def _get_negation_patterns() -> frozenset[str]:
+    """Load negation patterns from database via cache.
+
+    Returns patterns that indicate user wants to remove/clear an attribute
+    (e.g., "no milk", "black coffee", "plain bagel").
+    """
+    return frozenset(menu_cache.get_response_patterns("skip"))
 
 
 # Note: Shot normalization was removed when shots moved to quantity-based system.
@@ -90,7 +92,7 @@ def resolve_to_canonical(
 
     # Check for negation patterns - user wants to remove/clear the attribute
     first_word = value_clean.split()[0] if value_clean else ""
-    if first_word in NEGATION_PATTERNS:
+    if first_word in _get_negation_patterns():
         return None
 
     # Get attribute info to check input_type

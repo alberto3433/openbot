@@ -247,6 +247,37 @@ class IngredientQueryMixin:
             key=lambda c: self._ingredient_category_order.get(c, 999)
         )
 
+    def get_name_forming_categories(self) -> set[str]:
+        """Get ingredient categories that form the item name.
+
+        Name-forming categories have their ingredient display name replace
+        the base menu item name. For example, a "Bagel" with bread="garlic_bagel"
+        displays as "Garlic Bagel" instead of "Bagel, Garlic Bagel".
+
+        Returns:
+            Set of category slugs that are name-forming.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._name_forming_categories.copy()
+
+    def is_name_forming_category(self, category_slug: str) -> bool:
+        """Check if a category is name-forming.
+
+        Args:
+            category_slug: The ingredient category slug
+
+        Returns:
+            True if the category is name-forming, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return category_slug in self._name_forming_categories
+
     def get_ingredient_category_field_config(self, category_slug: str) -> dict | None:
         """Get field configuration for an ingredient category.
 

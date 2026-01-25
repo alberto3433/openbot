@@ -8,12 +8,30 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+import re
 
 from .normalization import normalize_for_match
 from .mixins import MenuDataMixin
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
+
+
+def _word_boundary_match(search_term: str, item_name: str) -> bool:
+    """Check if search_term appears as a complete word in item_name.
+
+    Uses word boundary matching to avoid false positives like
+    "tea" matching "Cheesesteak".
+
+    Args:
+        search_term: The term to search for (e.g., "tea")
+        item_name: The item name to search in (e.g., "Hot Tea")
+
+    Returns:
+        True if search_term appears as a complete word in item_name.
+    """
+    pattern = re.compile(rf'\b{re.escape(search_term)}\b', re.IGNORECASE)
+    return bool(pattern.search(item_name))
 
 
 class MenuLookup(MenuDataMixin):
@@ -253,9 +271,28 @@ class MenuLookup(MenuDataMixin):
                 unique_items.append(item)
         all_items = unique_items
 
-        # Pass 1: Search term (or synonyms) is contained in item name
+        # Pass 1a: Word-boundary matching for short search terms
+        # Uses \b word boundaries to avoid false positives like "tea" matching "Cheesesteak"
+        # This ensures "tea" only matches items with "tea" as a complete word
+        matches = []
+        matched_names = set()
+        for item in all_items:
+            item_name_db = item.get("name", "")
+            item_name_db_lower = item_name_db.lower()
+            for search_term in search_terms:
+                if _word_boundary_match(search_term, item_name_db):
+                    if item_name_db_lower not in matched_names:
+                        if self._passes_match_filter(item, item_name):
+                            matches.append(item)
+                            matched_names.add(item_name_db_lower)
+                    break
+        if matches:
+            # Sort by name length (shortest first = more specific)
+            return sorted(matches, key=lambda x: len(x.get("name", "")))
+
+        # Pass 1b: Substring matching for longer search terms (fallback)
         # e.g., "orange juice" finds "Tropicana Orange Juice", "Fresh Squeezed Orange Juice"
-        # Also "tropicana" (synonym) finds "Tropicana Orange Juice No Pulp"
+        # Only used if word-boundary matching didn't find anything
         matches = []
         matched_names = set()
         for item in all_items:

@@ -441,3 +441,108 @@ class TestReplacementModificationScenarios:
 
         assert not asks_omelette_toasted, \
             f"Should NOT ask if omelette is toasted. Got: {result.message}"
+
+    def test_change_spread_during_configuration(self):
+        """
+        Test: User changes spread DURING item configuration, not after.
+
+        Scenario:
+        - User orders: "plain bagel with cream cheese"
+        - Bot asks: "Would you like it toasted?"
+        - User says: "actually make it veggie cream cheese"
+        - Expected: spread changes to veggie cream cheese, bot continues asking about toasting
+
+        This tests the mid-config modification behavior where the change is applied
+        immediately rather than being deferred until configuration is complete.
+        """
+        from orderbot.tasks.models import MenuItemTask
+
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Step 1: User orders plain bagel with cream cheese
+        result1 = sm.process("plain bagel with cream cheese", order)
+
+        # Should be asking about toasted
+        bagels = [i for i in result1.order.items.items if i.has_attribute('bread')]
+        assert len(bagels) == 1, "Should have 1 bagel"
+        bagel = bagels[0]
+
+        # The bagel should be in_progress and we should be in CONFIGURING_ITEM phase
+        assert result1.order.phase == OrderPhase.CONFIGURING_ITEM.value, \
+            f"Expected CONFIGURING_ITEM phase, got: {result1.order.phase}"
+
+        # Store the bagel ID for comparison
+        bagel_id = bagel.id
+
+        # Step 2: User changes spread to veggie during configuration
+        result2 = sm.process("actually make it veggie cream cheese", result1.order)
+
+        # The change should be applied AND we should continue with configuration
+        # Check that we're still in configuration phase (or moved to next question)
+        bagels_after = [i for i in result2.order.items.items if i.has_attribute('bread')]
+        assert len(bagels_after) == 1, "Should still have 1 bagel"
+        bagel_after = bagels_after[0]
+
+        # The bagel type should be preserved
+        assert bagel_after["bread"] in ("plain", "plain_bagel"), \
+            f"Bagel type should be plain, got: {bagel_after['bread']}"
+
+        # The change should be acknowledged in the message
+        msg_lower = result2.message.lower()
+        change_acknowledged = (
+            "sure" in msg_lower or
+            "changed" in msg_lower or
+            "veggie" in msg_lower
+        )
+        assert change_acknowledged, \
+            f"Bot should acknowledge the change. Got: {result2.message}"
+
+        # Should continue with configuration (not say "let me finish first")
+        deferred_response = "finish" in msg_lower and "first" in msg_lower
+        assert not deferred_response, \
+            f"Should NOT defer the change. Got: {result2.message}"
+
+    def test_change_size_during_coffee_configuration(self):
+        """
+        Test: User changes size DURING coffee configuration.
+
+        Scenario:
+        - User orders: "small latte"
+        - Bot asks: "Hot or iced?"
+        - User says: "make it large"
+        - Expected: size changes to large, bot continues asking about temperature
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Step 1: User orders small latte
+        result1 = sm.process("small latte", order)
+
+        # Verify we're in configuration phase
+        assert result1.order.phase == OrderPhase.CONFIGURING_ITEM.value, \
+            f"Expected CONFIGURING_ITEM phase, got: {result1.order.phase}"
+
+        # Step 2: User changes size to large during configuration
+        result2 = sm.process("make it large", result1.order)
+
+        # The change should be applied
+        coffees = [i for i in result2.order.items.items if i.has_attribute('size')]
+        assert len(coffees) == 1, "Should have 1 coffee"
+        coffee = coffees[0]
+
+        # Size should be changed to large
+        assert coffee["size"] == "large", \
+            f"Coffee size should be large, got: {coffee['size']}"
+
+        # The change should be acknowledged and continue with config
+        msg_lower = result2.message.lower()
+        change_acknowledged = "sure" in msg_lower or "changed" in msg_lower
+        deferred_response = "finish" in msg_lower and "first" in msg_lower
+
+        assert not deferred_response, \
+            f"Should NOT defer the change. Got: {result2.message}"

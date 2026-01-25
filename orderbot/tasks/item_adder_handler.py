@@ -161,25 +161,42 @@ class ItemAdderHandler(MenuDataMixin):
         # Disambiguation is needed when:
         # 1. Item name is a category reference (e.g., "coffee" matches multiple items)
         # 2. Item name is empty but we have an item_type (generic request)
+        # 3. Item name matches multiple items by word boundary (e.g., "tea" matches Hot Tea, Iced Tea)
         item_name_lower = (item_name or "").lower().strip()
         category_ref = menu_cache.is_category_reference(item_name_lower) if item_name_lower else None
         is_category_reference = category_ref is not None
         is_empty_name = not item_name_lower
+
+        # Check for multiple word-boundary matches (e.g., "tea" matches Hot Tea, Iced Tea, etc.)
+        # This triggers disambiguation even when the term isn't a registered category reference
+        word_matches = menu_cache.find_items_by_word_match(item_name_lower) if item_name_lower else []
+        has_multiple_word_matches = len(word_matches) > 1
 
         # Generic modifier storage for disambiguation (stores ALL non-None kwargs)
         # This preserves modifiers like size, milk, sweetener during disambiguation
         item_modifiers = {k: v for k, v in kwargs.items() if v is not None}
         item_modifiers["quantity"] = quantity
 
-        # Trigger disambiguation for category references or empty names with item_type
-        if is_category_reference or is_empty_name:
+        # Trigger disambiguation for category references, empty names, or multiple word matches
+        if is_category_reference or is_empty_name or has_multiple_word_matches:
+            # Determine item_type_filter:
+            # - Category reference: use the category slug
+            # - Word matches: None (let all matching items through)
+            # - Empty name: use original item_type
+            if is_category_reference:
+                filter_type = category_ref
+            elif has_multiple_word_matches:
+                filter_type = None  # Don't filter - show all word matches
+            else:
+                filter_type = item_type
+
             menu_item, disambiguation_result = self._lookup_menu_item_with_disambiguation(
                 item_name=item_name_lower or "item",
                 quantity=quantity,
                 order=order,
                 modifiers=item_modifiers,
                 pending_field="item_selection",
-                item_type_filter=category_ref if is_category_reference else item_type,
+                item_type_filter=filter_type,
             )
 
             if disambiguation_result:
@@ -737,7 +754,8 @@ class ItemAdderHandler(MenuDataMixin):
         # If item needs configuration, start the configuration flow
         if needs_configuration and self.menu_item_handler:
             # Capture any attributes from original user input
-            if user_input:
+            # Skip if extracted_selections provided - parser already extracted attributes
+            if user_input and not extracted_selections:
                 self.menu_item_handler.capture_attributes_from_input(user_input, first_item)
             # Start configuration flow
             return self.menu_item_handler.get_first_question(first_item, order)

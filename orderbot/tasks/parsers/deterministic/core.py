@@ -256,6 +256,24 @@ def parse_open_input_deterministic(
                     resolved_item_type = item_type_slug
                     break
 
+        # 3. Fallback: Try word-boundary matching to find items containing the keyword
+        # This handles cases like "tea" matching "Hot Tea", "Iced Tea", etc.
+        if not resolved_item_type:
+            word_matches = menu_cache.find_items_by_word_match(item_keyword)
+            if not word_matches:
+                word_matches = menu_cache.find_items_by_word_match(item_keyword_singular)
+            if word_matches:
+                # Find the most common item type among matches
+                item_types = [m.get("item_type") for m in word_matches if m.get("item_type")]
+                if item_types:
+                    # Use the most frequent item type
+                    from collections import Counter
+                    resolved_item_type = Counter(item_types).most_common(1)[0][0]
+                    logger.debug(
+                        "Deterministic parse: 'another %s' word-matches %d items, item_type '%s'",
+                        item_keyword, len(word_matches), resolved_item_type
+                    )
+
         if resolved_item_type:
             # Valid item type keyword - pass the canonical item type to downstream handler
             logger.info("Deterministic parse: 'another %s' detected -> item_type '%s'", item_keyword, resolved_item_type)

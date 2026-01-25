@@ -27,6 +27,40 @@ from .patterns import ADD_MORE_PATTERN
 logger = logging.getLogger(__name__)
 
 
+# Cache for dynamic terminator pattern
+_ATTRIBUTE_TERMINATORS_PATTERN: str | None = None
+
+
+def _get_attribute_terminators_pattern() -> str:
+    """Build regex alternation of all attribute option words from database.
+
+    These words act as terminators for 'with X' patterns, e.g.:
+    - "with butter toasted" -> butter is the modifier, toasted terminates
+    - "with cream cheese scooped" -> cream cheese is the modifier, scooped terminates
+
+    Returns:
+        Regex alternation string like "toasted|scooped|iced|hot|large|medium|..."
+    """
+    global _ATTRIBUTE_TERMINATORS_PATTERN
+    if _ATTRIBUTE_TERMINATORS_PATTERN is not None:
+        return _ATTRIBUTE_TERMINATORS_PATTERN
+
+    # Get all attribute option words from database
+    attr_words = menu_cache.get_all_attribute_option_words()
+
+    # Filter to reasonable terminators (2+ chars, not common words)
+    skip_words = {'a', 'an', 'the', 'on', 'in', 'to', 'of', 'no', 'yes'}
+    terminators = {word for word in attr_words.keys()
+                   if len(word) >= 2 and word not in skip_words}
+
+    # Sort by length descending (longer matches first)
+    sorted_terminators = sorted(terminators, key=len, reverse=True)
+
+    # Build alternation pattern
+    _ATTRIBUTE_TERMINATORS_PATTERN = "|".join(re.escape(t) for t in sorted_terminators)
+    return _ATTRIBUTE_TERMINATORS_PATTERN
+
+
 # =============================================================================
 # Menu Item Modifications Extraction
 # =============================================================================
@@ -105,8 +139,10 @@ def _extract_menu_item_modifications(
         return None
 
     # Pattern for "with X and Y" or "with X, Y, and Z"
+    # Build dynamic terminator pattern from attribute options
+    attr_terminators = _get_attribute_terminators_pattern()
     with_pattern = re.search(
-        r'\bwith\s+(.+?)(?:\s*(?:please|thanks|toasted)|\s*$)',
+        rf'\bwith\s+(.+?)(?:\s*(?:please|thanks|{attr_terminators})|\s*$)',
         text_lower,
         re.IGNORECASE
     )

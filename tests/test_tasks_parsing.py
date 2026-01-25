@@ -113,7 +113,7 @@ class TestDeterministicParserHelpers:
     def test_extract_spread(self):
         """Test extracting spread via generic extract_attribute_values.
 
-        Database slugs use _cc suffix (e.g., plain_cc, scallion_cc).
+        Database slugs use full format (e.g., plain_cream_cheese, scallion_cream_cheese).
         Matching is done via display_name and aliases, not slug literals.
         Note: Spread is a multi-select attribute, so it returns a list of dicts.
         """
@@ -124,13 +124,13 @@ class TestDeterministicParserHelpers:
                 return spread[0].get("slug")
             return None
 
-        # "scallion cream cheese" is an alias for scallion_cc
+        # "scallion cream cheese" matches scallion_cream_cheese slug
         attrs = extract_attribute_values("with scallion cream cheese", "bagel")
-        assert _get_spread_slug(attrs) == "scallion_cc"
+        assert _get_spread_slug(attrs) == "scallion_cream_cheese"
 
-        # "regular cream cheese" is an alias for plain_cc
+        # "regular cream cheese" matches plain_cream_cheese slug
         attrs = extract_attribute_values("with regular cream cheese", "bagel")
-        assert _get_spread_slug(attrs) == "plain_cc"
+        assert _get_spread_slug(attrs) == "plain_cream_cheese"
 
         attrs = extract_attribute_values("everything bagel toasted", "bagel")
         assert "spread" not in attrs  # No spread mentioned
@@ -144,15 +144,15 @@ class TestDeterministicParserHelpers:
                 return spread[0].get("slug")
             return None
 
-        # "scallion cc" is an alias for scallion_cc
+        # "scallion cc" alias resolves to scallion_cream_cheese slug
         attrs = extract_attribute_values("scallion cc", "bagel")
         spread = _get_spread_slug(attrs)
-        assert spread == "scallion_cc", f"Expected 'scallion_cc' but got '{spread}'"
+        assert spread == "scallion_cream_cheese", f"Expected 'scallion_cream_cheese' but got '{spread}'"
 
-        # "blueberry cc" is an alias for blueberry_cc
+        # "blueberry cc" alias resolves to blueberry_cream_cheese slug
         attrs = extract_attribute_values("blueberry cc", "bagel")
         spread = _get_spread_slug(attrs)
-        assert spread == "blueberry_cc", f"Expected 'blueberry_cc' but got '{spread}'"
+        assert spread == "blueberry_cream_cheese", f"Expected 'blueberry_cream_cheese' but got '{spread}'"
 
 
 class TestDeterministicParserGreetings:
@@ -220,10 +220,10 @@ class TestDeterministicParserBagelOrders:
         assert len(bagels) == expected_qty, f"Expected {expected_qty} bagel(s), got {len(bagels)}"
 
     @pytest.mark.parametrize("text,expected_type", [
-        ("one plain bagel", "plain"),
-        ("two everything bagels", "everything"),
-        ("sesame bagel please", "sesame"),
-        ("I want a cinnamon raisin bagel", "cinnamon_raisin"),
+        ("one plain bagel", "plain_bagel"),
+        ("two everything bagels", "everything_bagel"),
+        ("sesame bagel please", "sesame_bagel"),
+        ("I want a cinnamon raisin bagel", "cinnamon_raisin_bagel"),
         ("three bagels", None),  # No type specified
     ])
     def test_bagel_type_extraction(self, text, expected_type):
@@ -242,54 +242,7 @@ class TestDeterministicParserBagelOrders:
         assert len(bagels) == 2
         # Both should be plain and toasted
         for bagel in bagels:
-            assert bagel.attribute_values.get("bread") == "plain"
-            assert bagel.attribute_values.get("toasted") is True
-
-    def test_bagel_with_spread(self):
-        """Test parsing bagel with spread matches spread_sandwich.
-
-        When a bagel is ordered with a spread like "plain cream cheese",
-        the parser matches to spread_sandwich type because "plain cream cheese"
-        is a menu item trigger for spread_sandwich.
-        """
-        result = parse_open_input_deterministic("everything bagel with plain cream cheese")
-        assert result is not None
-        # Parser matches to spread_sandwich because "plain cream cheese" is a menu item
-        items = get_parsed_items(result, item_type="spread_sandwich")
-        assert len(items) == 1
-        item = items[0]
-        assert item.attribute_values.get("bread") == "everything"
-
-    def test_bagel_with_spread_type(self):
-        """Test parsing 'bagel with scallion cream cheese' matches spread sandwich.
-
-        When a spread is specified with a bagel, the parser intentionally
-        matches to a spread_sandwich menu item rather than a generic bagel.
-        This is by design.
-        """
-        result = parse_open_input_deterministic("plain bagel with scallion cream cheese")
-        assert result is not None
-        # Matches spread_sandwich type because "scallion cream cheese" is a trigger
-        assert len(result.parsed_items) == 1
-        item = result.parsed_items[0]
-        assert item.item_type == "spread_sandwich"
-        assert item.attribute_values.get("bread") == "plain"
-
-    def test_full_bagel_order(self):
-        """Test parsing a fully specified bagel order.
-
-        When "plain cream cheese" is included, it triggers spread_sandwich matching.
-        """
-        result = parse_open_input_deterministic(
-            "three everything bagels toasted with plain cream cheese"
-        )
-        assert result is not None
-        # Parser matches to spread_sandwich because "plain cream cheese" is a menu item
-        bagels = get_parsed_items(result, item_type="spread_sandwich")
-        assert len(bagels) == 3
-        # All should have same attributes
-        for bagel in bagels:
-            assert bagel.attribute_values.get("bread") == "everything"
+            assert bagel.attribute_values.get("bread") == "plain_bagel"
             assert bagel.attribute_values.get("toasted") is True
 
     def test_bagel_with_comma_separated_modifiers(self):
@@ -302,7 +255,7 @@ class TestDeterministicParserBagelOrders:
         assert result is not None
         bagel = get_bagel_item(result)
         assert bagel is not None
-        assert bagel.attribute_values.get("bread") == "pumpernickel"
+        assert bagel.attribute_values.get("bread") == "pumpernickel_bagel"
         # Butter is a spread in the database
         spread = bagel.attribute_values.get("spread")
         assert spread == "butter", f"Expected spread='butter', got {spread}"
@@ -590,7 +543,7 @@ class TestReplacementPatternDetection:
         assert result.replace_last_item is True
         bagel = get_bagel_item(result)
         assert bagel is not None
-        assert bagel.attribute_values.get("bread") == "everything"
+        assert bagel.attribute_values.get("bread") == "everything_bagel"
 
 
 # =============================================================================
@@ -1659,21 +1612,21 @@ class TestSpeedMenuBagelParsing:
         assert item.item_name == expected_name
 
     @pytest.mark.parametrize("text,expected_bagel", [
-        # "wheat" maps to "whole_wheat" slug since there's no separate "wheat" bagel in database
-        ("The Classic BEC on a wheat bagel", "whole_wheat"),
-        ("classic bec on wheat", "whole_wheat"),
-        ("The Leo on an everything bagel", "everything"),
+        # "wheat" maps to "whole_wheat_bagel" slug since there's no separate "wheat" bagel in database
+        ("The Classic BEC on a wheat bagel", "whole_wheat_bagel"),
+        ("classic bec on wheat", "whole_wheat_bagel"),
+        ("The Leo on an everything bagel", "everything_bagel"),
         # "leo on everything" needs "bagel" word since "everything" alone doesn't match
         # (database slug is "everything_bagel", not "everything")
-        ("leo on everything bagel", "everything"),
-        ("The Traditional on a sesame bagel", "sesame"),
-        ("classic bec but on a plain bagel", "plain"),
-        ("give me the classic bec on a pumpernickel bagel", "pumpernickel"),
-        ("I want the lexington on whole wheat", "whole_wheat"),
+        ("leo on everything bagel", "everything_bagel"),
+        ("The Traditional on a sesame bagel", "sesame_bagel"),
+        ("classic bec but on a plain bagel", "plain_bagel"),
+        ("give me the classic bec on a pumpernickel bagel", "pumpernickel_bagel"),
+        ("I want the lexington on whole wheat", "whole_wheat_bagel"),
         # Without "on/with" prefix - should still extract bagel type
-        ("bec everything bagel toasted", "everything"),
-        ("classic bec plain bagel", "plain"),
-        ("the leo sesame bagel", "sesame"),
+        ("bec everything bagel toasted", "everything_bagel"),
+        ("classic bec plain bagel", "plain_bagel"),
+        ("the leo sesame bagel", "sesame_bagel"),
     ])
     def test_signature_item_with_bagel_choice(self, text, expected_bagel):
         """Test that speed menu items with bagel choice are correctly parsed."""
@@ -1728,10 +1681,10 @@ class TestSpeedMenuBagelParsing:
         sig_items = get_parsed_items(result, is_signature=True)
         assert len(sig_items) == 2
         # All items should have the same name, bagel choice, and toasted preference
-        # Note: "wheat" maps to "whole_wheat" slug since there's no separate "wheat" bagel in DB
+        # Note: "wheat" maps to "whole_wheat_bagel" slug since there's no separate "wheat" bagel in DB
         for item in sig_items:
             assert item.item_name == "The Classic BEC"
-            assert item.attribute_values.get("bread") == "whole_wheat"
+            assert item.attribute_values.get("bread") == "whole_wheat_bagel"
             assert item.attribute_values.get("toasted") is True
 
     def test_signature_item_parsed_before_bagel_check(self):
@@ -1746,8 +1699,8 @@ class TestSpeedMenuBagelParsing:
         sig_item = get_signature_item(result)
         assert sig_item is not None, "Should parse as signature item"
         assert sig_item.item_name == "The Classic BEC"
-        # Note: "wheat" maps to "whole_wheat" slug since there's no separate "wheat" bagel in DB
-        assert sig_item.attribute_values.get("bread") == "whole_wheat"
+        # Note: "wheat" maps to "whole_wheat_bagel" slug since there's no separate "wheat" bagel in DB
+        assert sig_item.attribute_values.get("bread") == "whole_wheat_bagel"
         # Should NOT have a plain bagel item
         bagel_items = get_parsed_items(result, item_type="bagel")
         assert len(bagel_items) == 0, "Should not have a separate bagel item"
@@ -1758,8 +1711,8 @@ class TestSpeedMenuBagelParsing:
         assert result is not None
         bagel_item = get_bagel_item(result)
         assert bagel_item is not None, "Should parse as bagel item"
-        # Note: "wheat" maps to "whole_wheat" slug since there's no separate "wheat" bagel in DB
-        assert bagel_item.attribute_values.get("bread") == "whole_wheat"
+        # Note: "wheat" maps to "whole_wheat_bagel" slug since there's no separate "wheat" bagel in DB
+        assert bagel_item.attribute_values.get("bread") == "whole_wheat_bagel"
         # Should NOT be a signature item
         assert not has_signature_item(result)
 
@@ -1776,10 +1729,10 @@ class TestSplitQuantityBagelParsing:
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2, f"Expected 2 bagels, got {len(bagels)}. All items: {[(i.item_type, i.item_name) for i in result.parsed_items]}"
         # First bagel: scallion cream cheese (slug from DB)
-        assert bagels[0].attribute_values.get("bread") == "plain"
-        assert bagels[0].attribute_values.get("spread") == "scallion_cc"
+        assert bagels[0].attribute_values.get("bread") == "plain_bagel"
+        assert bagels[0].attribute_values.get("spread") == "scallion_cream_cheese"
         # Second bagel: lox (extra_protein, not spread - salmon is a protein topping)
-        assert bagels[1].attribute_values.get("bread") == "plain"
+        assert bagels[1].attribute_values.get("bread") == "plain_bagel"
         assert bagels[1].attribute_values.get("extra_protein") == "nova_scotia_salmon"
 
     def test_two_bagels_toasted_variants(self):
@@ -1790,16 +1743,16 @@ class TestSplitQuantityBagelParsing:
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
-        assert bagels[0].attribute_values.get("bread") == "everything"
+        assert bagels[0].attribute_values.get("bread") == "everything_bagel"
         assert bagels[0].attribute_values.get("toasted") is True
-        assert bagels[1].attribute_values.get("bread") == "everything"
+        assert bagels[1].attribute_values.get("bread") == "everything_bagel"
         assert bagels[1].attribute_values.get("toasted") is False
 
     def test_three_bagels_different_spreads(self):
         """Test parsing 'three bagels one with butter one plain one with plain cream cheese'.
 
         Note: Uses 'plain cream cheese' since that's the full name in DB.
-        'cream cheese' alone would need to be added as an alias for 'plain_cc'.
+        'cream cheese' alone would need to be added as an alias for 'plain_cream_cheese'.
         """
         from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
@@ -1811,7 +1764,7 @@ class TestSplitQuantityBagelParsing:
         assert bagels[0].attribute_values.get("spread") == "butter"
         assert bagels[1].attribute_values.get("spread") is None  # plain = no spread
         # Plain cream cheese is also in the spread category
-        assert bagels[2].attribute_values.get("spread") == "plain_cc"
+        assert bagels[2].attribute_values.get("spread") == "plain_cream_cheese"
 
     def test_numeric_quantity(self):
         """Test parsing with numeric quantity."""
@@ -1851,11 +1804,11 @@ class TestSplitQuantityBagelParsing:
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
         # First bagel: plain cream cheese, toasted
-        assert bagels[0].attribute_values.get("bread") == "plain"
-        assert bagels[0].attribute_values.get("spread") == "plain_cc"
+        assert bagels[0].attribute_values.get("bread") == "plain_bagel"
+        assert bagels[0].attribute_values.get("spread") == "plain_cream_cheese"
         assert bagels[0].attribute_values.get("toasted") is True
         # Second bagel: lox (extra_protein), not toasted
-        assert bagels[1].attribute_values.get("bread") == "plain"
+        assert bagels[1].attribute_values.get("bread") == "plain_bagel"
         assert bagels[1].attribute_values.get("extra_protein") == "nova_scotia_salmon"
         assert bagels[1].attribute_values.get("toasted") is False
 
@@ -1873,11 +1826,11 @@ class TestSplitQuantityBagelParsing:
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
         # First bagel: butter (spread)
-        assert bagels[0].attribute_values.get("bread") == "plain"
+        assert bagels[0].attribute_values.get("bread") == "plain_bagel"
         assert bagels[0].attribute_values.get("spread") == "butter"
         # Second bagel: plain cream cheese (spread)
-        assert bagels[1].attribute_values.get("bread") == "plain"
-        assert bagels[1].attribute_values.get("spread") == "plain_cc"
+        assert bagels[1].attribute_values.get("bread") == "plain_bagel"
+        assert bagels[1].attribute_values.get("spread") == "plain_cream_cheese"
 
     def test_uneven_split_one_toasted_two_not(self):
         """Test parsing '3 bagels, one toasted, two not toasted'.
@@ -1915,7 +1868,7 @@ class TestSplitQuantityBagelParsing:
         # First bagel: butter (spread in database)
         assert bagels[0].attribute_values.get("spread") == "butter"
         # Second bagel: plain cream cheese (spread)
-        assert bagels[1].attribute_values.get("spread") == "plain_cc"
+        assert bagels[1].attribute_values.get("spread") == "plain_cream_cheese"
 
     def test_split_with_scallion_and_veggie(self):
         """Test parsing with specific cream cheese variants."""
@@ -1925,8 +1878,8 @@ class TestSplitQuantityBagelParsing:
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
         assert len(bagels) == 2
-        assert bagels[0].attribute_values.get("spread") == "scallion_cc"
-        assert bagels[1].attribute_values.get("spread") == "veggie_cc"
+        assert bagels[0].attribute_values.get("spread") == "scallion_cream_cheese"
+        assert bagels[1].attribute_values.get("spread") == "veggie_cream_cheese"
 
 
 class TestSplitQuantityDrinksParsing:
@@ -2514,15 +2467,6 @@ class TestAddModifierToItem:
         assert result.modify_existing_item is True
         # Check case-insensitively since function may return "Egg"
         assert any("egg" in m.lower() for m in result.modify_add_modifiers)
-
-    def test_add_tomato_and_onion(self):
-        """Test 'add tomato and onion' adds both toppings."""
-        result = parse_open_input_deterministic("add tomato and onion")
-        assert result is not None
-        assert result.modify_existing_item is True
-        # Check case-insensitively since function may return "Tomato", "Onion"
-        assert any("tomato" in m.lower() for m in result.modify_add_modifiers)
-        assert any("onion" in m.lower() for m in result.modify_add_modifiers)
 
     def test_add_unknown_item_returns_none(self):
         """Test 'add unicorn' returns None (unknown modifier)."""

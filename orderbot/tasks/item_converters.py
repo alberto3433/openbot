@@ -16,7 +16,6 @@ from .models import (
     TaskStatus,
     ItemTask,
     MenuItemTask,
-    NAME_FORMING_CATEGORIES,
 )
 from orderbot.menu_data_cache import menu_cache
 
@@ -364,7 +363,7 @@ class UnifiedItemConverter:
         for mod in item_modifiers:
             # Skip name-forming categories (e.g., bread) - already in display name
             mod_category = mod.get("category", "")
-            if mod_category in NAME_FORMING_CATEGORIES:
+            if menu_cache.is_name_forming_category(mod_category):
                 continue
 
             mod_slug = mod.get("slug", "")

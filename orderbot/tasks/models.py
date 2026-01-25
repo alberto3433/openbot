@@ -18,18 +18,23 @@ import uuid
 
 
 # =============================================================================
-# Constants
-# =============================================================================
-
-# Categories whose ingredient display name should replace the base menu item name.
-# For example, a "Bagel" with bread="garlic_bagel" should display as "Garlic Bagel"
-# instead of "Bagel, Garlic Bagel".
-NAME_FORMING_CATEGORIES = {"bread"}
-
-
-# =============================================================================
 # Utility Functions
 # =============================================================================
+
+
+def _is_name_forming_category(category: str) -> bool:
+    """Check if a category is name-forming (data-driven).
+
+    Name-forming categories have their ingredient display name replace
+    the base menu item name. For example, "bread" category means
+    "Garlic Bagel" instead of "Bagel, Garlic Bagel".
+    """
+    from orderbot.menu_data_cache import menu_cache
+    try:
+        return menu_cache.is_name_forming_category(category)
+    except Exception:
+        # Fallback if cache not loaded (shouldn't happen in production)
+        return False
 
 def parse_pending_field(pending_field: str | None) -> tuple[str | None, str | None]:
     """Parse pending_field format 'item_type:attr_slug' into components.
@@ -582,7 +587,7 @@ class MenuItemTask(ItemTask):
         # Check for name-forming category modifiers (e.g., bread type)
         for sel in self.modifiers:
             category = sel.get("category", "")
-            if category in NAME_FORMING_CATEGORIES:
+            if _is_name_forming_category(category):
                 # Use the ingredient's display name if available
                 display_name = sel.get("display_name")
                 if display_name:
@@ -628,7 +633,7 @@ class MenuItemTask(ItemTask):
                 continue
 
             # Skip name-forming categories (already part of base name)
-            if category in NAME_FORMING_CATEGORIES:
+            if _is_name_forming_category(category):
                 continue
 
             if display_name:

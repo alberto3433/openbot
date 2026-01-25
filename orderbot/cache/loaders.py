@@ -1405,6 +1405,7 @@ class LoaderMixin:
         categories_by_modifier_type: dict[str, set[str]] = {}
         category_field_config: dict[str, dict] = {}
         category_order: dict[str, int] = {}
+        name_forming_categories: set[str] = set()
 
         categories = db.query(IngredientCategory).all()
 
@@ -1422,15 +1423,21 @@ class LoaderMixin:
 
             category_order[cat.slug] = cat.display_order or 999
 
+            # Collect name-forming categories
+            if cat.is_name_forming:
+                name_forming_categories.add(cat.slug)
+
         self._ingredient_categories_by_modifier_type = categories_by_modifier_type
         self._ingredient_category_field_config = category_field_config
         self._ingredient_category_order = category_order
+        self._name_forming_categories = name_forming_categories
 
         logger.debug(
-            "Loaded ingredient category metadata: %s modifier types, %s field configs, %s orders",
+            "Loaded ingredient category metadata: %s modifier types, %s field configs, %s orders, %d name-forming",
             {k: len(v) for k, v in categories_by_modifier_type.items()},
             len(category_field_config),
-            len(category_order)
+            len(category_order),
+            len(name_forming_categories)
         )
 
     def _load_menu_item_categories(self, db: Session) -> None:
@@ -2525,6 +2532,7 @@ class LoaderMixin:
         categories_by_modifier_type: dict[str, set[str]] = {}
         category_field_config: dict[str, dict] = {}
         category_order: dict[str, int] = {}
+        name_forming_categories: set[str] = set()
 
         for cat in categories:
             if cat.modifier_type:
@@ -2540,13 +2548,19 @@ class LoaderMixin:
 
             category_order[cat.slug] = cat.display_order or 999
 
+            # Collect name-forming categories
+            if getattr(cat, 'is_name_forming', False):
+                name_forming_categories.add(cat.slug)
+
         self._ingredient_categories_by_modifier_type = categories_by_modifier_type
         self._ingredient_category_field_config = category_field_config
         self._ingredient_category_order = category_order
+        self._name_forming_categories = name_forming_categories
 
         logger.debug(
-            "Loaded ingredient category metadata (from bulk): %d configs",
-            len(category_field_config)
+            "Loaded ingredient category metadata (from bulk): %d configs, %d name-forming",
+            len(category_field_config),
+            len(name_forming_categories)
         )
 
     def _load_menu_item_categories_from_bulk(self, bulk_data: dict) -> None:

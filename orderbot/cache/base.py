@@ -205,6 +205,10 @@ class BaseCacheMixin:
         # Maps category_slug -> display_order (int)
         self._ingredient_category_order: dict[str, int] = {}
 
+        # Name-forming categories (e.g., "bread" - ingredient name replaces menu item name)
+        # Set of category slugs where ingredient display name should replace base item name
+        self._name_forming_categories: set[str] = set()
+
         # Menu item categories (high-level classifications like "drink", "food")
         # Maps category slug -> list of menu item dicts (id, name, item_type_slug)
         self._menu_items_by_category_slug: dict[str, list[dict]] = {}

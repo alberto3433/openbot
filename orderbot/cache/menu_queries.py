@@ -310,6 +310,57 @@ class MenuQueryMixin:
 
         return matches
 
+    def find_items_by_word_match(
+        self,
+        word: str,
+        item_type_slug: str | None = None,
+    ) -> list[dict]:
+        """Find menu items where the word appears as a complete word in the name.
+
+        Uses word boundary matching (not substring).
+        Example: "tea" matches "Hot Tea", "Iced Tea" but NOT "Cheesesteak"
+
+        Args:
+            word: The word to search for
+            item_type_slug: Optional item type to restrict search
+
+        Returns:
+            List of matching menu item dicts with name, item_type, base_price.
+        """
+        self._ensure_loaded()
+        word_lower = word.lower().strip()
+
+        if not word_lower:
+            return []
+
+        # Word boundary pattern - matches whole words only
+        word_pattern = re.compile(rf'\b{re.escape(word_lower)}\b', re.IGNORECASE)
+
+        matches = []
+        seen_names = set()
+
+        # Iterate over _menu_items which contains item names and their item_type
+        for item_name, item_info in self._menu_items.items():
+            item_type = item_info.get("item_type")
+
+            # Skip if filtering by item type and doesn't match
+            if item_type_slug and item_type != item_type_slug:
+                continue
+
+            item_name_lower = item_name.lower()
+            if item_name_lower in seen_names:
+                continue
+
+            if word_pattern.search(item_name):
+                seen_names.add(item_name_lower)
+                matches.append({
+                    "name": item_info.get("name", item_name),
+                    "item_type": item_type or "menu_item",
+                    "base_price": item_info.get("base_price", 0.0),
+                })
+
+        return matches
+
     def get_menu_item_names_by_category(self, category_slug: str) -> set[str]:
         """Get all menu item names that belong to a category.
 

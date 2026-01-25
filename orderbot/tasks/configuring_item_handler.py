@@ -14,6 +14,7 @@ from .models import OrderTask, MenuItemTask, parse_pending_field
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
 from .parsers.deterministic.patterns import parse_can_you_make_it
+from .modifier_change_handler import ChangeRequest
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
@@ -419,16 +420,13 @@ class ConfiguringItemHandler:
             logger.debug("Input is valid answer for %s - skipping change/off-topic detection", order.pending_field)
 
         # Check for modifier change requests during configuration
-        # If detected, tell user to wait until config is complete
+        # If detected, try to apply immediately instead of deferring
         change_request = None if is_valid_answer else self.modifier_change_handler.detect_change_request(user_input)
-        if change_request:
-            logger.info("CHANGE REQUEST: Detected during config, deferring: %s", change_request)
-            msg = self.modifier_change_handler.generate_mid_config_message()
-            # Re-ask the current question
-            current_question = self.config_helper_handler.get_current_config_question(order, item)
-            if current_question:
-                msg = f"{msg} {current_question}"
-            return StateMachineResult(message=msg, order=order)
+        if change_request and isinstance(item, MenuItemTask):
+            result = self._apply_modification_during_config(change_request, item, order)
+            if result:
+                return result
+            # If couldn't apply, fall through to normal processing
 
         # Check for "can you make it X?" style requests (e.g., "can you make it iced?")
         # This handles users asking to modify an aspect of the item being configured
@@ -579,27 +577,53 @@ class ConfiguringItemHandler:
                 order=order,
             )
 
-        # Found the selection - clear pending state and add the item directly
+        # Found the selection - clear pending state
         selected_name = selected_item.get("name", "item")
         selected_price = selected_item.get("base_price", 0.0)
         selected_id = selected_item.get("id")
         selected_item_type = selected_item.get("item_type")
 
+        # Get any pre-filled modifiers from disambiguation (size, milk, etc.)
+        # Filter out structural keys that aren't actual item attributes
+        raw_pre_filled = order.pending_item_modifiers or {}
+        non_attribute_keys = {"item_name", "quantity", "original_input", "item_type"}
+        pre_filled = {k: v for k, v in raw_pre_filled.items() if k not in non_attribute_keys}
+
         order.pending_item_options = []
         order.pending_item_quantity = 1
+        order.pending_item_modifiers = None
         order.clear_pending()
 
         logger.info("ITEM SELECTION: User chose '%s' (type=%s), adding %d item(s)",
                     selected_name, selected_item_type, quantity)
 
+        # Check if item type is configurable (has conversation attributes like size, temperature)
+        configurable_types = menu_cache.get_configurable_item_types()
+        is_configurable = selected_item_type in configurable_types if selected_item_type else False
+
+        # For configurable items (sized_beverage, bagel, etc.), route through proper config flow
+        if is_configurable and self.item_adder_handler:
+            menu_item = {
+                "name": selected_name,
+                "id": selected_id,
+                "base_price": selected_price,
+                "item_type": selected_item_type,
+            }
+            return self.item_adder_handler._create_configurable_item(
+                menu_item=menu_item,
+                order=order,
+                quantity=quantity,
+                pre_filled_attributes=pre_filled if pre_filled else None,
+            )
+
+        # For non-configurable items, use direct creation
         # Check if item type requires side choice (data-driven from database)
         requires_side_choice = (
             menu_cache.item_type_has_side_choice(selected_item_type)
             if selected_item_type else False
         )
 
-        # Directly create the MenuItemTask(s) - no need to go through add_menu_item
-        # since we already have all the item details from pending_item_options
+        # Directly create the MenuItemTask(s) for non-configurable items
         first_item = None
         for _ in range(quantity):
             item = MenuItemTask(
@@ -872,3 +896,142 @@ class ConfiguringItemHandler:
                 message="No problem. What else can I help you with?",
                 order=order,
             )
+
+    def _apply_modification_during_config(
+        self,
+        change_request: ChangeRequest,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Apply a modification to the item being configured, then continue config.
+
+        This handles the case where a user says something like "make it veggie cream cheese"
+        during item configuration. Instead of deferring the change, we apply it immediately
+        and continue with the remaining configuration questions.
+
+        Args:
+            change_request: The detected change request
+            item: The item being configured
+            order: The current order state
+
+        Returns:
+            StateMachineResult if the change was applied, None if we couldn't apply it
+        """
+        new_value = change_request.new_value
+        logger.info("APPLY_MOD_DURING_CONFIG: Attempting to apply '%s' to item being configured", new_value)
+
+        # Case 1: Unambiguous attribute change (bread, size, toasted, temperature)
+        if not change_request.is_ambiguous and change_request.possible_attributes:
+            attr_slug = change_request.possible_attributes[0]
+            if attr_slug != "unknown":
+                result = self.modifier_change_handler.apply_change(
+                    order, item.id, attr_slug, new_value
+                )
+                if result.success:
+                    logger.info("APPLY_MOD_DURING_CONFIG: Applied attribute change %s=%s", attr_slug, new_value)
+                    return self._continue_config_with_message(
+                        f"Sure, I've changed that to {new_value}.", item, order
+                    )
+
+        # Case 2: Try as modifier (spread, topping, syrup, etc.)
+        matches = menu_cache.find_matching_ingredients(new_value.lower())
+
+        if len(matches) == 1:
+            match = matches[0]
+            # Replace or add the modifier
+            self._replace_or_add_modifier(item, match)
+            logger.info("APPLY_MOD_DURING_CONFIG: Applied modifier change %s (%s)", match['name'], match['category'])
+            return self._continue_config_with_message(
+                f"Sure, I've changed the {match['category']} to {match['name']}.", item, order
+            )
+
+        if len(matches) > 1:
+            # Multiple matches - need disambiguation
+            logger.info("APPLY_MOD_DURING_CONFIG: Multiple matches for '%s', starting disambiguation", new_value)
+            return self._start_modifier_disambiguation(new_value, matches, item, order)
+
+        # Couldn't apply - fall through to normal processing
+        logger.debug("APPLY_MOD_DURING_CONFIG: Could not apply change for '%s'", new_value)
+        return None
+
+    def _replace_or_add_modifier(self, item: MenuItemTask, match: dict) -> None:
+        """Replace existing modifier of same category, or add if none exists.
+
+        Args:
+            item: The item to modify
+            match: Dict with slug, name, category, base_price from find_matching_ingredients()
+        """
+        category = match["category"]
+
+        # Remove existing modifier of same category (if any)
+        item.modifiers = [m for m in item.modifiers if m.get("category") != category]
+
+        # Add new one
+        item.add_selection(
+            slug=match["slug"],
+            category=category,
+            display_name=match["name"],
+            quantity=1,
+            price=match.get("base_price", 0.0),
+        )
+
+        # Recalculate price
+        if self.modifier_change_handler and self.modifier_change_handler.pricing:
+            self.modifier_change_handler.pricing.recalculate_item_price(item)
+
+    def _continue_config_with_message(
+        self, message: str, item: MenuItemTask, order: OrderTask
+    ) -> StateMachineResult:
+        """Return message + next config question, or proceed if item complete.
+
+        Args:
+            message: The feedback message about the change that was applied
+            item: The item being configured
+            order: The current order state
+
+        Returns:
+            StateMachineResult with the message and next question, or checkout transition
+        """
+        current_question = self.config_helper_handler.get_current_config_question(order, item)
+        if current_question:
+            return StateMachineResult(message=f"{message} {current_question}", order=order)
+
+        # Item configuration complete - proceed to next question or checkout
+        return self.checkout_utils_handler.get_next_question(order)
+
+    def _start_modifier_disambiguation(
+        self,
+        new_value: str,
+        matches: list[dict],
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Start disambiguation flow for a modifier with multiple matches.
+
+        Args:
+            new_value: The modifier value that has multiple matches
+            matches: List of matching ingredient dicts
+            item: The item being configured
+            order: The current order state
+
+        Returns:
+            StateMachineResult asking user to select which modifier they want
+        """
+        # Store the modifier options for disambiguation
+        order.pending_item_options = matches
+        order.pending_field = "modifier_selection"
+        order.pending_modifier_target_item_index = order.items.items.index(item)
+
+        # Build disambiguation message
+        option_lines = []
+        for i, match in enumerate(matches[:6], 1):
+            price_str = ""
+            if match.get("base_price", 0) > 0:
+                price_str = f" (+${match['base_price']:.2f})"
+            option_lines.append(f"{i}. {match['name']}{price_str}")
+
+        options_str = "\n".join(option_lines)
+        return StateMachineResult(
+            message=f"Which {new_value} would you like?\n{options_str}",
+            order=order,
+        )

@@ -28,6 +28,9 @@ from .extraction import (
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache for split-indicator patterns built from database
+_SPLIT_INDICATOR_PATTERNS_CACHE: list[str] | None = None
+
 
 # =============================================================================
 # Generic Parsed Item Builder (Data-Driven)
@@ -589,9 +592,53 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
 # Split-Quantity Parsing
 # =============================================================================
 
+def _get_split_attribute_patterns() -> list[str]:
+    """Build split-indicator patterns from database attribute options.
+
+    Returns patterns like:
+        r"\\b(?:one|1)\\s+(?:not\\s+)?(?:toasted|iced|hot|...)\\b"
+
+    The attribute option words come from the database, making this data-driven
+    instead of hardcoding specific food attributes.
+
+    Returns:
+        List of regex patterns for split-quantity detection.
+    """
+    global _SPLIT_INDICATOR_PATTERNS_CACHE
+    if _SPLIT_INDICATOR_PATTERNS_CACHE is not None:
+        return _SPLIT_INDICATOR_PATTERNS_CACHE
+
+    # Get all attribute option words from database
+    # Handle case where menu cache isn't loaded yet (e.g., during test setup)
+    try:
+        attr_option_words = menu_cache.get_all_attribute_option_words()
+    except Exception:
+        # Cache not loaded - return empty list but DON'T cache it
+        # so we retry when cache is available
+        return []
+
+    if not attr_option_words:
+        # Empty result - don't cache, retry later
+        return []
+
+    # Build alternation pattern from option words
+    # Sort by length descending for greedy matching
+    sorted_words = sorted(attr_option_words.keys(), key=len, reverse=True)
+    words_pattern = "|".join(re.escape(w) for w in sorted_words)
+
+    # Build patterns for each quantity
+    _SPLIT_INDICATOR_PATTERNS_CACHE = [
+        rf"\b(?:one|1)\s+(?:not\s+)?(?:{words_pattern})\b",
+        rf"\b(?:two|2)\s+(?:not\s+)?(?:{words_pattern})\b",
+        rf"\b(?:three|3)\s+(?:not\s+)?(?:{words_pattern})\b",
+    ]
+    return _SPLIT_INDICATOR_PATTERNS_CACHE
+
+
 def _count_split_indicators(text: str) -> int:
     """Count split-quantity indicators in text."""
-    indicators = [
+    # Static patterns that don't need DB lookup
+    static_indicators = [
         r"\bone\s+with\b",
         r"\b1\s+with\b",
         r"\bfirst\s+with\b",
@@ -600,11 +647,14 @@ def _count_split_indicators(text: str) -> int:
         r"\banother\s+with\b",
         r"\bfirst\s+one\b",
         r"\bsecond\s+one\b",
-        # Match "one/two/three [word]" patterns (not just "with")
-        r"\b(?:one|1)\s+(?:not\s+)?(?:toasted|iced|hot|black|plain|decaf)\b",
-        r"\b(?:two|2)\s+(?:not\s+)?(?:toasted|iced|hot|black|plain|decaf)\b",
-        r"\b(?:three|3)\s+(?:not\s+)?(?:toasted|iced|hot|black|plain|decaf)\b",
     ]
+
+    # Get data-driven patterns for attribute options (e.g., "one toasted", "two iced")
+    dynamic_patterns = _get_split_attribute_patterns()
+
+    # Combine all patterns
+    indicators = static_indicators + dynamic_patterns
+
     count = 0
     for pattern in indicators:
         count += len(re.findall(pattern, text, re.IGNORECASE))
@@ -797,11 +847,33 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
             return OpenInputResponse(needs_category_clarification=category_slug)
 
     if not drink_type:
-        return None
+        # Fallback: Try word-boundary matching on item names
+        # This handles cases like "tea" matching "Hot Tea", "Iced Tea", etc.
+        # without matching "Cheesesteak" (substring but not word match)
+        word_matches = menu_cache.find_items_by_word_match(text_lower)
+        if word_matches:
+            # Found items containing this word - use original term for disambiguation
+            logger.debug(
+                "Deterministic parse: '%s' word-matches %d items, using for disambiguation",
+                text_lower, len(word_matches)
+            )
+            drink_type = text_lower
+        else:
+            return None
 
     # Resolve alias to canonical menu item name from database (e.g., "coke" -> "Coca-Cola")
-    # If not found, keep original name (will fail gracefully if item doesn't exist in menu)
-    canonical_name = menu_cache.resolve_item_alias(drink_type, "beverage") or drink_type
+    # If multiple items match by word, skip alias resolution to allow disambiguation
+    word_match_count = len(menu_cache.find_items_by_word_match(drink_type))
+    if word_match_count > 1:
+        # Multiple items match - don't resolve alias, let item_adder disambiguate
+        logger.debug(
+            "Deterministic parse: '%s' matches %d items, skipping alias resolution",
+            drink_type, word_match_count
+        )
+        canonical_name = drink_type
+    else:
+        # Single match or no word matches - resolve alias as before
+        canonical_name = menu_cache.resolve_item_alias(drink_type, "beverage") or drink_type
     logger.debug("Deterministic parse: detected soda type '%s' -> canonical '%s'", drink_type, canonical_name)
 
     quantity = 1

@@ -52,13 +52,15 @@
 }
 
 /* Navigation Container - use flexbox for consistent spacing */
-.app-header > div:last-child {
-  display: flex;
+.app-header > div:last-child,
+.nav-links {
+  display: flex !important;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
-.app-header > div:last-child > a {
-  margin-left: 0;
+.app-header > div:last-child > a,
+.nav-links > a {
+  margin: 0 !important;
 }
 
 /* Navigation Dropdown Styles */

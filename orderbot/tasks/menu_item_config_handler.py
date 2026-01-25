@@ -28,6 +28,13 @@ from .utils import OptionMatcher, InputNormalizer
 logger = logging.getLogger(__name__)
 
 
+def _number_to_word(n: int) -> str:
+    """Convert small integers to words for natural language."""
+    words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+             6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
+    return words.get(n, str(n))
+
+
 class MenuItemConfigHandler(BaseHandler):
     """
     Handles menu item configuration with DB-driven attributes.
@@ -639,24 +646,73 @@ class MenuItemConfigHandler(BaseHandler):
         Does NOT list options by default - user must ask "what options?" to see them.
         For boolean attributes (like toasted), uses simple yes/no question.
         Uses DB's question_text if configured, otherwise generates a natural question.
+
+        For multi-item configurations, uses ordinal references like "the first one", "the second one".
         """
+        from .message_builder import MessageBuilder
+
         input_type = attr.get("input_type", "single_select")
         attr_name = attr["display_name"].lower()
+
+        # Determine if we're configuring multiple items of same type
+        multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
+
+        # Calculate ordinal position of this item among same-type items
+        ordinal = "first"  # default
+        item_num = 1  # default
+        if multi_count > 1:
+            # Find all items of the same type
+            same_type_items = [
+                it for it in order.items.items
+                if isinstance(it, MenuItemTask) and it.menu_item_type == item.menu_item_type
+            ]
+            # Find position of current item
+            item_num = next(
+                (i + 1 for i, it in enumerate(same_type_items) if it.id == item.id),
+                1
+            )
+            ordinal = MessageBuilder.get_ordinal(item_num)
 
         # Use DB's question_text if available, otherwise generate a natural question
         db_question = attr.get("question_text")
         if db_question:
             question = db_question
         elif input_type == "boolean":
-            # Simple yes/no question
-            question = f"Would you like it {attr_name}?"
+            # Simple yes/no question - use ordinal for multi-item
+            if multi_count > 1:
+                question = f"Would you like the {ordinal} one {attr_name}?"
+            else:
+                question = f"Would you like it {attr_name}?"
         else:
             # For select types, ask naturally without listing options
-            question = f"What kind of {attr_name} would you like?"
+            if multi_count > 1:
+                question = f"For the {ordinal} one, what kind of {attr_name} would you like?"
+            else:
+                question = f"What kind of {attr_name} would you like?"
 
-        # Add acknowledgment for first question
+        # Add acknowledgment for first question of each item
         if is_first_question:
-            question = f"Got it, {item.get_display_name()}. {question}"
+            if multi_count > 1:
+                if item_num == 1:
+                    # First item: "Got it, two Everything Bagels. Would you like the first one scooped?"
+                    quantity_word = _number_to_word(multi_count)
+                    item_name = item.get_display_name()
+                    # Simple pluralization - add 's' if not already ending in 's'
+                    if not item_name.lower().endswith('s'):
+                        item_name = item_name + "s"
+                    item_desc = f"{quantity_word} {item_name}"
+                    question = f"Got it, {item_desc}. {question}"
+                else:
+                    # Subsequent items: "For the second Everything Bagel, would you like that scooped?"
+                    item_desc = f"the {ordinal} {item.get_display_name()}"
+                    # Adjust question to use "that" instead of "the {ordinal} one"
+                    if input_type == "boolean":
+                        question = f"For {item_desc}, would you like that {attr_name}?"
+                    else:
+                        question = f"For {item_desc}, what kind of {attr_name} would you like?"
+            else:
+                item_desc = item.get_display_name()
+                question = f"Got it, {item_desc}. {question}"
 
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id

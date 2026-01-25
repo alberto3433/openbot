@@ -516,6 +516,10 @@ class PricingEngine(MenuDataMixin):
             price = self.lookup_modifier_price(slug, item_type)
             total += price * quantity
 
+            # Update the modifier's stored price so it displays in UI
+            if price > 0:
+                modifier["price"] = price
+
         # =====================================================================
         # 4. Update item price
         # =====================================================================

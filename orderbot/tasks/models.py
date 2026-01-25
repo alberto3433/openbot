@@ -623,8 +623,8 @@ class MenuItemTask(ItemTask):
             display_name = sel.get("display_name", "")
             quantity = sel.get("quantity", 1)
 
-            # Skip "no" selections (user declined)
-            if slug == "no":
+            # Skip "no" and "_declined" selections (user declined)
+            if slug in ("no", "_declined"):
                 continue
 
             # Skip name-forming categories (already part of base name)

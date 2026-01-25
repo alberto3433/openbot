@@ -612,3 +612,58 @@ class TestOptionsInquiryAtCheckpoint:
         assert has_condiment_option, (
             f"Bot did not list condiment options: {result.message}"
         )
+
+    def test_declined_not_in_summary_after_removal(self):
+        """
+        Test that 'Declined' does not appear in item summary.
+
+        Scenario:
+        - User orders: plain bagel toasted not scooped no spread
+        - User adds: ketchup
+        - User removes: ketchup
+        - Bot shows summary
+
+        Expected: Summary should NOT contain "Declined"
+        Actual (before fix): "Plain Bagel, Declined, Toasted, Salt"
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order a plain bagel with some specifications that decline spread
+        result = sm.process("plain bagel toasted not scooped no spread", order)
+        assert len(result.order.items.items) == 1
+
+        # Navigate to customization_checkpoint
+        max_iterations = 10
+        for _ in range(max_iterations):
+            pending = result.order.pending_field
+            if pending == "customization_checkpoint":
+                break
+            if pending and pending.endswith(":scooped"):
+                result = sm.process("no", result.order)
+            elif pending and pending.endswith(":spread_type"):
+                result = sm.process("none", result.order)
+            elif result.message and "any more changes" in result.message.lower():
+                break
+            else:
+                result = sm.process("no", result.order)
+
+        # Add ketchup
+        result = sm.process("ketchup", result.order)
+
+        # Remove ketchup
+        result = sm.process("remove ketchup", result.order)
+
+        # Check that "Declined" doesn't appear in the message
+        assert "declined" not in result.message.lower(), (
+            f"Summary incorrectly contains 'Declined': {result.message}"
+        )
+
+        # Also check the item's get_summary() method directly
+        item = result.order.items.items[0]
+        summary = item.get_summary()
+        assert "declined" not in summary.lower(), (
+            f"Item summary incorrectly contains 'Declined': {summary}"
+        )

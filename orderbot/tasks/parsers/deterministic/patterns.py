@@ -224,6 +224,48 @@ DUPLICATE_ALL_PATTERN = re.compile(
 
 
 # =============================================================================
+# "Can You Make It X?" Pattern
+# =============================================================================
+
+# Pattern to detect "can you make it X?" style requests during configuration
+# Captures the modifier (e.g., "iced", "decaf", "hot")
+# Used when user wants to change an aspect of the item being configured
+CAN_YOU_MAKE_IT_PATTERN = re.compile(
+    r"^(?:"
+    # "can you make it iced?", "could you make it decaf?"
+    r"(?:can|could)\s+(?:you|i)\s+(?:make|get|have)\s+(?:it|that|this)\s+(.+?)"
+    r"|"
+    # "is it available iced?", "is that available hot?"
+    r"(?:is|are)\s+(?:it|that|this|they)\s+available\s+(.+?)"
+    r"|"
+    # "does it come in iced?", "does it come iced?"
+    r"(?:do|does)\s+(?:it|that|this)\s+come\s+(?:in\s+)?(.+?)"
+    r")"
+    r"[\s?!.,]*$",
+    re.IGNORECASE
+)
+
+
+def parse_can_you_make_it(text: str) -> str | None:
+    """
+    Parse 'can you make it X?' style requests and extract the modifier.
+
+    Args:
+        text: User input to parse
+
+    Returns:
+        The extracted modifier (e.g., "iced", "decaf") or None if no match
+    """
+    match = CAN_YOU_MAKE_IT_PATTERN.match(text.strip())
+    if match:
+        # Get first non-None group (different branches capture to different groups)
+        modifier = next((g for g in match.groups() if g), None)
+        if modifier:
+            return modifier.strip().rstrip('?.,!')
+    return None
+
+
+# =============================================================================
 # Order/Inquiry Detection Patterns
 # =============================================================================
 

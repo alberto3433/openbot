@@ -23,6 +23,7 @@ from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .parsers.quantity_utils import extract_leading_quantity
 from .parsers import extract_attribute_values
 from .handler_config import BaseHandler
+from .utils import OptionMatcher, InputNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,8 @@ class MenuItemConfigHandler(BaseHandler):
         """
         super().__init__(config)
         # Note: Item type attributes are cached in menu_cache (single source of truth)
+        self._input_normalizer = InputNormalizer()
+        self._option_matcher = OptionMatcher(self._input_normalizer)
 
     def supports_item_type(self, item_type_slug: str | None) -> bool:
         """Check if this handler supports the given item type.
@@ -162,12 +165,9 @@ class MenuItemConfigHandler(BaseHandler):
         Extract quantity from user input.
 
         Returns (quantity, remaining_text) tuple.
-        E.g., "2 scrambled eggs" → (2, "scrambled eggs")
-              "two fried eggs" → (2, "fried eggs")
-              "scrambled egg" → (1, "scrambled egg")
+        Delegates to InputNormalizer.
         """
-        quantity, remaining = extract_leading_quantity(user_input)
-        return (quantity or 1, remaining)
+        return self._input_normalizer.extract_leading_quantity(user_input)
 
     def _parse_numeric_input(self, user_input: str) -> int | None:
         """
@@ -203,10 +203,9 @@ class MenuItemConfigHandler(BaseHandler):
         """
         Normalize user input for option matching.
 
-        Delegates to normalization.normalize_for_option_match() for unified handling.
-        Handles common patterns: shot quantities, leading quantities, plural forms.
+        Delegates to InputNormalizer.
         """
-        return normalize_for_option_match(text)
+        return self._input_normalizer.normalize_for_matching(text)
 
     def _match_option_from_input(
         self, user_input: str, options: list[dict]
@@ -214,138 +213,17 @@ class MenuItemConfigHandler(BaseHandler):
         """
         Try to match user input to an option with smart partial matching.
 
-        Returns:
-            (matched_option, partial_matches) tuple:
-            - (option, []) = exact or unique partial match found
-            - (None, [opt1, opt2, ...]) = multiple partial matches, need disambiguation
-            - (None, []) = no matches at all
-
-        Matching priority:
-        1. Exact match on display_name, slug, or alias
-        2. Partial match: user input is contained in option name (e.g., "plain" → "Plain Bagel")
-        3. Partial match: option name is contained in user input (e.g., "plain bagel please" → "Plain Bagel")
-
-        Note: Options with must_match are only matched if user input contains at least
-        one of the must_match strings.
+        Delegates to OptionMatcher.match_single().
         """
-        # Normalize input to handle quantities and plurals
-        # e.g., "2 scrambled eggs" → "scrambled egg"
-        user_lower = self._normalize_for_matching(user_input)
-        # Also keep raw lowercase for initial exact match check
-        user_raw_lower = user_input.lower().strip()
-
-        def get_aliases(opt: dict) -> list[str]:
-            aliases_raw = opt.get("aliases", [])
-            if isinstance(aliases_raw, str):
-                # Support both pipe-separated (DB format) and comma-separated aliases
-                if "|" in aliases_raw:
-                    return [a.strip() for a in aliases_raw.split("|") if a.strip()]
-                return [a.strip() for a in aliases_raw.split(",") if a.strip()]
-            return aliases_raw or []
-
-        # Phase 0: Try exact match with raw (un-normalized) input first
-        # This catches cases like "tomatoes" matching option "tomatoes" before
-        # normalization converts it to "tomato"
-        for opt in options:
-            if not self._passes_must_match(user_input, opt):
-                continue
-            display_lower = opt["display_name"].lower()
-            if display_lower == user_raw_lower:
-                return (opt, [])
-            slug_readable = opt["slug"].replace("_", " ")
-            if slug_readable == user_raw_lower:
-                return (opt, [])
-            for alias in get_aliases(opt):
-                if alias.lower() == user_raw_lower:
-                    return (opt, [])
-
-        # Phase 1: Exact matches with normalized input (highest priority after raw)
-        # Normalize option names too so "tomatoes" (normalized to "tomato")
-        # matches option "tomatoes" (also normalized to "tomato")
-        for opt in options:
-            if not self._passes_must_match(user_input, opt):
-                continue  # Skip options that don't pass must_match
-            display_lower = opt["display_name"].lower()
-            display_normalized = self._normalize_for_matching(display_lower)
-            if display_normalized == user_lower:
-                return (opt, [])
-            slug_readable = opt["slug"].replace("_", " ")
-            slug_normalized = self._normalize_for_matching(slug_readable)
-            if slug_normalized == user_lower:
-                return (opt, [])
-            for alias in get_aliases(opt):
-                alias_normalized = self._normalize_for_matching(alias)
-                if alias_normalized == user_lower:
-                    return (opt, [])
-
-        # Phase 2: User input is contained in option name (partial match)
-        # e.g., "plain" matches "Plain Bagel", "gluten free" matches "Gluten Free Plain Bagel"
-        partial_matches = []
-        for opt in options:
-            if not self._passes_must_match(user_input, opt):
-                continue  # Skip options that don't pass must_match
-            display_lower = opt["display_name"].lower()
-            if self._is_whole_word_match(user_lower, display_lower):
-                partial_matches.append(opt)
-                continue
-            slug_readable = opt["slug"].replace("_", " ")
-            if self._is_whole_word_match(user_lower, slug_readable):
-                if opt not in partial_matches:
-                    partial_matches.append(opt)
-                continue
-            for alias in get_aliases(opt):
-                alias_lower = alias.lower()
-                if len(alias_lower) >= 3 and self._is_whole_word_match(user_lower, alias_lower):
-                    if opt not in partial_matches:
-                        partial_matches.append(opt)
-                    break
-
-        if len(partial_matches) == 1:
-            return (partial_matches[0], [])
-        elif len(partial_matches) > 1:
-            return (None, partial_matches)
-
-        # Phase 3: Option name is contained in user input (original behavior)
-        # e.g., "plain bagel please" matches "Plain Bagel"
-        for opt in options:
-            if not self._passes_must_match(user_input, opt):
-                continue  # Skip options that don't pass must_match
-            display_lower = opt["display_name"].lower()
-            if display_lower in user_lower and self._is_whole_word_match(display_lower, user_lower):
-                return (opt, [])
-            slug_readable = opt["slug"].replace("_", " ")
-            if slug_readable in user_lower and self._is_whole_word_match(slug_readable, user_lower):
-                return (opt, [])
-            for alias in get_aliases(opt):
-                alias_lower = alias.lower()
-                if len(alias_lower) >= 3 and alias_lower in user_lower:
-                    if self._is_whole_word_match(alias_lower, user_lower):
-                        return (opt, [])
-
-        return (None, [])
+        return self._option_matcher.match_single(user_input, options)
 
     def _tokenize_multi_input(self, user_input: str) -> list[str]:
         """
         Tokenize compound input into individual items.
 
-        E.g., "milk and sugar" -> ["milk", "sugar"]
-              "bacon, cheese, tomato" -> ["bacon", "cheese", "tomato"]
-              "oat milk and vanilla syrup" -> ["oat milk", "vanilla syrup"]
+        Delegates to InputNormalizer.
         """
-        import re
-        # Split on common separators, preserving multi-word items
-        # Order matters: check longer patterns first
-        separators = [
-            r'\s+and\s+',      # " and "
-            r'\s*,\s*',        # ", " or ","
-            r'\s+&\s+',        # " & "
-            r'\s+with\s+',     # " with "
-            r'\s+plus\s+',     # " plus "
-        ]
-        pattern = '|'.join(separators)
-        tokens = re.split(pattern, user_input, flags=re.IGNORECASE)
-        # Clean up tokens
-        return [t.strip() for t in tokens if t.strip()]
+        return self._input_normalizer.tokenize_multi_input(user_input)
 
     def _match_multiple_options_from_input(
         self, user_input: str, options: list[dict]
@@ -353,189 +231,17 @@ class MenuItemConfigHandler(BaseHandler):
         """
         Match ALL options mentioned in user input (for multi_select attributes).
 
-        Returns list of matched options (may be empty if none found).
-        Unlike _match_option_from_input, this finds ALL matches, not just one.
-
-        E.g., "milk and sugar" -> [whole_milk_option, sugar_option]
-              "mayo mustard" -> [mayo_option, mustard_option]
-
-        Supports tokenized input: splits on "and", ",", "&", etc. to match
-        multiple items like "milk and sugar" -> ["milk", "sugar"].
-
-        Matching is bidirectional:
-        1. Option name in user input (e.g., "sugar" in "milk and sugar")
-        2. User token in option name (e.g., "milk" in "whole milk")
-
-        Note: Options with must_match are only matched if user input contains at least
-        one of the must_match strings.
+        Delegates to OptionMatcher.match_multiple().
         """
-        # Normalize input to handle quantities and plurals
-        user_lower = self._normalize_for_matching(user_input)
-        # Also keep raw lowercase for exact match check
-        user_raw_lower = user_input.lower().strip()
-        matched = []
-        matched_slugs = set()  # Track slugs to avoid duplicates
-
-        def get_aliases(opt: dict) -> list[str]:
-            aliases_raw = opt.get("aliases", [])
-            if isinstance(aliases_raw, str):
-                # Support both pipe-separated (DB format) and comma-separated aliases
-                if "|" in aliases_raw:
-                    return [a.strip() for a in aliases_raw.split("|") if a.strip()]
-                return [a.strip() for a in aliases_raw.split(",") if a.strip()]
-            return aliases_raw or []
-
-        def add_match(opt: dict) -> bool:
-            """Add option to matches if not already present. Returns True if added."""
-            if opt["slug"] not in matched_slugs:
-                matched_slugs.add(opt["slug"])
-                matched.append(opt)
-                return True
-            return False
-
-        # Tokenize input for compound inputs like "milk and sugar"
-        tokens = self._tokenize_multi_input(user_input)
-        # Raw tokens for exact matching
-        raw_tokens = [t.lower().strip() for t in tokens]
-        # Normalized tokens for fuzzy matching
-        normalized_tokens = [self._normalize_for_matching(t) for t in tokens]
-        # All inputs includes both raw and normalized for comprehensive matching
-        all_inputs = [user_raw_lower, user_lower] + raw_tokens + normalized_tokens
-        # Remove duplicates while preserving order
-        seen = set()
-        all_inputs = [x for x in all_inputs if x and x not in seen and not seen.add(x)]
-
-        # Log which options have must_match for debugging
-        opts_with_must_match = [
-            (o.get("display_name"), o.get("must_match"))
-            for o in options if o.get("must_match")
-        ]
-        if opts_with_must_match:
-            logger.info(
-                "MULTI_SELECT OPTIONS with must_match: %s",
-                opts_with_must_match
-            )
-        else:
-            logger.info(
-                "MULTI_SELECT OPTIONS: none have must_match (total %d options)",
-                len(options)
-            )
-
-        for opt in options:
-            if not self._passes_must_match(user_input, opt):
-                logger.debug(
-                    "MULTI_SELECT SKIP: '%s' filtered by must_match=%s for option '%s'",
-                    user_input, opt.get("must_match"), opt.get("display_name")
-                )
-                continue  # Skip options that don't pass must_match
-
-            display_lower = opt["display_name"].lower()
-            slug_readable = opt["slug"].replace("_", " ")
-            # Also normalize option names for fuzzy matching
-            display_normalized = self._normalize_for_matching(display_lower)
-            slug_normalized = self._normalize_for_matching(slug_readable)
-
-            # === Phase 0: Exact match with raw input ===
-            # E.g., "tomatoes" exactly matches option "Tomatoes"
-            if display_lower == user_raw_lower or slug_readable == user_raw_lower:
-                add_match(opt)
-                continue
-            # Check raw tokens for exact match
-            if display_lower in raw_tokens or slug_readable in raw_tokens:
-                add_match(opt)
-                continue
-
-            # === Phase 1: Exact match with normalized input ===
-            # E.g., "tomato" (normalized from "tomatoes") matches normalized "tomato"
-            if display_normalized == user_lower or slug_normalized == user_lower:
-                add_match(opt)
-                continue
-            if display_normalized in normalized_tokens or slug_normalized in normalized_tokens:
-                add_match(opt)
-                continue
-
-            # === Direction 1: Option name/alias appears in user input ===
-            # E.g., "sugar" (option) in "milk and sugar" (input)
-            if self._is_whole_word_match(display_lower, user_raw_lower):
-                add_match(opt)
-                continue
-            if self._is_whole_word_match(slug_readable, user_raw_lower):
-                add_match(opt)
-                continue
-
-            # Check aliases in user input
-            alias_matched = False
-            for alias in get_aliases(opt):
-                alias_lower = alias.lower()
-                if len(alias_lower) >= 2 and self._is_whole_word_match(alias_lower, user_raw_lower):
-                    add_match(opt)
-                    alias_matched = True
-                    break
-            if alias_matched:
-                continue
-
-            # === Direction 2: User token appears in option name ===
-            # E.g., "milk" (token) in "whole milk" (option)
-            # This handles cases like "milk" matching "Whole Milk"
-            for token in all_inputs:
-                if not token or len(token) < 2:
-                    continue
-                # Check if token is in display name
-                if self._is_whole_word_match(token, display_lower):
-                    add_match(opt)
-                    break
-                # Check if token is in slug
-                if self._is_whole_word_match(token, slug_readable):
-                    add_match(opt)
-                    break
-                # Check if token matches an alias
-                for alias in get_aliases(opt):
-                    alias_lower = alias.lower()
-                    if len(alias_lower) >= 2 and self._is_whole_word_match(token, alias_lower):
-                        add_match(opt)
-                        break
-
-        return matched
+        return self._option_matcher.match_multiple(user_input, options)
 
     def _is_whole_word_match(self, needle: str, haystack: str) -> bool:
         """Check if needle appears as a whole word/phrase in haystack."""
-        import re
-        # Use word boundaries to ensure we match whole words
-        pattern = r'\b' + re.escape(needle) + r'\b'
-        return bool(re.search(pattern, haystack))
+        return self._option_matcher._is_whole_word_match(needle, haystack)
 
     def _passes_must_match(self, user_input: str, opt: dict) -> bool:
-        """
-        Check if option passes must_match requirement.
-
-        If opt has must_match strings, at least one must be present in user_input.
-        If no must_match is set, returns True (no restriction).
-        """
-        must_match_raw = opt.get("must_match")
-        if not must_match_raw:
-            return True  # No must_match requirement
-
-        user_lower = user_input.lower()
-        # Parse comma-separated must_match strings
-        if isinstance(must_match_raw, str):
-            must_match_list = [m.strip().lower() for m in must_match_raw.split(",") if m.strip()]
-        else:
-            must_match_list = [str(m).lower() for m in must_match_raw]
-
-        # At least one must_match string must be present
-        for must_str in must_match_list:
-            if self._is_whole_word_match(must_str, user_lower):
-                logger.debug(
-                    "MUST_MATCH PASSED: '%s' contains '%s' for option '%s'",
-                    user_input, must_str, opt.get("display_name")
-                )
-                return True
-
-        logger.debug(
-            "MUST_MATCH FAILED: '%s' does not contain any of %s for option '%s'",
-            user_input, must_match_list, opt.get("display_name")
-        )
-        return False
+        """Check if option passes must_match requirement."""
+        return self._option_matcher._passes_must_match(user_input, opt)
 
     def _extract_qualifier_for_option(self, user_input: str, option_name: str) -> str | None:
         """

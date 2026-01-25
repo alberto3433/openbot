@@ -943,6 +943,11 @@ class OrderTask(BaseTask):
     # Stores the menu item name (e.g., "The Lexington") for confirmation
     pending_suggested_item: str | None = None
 
+    # Pending item switch when user asks "can you make it X?" and we find a similar item
+    # Dict with menu item info: {id, name, base_price, item_type}
+    # Used to offer switching from current item to a similar one with requested modifier
+    pending_switch_item: dict | None = None
+
     # Menu query pagination state for "show more" functionality
     # Dict with: category (str), offset (int), total_items (int)
     # Used when user asks "what other X do you have?" or "more X"
@@ -1021,6 +1026,9 @@ class OrderTask(BaseTask):
         # Handle modifier selection (disambiguation like "cream cheese" matching multiple options)
         if self.pending_field == "modifier_selection":
             return True
+        # Handle item switch confirmation ("can you make it X?" -> similar item found)
+        if self.pending_field == "confirm_item_switch":
+            return True
         # Handle attribute disambiguation (e.g., "walnut" -> "honey walnut" or "maple raisin walnut")
         if self.pending_attr_disambiguation is not None:
             return True
@@ -1036,6 +1044,7 @@ class OrderTask(BaseTask):
         self.pending_field = None
         self.config_options_page = 0
         self.pending_suggested_item = None
+        self.pending_switch_item = None
         self.pending_item_modifiers = {}
         self.pending_attr_disambiguation = None
 

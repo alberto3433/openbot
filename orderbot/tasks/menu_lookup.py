@@ -322,6 +322,63 @@ class MenuLookup(MenuDataMixin):
 
         return []
 
+    def find_similar_item_with_modifier(
+        self,
+        current_name: str,
+        modifier: str,
+    ) -> dict | None:
+        """
+        Find a menu item similar to current_name but including the modifier.
+
+        Uses name similarity heuristic: both items should share significant words.
+        Example: "Hot Tea" -> "Iced Tea" (both contain "Tea")
+
+        Args:
+            current_name: Name of the current menu item (e.g., "Hot Tea")
+            modifier: The modifier to look for (e.g., "iced")
+
+        Returns:
+            Menu item dict if a similar item with the modifier is found, None otherwise
+        """
+        if not self._menu_data or not current_name or not modifier:
+            return None
+
+        all_items = self._get_all_items()
+        current_words = set(current_name.lower().split())
+        modifier_lower = modifier.lower()
+
+        # Remove common filler words that don't help with matching
+        filler_words = {"a", "an", "the", "of", "with", "and", "or"}
+        current_words_clean = current_words - filler_words - {modifier_lower}
+
+        best_match = None
+        best_score = 0
+
+        for item in all_items:
+            item_name = item.get("name", "")
+            item_name_lower = item_name.lower()
+
+            # Skip current item (exact match)
+            if item_name_lower == current_name.lower():
+                continue
+
+            # Item must contain the modifier (the thing user asked for)
+            if modifier_lower not in item_name_lower:
+                continue
+
+            # Calculate word overlap (excluding the modifier and filler words)
+            item_words = set(item_name_lower.split())
+            item_words_clean = item_words - filler_words - {modifier_lower}
+
+            overlap = len(item_words_clean & current_words_clean)
+
+            # Require at least 1 shared meaningful word
+            if overlap > best_score:
+                best_score = overlap
+                best_match = item
+
+        return best_match if best_score > 0 else None
+
     def infer_item_type(self, item_name: str) -> dict | None:
         """
         Infer the likely item type of an unknown item based on keywords.

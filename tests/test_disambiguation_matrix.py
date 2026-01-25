@@ -35,6 +35,7 @@ from sqlalchemy import create_engine, text
 from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
 from orderbot.tasks.menu_lookup import MenuLookup
 from orderbot.tasks.item_adder_handler import ItemAdderHandler
+from orderbot.tasks.handler_config import HandlerConfig
 from orderbot.tasks.models import OrderTask
 
 
@@ -86,7 +87,8 @@ def menu_lookup(menu_data):
 @pytest.fixture(scope="module")
 def item_handler(menu_lookup):
     """Create ItemAdderHandler instance."""
-    return ItemAdderHandler(menu_lookup=menu_lookup)
+    config = HandlerConfig(menu_lookup=menu_lookup)
+    return ItemAdderHandler(config=config)
 
 
 @pytest.fixture

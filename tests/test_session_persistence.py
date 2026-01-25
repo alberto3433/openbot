@@ -156,10 +156,10 @@ class TestSessionPersistenceIntegration:
     """Integration tests for session persistence with API endpoints."""
 
     def test_chat_start_creates_database_session(self, client):
-        """Test that /chat/start creates a session in the database."""
+        """Test that /api/v1/chat/start creates a session in the database."""
         import orderbot.db as db_mod
 
-        resp = client.post("/chat/start")
+        resp = client.post("/api/v1/chat/start")
         assert resp.status_code == 200
 
         session_id = resp.json()["session_id"]
@@ -184,7 +184,7 @@ class TestSessionCacheTTL:
 
         # Start a session via API (this goes through the proper DB)
         before = time.time()
-        resp = client.post("/chat/start")
+        resp = client.post("/api/v1/chat/start")
         after = time.time()
 
         session_id = resp.json()["session_id"]
@@ -206,7 +206,7 @@ class TestSessionCacheTTL:
         monkeypatch.setattr(session_mod, "SESSION_TTL_SECONDS", 1)
 
         # Start a session via API
-        resp = client.post("/chat/start")
+        resp = client.post("/api/v1/chat/start")
         session_id = resp.json()["session_id"]
         assert session_id in SESSION_CACHE
 

@@ -13,6 +13,7 @@ import re
 from .models import OrderTask, MenuItemTask, parse_pending_field
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
+from .parsers.deterministic.patterns import parse_can_you_make_it
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
@@ -392,6 +393,10 @@ class ConfiguringItemHandler:
         if order.pending_field == "confirm_suggested_item":
             return self.taking_items_handler.handle_confirm_suggested_item(user_input, order)
 
+        # Handle item switch confirmation ("can you make it X?" -> similar item found)
+        if order.pending_field == "confirm_item_switch":
+            return self._handle_confirm_item_switch(user_input, order)
+
         item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
         if item is None:
             order.clear_pending()
@@ -424,6 +429,13 @@ class ConfiguringItemHandler:
             if current_question:
                 msg = f"{msg} {current_question}"
             return StateMachineResult(message=msg, order=order)
+
+        # Check for "can you make it X?" style requests (e.g., "can you make it iced?")
+        # This handles users asking to modify an aspect of the item being configured
+        if not is_valid_answer and isinstance(item, MenuItemTask):
+            can_you_make_it_result = self._handle_can_you_make_it(user_input, item, order)
+            if can_you_make_it_result:
+                return can_you_make_it_result
 
         # Check for off-topic requests during configuration (e.g., "what syrups do you have?", "add vanilla syrup")
         # If detected, politely redirect back to the current configuration question
@@ -698,3 +710,165 @@ class ConfiguringItemHandler:
             message=f"Added {selected['name']}. Anything else?",
             order=order,
         )
+
+    def _handle_can_you_make_it(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """
+        Handle 'can you make it X?' requests during item configuration.
+
+        When user asks "can you make it iced?" while being asked about size:
+        1. Check if the current item has an attribute option matching "iced"
+        2. If yes, apply it and continue with normal configuration
+        3. If not, search for a similar menu item with that modifier
+        4. Offer to switch or report "Sorry, we don't have that option"
+
+        Args:
+            user_input: The user's input text
+            item: The item being configured
+            order: The current order state
+
+        Returns:
+            StateMachineResult if handled, None if not a "can you make it X?" request
+        """
+        modifier = parse_can_you_make_it(user_input)
+        if not modifier:
+            return None
+
+        logger.info("CAN_YOU_MAKE_IT: Detected modifier request '%s' for %s", modifier, item.menu_item_name)
+        modifier_lower = modifier.lower()
+
+        # 1. Check if current item has an attribute option matching this modifier
+        item_type = item.menu_item_type
+        if item_type:
+            try:
+                attrs = menu_cache.get_item_type_attributes(item_type)
+                for attr_slug, attr_config in attrs.items():
+                    for opt in attr_config.get("options", []):
+                        opt_slug = opt.get("slug", "").lower()
+                        opt_display = opt.get("display_name", "").lower()
+                        if modifier_lower == opt_slug or modifier_lower == opt_display:
+                            # Found matching attribute option - apply it
+                            logger.info("CAN_YOU_MAKE_IT: Found matching attr %s=%s", attr_slug, opt_slug)
+                            item.set_attribute(attr_slug, opt.get("slug"))
+                            # Re-ask current question (the one we were on)
+                            current_question = self.config_helper_handler.get_current_config_question(order, item)
+                            if current_question:
+                                return StateMachineResult(
+                                    message=f"Sure! {current_question}",
+                                    order=order,
+                                )
+                            return None  # Continue with normal flow
+            except Exception as e:
+                logger.debug("Error checking attributes for 'can you make it': %s", e)
+
+        # 2. Search for similar menu item with the modifier
+        if self.item_adder_handler and self.item_adder_handler.menu_lookup:
+            similar_item = self.item_adder_handler.menu_lookup.find_similar_item_with_modifier(
+                item.menu_item_name or "",
+                modifier,
+            )
+            if similar_item:
+                logger.info(
+                    "CAN_YOU_MAKE_IT: Found similar item '%s' for '%s' + '%s'",
+                    similar_item.get("name"),
+                    item.menu_item_name,
+                    modifier,
+                )
+                # Offer to switch
+                order.pending_switch_item = similar_item
+                order.pending_field = "confirm_item_switch"
+                return StateMachineResult(
+                    message=(
+                        f"{item.menu_item_name} isn't available {modifier}, "
+                        f"but we have {similar_item.get('name')}. Would you like that instead?"
+                    ),
+                    order=order,
+                )
+
+        # 3. Not found - report and re-ask
+        logger.info("CAN_YOU_MAKE_IT: No matching attribute or similar item found for '%s'", modifier)
+        current_question = self.config_helper_handler.get_current_config_question(order, item)
+        if current_question:
+            return StateMachineResult(
+                message=f"Sorry, we don't have that option. {current_question}",
+                order=order,
+            )
+        return StateMachineResult(
+            message="Sorry, we don't have that option.",
+            order=order,
+        )
+
+    def _handle_confirm_item_switch(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """
+        Handle user confirmation for item switch (from "can you make it X?").
+
+        Args:
+            user_input: The user's response (yes/no)
+            order: The current order state
+
+        Returns:
+            StateMachineResult with next action
+        """
+        switch_item = order.pending_switch_item
+        if not switch_item:
+            order.clear_pending()
+            return StateMachineResult(
+                message="What would you like to order?",
+                order=order,
+            )
+
+        user_lower = user_input.lower().strip()
+
+        # Check for affirmative response
+        affirmative_patterns = menu_cache.get_response_patterns("affirmative")
+        is_affirmative = any(p in user_lower for p in affirmative_patterns) or user_lower in ("yes", "yeah", "sure", "ok", "okay", "yep", "yup")
+
+        if is_affirmative:
+            # Get the current item being configured and remove it
+            current_item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
+            if current_item:
+                order.items.remove_item(current_item)
+
+            # Clear switch state
+            order.pending_switch_item = None
+            order.clear_pending()
+
+            # Add the new item via item_adder_handler
+            if self.item_adder_handler:
+                return self.item_adder_handler.add_menu_item(
+                    switch_item.get("name", "item"),
+                    order,
+                    quantity=1,
+                )
+
+            # Fallback - just acknowledge
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+            return StateMachineResult(
+                message=f"Got it, {switch_item.get('name')}. Anything else?",
+                order=order,
+            )
+        else:
+            # User declined - continue with original item
+            order.pending_switch_item = None
+            # Get the original item and continue configuration
+            original_item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
+            if original_item:
+                # Clear the confirm_item_switch field and restore previous config state
+                # Get the next question for the original item
+                if isinstance(original_item, MenuItemTask) and self.menu_item_handler:
+                    order.pending_field = None  # Clear to let get_first_question set it
+                    return self.menu_item_handler.get_first_question(original_item, order)
+
+            order.clear_pending()
+            return StateMachineResult(
+                message="No problem. What else can I help you with?",
+                order=order,
+            )

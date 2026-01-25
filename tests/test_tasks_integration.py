@@ -296,12 +296,9 @@ def mock_menu_cache_attributes(monkeypatch):
     monkeypatch.setattr(menu_cache, "get_category_keyword_mapping", mock_get_category_keyword_mapping)
     # Mock the functions in parsers.constants module
     import orderbot.tasks.parsers.constants as parser_constants
-    import orderbot.tasks.parsers.deterministic as parser_deterministic
     # Mock signature items and known menu items - required for multi-item parsing
     monkeypatch.setattr(parser_constants, "get_signature_item_aliases", mock_get_signature_item_aliases)
     monkeypatch.setattr(parser_constants, "get_known_menu_items", mock_get_known_menu_items)
-    monkeypatch.setattr(parser_deterministic, "get_signature_item_aliases", mock_get_signature_item_aliases)
-    monkeypatch.setattr(parser_deterministic, "get_known_menu_items", mock_get_known_menu_items)
 
 
 # =============================================================================

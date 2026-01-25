@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-from orderbot.models import Base, MenuItem
+from orderbot.models import Base, MenuItem, MenuItemCategory
 
 
 # Use TEST_DATABASE_URL or derive from DATABASE_URL
@@ -50,13 +50,12 @@ class TestMenuItemDuplicates:
         if duplicates:
             dup_details = []
             for name, count in duplicates:
-                # Get IDs and categories of duplicates for debugging
-                items = db_session.query(MenuItem.id, MenuItem.category).filter(
+                # Get IDs of duplicates for debugging
+                items = db_session.query(MenuItem.id).filter(
                     MenuItem.name == name
                 ).all()
                 dup_details.append(
-                    f"  '{name}': {count} copies (IDs: {[i.id for i in items]}, "
-                    f"categories: {[i.category for i in items]})"
+                    f"  '{name}': {count} copies (IDs: {[i.id for i in items]})"
                 )
 
             pytest.fail(
@@ -65,39 +64,36 @@ class TestMenuItemDuplicates:
                 + "\n\nTo debug, enable MENU_ITEM_INSERT_LOGGING=1 and re-run tests."
             )
 
-    def test_no_duplicate_menu_items_by_name_and_category(self, db_session):
-        """Fail if duplicate menu items exist with same name AND category.
+    def test_no_duplicate_category_assignments(self, db_session):
+        """Fail if any menu item is assigned to the same category multiple times.
 
-        This is a stricter check - same name in different categories might be
-        intentional (e.g., "Small" in drinks vs sides), but same name+category
-        is definitely a bug.
+        This checks the MenuItemCategory join table for duplicate entries,
+        which would indicate a bug in category assignment logic.
         """
         duplicates = (
             db_session.query(
-                MenuItem.name,
-                MenuItem.category,
-                func.count(MenuItem.id).label("count"),
+                MenuItemCategory.menu_item_id,
+                MenuItemCategory.category_id,
+                func.count(MenuItemCategory.id).label("count"),
             )
-            .group_by(MenuItem.name, MenuItem.category)
-            .having(func.count(MenuItem.id) > 1)
+            .group_by(MenuItemCategory.menu_item_id, MenuItemCategory.category_id)
+            .having(func.count(MenuItemCategory.id) > 1)
             .all()
         )
 
         if duplicates:
             dup_details = []
-            for name, category, count in duplicates:
-                items = db_session.query(MenuItem.id).filter(
-                    MenuItem.name == name,
-                    MenuItem.category == category,
-                ).all()
+            for menu_item_id, category_id, count in duplicates:
+                item = db_session.query(MenuItem.name).filter(
+                    MenuItem.id == menu_item_id
+                ).scalar()
                 dup_details.append(
-                    f"  '{name}' (category='{category}'): {count} copies (IDs: {[i.id for i in items]})"
+                    f"  MenuItem '{item}' (id={menu_item_id}) assigned to category_id={category_id} {count} times"
                 )
 
             pytest.fail(
-                f"Found {len(duplicates)} menu items with duplicate name+category:\n"
+                f"Found {len(duplicates)} duplicate category assignments:\n"
                 + "\n".join(dup_details)
-                + "\n\nTo debug, enable MENU_ITEM_INSERT_LOGGING=1 and re-run tests."
             )
 
     def test_report_total_menu_item_count(self, db_session):

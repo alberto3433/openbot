@@ -35,7 +35,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
@@ -890,8 +890,18 @@ def list_item_type_global_attributes(
     if not item_type:
         raise HTTPException(status_code=404, detail="Item type not found")
 
+    # Eager load all relationships to avoid N+1 queries
     links = (
         db.query(ItemTypeGlobalAttribute)
+        .options(
+            joinedload(ItemTypeGlobalAttribute.item_type),
+            joinedload(ItemTypeGlobalAttribute.global_attribute)
+            .selectinload(GlobalAttribute.options)
+            .joinedload(GlobalAttributeOption.ingredient),
+            joinedload(ItemTypeGlobalAttribute.global_attribute)
+            .selectinload(GlobalAttribute.options)
+            .joinedload(GlobalAttributeOption.modifier_category),
+        )
         .filter(ItemTypeGlobalAttribute.item_type_id == item_type_id)
         .order_by(ItemTypeGlobalAttribute.display_order)
         .all()

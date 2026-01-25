@@ -704,10 +704,10 @@
       }
     }
 
-    // Fetch all item types
+    // Fetch all item types (lightweight endpoint for sidebar)
     async function loadItemTypes() {
       try {
-        const resp = await fetch(`${API_BASE}/admin/modifiers/item-types`, { credentials: 'include' });
+        const resp = await fetch(`${API_BASE}/admin/modifiers/item-types/list`, { credentials: 'include' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         itemTypes = await resp.json();
         renderItemTypeList();

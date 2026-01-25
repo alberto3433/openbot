@@ -18,7 +18,6 @@ from ...schemas import (
 from ..constants import (
     WORD_TO_NUM,
     get_signature_item_aliases,
-    resolve_soda_alias,
 )
 from .extraction import (
     extract_attribute_values,
@@ -802,7 +801,7 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
 
     # Resolve alias to canonical menu item name from database (e.g., "coke" -> "Coca-Cola")
     # If not found, keep original name (will fail gracefully if item doesn't exist in menu)
-    canonical_name = resolve_soda_alias(drink_type)
+    canonical_name = menu_cache.resolve_item_alias(drink_type, "beverage") or drink_type
     logger.debug("Deterministic parse: detected soda type '%s' -> canonical '%s'", drink_type, canonical_name)
 
     quantity = 1

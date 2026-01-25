@@ -614,8 +614,6 @@ def find_item_by_unit_type(item_name: str, unit_type: str) -> tuple[str, str] | 
     return None
 
 
-
-
 def resolve_soda_alias(name: str) -> str:
     """
     Resolve a soda/beverage name or alias to its canonical menu item name.
@@ -634,22 +632,6 @@ def resolve_soda_alias(name: str) -> str:
         if result:
             return result
     return name
-
-
-def resolve_side_alias(name: str) -> str | None:
-    """
-    Resolve a side item name or alias to its canonical menu item name.
-
-    Args:
-        name: User input like "chips" or "fruit"
-
-    Returns:
-        Canonical menu item name if found, or None if no mapping found.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        return cache.resolve_side_alias(name)
-    return None
 
 
 def resolve_menu_item_alias(name: str) -> str | None:

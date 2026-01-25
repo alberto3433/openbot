@@ -757,6 +757,52 @@ class MenuItemConfigHandler(BaseHandler):
 
         return None
 
+    def _detect_options_inquiry_for_attribute(
+        self, user_input: str, attributes: list[dict]
+    ) -> dict | None:
+        """Detect if user is asking 'what X do you have?' and return matching attribute.
+
+        Used at customization checkpoint to detect options inquiries about ANY
+        attribute, including ones that have already been partially answered.
+        E.g., user adds "salt" then asks "what condiments do you have?" -
+        condiments is no longer in unanswered list but we should still show options.
+
+        Args:
+            user_input: The user's input text
+            attributes: List of attribute config dicts to check against
+
+        Returns:
+            The matching attribute config dict if found, None otherwise
+        """
+        input_lower = user_input.lower().strip()
+
+        # Patterns to extract attribute name from inquiry questions
+        inquiry_patterns = [
+            r"what\s+(?:kind\s+of\s+)?(\w+)\s+(?:do\s+you\s+have|options|are\s+there)",
+            r"(?:show|list)\s+(?:me\s+)?(?:the\s+)?(\w+)(?:\s+options)?",
+            r"what\s+(\w+)\s+can\s+i\s+(?:add|get|have)",
+            r"what\s+(?:types?|kinds?)\s+of\s+(\w+)",
+        ]
+
+        for pattern in inquiry_patterns:
+            match = re.search(pattern, input_lower)
+            if match:
+                topic = match.group(1).strip().rstrip("s")  # Remove trailing 's'
+
+                for attr in attributes:
+                    attr_slug = attr.get("slug", "")
+                    attr_name = attr.get("display_name", "").lower()
+                    attr_slug_normalized = attr_slug.rstrip("s")
+
+                    # Match against slug or display name
+                    if (topic == attr_slug or
+                        topic == attr_slug_normalized or
+                        topic in attr_name or
+                        attr_name.startswith(topic)):
+                        return attr
+
+        return None
+
     def _is_show_more_request(self, user_input: str) -> bool:
         """Check if user is asking to see more options."""
         input_lower = user_input.lower().strip()
@@ -2245,6 +2291,18 @@ class MenuItemConfigHandler(BaseHandler):
             )
 
         unanswered = self._get_unanswered_optional(item, item_type)
+
+        # Check for options inquiry about ANY attribute (not just unanswered)
+        # e.g., "what condiments do you have?" even after adding salt
+        all_optional = self._get_optional_attributes(item_type)
+        inquiry_attr = self._detect_options_inquiry_for_attribute(user_input, all_optional)
+        if inquiry_attr:
+            options = inquiry_attr.get("options", [])
+            if options:
+                order.pending_field = f"{item_type}:{inquiry_attr['slug']}"
+                return self._handle_options_inquiry(
+                    item, order, inquiry_attr, options, is_show_more=False
+                )
 
         # Check for "yes" - user wants to see the list
         yes_patterns = menu_cache.get_response_patterns("affirmative")

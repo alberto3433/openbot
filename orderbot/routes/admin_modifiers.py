@@ -39,7 +39,6 @@ from sqlalchemy.orm import Session
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..models import ItemType, ItemTypeAlias, MenuItem, ItemTypeGlobalAttribute, OverallCategory, GlobalAttribute
-from ..services.item_type_helpers import has_linked_attributes, has_askable_attributes
 from ..services.helpers import validate_aliases
 from ..schemas.modifiers import (
     GlobalAttributeRef,
@@ -65,28 +64,29 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         MenuItem.item_type_id == item_type.id
     ).count()
 
-    # Query linked global attributes with their details
-    linked_attrs = (
-        db.query(GlobalAttribute)
+    # Query linked global attributes with their link details in a single query
+    linked_data = (
+        db.query(GlobalAttribute, ItemTypeGlobalAttribute)
         .join(ItemTypeGlobalAttribute, ItemTypeGlobalAttribute.global_attribute_id == GlobalAttribute.id)
         .filter(ItemTypeGlobalAttribute.item_type_id == item_type.id)
         .order_by(ItemTypeGlobalAttribute.display_order)
         .all()
     )
 
-    global_attribute_count = len(linked_attrs)
+    global_attribute_count = len(linked_data)
     global_attributes = [
         GlobalAttributeRef(
             id=attr.id,
             slug=attr.slug,
             display_name=attr.display_name,
         )
-        for attr in linked_attrs
+        for attr, link in linked_data
     ]
 
-    # Derive configurability from linked global attributes
-    is_configurable = has_linked_attributes(item_type.id, db)
-    skip_config = not has_askable_attributes(item_type.id, db) if is_configurable else True
+    # Derive configurability from query results (no extra queries needed)
+    is_configurable = global_attribute_count > 0
+    has_askable = any(link.ask_in_conversation for attr, link in linked_data)
+    skip_config = not has_askable if is_configurable else True
 
     # Get category name if set
     category_name = None

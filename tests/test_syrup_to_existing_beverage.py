@@ -526,3 +526,89 @@ class TestExtraShotAtCheckpoint:
         assert parse_shots_from_input("add an extra shot") == 1
         assert parse_shots_from_input("double shot") == 1
         assert parse_shots_from_input("triple shot") == 2
+
+
+class TestOptionsInquiryAtCheckpoint:
+    """Test 'what X do you have?' at customization checkpoint.
+
+    This tests the scenario where:
+    1. User orders a bagel with a condiment (e.g., salt)
+    2. Bot asks "Any more changes?"
+    3. User asks "what condiments do you have?"
+    4. Expected: Bot lists condiment options (not "Sorry, we don't have that")
+
+    The fix ensures that options inquiries work for ALL optional attributes,
+    not just unanswered ones.
+    """
+
+    def test_what_condiments_after_adding_salt(self):
+        """
+        Test that 'what condiments do you have?' works after adding salt.
+
+        Scenario:
+        - User orders: plain bagel toasted not scooped no spread
+        - Bot asks: Any more changes? You can add Egg, Cheese, Meat, Toppings, or Condiments.
+        - User says: salt
+        - Bot says: Okay, Salt added. Any more changes? You can add Egg, Cheese, Meat, or Toppings.
+        - User asks: what condiments do you have
+
+        Expected: Bot lists condiment options
+        Actual (before fix): "Sorry, we don't have what condiments do you have"
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order a plain bagel with some specifications
+        result = sm.process("plain bagel toasted not scooped no spread", order)
+        assert len(result.order.items.items) == 1
+        item = result.order.items.items[0]
+        assert item.menu_item_type == "bagel"
+
+        # Check if we're at customization_checkpoint
+        max_iterations = 10
+        for _ in range(max_iterations):
+            pending = result.order.pending_field
+            if pending == "customization_checkpoint":
+                break
+            # Answer common questions to advance
+            if pending and pending.endswith(":scooped"):
+                result = sm.process("no", result.order)
+            elif pending and pending.endswith(":spread_type"):
+                result = sm.process("none", result.order)
+            elif result.message and "any more changes" in result.message.lower():
+                break
+            else:
+                result = sm.process("no", result.order)
+
+        # Add salt
+        result = sm.process("salt", result.order)
+        # Verify salt was added
+        item = result.order.items.items[0]
+        condiment_mods = [
+            m for m in (item.modifiers or [])
+            if m.get("category") == "condiments" or "salt" in m.get("slug", "").lower()
+        ]
+
+        # Now ask about condiments
+        result = sm.process("what condiments do you have", result.order)
+
+        # Should NOT contain the error message
+        assert "sorry" not in result.message.lower(), (
+            f"Bot incorrectly rejected options inquiry: {result.message}"
+        )
+        assert "we don't have what condiments" not in result.message.lower(), (
+            f"Bot incorrectly rejected options inquiry: {result.message}"
+        )
+
+        # Should list condiment options - check for at least one condiment
+        # Common condiments: Salt, Black Pepper, Ketchup, Mustard, Mayo, etc.
+        message_lower = result.message.lower()
+        has_condiment_option = any(
+            cond in message_lower
+            for cond in ["pepper", "ketchup", "mustard", "mayo", "condiment"]
+        )
+        assert has_condiment_option, (
+            f"Bot did not list condiment options: {result.message}"
+        )

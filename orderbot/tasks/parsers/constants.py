@@ -614,19 +614,3 @@ def find_item_by_unit_type(item_name: str, unit_type: str) -> tuple[str, str] | 
     return None
 
 
-def resolve_menu_item_alias(name: str) -> str | None:
-    """
-    Resolve a menu item name or alias to its canonical menu item name.
-
-    Args:
-        name: User input like "bec" or "tuna salad"
-
-    Returns:
-        Canonical menu item name if found, or None if no mapping found.
-    """
-    cache = _get_menu_cache()
-    if cache:
-        return cache.resolve_menu_item_alias(name)
-    return None
-
-

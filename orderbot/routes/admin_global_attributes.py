@@ -139,17 +139,17 @@ def _sync_option_aliases(
 
 
 def _serialize_attribute(attr: GlobalAttribute, db: Session) -> GlobalAttributeOut:
-    """Convert GlobalAttribute model to response schema with options."""
+    """Convert GlobalAttribute model to response schema with options.
+
+    Note: Requires attr.options and attr.item_type_links (with item_type)
+    to be eager-loaded to avoid N+1 queries.
+    """
     options_out = [_serialize_option(opt) for opt in attr.options]
 
-    # Get item types using this attribute
-    links = db.query(ItemTypeGlobalAttribute).filter(
-        ItemTypeGlobalAttribute.global_attribute_id == attr.id
-    ).all()
-
+    # Use eager-loaded relationship instead of separate queries
     linked_item_types = []
-    for link in links:
-        item_type = db.query(ItemType).filter(ItemType.id == link.item_type_id).first()
+    for link in attr.item_type_links:
+        item_type = link.item_type
         if item_type:
             linked_item_types.append(LinkedItemTypeInfo(
                 id=item_type.id,
@@ -172,23 +172,19 @@ def _serialize_attribute(attr: GlobalAttribute, db: Session) -> GlobalAttributeO
 
 
 def _serialize_attribute_list(attr: GlobalAttribute, db: Session) -> GlobalAttributeListOut:
-    """Convert GlobalAttribute model to list response schema (no options)."""
-    option_count = db.query(GlobalAttributeOption).filter(
-        GlobalAttributeOption.global_attribute_id == attr.id
-    ).count()
+    """Convert GlobalAttribute model to list response schema (no options).
 
-    item_type_count = db.query(ItemTypeGlobalAttribute).filter(
-        ItemTypeGlobalAttribute.global_attribute_id == attr.id
-    ).count()
-
+    Note: Requires attr.options and attr.item_type_links to be eager-loaded
+    to avoid N+1 queries.
+    """
     return GlobalAttributeListOut(
         id=attr.id,
         slug=attr.slug,
         display_name=attr.display_name,
         input_type=attr.input_type,
         description=attr.description,
-        option_count=option_count,
-        item_type_count=item_type_count,
+        option_count=len(attr.options),
+        item_type_count=len(attr.item_type_links),
         created_at=attr.created_at,
         updated_at=attr.updated_at,
     )
@@ -234,7 +230,11 @@ def list_global_attributes(
     input_type: Optional[str] = Query(None, description="Filter by input type"),
 ) -> List[GlobalAttributeListOut]:
     """List all global attributes."""
-    query = db.query(GlobalAttribute)
+    # Eager load relationships to get counts without N+1 queries
+    query = db.query(GlobalAttribute).options(
+        selectinload(GlobalAttribute.options),
+        selectinload(GlobalAttribute.item_type_links),
+    )
 
     if input_type:
         query = query.filter(GlobalAttribute.input_type == input_type)
@@ -250,7 +250,20 @@ def get_global_attribute(
     _admin: str = Depends(verify_admin_credentials),
 ) -> GlobalAttributeOut:
     """Get a specific global attribute by ID, including all options."""
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
+    # Eager load all relationships to avoid N+1 queries
+    attr = (
+        db.query(GlobalAttribute)
+        .options(
+            selectinload(GlobalAttribute.options)
+            .joinedload(GlobalAttributeOption.ingredient),
+            selectinload(GlobalAttribute.options)
+            .joinedload(GlobalAttributeOption.modifier_category),
+            selectinload(GlobalAttribute.item_type_links)
+            .joinedload(ItemTypeGlobalAttribute.item_type),
+        )
+        .filter(GlobalAttribute.id == attr_id)
+        .first()
+    )
     if not attr:
         raise HTTPException(status_code=404, detail="Global attribute not found")
     return _serialize_attribute(attr, db)

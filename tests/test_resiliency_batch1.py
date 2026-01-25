@@ -304,15 +304,14 @@ class TestReplacementModificationScenarios:
         )
         assert has_egg, f"Egg should be preserved. protein={extra_protein}, toppings={toppings}"
 
-    def test_bagel_toasted_should_ask_about_spread(self):
+    def test_bagel_toasted_should_ask_about_scooped(self):
         """
-        Test: User orders "onion bagel toasted" - should ask about spread.
+        Test: User orders "onion bagel toasted" - should ask about scooped.
 
         Scenario:
         - User says: "onion bagel toasted"
-        - Expected: System asks about spread (cream cheese or butter)
-        - This is a regression test for the bug where bagels with type+toasted
-          specified would skip the spread question.
+        - Expected: System asks about scooped (before asking about spread)
+        - Note: DB has scooped with display_order=3, spread with display_order=4
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -320,27 +319,22 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("onion bagel toasted", order)
 
-        # Should ask about spread, not say "Got it, ... Anything else?"
-        # Accept either specific options ("cream cheese", "butter") or generic "spread" question
+        # Should ask about scooped (comes before spread in DB display_order)
         msg_lower = result.message.lower()
-        is_spread_question = (
-            "cream cheese" in msg_lower or
-            "butter" in msg_lower or
-            "spread" in msg_lower
-        )
-        assert is_spread_question, \
-            f"Should ask about spread. Got: {result.message}"
+        is_scooped_question = "scoop" in msg_lower
+        assert is_scooped_question, \
+            f"Should ask about scooped. Got: {result.message}"
 
-        # Should be in CONFIGURING_ITEM phase with pending_field for spread
-        # Accept legacy "spread", data-driven "bagel:spread", and alternate formats
-        assert result.order.pending_field in ("spread", "menu_item_attr_spread", "bagel:spread_type", "bagel:spread"), \
-            f"Should be pending spread question. Got pending_field: {result.order.pending_field}"
+        # Should be in CONFIGURING_ITEM phase with pending_field for scooped
+        assert result.order.pending_field in ("scooped", "menu_item_attr_scooped", "bagel:scooped"), \
+            f"Should be pending scooped question. Got pending_field: {result.order.pending_field}"
 
-    def test_bagel_not_toasted_should_ask_about_spread(self):
+    def test_bagel_not_toasted_should_ask_about_scooped(self):
         """
-        Test: User orders "plain bagel not toasted" - should ask about spread.
+        Test: User orders "plain bagel not toasted" - should ask about scooped.
 
         Same as above but with toasted=False.
+        Note: DB has scooped with display_order=3, spread with display_order=4
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -348,21 +342,15 @@ class TestReplacementModificationScenarios:
         sm = OrderStateMachine()
         result = sm.process("plain bagel not toasted", order)
 
-        # Should ask about spread
-        # Accept either specific options ("cream cheese", "butter") or generic "spread" question
+        # Should ask about scooped (comes before spread in DB display_order)
         msg_lower = result.message.lower()
-        is_spread_question = (
-            "cream cheese" in msg_lower or
-            "butter" in msg_lower or
-            "spread" in msg_lower
-        )
-        assert is_spread_question, \
-            f"Should ask about spread. Got: {result.message}"
+        is_scooped_question = "scoop" in msg_lower
+        assert is_scooped_question, \
+            f"Should ask about scooped. Got: {result.message}"
 
-        # Should be in CONFIGURING_ITEM phase with pending_field for spread
-        # Accept legacy "spread", data-driven "bagel:spread", and alternate formats
-        assert result.order.pending_field in ("spread", "menu_item_attr_spread", "bagel:spread_type", "bagel:spread"), \
-            f"Should be pending spread question. Got pending_field: {result.order.pending_field}"
+        # Should be in CONFIGURING_ITEM phase with pending_field for scooped
+        assert result.order.pending_field in ("scooped", "menu_item_attr_scooped", "bagel:scooped"), \
+            f"Should be pending scooped question. Got pending_field: {result.order.pending_field}"
 
     def test_bagel_with_extras_skips_spread_question(self):
         """

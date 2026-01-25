@@ -76,7 +76,46 @@ class TestPydanticV2ModelValidate:
 
     def test_menu_item_out_model_validate(self, db_session):
         """MenuItemOut.model_validate should work with MenuItem ORM object."""
-        # Get or create a MenuItem in the database (avoid duplicates)
+        from orderbot.models import ItemType, Company, MenuItemSizeCategory, MenuItemSize, MenuItemSizePrice
+
+        # Get or create required fixtures
+        # 1. ItemType for category derivation
+        item_type = db_session.query(ItemType).filter(ItemType.slug == "test_sandwich_pydantic").first()
+        if not item_type:
+            item_type = ItemType(slug="test_sandwich_pydantic", display_name="Sandwich")
+            db_session.add(item_type)
+            db_session.flush()
+
+        # 2. Get or create Company for size category
+        company = db_session.query(Company).first()
+        if not company:
+            company = Company(name="Test Company", bot_persona_name="TestBot")
+            db_session.add(company)
+            db_session.flush()
+
+        # 3. Get or create size category and size for pricing
+        size_category = db_session.query(MenuItemSizeCategory).filter(
+            MenuItemSizeCategory.slug == "test_each"
+        ).first()
+        if not size_category:
+            size_category = MenuItemSizeCategory(
+                company_id=company.id, slug="test_each", name="Each"
+            )
+            db_session.add(size_category)
+            db_session.flush()
+
+        size = db_session.query(MenuItemSize).filter(
+            MenuItemSize.category_id == size_category.id,
+            MenuItemSize.name == "each"
+        ).first()
+        if not size:
+            size = MenuItemSize(
+                company_id=company.id, category_id=size_category.id, name="each"
+            )
+            db_session.add(size)
+            db_session.flush()
+
+        # 4. Get or create MenuItem with proper item_type
         menu_item = db_session.query(MenuItem).filter(
             MenuItem.name == "Test Sandwich Pydantic"
         ).first()
@@ -85,10 +124,33 @@ class TestPydanticV2ModelValidate:
                 name="Test Sandwich Pydantic",
                 is_signature=True,
                 available_qty=10,
+                item_type_id=item_type.id,
+                size_category_id=size_category.id,
             )
             db_session.add(menu_item)
-            db_session.commit()
-            db_session.refresh(menu_item)
+            db_session.flush()
+
+            # Add size price for base_price derivation
+            size_price = MenuItemSizePrice(
+                menu_item_id=menu_item.id,
+                size_id=size.id,
+                price=9.99,
+            )
+            db_session.add(size_price)
+        else:
+            # Ensure existing item has proper relationships
+            if not menu_item.item_type_id:
+                menu_item.item_type_id = item_type.id
+            if not menu_item.size_prices:
+                size_price = MenuItemSizePrice(
+                    menu_item_id=menu_item.id,
+                    size_id=size.id,
+                    price=9.99,
+                )
+                db_session.add(size_price)
+
+        db_session.commit()
+        db_session.refresh(menu_item)
 
         # model_validate should work without warnings
         with warnings.catch_warnings(record=True) as w:
@@ -109,8 +171,8 @@ class TestPydanticV2ModelValidate:
 
         assert result.id == menu_item.id
         assert result.name == "Test Sandwich Pydantic"
-        assert result.category == "sandwich"
-        assert result.base_price == 9.99
+        assert result.category == "Sandwich"  # Comes from ItemType.display_name
+        assert result.base_price == 9.99  # Comes from MenuItemSizePrice
 
     def test_order_item_out_model_validate(self, db_session):
         """OrderItemOut.model_validate should work with OrderItem ORM object."""

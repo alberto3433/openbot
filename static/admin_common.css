@@ -51,11 +51,20 @@
   padding: 4px 0;
 }
 
+/* Navigation Container - use flexbox for consistent spacing */
+.app-header > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.app-header > div:last-child > a {
+  margin-left: 0;
+}
+
 /* Navigation Dropdown Styles */
 .nav-group {
   display: inline-block;
   position: relative;
-  margin-left: 16px;
 }
 .nav-group-label {
   color: #bbdefb;

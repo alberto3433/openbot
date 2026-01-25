@@ -2306,10 +2306,12 @@ class MenuItemConfigHandler(BaseHandler):
             attr_slug = attr["slug"]
             options = attr.get("options", [])
             input_type = attr.get("input_type", "single_select")
-            quantity, _ = self._extract_quantity_from_input(user_input)
+            # Extract quantity and use remaining text for option matching
+            # e.g., "2 egg whites" → quantity=2, remaining="egg whites"
+            quantity, remaining_text = self._extract_quantity_from_input(user_input)
 
             if options:
-                user_clean = user_input.lower().strip()
+                user_clean = remaining_text.lower().strip()
                 if user_clean.startswith("add "):
                     user_clean = user_clean[4:].strip()
 

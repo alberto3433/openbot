@@ -264,6 +264,37 @@ def extract_attribute_values(
         after_ok = end >= len(text) or not text[end].isalnum()
         return before_ok and after_ok
 
+    def check_plural_boundary(text: str, start: int, end: int) -> tuple[bool, int]:
+        """Check if match is at word boundary, allowing for plural suffixes.
+
+        Returns (is_valid, actual_end) where actual_end includes any plural suffix.
+        Handles common English plural patterns: -s, -es.
+
+        Examples:
+            "bagel" in "bagels" -> (True, end+1)  # includes 's'
+            "box" in "boxes" -> (True, end+2)     # includes 'es'
+        """
+        before_ok = start == 0 or not text[start - 1].isalnum()
+        if not before_ok:
+            return (False, end)
+
+        # Check exact word boundary first
+        if end >= len(text) or not text[end].isalnum():
+            return (True, end)
+
+        # Check for plural suffix
+        remaining = text[end:]
+
+        # Check 's' suffix (bagels, drinks)
+        if remaining.startswith('s') and (len(remaining) == 1 or not remaining[1].isalnum()):
+            return (True, end + 1)
+
+        # Check 'es' suffix (boxes, dishes, tomatoes)
+        if remaining.startswith('es') and (len(remaining) == 2 or not remaining[2].isalnum()):
+            return (True, end + 2)
+
+        return (False, end)
+
     def extract_quantity_before(text: str, pos: int) -> int:
         """Extract quantity prefix before a match position."""
         before_text = text[:pos].strip()
@@ -362,14 +393,17 @@ def extract_attribute_values(
                     if pos == -1:
                         break
                     end = pos + len(pattern)
-                    if is_word_boundary(input_lower, pos, end) and check_must_match(opt, input_lower):
+                    # Use check_plural_boundary to match both singular and plural forms
+                    # e.g., "plain bagel" matches "plain bagels"
+                    is_valid, actual_end = check_plural_boundary(input_lower, pos, end)
+                    if is_valid and check_must_match(opt, input_lower):
                         candidates.append(CandidateMatch(
                             attr_slug=attr_slug,
                             option=opt,
                             pattern=pattern,
                             start=pos,
-                            end=end,
-                            length=len(pattern),
+                            end=actual_end,  # Include plural suffix in span
+                            length=actual_end - pos,  # Use actual matched length
                             is_multi_select=is_multi_select,
                         ))
                     start = pos + 1

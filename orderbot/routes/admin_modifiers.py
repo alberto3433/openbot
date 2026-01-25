@@ -34,6 +34,7 @@ import logging
 from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
@@ -256,11 +257,51 @@ def list_item_types_minimal(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
 ) -> List[ItemTypeListOut]:
-    """Lightweight list for sidebar - no counts, no derived fields."""
-    item_types = db.query(ItemType).order_by(ItemType.display_name).all()
+    """Lightweight list for sidebar with counts using efficient subqueries."""
+    # Subquery for menu item counts
+    menu_count_subq = (
+        db.query(
+            MenuItem.item_type_id,
+            func.count(MenuItem.id).label("menu_count")
+        )
+        .group_by(MenuItem.item_type_id)
+        .subquery()
+    )
+
+    # Subquery for global attribute counts
+    attr_count_subq = (
+        db.query(
+            ItemTypeGlobalAttribute.item_type_id,
+            func.count(ItemTypeGlobalAttribute.id).label("attr_count")
+        )
+        .group_by(ItemTypeGlobalAttribute.item_type_id)
+        .subquery()
+    )
+
+    # Main query with left outer joins to include types with zero counts
+    results = (
+        db.query(
+            ItemType.id,
+            ItemType.slug,
+            ItemType.display_name,
+            func.coalesce(menu_count_subq.c.menu_count, 0).label("menu_item_count"),
+            func.coalesce(attr_count_subq.c.attr_count, 0).label("global_attribute_count"),
+        )
+        .outerjoin(menu_count_subq, ItemType.id == menu_count_subq.c.item_type_id)
+        .outerjoin(attr_count_subq, ItemType.id == attr_count_subq.c.item_type_id)
+        .order_by(ItemType.display_name)
+        .all()
+    )
+
     return [
-        ItemTypeListOut(id=it.id, slug=it.slug, display_name=it.display_name)
-        for it in item_types
+        ItemTypeListOut(
+            id=r.id,
+            slug=r.slug,
+            display_name=r.display_name,
+            menu_item_count=r.menu_item_count,
+            global_attribute_count=r.global_attribute_count,
+        )
+        for r in results
     ]
 
 

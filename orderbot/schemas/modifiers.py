@@ -240,19 +240,23 @@ class ItemTypeListOut(BaseModel):
     """
     Lightweight response model for item type list (sidebar).
 
-    Returns only essential fields for fast loading. Full details
-    including counts are fetched on selection via ItemTypeOut.
+    Returns essential fields plus counts for fast loading using
+    efficient aggregated queries.
 
     Attributes:
         id: Database primary key
         slug: URL-safe identifier (e.g., "bagel")
         display_name: Human-readable name (e.g., "Bagel")
+        menu_item_count: Number of menu items using this type
+        global_attribute_count: Number of linked global attributes
     """
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     slug: str
     display_name: str
+    menu_item_count: int = 0
+    global_attribute_count: int = 0
 
 
 class ItemTypeOut(BaseModel):

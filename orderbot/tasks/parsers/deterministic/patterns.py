@@ -393,3 +393,13 @@ def _get_configurable_item_pattern() -> re.Pattern:
         re.IGNORECASE
     )
     return _CONFIGURABLE_ITEM_PATTERN_CACHE
+
+
+def warmup_patterns() -> None:
+    """
+    Pre-compile lazy patterns at startup.
+
+    This eliminates the first-request latency penalty for pattern compilation.
+    Call this during application startup after menu_cache is loaded.
+    """
+    _get_configurable_item_pattern()

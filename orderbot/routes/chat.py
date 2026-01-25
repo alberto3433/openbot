@@ -73,7 +73,12 @@ from ..order_logic import apply_intent_to_order_state
 from ..menu_index_builder import get_menu_version
 from ..menu_data_cache import menu_cache
 from ..services.session import get_or_create_session, save_session
-from ..services.helpers import lookup_customer_by_phone, get_or_create_company, get_primary_item_type_name
+from ..services.helpers import (
+    lookup_customer_by_phone,
+    get_or_create_company,
+    get_primary_item_type_name,
+    build_store_info,
+)
 from ..schemas.chat import (
     ChatStartResponse,
     ChatMessageRequest,
@@ -142,12 +147,11 @@ def chat_start(
 
     company = get_or_create_company(db)
 
-    # Get store name
-    if store_id:
-        store_record = db.query(Store).filter(Store.store_id == store_id).first()
-        store_name = store_record.name if store_record else company.name
-    else:
-        store_name = company.name
+    # Build full store_info and cache in session (for use by MessageProcessor later)
+    store_info = build_store_info(db, store_id, company_name=company.name)
+
+    # Get store name from the cached store_info
+    store_name = store_info.get("name") or company.name
 
     # Check for returning customer
     returning_customer = None
@@ -186,6 +190,7 @@ def chat_start(
         "caller_id": caller_id,
         "store_id": store_id,
         "returning_customer": returning_customer,
+        "store_info": store_info,  # Pre-loaded store info for faster message processing
     }
 
     save_session(db, session_id, session_data)

@@ -11,6 +11,9 @@ Key Functions:
 - lookup_customer_by_phone: Find returning customer by phone number
 - get_primary_item_type_name: Get name of primary configurable item type
 - serialize_menu_item: Convert MenuItem ORM object to response model
+- build_store_info: Build store info dict with caching
+- warmup_store_cache: Pre-warm store cache at startup
+- invalidate_store_cache: Invalidate cache after admin updates
 
 Usage:
 ------
@@ -46,9 +49,16 @@ Menu Item Serialization:
 ------------------------
 serialize_menu_item handles the conversion of MenuItem ORM objects to
 the API response format.
+
+Store Info Caching:
+-------------------
+build_store_info uses a TTL cache to avoid repeated database queries.
+Cache is populated at startup via warmup_store_cache() and invalidated
+when stores are updated via invalidate_store_cache().
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
@@ -71,6 +81,15 @@ from .item_type_helpers import has_linked_attributes
 
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Store Info Cache
+# =============================================================================
+
+_store_info_cache: Dict[str, Dict[str, Any]] = {}
+_store_info_cache_time: Dict[str, float] = {}
+_STORE_CACHE_TTL = 300  # 5 minutes
 
 
 def get_or_create_company(db: Session) -> Company:
@@ -114,6 +133,10 @@ def build_store_info(
     - Store location and contact info
     - All stores list for cross-store delivery lookup
 
+    Uses a TTL cache to avoid repeated database queries. Cache is populated
+    at startup via warmup_store_cache() and invalidated when stores are
+    updated via invalidate_store_cache().
+
     Args:
         db: Database session
         store_id: The store ID to look up (optional)
@@ -123,6 +146,14 @@ def build_store_info(
     Returns:
         Dict with store info including tax rates, delivery zones, and location
     """
+    cache_key = store_id or "__default__"
+
+    # Check cache first
+    cached = _store_info_cache.get(cache_key)
+    cache_time = _store_info_cache_time.get(cache_key, 0)
+    if cached and (time.time() - cache_time) < _STORE_CACHE_TTL:
+        return cached.copy()
+
     # Get company name if not provided
     if not company_name:
         company = db.query(Company).first()
@@ -176,7 +207,51 @@ def build_store_info(
         for s in all_stores
     ]
 
+    # Cache before returning
+    _store_info_cache[cache_key] = store_info
+    _store_info_cache_time[cache_key] = time.time()
+
     return store_info
+
+
+def invalidate_store_cache(store_id: Optional[str] = None) -> None:
+    """
+    Invalidate the store info cache.
+
+    Call this after admin store updates to ensure fresh data is loaded.
+
+    Args:
+        store_id: Specific store ID to invalidate, or None to clear all
+    """
+    if store_id:
+        _store_info_cache.pop(store_id, None)
+        _store_info_cache_time.pop(store_id, None)
+        # Also invalidate default since it contains all_stores list
+        _store_info_cache.pop("__default__", None)
+        _store_info_cache_time.pop("__default__", None)
+    else:
+        _store_info_cache.clear()
+        _store_info_cache_time.clear()
+    logger.debug("Store cache invalidated: %s", store_id or "all")
+
+
+def warmup_store_cache(db: Session) -> None:
+    """
+    Pre-warm the store info cache at startup.
+
+    Loads store info for all open stores plus the default (no store) case.
+    This eliminates cold-start latency for the first requests.
+
+    Args:
+        db: Database session
+    """
+    # Get all open stores
+    stores = db.query(Store).filter(Store.status == "open").all()
+    for store in stores:
+        build_store_info(db, store.store_id)
+    # Also cache the default (no store_id) case
+    build_store_info(db, None)
+    logger.info("Store cache warmed up: %d stores", len(stores) + 1)
 
 
 def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:

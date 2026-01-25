@@ -77,6 +77,7 @@ from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..models import Store
 from ..schemas.stores import StoreOut, StoreCreate, StoreUpdate
+from ..services.helpers import invalidate_store_cache
 
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,7 @@ def create_store(
     db.add(store)
     db.commit()
     db.refresh(store)
+    invalidate_store_cache(store_id)
     logger.info("Created store: %s (id=%s)", store.name, store.store_id)
     return StoreOut.model_validate(store)
 
@@ -189,6 +191,7 @@ def update_store(
 
     db.commit()
     db.refresh(store)
+    invalidate_store_cache(store_id)
     logger.info("Updated store: %s (id=%s)", store.name, store.store_id)
     return StoreOut.model_validate(store)
 
@@ -207,6 +210,7 @@ def delete_store(
     store.deleted_at = datetime.utcnow()
     store.status = "deleted"
     db.commit()
+    invalidate_store_cache(store_id)
     logger.info("Soft-deleted store: %s (id=%s)", store.name, store.store_id)
     return None
 
@@ -226,5 +230,6 @@ def restore_store(
     store.status = "open"
     db.commit()
     db.refresh(store)
+    invalidate_store_cache(store_id)
     logger.info("Restored store: %s (id=%s)", store.name, store.store_id)
     return StoreOut.model_validate(store)

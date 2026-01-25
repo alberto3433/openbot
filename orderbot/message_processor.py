@@ -122,7 +122,11 @@ class MessageProcessor:
 
         # 3. Get cached menu index and store context
         menu_index = menu_cache.get_menu_index(session_store_id)
-        store_info = self._build_store_info(session_store_id)
+
+        # Use cached store_info from session if available, otherwise query
+        store_info = session.get("store_info")
+        if not store_info:
+            store_info = self._build_store_info(session_store_id)
 
         # 4. Process through state machine
         reply, updated_order_state, actions = process_message_with_state_machine(

@@ -156,6 +156,16 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             menu_cache.load_from_db(db, fail_on_error=True)
+
+            # Warm up store info cache
+            from .services.helpers import warmup_store_cache
+            logger.info("Warming up store info cache...")
+            warmup_store_cache(db)
+
+            # Pre-compile parser patterns
+            from .tasks.parsers.deterministic.patterns import warmup_patterns
+            logger.info("Pre-compiling parser patterns...")
+            warmup_patterns()
         finally:
             db.close()
     except Exception as e:

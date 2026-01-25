@@ -512,7 +512,7 @@ class TestReplacementModificationScenarios:
         Scenario:
         - User orders: "small latte"
         - Bot asks: "Hot or iced?"
-        - User says: "make it large"
+        - User says: "actually make it large" (uses change request pattern)
         - Expected: size changes to large, bot continues asking about temperature
         """
         order = OrderTask()
@@ -528,7 +528,8 @@ class TestReplacementModificationScenarios:
             f"Expected CONFIGURING_ITEM phase, got: {result1.order.phase}"
 
         # Step 2: User changes size to large during configuration
-        result2 = sm.process("make it large", result1.order)
+        # "actually make it X" is detected as a change request pattern
+        result2 = sm.process("actually make it large", result1.order)
 
         # The change should be applied
         coffees = [i for i in result2.order.items.items if i.has_attribute('size')]

@@ -789,7 +789,21 @@ class ConfiguringItemHandler:
             except Exception as e:
                 logger.debug("Error checking attributes for 'can you make it': %s", e)
 
-        # 2. Search for similar menu item with the modifier
+        # 2. Check if it's an ingredient/modifier (spread, topping, syrup, etc.)
+        matches = menu_cache.find_matching_ingredients(modifier_lower)
+        if len(matches) == 1:
+            match = matches[0]
+            self._replace_or_add_modifier(item, match)
+            logger.info("CAN_YOU_MAKE_IT: Applied modifier %s (%s)", match['name'], match['category'])
+            return self._continue_config_with_message(
+                f"Sure, I've changed the {match['category']} to {match['name']}.", item, order
+            )
+        elif len(matches) > 1:
+            # Multiple matches - need disambiguation
+            logger.info("CAN_YOU_MAKE_IT: Multiple matches for '%s', starting disambiguation", modifier)
+            return self._start_modifier_disambiguation(modifier, matches, item, order)
+
+        # 3. Search for similar menu item with the modifier
         if self.item_adder_handler and self.item_adder_handler.menu_lookup:
             similar_item = self.item_adder_handler.menu_lookup.find_similar_item_with_modifier(
                 item.menu_item_name or "",
@@ -813,8 +827,8 @@ class ConfiguringItemHandler:
                     order=order,
                 )
 
-        # 3. Not found - report and re-ask
-        logger.info("CAN_YOU_MAKE_IT: No matching attribute or similar item found for '%s'", modifier)
+        # 4. Not found - report and re-ask
+        logger.info("CAN_YOU_MAKE_IT: No matching attribute, ingredient, or similar item found for '%s'", modifier)
         current_question = self.config_helper_handler.get_current_config_question(order, item)
         if current_question:
             return StateMachineResult(

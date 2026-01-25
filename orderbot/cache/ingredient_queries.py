@@ -509,13 +509,15 @@ class IngredientQueryMixin:
         Returns:
             List of matching ingredient dicts with name, slug, category, base_price.
             Empty list if no matches. Format matches what start_disambiguation() expects.
+            If there's an exact match, returns only that one (no disambiguation needed).
 
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
         term_lower = term.lower().strip()
-        matches = []
+        exact_matches = []
+        partial_matches = []
         seen_slugs = set()
 
         for category, details_list in self._ingredient_details_by_category.items():
@@ -526,16 +528,26 @@ class IngredientQueryMixin:
 
                 name = detail.get("name", "").lower()
                 aliases = [a.lower() for a in detail.get("aliases", [])]
-
-                # Check if term matches name or any alias (substring match)
                 all_terms = [name] + aliases
-                if any(term_lower in t or t in term_lower for t in all_terms):
-                    seen_slugs.add(slug)
-                    matches.append({
-                        "slug": slug,
-                        "name": detail.get("name"),  # Key expected by start_disambiguation()
-                        "category": category,
-                        "base_price": detail.get("price_modifier", 0.0),
-                    })
 
-        return matches
+                match_entry = {
+                    "slug": slug,
+                    "name": detail.get("name"),  # Key expected by start_disambiguation()
+                    "category": category,
+                    "base_price": detail.get("price_modifier", 0.0),
+                }
+
+                # Check for exact match first (term equals name or alias)
+                if term_lower in all_terms:
+                    seen_slugs.add(slug)
+                    exact_matches.append(match_entry)
+                # Check for partial/substring match
+                elif any(term_lower in t or t in term_lower for t in all_terms):
+                    seen_slugs.add(slug)
+                    partial_matches.append(match_entry)
+
+        # Prefer exact matches - if we have any, return only those
+        if exact_matches:
+            return exact_matches
+
+        return partial_matches

@@ -14,16 +14,21 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Pattern
 
+import inflect
+
 from ..exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)
 
+# Shared inflect engine instance (thread-safe for reading)
+_inflect_engine = inflect.engine()
+
 
 def singularize(word: str) -> str:
-    """Convert plural to singular form. Handles common English patterns.
+    """Convert plural to singular form using the inflect library.
 
-    This is a simple helper for data-driven category/item matching.
-    Does not handle irregular plurals - those should be defined as aliases in the database.
+    Uses the well-tested inflect library to handle English pluralization rules,
+    including irregular plurals and edge cases.
 
     Examples:
         >>> singularize("pastries")
@@ -38,41 +43,21 @@ def singularize(word: str) -> str:
         'glass'
         >>> singularize("tomatoes")
         'tomato'
-        >>> singularize("potatoes")
-        'potato'
+        >>> singularize("children")
+        'child'
     """
     word = word.lower().strip()
     if not word:
         return word
 
-    # Don't singularize words ending in 'ss' (glass, boss, etc.)
+    # Words ending in 'ss' are typically already singular (glass, boss, miss)
+    # inflect incorrectly tries to singularize these
     if word.endswith("ss"):
         return word
-    # -ies handling: distinguish between two patterns
-    # 1. Words ending in "-ie" that pluralize by adding "-s" (cookie/cookies, brownie/brownies)
-    # 2. Words ending in consonant + y that change to "-ies" (pastry/pastries, city/cities)
-    if word.endswith("ies") and len(word) > 3:
-        # Common "-ie" word suffixes (these just add -s for plural)
-        ie_suffixes = ("ookies", "ovies", "ownies", "uppies", "ippies", "ommies",
-                       "addies", "onnies", "innies", "unnies", "annies")
-        if any(word.endswith(suffix) for suffix in ie_suffixes):
-            return word[:-1]  # cookies -> cookie (just remove 's')
-        # Short words ending in common -ie patterns
-        if len(word) <= 5 and word.endswith(("pies", "ties", "lies", "dies")):
-            return word[:-1]  # pies -> pie, ties -> tie
-        # Otherwise use standard -ies -> -y (pastries -> pastry, cities -> city)
-        return word[:-3] + "y"
-    # -oes -> -o (tomatoes -> tomato, potatoes -> potato, heroes -> hero)
-    if word.endswith("oes"):
-        return word[:-2]
-    # -es after s, sh, ch, x, z -> remove -es (boxes -> box, dishes -> dish)
-    if word.endswith("es") and len(word) > 2:
-        if word[-3] in "shxz" or word[-4:-2] == "ch":
-            return word[:-2]
-    # -s -> remove s (drinks -> drink, bagels -> bagel)
-    if word.endswith("s"):
-        return word[:-1]
-    return word
+
+    # inflect.singular_noun returns False if the word is already singular
+    result = _inflect_engine.singular_noun(word)
+    return result if result else word
 
 
 class BaseCacheMixin:

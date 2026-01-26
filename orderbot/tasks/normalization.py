@@ -9,9 +9,13 @@ All handlers should use these functions for consistent value resolution.
 """
 from __future__ import annotations
 
+import logging
 import re
 
 from orderbot.menu_data_cache import menu_cache, singularize
+from orderbot.exceptions import MenuDataNotLoadedError
+
+logger = logging.getLogger(__name__)
 
 
 def _get_negation_patterns() -> frozenset[str]:
@@ -142,8 +146,8 @@ def _get_attribute_info(
             attr_info = attrs.get(attr_slug)
             if attr_info:
                 return attr_info
-        except Exception:
-            pass
+        except MenuDataNotLoadedError:
+            logger.debug("Menu cache not loaded when getting attribute info for %s", attr_slug)
 
     # Fall back to searching all item types
     try:
@@ -151,8 +155,8 @@ def _get_attribute_info(
             attrs = menu_cache.get_item_type_attributes(type_slug)
             if attr_slug in attrs:
                 return attrs[attr_slug]
-    except Exception:
-        pass
+    except MenuDataNotLoadedError:
+        logger.debug("Menu cache not loaded when searching for attribute %s", attr_slug)
 
     return None
 
@@ -192,3 +196,53 @@ def normalize_for_match(s: str) -> str:
         Normalized string with spaces removed and & converted to "and"
     """
     return s.replace("&", "and").replace(" ", "")
+
+
+def format_slug_for_display(
+    slug: str,
+    category: str | None = None,
+    *,
+    check_cache: bool = True,
+) -> str:
+    """
+    Convert a slug to a human-readable display name.
+
+    This is the canonical way to format slugs for display throughout the codebase.
+    It first attempts to look up the display name from the database cache, falling
+    back to converting the slug format (underscores to spaces, title case).
+
+    Args:
+        slug: The slug to format (e.g., "garlic_bagel", "vanilla_syrup")
+        category: Optional category for more specific cache lookup
+        check_cache: Whether to check the database cache for display names (default True).
+                     Set to False for pure string formatting without DB lookup.
+
+    Returns:
+        Human-readable display name (e.g., "Garlic Bagel", "Vanilla Syrup")
+
+    Examples:
+        >>> format_slug_for_display("garlic_bagel")
+        "Garlic Bagel"  # Or DB display_name if available
+        >>> format_slug_for_display("vanilla", category="syrup")
+        "Vanilla Syrup"  # From DB if available
+        >>> format_slug_for_display("custom_thing", check_cache=False)
+        "Custom Thing"  # Pure string conversion
+    """
+    if check_cache:
+        try:
+            # Try global attribute option lookup first (for attributes like bread, size)
+            if category:
+                display_name = menu_cache.get_global_option_display_name(category, slug)
+                if display_name:
+                    return display_name
+
+            # Try ingredient lookup
+            display_name = menu_cache.get_ingredient_display_name(slug)
+            if display_name:
+                return display_name
+        except Exception:
+            # Cache not loaded or lookup failed - fall through to string conversion
+            pass
+
+    # Fallback: convert slug to readable form
+    return slug.replace("_", " ").title()

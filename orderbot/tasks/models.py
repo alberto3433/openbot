@@ -10,11 +10,14 @@ The task hierarchy represents the order capture process:
   - PaymentTask
 """
 
+import logging
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 import uuid
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -30,10 +33,12 @@ def _is_name_forming_category(category: str) -> bool:
     "Garlic Bagel" instead of "Bagel, Garlic Bagel".
     """
     from orderbot.menu_data_cache import menu_cache
+    from orderbot.exceptions import MenuDataNotLoadedError
     try:
         return menu_cache.is_name_forming_category(category)
-    except Exception:
-        # Fallback if cache not loaded (shouldn't happen in production)
+    except MenuDataNotLoadedError:
+        # Cache not loaded - shouldn't happen in production
+        logger.warning("Menu cache not loaded when checking name-forming category: %s", category)
         return False
 
 def parse_pending_field(pending_field: str | None) -> tuple[str | None, str | None]:
@@ -346,6 +351,7 @@ class MenuItemTask(ItemTask):
 
         # Look up display name from database if not provided
         if not display_name:
+            from orderbot.exceptions import MenuDataNotLoadedError
             try:
                 from orderbot.menu_data_cache import menu_cache
                 # Try global attribute option lookup first (for bread, size, etc.)
@@ -353,8 +359,8 @@ class MenuItemTask(ItemTask):
                 if not display_name:
                     # Fall back to ingredient lookup
                     display_name = menu_cache.get_ingredient_display_name(slug)
-            except Exception:
-                pass
+            except MenuDataNotLoadedError:
+                logger.debug("Menu cache not loaded when looking up display name for %s/%s", category, slug)
 
         # Fall back to title-cased slug if lookup failed
         if not display_name:
@@ -595,13 +601,14 @@ class MenuItemTask(ItemTask):
                 # Fall back to looking up from cache
                 slug = sel.get("slug", "")
                 if slug:
+                    from orderbot.exceptions import MenuDataNotLoadedError
                     try:
                         from orderbot.menu_data_cache import menu_cache
                         ingredient_name = menu_cache.get_ingredient_display_name(slug)
                         if ingredient_name:
                             return ingredient_name
-                    except Exception:
-                        pass
+                    except MenuDataNotLoadedError:
+                        logger.debug("Menu cache not loaded when getting display name for slug: %s", slug)
         # Default to menu item name
         return self.menu_item_name
 

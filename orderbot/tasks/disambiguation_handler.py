@@ -19,6 +19,7 @@ from typing import Any
 
 from .models import OrderTask
 from .schemas import StateMachineResult, OrderPhase
+from .parsers.constants import _SELECTION_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +27,8 @@ logger = logging.getLogger(__name__)
 class DisambiguationHandler:
     """Handles disambiguation when multiple menu items match user input."""
 
-    # Number/ordinal patterns for selection - sorted by length descending
-    # so longer matches are checked first (e.g., "the second one" matches "the second" not "one")
-    NUMBER_PATTERNS = sorted([
-        ("the first", 0), ("number one", 0), ("number 1", 0), ("first", 0), ("one", 0), ("1", 0),
-        ("the second", 1), ("number two", 1), ("number 2", 1), ("second", 1), ("two", 1), ("2", 1),
-        ("the third", 2), ("number three", 2), ("number 3", 2), ("third", 2), ("three", 2), ("3", 2),
-        ("the fourth", 3), ("number four", 3), ("number 4", 3), ("fourth", 3), ("four", 3), ("4", 3),
-        ("the fifth", 4), ("number five", 4), ("number 5", 4), ("fifth", 4), ("five", 4), ("5", 4),
-        ("the sixth", 5), ("number six", 5), ("number 6", 5), ("sixth", 5), ("six", 5), ("6", 5),
-    ], key=lambda x: len(x[0]), reverse=True)
+    # Number/ordinal patterns for selection - imported from constants to avoid duplication
+    NUMBER_PATTERNS = _SELECTION_PATTERNS
 
     MAX_OPTIONS = 6
 

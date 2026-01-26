@@ -369,7 +369,8 @@ class ConfigHelperHandler:
         # Look up attribute from database
         try:
             attrs = menu_cache.get_item_type_attributes(item_type)
-        except Exception:
+        except MenuDataNotLoadedError:
+            logger.warning("Menu cache not loaded when getting question for %s:%s", item_type, attr_slug)
             return None
 
         attr = attrs.get(attr_slug)
@@ -558,9 +559,9 @@ class ConfigHelperHandler:
                     # Add any aliases
                     for alias in opt.get("aliases", []):
                         valid_answers.add(alias.lower())
-            except Exception:
-                # If options not found, fall back to empty set (won't filter anything)
-                pass
+            except MenuDataNotLoadedError:
+                # If cache not loaded, fall back to empty set (won't filter anything)
+                logger.debug("Menu cache not loaded when getting side choice options for %s", attr_slug)
 
         redirect = _check_redirect_to_pending_item(
             user_input, item, order, question_text,

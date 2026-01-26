@@ -15,7 +15,7 @@ from .models import (
     TaskStatus,
     OrderTask,
 )
-from .item_converters import get_converter, get_converter_for_item
+from .item_converters import _unified_converter
 from .pricing import PricingEngine
 from ..services.tax_utils import calculate_order_total
 
@@ -87,12 +87,8 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
             )
             continue
 
-        converter = get_converter(item_type)
-        if converter:
-            item_task = converter.from_dict(item)
-            order.items.add_item(item_task)
-        else:
-            logger.warning(f"Unknown item type in dict_to_order_task: {item_type}")
+        item_task = _unified_converter.from_dict(item)
+        order.items.add_item(item_task)
 
     # Restore conversation history if present
     task_state = order_dict.get("task_orchestrator_state", {})
@@ -168,12 +164,8 @@ def order_task_to_dict(
         if item.status == TaskStatus.SKIPPED:
             continue
 
-        converter = get_converter_for_item(item)
-        if converter:
-            item_dict = converter.to_dict(item, pricing)
-            items.append(item_dict)
-        else:
-            logger.warning(f"Unknown item type: {item.item_type}, type: {type(item)}")
+        item_dict = _unified_converter.to_dict(item, pricing)
+        items.append(item_dict)
 
     # Determine status
     if order.checkout.confirmed:

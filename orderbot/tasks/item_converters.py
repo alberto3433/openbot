@@ -17,9 +17,27 @@ from .models import (
     ItemTask,
     MenuItemTask,
 )
+from .normalization import format_slug_for_display
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Constants for canonical slug values
+# =============================================================================
+# These are used for declined/negative selections and boolean attributes
+
+DECLINED_SLUG = "_declined"
+"""Marker for explicitly declined optional attributes."""
+
+YES_SLUG = "yes"
+"""Canonical slug for boolean True values."""
+
+NO_SLUG = "no"
+"""Canonical slug for boolean False values."""
+
+# Price metadata suffixes used to store upcharges alongside attribute values
+PRICE_SUFFIXES = ("_price", "_upcharge")
 
 
 class UnifiedItemConverter:
@@ -199,7 +217,7 @@ class UnifiedItemConverter:
                 elif attr_slug in item_config and item_config[attr_slug] is not None:
                     attribute_values[attr_slug] = item_config[attr_slug]
             # Also check for {attr_slug}_price and {attr_slug}_upcharge companion fields
-            for suffix in ("_price", "_upcharge"):
+            for suffix in PRICE_SUFFIXES:
                 price_key = f"{attr_slug}{suffix}"
                 if price_key not in attribute_values:
                     if price_key in item_dict and item_dict[price_key] is not None:
@@ -221,7 +239,7 @@ class UnifiedItemConverter:
                 if key in attribute_values or key in structural_keys:
                     continue
                 # Skip metadata suffix keys (handled with their parent)
-                if key.endswith(("_price", "_upcharge")):
+                if key.endswith(PRICE_SUFFIXES):
                     continue
                 if value is not None:
                     attribute_values[key] = value
@@ -253,21 +271,22 @@ class UnifiedItemConverter:
                     "category": category,
                     "quantity": mod.get("quantity", 1),
                     "price": mod.get("price", 0),
-                    "display_name": mod.get("display_name", slug.replace("_", " ").title()),
+                    "display_name": mod.get("display_name") or format_slug_for_display(slug, category),
                 })
 
         # Add from attribute_values only if NOT already in stored_modifiers
         for category, value in attribute_values.items():
             # Skip price/upcharge companion keys
-            if category.endswith(("_price", "_upcharge")):
+            if category.endswith(PRICE_SUFFIXES):
                 continue
             if value is None:
                 continue
 
             if isinstance(value, bool):
-                # Boolean attributes: store as "yes"/"no" slug
-                slug = "yes" if value else "no"
-                display_name = category.replace("_", " ").title() if value else f"Not {category.replace('_', ' ').title()}"
+                # Boolean attributes: store as canonical yes/no slug
+                slug = YES_SLUG if value else NO_SLUG
+                cat_display = format_slug_for_display(category, check_cache=False)
+                display_name = cat_display if value else f"Not {cat_display}"
                 if (slug, category) not in stored_keys:
                     selections.append({
                         "slug": slug,
@@ -369,12 +388,10 @@ class UnifiedItemConverter:
             mod_slug = mod.get("slug", "")
 
             # Skip declined/negative selections - only show positive selections
-            if mod_slug == "_declined":
-                continue
-            if mod_slug == "no":
+            if mod_slug in (DECLINED_SLUG, NO_SLUG):
                 continue
 
-            mod_display = mod.get("display_name") or mod_slug.replace("_", " ").title()
+            mod_display = mod.get("display_name") or format_slug_for_display(mod_slug, mod_category)
             mod_price = mod.get("price", 0) or 0.0
             mod_quantity = mod.get("quantity", 1) or 1
 
@@ -450,19 +467,7 @@ class UnifiedItemConverter:
 
 
 # -----------------------------------------------------------------------------
-# Converter Registry
-# -----------------------------------------------------------------------------
 # Module-level converter instance (singleton - all item types use unified converter)
 # -----------------------------------------------------------------------------
 
 _unified_converter = UnifiedItemConverter()
-
-
-def get_converter(item_type: str) -> UnifiedItemConverter:
-    """Get the unified converter (same for all item types)."""
-    return _unified_converter
-
-
-def get_converter_for_item(item: ItemTask) -> UnifiedItemConverter:
-    """Get the unified converter for any ItemTask."""
-    return _unified_converter

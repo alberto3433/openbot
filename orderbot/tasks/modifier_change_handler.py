@@ -23,6 +23,7 @@ from .normalization import (
 )
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
 from orderbot.menu_data_cache import menu_cache
+from orderbot.exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)
 
@@ -98,18 +99,19 @@ class ModifierChangeHandler:
                                 self._target_attr_map[display_name] = attr_slug
                             # Also map slug itself (replace underscores with spaces)
                             self._target_attr_map[attr_slug.replace("_", " ")] = attr_slug
-                    except Exception:
+                    except MenuDataNotLoadedError:
+                        logger.debug("Menu cache not loaded when getting attributes for %s", item_type_slug)
                         continue
-            except Exception:
-                pass
+            except MenuDataNotLoadedError:
+                logger.warning("Menu cache not loaded when building target attribute map")
 
             # Add global attribute aliases from the database
             # (e.g., "cream cheese" -> "spread")
             try:
                 db_aliases = menu_cache.get_all_global_attribute_aliases()
                 self._target_attr_map.update(db_aliases)
-            except Exception:
-                pass
+            except MenuDataNotLoadedError:
+                logger.debug("Menu cache not loaded when getting global attribute aliases")
 
         return self._target_attr_map
 

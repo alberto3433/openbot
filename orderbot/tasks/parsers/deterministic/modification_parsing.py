@@ -476,6 +476,22 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
         # The item should appear as complete words in the text
         pattern = rf'\b{re.escape(item)}\b'
         if re.search(pattern, text_lower):
+            # Check if user input is longer than matched item - if so, there might be
+            # more specific items that match the full user phrase
+            # Example: "orange juice" should NOT match the generic "Juice" item
+            # if there are items like "Fresh Squeezed Orange Juice" that match better
+            if len(text_lower) > len(item) + 3:  # Allow for minor variations
+                # Check if the full user input word-matches any menu items
+                more_specific_matches = menu_cache.find_items_by_word_match(text_lower)
+                if more_specific_matches:
+                    # Found more specific matches - skip this generic match
+                    # and let the disambiguation flow handle it
+                    logger.debug(
+                        "Skipping generic match '%s' for '%s' - found %d more specific matches",
+                        item, text_lower, len(more_specific_matches)
+                    )
+                    continue
+
             # Use database lookup to get canonical name
             canonical = menu_cache.resolve_menu_item_alias(item)
             if canonical is None:

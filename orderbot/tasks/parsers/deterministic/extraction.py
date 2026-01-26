@@ -324,7 +324,12 @@ def extract_attribute_values(
         """Check if must_match patterns are present in text.
 
         Handles both string and list formats for must_match.
-        If must_match is set, ALL patterns must be present.
+        If must_match is set, at least ONE pattern must be present (OR logic).
+
+        The must_match list contains alternative disambiguation patterns.
+        For example, vegetable_cream_cheese has must_match=['veggie cream', 'vegetable cream']
+        meaning the input must contain at least one of these to disambiguate from
+        other cream cheese options.
         """
         must_match_raw = option.get("must_match")
         if not must_match_raw:
@@ -339,7 +344,7 @@ def extract_attribute_values(
         if not must_match_list:
             return True
 
-        return all(pattern in text for pattern in must_match_list)
+        return any(pattern in text for pattern in must_match_list)
 
     # Phase 1: Handle boolean attributes first (they don't overlap with option matches)
     for attr_slug, attr_config in attributes.items():
@@ -630,10 +635,13 @@ def _extract_modifiers_generic(
     text: str,
     item_type: str
 ) -> list[str]:
-    """Extract all modifiers for an item type from text.
+    """Extract modifiers for an item type from text.
 
-    Uses the modifier category for the item type (food or beverage)
-    to determine which modifier groups to search.
+    Uses the modifier category for the item type to determine which
+    modifier groups to search. All logic is data-driven from the database.
+
+    Skips categories that are handled via item type attributes (e.g., milk,
+    sweetener for beverages) since those are extracted by extract_attribute_values.
 
     Args:
         text: User input text (lowercase)
@@ -645,22 +653,37 @@ def _extract_modifiers_generic(
     text_lower = text.lower()
     found_modifiers = []
 
-    # Get modifier category for this item type (food or beverage)
+    # Get modifier category for this item type (data-driven from database)
     modifier_type = menu_cache.get_modifier_category(item_type)
 
-    if modifier_type == "food":
-        # Food modifiers: extracted in database-defined order (proteins, cheeses, toppings, spreads)
-        for category in menu_cache.get_ordered_ingredient_categories("food"):
-            # Get ingredients for this category
-            ingredients = menu_cache.get_ingredients(category)
-            for ingredient in ingredients:
-                if ingredient.lower() in text_lower:
-                    found_modifiers.append(ingredient.lower())
+    if not modifier_type:
+        return found_modifiers
 
-    elif modifier_type == "beverage":
-        # Beverage modifiers are handled differently (syrups, sweeteners, milk)
-        # These have quantities so they're extracted separately
-        pass
+    # Build set of all attribute option slugs for this item type (normalized to match ingredients)
+    # This lets us detect when an ingredient category overlaps with attribute options
+    attr_option_slugs: set[str] = set()
+    for attr_config in menu_cache.get_item_type_attributes(item_type).values():
+        for opt in attr_config.get("options", []):
+            slug = opt.get("slug", "")
+            # Normalize: "oat_milk" -> "oat milk"
+            attr_option_slugs.add(slug.replace("_", " ").lower())
+
+    # Extract modifiers from categories that aren't handled as attributes
+    for category in menu_cache.get_ordered_ingredient_categories(modifier_type):
+        ingredients = menu_cache.get_ingredients(category)
+
+        # Check if this category's ingredients overlap with attribute options
+        # If so, skip - those are handled via extract_attribute_values
+        category_overlaps_attrs = any(
+            ing.lower() in attr_option_slugs or ing.lower().replace(" ", "_") in attr_option_slugs
+            for ing in ingredients
+        )
+        if category_overlaps_attrs:
+            continue
+
+        for ingredient in ingredients:
+            if ingredient.lower() in text_lower:
+                found_modifiers.append(ingredient.lower())
 
     return found_modifiers
 

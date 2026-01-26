@@ -1877,7 +1877,7 @@ class TestSplitQuantityBagelParsing:
         print(f"DEBUG: Bagel 1 spread = {bagels[1].attribute_values.get('spread')}")
 
         assert bagels[0].attribute_values.get("spread") == "scallion_cream_cheese"
-        assert bagels[1].attribute_values.get("spread") == "veggie_cream_cheese"
+        assert bagels[1].attribute_values.get("spread") == "vegetable_cream_cheese"
 
 
 class TestSplitQuantityDrinksParsing:

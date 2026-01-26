@@ -493,6 +493,18 @@ class ConfigHelperHandler:
         if change_request.possible_attributes:
             attr_slug = change_request.possible_attributes[0]
 
+            # If "unknown" modifier, check if it's actually a menu item replacement
+            if attr_slug == "unknown":
+                from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
+                parsed = parse_open_input_deterministic(change_request.new_value)
+                if parsed and parsed.parsed_items:
+                    # This is a menu item, not a modifier - defer to normal parsing
+                    logger.info(
+                        "CHANGE REQUEST: '%s' is a menu item, deferring to item replacement flow",
+                        change_request.new_value
+                    )
+                    return None
+
             # Find target item
             active_items = order.items.get_active_items()
             if not active_items:

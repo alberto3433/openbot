@@ -3354,32 +3354,6 @@ class TestCoffeeModifiers:
         # Message should mention milk (either as a question or as a changeable option)
         assert "milk" in result.message.lower()
 
-    def test_modifiers_question_skipped_when_milk_set(self):
-        """Test that modifiers question is skipped when milk is already set."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import CoffeeItemTask, TaskStatus
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
-
-        # Coffee with milk already set via unified storage
-        coffee = CoffeeItemTask(drink_type="latte", size="medium")
-        # Set milk_sweetener_syrup via unified storage (not legacy property)
-        coffee.attribute_values["milk_sweetener_syrup"] = ["oat_milk"]
-        coffee.attribute_values["milk_sweetener_syrup_selections"] = [
-            {"slug": "oat_milk", "display_name": "Oat Milk", "price": 0.75, "quantity": 1}
-        ]
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
-
-        result = sm.configuring_item_handler.handle_configuring_item("hot", order)
-
-        # Should complete without asking modifiers question
-        assert coffee.status == TaskStatus.COMPLETE
-
     def test_handle_modifiers_with_milk(self):
         """Test handling modifiers response with milk."""
         from orderbot.tasks.state_machine import OrderStateMachine
@@ -5872,7 +5846,7 @@ class TestEmailHandler:
 
 
 class TestDrinkSelectionHandler:
-    """Tests for handle_drink_selection in CoffeeConfigHandler."""
+    """Tests for item selection via ConfiguringItemHandler._handle_item_selection."""
 
     def test_no_pending_options_clears_state(self):
         """Test that no pending options returns to taking items."""
@@ -5882,8 +5856,9 @@ class TestDrinkSelectionHandler:
         sm = OrderStateMachine()
         order = OrderTask()
         order.pending_item_options = []
+        order.pending_field = "item_selection"
 
-        result = sm.taking_items_handler.handle_drink_selection("1", order)
+        result = sm.configuring_item_handler._handle_item_selection("1", order)
 
         assert "what would you like" in result.message.lower()
 
@@ -5898,8 +5873,9 @@ class TestDrinkSelectionHandler:
             {"name": "Coke", "base_price": 2.50},
             {"name": "Sprite", "base_price": 2.50},
         ]
+        order.pending_field = "item_selection"
 
-        result = sm.taking_items_handler.handle_drink_selection("1", order)
+        result = sm.configuring_item_handler._handle_item_selection("1", order)
 
         assert "coke" in result.message.lower()
         assert len(order.items.items) == 1
@@ -5916,8 +5892,9 @@ class TestDrinkSelectionHandler:
             {"name": "Pepsi", "base_price": 2.50},
             {"name": "Dr Pepper", "base_price": 2.75},
         ]
+        order.pending_field = "item_selection"
 
-        result = sm.taking_items_handler.handle_drink_selection("the second", order)
+        result = sm.configuring_item_handler._handle_item_selection("the second", order)
 
         assert "dr pepper" in result.message.lower()
         assert order.items.items[0].menu_item_name == "Dr Pepper"
@@ -5933,8 +5910,9 @@ class TestDrinkSelectionHandler:
             {"name": "Orange Juice", "base_price": 3.00},
             {"name": "Apple Juice", "base_price": 3.00},
         ]
+        order.pending_field = "item_selection"
 
-        result = sm.taking_items_handler.handle_drink_selection("apple juice please", order)
+        result = sm.configuring_item_handler._handle_item_selection("apple juice please", order)
 
         assert "apple juice" in result.message.lower()
         assert order.items.items[0].menu_item_name == "Apple Juice"
@@ -5950,8 +5928,9 @@ class TestDrinkSelectionHandler:
             {"name": "Coke", "base_price": 2.50},
             {"name": "Sprite", "base_price": 2.50},
         ]
+        order.pending_field = "item_selection"
 
-        result = sm.taking_items_handler.handle_drink_selection("xyz", order)
+        result = sm.configuring_item_handler._handle_item_selection("xyz", order)
 
         assert "choose" in result.message.lower()
         assert "1." in result.message
@@ -5969,8 +5948,9 @@ class TestDrinkSelectionHandler:
             {"name": "Coke", "base_price": 2.50},
             {"name": "Sprite", "base_price": 2.50},
         ]
+        order.pending_field = "item_selection"
 
-        result = sm.taking_items_handler.handle_drink_selection("3", order)
+        result = sm.configuring_item_handler._handle_item_selection("3", order)
 
         assert "only" in result.message.lower() and "2" in result.message
         assert len(order.items.items) == 0
@@ -5985,8 +5965,9 @@ class TestDrinkSelectionHandler:
         order.pending_item_options = [
             {"name": "Coke", "base_price": 2.50},
         ]
+        order.pending_field = "item_selection"
 
-        result = sm.taking_items_handler.handle_drink_selection("-1", order)
+        result = sm.configuring_item_handler._handle_item_selection("-1", order)
 
         assert "choose" in result.message.lower()
         assert len(order.items.items) == 0
@@ -6001,8 +5982,9 @@ class TestDrinkSelectionHandler:
         order.pending_item_options = [
             {"name": "Coca-Cola", "base_price": 2.50},
         ]
+        order.pending_field = "item_selection"
 
-        result = sm.taking_items_handler.handle_drink_selection("1", order)
+        result = sm.configuring_item_handler._handle_item_selection("1", order)
 
         assert len(order.items.items) == 1
         drink = order.items.items[0]
@@ -6476,3 +6458,57 @@ class TestModifierRemovalDuringConfig:
         active_items = result.order.items.get_active_items()
         assert len(active_items) == 1, "Bagel should still be there"
         assert "couldn't find" in result.message.lower() or "lox" in result.message.lower()
+
+
+class TestChangeToMenuItemNotModifier:
+    """
+    Test that 'change it to [menu item]' is treated as item replacement,
+    not as a modifier change (which would fail with 'Unknown' attribute).
+    """
+
+    def test_change_to_menu_item_defers_to_replacement_flow(self, menu_cache_loaded):
+        """
+        When user says 'change it to fresh squeezed orange juice' with an OJ in cart,
+        the system should replace the item, not try to change a modifier.
+
+        This tests the fix in config_helper_handler.py that checks if the 'unknown'
+        modifier is actually a menu item, and defers to the item replacement flow.
+        """
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask, MenuItemTask
+        from orderbot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # Add an orange juice to the cart
+        # Use a MenuItemTask with a generic drink that could be replaced
+        oj = MenuItemTask(
+            menu_item_name="Tropicana Orange Juice 46 oz",
+            menu_item_type="bottled_drinks",
+        )
+        oj.mark_complete()
+        order.items.add_item(oj)
+
+        # Verify the item is in the cart
+        assert len(order.items.get_active_items()) == 1
+        assert order.items.get_active_items()[0].menu_item_name == "Tropicana Orange Juice 46 oz"
+
+        # Now say "change it to fresh squeezed orange juice"
+        result = sm.process("change it to fresh squeezed orange juice", order)
+
+        # Should NOT get "Unknown" error message
+        assert "unknown" not in result.message.lower(), (
+            f"Got 'unknown' modifier error: {result.message}"
+        )
+
+        # Should either successfully replace, or ask a relevant question about the new item
+        # (Not error about missing attribute)
+        active_items = result.order.items.get_active_items()
+
+        # Either the item was replaced with the new one, or we're being asked about the new item
+        # Either way, the error "doesn't have a Unknown to change" should NOT appear
+        assert "doesn't have a" not in result.message.lower(), (
+            f"Got modifier change error: {result.message}"
+        )

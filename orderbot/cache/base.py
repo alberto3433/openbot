@@ -48,8 +48,19 @@ def singularize(word: str) -> str:
     # Don't singularize words ending in 'ss' (glass, boss, etc.)
     if word.endswith("ss"):
         return word
-    # -ies -> -y (pastries -> pastry, cookies -> cookie)
-    if word.endswith("ies"):
+    # -ies handling: distinguish between two patterns
+    # 1. Words ending in "-ie" that pluralize by adding "-s" (cookie/cookies, brownie/brownies)
+    # 2. Words ending in consonant + y that change to "-ies" (pastry/pastries, city/cities)
+    if word.endswith("ies") and len(word) > 3:
+        # Common "-ie" word suffixes (these just add -s for plural)
+        ie_suffixes = ("ookies", "ovies", "ownies", "uppies", "ippies", "ommies",
+                       "addies", "onnies", "innies", "unnies", "annies")
+        if any(word.endswith(suffix) for suffix in ie_suffixes):
+            return word[:-1]  # cookies -> cookie (just remove 's')
+        # Short words ending in common -ie patterns
+        if len(word) <= 5 and word.endswith(("pies", "ties", "lies", "dies")):
+            return word[:-1]  # pies -> pie, ties -> tie
+        # Otherwise use standard -ies -> -y (pastries -> pastry, cities -> city)
         return word[:-3] + "y"
     # -oes -> -o (tomatoes -> tomato, potatoes -> potato, heroes -> hero)
     if word.endswith("oes"):

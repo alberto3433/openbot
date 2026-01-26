@@ -396,8 +396,10 @@ class MenuQueryMixin:
     def find_menu_item_matches(self, query: str) -> list[str]:
         """Find menu items that match a partial query.
 
+        Handles plural forms by also trying the singularized version of words.
+
         Args:
-            query: User input like "classic" or "blt"
+            query: User input like "classic", "blt", or "cookies"
 
         Returns:
             List of matching menu item names.
@@ -407,18 +409,34 @@ class MenuQueryMixin:
         if not query_lower:
             return []
 
+        # Try exact match first
         if query_lower in self._known_menu_items:
             return [query_lower]
 
+        # Also try singularized form for exact match
+        query_singular = singularize(query_lower)
+        if query_singular != query_lower and query_singular in self._known_menu_items:
+            return [query_singular]
+
         matches = set()
         for word in query_lower.split():
+            # Try original word
             if word in self._menu_item_keyword_index:
                 matches.update(self._menu_item_keyword_index[word])
+            # Also try singularized form (e.g., "cookies" -> "cookie")
+            word_singular = singularize(word)
+            if word_singular != word and word_singular in self._menu_item_keyword_index:
+                matches.update(self._menu_item_keyword_index[word_singular])
 
         if not matches and len(query_lower) >= 3:
             for item in self._known_menu_items:
                 if query_lower in item:
                     matches.add(item)
+            # Also try singularized form for substring matching
+            if not matches and query_singular != query_lower:
+                for item in self._known_menu_items:
+                    if query_singular in item:
+                        matches.add(item)
 
         return sorted(matches)
 

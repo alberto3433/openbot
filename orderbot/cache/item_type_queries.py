@@ -132,21 +132,6 @@ class ItemTypeQueryMixin:
         self._ensure_loaded()
         return self._global_attribute_options.get(attr_slug, []).copy()
 
-    def get_global_attribute_slug_by_alias(self, alias: str) -> str | None:
-        """Get attribute slug by alias.
-
-        Args:
-            alias: The alias (e.g., "cream cheese")
-
-        Returns:
-            The attribute slug, or None if not found.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._global_attribute_aliases.get(alias.lower())
-
     def get_all_global_attribute_aliases(self) -> dict[str, str]:
         """Get all global attribute aliases.
 
@@ -211,22 +196,6 @@ class ItemTypeQueryMixin:
                 return opt.get("display_name")
         return None
 
-    def is_boolean_attribute(self, attr_slug: str) -> bool:
-        """Check if an attribute is a boolean type.
-
-        Args:
-            attr_slug: The attribute slug
-
-        Returns:
-            True if the attribute is boolean type.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        metadata = self._global_attribute_metadata.get(attr_slug, {})
-        return metadata.get("input_type") == "boolean"
-
     def is_multi_select_attribute(self, attr_slug: str) -> bool:
         """Check if an attribute is a multi-select type.
 
@@ -242,21 +211,6 @@ class ItemTypeQueryMixin:
         self._ensure_loaded()
         metadata = self._global_attribute_metadata.get(attr_slug, {})
         return metadata.get("input_type") == "multi_select"
-
-    def get_attributes_for_modifier_category(self, modifier_category: str) -> set[str]:
-        """Get attribute slugs that contain options with a given modifier category.
-
-        Args:
-            modifier_category: The modifier category slug
-
-        Returns:
-            Set of attribute slugs.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._modifier_category_to_attrs.get(modifier_category, set()).copy()
 
     def attribute_contains_modifier_category(self, attr_slug: str, modifier_category: str) -> bool:
         """Check if an attribute contains options with a given modifier category.
@@ -292,23 +246,6 @@ class ItemTypeQueryMixin:
         """
         self._ensure_loaded()
         return self._item_type_attributes.get(item_type_slug, {})
-
-    def item_type_has_attribute(self, item_type_slug: str, attribute_slug: str) -> bool:
-        """Check if an item type has a specific attribute.
-
-        Args:
-            item_type_slug: The item type slug
-            attribute_slug: The attribute slug to check
-
-        Returns:
-            True if the item type has the attribute.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        attrs = self.get_item_type_attributes(item_type_slug)
-        return attribute_slug in attrs
 
     def has_conversation_attributes(self, item_type_slug: str) -> bool:
         """Check if an item type has any ask_in_conversation attributes.
@@ -483,11 +420,6 @@ class ItemTypeQueryMixin:
 
         return result
 
-    def clear_item_type_attributes_cache(self) -> None:
-        """Clear the item type attributes cache for reload."""
-        self._item_type_attributes = {}
-        self._field_to_slug_map = {}
-
     def get_field_to_slug_map(self, item_type_slug: str) -> dict[str, str]:
         """Get the field name to attribute slug mapping for an item type.
 
@@ -638,27 +570,6 @@ class ItemTypeQueryMixin:
                     return opt
 
         return None
-
-    def item_type_needs_configuration(self, item_type_slug: str) -> bool:
-        """Check if an item type has attributes that need to be asked in conversation.
-
-        Args:
-            item_type_slug: The item type slug (e.g., "sized_beverage", "beverage", "bagel")
-
-        Returns:
-            True if the item type has configurable attributes, False otherwise.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        attrs = self._item_type_attributes.get(item_type_slug, [])
-
-        for attr in attrs:
-            if attr.get("ask", False):
-                return True
-
-        return False
 
     def resolve_item_type_slug(self, name_or_alias: str) -> str:
         """Resolve an item type name or alias to its canonical database slug.

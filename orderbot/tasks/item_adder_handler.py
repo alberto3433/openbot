@@ -637,37 +637,6 @@ class ItemAdderHandler(MenuDataMixin):
         logger.info("Added %d side item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
         return (canonical_name, None)
 
-    def add_side_item_with_response(
-        self,
-        side_item_name: str,
-        quantity: int,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Add a side item to the order and return an appropriate response.
-
-        Used when a side item is ordered on its own (e.g., "I'll have a side of bacon").
-        """
-        canonical_name, error_message = self.add_side_item(side_item_name, quantity, order)
-
-        # If item wasn't found, return the error message
-        if error_message:
-            return StateMachineResult(
-                message=error_message,
-                order=order,
-            )
-
-        # Pluralize if quantity > 1
-        if quantity > 1:
-            item_display = f"{quantity} {canonical_name}s"
-        else:
-            item_display = canonical_name
-
-        order.set_phase(OrderPhase.TAKING_ITEMS)
-        return StateMachineResult(
-            message=f"I've added {item_display} to your order. Anything else?",
-            order=order,
-        )
-
     # =========================================================================
     # Generic Item Creation (Data-Driven)
     # =========================================================================

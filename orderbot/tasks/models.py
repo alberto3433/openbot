@@ -456,29 +456,6 @@ class MenuItemTask(ItemTask):
             i += 1
         return removed_any
 
-    def update_selection_quantity(self, category: str, slug: str, quantity: int) -> bool:
-        """Update quantity for an existing selection.
-
-        Args:
-            category: The category to find
-            slug: The slug to find
-            quantity: New quantity
-
-        Returns:
-            True if found and updated, False otherwise
-        """
-        for sel in self.modifiers:
-            if sel.get("category") == category and sel.get("slug") == slug:
-                old_quantity = sel.get("quantity", 1)
-                price = sel.get("price", 0)
-                # Update unit_price
-                if price > 0:
-                    self.unit_price -= price * old_quantity
-                    self.unit_price += price * quantity
-                sel["quantity"] = quantity
-                return True
-        return False
-
     # -------------------------------------------------------------------------
     # Dict-style access API (primary interface)
     # -------------------------------------------------------------------------
@@ -709,26 +686,6 @@ class MenuItemTask(ItemTask):
 
         return summary
 
-    def get_missing_customizations(self) -> list[str]:
-        """Get list of missing required customizations.
-
-        Uses data-driven approach: check for {side_choice}_choice field dynamically.
-        """
-        missing = []
-        if self.get_selection_value("requires_side_choice") == "yes" and not self.has_selection("side_choice"):
-            missing.append("side_choice")
-        # Check if side_choice type needs a specific choice (e.g., bagel_choice for bagel)
-        side_choice = self.get_selection_value("side_choice")
-        if side_choice:
-            choice_field = f"{side_choice}_choice"
-            if not self.has_selection(choice_field):
-                missing.append(choice_field)
-        return missing
-
-    def is_fully_customized(self) -> bool:
-        """Check if all required customizations are complete."""
-        return len(self.get_missing_customizations()) == 0
-
 
 # =============================================================================
 # Order Flow Tasks
@@ -744,28 +701,6 @@ class AddressTask(BaseTask):
     apt_unit: str | None = None
     delivery_instructions: str | None = None
     is_validated: bool = False
-
-    def get_formatted_address(self) -> str | None:
-        """Get formatted address string."""
-        if not self.street:
-            return None
-
-        parts = [self.street]
-        if self.apt_unit:
-            parts.append(f"Apt {self.apt_unit}")
-
-        city_state_zip = []
-        if self.city:
-            city_state_zip.append(self.city)
-        if self.state:
-            city_state_zip.append(self.state)
-        if self.zip_code:
-            city_state_zip.append(self.zip_code)
-
-        if city_state_zip:
-            parts.append(", ".join(city_state_zip))
-
-        return ", ".join(parts)
 
 
 class DeliveryMethodTask(BaseTask):
@@ -793,10 +728,6 @@ class CustomerInfoTask(BaseTask):
     name: str | None = None
     phone: str | None = None
     email: str | None = None
-
-    def has_contact(self) -> bool:
-        """Check if we have at least one contact method."""
-        return bool(self.phone or self.email)
 
 
 class CheckoutTask(BaseTask):

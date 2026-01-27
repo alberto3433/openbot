@@ -47,28 +47,6 @@ class IngredientQueryMixin:
             return []
         return [detail.copy() for detail in self._ingredient_details_by_category[category]]
 
-    def get_all_ingredients(self) -> dict[str, dict]:
-        """Get all ingredients across all categories.
-
-        Returns:
-            Dict mapping ingredient name (lowercase) -> {"name": str, "category": str, "slug": str}
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded.
-        """
-        self._ensure_loaded()
-        result: dict[str, dict] = {}
-        for category, details in self._ingredient_details_by_category.items():
-            for detail in details:
-                name_lower = detail.get("name", "").lower()
-                if name_lower:
-                    result[name_lower] = {
-                        "name": detail.get("name", ""),
-                        "category": category,
-                        "slug": detail.get("slug", ""),
-                    }
-        return result
-
     def get_ingredient_display_name(self, slug: str) -> str | None:
         """Get the display name for an ingredient by its slug.
 
@@ -88,35 +66,6 @@ class IngredientQueryMixin:
                 if detail.get("slug", "").lower() == slug_lower:
                     return detail.get("name")
         return None
-
-    def get_ingredients_for_item_type(
-        self, item_type_slug: str, category: str | None = None
-    ) -> set[str]:
-        """Get ingredients valid for a specific ItemType, optionally filtered by category.
-
-        Args:
-            item_type_slug: The ItemType slug (e.g., "bagel", "sandwich")
-            category: Optional ingredient category to filter by
-
-        Returns:
-            Set of lowercase ingredient names and aliases valid for the item type.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded.
-        """
-        self._ensure_loaded()
-
-        type_ingredients = self._ingredients_for_item_type.get(item_type_slug, {})
-        if not type_ingredients:
-            return set()
-
-        if category:
-            return type_ingredients.get(category, set()).copy()
-        else:
-            all_ingredients: set[str] = set()
-            for cat_ingredients in type_ingredients.values():
-                all_ingredients.update(cat_ingredients)
-            return all_ingredients
 
     def get_ingredients_by_category_for_item_type(
         self, item_type_slug: str
@@ -247,22 +196,6 @@ class IngredientQueryMixin:
             key=lambda c: self._ingredient_category_order.get(c, 999)
         )
 
-    def get_name_forming_categories(self) -> set[str]:
-        """Get ingredient categories that form the item name.
-
-        Name-forming categories have their ingredient display name replace
-        the base menu item name. For example, a "Bagel" with bread="garlic_bagel"
-        displays as "Garlic Bagel" instead of "Bagel, Garlic Bagel".
-
-        Returns:
-            Set of category slugs that are name-forming.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._name_forming_categories.copy()
-
     def is_name_forming_category(self, category_slug: str) -> bool:
         """Check if a category is name-forming.
 
@@ -381,18 +314,6 @@ class IngredientQueryMixin:
         self._ensure_loaded()
         return set(self._modifier_aliases.keys())
 
-    def get_modifier_qualifiers(self) -> dict[str, dict]:
-        """Get modifier qualifier patterns.
-
-        Returns:
-            Dict mapping pattern -> {normalized_form, category}
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._modifier_qualifiers.copy()
-
     def get_qualifier_patterns(self) -> list[str]:
         """Get all qualifier patterns sorted by length (longest first).
 
@@ -404,21 +325,6 @@ class IngredientQueryMixin:
         """
         self._ensure_loaded()
         return sorted(self._modifier_qualifiers.keys(), key=len, reverse=True)
-
-    def get_qualifier_patterns_by_category(self, category: str) -> set[str]:
-        """Get qualifier patterns for a specific category.
-
-        Args:
-            category: The qualifier category (e.g., "amount", "position")
-
-        Returns:
-            Set of patterns in that category.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._qualifier_patterns_by_category.get(category, set()).copy()
 
     def get_qualifier_info(self, pattern: str) -> dict | None:
         """Get info for a qualifier pattern.
@@ -434,60 +340,6 @@ class IngredientQueryMixin:
         """
         self._ensure_loaded()
         return self._modifier_qualifiers.get(pattern.lower())
-
-    def normalize_qualifier(self, pattern: str) -> str | None:
-        """Normalize a qualifier pattern to its canonical form.
-
-        Args:
-            pattern: The qualifier pattern (e.g., "lots of", "extra")
-
-        Returns:
-            The normalized form, or None if not found.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        info = self._modifier_qualifiers.get(pattern.lower())
-        if info:
-            return info.get("normalized_form")
-        return None
-
-    def get_qualifier_category(self, pattern: str) -> str | None:
-        """Get the category of a qualifier pattern.
-
-        Args:
-            pattern: The qualifier pattern
-
-        Returns:
-            The category (e.g., "amount", "position"), or None if not found.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        info = self._modifier_qualifiers.get(pattern.lower())
-        if info:
-            return info.get("category")
-        return None
-
-    def get_abbreviations(self) -> dict[str, str]:
-        """Get the abbreviation-to-canonical mapping.
-
-        Returns:
-            Dict mapping abbreviation (lowercase) to canonical name (lowercase).
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded or no abbreviations found
-        """
-        from ..exceptions import MenuDataNotLoadedError
-        self._ensure_loaded()
-        if not self._abbreviations:
-            raise MenuDataNotLoadedError(
-                "No abbreviations found in database. "
-                "Check that ingredients or menu_items tables have abbreviation values."
-            )
-        return self._abbreviations.copy()
 
     def expand_abbreviations(self, text: str) -> str:
         """Expand abbreviations in the input text.

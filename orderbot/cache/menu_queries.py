@@ -21,11 +21,6 @@ class MenuQueryMixin:
         """Check if cache has been loaded from database."""
         return self._is_loaded
 
-    @property
-    def last_refresh(self):
-        """Get timestamp of last cache refresh."""
-        return self._last_refresh
-
     def get_known_menu_items(self) -> set[str]:
         """Get the set of all known menu item names and aliases (lowercase).
 
@@ -249,24 +244,6 @@ class MenuQueryMixin:
 
         return (None, None)
 
-    def get_side_items(self) -> set[str]:
-        """Get all known side item names and aliases (lowercase).
-
-        Returns:
-            Set of side item names and their aliases, all lowercase.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded or no side items found
-        """
-        from ..exceptions import MenuDataNotLoadedError
-        self._ensure_loaded()
-        if not self._side_items:
-            raise MenuDataNotLoadedError(
-                "No side items found in database. "
-                "Check that menu_items table has items in 'side' category."
-            )
-        return self._side_items.copy()
-
     def resolve_side_alias(self, name: str) -> str | None:
         """Resolve a side item name or alias to its canonical menu item name.
 
@@ -360,38 +337,6 @@ class MenuQueryMixin:
                 })
 
         return matches
-
-    def get_menu_item_names_by_category(self, category_slug: str) -> set[str]:
-        """Get all menu item names that belong to a category.
-
-        Args:
-            category_slug: Category slug (e.g., "beverage", "bagel", "sandwich")
-
-        Returns:
-            Set of menu item names and aliases in that category
-        """
-        self._ensure_loaded()
-        names = set()
-
-        for item_name, item_info in self._menu_index.items():
-            item_category = item_info.get("category", "")
-            if item_category == category_slug or category_slug in item_category.lower():
-                names.add(item_name)
-                aliases = item_info.get("aliases", [])
-                if aliases:
-                    names.update(aliases)
-
-        for item_name, item_info in self._menu_index.items():
-            item_type = item_info.get("item_type", "")
-            if item_type:
-                modifier_cat = self.get_modifier_category(item_type)
-                if modifier_cat == category_slug:
-                    names.add(item_name)
-                    aliases = item_info.get("aliases", [])
-                    if aliases:
-                        names.update(aliases)
-
-        return names
 
     def find_menu_item_matches(self, query: str) -> list[str]:
         """Find menu items that match a partial query.

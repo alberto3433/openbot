@@ -241,21 +241,6 @@ class DisambiguationHandler:
         options_str = self._format_options(options[:self.MAX_OPTIONS], show_prices)
         return f"I didn't catch which one. Please choose:\n{options_str}"
 
-    def get_out_of_range_message(self, order: OrderTask, show_prices: bool = True) -> str:
-        """Get message when user selects a number out of range.
-
-        Args:
-            order: Current order task with pending_item_options
-            show_prices: Whether to show prices in the options list
-
-        Returns:
-            Message string with valid options
-        """
-        options = order.pending_item_options or []
-        num_options = min(len(options), self.MAX_OPTIONS)
-        options_str = self._format_options(options[:self.MAX_OPTIONS], show_prices)
-        return f"I only have {num_options} options. Please choose:\n{options_str}"
-
     def clear_disambiguation_state(self, order: OrderTask) -> None:
         """Clear all disambiguation-related state from the order.
 
@@ -267,17 +252,6 @@ class DisambiguationHandler:
         order.pending_item_modifiers = {}
         order.clear_pending()
         logger.info("DISAMBIGUATION: Cleared pending state")
-
-    def get_stored_modifiers(self, order: OrderTask) -> dict[str, Any]:
-        """Get the stored modifiers from disambiguation state.
-
-        Args:
-            order: Current order task
-
-        Returns:
-            Dict of stored modifiers (may be empty)
-        """
-        return order.pending_item_modifiers or {}
 
     def _format_options(self, options: list[dict], show_prices: bool = True) -> str:
         """Format options list for display.

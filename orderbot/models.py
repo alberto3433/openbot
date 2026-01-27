@@ -763,6 +763,10 @@ class IngredientCategory(Base):
     # is_name_forming: True if ingredient display name should replace menu item name
     # e.g., bread category - "Garlic Bagel" instead of "Bagel, Garlic Bagel"
     is_name_forming = Column(Boolean, nullable=False, default=False)
+    # quantity_unit: Unit name for numeric quantities (e.g., "pump", "packet", "piece")
+    # If NULL, category uses qualifiers (extra/light) instead of numeric quantities
+    # Display: "2 pumps of Vanilla Syrup" vs "extra oat milk"
+    quantity_unit = Column(String(50), nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

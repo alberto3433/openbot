@@ -303,12 +303,14 @@ class LoaderMixin:
 
         # Add linked ingredient aliases (if any)
         must_match = None
+        ingredient_category = None
         if opt.ingredient:
             if opt.ingredient.aliases:
                 for ing_alias in opt.ingredient.aliases:
                     if ing_alias not in aliases:
                         aliases.append(ing_alias)
             must_match = opt.ingredient.must_match
+            ingredient_category = opt.ingredient.category
 
         modifier_category_slug = None
         if opt.modifier_category:
@@ -323,6 +325,7 @@ class LoaderMixin:
             "aliases": aliases if aliases else None,
             "must_match": must_match,
             "modifier_category": modifier_category_slug,
+            "ingredient_category": ingredient_category,
         }
 
     def _load_global_attribute_options_from_bulk(self, bulk_data: dict) -> None:
@@ -1292,6 +1295,7 @@ class LoaderMixin:
                 "code_field_name": cat.code_field_name or cat.slug,
                 "is_multi_select": cat.is_multi_select or False,
                 "display_name": cat.display_name,
+                "quantity_unit": getattr(cat, 'quantity_unit', None),
             }
 
             category_order[cat.slug] = cat.display_order or 999

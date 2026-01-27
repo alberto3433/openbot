@@ -398,7 +398,17 @@ class UnifiedItemConverter:
 
             # Handle quantity display
             if mod_quantity > 1:
-                mod_display = f"{mod_quantity} {_pluralize_display_name(mod_display)}"
+                # Use ingredient_category for quantity unit lookup (e.g., "syrup" has "pump")
+                # Fall back to mod_category if ingredient_category not set
+                ing_category = mod.get("ingredient_category") or mod_category
+                quantity_unit = menu_cache.get_ingredient_category_quantity_unit(ing_category)
+                if quantity_unit:
+                    # Format: "2 pumps of Vanilla Syrup"
+                    unit_plural = quantity_unit + "s" if mod_quantity > 1 else quantity_unit
+                    mod_display = f"{mod_quantity} {unit_plural} of {mod_display}"
+                else:
+                    # Fallback: "2 Vanilla Syrups"
+                    mod_display = f"{mod_quantity} {_pluralize_display_name(mod_display)}"
                 mod_price = mod_price * mod_quantity
 
             if mod_display:

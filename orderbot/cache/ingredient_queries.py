@@ -309,6 +309,23 @@ class IngredientQueryMixin:
         config = self._ingredient_category_field_config.get(category_slug, {})
         return config.get("display_name", category_slug)
 
+    def get_ingredient_category_quantity_unit(self, category_slug: str) -> str | None:
+        """Get the quantity unit for an ingredient category.
+
+        Args:
+            category_slug: The category slug (e.g., "syrup", "sweetener")
+
+        Returns:
+            Quantity unit (e.g., "pump", "packet", "piece") or None if category
+            uses qualifiers (extra/light) instead of numeric quantities.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        config = self._ingredient_category_field_config.get(category_slug, {})
+        return config.get("quantity_unit")
+
     def normalize_modifier(self, modifier: str) -> str:
         """Normalize a modifier name or alias to its canonical Ingredient name.
 

@@ -372,6 +372,7 @@ class MenuItemTask(ItemTask):
         quantity: int = 1,
         price: float = 0.0,
         display_name: str | None = None,
+        ingredient_category: str | None = None,
     ) -> None:
         """Add a selection to the item.
 
@@ -381,6 +382,8 @@ class MenuItemTask(ItemTask):
             quantity: How many (default 1)
             price: Price contribution per unit (default 0.0)
             display_name: Human-readable name (looked up from cache if not provided)
+            ingredient_category: The ingredient's category (e.g., "syrup", "sweetener")
+                for quantity unit lookup. Different from category (attribute slug).
         """
         # Check if already present (same slug and category)
         if any(s.get("slug") == slug and s.get("category") == category for s in self.modifiers):
@@ -417,6 +420,8 @@ class MenuItemTask(ItemTask):
             "price": price,
             "display_name": display_name,
         }
+        if ingredient_category:
+            selection["ingredient_category"] = ingredient_category
 
         self.modifiers.append(selection)
 

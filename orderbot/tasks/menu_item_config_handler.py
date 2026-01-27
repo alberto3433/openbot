@@ -234,14 +234,6 @@ class MenuItemConfigHandler(BaseHandler):
 
         return None
 
-    def _normalize_for_matching(self, text: str) -> str:
-        """
-        Normalize user input for option matching.
-
-        Delegates to InputNormalizer.
-        """
-        return self._input_normalizer.normalize_for_matching(text)
-
     def _match_option_from_input(
         self, user_input: str, options: list[dict]
     ) -> tuple[dict | None, list[dict]]:
@@ -273,10 +265,6 @@ class MenuItemConfigHandler(BaseHandler):
     def _is_whole_word_match(self, needle: str, haystack: str) -> bool:
         """Check if needle appears as a whole word/phrase in haystack."""
         return self._option_matcher._is_whole_word_match(needle, haystack)
-
-    def _passes_must_match(self, user_input: str, opt: dict) -> bool:
-        """Check if option passes must_match requirement."""
-        return self._option_matcher._passes_must_match(user_input, opt)
 
     def _extract_qualifier_for_option(self, user_input: str, option_name: str) -> str | None:
         """
@@ -1361,9 +1349,25 @@ class MenuItemConfigHandler(BaseHandler):
         # Re-extract quantity from user's clarification input (not stored value)
         # This handles cases like "2 hazelnut syrups" after disambiguation
         user_lower = user_input.lower()
-        quantity = extract_quantity(user_lower, selected["display_name"].lower())
-        if quantity == 1:
-            quantity = extract_quantity(user_lower, selected["slug"].replace("_", " "))
+
+        # Only extract numeric quantity if category supports it (has quantity_unit)
+        # Use ingredient_category (from Ingredient.category) to look up quantity_unit
+        mod_category = selected.get("ingredient_category") or attr_slug
+        quantity_unit = menu_cache.get_ingredient_category_quantity_unit(mod_category)
+
+        quantity = 1
+        if quantity_unit:
+            quantity = extract_quantity(user_lower, selected["display_name"].lower())
+            if quantity == 1:
+                quantity = extract_quantity(user_lower, selected["slug"].replace("_", " "))
+            if quantity == 1 and selected.get("aliases"):
+                # Also try with ingredient aliases (e.g., "sugar" for "domino_sugar")
+                for alias in selected["aliases"]:
+                    alias_qty = extract_quantity(user_lower, alias.lower())
+                    if alias_qty > 1:
+                        quantity = alias_qty
+                        break
+
         # Remove stored quantity (no longer needed)
         stored_modifiers.pop("_quantity", None)
         qualifier = self._extract_qualifier_for_option(user_input, selected["display_name"])
@@ -1385,6 +1389,7 @@ class MenuItemConfigHandler(BaseHandler):
             quantity=quantity,
             price=opt_price,
             display_name=selected["display_name"],
+            ingredient_category=selected.get("ingredient_category"),
         )
 
         # Apply any stored modifiers (e.g., milk type, sweetener extracted before disambiguation)
@@ -1739,11 +1744,26 @@ class MenuItemConfigHandler(BaseHandler):
                     if opt["slug"] not in existing_slugs:
                         # Extract qualifier (extra, light, on the side, etc.)
                         qualifier = self._extract_qualifier_for_option(user_input, opt["display_name"])
-                        # Extract quantity specific to this option (e.g., "2 vanilla syrups")
-                        opt_quantity = extract_quantity(user_lower, opt["display_name"].lower())
-                        if opt_quantity == 1:
-                            # Also try with slug pattern
-                            opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
+
+                        # Only extract numeric quantity if category supports it (has quantity_unit)
+                        # Use ingredient_category (from Ingredient.category) to look up quantity_unit
+                        mod_category = opt.get("ingredient_category") or attr_slug
+                        quantity_unit = menu_cache.get_ingredient_category_quantity_unit(mod_category)
+
+                        opt_quantity = 1
+                        if quantity_unit:
+                            # Extract quantity specific to this option (e.g., "2 vanilla syrups")
+                            opt_quantity = extract_quantity(user_lower, opt["display_name"].lower())
+                            if opt_quantity == 1:
+                                # Also try with slug pattern
+                                opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
+                            if opt_quantity == 1 and opt.get("aliases"):
+                                # Also try with ingredient aliases (e.g., "sugar" for "domino_sugar")
+                                for alias in opt["aliases"]:
+                                    alias_qty = extract_quantity(user_lower, alias.lower())
+                                    if alias_qty > 1:
+                                        opt_quantity = alias_qty
+                                        break
 
                         opt_price = opt.get("price") or opt.get("price_modifier") or 0
 
@@ -1758,6 +1778,7 @@ class MenuItemConfigHandler(BaseHandler):
                             quantity=opt_quantity,
                             price=opt_price,
                             display_name=opt["display_name"],
+                            ingredient_category=opt.get("ingredient_category"),
                         )
                         added_selections.append({
                             "slug": opt["slug"],

@@ -4,7 +4,9 @@ Unified input normalization utilities for option matching.
 Consolidates duplicate implementations from:
 - menu_item_config_handler._extract_quantity_from_input()
 - taking_items_handler._extract_quantity_from_input()
-- normalization.normalize_for_option_match()
+
+Note: normalize_for_option_match() is imported from normalization.py
+to avoid duplication.
 """
 
 from __future__ import annotations
@@ -12,7 +14,8 @@ from __future__ import annotations
 import re
 
 from orderbot.menu_data_cache import singularize
-from orderbot.tasks.parsers.quantity_utils import extract_leading_quantity, WORD_TO_NUM
+from orderbot.tasks.normalization import normalize_for_option_match as _normalize_for_option_match
+from orderbot.tasks.parsers.quantity_utils import extract_leading_quantity
 
 
 class InputNormalizer:
@@ -71,21 +74,7 @@ class InputNormalizer:
         Returns:
             Normalized text suitable for option matching.
         """
-        text = text.lower().strip()
-
-        # Strip leading quantity patterns (numbers like "2", "2x", words like "two")
-        text = re.sub(r'^(\d+x?\s+)', '', text)  # "2 ", "2x ", "10 "
-        text = re.sub(
-            r'^(one|two|three|four|five|six|seven|eight|nine|ten)\s+',
-            '', text, flags=re.IGNORECASE
-        )
-        text = re.sub(r'^(a|an)\s+', '', text)  # "a scrambled egg", "an egg"
-
-        # Normalize plurals to singular for matching
-        words = text.split()
-        text = " ".join(singularize(word) for word in words)
-
-        return text.strip()
+        return _normalize_for_option_match(text)
 
     def singularize(self, text: str) -> str:
         """
@@ -156,7 +145,7 @@ _normalizer = InputNormalizer()
 
 def normalize_for_option_match(text: str) -> str:
     """Module-level wrapper for backward compatibility."""
-    return _normalizer.normalize_for_matching(text)
+    return _normalize_for_option_match(text)
 
 
 def extract_quantity_from_input(user_input: str) -> tuple[int, str]:

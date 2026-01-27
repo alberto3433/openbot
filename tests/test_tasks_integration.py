@@ -1220,7 +1220,7 @@ class TestRepeatOrder:
                 {
                     "item_type": "sandwich",
                     "menu_item_name": "Turkey Club",
-                    "price": 12.99,
+                    "base_price": 12.99,
                     "quantity": 1,
                 },
             ],
@@ -2105,7 +2105,7 @@ class TestDrinkClarification:
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
         # User selects "2" (second option)
-        result = sm.taking_items_handler.handle_drink_selection("2", order)
+        result = sm.configuring_item_handler._handle_item_selection("2", order)
 
         # Should have added the second drink
         coffees = [i for i in order.items.items if i.has_attribute('size')]
@@ -2139,7 +2139,7 @@ class TestDrinkClarification:
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
         # User selects by name
-        result = sm.taking_items_handler.handle_drink_selection("fresh squeezed", order)
+        result = sm.configuring_item_handler._handle_item_selection("fresh squeezed", order)
 
         # Should have added the first drink
         coffees = [i for i in order.items.items if i.has_attribute('size')]
@@ -2472,8 +2472,8 @@ class TestMenuQuery:
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "sized_beverage": [{"name": "Latte", "price": 4.50}],
-                "beverage": [{"name": "Coke", "price": 2.00}],
+                "sized_beverage": [{"name": "Latte", "base_price": 4.50}],
+                "beverage": [{"name": "Coke", "base_price": 2.00}],
             }
         })
         order = OrderTask()
@@ -2491,8 +2491,8 @@ class TestMenuQuery:
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "sized_beverage": [{"name": "Latte", "price": 4.50}],
-                "beverage": [{"name": "Coke", "price": 2.00}],
+                "sized_beverage": [{"name": "Latte", "base_price": 4.50}],
+                "beverage": [{"name": "Coke", "base_price": 2.00}],
             }
         })
         order = OrderTask()
@@ -2541,8 +2541,8 @@ class TestMenuQuery:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "sized_beverage": [
-                    {"name": "Drip Coffee", "price": 2.50},
-                    {"name": "Latte", "price": 4.50},
+                    {"name": "Drip Coffee", "base_price": 2.50},
+                    {"name": "Latte", "base_price": 4.50},
                 ],
             }
         })
@@ -3978,8 +3978,8 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "sized_beverage": [
-                    {"name": "Latte", "price": 4.50},
-                    {"name": "Cappuccino", "price": 4.25},
+                    {"name": "Latte", "base_price": 4.50},
+                    {"name": "Cappuccino", "base_price": 4.25},
                 ],
             }
         })
@@ -3998,8 +3998,8 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "egg_sandwich": [
-                    {"name": "Bacon Egg Cheese", "price": 7.50},
-                    {"name": "Ham Egg Cheese", "price": 6.99},
+                    {"name": "Bacon Egg Cheese", "base_price": 7.50},
+                    {"name": "Ham Egg Cheese", "base_price": 6.99},
                 ],
             }
         })
@@ -4018,8 +4018,8 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "signature_items": [
-                    {"name": "The Classic", "price": 12.99},
-                    {"name": "Turkey Club", "price": 11.50},
+                    {"name": "The Classic", "base_price": 12.99},
+                    {"name": "Turkey Club", "base_price": 11.50},
                 ],
             }
         })
@@ -4040,8 +4040,8 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "beverage": [
-                    {"name": "Diet Coke", "price": 2.50},
-                    {"name": "Sprite", "price": 2.50},
+                    {"name": "Diet Coke", "base_price": 2.50},
+                    {"name": "Sprite", "base_price": 2.50},
                 ],
             }
         })
@@ -4060,7 +4060,7 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "sized_beverage": [
-                    {"name": "Espresso", "price": 3.00},
+                    {"name": "Espresso", "base_price": 3.00},
                 ],
             }
         })
@@ -4100,7 +4100,7 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "beverage": [
-                    {"name": "Coke", "price": 2.50},
+                    {"name": "Coke", "base_price": 2.50},
                 ],
             }
         })
@@ -4118,8 +4118,8 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "omelette": [
-                    {"name": "Western Omelette", "price": 12.99},
-                    {"name": "Cheese Omelette", "price": 10.99},
+                    {"name": "Western Omelette", "base_price": 12.99},
+                    {"name": "Cheese Omelette", "base_price": 10.99},
                 ],
             }
         })
@@ -5491,7 +5491,7 @@ class TestShotQuantityExtraction:
         and return 'shot' (singular) for matching against the Shot ingredient.
         """
         from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
-        from tests.helpers import HandlerConfig
+        from orderbot.tasks.handler_config import HandlerConfig
 
         handler = MenuItemConfigHandler(HandlerConfig())
 

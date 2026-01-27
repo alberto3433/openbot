@@ -9,7 +9,6 @@ Extracted from state_machine.py for better separation of concerns.
 
 import logging
 import re
-import uuid
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache
@@ -36,7 +35,7 @@ from .modifier_operations import (
     find_default_ingredient_on_any_item,
     remove_default_ingredient_from_item,
 )
-from .parsers.constants import DEFAULT_PAGINATION_SIZE, ORDINAL_WORDS
+from .parsers.constants import ORDINAL_WORDS
 from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
 from .parsers.quantity_utils import (
     BASIC_WORD_TO_NUM,
@@ -373,37 +372,6 @@ def _remove_modifiers_by_category(
         return True
 
     return False
-
-
-def _find_item_by_description(
-    active_items: list["MenuItemTask"],
-    description: str,
-) -> "MenuItemTask | None":
-    """Find an item in the cart by matching against its summary or name.
-
-    Uses get_summary() text for matching, which includes menu item name
-    plus all configured attributes and modifiers. This is what the user sees
-    in confirmations, so it's the most natural matching approach.
-
-    Args:
-        active_items: List of items in the cart
-        description: User's description of the item to find
-
-    Returns:
-        Matching MenuItemTask, or None if not found.
-    """
-    desc_lower = description.lower()
-
-    # Search from most recent first
-    for item in reversed(active_items):
-        # Match against summary (includes name + attributes + modifiers)
-        if desc_lower in item.get_summary().lower():
-            return item
-        # Also match against just the menu item name
-        if item.menu_item_name and desc_lower in item.menu_item_name.lower():
-            return item
-
-    return None
 
 
 def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:

@@ -595,9 +595,11 @@ class LoaderMixin:
                 for opt in sorted(attr.options, key=lambda o: o.display_order):
                     aliases = None
                     must_match = None
+                    ingredient_category = None
                     if opt.ingredient:
                         aliases = opt.ingredient.aliases
                         must_match = opt.ingredient.must_match
+                        ingredient_category = opt.ingredient.category
 
                     options.append({
                         "slug": opt.slug,
@@ -607,6 +609,7 @@ class LoaderMixin:
                         "is_available": opt.is_available,
                         "aliases": aliases,
                         "must_match": must_match,
+                        "ingredient_category": ingredient_category,
                     })
 
                 result[attr.slug] = {

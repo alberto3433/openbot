@@ -177,6 +177,13 @@ class ItemAdderHandler(MenuDataMixin):
         item_modifiers = {k: v for k, v in kwargs.items() if v is not None}
         item_modifiers["quantity"] = quantity
 
+        # Convert Selection objects to dicts for JSON serialization
+        # (extracted_selections may contain Pydantic Selection objects)
+        if "extracted_selections" in item_modifiers:
+            selections = item_modifiers["extracted_selections"]
+            if selections and hasattr(selections[0], "model_dump"):
+                item_modifiers["extracted_selections"] = [s.model_dump() for s in selections]
+
         # Trigger disambiguation for category references, empty names, or multiple word matches
         if is_category_reference or is_empty_name or has_multiple_word_matches:
             # Determine item_type_filter:

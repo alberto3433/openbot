@@ -1,11 +1,7 @@
 """
 Unified option matching with multi-phase algorithm.
 
-Consolidates duplicated option matching logic from:
-- menu_item_config_handler._match_option_from_input()
-- menu_item_config_handler._match_multiple_options_from_input()
-- menu_item_config_handler._is_whole_word_match()
-- menu_item_config_handler._passes_must_match()
+Provides multi-phase matching for single-select and multi-select attributes.
 """
 
 from __future__ import annotations

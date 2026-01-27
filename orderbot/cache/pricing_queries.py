@@ -58,21 +58,6 @@ class PricingQueryMixin:
         self._ensure_loaded()
         return self._resolved_item_prices.get(item_name.lower())
 
-    def get_ingredient_price_contexts(self, ingredient_name: str) -> list[dict]:
-        """Get price contexts for an ingredient.
-
-        Args:
-            ingredient_name: The ingredient name or alias
-
-        Returns:
-            List of context dicts with context_type, item_type_slug, label, price.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._ingredient_price_contexts.get(ingredient_name.lower(), []).copy()
-
     def resolve_price_inquiry(
         self, query: str, context: dict | None = None
     ) -> dict[str, Any]:

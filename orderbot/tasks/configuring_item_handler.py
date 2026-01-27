@@ -11,7 +11,7 @@ import logging
 import re
 
 from .models import OrderTask, MenuItemTask, parse_pending_field
-from .schemas import StateMachineResult, OrderPhase
+from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
 from .parsers.deterministic.patterns import parse_can_you_make_it
 from .modifier_change_handler import ChangeRequest
@@ -587,8 +587,17 @@ class ConfiguringItemHandler:
         # Get any pre-filled modifiers from disambiguation (size, milk, etc.)
         # Filter out structural keys that aren't actual item attributes
         raw_pre_filled = order.pending_item_modifiers or {}
-        non_attribute_keys = {"item_name", "quantity", "original_input", "item_type"}
+        non_attribute_keys = {"item_name", "quantity", "original_input", "item_type", "extracted_selections"}
         pre_filled = {k: v for k, v in raw_pre_filled.items() if k not in non_attribute_keys}
+
+        # Extract and convert selections (stored as dicts for JSON serialization)
+        stored_selections = raw_pre_filled.get("extracted_selections")
+        extracted_selections = None
+        if stored_selections:
+            extracted_selections = [
+                Selection(**s) if isinstance(s, dict) else s
+                for s in stored_selections
+            ]
 
         order.pending_item_options = []
         order.pending_item_quantity = 1
@@ -615,6 +624,7 @@ class ConfiguringItemHandler:
                 order=order,
                 quantity=quantity,
                 pre_filled_attributes=pre_filled if pre_filled else None,
+                extracted_selections=extracted_selections,
             )
 
         # For non-configurable items, use direct creation

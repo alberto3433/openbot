@@ -55,21 +55,6 @@ class ParsingQueryMixin:
 
         return False
 
-    def get_response_regex(self, pattern_type: str) -> Pattern | None:
-        """Get compiled regex pattern for a response type.
-
-        Args:
-            pattern_type: The type of response
-
-        Returns:
-            Compiled regex Pattern, or None if not found.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._response_regex_compiled.get(pattern_type)
-
     def is_affirmative(self, text: str) -> bool:
         """Check if text is an affirmative response.
 
@@ -97,20 +82,6 @@ class ParsingQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         return self.is_response_type(text, "negative")
-
-    def is_cancel(self, text: str) -> bool:
-        """Check if text is a cancel signal.
-
-        Args:
-            text: User input to check
-
-        Returns:
-            True if text is a cancel signal.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        return self.is_response_type(text, "cancel")
 
     def is_done(self, text: str) -> bool:
         """Check if text is a done signal.
@@ -158,18 +129,6 @@ class ParsingQueryMixin:
 
         return patterns
 
-    def get_compound_phrases(self) -> set[str]:
-        """Get compound phrases that shouldn't be split during parsing.
-
-        Returns:
-            Set of compound phrases (lowercase).
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._compound_phrases.copy()
-
     def get_item_type_triggers(self, item_type_slug: str | None = None) -> dict[str, set[str]] | set[str]:
         """Get item type trigger keywords.
 
@@ -201,21 +160,6 @@ class ParsingQueryMixin:
         self._ensure_loaded()
         return self._configurable_item_type_slugs.copy()
 
-    def is_configurable_item_type(self, item_type_slug: str) -> bool:
-        """Check if an item type is configurable.
-
-        Args:
-            item_type_slug: The item type slug to check
-
-        Returns:
-            True if the item type has askable attributes.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return item_type_slug in self._configurable_item_type_slugs
-
     def get_configurable_item_names(self) -> set[str]:
         """Get all item names for configurable item types.
 
@@ -236,18 +180,6 @@ class ParsingQueryMixin:
 
         self._configurable_item_names = result
         return result.copy()
-
-    def get_items_with_required_phrases(self) -> dict[str, str]:
-        """Get items that have required_match_phrases set.
-
-        Returns:
-            Dict mapping item_name (lowercase) -> required_match_phrases string.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return self._items_with_required_phrases.copy()
 
     def text_matches_exclusion_phrase(self, text: str) -> bool:
         """Check if text contains an item with required match phrases.
@@ -276,22 +208,3 @@ class ParsingQueryMixin:
                         return True
 
         return False
-
-    def detect_item_type_from_keyword(self, keyword: str) -> str | None:
-        """Detect item type from a keyword in the item type triggers.
-
-        Args:
-            keyword: A keyword that might indicate an item type
-
-        Returns:
-            The item type slug if keyword matches a trigger, None otherwise.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        keyword_lower = keyword.lower()
-        for item_type_slug, triggers in self._item_type_triggers.items():
-            if keyword_lower in triggers:
-                return item_type_slug
-        return None

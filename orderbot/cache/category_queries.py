@@ -15,21 +15,6 @@ logger = logging.getLogger(__name__)
 class CategoryQueryMixin:
     """Mixin containing category query methods."""
 
-    def is_category_slug(self, keyword: str) -> bool:
-        """Check if a keyword is a valid high-level category slug.
-
-        Args:
-            keyword: The keyword to check (e.g., "drink", "food")
-
-        Returns:
-            True if keyword is a valid category slug.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded.
-        """
-        self._ensure_loaded()
-        return keyword.lower() in self._available_categories
-
     def get_available_menu_categories(self) -> dict[str, str]:
         """Get all available high-level menu categories.
 
@@ -91,18 +76,6 @@ class CategoryQueryMixin:
         self._ensure_loaded()
         keyword_lower = keyword.lower().strip()
         return self._category_keywords.get(keyword_lower)
-
-    def get_available_category_keywords(self) -> list[str]:
-        """Get list of all available category keywords for error messages.
-
-        Returns:
-            Sorted list of all valid category keywords.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        return sorted(self._category_keywords.keys())
 
     def is_category_reference(self, term: str) -> str | None:
         """Check if a term matches a category name/slug (case-insensitive).

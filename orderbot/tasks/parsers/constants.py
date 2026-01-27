@@ -294,35 +294,6 @@ DELIVERY_ZONE_PATTERNS = [
 ]
 
 # =============================================================================
-# Customer Service / Escalation Patterns
-# =============================================================================
-
-# Customer service patterns - user wants to speak to someone or has a complaint
-# When matched, provide contact information (corporate email and store phone)
-CUSTOMER_SERVICE_PATTERNS = [
-    # Speak to manager/person
-    re.compile(r"(?:i\s+)?(?:want|need|would\s+like)\s+to\s+(?:speak|talk)\s+(?:to|with)\s+(?:a\s+)?(?:manager|supervisor|person|human|someone)", re.IGNORECASE),
-    re.compile(r"(?:can|may)\s+i\s+(?:speak|talk)\s+(?:to|with)\s+(?:a\s+)?(?:manager|supervisor|person|human|someone)", re.IGNORECASE),
-    re.compile(r"(?:get|let)\s+me\s+(?:a\s+)?(?:manager|supervisor)", re.IGNORECASE),
-    re.compile(r"(?:is\s+there\s+)?(?:a\s+)?manager\s+(?:i\s+can\s+speak\s+(?:to|with)|available)", re.IGNORECASE),
-    # Order issues / complaints
-    re.compile(r"(?:my\s+)?order\s+(?:was|is)\s+(?:wrong|incorrect|messed\s+up|missing|not\s+right)", re.IGNORECASE),
-    re.compile(r"(?:you\s+)?(?:got|made)\s+(?:my\s+)?order\s+wrong", re.IGNORECASE),
-    re.compile(r"(?:there(?:'?s|\s+is|\s+was)\s+)?(?:a\s+)?(?:problem|issue)\s+(?:with\s+)?(?:my\s+)?order", re.IGNORECASE),
-    re.compile(r"(?:i\s+)?(?:have|got)\s+(?:a\s+)?(?:complaint|problem|issue)", re.IGNORECASE),
-    re.compile(r"(?:i\s+)?(?:want|need)\s+to\s+(?:complain|file\s+a\s+complaint|report\s+(?:a\s+)?(?:problem|issue))", re.IGNORECASE),
-    re.compile(r"(?:something(?:'?s|\s+is)\s+)?wrong\s+with\s+(?:my\s+)?(?:order|food)", re.IGNORECASE),
-    re.compile(r"(?:this\s+)?(?:is(?:n'?t|\s+not)\s+)?what\s+i\s+ordered", re.IGNORECASE),
-    re.compile(r"(?:i\s+)?(?:didn'?t\s+get|never\s+(?:got|received))\s+(?:my\s+)?(?:order|food|item)", re.IGNORECASE),
-    re.compile(r"missing\s+(?:item|food|part\s+of\s+my\s+order)", re.IGNORECASE),
-    re.compile(r"(?:i(?:'?m|\s+am)\s+)?(?:very\s+)?(?:unhappy|dissatisfied|disappointed|upset)\s+(?:with\s+)?(?:my\s+)?(?:order)?", re.IGNORECASE),
-    # Refund requests
-    re.compile(r"(?:i\s+)?(?:want|need|would\s+like)\s+(?:a\s+)?refund", re.IGNORECASE),
-    re.compile(r"(?:can|how\s+(?:do|can))\s+i\s+(?:get\s+)?(?:a\s+)?refund", re.IGNORECASE),
-    re.compile(r"(?:i\s+)?(?:want|need)\s+(?:my\s+)?money\s+back", re.IGNORECASE),
-]
-
-# =============================================================================
 # Recommendation Inquiry Patterns
 # =============================================================================
 

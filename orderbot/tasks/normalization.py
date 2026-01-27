@@ -1,10 +1,7 @@
 """
 Unified attribute value normalization for order handling.
 
-This module consolidates normalization logic that was previously duplicated across:
-- modifier_change_handler._normalize_attribute_value()
-- menu_item_config_handler._normalize_for_matching()
-
+This module consolidates normalization logic previously duplicated across handlers.
 All handlers should use these functions for consistent value resolution.
 """
 from __future__ import annotations

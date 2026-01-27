@@ -192,7 +192,7 @@ REPEAT_ORDER_PATTERNS = re.compile(
 # Menu Item Recognition
 # =============================================================================
 # NOTE: KNOWN_MENU_ITEMS has been removed. All menu item names and aliases are
-# now loaded from the database via menu_data_cache._load_known_menu_items().
+# now loaded from the database via menu_data_cache._load_known_menu_items_from_bulk().
 # Use get_known_menu_items() to access the cached set of recognized item names.
 #
 # The database stores:

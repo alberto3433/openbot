@@ -114,9 +114,11 @@ def _preload_global_attribute_options(db: Session) -> Dict[int, List]:
     Returns:
         Dict mapping global_attribute_id -> List[GlobalAttributeOption]
     """
+    # Load ALL options including unavailable ones (for recognition)
+    # Unavailable options allow us to detect when user selects them
+    # and provide helpful feedback (e.g., "We don't have medium - we have small or large")
     all_options = (
         db.query(GlobalAttributeOption)
-        .filter(GlobalAttributeOption.is_available == True)  # noqa: E712
         .order_by(GlobalAttributeOption.global_attribute_id, GlobalAttributeOption.display_order)
         .all()
     )
@@ -670,6 +672,7 @@ def _build_item_types_data(
                         "display_name": opt.display_name,
                         "price_modifier": opt.price_modifier,
                         "is_default": opt.is_default,
+                        "is_available": opt.is_available,
                     }
                     for opt in options
                 ],

@@ -125,6 +125,11 @@ class ParsedItemEntry(BaseModel):
     # For by-pound items (e.g., "1/4 lb", "1 lb")
     weight_unit: str | None = None
 
+    # Track unavailable options user attempted to select
+    # Map of attr_slug -> {attempted_slug, attempted_display}
+    # Used to show helpful "We don't have X - we have Y or Z" messages
+    unavailable_selections: dict[str, dict] = Field(default_factory=dict)
+
     def get_selection(self, category: str) -> Selection | None:
         """Get first selection for a category (for single-select attributes)."""
         for sel in self.selections:

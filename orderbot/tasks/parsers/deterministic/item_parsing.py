@@ -76,13 +76,28 @@ def build_parsed_item(
     # Build the selections list
     final_selections: list[Selection] = []
 
+    # Extract unavailable selections from attribute_values (keys like "_unavailable_size")
+    # These are stored separately for helpful "We don't have X" messaging
+    unavailable_selections: dict[str, dict] = {}
+    clean_attribute_values: dict = {}
+    if attribute_values:
+        for key, value in attribute_values.items():
+            if key.startswith("_unavailable_"):
+                # Extract attr_slug from key (e.g., "_unavailable_size" -> "size")
+                attr_slug = key[len("_unavailable_"):]
+                unavailable_selections[attr_slug] = value
+            else:
+                clean_attribute_values[key] = value
+    else:
+        clean_attribute_values = {}
+
     # If selections provided directly, use them
     if selections:
         final_selections.extend(selections)
 
     # Backward compat: convert attribute_values dict to selections
-    if attribute_values:
-        for category, value in attribute_values.items():
+    if clean_attribute_values:
+        for category, value in clean_attribute_values.items():
             if value is None:
                 # Explicitly declined: create _declined marker so orchestrator won't ask
                 final_selections.append(Selection(
@@ -128,6 +143,7 @@ def build_parsed_item(
         original_text=original_text,
         is_signature=is_signature,
         weight_unit=weight_unit,
+        unavailable_selections=unavailable_selections,
     )
 
 

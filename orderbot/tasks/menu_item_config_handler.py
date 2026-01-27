@@ -28,6 +28,34 @@ from .utils import OptionMatcher, InputNormalizer
 logger = logging.getLogger(__name__)
 
 
+# Pattern to strip common ordering prefixes from attribute answers
+# e.g., "make it a double" -> "double", "I want avocado" -> "avocado"
+_ANSWER_PREFIX_PATTERN = re.compile(
+    r"^(?:i(?:'?d)?\s*(?:want|like|need|have)|"
+    r"(?:can\s+i\s+(?:get|have))|"
+    r"(?:give\s+me)|"
+    r"(?:make\s+it(?:\s+a)?)|"
+    r"(?:let(?:'?s)?\s+(?:do|go\s+with))|"
+    r"(?:i(?:'?ll)?\s+(?:take|have|get)))\s+",
+    re.IGNORECASE
+)
+
+
+def _strip_answer_prefix(user_input: str) -> str:
+    """Strip common ordering prefixes from attribute answer input.
+
+    Args:
+        user_input: The user's raw input
+
+    Returns:
+        The input with ordering prefixes stripped, or the original if no prefix found
+    """
+    stripped = _ANSWER_PREFIX_PATTERN.sub("", user_input.strip())
+    # Also strip trailing "please"
+    stripped = re.sub(r"\s+please\s*$", "", stripped, flags=re.IGNORECASE)
+    return stripped.strip()
+
+
 def _number_to_word(n: int) -> str:
     """Convert small integers to words for natural language."""
     words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
@@ -650,6 +678,48 @@ class MenuItemConfigHandler(BaseHandler):
         For multi-item configurations, uses ordinal references like "the first one", "the second one".
         """
         from .message_builder import MessageBuilder
+
+        attr_slug = attr.get("slug", "")
+
+        # Check if user tried to select an unavailable option for this attribute
+        # If so, generate a helpful message showing what's available
+        unavail = item.unavailable_selections.get(attr_slug)
+        if unavail:
+            attempted = unavail.get("attempted_display", unavail.get("attempted_slug", "that"))
+            options = attr.get("options", [])
+
+            # Get available options (filter out unavailable ones)
+            available = [
+                o.get("display_name", o.get("slug", ""))
+                for o in options
+                if o.get("is_available", True)
+            ]
+
+            # Build helpful message
+            if len(available) == 2:
+                opts_str = f"{available[0]} or {available[1]}"
+            elif len(available) <= 4:
+                opts_str = ", ".join(available[:-1]) + f", or {available[-1]}"
+            else:
+                # Too many options - just name the attribute
+                opts_str = None
+
+            if opts_str:
+                question = f"We don't have {attempted} - we have {opts_str}. Which would you like?"
+            else:
+                attr_name_lower = attr.get("display_name", attr_slug).lower()
+                question = f"We don't have {attempted}. Which {attr_name_lower} would you like?"
+
+            # Clear so we don't repeat this message
+            del item.unavailable_selections[attr_slug]
+
+            # Set up order state for receiving the answer
+            order.set_phase(OrderPhase.CONFIGURING_ITEM)
+            order.pending_item_id = item.id
+            order.pending_field = f"{item.menu_item_type}:{attr_slug}"
+            order.config_options_page = 0
+
+            return StateMachineResult(message=question, order=order)
 
         input_type = attr.get("input_type", "single_select")
         attr_name = attr["display_name"].lower()
@@ -1393,6 +1463,10 @@ class MenuItemConfigHandler(BaseHandler):
         if disambiguation_result:
             return disambiguation_result
 
+        # Strip common ordering prefixes from the input
+        # e.g., "make it a double" -> "double", "give me triple" -> "triple"
+        user_input = _strip_answer_prefix(user_input)
+
         # NOTE: milk_sweetener_syrup now uses the standard multi_select flow
         # which includes partial matching (e.g., "syrup" lists all syrup options)
 
@@ -1748,6 +1822,18 @@ class MenuItemConfigHandler(BaseHandler):
         if numeric_match:
             return numeric_match
 
+        # Check if input is an affirmative response (yes, sure, yeah, etc.)
+        # For optional add-on attributes like shots, treat as "yes I want some, show me options"
+        if self._is_affirmative_response(user_lower):
+            attr_name = attr["display_name"].lower()
+            available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
+            if available and len(available) <= 6:
+                options_str = self._format_options_list_for_clarification(available)
+                return StateMachineResult(
+                    message=f"Great! Which {attr_name} would you like? {options_str}",
+                    order=order,
+                )
+
         # No match at all - inform user we don't have what they asked for
         attr_name = attr["display_name"].lower()
         available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
@@ -1839,6 +1925,34 @@ class MenuItemConfigHandler(BaseHandler):
         )
 
         return self._advance_to_next_question(item, order, attr, display_name)
+
+    def _is_affirmative_response(self, user_input: str) -> bool:
+        """Check if input is a simple affirmative response (yes, sure, yeah, etc.)
+
+        Args:
+            user_input: The user's input (should be lowercased and stripped)
+
+        Returns:
+            True if the input matches an affirmative pattern
+        """
+        affirmatives = menu_cache.get_response_patterns("affirmative")
+        return user_input in affirmatives
+
+    def _format_options_list_for_clarification(self, options: list[str]) -> str:
+        """Format options list for clarification question.
+
+        Args:
+            options: List of option display names
+
+        Returns:
+            Formatted string like "A, B, C, or D"
+        """
+        if len(options) == 1:
+            return options[0]
+        elif len(options) == 2:
+            return f"{options[0]} or {options[1]}"
+        else:
+            return ", ".join(options[:-1]) + f", or {options[-1]}"
 
     def _check_partial_match(
         self,

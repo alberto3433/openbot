@@ -55,6 +55,7 @@ _ORDERING_PREFIX_PATTERN = re.compile(
     r"^(?:i(?:'?d)?\s*(?:want|like|need|have)|"
     r"(?:can\s+i\s+(?:get|have))|"
     r"(?:give\s+me)|"
+    r"(?:make\s+it(?:\s+a)?)|"
     r"(?:let(?:'?s)?\s+(?:do|go\s+with))|"
     r"(?:i(?:'?ll)?\s+(?:take|have|get)))\s+",
     re.IGNORECASE

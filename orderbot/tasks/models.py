@@ -230,6 +230,11 @@ class MenuItemTask(ItemTask):
 
     is_signature: bool = False  # Whether this is a signature/featured menu item
 
+    # Track unavailable options user attempted to select
+    # Map of attr_slug -> {attempted_slug, attempted_display}
+    # Used to show helpful "We don't have X - we have Y or Z" messages
+    unavailable_selections: dict[str, dict] = Field(default_factory=dict)
+
     # Unified modifiers list - all customizations (attributes and modifiers)
     modifiers: list[dict] = Field(default_factory=list)  # Stored as dict for serialization
 

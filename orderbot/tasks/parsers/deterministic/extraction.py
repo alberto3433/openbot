@@ -435,6 +435,26 @@ def extract_attribute_values(
         if spans_overlap(cand.start, cand.end):
             continue
 
+        # Check if option is unavailable (e.g., "medium" size doesn't exist)
+        # Track the unavailable attempt for helpful user feedback
+        if not cand.option.get("is_available", True):
+            # Mark span as matched to prevent overlapping available options
+            matched_spans.append((cand.start, cand.end))
+            matched_options_per_attr.setdefault(cand.attr_slug, set()).add(slug)
+
+            # Store unavailable selection info using special key pattern
+            # The config handler will use this to show "We don't have X - we have Y or Z"
+            unavail_key = f"_unavailable_{cand.attr_slug}"
+            result[unavail_key] = {
+                "attempted_slug": slug,
+                "attempted_display": cand.option.get("display_name", slug),
+            }
+            logger.debug(
+                "Unavailable option detected: '%s' for attr '%s' (user said '%s')",
+                slug, cand.attr_slug, cand.pattern
+            )
+            continue  # Don't add to normal result
+
         # Record the match
         matched_spans.append((cand.start, cand.end))
         matched_options_per_attr.setdefault(cand.attr_slug, set()).add(slug)

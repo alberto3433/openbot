@@ -1749,34 +1749,18 @@ class MenuItemConfigHandler(BaseHandler):
                         # Use ingredient_category (from Ingredient.category) to look up quantity_unit
                         mod_category = opt.get("ingredient_category") or attr_slug
                         quantity_unit = menu_cache.get_ingredient_category_quantity_unit(mod_category)
-                        logger.info(
-                            "QUANTITY_UNIT_DEBUG: opt=%s, ingredient_category=%s, mod_category=%s, quantity_unit=%s",
-                            opt["slug"], opt.get("ingredient_category"), mod_category, quantity_unit
-                        )
 
                         opt_quantity = 1
                         if quantity_unit:
                             # Extract quantity specific to this option (e.g., "2 vanilla syrups")
                             opt_quantity = extract_quantity(user_lower, opt["display_name"].lower())
-                            logger.info(
-                                "QUANTITY_EXTRACT_DEBUG: display_name='%s', extracted=%d",
-                                opt["display_name"].lower(), opt_quantity
-                            )
                             if opt_quantity == 1:
                                 # Also try with slug pattern
                                 opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
-                                logger.info(
-                                    "QUANTITY_EXTRACT_DEBUG: slug='%s', extracted=%d",
-                                    opt["slug"].replace("_", " "), opt_quantity
-                                )
                             if opt_quantity == 1 and opt.get("aliases"):
                                 # Also try with ingredient aliases (e.g., "sugar" for "domino_sugar")
                                 for alias in opt["aliases"]:
                                     alias_qty = extract_quantity(user_lower, alias.lower())
-                                    logger.info(
-                                        "QUANTITY_EXTRACT_DEBUG: alias='%s', extracted=%d",
-                                        alias.lower(), alias_qty
-                                    )
                                     if alias_qty > 1:
                                         opt_quantity = alias_qty
                                         break

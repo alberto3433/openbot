@@ -303,18 +303,6 @@ class ModifierChangeHandler:
                 f"Could you please clarify?"
             )
 
-    def generate_mid_config_message(self) -> str:
-        """
-        Generate a message when user tries to change during configuration.
-
-        Returns:
-            Message asking user to wait until configuration is complete
-        """
-        return (
-            "Sure, let me finish getting the details for your current item first, "
-            "and then we can make that change."
-        )
-
     def _extract_quantity_from_value(self, value: str) -> tuple[int, str]:
         """Extract quantity prefix from a value.
 

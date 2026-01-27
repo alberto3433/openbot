@@ -108,27 +108,6 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
         return []
 
 
-def get_item_modifiers(item: ItemTask) -> list[tuple[str, Any, ModifierField]]:
-    """
-    Get all current modifiers on an item.
-
-    Returns:
-        List of (display_name, current_value, field_definition) tuples
-    """
-    modifiers = []
-    fields = get_modifier_fields(item)
-
-    for field in fields:
-        value = getattr(item, field.field_name, None)
-        if value is not None:
-            if field.is_list and isinstance(value, list) and len(value) > 0:
-                modifiers.append((field.display_name, value, field))
-            elif not field.is_list and value:
-                modifiers.append((field.display_name, value, field))
-
-    return modifiers
-
-
 def _normalize_modifier_name(name: str) -> str:
     """Normalize a modifier name for matching."""
     return ' '.join(name.lower().strip().split())
@@ -156,17 +135,6 @@ def _get_singular_plural_variants(name: str) -> list[str]:
             variants.append(plural)
 
     return variants
-
-
-def _extract_cream_cheese_flavor(user_input: str) -> str | None:
-    """Extract cream cheese flavor from user input like 'kalamata olive cream cheese'."""
-    input_lower = user_input.lower()
-    # Match patterns like "X cream cheese" or "X cc"
-    cc_pattern = re.compile(r'^(.+?)\s+(?:cream\s*cheese|cc)$', re.IGNORECASE)
-    match = cc_pattern.match(input_lower.strip())
-    if match:
-        return match.group(1).strip()
-    return None
 
 
 def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None:

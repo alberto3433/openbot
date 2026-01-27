@@ -539,10 +539,6 @@ class OrderStateMachine:
         """Delegate to slot orchestration handler."""
         self.slot_orchestration_handler.log_slot_comparison(order)
 
-    def _derive_next_phase_from_slots(self, order: OrderTask) -> OrderPhase:
-        """Delegate to slot orchestration handler."""
-        return self.slot_orchestration_handler.derive_next_phase_from_slots(order)
-
     def _transition_to_next_slot(self, order: OrderTask) -> None:
         """Delegate to slot orchestration handler."""
         self.slot_orchestration_handler.transition_to_next_slot(order)

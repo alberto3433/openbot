@@ -16,6 +16,7 @@ from .models import (
     TaskStatus,
     ItemTask,
     MenuItemTask,
+    _pluralize_display_name,
 )
 from .normalization import format_slug_for_display
 from orderbot.menu_data_cache import menu_cache
@@ -104,7 +105,7 @@ class UnifiedItemConverter:
 
         # Handle quantity
         if sel_quantity > 1:
-            sel_display = f"{sel_quantity} {sel_display}"
+            sel_display = f"{sel_quantity} {_pluralize_display_name(sel_display)}"
             sel_price = sel_price * sel_quantity
 
         if not sel_display:
@@ -397,7 +398,7 @@ class UnifiedItemConverter:
 
             # Handle quantity display
             if mod_quantity > 1:
-                mod_display = f"{mod_quantity} {mod_display}"
+                mod_display = f"{mod_quantity} {_pluralize_display_name(mod_display)}"
                 mod_price = mod_price * mod_quantity
 
             if mod_display:

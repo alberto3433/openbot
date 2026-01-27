@@ -1601,6 +1601,9 @@ class MenuItemConfigHandler(BaseHandler):
         # Check for negative responses (skip)
         no_patterns = menu_cache.get_response_patterns("negative")
         if user_lower in no_patterns or user_lower in ("none", "no thanks", "nope"):
+            # Mark attribute as declined so _get_unanswered_mandatory knows it's answered
+            # Using item[attr_slug] = None triggers __setitem__ which adds to modifiers
+            item[attr_slug] = None
             return self._advance_to_next_question(item, order, attr)
 
         # Check for affirmative responses (quantity=1)

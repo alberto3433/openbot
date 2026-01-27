@@ -46,6 +46,7 @@ from ..schemas.menu_item_sizes import (
     SizeList,
 )
 from ..services.helpers import get_or_create_company
+from .crud_helpers import apply_payload_updates
 
 
 logger = logging.getLogger(__name__)
@@ -215,10 +216,9 @@ def update_size_category(
     if not category:
         raise HTTPException(status_code=404, detail="Size category not found")
 
-    # Update fields if provided
+    # Check for duplicate slug (company-scoped uniqueness)
     if payload.slug is not None:
         new_slug = payload.slug.lower().strip()
-        # Check for duplicate slug (excluding self)
         existing = db.query(MenuItemSizeCategory).filter(
             MenuItemSizeCategory.company_id == category.company_id,
             MenuItemSizeCategory.slug == new_slug,
@@ -229,13 +229,12 @@ def update_size_category(
                 status_code=400,
                 detail=f"A size category with slug '{new_slug}' already exists"
             )
-        category.slug = new_slug
 
-    if payload.name is not None:
-        category.name = payload.name.strip()
-
-    if payload.question_text is not None:
-        category.question_text = payload.question_text.strip() if payload.question_text else None
+    # Apply updates with normalization
+    apply_payload_updates(
+        category, payload, db,
+        normalize_fields={"slug": "lower_strip", "name": "strip", "question_text": "strip"}
+    )
 
     db.commit()
     db.refresh(category)
@@ -381,7 +380,7 @@ def update_size(
     if not size:
         raise HTTPException(status_code=404, detail="Size not found")
 
-    # Update category if provided
+    # Validate category if provided
     if payload.category_id is not None:
         company = get_or_create_company(db)
         category = db.query(MenuItemSizeCategory).filter(
@@ -390,14 +389,13 @@ def update_size(
         ).first()
         if not category:
             raise HTTPException(status_code=404, detail="Size category not found")
-        size.category_id = payload.category_id
 
-    # Update name if provided
+    # Check for duplicate name within category
     if payload.name is not None:
         new_name = payload.name.strip()
-        # Check for duplicate name within category (excluding self)
+        check_category_id = payload.category_id if payload.category_id is not None else size.category_id
         existing = db.query(MenuItemSize).filter(
-            MenuItemSize.category_id == size.category_id,
+            MenuItemSize.category_id == check_category_id,
             MenuItemSize.name == new_name,
             MenuItemSize.id != size_id
         ).first()
@@ -406,10 +404,9 @@ def update_size(
                 status_code=400,
                 detail=f"A size with name '{new_name}' already exists in this category"
             )
-        size.name = new_name
 
-    if payload.display_order is not None:
-        size.display_order = payload.display_order
+    # Apply updates with normalization
+    apply_payload_updates(size, payload, db, normalize_fields={"name": "strip"})
 
     db.commit()
     db.refresh(size)

@@ -2455,7 +2455,7 @@ class TestMenuQuery:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_menu_query(None, order)
+        result = sm.menu_inquiry_handler.handle_menu_query(None, order)
 
         assert "We have:" in result.message
         assert "bagel" in result.message
@@ -2478,7 +2478,7 @@ class TestMenuQuery:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_menu_query("beverage", order)
+        result = sm.menu_inquiry_handler.handle_menu_query("beverage", order)
 
         # Should return items from the mapped type (sized_beverage based on database config)
         assert "include" in result.message.lower()
@@ -2497,7 +2497,7 @@ class TestMenuQuery:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_menu_query("beverage", order, show_prices=True)
+        result = sm.menu_inquiry_handler.handle_menu_query("beverage", order, show_prices=True)
 
         # Should show price for items from mapped type
         assert "$4.50" in result.message
@@ -2515,7 +2515,7 @@ class TestMenuQuery:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_menu_query("sandwich", order)
+        result = sm.menu_inquiry_handler.handle_menu_query("sandwich", order)
 
         # Should list sandwiches or ask for specifics
         assert "sandwich" in result.message.lower()
@@ -2529,7 +2529,7 @@ class TestMenuQuery:
         sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        result = sm.query_handler.handle_menu_query(None, order)
+        result = sm.menu_inquiry_handler.handle_menu_query(None, order)
 
         assert "What can I get for you?" in result.message
 
@@ -2548,7 +2548,7 @@ class TestMenuQuery:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_menu_query("coffee", order)
+        result = sm.menu_inquiry_handler.handle_menu_query("coffee", order)
 
         assert "Drip Coffee" in result.message or "Latte" in result.message
 
@@ -2680,7 +2680,7 @@ class TestStoreInfoInquiries:
         }
 
         order = OrderTask()
-        result = sm.query_handler.handle_store_hours_inquiry(order)
+        result = sm.store_info_handler.handle_store_hours_inquiry(order)
 
         assert "7am" in result.message or "hours" in result.message.lower()
 
@@ -2693,7 +2693,7 @@ class TestStoreInfoInquiries:
         sm._store_info = {}
 
         order = OrderTask()
-        result = sm.query_handler.handle_store_hours_inquiry(order)
+        result = sm.store_info_handler.handle_store_hours_inquiry(order)
 
         # Should have some fallback message
         assert result.message is not None
@@ -2710,7 +2710,7 @@ class TestStoreInfoInquiries:
         }
 
         order = OrderTask()
-        result = sm.query_handler.handle_store_location_inquiry(order)
+        result = sm.store_info_handler.handle_store_location_inquiry(order)
 
         assert "123 Main St" in result.message or "location" in result.message.lower()
 
@@ -2725,7 +2725,7 @@ class TestStoreInfoInquiries:
         }
 
         order = OrderTask()
-        result = sm.query_handler.handle_delivery_zone_inquiry("10001", order)
+        result = sm.store_info_handler.handle_delivery_zone_inquiry("10001", order)
 
         # Should confirm delivery is available
         assert "deliver" in result.message.lower()
@@ -2741,7 +2741,7 @@ class TestStoreInfoInquiries:
         }
 
         order = OrderTask()
-        result = sm.query_handler.handle_delivery_zone_inquiry("90210", order)
+        result = sm.store_info_handler.handle_delivery_zone_inquiry("90210", order)
 
         # Should indicate delivery not available
         assert "deliver" in result.message.lower() or "pickup" in result.message.lower()
@@ -2786,7 +2786,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_recommendation_inquiry("bagel", order)
+        result = sm.store_info_handler.handle_recommendation_inquiry("bagel", order)
 
         # Should recommend popular bagels
         assert "everything" in result.message.lower() or "plain" in result.message.lower()
@@ -2812,7 +2812,7 @@ class TestRecommendationInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_recommendation_inquiry("sandwich", order)
+        result = sm.store_info_handler.handle_recommendation_inquiry("sandwich", order)
 
         # Should mention sandwiches from menu
         assert "sandwich" in result.message.lower() or "classic" in result.message.lower() or "egg" in result.message.lower()
@@ -2834,7 +2834,7 @@ class TestRecommendationInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_recommendation_inquiry("coffee", order)
+        result = sm.store_info_handler.handle_recommendation_inquiry("coffee", order)
 
         # Should recommend coffee items
         assert "latte" in result.message.lower() or "coffee" in result.message.lower()
@@ -2855,7 +2855,7 @@ class TestRecommendationInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_recommendation_inquiry(None, order)
+        result = sm.store_info_handler.handle_recommendation_inquiry(None, order)
 
         # Should mention the speed menu item
         assert "nova special" in result.message.lower() or "popular" in result.message.lower()
@@ -2870,7 +2870,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine(menu_data={"items_by_type": {}})
         order = OrderTask()
 
-        result = sm.query_handler.handle_recommendation_inquiry(None, order)
+        result = sm.store_info_handler.handle_recommendation_inquiry(None, order)
 
         # Should give generic recommendation
         assert "bagel" in result.message.lower() or "favorite" in result.message.lower()
@@ -2893,7 +2893,7 @@ class TestRecommendationInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_recommendation_inquiry("breakfast", order)
+        result = sm.store_info_handler.handle_recommendation_inquiry("breakfast", order)
 
         # Should recommend breakfast items
         assert "egg" in result.message.lower() or "bagel" in result.message.lower() or "breakfast" in result.message.lower()
@@ -3940,7 +3940,7 @@ class TestPriceInquiry:
         sm = OrderStateMachine(menu_data={})
         order = OrderTask()
 
-        result = sm.query_handler.handle_price_inquiry("latte", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("latte", order)
 
         assert "sorry" in result.message.lower() or "don't have" in result.message.lower()
 
@@ -3958,7 +3958,7 @@ class TestPriceInquiry:
         if not category_info:
             pytest.skip("No sandwich category in database")
 
-        result = sm.query_handler.handle_price_inquiry("sandwich", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("sandwich", order)
         msg_lower = result.message.lower()
 
         # Should either list sandwich types or give a starting price
@@ -3985,7 +3985,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_price_inquiry("coffee", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("coffee", order)
 
         assert "start at" in result.message.lower()
         assert "$4.25" in result.message
@@ -4005,7 +4005,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_price_inquiry("egg sandwich", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("egg sandwich", order)
 
         assert "start at" in result.message.lower()
         assert "$6.99" in result.message
@@ -4026,7 +4026,7 @@ class TestPriceInquiry:
         order = OrderTask()
 
         # Use a specific menu item name that won't match generic categories
-        result = sm.query_handler.handle_price_inquiry("the classic", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("the classic", order)
 
         assert "classic" in result.message.lower()
         assert "$12.99" in result.message
@@ -4047,7 +4047,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_price_inquiry("diet coke", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("diet coke", order)
 
         assert "diet coke" in result.message.lower()
         assert "$2.50" in result.message
@@ -4066,7 +4066,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_price_inquiry("an espresso", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("an espresso", order)
 
         assert "espresso" in result.message.lower()
         assert "$3.00" in result.message
@@ -4086,7 +4086,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_price_inquiry("plain bagel", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("plain bagel", order)
 
         # Should return a price (uses lookup_base_price)
         assert "$" in result.message
@@ -4106,7 +4106,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_price_inquiry("flying saucer", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("flying saucer", order)
 
         assert "not sure" in result.message.lower() or "help" in result.message.lower()
 
@@ -4125,7 +4125,7 @@ class TestPriceInquiry:
         })
         order = OrderTask()
 
-        result = sm.query_handler.handle_price_inquiry("omelette", order)
+        result = sm.menu_inquiry_handler.handle_price_inquiry("omelette", order)
 
         assert "start at" in result.message.lower()
         assert "$10.99" in result.message
@@ -4146,7 +4146,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_item_description_inquiry(None, order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry(None, order)
 
         assert "which item" in result.message.lower()
 
@@ -4158,7 +4158,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_item_description_inquiry("the classic bec", order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry("the classic bec", order)
 
         assert "eggs" in result.message.lower()
         assert "bacon" in result.message.lower()
@@ -4173,7 +4173,7 @@ class TestItemDescriptionInquiry:
         order = OrderTask()
 
         # "health nut" should match "the health nut"
-        result = sm.query_handler.handle_item_description_inquiry("health nut", order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry("health nut", order)
 
         assert "egg whites" in result.message.lower()
         assert "spinach" in result.message.lower()
@@ -4186,7 +4186,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_item_description_inquiry("the flatiron", order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry("the flatiron", order)
 
         assert "salmon" in result.message.lower()
         assert "avocado" in result.message.lower()
@@ -4199,7 +4199,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_item_description_inquiry("mystery sandwich", order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry("mystery sandwich", order)
 
         assert "don't have" in result.message.lower() or "not" in result.message.lower()
         # Should offer to tell user what categories are available (data-driven)
@@ -4213,7 +4213,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_item_description_inquiry("the leo", order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry("the leo", order)
 
         # Should describe the item
         assert "salmon" in result.message.lower() or "eggs" in result.message.lower()
@@ -4228,7 +4228,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_item_description_inquiry("THE DELANCEY", order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry("THE DELANCEY", order)
 
         assert "eggs" in result.message.lower()
         assert "corned beef" in result.message.lower() or "pastrami" in result.message.lower()
@@ -4241,7 +4241,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_item_description_inquiry("traditional", order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry("traditional", order)
 
         assert "salmon" in result.message.lower()
         assert "cream cheese" in result.message.lower()
@@ -4254,7 +4254,7 @@ class TestItemDescriptionInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.query_handler.handle_item_description_inquiry("the mulberry", order)
+        result = sm.menu_inquiry_handler.handle_item_description_inquiry("the mulberry", order)
 
         # Should have title case formatting
         assert "Mulberry" in result.message or "mulberry" in result.message.lower()
@@ -5946,7 +5946,7 @@ class TestSignatureMenuInquiryHandler:
         sm.menu_data = {"items_by_type": {}}  # No items
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry(None, order)
+        result = sm.menu_inquiry_handler.handle_signature_menu_inquiry(None, order)
 
         assert "build your own" in result.message.lower()
 
@@ -5968,7 +5968,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry(None, order)
+        result = sm.menu_inquiry_handler.handle_signature_menu_inquiry(None, order)
 
         assert "turkey club" in result.message.lower()
         assert "italian sub" in result.message.lower()
@@ -5994,7 +5994,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
+        result = sm.menu_inquiry_handler.handle_signature_menu_inquiry("signature_items", order)
 
         assert "turkey club" in result.message.lower()
         assert "the classic" not in result.message.lower()
@@ -6015,7 +6015,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
+        result = sm.menu_inquiry_handler.handle_signature_menu_inquiry("signature_items", order)
 
         assert "turkey club" in result.message.lower()
         assert " and " not in result.message.lower().split("are:")[1].split("would")[0]
@@ -6036,7 +6036,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("signature_item", order)
+        result = sm.menu_inquiry_handler.handle_signature_menu_inquiry("signature_item", order)
 
         assert "the classic and the leo" in result.message.lower()
 
@@ -6055,7 +6055,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("signature_item", order)
+        result = sm.menu_inquiry_handler.handle_signature_menu_inquiry("signature_item", order)
 
         # "signature_item" should be pluralized to "signature items"
         assert "signature items" in result.message.lower()
@@ -6082,7 +6082,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
+        result = sm.menu_inquiry_handler.handle_signature_menu_inquiry("signature_items", order)
 
         # Should show first 5 items plus "and 3 more"
         assert "item 1" in result.message.lower()
@@ -6120,10 +6120,10 @@ class TestSignatureMenuInquiryHandler:
         order = OrderTask()
 
         # First request - shows first 5
-        result1 = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
+        result1 = sm.menu_inquiry_handler.handle_signature_menu_inquiry("signature_items", order)
 
         # Second request - "what else" shows remaining
-        result2 = sm.query_handler.handle_more_menu_items(result1.order)
+        result2 = sm.menu_inquiry_handler.handle_more_menu_items(result1.order)
 
         assert "item 6" in result2.message.lower()
         assert "item 7" in result2.message.lower()
@@ -6150,7 +6150,7 @@ class TestSignatureMenuInquiryHandler:
         }
         order = OrderTask()
 
-        result = sm.query_handler.handle_signature_menu_inquiry("signature_items", order)
+        result = sm.menu_inquiry_handler.handle_signature_menu_inquiry("signature_items", order)
 
         # Should show all 3 items
         assert "item 1" in result.message.lower()

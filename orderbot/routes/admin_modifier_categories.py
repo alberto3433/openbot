@@ -36,10 +36,7 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-from typing import Any
-
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
 
 from ..models import ModifierCategory, ModifierCategoryAlias
 from ..schemas.modifiers import (
@@ -49,85 +46,43 @@ from ..schemas.modifiers import (
 )
 from ..services.helpers import validate_aliases
 from .crud_factory import CRUDRouterFactory
+from .crud_helpers import apply_payload_updates
 
 
-def _set_modifier_category_aliases(
-    db: Session,
-    category: ModifierCategory,
-    aliases_str: str | None,
-) -> None:
-    """
-    Set modifier category aliases from a comma-separated string.
-    Clears existing aliases and creates new ones from the input string.
-    Validates global uniqueness of aliases before adding.
-
-    Raises:
-        HTTPException: If any alias conflicts with an existing alias
-    """
+def _set_modifier_category_aliases(db, category, aliases_str):
+    """Set modifier category aliases from a comma-separated string."""
     # Clear existing aliases
     for alias in list(category.alias_records):
         db.delete(alias)
-
-    # Flush deletes before inserting new records to avoid unique constraint violations
     db.flush()
 
     # Validate and add new aliases if provided
     if aliases_str:
         try:
-            # Exclude current category's own ID so re-saving same aliases works
-            validated_aliases = validate_aliases(
-                db,
-                aliases_str,
-                exclude_modifier_category_id=category.id,
-            )
+            validated_aliases = validate_aliases(db, aliases_str, exclude_modifier_category_id=category.id)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-
         for alias in validated_aliases:
             db.add(ModifierCategoryAlias(modifier_category=category, alias=alias))
 
 
-def _build_create_kwargs(payload: ModifierCategoryCreate, db: Session) -> dict[str, Any]:
+def _build_create_kwargs(payload, db):
     """Build model kwargs from create payload."""
-    return {
-        "slug": payload.slug,
-        "display_name": payload.display_name,
-        "description": payload.description,
-        "prompt_suffix": payload.prompt_suffix,
-        "loads_from_ingredients": payload.loads_from_ingredients,
-        "ingredient_category": payload.ingredient_category,
-    }
+    return payload.model_dump(exclude={"aliases"})
 
 
-def _handle_create_pre_commit(
-    item: ModifierCategory,
-    payload: ModifierCategoryCreate,
-    db: Session,
-) -> None:
+def _handle_create_pre_commit(item, payload, db):
     """Add aliases after item has ID but before commit."""
     _set_modifier_category_aliases(db, item, payload.aliases)
 
 
-def _handle_before_update(
-    item: ModifierCategory,
-    payload: ModifierCategoryUpdate,
-    db: Session,
-) -> None:
+def _handle_before_update(item, payload, db):
     """Apply update payload to item with custom alias handling."""
-    if payload.slug is not None:
-        item.slug = payload.slug
-    if payload.display_name is not None:
-        item.display_name = payload.display_name
+    # Handle aliases separately since they need special processing
     if payload.aliases is not None:
         _set_modifier_category_aliases(db, item, payload.aliases)
-    if payload.description is not None:
-        item.description = payload.description
-    if payload.prompt_suffix is not None:
-        item.prompt_suffix = payload.prompt_suffix
-    if payload.loads_from_ingredients is not None:
-        item.loads_from_ingredients = payload.loads_from_ingredients
-    if payload.ingredient_category is not None:
-        item.ingredient_category = payload.ingredient_category
+    # Apply remaining fields
+    apply_payload_updates(item, payload, db, skip_fields={"aliases"})
 
 
 # Create the CRUD router using the factory

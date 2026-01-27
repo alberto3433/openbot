@@ -19,10 +19,7 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-from typing import Any
-
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
 
 from ..models import Category, MenuItemCategory
 from ..schemas.categories import (
@@ -32,9 +29,10 @@ from ..schemas.categories import (
     CategoryList,
 )
 from .crud_factory import CRUDRouterFactory
+from .crud_helpers import make_list_builder
 
 
-def _category_to_out(category: Category, db: Session) -> CategoryOut:
+def _category_to_out(category, db):
     """Convert a Category model to CategoryOut with menu_item_count."""
     menu_item_count = db.query(MenuItemCategory).filter(
         MenuItemCategory.category_id == category.id
@@ -50,18 +48,14 @@ def _category_to_out(category: Category, db: Session) -> CategoryOut:
     )
 
 
-def _build_create_kwargs(payload: CategoryCreate, db: Session) -> dict[str, Any]:
-    """Build model kwargs from create payload with normalization."""
+def _build_create_kwargs(payload, db):
+    """Build model kwargs from create payload with normalization and validation."""
     slug = payload.slug.lower().strip()
     name = payload.name.strip()
 
-    # Check for duplicate name (factory only handles slug)
-    existing_name = db.query(Category).filter(Category.name == name).first()
-    if existing_name:
-        raise HTTPException(
-            status_code=400,
-            detail=f"A category with name '{name}' already exists"
-        )
+    # Check for duplicate name (factory only handles slug uniqueness)
+    if db.query(Category).filter(Category.name == name).first():
+        raise HTTPException(status_code=400, detail=f"A category with name '{name}' already exists")
 
     return {
         "name": name,
@@ -70,52 +64,31 @@ def _build_create_kwargs(payload: CategoryCreate, db: Session) -> dict[str, Any]
     }
 
 
-def _handle_before_update(
-    item: Category,
-    payload: CategoryUpdate,
-    db: Session,
-) -> None:
-    """Apply update payload to item with custom validation."""
+def _handle_before_update(item, payload, db):
+    """Apply update payload to item with validation."""
     if payload.slug is not None:
         item.slug = payload.slug.lower().strip()
 
     if payload.name is not None:
         new_name = payload.name.strip()
         # Check for duplicate name (excluding self)
-        existing = db.query(Category).filter(
-            Category.name == new_name,
-            Category.id != item.id
-        ).first()
+        existing = db.query(Category).filter(Category.name == new_name, Category.id != item.id).first()
         if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"A category with name '{new_name}' already exists"
-            )
+            raise HTTPException(status_code=400, detail=f"A category with name '{new_name}' already exists")
         item.name = new_name
 
     if payload.description is not None:
         item.description = payload.description.strip() if payload.description else None
 
 
-def _handle_before_delete(item: Category, db: Session) -> None:
+def _handle_before_delete(item, db):
     """Check if category can be deleted."""
-    menu_item_count = db.query(MenuItemCategory).filter(
-        MenuItemCategory.category_id == item.id
-    ).count()
-
+    menu_item_count = db.query(MenuItemCategory).filter(MenuItemCategory.category_id == item.id).count()
     if menu_item_count > 0:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot delete category '{item.name}' - it has {menu_item_count} menu items assigned"
         )
-
-
-def _build_list_response(
-    items: list[CategoryOut],
-    total: int,
-) -> CategoryList:
-    """Build list response wrapper."""
-    return CategoryList(categories=items, total=total)
 
 
 # Create the CRUD router using the factory
@@ -135,7 +108,7 @@ _crud = CRUDRouterFactory(
     on_before_update=_handle_before_update,
     on_before_delete=_handle_before_delete,
     list_response_schema=CategoryList,
-    list_response_builder=_build_list_response,
+    list_response_builder=make_list_builder(CategoryList, "categories"),
 )
 
 # Export the router

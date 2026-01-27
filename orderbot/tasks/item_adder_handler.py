@@ -167,10 +167,23 @@ class ItemAdderHandler(MenuDataMixin):
         is_category_reference = category_ref is not None
         is_empty_name = not item_name_lower
 
+        # Skip word-match disambiguation for configurable item types requested generically
+        # e.g., "plain bagel" has item_type="bagel" and item_name="bagel" (or item_name=None)
+        # User wants a configurable bagel, not disambiguation among "6 Bagel Package", "Pizza Bagel", etc.
+        configurable_types = menu_cache.get_configurable_item_types()
+        is_configurable_generic_request = (
+            item_type in configurable_types and
+            (item_name_lower == item_type.lower() or is_empty_name)
+        )
+
         # Check for multiple word-boundary matches (e.g., "tea" matches Hot Tea, Iced Tea, etc.)
         # This triggers disambiguation even when the term isn't a registered category reference
-        word_matches = menu_cache.find_items_by_word_match(item_name_lower) if item_name_lower else []
-        has_multiple_word_matches = len(word_matches) > 1
+        # Skip this check for configurable item types requested generically
+        word_matches = []
+        has_multiple_word_matches = False
+        if not is_configurable_generic_request:
+            word_matches = menu_cache.find_items_by_word_match(item_name_lower) if item_name_lower else []
+            has_multiple_word_matches = len(word_matches) > 1
 
         # Generic modifier storage for disambiguation (stores ALL non-None kwargs)
         # This preserves modifiers like size, milk, sweetener during disambiguation
@@ -185,7 +198,9 @@ class ItemAdderHandler(MenuDataMixin):
                 item_modifiers["extracted_selections"] = [s.model_dump() for s in selections]
 
         # Trigger disambiguation for category references, empty names, or multiple word matches
-        if is_category_reference or is_empty_name or has_multiple_word_matches:
+        # BUT skip if it's a configurable item type requested generically (like "bagel")
+        needs_disambiguation = (is_category_reference or is_empty_name or has_multiple_word_matches) and not is_configurable_generic_request
+        if needs_disambiguation:
             # Determine item_type_filter:
             # - Category reference: use the category slug
             # - Word matches: None (let all matching items through)

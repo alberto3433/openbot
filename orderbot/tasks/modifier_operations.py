@@ -56,20 +56,15 @@ class ModifierRemovalResult:
 def _load_modifier_fields_from_db(item_type_slug: str) -> list[ModifierField]:
     """Load modifier fields from database for an item type.
 
-    Returns a list of ModifierField objects.
-
-    Raises:
-        MenuDataNotLoadedError: If no modifier fields found in database
+    Returns a list of ModifierField objects. Returns empty list if no modifier
+    fields are defined for this item type (this is valid - not all item types
+    have modifier fields via item_type_ingredients).
     """
     from orderbot.menu_data_cache import menu_cache
 
     field_configs = menu_cache.get_modifier_fields_for_item_type(item_type_slug)
     if not field_configs:
-        raise MenuDataNotLoadedError(
-            f"No modifier fields found in database for item type '{item_type_slug}'. "
-            f"Check that item_type_ingredients table has entries linking "
-            f"ingredients to this item type."
-        )
+        return []  # No modifier fields defined for this item type
 
     result = []
     for config in field_configs:
@@ -241,8 +236,11 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                 if isinstance(attr_value, list):
                     for list_item in attr_value:
                         item_value = str(list_item).lower()
+                        # Normalize underscores to spaces for comparison
+                        # (stored: "blueberry_cream_cheese" vs input: "blueberry cream cheese")
+                        item_value_normalized = item_value.replace("_", " ")
                         for variant in input_variants:
-                            if variant in item_value or item_value in variant:
+                            if variant in item_value_normalized or item_value_normalized in variant:
                                 synthetic_field = ModifierField(
                                     field_name="attribute_values",
                                     display_name=attr_key.replace("_", " "),
@@ -257,8 +255,10 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                                 )
                 elif attr_value:
                     value_str = str(attr_value).lower()
+                    # Normalize underscores to spaces for comparison
+                    value_str_normalized = value_str.replace("_", " ")
                     for variant in input_variants:
-                        if variant in value_str or value_str in variant:
+                        if variant in value_str_normalized or value_str_normalized in variant:
                             synthetic_field = ModifierField(
                                 field_name="attribute_values",
                                 display_name=attr_key.replace("_", " "),
@@ -334,7 +334,8 @@ def remove_modifier_from_item(
             else:
                 # Remove all - shouldn't normally happen but handle it
                 removed = attr_value.copy() if attr_value else []
-                attribute_values[match.attribute_key] = []
+                # Use remove_selection to properly update the underlying modifiers list
+                item.remove_selection(match.attribute_key)
                 return ModifierRemovalResult(
                     success=True,
                     removed_value=", ".join(str(v) for v in removed),
@@ -343,11 +344,10 @@ def remove_modifier_from_item(
         else:
             # Single value - remove it
             removed_value = str(attr_value)
-            attribute_values[match.attribute_key] = None
-            # Also clear the _price if it exists
-            price_key = f"{match.attribute_key}_price"
-            if price_key in attribute_values:
-                del attribute_values[price_key]
+            # Use remove_selection to properly update the underlying modifiers list
+            # (attribute_values is a computed property - modifying the returned dict doesn't persist)
+            item.remove_selection(match.attribute_key)
+            # Note: remove_selection handles clearing both the value and any associated _price
             logger.info(
                 "Removed '%s' from attribute_values['%s'] for %s",
                 removed_value, match.attribute_key, type(item).__name__

@@ -874,314 +874,10 @@ class TakingItemsHandler(MenuDataMixin):
         if result:
             return result
 
-        # Handle modifier removal: "remove the bacon", "no cheese", etc.
-        # Use unified modifier operations to handle ALL item types (bagels, coffee, menu items)
-        if parsed.cancel_item:
-            active_items = order.items.get_active_items()
-            if active_items:
-                # Try to find a matching modifier on any item (checks most recent first)
-                modifier_match = find_modifier_on_any_item(active_items, parsed.cancel_item)
-                if modifier_match:
-                    # Found a modifier match - remove it
-                    result = remove_modifier_from_item(modifier_match.item, modifier_match)
-                    if result.success:
-                        # Recalculate price using unified method
-                        try:
-                            self.pricing.recalculate_item_price(modifier_match.item)
-                        except ValueError:
-                            # Price lookup failed - item may not have pricing data
-                            # (e.g., in tests). Modifier removal still succeeded.
-                            pass
-
-                        updated_summary = modifier_match.item.get_summary()
-                        return StateMachineResult(
-                            message=f"{result.message} Your order is now {updated_summary}. Anything else?",
-                            order=order,
-                        )
-                else:
-                    # No modifier found - check if it's a default ingredient of a signature/menu item
-                    default_match = find_default_ingredient_on_any_item(active_items, parsed.cancel_item)
-                    if default_match:
-                        # Found a default ingredient - add to removed_ingredients list
-                        result = remove_default_ingredient_from_item(default_match.item, default_match)
-                        if result.success:
-                            # Note: No price recalculation needed - removing default doesn't change price
-                            updated_summary = default_match.item.get_summary()
-                            return StateMachineResult(
-                                message=f"{result.message} Your order is now {updated_summary}. Anything else?",
-                                order=order,
-                            )
-
-        # Handle item cancellation: "cancel the coke", "remove the bagel", etc.
-        if parsed.cancel_item:
-            cancel_item_desc = parsed.cancel_item.lower()
-            active_items = order.items.get_active_items()
-
-            # Handle special "__last_item__" value for "cancel that", "remove it", etc.
-            if parsed.cancel_item == "__last_item__" and active_items:
-                last_item = active_items[-1]
-                removed_name = last_item.get_summary()
-                idx = order.items.items.index(last_item)
-                order.items.remove_item(idx)
-                logger.info("Cancellation: removed last item from cart: %s", removed_name)
-
-                remaining_items = order.items.get_active_items()
-                if remaining_items:
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {removed_name}. Anything else?",
-                        order=order,
-                    )
-                else:
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {removed_name}. What would you like to order?",
-                        order=order,
-                    )
-
-            # Handle special "__all_items__" value for "remove all", "cancel everything", etc.
-            if parsed.cancel_item == "__all_items__":
-                if active_items:
-                    num_items = len(active_items)
-                    # Remove all items by marking them as cancelled
-                    for item in active_items:
-                        idx = order.items.items.index(item)
-                        order.items.remove_item(idx)
-                    logger.info("Cancellation: removed ALL %d items from cart", num_items)
-                    return StateMachineResult(
-                        message="OK, I've cleared your order. What would you like to order?",
-                        order=order,
-                    )
-                else:
-                    return StateMachineResult(
-                        message="Your order is already empty. What would you like to order?",
-                        order=order,
-                    )
-
-            # Handle special "__reduce_to_one__" value for "just one bagel", "only one", etc.
-            # This reduces quantity by removing all but the first item of the specified type
-            if parsed.cancel_item and parsed.cancel_item.startswith("__reduce_to_one"):
-                if active_items:
-                    # Extract item type from cancel_item (e.g., "__reduce_to_one_bagel__" -> "bagel")
-                    item_type = None
-                    if parsed.cancel_item != "__reduce_to_one__":
-                        # Extract the type between "__reduce_to_one_" and "__"
-                        parts = parsed.cancel_item.replace("__", "").replace("reduce_to_one_", "")
-                        if parts:
-                            item_type = parts.strip()
-
-                    # Find items to remove (keep first, remove rest)
-                    items_to_check = active_items
-                    if item_type:
-                        # Filter by item type using data-driven attribute checks
-                        # Look up the primary attribute for this item type from the database
-                        type_attrs = menu_cache.get_item_type_attributes(item_type)
-                        if type_attrs:
-                            # Get the first required attribute as the discriminator
-                            # Items with this attribute are considered to be of this type
-                            primary_attr = type_attrs[0] if type_attrs else None
-                            if primary_attr:
-                                items_to_check = [
-                                    i for i in active_items
-                                    if isinstance(i, MenuItemTask) and i.has_attribute(primary_attr)
-                                ]
-                            else:
-                                # No specific attribute - match all menu items
-                                items_to_check = [i for i in active_items if isinstance(i, MenuItemTask)]
-                        else:
-                            # Unknown item type - match all menu items
-                            items_to_check = [i for i in active_items if isinstance(i, MenuItemTask)]
-
-                    if len(items_to_check) > 1:
-                        # Keep the first item, remove the rest
-                        items_to_remove = items_to_check[1:]
-                        removed_count = 0
-                        removed_names = []
-                        for item in items_to_remove:
-                            removed_name = item.get_summary()
-                            idx = order.items.items.index(item)
-                            order.items.remove_item(idx)
-                            removed_count += 1
-                            removed_names.append(removed_name)
-
-                        kept_item = items_to_check[0].get_summary()
-                        logger.info(
-                            "Reduce to one: kept '%s', removed %d items: %s",
-                            kept_item, removed_count, removed_names
-                        )
-
-                        if removed_count == 1:
-                            return StateMachineResult(
-                                message=f"OK, I've removed the extra {item_type or 'item'}. You have {kept_item}. Anything else?",
-                                order=order,
-                            )
-                        else:
-                            return StateMachineResult(
-                                message=f"OK, I've removed {removed_count} items. You have {kept_item}. Anything else?",
-                                order=order,
-                            )
-                    elif len(items_to_check) == 1:
-                        # Already just one item
-                        kept_item = items_to_check[0].get_summary()
-                        return StateMachineResult(
-                            message=f"You already have just one {item_type or 'item'}: {kept_item}. Anything else?",
-                            order=order,
-                        )
-                    else:
-                        # No items of that type
-                        return StateMachineResult(
-                            message=f"I don't see any {item_type or 'items'} in your order. What would you like?",
-                            order=order,
-                        )
-                else:
-                    return StateMachineResult(
-                        message="Your order is empty. What would you like to order?",
-                        order=order,
-                    )
-
-            if active_items:
-                # First, check for ordinal reference (e.g., "second bagel", "3rd coffee")
-                ordinal_index, item_type_keyword = extract_ordinal_reference(cancel_item_desc)
-
-                if ordinal_index is not None and item_type_keyword:
-                    # User wants to remove a specific Nth item
-                    result = find_nth_item_of_type(active_items, item_type_keyword, ordinal_index)
-                    if result:
-                        item_to_remove, _ = result
-                        removed_name = item_to_remove.get_summary()
-                        idx = order.items.items.index(item_to_remove)
-                        order.items.remove_item(idx)
-
-                        logger.info(
-                            "Cancellation: removed %s #%d from cart: %s",
-                            item_type_keyword, ordinal_index, removed_name
-                        )
-
-                        remaining_items = order.items.get_active_items()
-                        if remaining_items:
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {removed_name}. Anything else?",
-                                order=order,
-                            )
-                        else:
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {removed_name}. What would you like to order?",
-                                order=order,
-                            )
-                    else:
-                        # Ordinal item not found
-                        logger.info(
-                            "Cancellation: couldn't find %s #%d in cart",
-                            item_type_keyword, ordinal_index
-                        )
-                        # Build appropriate error message
-                        if item_type_keyword.lower() in ("item", "items", "one", "thing"):
-                            not_found_msg = f"I couldn't find item #{ordinal_index} in your order."
-                        else:
-                            not_found_msg = f"I couldn't find a {item_type_keyword} #{ordinal_index} in your order."
-                        return StateMachineResult(
-                            message=f"{not_found_msg} What would you like to do?",
-                            order=order,
-                        )
-
-                # Check if plural removal (e.g., "coffees", "bagels")
-                is_plural = cancel_item_desc.endswith('s') and len(cancel_item_desc) > 2
-                singular_desc = cancel_item_desc[:-1] if is_plural else cancel_item_desc
-
-                # Map user category terms to item_type via database (e.g., "coffee" -> "sized_beverage")
-                # Uses category keywords from item_types.aliases in the database
-                mapped_item_type = None
-                category_mapping = menu_cache.get_category_keyword_mapping(cancel_item_desc)
-                if not category_mapping:
-                    category_mapping = menu_cache.get_category_keyword_mapping(singular_desc)
-                if category_mapping:
-                    mapped_item_type = category_mapping.get("slug")
-
-                # Resolve aliases to canonical names using unified resolver (data-driven)
-                resolved_name, _ = menu_cache.resolve_alias(singular_desc)
-                canonical_name_lower = resolved_name.lower() if resolved_name else None
-
-                # Find matching items (fallback for non-ordinal cancellations)
-                items_to_remove = []
-                for item in reversed(active_items):  # Search from most recent
-                    item_summary = item.get_summary().lower()
-                    item_name = getattr(item, 'menu_item_name', '') or ''
-                    item_name_lower = item_name.lower()
-                    item_type = getattr(item, 'item_type', '') or ''
-                    menu_item_type = getattr(item, 'menu_item_type', '') or ''
-
-                    # Check for matches - be careful with empty strings
-                    matches = False
-                    if cancel_item_desc in item_summary:
-                        matches = True
-                    elif singular_desc in item_summary:
-                        matches = True
-                    elif item_name_lower and cancel_item_desc in item_name_lower:
-                        matches = True
-                    elif item_name_lower and singular_desc in item_name_lower:
-                        matches = True
-                    elif item_name_lower and item_name_lower in cancel_item_desc:
-                        matches = True
-                    # Check item_type for "coffees" -> item_type="coffee"
-                    elif item_type and (cancel_item_desc == item_type or singular_desc == item_type):
-                        matches = True
-                    # Check menu_item_type (e.g., "sized_beverage", "bagel")
-                    elif menu_item_type and (cancel_item_desc == menu_item_type or singular_desc == menu_item_type):
-                        matches = True
-                    # Check if user's category term maps to this item's type (e.g., "coffee" -> "sized_beverage")
-                    elif mapped_item_type and menu_item_type == mapped_item_type:
-                        matches = True
-                    elif any(word in item_summary for word in cancel_item_desc.split() if word):
-                        matches = True
-                    # Check canonical name from alias resolution (e.g., "coke" -> "Coca-Cola")
-                    elif canonical_name_lower and canonical_name_lower == item_name_lower:
-                        matches = True
-
-                    if matches:
-                        items_to_remove.append(item)
-                        # If not plural, only remove one item
-                        if not is_plural:
-                            break
-
-                if items_to_remove:
-                    # Remove all matching items
-                    removed_names = []
-                    for item in items_to_remove:
-                        removed_names.append(item.get_summary())
-                        idx = order.items.items.index(item)
-                        order.items.remove_item(idx)
-
-                    # Build response message
-                    if len(removed_names) == 1:
-                        removed_str = f"the {removed_names[0]}"
-                    else:
-                        removed_str = f"the {len(removed_names)} {singular_desc}s"
-
-                    logger.info("Cancellation: removed %d item(s) from cart: %s", len(removed_names), removed_names)
-
-                    remaining_items = order.items.get_active_items()
-                    if remaining_items:
-                        return StateMachineResult(
-                            message=f"OK, I've removed {removed_str}. Anything else?",
-                            order=order,
-                        )
-                    else:
-                        return StateMachineResult(
-                            message=f"OK, I've removed {removed_str}. What would you like to order?",
-                            order=order,
-                        )
-                else:
-                    # Item not found - let them know
-                    logger.info("Cancellation: couldn't find item matching '%s'", cancel_item_desc)
-                    return StateMachineResult(
-                        message=f"I couldn't find {parsed.cancel_item} in your order. What would you like to do?",
-                        order=order,
-                    )
-            else:
-                # No items to cancel
-                logger.info("Cancellation requested but no items in cart")
-                return StateMachineResult(
-                    message="There's nothing in your order yet. What can I get for you?",
-                    order=order,
-                )
+        # Handle item/modifier cancellation: "cancel the coke", "remove bacon", etc.
+        result = self._handle_item_cancellation(parsed, order)
+        if result:
+            return result
 
         # Handle "another bagel" / "one more coffee" - treat as new item of that type
         if parsed.duplicate_new_item_type:
@@ -1460,6 +1156,298 @@ class TakingItemsHandler(MenuDataMixin):
     # =========================================================================
     # Extracted Handler Methods (refactored from handle_taking_items_with_parsed)
     # =========================================================================
+
+    def _handle_item_cancellation(
+        self,
+        parsed: OpenInputResponse,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle item/modifier cancellation: 'cancel the coke', 'remove bacon', etc.
+
+        Handles:
+        - Modifier removal: "remove the bacon", "no cheese"
+        - Last item removal: "cancel that", "remove it"
+        - All items removal: "cancel everything", "remove all"
+        - Reduce to one: "just one bagel", "only one"
+        - Ordinal removal: "remove the second bagel"
+        - Name-based removal: "cancel the coke", "remove the bagel"
+
+        Returns:
+            StateMachineResult if handled, None otherwise.
+        """
+        if not parsed.cancel_item:
+            return None
+
+        active_items = order.items.get_active_items()
+
+        # First, try modifier removal: "remove the bacon", "no cheese", etc.
+        if active_items:
+            modifier_match = find_modifier_on_any_item(active_items, parsed.cancel_item)
+            if modifier_match:
+                result = remove_modifier_from_item(modifier_match.item, modifier_match)
+                if result.success:
+                    try:
+                        self.pricing.recalculate_item_price(modifier_match.item)
+                    except ValueError:
+                        pass  # Price lookup failed - item may not have pricing data
+
+                    updated_summary = modifier_match.item.get_summary()
+                    return StateMachineResult(
+                        message=f"{result.message} Your order is now {updated_summary}. Anything else?",
+                        order=order,
+                    )
+            else:
+                # Check if it's a default ingredient of a signature/menu item
+                default_match = find_default_ingredient_on_any_item(active_items, parsed.cancel_item)
+                if default_match:
+                    result = remove_default_ingredient_from_item(default_match.item, default_match)
+                    if result.success:
+                        updated_summary = default_match.item.get_summary()
+                        return StateMachineResult(
+                            message=f"{result.message} Your order is now {updated_summary}. Anything else?",
+                            order=order,
+                        )
+
+        # Handle special "__last_item__" value for "cancel that", "remove it", etc.
+        if parsed.cancel_item == "__last_item__" and active_items:
+            last_item = active_items[-1]
+            removed_name = last_item.get_summary()
+            idx = order.items.items.index(last_item)
+            order.items.remove_item(idx)
+            logger.info("Cancellation: removed last item from cart: %s", removed_name)
+
+            remaining_items = order.items.get_active_items()
+            if remaining_items:
+                return StateMachineResult(
+                    message=f"OK, I've removed the {removed_name}. Anything else?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message=f"OK, I've removed the {removed_name}. What would you like to order?",
+                    order=order,
+                )
+
+        # Handle special "__all_items__" value for "remove all", "cancel everything", etc.
+        if parsed.cancel_item == "__all_items__":
+            if active_items:
+                num_items = len(active_items)
+                for item in active_items:
+                    idx = order.items.items.index(item)
+                    order.items.remove_item(idx)
+                logger.info("Cancellation: removed ALL %d items from cart", num_items)
+                return StateMachineResult(
+                    message="OK, I've cleared your order. What would you like to order?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message="Your order is already empty. What would you like to order?",
+                    order=order,
+                )
+
+        # Handle special "__reduce_to_one__" value for "just one bagel", "only one", etc.
+        if parsed.cancel_item.startswith("__reduce_to_one"):
+            if active_items:
+                item_type = None
+                if parsed.cancel_item != "__reduce_to_one__":
+                    parts = parsed.cancel_item.replace("__", "").replace("reduce_to_one_", "")
+                    if parts:
+                        item_type = parts.strip()
+
+                items_to_check = active_items
+                if item_type:
+                    type_attrs = menu_cache.get_item_type_attributes(item_type)
+                    if type_attrs:
+                        primary_attr = type_attrs[0] if type_attrs else None
+                        if primary_attr:
+                            items_to_check = [
+                                i for i in active_items
+                                if isinstance(i, MenuItemTask) and i.has_attribute(primary_attr)
+                            ]
+                        else:
+                            items_to_check = [i for i in active_items if isinstance(i, MenuItemTask)]
+                    else:
+                        items_to_check = [i for i in active_items if isinstance(i, MenuItemTask)]
+
+                if len(items_to_check) > 1:
+                    items_to_remove = items_to_check[1:]
+                    removed_count = 0
+                    removed_names = []
+                    for item in items_to_remove:
+                        removed_name = item.get_summary()
+                        idx = order.items.items.index(item)
+                        order.items.remove_item(idx)
+                        removed_count += 1
+                        removed_names.append(removed_name)
+
+                    kept_item = items_to_check[0].get_summary()
+                    logger.info(
+                        "Reduce to one: kept '%s', removed %d items: %s",
+                        kept_item, removed_count, removed_names
+                    )
+
+                    if removed_count == 1:
+                        return StateMachineResult(
+                            message=f"OK, I've removed the extra {item_type or 'item'}. You have {kept_item}. Anything else?",
+                            order=order,
+                        )
+                    else:
+                        return StateMachineResult(
+                            message=f"OK, I've removed {removed_count} items. You have {kept_item}. Anything else?",
+                            order=order,
+                        )
+                elif len(items_to_check) == 1:
+                    kept_item = items_to_check[0].get_summary()
+                    return StateMachineResult(
+                        message=f"You already have just one {item_type or 'item'}: {kept_item}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message=f"I don't see any {item_type or 'items'} in your order. What would you like?",
+                        order=order,
+                    )
+            else:
+                return StateMachineResult(
+                    message="Your order is empty. What would you like to order?",
+                    order=order,
+                )
+
+        # Normal item cancellation by description
+        if not active_items:
+            logger.info("Cancellation requested but no items in cart")
+            return StateMachineResult(
+                message="There's nothing in your order yet. What can I get for you?",
+                order=order,
+            )
+
+        cancel_item_desc = parsed.cancel_item.lower()
+
+        # Check for ordinal reference (e.g., "second bagel", "3rd coffee")
+        ordinal_index, item_type_keyword = extract_ordinal_reference(cancel_item_desc)
+
+        if ordinal_index is not None and item_type_keyword:
+            result = find_nth_item_of_type(active_items, item_type_keyword, ordinal_index)
+            if result:
+                item_to_remove, _ = result
+                removed_name = item_to_remove.get_summary()
+                idx = order.items.items.index(item_to_remove)
+                order.items.remove_item(idx)
+
+                logger.info(
+                    "Cancellation: removed %s #%d from cart: %s",
+                    item_type_keyword, ordinal_index, removed_name
+                )
+
+                remaining_items = order.items.get_active_items()
+                if remaining_items:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_name}. Anything else?",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_name}. What would you like to order?",
+                        order=order,
+                    )
+            else:
+                logger.info(
+                    "Cancellation: couldn't find %s #%d in cart",
+                    item_type_keyword, ordinal_index
+                )
+                if item_type_keyword.lower() in ("item", "items", "one", "thing"):
+                    not_found_msg = f"I couldn't find item #{ordinal_index} in your order."
+                else:
+                    not_found_msg = f"I couldn't find a {item_type_keyword} #{ordinal_index} in your order."
+                return StateMachineResult(
+                    message=f"{not_found_msg} What would you like to do?",
+                    order=order,
+                )
+
+        # Check if plural removal (e.g., "coffees", "bagels")
+        is_plural = cancel_item_desc.endswith('s') and len(cancel_item_desc) > 2
+        singular_desc = cancel_item_desc[:-1] if is_plural else cancel_item_desc
+
+        # Map user category terms to item_type via database
+        mapped_item_type = None
+        category_mapping = menu_cache.get_category_keyword_mapping(cancel_item_desc)
+        if not category_mapping:
+            category_mapping = menu_cache.get_category_keyword_mapping(singular_desc)
+        if category_mapping:
+            mapped_item_type = category_mapping.get("slug")
+
+        # Resolve aliases to canonical names
+        resolved_name, _ = menu_cache.resolve_alias(singular_desc)
+        canonical_name_lower = resolved_name.lower() if resolved_name else None
+
+        # Find matching items
+        items_to_remove = []
+        for item in reversed(active_items):
+            item_summary = item.get_summary().lower()
+            item_name = getattr(item, 'menu_item_name', '') or ''
+            item_name_lower = item_name.lower()
+            item_type = getattr(item, 'item_type', '') or ''
+            menu_item_type = getattr(item, 'menu_item_type', '') or ''
+
+            matches = False
+            if cancel_item_desc in item_summary:
+                matches = True
+            elif singular_desc in item_summary:
+                matches = True
+            elif item_name_lower and cancel_item_desc in item_name_lower:
+                matches = True
+            elif item_name_lower and singular_desc in item_name_lower:
+                matches = True
+            elif item_name_lower and item_name_lower in cancel_item_desc:
+                matches = True
+            elif item_type and (cancel_item_desc == item_type or singular_desc == item_type):
+                matches = True
+            elif menu_item_type and (cancel_item_desc == menu_item_type or singular_desc == menu_item_type):
+                matches = True
+            elif mapped_item_type and menu_item_type == mapped_item_type:
+                matches = True
+            elif any(word in item_summary for word in cancel_item_desc.split() if word):
+                matches = True
+            elif canonical_name_lower and canonical_name_lower == item_name_lower:
+                matches = True
+
+            if matches:
+                items_to_remove.append(item)
+                if not is_plural:
+                    break
+
+        if items_to_remove:
+            removed_names = []
+            for item in items_to_remove:
+                removed_names.append(item.get_summary())
+                idx = order.items.items.index(item)
+                order.items.remove_item(idx)
+
+            if len(removed_names) == 1:
+                removed_str = f"the {removed_names[0]}"
+            else:
+                removed_str = f"the {len(removed_names)} {singular_desc}s"
+
+            logger.info("Cancellation: removed %d item(s) from cart: %s", len(removed_names), removed_names)
+
+            remaining_items = order.items.get_active_items()
+            if remaining_items:
+                return StateMachineResult(
+                    message=f"OK, I've removed {removed_str}. Anything else?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message=f"OK, I've removed {removed_str}. What would you like to order?",
+                    order=order,
+                )
+        else:
+            logger.info("Cancellation: couldn't find item matching '%s'", cancel_item_desc)
+            return StateMachineResult(
+                message=f"I couldn't find {parsed.cancel_item} in your order. What would you like to do?",
+                order=order,
+            )
 
     def _handle_item_replacement(
         self,

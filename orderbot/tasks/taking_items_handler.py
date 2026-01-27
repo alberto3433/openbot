@@ -1341,16 +1341,18 @@ class TakingItemsHandler(MenuDataMixin):
                                     selections.append(Selection(slug=value, category=attr_slug))
 
                         if selections:
-                            # Clear existing selections and apply new ones using unified storage
+                            # Clear only modifiers in categories being modified (preserve others)
                             categories = {sel.category for sel in selections}
                             logger.info("Replacement: applying selections to item from categories: %s", categories)
-                            last_item.modifiers = []  # Clear existing selections
+                            for category in categories:
+                                last_item.remove_selection(category)  # Clear only this category
 
                             # Apply all selections
                             for sel in selections:
                                 last_item.add_selection(
                                     slug=sel.slug,
                                     category=sel.category,
+                                    quantity=sel.quantity or 1,
                                     display_name=sel.slug.replace("_", " ").title(),
                                 )
 
@@ -2048,6 +2050,12 @@ class TakingItemsHandler(MenuDataMixin):
 
         # 5. Build summary if item was added
         if items_after > items_before:
+            # Copy unavailable_selections from parsed item to MenuItemTask
+            # This enables helpful "We don't have X - we have Y or Z" messaging
+            last_item = order.items.items[-1]
+            if isinstance(last_item, MenuItemTask) and item.unavailable_selections:
+                last_item.unavailable_selections = item.unavailable_selections.copy()
+
             summary = _build_item_summary(item)
             return order, summary, None
 

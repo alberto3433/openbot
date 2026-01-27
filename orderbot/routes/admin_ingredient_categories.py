@@ -25,10 +25,6 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-from typing import Any
-
-from sqlalchemy.orm import Session
-
 from ..models import IngredientCategory
 from ..schemas.ingredient_categories import (
     IngredientCategoryCreate,
@@ -37,41 +33,24 @@ from ..schemas.ingredient_categories import (
     IngredientCategoryList,
 )
 from .crud_factory import CRUDRouterFactory
+from .crud_helpers import make_list_builder, build_create_kwargs, apply_payload_updates
 
 
-def _build_create_kwargs(payload: IngredientCategoryCreate, db: Session) -> dict[str, Any]:
+# Field normalization rules
+_NORMALIZE = {"slug": "lower_strip", "display_name": "strip"}
+
+
+def _build_create_kwargs(payload, db):
     """Build model kwargs from create payload with normalization."""
-    return {
-        "slug": payload.slug.lower().strip(),
-        "display_name": payload.display_name.strip(),
-        "modifier_type": payload.modifier_type,
-        "display_order": payload.display_order,
-    }
+    return build_create_kwargs(payload, normalize_fields=_NORMALIZE)
 
 
-def _handle_before_update(
-    item: IngredientCategory,
-    payload: IngredientCategoryUpdate,
-    db: Session,
-) -> None:
-    """Apply update payload to item with custom normalization."""
-    if payload.slug is not None:
-        item.slug = payload.slug.lower().strip()
-    if payload.display_name is not None:
-        item.display_name = payload.display_name.strip()
-    if payload.modifier_type is not None:
-        # Handle empty string as null
-        item.modifier_type = payload.modifier_type if payload.modifier_type else None
-    if payload.display_order is not None:
-        item.display_order = payload.display_order
-
-
-def _build_list_response(
-    items: list[IngredientCategoryOut],
-    total: int,
-) -> IngredientCategoryList:
-    """Build list response wrapper."""
-    return IngredientCategoryList(categories=items, total=total)
+def _handle_before_update(item, payload, db):
+    """Apply update payload to item with normalization."""
+    apply_payload_updates(item, payload, db, normalize_fields=_NORMALIZE)
+    # Handle empty string modifier_type as null
+    if payload.modifier_type is not None and not payload.modifier_type:
+        item.modifier_type = None
 
 
 # Create the CRUD router using the factory
@@ -89,7 +68,7 @@ _crud = CRUDRouterFactory(
     on_before_create=_build_create_kwargs,
     on_before_update=_handle_before_update,
     list_response_schema=IngredientCategoryList,
-    list_response_builder=_build_list_response,
+    list_response_builder=make_list_builder(IngredientCategoryList, "categories"),
 )
 
 # Export the router

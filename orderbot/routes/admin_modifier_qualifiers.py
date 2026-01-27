@@ -26,10 +26,6 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-from typing import Any
-
-from sqlalchemy.orm import Session
-
 from ..models import ModifierQualifier
 from ..schemas.modifier_qualifiers import (
     ModifierQualifierCreate,
@@ -38,40 +34,21 @@ from ..schemas.modifier_qualifiers import (
     ModifierQualifierList,
 )
 from .crud_factory import CRUDRouterFactory
+from .crud_helpers import make_list_builder, build_create_kwargs, apply_payload_updates
 
 
-def _build_create_kwargs(payload: ModifierQualifierCreate, db: Session) -> dict[str, Any]:
+# Field normalization rules
+_NORMALIZE = {"pattern": "lower_strip", "normalized_form": "lower_strip"}
+
+
+def _build_create_kwargs(payload, db):
     """Build model kwargs from create payload with normalization."""
-    return {
-        "pattern": payload.pattern.lower().strip(),
-        "normalized_form": payload.normalized_form.lower().strip(),
-        "category": payload.category,
-        "is_active": payload.is_active,
-    }
+    return build_create_kwargs(payload, normalize_fields=_NORMALIZE)
 
 
-def _handle_before_update(
-    item: ModifierQualifier,
-    payload: ModifierQualifierUpdate,
-    db: Session,
-) -> None:
+def _handle_before_update(item, payload, db):
     """Apply update payload to item with normalization."""
-    if payload.pattern is not None:
-        item.pattern = payload.pattern.lower().strip()
-    if payload.normalized_form is not None:
-        item.normalized_form = payload.normalized_form.lower().strip()
-    if payload.category is not None:
-        item.category = payload.category
-    if payload.is_active is not None:
-        item.is_active = payload.is_active
-
-
-def _build_list_response(
-    items: list[ModifierQualifierOut],
-    total: int,
-) -> ModifierQualifierList:
-    """Build list response wrapper."""
-    return ModifierQualifierList(qualifiers=items, total=total)
+    apply_payload_updates(item, payload, db, normalize_fields=_NORMALIZE)
 
 
 # Create the CRUD router using the factory
@@ -89,7 +66,7 @@ _crud = CRUDRouterFactory(
     on_before_create=_build_create_kwargs,
     on_before_update=_handle_before_update,
     list_response_schema=ModifierQualifierList,
-    list_response_builder=_build_list_response,
+    list_response_builder=make_list_builder(ModifierQualifierList, "qualifiers"),
 )
 
 # Export the router

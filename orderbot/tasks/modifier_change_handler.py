@@ -22,6 +22,7 @@ from .normalization import (
     get_attribute_display_name as _get_attr_display_name_from_db,
 )
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
+from .parsers.quantity_utils import extract_quantity_for_pattern
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 
@@ -321,9 +322,39 @@ class ModifierChangeHandler:
             attr_slug, new_value_lower, item_type_slug
         )
 
+        # Extract quantity from original input (e.g., "2 vanilla syrups" -> 2)
+        # Must be done BEFORE normalization strips the quantity
+        quantity = 1
+        if isinstance(normalized_value, str):
+            quantity = extract_quantity_for_pattern(new_value_lower, normalized_value)
+
         # Get old value and set new value
         old_value = self._get_attr_value(item, attr_slug)
-        success = self._set_attr_value(item, attr_slug, normalized_value)
+
+        # Handle multi-select attributes (syrups, sweeteners, etc.) with quantities
+        if isinstance(item, MenuItemTask) and menu_cache.is_multi_select_attribute(attr_slug):
+            # Check if this selection already exists
+            if item.update_selection_quantity(attr_slug, normalized_value, quantity):
+                # Successfully updated existing selection
+                logger.info(
+                    "Updated %s/%s quantity to %d",
+                    attr_slug, normalized_value, quantity
+                )
+                success = True
+            else:
+                # Selection doesn't exist, add it with quantity
+                item.add_selection(
+                    slug=normalized_value,
+                    category=attr_slug,
+                    quantity=quantity,
+                )
+                logger.info(
+                    "Added %s/%s with quantity %d",
+                    attr_slug, normalized_value, quantity
+                )
+                success = True
+        else:
+            success = self._set_attr_value(item, attr_slug, normalized_value)
 
         if not success:
             display_name = self._get_attr_display_name(attr_slug)

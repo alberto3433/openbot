@@ -13,6 +13,7 @@ option aliases via menu_cache.resolve_option_by_alias().
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -212,8 +213,60 @@ class ModifierChangeHandler:
         except Exception:
             pass
 
+        # Try stripping quantity prefix and re-analyzing
+        # e.g., "2 vanilla syrups" -> "vanilla syrups" -> "vanilla syrup"
+        stripped_value = self._strip_quantity_prefix(new_value_lower)
+        if stripped_value != new_value_lower:
+            # Recurse with stripped value
+            is_ambiguous, attrs = self._analyze_modifier(stripped_value, target)
+            if attrs and attrs[0] != "unknown":
+                return is_ambiguous, attrs
+
         # Unknown modifier
         return False, ["unknown"]
+
+    def _strip_quantity_prefix(self, value: str) -> str:
+        """Strip quantity prefixes like '2 ', 'two ', 'double ' from value.
+
+        Also handles pluralization (e.g., "syrups" -> "syrup").
+
+        Args:
+            value: The value to strip quantity from
+
+        Returns:
+            Value with quantity prefix stripped, or original if no prefix found
+        """
+        original = value
+
+        # Strip numeric prefix: "2 vanilla syrups" -> "vanilla syrups"
+        value = re.sub(r"^\d+\s+", "", value)
+
+        # Strip word prefix: "two vanilla syrups" -> "vanilla syrups"
+        quantity_words = [
+            "one", "two", "three", "four", "five", "six",
+            "seven", "eight", "nine", "ten",
+            "double", "triple", "quad", "quadruple",
+        ]
+        for word in quantity_words:
+            if value.startswith(word + " "):
+                value = value[len(word) + 1:]
+                break
+
+        # Strip trailing 's' for plural: "vanilla syrups" -> "vanilla syrup"
+        if value.endswith("s") and not value.endswith("ss"):
+            singular = value[:-1]
+            # Verify the singular form is recognized as an ingredient
+            try:
+                if menu_cache.find_all_categories_for_ingredient(singular):
+                    return singular
+            except Exception:
+                pass
+
+        # Return stripped value (even if we couldn't verify singular)
+        if value != original:
+            return value
+
+        return original
 
     def generate_clarification_message(
         self, change_request: ChangeRequest
@@ -261,6 +314,38 @@ class ModifierChangeHandler:
             "Sure, let me finish getting the details for your current item first, "
             "and then we can make that change."
         )
+
+    def _extract_quantity_from_value(self, value: str) -> tuple[int, str]:
+        """Extract quantity prefix from a value.
+
+        Args:
+            value: The raw value string (e.g., "2 vanilla syrups")
+
+        Returns:
+            Tuple of (quantity, stripped_value)
+        """
+        value = value.strip()
+        quantity = 1
+
+        # Check for numeric prefix: "2 vanilla syrups"
+        match = re.match(r"^(\d+)\s+(.+)$", value)
+        if match:
+            quantity = int(match.group(1))
+            value = match.group(2)
+        else:
+            # Check for word prefix
+            quantity_map = {
+                "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+                "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+                "double": 2, "triple": 3, "quad": 4, "quadruple": 4,
+            }
+            for word, qty in quantity_map.items():
+                if value.startswith(word + " "):
+                    quantity = qty
+                    value = value[len(word) + 1:]
+                    break
+
+        return quantity, value
 
     def apply_change(
         self,
@@ -315,13 +400,56 @@ class ModifierChangeHandler:
                 message=f"This item doesn't have a {display_name} to change.",
             )
 
+        # Extract quantity from value (e.g., "2 vanilla syrups" -> quantity=2, value="vanilla syrups")
+        quantity, stripped_value = self._extract_quantity_from_value(new_value_lower)
+
         # Use data-driven normalization based on database option aliases
         item_type_slug = item.item_type if isinstance(item, MenuItemTask) else None
         normalized_value = self._normalize_attribute_value(
-            attr_slug, new_value_lower, item_type_slug
+            attr_slug, stripped_value, item_type_slug
         )
 
-        # Get old value and set new value
+        # For multi-select attributes (like syrup), use add_selection with quantity
+        # Include unified beverage category 'milk_sweetener_syrup'
+        multi_select_categories = ["syrup", "sweetener", "extras", "milk_sweetener_syrup"]
+        if isinstance(item, MenuItemTask) and attr_slug in multi_select_categories:
+            # Normalize the slug: "vanilla syrups" -> "vanilla_syrup"
+            modifier_slug = normalized_value.replace(" ", "_")
+            if modifier_slug.endswith("s") and not modifier_slug.endswith("ss"):
+                modifier_slug = modifier_slug[:-1]  # Remove trailing 's' for plural
+
+            # Check if we're updating an existing selection
+            # Match on slug containing the base modifier name
+            base_name = modifier_slug.replace("_syrup", "").replace("_", "")
+            existing_mods = [
+                m for m in (item.modifiers or [])
+                if base_name in m.get("slug", "").replace("_", "").lower()
+            ]
+
+            if existing_mods:
+                # Update quantity on existing modifier
+                existing_mods[0]["quantity"] = quantity
+                logger.info("Updated %s quantity to %d", existing_mods[0].get("slug"), quantity)
+            else:
+                # Add new selection with quantity
+                item.add_selection(
+                    modifier_slug,
+                    attr_slug,
+                    quantity=quantity,
+                )
+                logger.info("Added %s x%d to %s", modifier_slug, quantity, attr_slug)
+
+            # Recalculate price
+            if self.pricing:
+                self.pricing.recalculate_item_price(item)
+
+            return ChangeResult(
+                success=True,
+                message=self._build_change_message(item, attr_slug, None, normalized_value),
+                applied_attribute=attr_slug,
+            )
+
+        # Get old value and set new value (for single-select attributes)
         old_value = self._get_attr_value(item, attr_slug)
         success = self._set_attr_value(item, attr_slug, normalized_value)
 

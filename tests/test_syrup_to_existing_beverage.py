@@ -667,3 +667,58 @@ class TestOptionsInquiryAtCheckpoint:
         assert "declined" not in summary.lower(), (
             f"Item summary incorrectly contains 'Declined': {summary}"
         )
+
+
+class TestChangeRequestWithQuantity:
+    """Test change requests with quantity prefixes like 'can you make it with 2 vanilla syrups'."""
+
+    def test_make_it_with_2_vanilla_syrups(self):
+        """
+        Regression test for: "can you make it with 2 vanilla syrups" returning
+        "This item doesn't have a Unknown to change."
+
+        The fix strips the quantity prefix before analyzing the modifier.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # Create a pre-configured latte with 1 vanilla syrup
+        latte = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="sized_beverage",
+        )
+        latte.attribute_values["size"] = "medium"
+        latte.attribute_values["iced"] = False
+        latte.add_selection(
+            "vanilla_syrup",
+            "syrup",
+            quantity=1,
+            price=0.75,
+            display_name="Vanilla Syrup",
+        )
+        latte.mark_complete()
+        order.items.add_item(latte)
+
+        sm = OrderStateMachine()
+
+        # The change request that was failing
+        result = sm.process("can you make it with 2 vanilla syrups", order)
+
+        # Should NOT return "Unknown" error
+        assert "unknown" not in result.message.lower(), (
+            f"Got 'Unknown' error: {result.message}"
+        )
+
+        # Check that vanilla syrup has quantity 2
+        item = result.order.items.items[0]
+        vanilla_mods = [m for m in (item.modifiers or []) if "vanilla" in m.get("slug", "").lower()]
+        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found: {item.modifiers}"
+        assert vanilla_mods[0].get("quantity") == 2, (
+            f"Expected quantity 2, got {vanilla_mods[0].get('quantity')}"
+        )
+
+        # Verify display is pluralized ("Vanilla Syrups" not "Vanilla Syrup")
+        summary = item.get_summary()
+        assert "Syrups" in summary, (
+            f"Expected pluralized 'Syrups' in summary but got: {summary}"
+        )

@@ -1513,6 +1513,10 @@ class MenuItemConfigHandler(BaseHandler):
         if input_type == "boolean":
             return self._handle_boolean_input(user_input, item, order, attr)
 
+        # Handle quantity attributes (e.g., shots)
+        if input_type == "quantity":
+            return self._handle_quantity_input(user_input, item, order, attr, options)
+
         # Handle single/multi select
         if input_type in ("single_select", "multi_select"):
             return self._handle_select_input(user_input, item, order, attr, options)
@@ -1557,6 +1561,106 @@ class MenuItemConfigHandler(BaseHandler):
         self._extract_and_apply_selections(user_input, item)
 
         return self._advance_to_next_question(item, order, attr)
+
+    def _handle_quantity_input(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+        attr: dict,
+        options: list[dict],
+    ) -> StateMachineResult:
+        """Handle quantity-based input (e.g., shots).
+
+        This input type interprets:
+        - Negative responses ("no", "none") as skip
+        - Affirmative responses ("yes", "sure") as quantity=1
+        - Numeric words ("double", "triple", "two") as that quantity
+        - Digits ("2", "3") as that quantity
+
+        Uses the first available option for unit price and display name.
+        Validates against max_selections from the attribute config.
+        """
+        attr_slug = attr["slug"]
+        user_lower = user_input.lower().strip()
+
+        # Get unit option (first available option defines unit price and name)
+        available_options = [opt for opt in options if opt.get("is_available", True)]
+        if not available_options:
+            logger.warning("No available options for quantity attribute %s", attr_slug)
+            return self._advance_to_next_question(item, order, attr)
+
+        unit_option = available_options[0]
+        unit_price = unit_option.get("price") or unit_option.get("price_modifier") or 0.0
+        unit_name = unit_option.get("display_name", attr["display_name"])
+        unit_slug = unit_option.get("slug", attr_slug)
+
+        # Get max quantity from attribute config
+        max_qty = attr.get("max_selections") or 10
+
+        # Check for negative responses (skip)
+        no_patterns = menu_cache.get_response_patterns("negative")
+        if user_lower in no_patterns or user_lower in ("none", "no thanks", "nope"):
+            return self._advance_to_next_question(item, order, attr)
+
+        # Check for affirmative responses (quantity=1)
+        # Also treat "extra" or "extra <anything>" as affirmative (e.g., "extra shot" = 1 shot)
+        # This handles typos like "extra host" as "yes, one"
+        yes_patterns = menu_cache.get_response_patterns("affirmative")
+        is_extra_response = user_lower == "extra" or user_lower.startswith("extra ")
+        if user_lower in yes_patterns or is_extra_response:
+            quantity = 1
+        else:
+            # Try to parse numeric quantity
+            parsed_qty = self._parse_numeric_input(user_input)
+            if parsed_qty is None:
+                # Couldn't parse - ask for clarification
+                question = attr.get("question_text") or f"How many {attr['display_name'].lower()}?"
+                return StateMachineResult(
+                    message=f"Sorry, I didn't catch that. {question}",
+                    order=order,
+                )
+            quantity = parsed_qty
+
+        # Validate quantity
+        if quantity < 1:
+            return self._advance_to_next_question(item, order, attr)
+        if quantity > max_qty:
+            return StateMachineResult(
+                message=f"Sorry, the maximum is {max_qty}. How many would you like?",
+                order=order,
+            )
+
+        # Calculate total price and add selection
+        # Note: Don't include quantity in display_name - the display layer handles that
+        # But DO pluralize the name when quantity > 1
+        total_price = quantity * unit_price
+        if quantity > 1:
+            display_name = unit_name if unit_name.endswith('s') else f"{unit_name}s"
+        else:
+            display_name = unit_name
+
+        item.add_selection(
+            unit_slug,
+            attr_slug,
+            quantity=quantity,
+            price=total_price,
+            display_name=display_name,
+        )
+
+        logger.info(
+            "QUANTITY_INPUT: %s=%d (price=$%.2f) from input '%s'",
+            attr_slug, quantity, total_price, user_input
+        )
+
+        # Build acknowledgment with quantity prefix and pluralization
+        if quantity > 1:
+            # Simple pluralization: add 's' if not already plural
+            plural_name = unit_name if unit_name.endswith('s') else f"{unit_name}s"
+            ack_text = f"{quantity} {plural_name}"
+        else:
+            ack_text = unit_name
+        return self._advance_to_next_question(item, order, attr, ack_text)
 
     def _handle_select_input(
         self,

@@ -270,6 +270,8 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
             implicit_target_patterns = [
                 # "make it with X"
                 r"make\s+it\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+                # "can you make it with X" / "could you make it with X instead"
+                r"(?:can|could|would)\s+you\s+(?:make|have|do)\s+(?:it|that)\s+with\s+(.+?)(?:\s+instead)?(?:\s+(?:please|thanks))?$",
                 # "put X on it"
                 r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+it\b",
                 # "i want X on it"

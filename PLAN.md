@@ -1,64 +1,82 @@
-# Plan: Update Shot Question Phrasing
+# Fix: "can you make it with 2 vanilla syrups" Fails
 
-## Goal
-Make the shot questions more natural sounding:
-- Espresso drinks (latte, cappuccino, etc.): "Any extra shots?"
-- Non-espresso drinks (coffee, cold brew): "Would you like an espresso shot?"
+## Problem Statement
 
-## Changes
+When user says "can you make it with 2 vanilla syrups" after ordering a latte with 1 vanilla syrup:
+- Bot responds: "This item doesn't have a Unknown to change."
 
-### 1. Update `espresso` item type - `espresso_shots` attribute
+## Root Cause
 
-```sql
-UPDATE item_type_global_attributes ita
-SET ask_in_conversation = true,
-    question_text = 'Any extra shots?'
-FROM item_types it, global_attributes ga
-WHERE ita.item_type_id = it.id
-  AND ita.global_attribute_id = ga.id
-  AND it.slug = 'espresso'
-  AND ga.slug = 'espresso_shots';
+In `modifier_change_handler.py`, the `_analyze_modifier` method:
+
+1. Gets new_value = "2 vanilla syrups"
+2. Calls `menu_cache.find_all_categories_for_ingredient("2 vanilla syrups")`
+3. This fails because "2 vanilla syrups" isn't recognized as an ingredient (the "2" prefix breaks matching)
+4. Falls through to line 216: `return False, ["unknown"]`
+5. Then `change_attribute()` tries to change "unknown" attribute, which doesn't exist
+6. `_get_attr_display_name("unknown")` returns "Unknown"
+7. Error message: "This item doesn't have a Unknown to change."
+
+## Solution
+
+Before returning `["unknown"]`, strip quantity prefixes and re-try the ingredient lookup:
+
+**In `_analyze_modifier` method, before line 215-216:**
+
+```python
+# Try stripping quantity prefix and re-analyzing
+# e.g., "2 vanilla syrups" -> "vanilla syrups" -> "vanilla syrup"
+stripped_value = self._strip_quantity_prefix(new_value_lower)
+if stripped_value != new_value_lower:
+    # Recurse with stripped value
+    is_ambiguous, attrs = self._analyze_modifier(stripped_value, target)
+    if attrs and attrs[0] != "unknown":
+        return is_ambiguous, attrs
+
+# Unknown modifier
+return False, ["unknown"]
 ```
 
-### 2. Update `sized_beverage` item type - `shots` attribute
+**Add helper method:**
 
-```sql
-UPDATE item_type_global_attributes ita
-SET question_text = 'Would you like an espresso shot?'
-FROM item_types it, global_attributes ga
-WHERE ita.item_type_id = it.id
-  AND ita.global_attribute_id = ga.id
-  AND it.slug = 'sized_beverage'
-  AND ga.slug = 'shots';
+```python
+def _strip_quantity_prefix(self, value: str) -> str:
+    """Strip quantity prefixes like '2 ', 'two ', 'double ' from value."""
+    import re
+    # Strip numeric prefix: "2 vanilla syrups" -> "vanilla syrups"
+    value = re.sub(r"^\d+\s+", "", value)
+    # Strip word prefix: "two vanilla syrups" -> "vanilla syrups"
+    quantity_words = ["one", "two", "three", "four", "five", "six", "double", "triple"]
+    for word in quantity_words:
+        if value.startswith(word + " "):
+            value = value[len(word)+1:]
+            break
+    # Strip trailing 's' for plural: "vanilla syrups" -> "vanilla syrup"
+    if value.endswith("s") and not value.endswith("ss"):
+        singular = value[:-1]
+        # Verify the singular form is recognized
+        try:
+            if menu_cache.find_all_categories_for_ingredient(singular):
+                return singular
+        except:
+            pass
+    return value
 ```
+
+## Alternative: Handle in change_attribute
+
+Could also handle this at the `change_attribute` level by:
+1. Detecting quantity in new_value
+2. Using `add_selection` with quantity instead of single-value attribute change
+
+## File to Modify
+
+| File | Change |
+|------|--------|
+| `orderbot/tasks/modifier_change_handler.py` | Add quantity stripping before returning "unknown" |
 
 ## Verification
 
-After running the updates, verify with:
-
-```sql
-SELECT it.slug as item_type, ga.slug as attr, ita.question_text, ita.ask_in_conversation
-FROM item_type_global_attributes ita
-JOIN item_types it ON ita.item_type_id = it.id
-JOIN global_attributes ga ON ita.global_attribute_id = ga.id
-WHERE ga.slug IN ('espresso_shots', 'shots')
-ORDER BY it.slug;
-```
-
-Expected output:
-| item_type | attr | question_text | ask_in_conversation |
-|-----------|------|---------------|---------------------|
-| espresso | espresso_shots | Any extra shots? | true |
-| sized_beverage | shots | Would you like an espresso shot? | true |
-
-## Testing
-
-Test in chatbot UI:
-1. Order a latte → should ask "Any extra shots?"
-2. Order a hot coffee → should ask "Would you like an espresso shot?"
-3. Respond with "two" or "double" → should apply quantity correctly
-
-## Notes
-- No code changes required - database only
-- Quantity parsing already handles: "two shots", "triple", "double", "yes, two please"
-- All espresso-based drinks (latte, cappuccino, americano, macchiato) are already classified as `espresso` item type
+1. Order a latte with vanilla syrup
+2. Say "can you make it with 2 vanilla syrups"
+3. Should update to 2x Vanilla Syrup, not show "Unknown" error

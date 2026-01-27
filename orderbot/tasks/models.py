@@ -25,6 +25,38 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
+def _pluralize_display_name(display_name: str) -> str:
+    """Pluralize a display name by pluralizing the last word.
+
+    Examples:
+        "Vanilla Syrup" -> "Vanilla Syrups"
+        "Extra Shot" -> "Extra Shots"
+        "Chocolate Chips" -> "Chocolate Chips" (already plural)
+    """
+    if not display_name:
+        return display_name
+
+    # Already plural (ends with 's' but not 'ss')
+    if display_name.endswith('s') and not display_name.endswith('ss'):
+        return display_name
+
+    words = display_name.split()
+    if not words:
+        return display_name
+
+    last_word = words[-1]
+
+    # Simple pluralization rules
+    if last_word.endswith(('ch', 'sh', 's', 'x', 'z')):
+        words[-1] = last_word + 'es'
+    elif last_word.endswith('y') and len(last_word) > 1 and last_word[-2] not in 'aeiou':
+        words[-1] = last_word[:-1] + 'ies'
+    else:
+        words[-1] = last_word + 's'
+
+    return ' '.join(words)
+
+
 def _is_name_forming_category(category: str) -> bool:
     """Check if a category is name-forming (data-driven).
 
@@ -650,7 +682,8 @@ class MenuItemTask(ItemTask):
 
             if display_name:
                 if quantity > 1:
-                    displays.append(f"{quantity}x {display_name}")
+                    plural_name = _pluralize_display_name(display_name)
+                    displays.append(f"{quantity}x {plural_name}")
                 else:
                     displays.append(display_name)
 

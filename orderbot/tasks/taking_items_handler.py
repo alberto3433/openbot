@@ -37,9 +37,11 @@ from .modifier_operations import (
     remove_default_ingredient_from_item,
 )
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, ORDINAL_WORDS
+from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
 from .parsers.quantity_utils import (
     BASIC_WORD_TO_NUM,
     extract_quantity_for_pattern,
+    extract_leading_quantity,
     parse_make_it_n_quantity,
 )
 from .mixins import MenuDataMixin
@@ -1173,6 +1175,17 @@ class TakingItemsHandler(MenuDataMixin):
                             modifier_lower = modifier.lower()
                             base_modifier = modifier_lower.split(" (")[0].strip()
 
+                            # Strip quantity prefix from modifier: "2 vanilla syrups" -> "vanilla syrups"
+                            quantity_from_modifier, base_modifier_stripped = extract_leading_quantity(base_modifier)
+                            if quantity_from_modifier:
+                                base_modifier = base_modifier_stripped
+                            # Also strip trailing 's' for plural: "vanilla syrups" -> "vanilla syrup"
+                            if base_modifier.endswith("s") and not base_modifier.endswith("ss"):
+                                singular = base_modifier[:-1]
+                                # Check if singular form is recognized
+                                if menu_cache.find_matching_ingredients(singular):
+                                    base_modifier = singular
+
                             # Check for multiple matching ingredients (disambiguation)
                             matches = menu_cache.find_matching_ingredients(base_modifier)
 
@@ -1186,9 +1199,9 @@ class TakingItemsHandler(MenuDataMixin):
                                     )
                                     continue
 
-                                # Extract quantity
-                                quantity = 1
-                                if raw_user_input:
+                                # Extract quantity - prefer quantity from modifier prefix
+                                quantity = quantity_from_modifier if quantity_from_modifier else 1
+                                if quantity == 1 and raw_user_input:
                                     quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
                                     if quantity == 1 and "(extra)" in modifier_lower:
                                         quantity = 2
@@ -1205,8 +1218,9 @@ class TakingItemsHandler(MenuDataMixin):
                             elif len(matches) == 1:
                                 # Single match - add it directly
                                 match = matches[0]
-                                quantity = 1
-                                if raw_user_input:
+                                # Extract quantity - prefer quantity from modifier prefix
+                                quantity = quantity_from_modifier if quantity_from_modifier else 1
+                                if quantity == 1 and raw_user_input:
                                     quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
                                     if quantity == 1 and "(extra)" in modifier_lower:
                                         quantity = 2
@@ -1229,8 +1243,9 @@ class TakingItemsHandler(MenuDataMixin):
                                 # Store context for when disambiguation resolves
                                 target_item_index = order.items.items.index(target_item)
                                 order.pending_modifier_target_item_index = target_item_index
-                                quantity = 1
-                                if raw_user_input:
+                                # Extract quantity - prefer quantity from modifier prefix
+                                quantity = quantity_from_modifier if quantity_from_modifier else 1
+                                if quantity == 1 and raw_user_input:
                                     quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
                                     if quantity == 1 and "(extra)" in modifier_lower:
                                         quantity = 2
@@ -1282,6 +1297,64 @@ class TakingItemsHandler(MenuDataMixin):
 
                 # Check if parsed result has any valid new items
                 has_new_items = bool(parsed.parsed_items)
+
+                # PRIORITY CHECK: Before anything else, check if the replacement text is
+                # an attribute value on the last item (e.g., "double" for shots).
+                # This takes priority over item parsing to avoid false matches like
+                # "double" -> "Double-Chocolate Muffin" when user meant "double shot".
+                if isinstance(last_item, MenuItemTask) and raw_user_input:
+                    replace_match = REPLACE_ITEM_PATTERN.match(raw_user_input)
+                    if replace_match:
+                        replacement_text = None
+                        for i in range(1, 11):
+                            if replace_match.group(i):
+                                replacement_text = replace_match.group(i)
+                                break
+                        if replacement_text:
+                            replacement_text = replacement_text.strip().lower()
+                            replacement_text = re.sub(r"^(?:a|an)\s+", "", replacement_text)
+
+                            item_type = last_item.menu_item_type
+                            if item_type:
+                                attrs = menu_cache.get_item_type_attributes(item_type)
+                                for attr_slug, attr_config in attrs.items():
+                                    for opt in attr_config.get("options", []):
+                                        opt_slug = opt.get("slug", "").lower()
+                                        opt_display = opt.get("display_name", "").lower()
+                                        matches = (
+                                            replacement_text == opt_slug or
+                                            replacement_text == opt_slug.replace("_", " ") or
+                                            replacement_text == opt_display or
+                                            replacement_text in [w.lower() for w in opt_display.split()]
+                                        )
+                                        if matches:
+                                            logger.info(
+                                                "REPLACE_AS_ATTR_PRIORITY: '%s' matches attr %s option '%s'",
+                                                replacement_text, attr_slug, opt["slug"]
+                                            )
+
+                                            # Remove existing selections for this attribute
+                                            last_item.modifiers = [
+                                                m for m in last_item.modifiers
+                                                if m.get("category") != attr_slug
+                                            ]
+
+                                            # Add the new selection
+                                            last_item.add_selection(
+                                                opt["slug"],
+                                                attr_slug,
+                                                quantity=1,
+                                                price=opt.get("price_modifier", 0),
+                                                display_name=opt.get("display_name", opt["slug"]),
+                                            )
+
+                                            if self.pricing:
+                                                self.pricing.recalculate_item_price(last_item)
+
+                                            return StateMachineResult(
+                                                message=f"Changed to {opt.get('display_name', opt['slug'])}. Anything else?",
+                                                order=order,
+                                            )
 
                 # If last item has a single_select attribute and user specifies a new value,
                 # update just that attribute while preserving other attributes and modifiers

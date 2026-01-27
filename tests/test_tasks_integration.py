@@ -6512,3 +6512,81 @@ class TestChangeToMenuItemNotModifier:
         assert "doesn't have a" not in result.message.lower(), (
             f"Got modifier change error: {result.message}"
         )
+
+
+class TestUnavailableAttributeOptions:
+    """Tests for handling unavailable attribute options (e.g., 'medium' size)."""
+
+    def test_unavailable_selection_in_menu_item_task(self):
+        """Test that MenuItemTask can store unavailable_selections."""
+        from orderbot.tasks.models import MenuItemTask
+
+        task = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="sized_beverage",
+            unavailable_selections={"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
+        )
+
+        assert task.unavailable_selections == {"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
+
+    def test_unavailable_selection_message_generation(self):
+        """Test that the handler generates helpful message for unavailable selections."""
+        from orderbot.tasks.models import OrderTask, MenuItemTask
+        from orderbot.tasks.schemas import OrderPhase
+        from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
+        from orderbot.tasks.handler_config import HandlerConfig
+
+        # Create handler with real handler config
+        config = HandlerConfig()
+        handler = MenuItemConfigHandler(config)
+
+        # Create order with item that has unavailable selection
+        order = OrderTask()
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
+
+        # Create item with unavailable "medium" size selection
+        item = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="sized_beverage",
+            unavailable_selections={"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
+        )
+        order.items.add_item(item)
+        order.pending_item_id = item.id
+
+        # Mock attribute definition with available options only
+        mock_attr = {
+            "slug": "size",
+            "display_name": "Size",
+            "question_text": "What size?",
+            "ask_in_conversation": True,
+            "input_type": "single_select",
+            "options": [
+                {"slug": "small", "display_name": "Small", "price": 0, "is_available": True},
+                {"slug": "large", "display_name": "Large", "price": 1.00, "is_available": True},
+            ],
+        }
+
+        # Call the internal method that generates the question
+        result = handler._ask_attribute_question(item, order, mock_attr, "size")
+
+        # Should mention "we don't have Medium" and list available options
+        assert "we don't have medium" in result.message.lower(), f"Expected unavailable message, got: {result.message}"
+        assert "small" in result.message.lower(), f"Expected 'Small' option, got: {result.message}"
+        assert "large" in result.message.lower(), f"Expected 'Large' option, got: {result.message}"
+
+        # Unavailable selection should be cleared
+        assert "size" not in item.unavailable_selections
+
+    def test_parsed_item_entry_unavailable_selections(self):
+        """Test that ParsedItemEntry stores unavailable_selections."""
+        from orderbot.tasks.schemas.parser_responses import ParsedItemEntry
+
+        entry = ParsedItemEntry(
+            menu_item_name="Latte",
+            menu_item_type="sized_beverage",
+            item_type="sized_beverage",  # Required field
+            quantity=1,
+            unavailable_selections={"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
+        )
+
+        assert entry.unavailable_selections == {"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}

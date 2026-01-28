@@ -50,24 +50,9 @@ from .parsers import (
     validate_phone_number,
     extract_zip_code,
     validate_delivery_zip_code,
-    # Note: GREETING_PATTERNS and DONE_PATTERNS moved to database
-    # - use menu_cache.is_greeting() / menu_cache.is_done() instead
-    REPEAT_ORDER_PATTERNS,
-    # Constants - Price inquiry patterns
-    PRICE_INQUIRY_PATTERNS,
-    # Note: MENU_CATEGORY_KEYWORDS was moved to the database
-    # - use menu_cache.get_category_keyword_mapping() instead
-    # Constants - Store info patterns
-    STORE_HOURS_PATTERNS,
-    STORE_LOCATION_PATTERNS,
-    DELIVERY_ZONE_PATTERNS,
-    # Note: NYC_NEIGHBORHOOD_ZIPS moved to database - use menu_data["neighborhood_zip_codes"]
     # String normalization utilities
     normalize_for_match,
     # Deterministic parsers - Compiled patterns
-    REPLACE_ITEM_PATTERN,
-    CANCEL_ITEM_PATTERN,
-    TAX_QUESTION_PATTERN,
     ORDER_STATUS_PATTERN,
     # Unified data-driven pattern for detecting new item orders
     _get_configurable_item_pattern,

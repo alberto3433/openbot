@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 
 from collections import defaultdict
 
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload
 
 logger = logging.getLogger(__name__)
 

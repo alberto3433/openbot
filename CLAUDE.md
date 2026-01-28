@@ -123,6 +123,41 @@ The frontend should be a pure data renderer with no business logic. All item-typ
 - **Modifier Normalization**: Uses `Ingredient.aliases` in database. Use `menu_cache.normalize_modifier()`.
 - **Pricing**: Calculated in `pricing.py` using `menu_items.base_price` and `attribute_options.price_modifier`.
 
+### Menu Item Matching Rules
+
+These rules apply whenever the system needs to resolve user text to a menu item — whether the user is ordering ("the classic"), removing ("remove the classic"), or switching ("switch to the classic"). The verb determines the action; the rules below determine which item is referenced.
+
+**Step 1: Extract the search term**
+Strip ordering verbs, articles, quantities, and size/modifier words to get the core item reference.
+- "I'd like a large iced coffee" → "iced coffee"
+- "remove the classic" → "the classic"
+- "two plain bagels" → "plain bagel" (quantity extracted separately)
+
+**Step 2: Find matching menu items**
+Search ALL menu items (display names + aliases from `menu_item_aliases`) using **word-boundary matching** of the **full search term**:
+- `\b{search_term}\b` must appear in the item's display name OR exactly match one of its aliases
+- "the classic" → `\bthe classic\b` matches "**The Classic** BEC" ✓ and "**The Classic** BEC Omelette" ✓
+- "iced tea" → `\biced tea\b` matches "**Iced Tea**" ✓ but NOT "Hot Tea" ✗
+- "bec" → exact alias match → "The Classic BEC" ✓
+
+**Step 3: Apply `required_match_phrases` filter**
+If a menu item has `required_match_phrases` set, the user's input must contain at least one of those phrases. Otherwise the item is excluded.
+- "The Classic Omelette" requires "classic omelette" or "classic omelet"
+- Input "the classic" → doesn't contain either → **excluded**
+- "Russian Coffee Cake" requires "coffee cake" or "cake"
+- Input "coffee" → doesn't contain either → **excluded** (prevents "coffee" from matching "Russian Coffee Cake")
+
+**Step 4: Handle results**
+- **0 matches**: Fall through to LLM fallback or "item not found"
+- **1 match**: Add/remove/modify the item directly
+- **2+ matches**: Show disambiguation (numbered list, user picks one)
+
+**Example: "the classic"**
+1. Search term: "the classic"
+2. Word-boundary matches: The Classic BEC ✓, The Classic BEC Omelette ✓, The Classic Omelette ✓, Olipop Classic Grape ✓
+3. After `required_match_phrases` filter: The Classic Omelette excluded (needs "classic omelette"), Olipop Classic Grape excluded (needs "classic grape")
+4. Result: 2 matches → disambiguation between The Classic BEC and The Classic BEC Omelette
+
 ## Data-Driven Architecture
 
 ### Core Principle

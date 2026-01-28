@@ -6,7 +6,6 @@ This module provides:
 2. Wrapper functions that match the existing API signatures
 """
 
-import os
 import logging
 from typing import Any, Dict, List, Tuple
 
@@ -20,25 +19,6 @@ from .adapter import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-# -----------------------------------------------------------------------------
-# Feature Flag
-# -----------------------------------------------------------------------------
-
-def is_state_machine_enabled() -> bool:
-    """
-    Check if the state machine is enabled.
-
-    Control via environment variable:
-        STATE_MACHINE_ENABLED=true|false
-
-    Examples:
-        STATE_MACHINE_ENABLED=true   - Use state machine (default)
-        STATE_MACHINE_ENABLED=false  - Don't use state machine
-    """
-    flag_value = os.environ.get("STATE_MACHINE_ENABLED", "true").lower()
-    return flag_value == "true"
 
 
 # -----------------------------------------------------------------------------

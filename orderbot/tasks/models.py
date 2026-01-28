@@ -297,10 +297,6 @@ class MenuItemTask(ItemTask):
     # Side item helpers
     # -------------------------------------------------------------------------
 
-    def is_side(self) -> bool:
-        """Check if this item is a side of another item."""
-        return self.side_of_item_id is not None
-
     def duplicate(self, mark_complete: bool = True) -> "MenuItemTask":
         """Create a deep copy of this item with a new UUID.
 
@@ -749,22 +745,6 @@ class CheckoutTask(BaseTask):
     confirmed: bool = False
     order_number: str | None = None
 
-    def calculate_total(
-        self,
-        subtotal: float,
-        is_delivery: bool = False,
-        city_tax_rate: float = 0.0,
-        state_tax_rate: float = 0.0,
-        delivery_fee: float = 0.0,
-    ) -> None:
-        """Calculate order totals."""
-        self.subtotal = subtotal
-        self.city_tax = round(subtotal * city_tax_rate, 2)
-        self.state_tax = round(subtotal * state_tax_rate, 2)
-        self.tax = self.city_tax + self.state_tax
-        self.delivery_fee = delivery_fee if is_delivery else 0.0
-        self.total = round(self.subtotal + self.tax + self.delivery_fee + self.tip, 2)
-
     def generate_order_number(self) -> str:
         """Generate a unique order number."""
         import random
@@ -1024,10 +1004,6 @@ class OrderTask(BaseTask):
         if self.pending_attr_disambiguation is not None:
             return True
         return len(self.pending_item_ids) > 0 and self.pending_field is not None
-
-    def is_configuring_multiple(self) -> bool:
-        """Check if we're configuring multiple items at once."""
-        return len(self.pending_item_ids) > 1
 
     def clear_pending(self):
         """Clear pending item/field when done configuring."""

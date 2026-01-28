@@ -258,12 +258,6 @@ def extract_attribute_values(
                 attr_slug
             )
 
-    def is_word_boundary(text: str, start: int, end: int) -> bool:
-        """Check if the match is at word boundaries."""
-        before_ok = start == 0 or not text[start - 1].isalnum()
-        after_ok = end >= len(text) or not text[end].isalnum()
-        return before_ok and after_ok
-
     def check_plural_boundary(text: str, start: int, end: int) -> tuple[bool, int]:
         """Check if match is at word boundary, allowing for plural suffixes.
 

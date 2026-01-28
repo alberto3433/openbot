@@ -333,19 +333,3 @@ def should_ask_field(
     return False
 
 
-def get_field_question(
-    item_type: str,
-    field_name: str,
-    menu_config: MenuFieldConfig | None = None,
-) -> str | None:
-    """Get the question to ask for a field from database."""
-    # Try direct database lookup
-    db_config = _get_db_field_config(item_type, field_name)
-    if db_config:
-        return db_config.get("question")
-
-    # Fall back to FieldConfig
-    config = get_field_config(item_type, field_name, menu_config)
-    if config:
-        return config.question
-    return None

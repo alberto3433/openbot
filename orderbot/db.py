@@ -43,7 +43,6 @@ SessionLocal = sessionmaker(
 
 # NOTE: Tables are created via alembic migrations, not on module import.
 # This avoids blocking database connections during import.
-# Use init_db() if you need to create tables programmatically.
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -53,8 +52,3 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
-
-
-def init_db() -> None:
-    """Initialize database tables programmatically."""
-    Base.metadata.create_all(bind=engine)

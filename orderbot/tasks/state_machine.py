@@ -182,11 +182,6 @@ def set_global_menu_data(menu_data: dict | None) -> None:
     _global_menu_data = menu_data
 
 
-def get_global_menu_data() -> dict | None:
-    """Get global menu data if set."""
-    return _global_menu_data
-
-
 class OrderStateMachine:
     """
     State machine for order capture.

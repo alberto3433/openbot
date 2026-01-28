@@ -23,7 +23,6 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
-from sqlalchemy.orm.attributes import flag_modified
 
 from .db import get_db
 from .models import ChatSession, Store, Company, SessionAnalytics
@@ -276,26 +275,6 @@ def _get_session_data(db: Session, session_id: str) -> Optional[Dict[str, Any]]:
         }
 
     return None
-
-
-def _save_session_data(db: Session, session_id: str, session_data: Dict[str, Any]) -> None:
-    """Save session data to cache and database."""
-    # Update phone session cache
-    phone = session_data.get("caller_id")
-    if phone and phone in _phone_sessions:
-        _phone_sessions[phone]["session_data"] = session_data
-        _phone_sessions[phone]["last_access"] = time.time()
-
-    # Update database
-    db_session = db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
-    if db_session:
-        db_session.history = session_data.get("history", [])
-        db_session.order_state = session_data.get("order", {})
-        db_session.menu_version_sent = session_data.get("menu_version")
-        # Force SQLAlchemy to detect changes to mutable JSON columns
-        flag_modified(db_session, "history")
-        flag_modified(db_session, "order_state")
-        db.commit()
 
 
 def _save_call_analytics(

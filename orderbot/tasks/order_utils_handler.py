@@ -55,10 +55,6 @@ class OrderUtilsHandler:
         """Set context from unified OrderContext."""
         self._store_info = ctx.store_info
 
-    def set_message_builder(self, message_builder: "MessageBuilder | None") -> None:
-        """Set the message builder (for use when set post-init)."""
-        self._message_builder = message_builder
-
     def handle_quantity_change(
         self,
         user_input: str,

@@ -447,7 +447,21 @@ class LoaderMixin:
 
                 for suffix in all_type_suffixes:
                     if name_lower.endswith(suffix):
-                        triggers.add(name_lower[:-len(suffix)])
+                        stripped = name_lower[:-len(suffix)]
+                        # If the item has required_match_phrases, only add the
+                        # stripped trigger when it satisfies those phrases.
+                        # Example: "The Classic Omelette" requires "classic omelette"
+                        # Stripped "the classic" doesn't contain it → skip,
+                        # preventing "the classic" from triggering the omelette type.
+                        if item.required_match_phrases:
+                            phrases = [
+                                p.strip().lower()
+                                for p in item.required_match_phrases.split(",")
+                                if p.strip()
+                            ]
+                            if not any(phrase in stripped for phrase in phrases):
+                                continue
+                        triggers.add(stripped)
 
                 words = name_lower.split()
                 if len(words) > 1:

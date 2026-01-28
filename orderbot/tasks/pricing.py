@@ -443,6 +443,7 @@ class PricingEngine(MenuDataMixin):
         # =====================================================================
 
         skip_suffixes = ("_price", "_upcharge", "_choice")
+        priced_slugs: set[str] = set()
 
         for attr_slug, attr_value in attr_values.items():
             # Skip metadata/computed fields
@@ -475,15 +476,18 @@ class PricingEngine(MenuDataMixin):
                         upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, item_val)
                         if upcharge > 0:
                             total += upcharge
+                            priced_slugs.add(item_val)
                         else:
                             price = self.lookup_modifier_price(item_val, item_type)
                             total += price
+                            priced_slugs.add(item_val)
                     elif isinstance(item_val, dict):
                         slug = item_val.get("slug") or ""
                         qty = item_val.get("quantity", 1) or 1
                         if slug:
                             price = self.lookup_modifier_price(slug, item_type)
                             total += price * qty
+                            priced_slugs.add(slug)
 
             elif isinstance(attr_value, (int, float)):
                 # Numeric values - skip direct pricing (handled via modifiers list)
@@ -494,9 +498,11 @@ class PricingEngine(MenuDataMixin):
                 upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, attr_value)
                 if upcharge > 0:
                     total += upcharge
+                    priced_slugs.add(attr_value)
                 else:
                     price = self.lookup_modifier_price(attr_value, item_type)
                     total += price
+                    priced_slugs.add(attr_value)
 
         # =====================================================================
         # 3. Process item.modifiers generically (no hardcoded categories)
@@ -507,7 +513,7 @@ class PricingEngine(MenuDataMixin):
                 continue
 
             slug = modifier.get("slug") or ""
-            if not slug:
+            if not slug or slug in priced_slugs:
                 continue
 
             quantity = modifier.get("quantity", 1) or 1

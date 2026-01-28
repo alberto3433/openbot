@@ -65,7 +65,6 @@ class SizeCategoryBase(BaseModel):
 
 class SizeCategoryCreate(SizeCategoryBase):
     """Request model for creating a new size category."""
-    pass
 
 
 class SizeCategoryUpdate(BaseModel):
@@ -139,7 +138,6 @@ class SizeBase(BaseModel):
 
 class SizeCreate(SizeBase):
     """Request model for creating a new size."""
-    pass
 
 
 class SizeUpdate(BaseModel):
@@ -212,7 +210,6 @@ class SizePriceBase(BaseModel):
 
 class SizePriceCreate(SizePriceBase):
     """Request model for creating a size price entry."""
-    pass
 
 
 class SizePriceUpdate(BaseModel):

@@ -62,7 +62,6 @@ class IngredientCategoryBase(BaseModel):
 
 class IngredientCategoryCreate(IngredientCategoryBase):
     """Request model for creating a new ingredient category."""
-    pass
 
 
 class IngredientCategoryUpdate(BaseModel):

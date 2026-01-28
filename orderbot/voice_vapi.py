@@ -204,7 +204,7 @@ def _get_or_create_phone_session(
             store_name = store.name
 
     # Check for returning customer
-    returning_customer = _lookup_customer_by_phone(db, normalized_phone)
+    returning_customer = lookup_customer_by_phone(db, normalized_phone)
 
     # Generate greeting
     if returning_customer and returning_customer.get("name"):
@@ -255,14 +255,6 @@ def _get_or_create_phone_session(
                normalized_phone[-4:], session_id[:8], store_id or "default")
 
     return session_id
-
-
-def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
-    """Look up returning customer by phone number from past orders.
-
-    Delegates to the shared lookup_customer_by_phone helper in services.helpers.
-    """
-    return lookup_customer_by_phone(db, phone)
 
 
 def _get_session_data(db: Session, session_id: str) -> Optional[Dict[str, Any]]:
@@ -561,7 +553,7 @@ async def vapi_chat_completions(
 
     # Look up returning customer if not already in session (e.g., resumed from DB)
     if not returning_customer and phone_number:
-        returning_customer = _lookup_customer_by_phone(db, phone_number)
+        returning_customer = lookup_customer_by_phone(db, phone_number)
         if returning_customer:
             session_data["returning_customer"] = returning_customer
             logger.info("Looked up returning customer: %s", returning_customer.get("name"))
@@ -769,7 +761,7 @@ async def vapi_webhook(
         # Look up returning customer
         returning_customer = None
         if phone_number:
-            returning_customer = _lookup_customer_by_phone(db, phone_number)
+            returning_customer = lookup_customer_by_phone(db, phone_number)
 
         # Get company/store info for greeting
         company = db.query(Company).first()

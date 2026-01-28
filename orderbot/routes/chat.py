@@ -111,18 +111,6 @@ limiter = Limiter(key_func=get_session_id_or_ip, enabled=RATE_LIMIT_ENABLED)
 
 
 # =============================================================================
-# Helper Functions
-# =============================================================================
-
-def _lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
-    """Look up a returning customer by phone number.
-
-    Delegates to the shared lookup_customer_by_phone helper in services.helpers.
-    """
-    return lookup_customer_by_phone(db, phone)
-
-
-# =============================================================================
 # Chat Endpoints
 # =============================================================================
 
@@ -153,7 +141,7 @@ def chat_start(
     # Check for returning customer
     returning_customer = None
     if caller_id:
-        returning_customer = _lookup_customer_by_phone(db, caller_id)
+        returning_customer = lookup_customer_by_phone(db, caller_id)
         logger.info("Caller ID lookup: %s -> %s", caller_id, "found" if returning_customer else "new customer")
 
     # Get primary item type for greeting

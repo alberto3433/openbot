@@ -75,7 +75,6 @@ class ModifierQualifierBase(BaseModel):
 
 class ModifierQualifierCreate(ModifierQualifierBase):
     """Request model for creating a new modifier qualifier."""
-    pass
 
 
 class ModifierQualifierUpdate(BaseModel):

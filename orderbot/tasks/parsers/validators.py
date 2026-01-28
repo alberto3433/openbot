@@ -137,48 +137,6 @@ def extract_zip_code(address: str) -> str | None:
     return None
 
 
-def parse_yes_no_deterministic(
-    user_input: str,
-    no_patterns: str | None = None,
-    yes_patterns: str | None = None,
-) -> bool | None:
-    """
-    Deterministically parse yes/no responses using regex patterns.
-
-    Checks NO patterns FIRST (before yes) to handle phrases like
-    "not toasted" which contains "toasted" but means no.
-
-    Args:
-        user_input: The user's response text
-        no_patterns: Regex pattern for negative responses.
-                     Defaults to common negative words.
-        yes_patterns: Regex pattern for positive responses.
-                      Defaults to common positive words.
-
-    Returns:
-        True if positive, False if negative, None if unclear
-    """
-    if not user_input:
-        return None
-
-    input_lower = user_input.lower().strip()
-
-    # Default patterns
-    if no_patterns is None:
-        no_patterns = r'\b(no|nope|nah|not|don\'t|none|neither)\b'
-    if yes_patterns is None:
-        yes_patterns = r'\b(yes|yeah|yep|yup|sure|please|ok|okay)\b'
-
-    # Check NO first (important for "not X" phrases)
-    if re.search(no_patterns, input_lower):
-        return False
-
-    # Then check YES
-    if re.search(yes_patterns, input_lower):
-        return True
-
-    return None
-
 
 # Note: parse_toasted_deterministic was removed - toasted preference is now
 # parsed via data-driven boolean attribute lookup using global_attribute_options

@@ -13,6 +13,7 @@ from typing import Callable, TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
+from orderbot.cache.base import singularize, get_singular_plural_variants
 
 from .models import (
     OrderTask,
@@ -1366,16 +1367,20 @@ class TakingItemsHandler(MenuDataMixin):
                 )
 
         # Check if plural removal (e.g., "coffees", "bagels")
-        is_plural = cancel_item_desc.endswith('s') and len(cancel_item_desc) > 2
-        singular_desc = cancel_item_desc[:-1] if is_plural else cancel_item_desc
+        # Use singularize to properly detect plural forms
+        singular_desc = singularize(cancel_item_desc)
+        is_plural = singular_desc != cancel_item_desc.lower()
+
+        # Get all variants for matching
+        cancel_variants = get_singular_plural_variants(cancel_item_desc)
 
         # Map user category terms to item_type via database
         mapped_item_type = None
-        category_mapping = menu_cache.get_category_keyword_mapping(cancel_item_desc)
-        if not category_mapping:
-            category_mapping = menu_cache.get_category_keyword_mapping(singular_desc)
-        if category_mapping:
-            mapped_item_type = category_mapping.get("slug")
+        for variant in cancel_variants:
+            category_mapping = menu_cache.get_category_keyword_mapping(variant)
+            if category_mapping:
+                mapped_item_type = category_mapping.get("slug")
+                break
 
         # Resolve aliases to canonical names
         resolved_name, _ = menu_cache.resolve_alias(singular_desc)
@@ -1390,20 +1395,17 @@ class TakingItemsHandler(MenuDataMixin):
             item_type = getattr(item, 'item_type', '') or ''
             menu_item_type = getattr(item, 'menu_item_type', '') or ''
 
+            # Check for matches using all variants
             matches = False
-            if cancel_item_desc in item_summary:
+            if any(v in item_summary for v in cancel_variants):
                 matches = True
-            elif singular_desc in item_summary:
-                matches = True
-            elif item_name_lower and cancel_item_desc in item_name_lower:
-                matches = True
-            elif item_name_lower and singular_desc in item_name_lower:
+            elif item_name_lower and any(v in item_name_lower for v in cancel_variants):
                 matches = True
             elif item_name_lower and item_name_lower in cancel_item_desc:
                 matches = True
-            elif item_type and (cancel_item_desc == item_type or singular_desc == item_type):
+            elif item_type and any(v == item_type for v in cancel_variants):
                 matches = True
-            elif menu_item_type and (cancel_item_desc == menu_item_type or singular_desc == menu_item_type):
+            elif menu_item_type and any(v == menu_item_type for v in cancel_variants):
                 matches = True
             elif mapped_item_type and menu_item_type == mapped_item_type:
                 matches = True

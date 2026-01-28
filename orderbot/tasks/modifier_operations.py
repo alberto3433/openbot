@@ -23,6 +23,7 @@ from .models import (
 )
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import get_singular_plural_variants
 
 logger = logging.getLogger(__name__)
 
@@ -106,30 +107,6 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
 def _normalize_modifier_name(name: str) -> str:
     """Normalize a modifier name for matching."""
     return ' '.join(name.lower().strip().split())
-
-
-def _get_singular_plural_variants(name: str) -> list[str]:
-    """Get singular and plural variants of a name for matching.
-
-    Returns a list containing the original name plus singular/plural variants.
-    E.g., "eggs" -> ["eggs", "egg"], "egg" -> ["egg", "eggs"]
-    """
-    name = name.lower().strip()
-    variants = [name]
-
-    # Handle plural -> singular (eggs -> egg)
-    if name.endswith('s') and len(name) > 2:
-        singular = name[:-1]  # Remove trailing 's'
-        if singular not in variants:
-            variants.append(singular)
-
-    # Handle singular -> plural (egg -> eggs)
-    if not name.endswith('s'):
-        plural = name + 's'
-        if plural not in variants:
-            variants.append(plural)
-
-    return variants
 
 
 def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None:
@@ -226,7 +203,7 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
         attribute_values = getattr(item, 'attribute_values', None)
         if attribute_values and isinstance(attribute_values, dict):
             # Get singular/plural variants for matching (e.g., "eggs" -> ["eggs", "egg"])
-            input_variants = _get_singular_plural_variants(normalized_input)
+            input_variants = get_singular_plural_variants(normalized_input)
 
             for attr_key, attr_value in attribute_values.items():
                 # Skip metadata fields

@@ -20,6 +20,7 @@ from .handler_config import HandlerConfig
 from .disambiguation_handler import DisambiguationHandler
 from .mixins import MenuDataMixin
 from ..menu_data_cache import menu_cache
+from ..cache.base import get_singular_plural_variants
 
 logger = logging.getLogger(__name__)
 
@@ -878,16 +879,8 @@ class ItemAdderHandler(MenuDataMixin):
             )
             return (None, result)
 
-        # Step 3: No matches - try partial search
-        # Try singular form (cookies -> cookie)
-        search_terms = [item_lower]
-        if item_lower.endswith('ies'):
-            search_terms.append(item_lower[:-3] + 'y')
-            search_terms.append(item_lower[:-1])
-        elif item_lower.endswith('es'):
-            search_terms.append(item_lower[:-2])
-        elif item_lower.endswith('s') and len(item_lower) > 2:
-            search_terms.append(item_lower[:-1])
+        # Step 3: No matches - try partial search with singular/plural variants
+        search_terms = get_singular_plural_variants(item_lower)
 
         for term in search_terms:
             matching_items = self.menu_lookup.lookup_menu_items(term)

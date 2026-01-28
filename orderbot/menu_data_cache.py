@@ -19,6 +19,6 @@ New preferred import:
 """
 
 from orderbot.cache import menu_cache, MenuDataCache
-from orderbot.cache.base import singularize
+from orderbot.cache.base import singularize, pluralize, get_singular_plural_variants
 
-__all__ = ["menu_cache", "MenuDataCache", "singularize"]
+__all__ = ["menu_cache", "MenuDataCache", "singularize", "pluralize", "get_singular_plural_variants"]

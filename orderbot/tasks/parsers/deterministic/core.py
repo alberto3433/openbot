@@ -9,6 +9,7 @@ import re
 import logging
 
 from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import singularize
 
 from ...schemas import OpenInputResponse, Selection
 
@@ -212,9 +213,9 @@ def parse_open_input_deterministic(
             if reduce_to_one_match.group(i):
                 item_type = reduce_to_one_match.group(i).lower()
                 # Normalize plurals using data-driven approach:
-                # Check if the word matches an item type, if not try without 's'
-                if item_type not in all_item_type_slugs and item_type.endswith('s'):
-                    singular = item_type[:-1]
+                # Check if the word matches an item type, if not try singular form
+                if item_type not in all_item_type_slugs:
+                    singular = singularize(item_type)
                     if singular in all_item_type_slugs:
                         item_type = singular
                 break
@@ -234,8 +235,8 @@ def parse_open_input_deterministic(
     another_item_match = ANOTHER_ITEM_PATTERN.match(text)
     if another_item_match:
         item_keyword = another_item_match.group(1).lower()
-        # Strip trailing 's' for plural forms (pattern captures base word, 's' is separate)
-        item_keyword_singular = item_keyword.rstrip('s') if item_keyword.endswith('s') else item_keyword
+        # Get singular form for matching
+        item_keyword_singular = singularize(item_keyword)
 
         # Validate against data-driven category keywords or item type triggers
         # This replaces the hardcoded ANOTHER_ITEM_TYPE_KEYWORDS mapping

@@ -13,6 +13,7 @@ import re
 from .normalization import normalize_for_match
 from .mixins import MenuDataMixin
 from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import get_singular_plural_variants
 
 logger = logging.getLogger(__name__)
 
@@ -75,31 +76,16 @@ class MenuLookup(MenuDataMixin):
         """
         Generate search variants to handle singular/plural variations.
 
+        Uses the centralized get_singular_plural_variants function from cache/base.py
+        which handles irregular plurals correctly via the inflect library.
+
         Args:
             item_name: The name to generate variants for.
 
         Returns:
             List of search variants (lowercase).
         """
-        item_name_lower = item_name.lower()
-        search_variants = [item_name_lower]
-
-        # Handle singular/plural variations
-        # e.g., "cookies" should match "cookie", "bagels" should match "bagel"
-        if item_name_lower.endswith('ies'):
-            # Try both transformations:
-            # 1. "ladies" -> "lady" (y -> ies rule)
-            # 2. "cookies" -> "cookie" (just -s, the "ie" is part of the word)
-            search_variants.append(item_name_lower[:-3] + 'y')  # ladies -> lady
-            search_variants.append(item_name_lower[:-1])  # cookies -> cookie
-        elif item_name_lower.endswith('es'):
-            # dishes -> dish
-            search_variants.append(item_name_lower[:-2])
-        elif item_name_lower.endswith('s') and len(item_name_lower) > 2:
-            # bagels -> bagel
-            search_variants.append(item_name_lower[:-1])
-
-        return search_variants
+        return get_singular_plural_variants(item_name)
 
     def _passes_match_filter(self, item: dict, user_input: str) -> bool:
         """

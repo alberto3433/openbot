@@ -60,6 +60,71 @@ def singularize(word: str) -> str:
     return result if result else word
 
 
+def pluralize(word: str) -> str:
+    """Convert singular to plural form using the inflect library.
+
+    Uses the well-tested inflect library to handle English pluralization rules,
+    including irregular plurals and edge cases.
+
+    Examples:
+        >>> pluralize("bagel")
+        'bagels'
+        >>> pluralize("sandwich")
+        'sandwiches'
+        >>> pluralize("pastry")
+        'pastries'
+        >>> pluralize("child")
+        'children'
+        >>> pluralize("glass")
+        'glasses'
+    """
+    word = word.lower().strip()
+    if not word:
+        return word
+
+    # Use inflect to get the plural form
+    result = _inflect_engine.plural_noun(word)
+    return result if result else word + 's'
+
+
+def get_singular_plural_variants(word: str) -> list[str]:
+    """Get both singular and plural variants of a word for matching.
+
+    Returns a list containing the original word and its singular/plural form.
+    Useful for matching user input that might be in either form.
+
+    Examples:
+        >>> get_singular_plural_variants("bagels")
+        ['bagels', 'bagel']
+        >>> get_singular_plural_variants("cookie")
+        ['cookie', 'cookies']
+        >>> get_singular_plural_variants("glass")
+        ['glass', 'glasses']
+    """
+    word = word.lower().strip()
+    if not word:
+        return [word]
+
+    variants = [word]
+
+    # Try to get singular form
+    singular = singularize(word)
+    if singular != word and singular not in variants:
+        variants.append(singular)
+        # If we found a singular form, pluralize that instead of the original
+        # This avoids "bagels" -> "bagelss"
+        plural = pluralize(singular)
+        if plural != word and plural not in variants:
+            variants.append(plural)
+    else:
+        # Word is likely already singular, try to pluralize it
+        plural = pluralize(word)
+        if plural != word and plural not in variants:
+            variants.append(plural)
+
+    return variants
+
+
 class BaseCacheMixin:
     """Mixin class that initializes all cache attributes.
 

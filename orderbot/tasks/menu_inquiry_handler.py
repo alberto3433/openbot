@@ -15,6 +15,7 @@ import logging
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import singularize
 
 from .models import OrderTask
 from .schemas import StateMachineResult
@@ -402,6 +403,9 @@ class MenuInquiryHandler(MenuDataMixin):
 
         Removes plural variants, filters out very similar items,
         and returns a clean sorted list for user display.
+
+        Uses centralized singularize function from cache/base.py for proper
+        handling of irregular plurals.
         """
         seen_base = set()
         normalized = []
@@ -409,23 +413,15 @@ class MenuInquiryHandler(MenuDataMixin):
         for item in sorted(items_set):
             item_lower = item.lower()
 
-            # Skip plural forms if singular exists
-            if item_lower.endswith('s') and not item_lower.endswith('ss'):
-                singular = item_lower.rstrip('s')
-                if singular in seen_base:
-                    continue
+            # Get the singular form using the centralized function
+            singular = singularize(item_lower)
 
-            # Skip "es" plural forms
-            if item_lower.endswith('es'):
-                singular = item_lower[:-2]
-                if singular in seen_base:
-                    continue
-
-            # Track base form
-            base = item_lower.rstrip('s')
-            if base in seen_base:
+            # Skip if we've seen this base form
+            if singular in seen_base:
                 continue
-            seen_base.add(base)
+
+            # Track both forms
+            seen_base.add(singular)
             seen_base.add(item_lower)
 
             # Capitalize for display

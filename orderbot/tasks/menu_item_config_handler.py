@@ -15,7 +15,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from orderbot.menu_data_cache import menu_cache, singularize
+from orderbot.menu_data_cache import menu_cache, singularize, pluralize
 from .models import OrderTask, MenuItemTask
 from .normalization import normalize_for_option_match
 from .schemas import StateMachineResult, OrderPhase, Selection
@@ -752,13 +752,23 @@ class MenuItemConfigHandler(BaseHandler):
         if is_first_question:
             if multi_count > 1:
                 if item_num == 1:
-                    # First item: "Got it, two Everything Bagels. Would you like the first one scooped?"
-                    quantity_word = _number_to_word(multi_count)
-                    item_name = item.get_display_name()
-                    # Simple pluralization - add 's' if not already ending in 's'
-                    if not item_name.lower().endswith('s'):
-                        item_name = item_name + "s"
-                    item_desc = f"{quantity_word} {item_name}"
+                    # First item acknowledgment
+                    config_names = order.multi_item_config_names or []
+                    all_same_name = len(set(config_names)) == 1
+
+                    if all_same_name:
+                        # All identical: "Got it, two Plain Bagels."
+                        quantity_word = _number_to_word(multi_count)
+                        item_name = item.get_display_name()
+                        # Pluralize using centralized function
+                        item_name = pluralize(item_name)
+                        item_desc = f"{quantity_word} {item_name}"
+                    else:
+                        # Different items: "Got it, Plain Bagel and Hot Coffee."
+                        if len(config_names) == 2:
+                            item_desc = f"{config_names[0]} and {config_names[1]}"
+                        else:
+                            item_desc = ", ".join(config_names[:-1]) + f", and {config_names[-1]}"
                     question = f"Got it, {item_desc}. {question}"
                 else:
                     # Subsequent items: "For the second Everything Bagel, would you like that scooped?"
@@ -1644,7 +1654,7 @@ class MenuItemConfigHandler(BaseHandler):
         # But DO pluralize the name when quantity > 1
         total_price = quantity * unit_price
         if quantity > 1:
-            display_name = unit_name if unit_name.endswith('s') else f"{unit_name}s"
+            display_name = pluralize(unit_name)
         else:
             display_name = unit_name
 
@@ -1663,8 +1673,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Build acknowledgment with quantity prefix and pluralization
         if quantity > 1:
-            # Simple pluralization: add 's' if not already plural
-            plural_name = unit_name if unit_name.endswith('s') else f"{unit_name}s"
+            plural_name = pluralize(unit_name)
             ack_text = f"{quantity} {plural_name}"
         else:
             ack_text = unit_name

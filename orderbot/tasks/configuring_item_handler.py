@@ -16,6 +16,7 @@ from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
 from .parsers.deterministic.patterns import parse_can_you_make_it
 from .modifier_change_handler import ChangeRequest
 from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import pluralize
 
 logger = logging.getLogger(__name__)
 
@@ -673,7 +674,7 @@ class ConfiguringItemHandler:
         # Return to taking items phase for items not requiring side choice
         order.set_phase(OrderPhase.TAKING_ITEMS)
         return StateMachineResult(
-            message=f"Got it, {quantity} {selected_name}{'s' if quantity > 1 and not selected_name.endswith('s') else ''}. Anything else?",
+            message=f"Got it, {quantity} {pluralize(selected_name) if quantity > 1 else selected_name}. Anything else?",
             order=order,
         )
 

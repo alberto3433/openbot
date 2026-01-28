@@ -18,6 +18,7 @@ from .handler_config import HandlerConfig
 from .taking_items_handler import extract_ordinal_reference, find_nth_item_of_type
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
+from orderbot.cache.base import get_singular_plural_variants
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -146,11 +147,9 @@ class ConfigHelperHandler:
             modifier_removed = False
             removed_modifier_name = cancel_desc
 
-            # Normalize cancel_desc for matching - handle singular/plural
-            # "eggs" -> also check "egg", "cheeses" -> also check "cheese"
-            cancel_desc_singular = cancel_desc.rstrip('s') if cancel_desc.endswith('s') and len(cancel_desc) > 2 else cancel_desc
-            # Also handle the reverse: "egg" -> also check "eggs"
-            cancel_desc_plural = cancel_desc + 's' if not cancel_desc.endswith('s') else cancel_desc
+            # Get singular/plural variants for matching
+            # "eggs" -> ["eggs", "egg"], "cheese" -> ["cheese", "cheeses"]
+            cancel_variants = get_singular_plural_variants(cancel_desc)
 
             # Check all selections for ones that match the cancel description
             selections_to_remove = []
@@ -158,11 +157,9 @@ class ConfigHelperHandler:
                 sel_display = sel.get("display_name", "").lower()
                 sel_slug = sel.get("slug", "").lower()
                 sel_category = sel.get("category", "")
-                # Check if this selection matches the cancel description (singular or plural)
-                if (cancel_desc in sel_display or cancel_desc_singular in sel_display or
-                    cancel_desc_plural in sel_display or
-                    cancel_desc in sel_slug or cancel_desc_singular in sel_slug or
-                    cancel_desc_plural in sel_slug):
+                # Check if this selection matches any cancel variant
+                if (any(v in sel_display for v in cancel_variants) or
+                    any(v in sel_slug for v in cancel_variants)):
                     selections_to_remove.append((sel_category, sel_slug))
                     modifier_removed = True
                     removed_modifier_name = sel.get("display_name", cancel_desc)
@@ -238,21 +235,25 @@ class ConfigHelperHandler:
 
         # Check if this is a plural removal (e.g., "coffees", "bagels")
         # If plural, we remove ALL matching items
-        is_plural = cancel_desc.endswith('s') and len(cancel_desc) > 2
-        singular_desc = cancel_desc[:-1] if is_plural else cancel_desc
+        # Use singularize to properly detect plural forms
+        from orderbot.cache.base import singularize
+        singular_desc = singularize(cancel_desc)
+        is_plural = singular_desc != cancel_desc.lower()
+
+        # Get all variants for matching
+        cancel_variants = get_singular_plural_variants(cancel_desc)
 
         # Find matching items (fallback for non-ordinal cancellations)
         items_to_remove = []
 
         # Map user category terms to item_type via database (e.g., "coffee" -> "sized_beverage")
         # Uses category keywords from item_types.aliases in the database
-        from orderbot.menu_data_cache import menu_cache
         mapped_item_type = None
-        category_mapping = menu_cache.get_category_keyword_mapping(cancel_desc)
-        if not category_mapping:
-            category_mapping = menu_cache.get_category_keyword_mapping(singular_desc)
-        if category_mapping:
-            mapped_item_type = category_mapping.get("slug")
+        for variant in cancel_variants:
+            category_mapping = menu_cache.get_category_keyword_mapping(variant)
+            if category_mapping:
+                mapped_item_type = category_mapping.get("slug")
+                break
 
         for item in active_items:
             item_summary = item.get_summary().lower()
@@ -261,23 +262,19 @@ class ConfigHelperHandler:
             item_type = getattr(item, 'item_type', '') or ''
             menu_item_type = getattr(item, 'menu_item_type', '') or ''
 
-            # Check for matches - be careful with empty strings
+            # Check for matches using all variants
             matches = False
-            if cancel_desc in item_summary:
+            if any(v in item_summary for v in cancel_variants):
                 matches = True
-            elif singular_desc in item_summary:
-                matches = True
-            elif item_name_lower and cancel_desc in item_name_lower:
-                matches = True
-            elif item_name_lower and singular_desc in item_name_lower:
+            elif item_name_lower and any(v in item_name_lower for v in cancel_variants):
                 matches = True
             elif item_name_lower and item_name_lower in cancel_desc:
                 matches = True
             # Check item_type for things like "coffee" -> matches item_type="coffee"
-            elif item_type and (cancel_desc == item_type or singular_desc == item_type):
+            elif item_type and any(v == item_type for v in cancel_variants):
                 matches = True
             # Check menu_item_type (e.g., "sized_beverage", "bagel")
-            elif menu_item_type and (cancel_desc == menu_item_type or singular_desc == menu_item_type):
+            elif menu_item_type and any(v == menu_item_type for v in cancel_variants):
                 matches = True
             # Check if user's category term maps to this item's type (e.g., "coffee" -> "sized_beverage")
             elif mapped_item_type and menu_item_type == mapped_item_type:

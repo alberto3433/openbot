@@ -28,16 +28,17 @@ logger = logging.getLogger(__name__)
 def _pluralize_display_name(display_name: str) -> str:
     """Pluralize a display name by pluralizing the last word.
 
+    Uses the centralized pluralize function from cache/base.py which handles
+    irregular plurals and edge cases correctly.
+
     Examples:
         "Vanilla Syrup" -> "Vanilla Syrups"
         "Extra Shot" -> "Extra Shots"
         "Chocolate Chips" -> "Chocolate Chips" (already plural)
     """
-    if not display_name:
-        return display_name
+    from ..cache.base import pluralize, singularize
 
-    # Already plural (ends with 's' but not 'ss')
-    if display_name.endswith('s') and not display_name.endswith('ss'):
+    if not display_name:
         return display_name
 
     words = display_name.split()
@@ -46,13 +47,17 @@ def _pluralize_display_name(display_name: str) -> str:
 
     last_word = words[-1]
 
-    # Simple pluralization rules
-    if last_word.endswith(('ch', 'sh', 's', 'x', 'z')):
-        words[-1] = last_word + 'es'
-    elif last_word.endswith('y') and len(last_word) > 1 and last_word[-2] not in 'aeiou':
-        words[-1] = last_word[:-1] + 'ies'
-    else:
-        words[-1] = last_word + 's'
+    # Check if already plural by seeing if singularize changes it
+    singular = singularize(last_word)
+    if singular != last_word.lower():
+        # Already plural
+        return display_name
+
+    # Pluralize the last word
+    words[-1] = pluralize(last_word)
+    # Preserve original casing if word was capitalized
+    if last_word[0].isupper():
+        words[-1] = words[-1].capitalize()
 
     return ' '.join(words)
 

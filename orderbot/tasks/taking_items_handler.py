@@ -39,7 +39,6 @@ from .modifier_operations import (
 from .parsers.constants import ORDINAL_WORDS
 from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
 from .parsers.quantity_utils import (
-    BASIC_WORD_TO_NUM,
     extract_quantity_for_pattern,
     extract_leading_quantity,
     parse_make_it_n_quantity,

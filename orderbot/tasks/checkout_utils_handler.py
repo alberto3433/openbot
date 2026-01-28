@@ -143,11 +143,7 @@ class CheckoutUtilsHandler:
                 option_list = []
                 for i, option_item in enumerate(order.pending_item_options, 1):
                     name = option_item.get("name", "Unknown")
-                    price = option_item.get("base_price", 0)
-                    if price > 0:
-                        option_list.append(f"{i}. {name} (${price:.2f})")
-                    else:
-                        option_list.append(f"{i}. {name}")
+                    option_list.append(f"{i}. {name}")
                 options_str = "\n".join(option_list)
                 return StateMachineResult(
                     message=f"We have a few options:\n{options_str}\nWhich would you like?",

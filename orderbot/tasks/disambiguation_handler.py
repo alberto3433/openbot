@@ -104,7 +104,7 @@ class DisambiguationHandler:
         quantity: int = 1,
         pending_field: str = "item_selection",
         modifiers: dict[str, Any] | None = None,
-        show_prices: bool = True,
+        show_prices: bool = False,
     ) -> StateMachineResult:
         """Start disambiguation flow when multiple items match.
 
@@ -224,7 +224,7 @@ class DisambiguationHandler:
         logger.info("DISAMBIGUATION: Could not match user input '%s' to any option", user_input[:50])
         return None
 
-    def get_reask_message(self, order: OrderTask, show_prices: bool = True) -> str:
+    def get_reask_message(self, order: OrderTask, show_prices: bool = False) -> str:
         """Get message to re-ask disambiguation question.
 
         Args:
@@ -250,7 +250,7 @@ class DisambiguationHandler:
         order.clear_pending()
         logger.info("DISAMBIGUATION: Cleared pending state")
 
-    def _format_options(self, options: list[dict], show_prices: bool = True) -> str:
+    def _format_options(self, options: list[dict], show_prices: bool = False) -> str:
         """Format options list for display.
 
         Args:

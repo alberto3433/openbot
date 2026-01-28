@@ -702,7 +702,7 @@ class ConfiguringItemHandler:
         if not selected:
             # Couldn't match - re-ask
             return StateMachineResult(
-                message=disambiguation.get_reask_message(order, show_prices=True),
+                message=disambiguation.get_reask_message(order),
                 order=order,
             )
 

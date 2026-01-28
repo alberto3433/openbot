@@ -1856,7 +1856,7 @@ class TakingItemsHandler(MenuDataMixin):
                                 matching_items=matches,
                                 order=order,
                                 pending_field="modifier_selection",
-                                show_prices=True,
+                                show_prices=False,
                             )
 
                 # Recalculate price
@@ -2236,6 +2236,7 @@ class TakingItemsHandler(MenuDataMixin):
         order.last_add_error = None
 
         for parsed_item in parsed.parsed_items:
+            items_before_count = len(order.items.items)
             order, summary, disambiguation_result = self._add_parsed_item(parsed_item, order)
 
             # Check if disambiguation was triggered - return immediately
@@ -2252,14 +2253,15 @@ class TakingItemsHandler(MenuDataMixin):
 
             if summary:
                 summaries.append(summary)
-                # Find the item that was just added (last item with matching type)
-                last_item = order.items.items[-1] if order.items.items else None
-                if last_item:
-                    # Data-driven: use summary from _build_item_summary, item_type from parsed entry
-                    display_name = summary
-                    item_type = parsed_item.item_type
-                    added_items.append((last_item.id, display_name, item_type))
-                logger.info("Added item via parsed_items: %s (id=%s)", summary, last_item.id[:8] if last_item else "?")
+                # Capture ALL newly added items (quantity>1 creates multiple MenuItemTasks)
+                new_items = order.items.items[items_before_count:]
+                for new_item in new_items:
+                    added_items.append((new_item.id, new_item.get_display_name(), parsed_item.item_type))
+                if new_items:
+                    logger.info(
+                        "Added item via parsed_items: %s (%d tasks, first id=%s)",
+                        summary, len(new_items), new_items[0].id[:8],
+                    )
 
         if not summaries:
             return None

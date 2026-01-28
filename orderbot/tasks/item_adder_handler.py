@@ -821,7 +821,7 @@ class ItemAdderHandler(MenuDataMixin):
                 quantity=quantity,
                 pending_field=pending_field,
                 modifiers=modifiers,
-                show_prices=not is_exact_generic,  # Show prices for specific items, not generic
+                show_prices=False,
             )
             return (None, result)
 
@@ -870,7 +870,7 @@ class ItemAdderHandler(MenuDataMixin):
                 quantity=quantity,
                 pending_field=pending_field,
                 modifiers=modifiers,
-                show_prices=True,
+                show_prices=False,
             )
             return (None, result)
 

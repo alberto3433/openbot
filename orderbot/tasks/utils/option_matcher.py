@@ -322,17 +322,3 @@ class OptionMatcher:
             user_input, must_match_list, opt.get("display_name")
         )
         return False
-
-
-# Module-level singleton for convenience
-_matcher = OptionMatcher()
-
-
-def match_option(user_input: str, options: list[dict]) -> tuple[dict | None, list[dict]]:
-    """Module-level wrapper for single option matching."""
-    return _matcher.match_single(user_input, options)
-
-
-def match_multiple_options(user_input: str, options: list[dict]) -> list[dict]:
-    """Module-level wrapper for multiple option matching."""
-    return _matcher.match_multiple(user_input, options)

@@ -137,22 +137,3 @@ class InputNormalizer:
         # Remove duplicates while preserving order
         seen = set()
         return [x for x in all_inputs if x and x not in seen and not seen.add(x)]
-
-
-# Module-level singleton for convenience
-_normalizer = InputNormalizer()
-
-
-def normalize_for_option_match(text: str) -> str:
-    """Module-level wrapper for backward compatibility."""
-    return _normalize_for_option_match(text)
-
-
-def extract_quantity_from_input(user_input: str) -> tuple[int, str]:
-    """Module-level wrapper for backward compatibility."""
-    return _normalizer.extract_leading_quantity(user_input)
-
-
-def tokenize_multi_input(user_input: str) -> list[str]:
-    """Module-level wrapper for backward compatibility."""
-    return _normalizer.tokenize_multi_input(user_input)

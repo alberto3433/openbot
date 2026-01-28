@@ -32,9 +32,6 @@ class DisambiguationHandler:
 
     MAX_OPTIONS = 6
 
-    def __init__(self):
-        pass
-
     def check_exact_match(
         self,
         item_name: str,

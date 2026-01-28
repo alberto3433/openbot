@@ -10,7 +10,6 @@ Key Functions:
 - get_or_create_company: Get the company record or create default
 - lookup_customer_by_phone: Find returning customer by phone number
 - get_primary_item_type_name: Get name of primary configurable item type
-- serialize_menu_item: Convert MenuItem ORM object to response model
 - build_store_info: Build store info dict with caching
 - warmup_store_cache: Pre-warm store cache at startup
 - invalidate_store_cache: Invalidate cache after admin updates
@@ -45,11 +44,6 @@ to identify returning customers. It handles various phone formats:
 - With/without dashes and parentheses
 - Returns customer info and last order items for "repeat order" feature
 
-Menu Item Serialization:
-------------------------
-serialize_menu_item handles the conversion of MenuItem ORM objects to
-the API response format.
-
 Store Info Caching:
 -------------------
 build_store_info uses a TTL cache to avoid repeated database queries.
@@ -76,7 +70,6 @@ from ..models import (
     Order,
     Store,
 )
-from ..schemas.menu import MenuItemOut
 from .item_type_helpers import has_linked_attributes
 
 
@@ -373,30 +366,6 @@ def get_primary_item_type_name(db: Session) -> str:
         if has_linked_attributes(it.id, db):
             return it.display_name
     return "Sandwich"
-
-
-def serialize_menu_item(item: MenuItem) -> MenuItemOut:
-    """
-    Convert a MenuItem ORM instance into MenuItemOut response model.
-
-    Args:
-        item: MenuItem ORM instance
-
-    Returns:
-        MenuItemOut Pydantic model ready for API response
-    """
-    # Derive category from item_type
-    category = item.item_type.display_name if item.item_type else None
-
-    return MenuItemOut(
-        id=item.id,
-        name=item.name,
-        category=category,
-        is_signature=item.is_signature,
-        base_price=item.base_price,
-        available_qty=item.available_qty,
-        item_type_id=item.item_type_id,
-    )
 
 
 def check_alias_uniqueness(

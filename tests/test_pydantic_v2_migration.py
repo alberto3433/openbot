@@ -156,8 +156,8 @@ class TestPydanticV2ModelValidate:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             # We use the serialize function since MenuItemOut has custom metadata handling
-            from orderbot.services.helpers import serialize_menu_item
-            result = serialize_menu_item(menu_item)
+            from orderbot.routes.admin_menu import serialize_menu_item
+            result = serialize_menu_item(menu_item, db_session)
 
             # Check no Pydantic deprecation warnings
             pydantic_warnings = [

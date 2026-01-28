@@ -48,12 +48,8 @@ from .extraction import (
     # Internal helpers (used by tests)
     _extract_quantity,
     _extract_by_pound_info,
-    _slug_to_display,
-    _extract_attribute_value,
     _extract_modifiers_generic,
     _extract_boolean_global_attribute,
-    _extract_single_select_global_attribute,
-    _extract_side_item,
 )
 
 # =============================================================================
@@ -154,12 +150,8 @@ __all__ = [
     "extract_modifiers_with_qualifiers",
     "_extract_quantity",
     "_extract_by_pound_info",
-    "_slug_to_display",
-    "_extract_attribute_value",
     "_extract_modifiers_generic",
     "_extract_boolean_global_attribute",
-    "_extract_single_select_global_attribute",
-    "_extract_side_item",
     # Item parsing
     "build_parsed_item",
     "_detect_item_type",

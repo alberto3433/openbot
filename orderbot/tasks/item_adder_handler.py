@@ -8,7 +8,6 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-from typing import TYPE_CHECKING
 
 from .models import (
     OrderTask,

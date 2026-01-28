@@ -8,12 +8,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
 
 from .input_normalizer import InputNormalizer
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

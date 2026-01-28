@@ -15,7 +15,6 @@ option aliases via menu_cache.resolve_option_by_alias().
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from .models import MenuItemTask
 from .normalization import (

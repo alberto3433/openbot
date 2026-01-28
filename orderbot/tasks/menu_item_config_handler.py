@@ -13,7 +13,6 @@ Designed to be generic and work with any item type that has DB-defined attribute
 
 import logging
 import re
-from typing import TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache, singularize, pluralize
 from .models import OrderTask, MenuItemTask
@@ -733,7 +732,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Use DB's question_text if available, otherwise generate a natural question
         db_question = attr.get("question_text")
-        if db_question:
+        if db_question and multi_count <= 1:
             question = db_question
         elif input_type == "boolean":
             # Simple yes/no question - use ordinal for multi-item

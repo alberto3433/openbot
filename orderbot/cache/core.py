@@ -5,7 +5,6 @@ This is the main cache class that composes all functionality through mixin inher
 """
 
 import threading
-from typing import TYPE_CHECKING
 
 from .base import BaseCacheMixin
 from .loaders import LoaderMixin
@@ -15,9 +14,6 @@ from .item_type_queries import ItemTypeQueryMixin
 from .category_queries import CategoryQueryMixin
 from .parsing_queries import ParsingQueryMixin
 from .pricing_queries import PricingQueryMixin
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 
 class MenuDataCache(

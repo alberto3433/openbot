@@ -10,7 +10,7 @@ sized_beverage, etc.) are aliases that map to the single UnifiedItemConverter.
 """
 
 import logging
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict
 
 from .models import (
     TaskStatus,

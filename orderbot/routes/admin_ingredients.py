@@ -73,7 +73,9 @@ from ..models import (
     IngredientMustMatch,
     IngredientStoreAvailability,
     IngredientUnit,
+    ItemTypeIngredient,
     MenuItem,
+    MenuItemIngredient,
     MenuItemStoreAvailability,
 )
 from ..schemas.ingredients import (
@@ -172,6 +174,9 @@ def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> i
             "Auto-linked GlobalAttributeOption '%s' (id=%d) to Ingredient '%s' (id=%d)",
             opt.display_name, opt.id, ingredient.name, ingredient.id
         )
+        # NULL out slug/display_name (derived from ingredient at read time)
+        opt.slug = None
+        opt.display_name = None
 
     return len(matching_options)
 
@@ -254,6 +259,7 @@ def list_ingredients(
         result.append(IngredientStoreAvailabilityOut(
             id=ing.id,
             name=ing.name,
+            slug=ing.slug,
             category=ing.category,
             unit=ing.unit,
             track_inventory=ing.track_inventory,
@@ -331,6 +337,7 @@ def list_unavailable_ingredients(
     return [IngredientStoreAvailabilityOut(
         id=ing.id,
         name=ing.name,
+        slug=ing.slug,
         category=ing.category,
         unit=ing.unit,
         track_inventory=ing.track_inventory,
@@ -547,6 +554,7 @@ def update_ingredient_availability(
     return IngredientStoreAvailabilityOut(
         id=ingredient.id,
         name=ingredient.name,
+        slug=ingredient.slug,
         category=ingredient.category,
         unit=ingredient.unit,
         track_inventory=ingredient.track_inventory,
@@ -565,9 +573,28 @@ def delete_ingredient(
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
 
-    db.query(IngredientStoreAvailability).filter(
-        IngredientStoreAvailability.ingredient_id == ingredient_id
-    ).delete()
+    # Check for RESTRICT-protected references before attempting delete
+    dependents: list[str] = []
+
+    menu_item_count = db.query(MenuItemIngredient).filter(
+        MenuItemIngredient.ingredient_id == ingredient_id
+    ).count()
+    if menu_item_count:
+        dependents.append(f"{menu_item_count} menu item default(s)")
+
+    item_type_count = db.query(ItemTypeIngredient).filter(
+        ItemTypeIngredient.ingredient_id == ingredient_id
+    ).count()
+    if item_type_count:
+        dependents.append(f"{item_type_count} item type association(s)")
+
+    if dependents:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete ingredient '{ingredient.name}' — "
+                   f"it still has: {', '.join(dependents)}. "
+                   f"Remove these records first."
+        )
 
     logger.info("Deleting ingredient: %s (id=%d)", ingredient.name, ingredient.id)
     db.delete(ingredient)

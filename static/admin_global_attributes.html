@@ -1340,41 +1340,14 @@
       const modifierCategoryValue = document.getElementById("optionModifierCategory").value;
       const modifierCategoryId = modifierCategoryValue ? parseInt(modifierCategoryValue) : null;
 
-      // Get ingredient_id and derive slug/display_name if linked
+      // Get ingredient_id
       const ingredientVal = document.getElementById("optionIngredient").value;
       const ingredientId = ingredientVal ? parseInt(ingredientVal) : null;
 
-      let slug, displayName;
-      if (ingredientId) {
-        // Derive from ingredient - this ensures consistency
-        const ingredient = ingredientsCache.find(i => i.id === ingredientId);
-        if (!ingredient) {
-          showToast("Selected ingredient not found", "error");
-          return;
-        }
-        slug = ingredient.slug;
-        displayName = ingredient.name;
-      } else {
-        // Use manual values from form
-        slug = document.getElementById("optionSlug").value.trim().toLowerCase();
-        displayName = document.getElementById("optionDisplayName").value.trim();
-      }
-
-      if (!slug || !displayName) {
-        showToast("Slug and display name are required", "error");
-        return;
-      }
-
-      if (!/^[a-z0-9_]+$/.test(slug)) {
-        showToast("Slug must contain only lowercase letters, numbers, and underscores", "error");
-        return;
-      }
-
       const aliases = document.getElementById("optionAliases").value.trim();
 
+      // Build payload - backend derives slug/display_name from ingredient when linked
       const payload = {
-        slug,
-        display_name: displayName,
         price_modifier: priceModifier,
         display_order: displayOrder,
         is_default: isDefault,
@@ -1383,6 +1356,23 @@
         ingredient_id: ingredientId,
         aliases: aliases || null
       };
+
+      if (!ingredientId) {
+        // Only include slug/display_name for non-ingredient options
+        const slug = document.getElementById("optionSlug").value.trim().toLowerCase();
+        const displayName = document.getElementById("optionDisplayName").value.trim();
+
+        if (!slug || !displayName) {
+          showToast("Slug and display name are required", "error");
+          return;
+        }
+        if (!/^[a-z0-9_]+$/.test(slug)) {
+          showToast("Slug must contain only lowercase letters, numbers, and underscores", "error");
+          return;
+        }
+        payload.slug = slug;
+        payload.display_name = displayName;
+      }
 
       const saveBtn = document.getElementById("optionSaveBtn");
       saveBtn.classList.add("saving");

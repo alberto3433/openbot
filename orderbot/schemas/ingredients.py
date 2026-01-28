@@ -211,6 +211,7 @@ class IngredientStoreAvailabilityOut(BaseModel):
     Attributes:
         id: Database primary key
         name: Display name
+        slug: URL-friendly identifier
         category: Type category
         unit: Unit of measurement
         track_inventory: Whether inventory counting is enabled
@@ -222,6 +223,7 @@ class IngredientStoreAvailabilityOut(BaseModel):
 
     id: int
     name: str
+    slug: str
     category: str
     unit: str
     track_inventory: bool

@@ -52,14 +52,19 @@ class GlobalAttributeOptionOut(BaseModel):
 
 
 class GlobalAttributeOptionCreate(BaseModel):
-    """Request model for creating a global attribute option."""
-    slug: str
-    display_name: str
+    """Request model for creating a global attribute option.
+
+    When ingredient_id is provided, slug and display_name are derived from
+    the ingredient and should not be sent. When no ingredient is linked,
+    slug and display_name are required.
+    """
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
     price_modifier: float = 0.0
     is_default: bool = False
     is_available: bool = True
     display_order: int = 0
-    # Link to ingredient (optional) - when set, must_match/aliases are read from ingredient
+    # Link to ingredient (optional) - when set, slug/display_name derived from ingredient
     ingredient_id: Optional[int] = None
     # Link to modifier category for sub-categorization (e.g., milks within coffee_additions)
     modifier_category_id: Optional[int] = None

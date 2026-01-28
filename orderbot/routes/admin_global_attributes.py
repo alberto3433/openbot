@@ -89,10 +89,14 @@ def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
     # Get aliases from the option's alias_records
     aliases_str = ", ".join(opt.aliases) if opt.aliases else None
 
+    # Derive slug/display_name from ingredient when linked (normalized)
+    slug = opt.ingredient.slug if opt.ingredient else opt.slug
+    display_name = opt.ingredient.name if opt.ingredient else opt.display_name
+
     return GlobalAttributeOptionOut(
         id=opt.id,
-        slug=opt.slug,
-        display_name=opt.display_name,
+        slug=slug,
+        display_name=display_name,
         price_modifier=float(opt.price_modifier or 0),
         is_default=opt.is_default,
         is_available=opt.is_available,
@@ -334,16 +338,24 @@ def create_global_attribute_with_options(
     # Add options
     for i, opt_data in enumerate(payload.options):
         # Auto-find matching ingredient by name or slug
-        ingredient = db.query(Ingredient).filter(
-            (Ingredient.name == opt_data.display_name) |
-            (Ingredient.slug == opt_data.slug)
-        ).first()
+        ingredient = None
+        if opt_data.ingredient_id:
+            ingredient = db.query(Ingredient).filter(Ingredient.id == opt_data.ingredient_id).first()
+        elif opt_data.slug and opt_data.display_name:
+            ingredient = db.query(Ingredient).filter(
+                (Ingredient.name == opt_data.display_name) |
+                (Ingredient.slug == opt_data.slug)
+            ).first()
         ingredient_id = ingredient.id if ingredient else None
+
+        # Ingredient-linked: store NULL (derived at read time)
+        db_slug = None if ingredient else opt_data.slug
+        db_display_name = None if ingredient else opt_data.display_name
 
         option = GlobalAttributeOption(
             global_attribute_id=attr.id,
-            slug=opt_data.slug,
-            display_name=opt_data.display_name,
+            slug=db_slug,
+            display_name=db_display_name,
             price_modifier=opt_data.price_modifier,
             is_default=opt_data.is_default,
             is_available=opt_data.is_available,
@@ -354,7 +366,7 @@ def create_global_attribute_with_options(
         if ingredient:
             logger.info(
                 "Auto-linked option '%s' to Ingredient '%s' (id=%d)",
-                opt_data.display_name, ingredient.name, ingredient.id
+                display_name, ingredient.name, ingredient.id
             )
 
     db.commit()
@@ -420,15 +432,26 @@ def delete_global_attribute(
     if not attr:
         raise HTTPException(status_code=404, detail="Global attribute not found")
 
-    # Check if any item types are using this attribute
+    # Check for RESTRICT-protected references before attempting delete
+    dependents: list[str] = []
+
     link_count = db.query(ItemTypeGlobalAttribute).filter(
         ItemTypeGlobalAttribute.global_attribute_id == attr_id
     ).count()
     if link_count > 0:
+        dependents.append(f"{link_count} item type link(s)")
+
+    option_count = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.global_attribute_id == attr_id
+    ).count()
+    if option_count > 0:
+        dependents.append(f"{option_count} option(s)")
+
+    if dependents:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete: {link_count} item type(s) are using this attribute. "
-                   "Unlink them first."
+            detail=f"Cannot delete attribute '{attr.slug}' — it still has: "
+                   f"{', '.join(dependents)}. Remove these first."
         )
 
     logger.info("Deleting global attribute: %s (id=%d)", attr.slug, attr.id)
@@ -476,19 +499,9 @@ def create_global_attribute_option(
     if not attr:
         raise HTTPException(status_code=404, detail="Global attribute not found")
 
-    # Check for duplicate slug
-    existing = db.query(GlobalAttributeOption).filter(
-        GlobalAttributeOption.global_attribute_id == attr_id,
-        GlobalAttributeOption.slug == payload.slug
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Option with slug '{payload.slug}' already exists for this attribute"
-        )
-
     # Determine ingredient_id: use provided value, or auto-find matching ingredient
     ingredient_id = payload.ingredient_id
+    ingredient = None
     if ingredient_id is not None:
         # Validate provided ingredient_id
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
@@ -497,7 +510,7 @@ def create_global_attribute_option(
                 status_code=400,
                 detail=f"Ingredient with id {ingredient_id} not found"
             )
-    else:
+    elif payload.slug and payload.display_name:
         # Auto-find matching ingredient by name or slug
         ingredient = db.query(Ingredient).filter(
             (Ingredient.name == payload.display_name) |
@@ -508,6 +521,45 @@ def create_global_attribute_option(
             logger.info(
                 "Auto-linked new option '%s' to Ingredient '%s' (id=%d)",
                 payload.display_name, ingredient.name, ingredient.id
+            )
+
+    # When ingredient-linked: store NULL, derive at read time
+    # When not linked: require slug/display_name from payload
+    if ingredient:
+        effective_slug = ingredient.slug
+        db_slug = None
+        db_display_name = None
+    else:
+        if not payload.slug or not payload.display_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Slug and display name are required (or link an ingredient)"
+            )
+        effective_slug = payload.slug
+        db_slug = payload.slug
+        db_display_name = payload.display_name
+
+    # Check for duplicate slug (using ingredient slug or payload slug)
+    existing = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.global_attribute_id == attr_id,
+        GlobalAttributeOption.slug == effective_slug
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Option with slug '{effective_slug}' already exists for this attribute"
+        )
+
+    # Also check for duplicate ingredient link
+    if ingredient_id:
+        existing_link = db.query(GlobalAttributeOption).filter(
+            GlobalAttributeOption.global_attribute_id == attr_id,
+            GlobalAttributeOption.ingredient_id == ingredient_id
+        ).first()
+        if existing_link:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ingredient '{ingredient.name}' is already linked to an option for this attribute"
             )
 
     # Validate modifier_category_id if provided
@@ -524,8 +576,8 @@ def create_global_attribute_option(
 
     option = GlobalAttributeOption(
         global_attribute_id=attr_id,
-        slug=payload.slug,
-        display_name=payload.display_name,
+        slug=db_slug,
+        display_name=db_display_name,
         price_modifier=payload.price_modifier,
         is_default=payload.is_default,
         is_available=payload.is_available,
@@ -581,23 +633,29 @@ def update_global_attribute_option(
     if not option:
         raise HTTPException(status_code=404, detail="Option not found")
 
-    # Check for duplicate slug if changing
-    if payload.slug is not None and payload.slug != option.slug:
-        existing = db.query(GlobalAttributeOption).filter(
-            GlobalAttributeOption.global_attribute_id == attr_id,
-            GlobalAttributeOption.slug == payload.slug
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Option with slug '{payload.slug}' already exists"
-            )
+    # Determine effective ingredient_id after this update
+    effective_ingredient_id = option.ingredient_id
+    if "ingredient_id" in payload.model_fields_set:
+        effective_ingredient_id = payload.ingredient_id
+
+    # Only allow slug/display_name changes for non-ingredient-linked options
+    if not effective_ingredient_id:
+        if payload.slug is not None and payload.slug != option.slug:
+            existing = db.query(GlobalAttributeOption).filter(
+                GlobalAttributeOption.global_attribute_id == attr_id,
+                GlobalAttributeOption.slug == payload.slug
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Option with slug '{payload.slug}' already exists"
+                )
+        if payload.slug is not None:
+            option.slug = payload.slug
+        if payload.display_name is not None:
+            option.display_name = payload.display_name
 
     # Apply updates
-    if payload.slug is not None:
-        option.slug = payload.slug
-    if payload.display_name is not None:
-        option.display_name = payload.display_name
     if payload.price_modifier is not None:
         option.price_modifier = payload.price_modifier
     if payload.is_default is not None:
@@ -617,6 +675,27 @@ def update_global_attribute_option(
                     status_code=400,
                     detail=f"Ingredient with id {payload.ingredient_id} not found"
                 )
+            # Ingredient-linked: NULL out slug/display_name (derived at read time)
+            option.slug = None
+            option.display_name = None
+        else:
+            # Unlinking ingredient: slug/display_name must be provided
+            if not option.slug:
+                if payload.slug:
+                    option.slug = payload.slug
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Slug is required when unlinking an ingredient"
+                    )
+            if not option.display_name:
+                if payload.display_name:
+                    option.display_name = payload.display_name
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Display name is required when unlinking an ingredient"
+                    )
         option.ingredient_id = payload.ingredient_id
 
     # Handle modifier_category_id - check model_fields_set to distinguish None from not provided
@@ -723,12 +802,15 @@ def auto_link_options_to_ingredients(
         # Try to find ingredient with matching slug
         ingredient = db.query(Ingredient).filter(Ingredient.slug == option.slug).first()
         if ingredient:
-            option.ingredient_id = ingredient.id
             linked.append({
                 "option_slug": option.slug,
                 "ingredient_id": ingredient.id,
                 "ingredient_name": ingredient.name,
             })
+            # Link and NULL out slug/display_name (derived from ingredient at read time)
+            option.ingredient_id = ingredient.id
+            option.slug = None
+            option.display_name = None
         else:
             unmatched.append(option.slug)
 
@@ -782,17 +864,6 @@ def create_option_from_ingredient(
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
 
-    # Check if option with this slug already exists
-    existing = db.query(GlobalAttributeOption).filter(
-        GlobalAttributeOption.global_attribute_id == attr_id,
-        GlobalAttributeOption.slug == ingredient.slug
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Option with slug '{ingredient.slug}' already exists for this attribute"
-        )
-
     # Check if this ingredient is already linked to an option for this attribute
     already_linked = db.query(GlobalAttributeOption).filter(
         GlobalAttributeOption.global_attribute_id == attr_id,
@@ -801,7 +872,18 @@ def create_option_from_ingredient(
     if already_linked:
         raise HTTPException(
             status_code=400,
-            detail=f"Ingredient '{ingredient.name}' is already linked to option '{already_linked.display_name}'"
+            detail=f"Ingredient '{ingredient.name}' is already linked to an option for this attribute"
+        )
+
+    # Check if a non-ingredient option with the same slug already exists
+    existing = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.global_attribute_id == attr_id,
+        GlobalAttributeOption.slug == ingredient.slug
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Option with slug '{ingredient.slug}' already exists for this attribute"
         )
 
     # Validate modifier_category_id if provided
@@ -815,11 +897,11 @@ def create_option_from_ingredient(
                 detail=f"Modifier category with id {payload.modifier_category_id} not found"
             )
 
-    # Create the option with auto-populated fields from ingredient
+    # Create the option - slug/display_name are NULL (derived from ingredient at read time)
     option = GlobalAttributeOption(
         global_attribute_id=attr_id,
-        slug=ingredient.slug,
-        display_name=ingredient.name,
+        slug=None,
+        display_name=None,
         price_modifier=payload.price_modifier,
         is_default=payload.is_default,
         is_available=payload.is_available,

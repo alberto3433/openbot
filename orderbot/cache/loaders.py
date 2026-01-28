@@ -316,9 +316,21 @@ class LoaderMixin:
         if opt.modifier_category:
             modifier_category_slug = opt.modifier_category.slug
 
+        # Derive slug/display_name from ingredient when linked
+        slug = opt.ingredient.slug if opt.ingredient else opt.slug
+        display_name = opt.ingredient.name if opt.ingredient else opt.display_name
+
+        # Guard against NULL slug (ingredient-linked option with unloaded ingredient)
+        if not slug:
+            logger.warning(
+                "GlobalAttributeOption id=%d has NULL slug (ingredient_id=%s). Skipping.",
+                opt.id, opt.ingredient_id,
+            )
+            return None
+
         return {
-            "slug": opt.slug,
-            "display_name": opt.display_name,
+            "slug": slug,
+            "display_name": display_name or slug,
             "price_modifier": opt.price_modifier,
             "is_default": opt.is_default,
             "is_available": opt.is_available,
@@ -344,8 +356,8 @@ class LoaderMixin:
             # Options are already loaded via selectinload - no query here
             sorted_options = sorted(attr.options, key=lambda o: o.display_order)
             global_attribute_options[attr.slug] = [
-                self._build_global_option_dict(opt)
-                for opt in sorted_options
+                d for opt in sorted_options
+                if (d := self._build_global_option_dict(opt)) is not None
             ]
 
             if attr.property_name:
@@ -596,14 +608,27 @@ class LoaderMixin:
                     aliases = None
                     must_match = None
                     ingredient_category = None
+                    # Derive slug/display_name from ingredient when linked
+                    slug = opt.slug
+                    display_name = opt.display_name
                     if opt.ingredient:
+                        slug = opt.ingredient.slug
+                        display_name = opt.ingredient.name
                         aliases = opt.ingredient.aliases
                         must_match = opt.ingredient.must_match
                         ingredient_category = opt.ingredient.category
 
+                    # Guard against NULL slug (ingredient-linked option with unloaded ingredient)
+                    if not slug:
+                        logger.warning(
+                            "GlobalAttributeOption id=%d has NULL slug (ingredient_id=%s). Skipping.",
+                            opt.id, getattr(opt, 'ingredient_id', None),
+                        )
+                        continue
+
                     options.append({
-                        "slug": opt.slug,
-                        "display_name": opt.display_name,
+                        "slug": slug,
+                        "display_name": display_name or slug,
                         "price_modifier": float(opt.price_modifier or 0),
                         "is_default": opt.is_default,
                         "is_available": opt.is_available,

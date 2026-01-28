@@ -77,8 +77,8 @@ class ItemType(Base):
 
     # Relationships
     menu_items = relationship("MenuItem", back_populates="item_type")
-    type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type", cascade="all, delete-orphan")
-    global_attribute_links = relationship("ItemTypeGlobalAttribute", back_populates="item_type", cascade="all, delete-orphan")
+    type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type")
+    global_attribute_links = relationship("ItemTypeGlobalAttribute", back_populates="item_type")
     alias_records = relationship("ItemTypeAlias", back_populates="item_type", cascade="all, delete-orphan")
 
     @property
@@ -217,8 +217,8 @@ class GlobalAttribute(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    options = relationship("GlobalAttributeOption", back_populates="attribute", cascade="all, delete-orphan", order_by="GlobalAttributeOption.display_order")
-    item_type_links = relationship("ItemTypeGlobalAttribute", back_populates="global_attribute", cascade="all, delete-orphan")
+    options = relationship("GlobalAttributeOption", back_populates="attribute", order_by="GlobalAttributeOption.display_order")
+    item_type_links = relationship("ItemTypeGlobalAttribute", back_populates="global_attribute")
     alias_records = relationship("GlobalAttributeAlias", back_populates="global_attribute", cascade="all, delete-orphan")
 
     @property
@@ -261,10 +261,11 @@ class GlobalAttributeOption(Base):
     __tablename__ = "global_attribute_options"
 
     id = Column(Integer, primary_key=True, index=True)
-    global_attribute_id = Column(Integer, ForeignKey("global_attributes.id", ondelete="CASCADE"), nullable=False, index=True)
+    global_attribute_id = Column(Integer, ForeignKey("global_attributes.id", ondelete="RESTRICT"), nullable=False, index=True)
 
-    slug = Column(String(100), nullable=False)  # e.g., "plain_cream_cheese", "scallion_cream_cheese"
-    display_name = Column(String(100), nullable=False)  # e.g., "Plain Cream Cheese", "Scallion Cream Cheese"
+    # NULL when ingredient_id is set (derived from ingredient at read time)
+    slug = Column(String(100), nullable=True)
+    display_name = Column(String(100), nullable=True)
 
     # Link to ingredient for aliases/must_match lookup
     # Options that need special parsing MUST link to an Ingredient
@@ -346,8 +347,8 @@ class ItemTypeGlobalAttribute(Base):
     __tablename__ = "item_type_global_attributes"
 
     id = Column(Integer, primary_key=True, index=True)
-    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False, index=True)
-    global_attribute_id = Column(Integer, ForeignKey("global_attributes.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="RESTRICT"), nullable=False, index=True)
+    global_attribute_id = Column(Integer, ForeignKey("global_attributes.id", ondelete="RESTRICT"), nullable=False, index=True)
 
     # Item-type-specific settings
     display_order = Column(Integer, nullable=False, default=0)  # Order in which to ask
@@ -491,15 +492,15 @@ class MenuItem(Base):
         back_populates="menu_item",
         cascade="all, delete-orphan",
     )
-    store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item", cascade="all, delete-orphan")
-    alias_records = relationship("MenuItemAlias", back_populates="menu_item", cascade="all, delete-orphan")
-    category_records = relationship("MenuItemCategory", back_populates="menu_item", cascade="all, delete-orphan")
-    ingredient_links = relationship("MenuItemIngredient", back_populates="menu_item", cascade="all, delete-orphan")
+    store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item")
+    alias_records = relationship("MenuItemAlias", back_populates="menu_item")
+    category_records = relationship("MenuItemCategory", back_populates="menu_item")
+    ingredient_links = relationship("MenuItemIngredient", back_populates="menu_item")
 
     # Size-based pricing (variant pricing)
     size_category_id = Column(Integer, ForeignKey("menu_item_size_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     size_category = relationship("MenuItemSizeCategory", back_populates="menu_items")
-    size_prices = relationship("MenuItemSizePrice", back_populates="menu_item", cascade="all, delete-orphan")
+    size_prices = relationship("MenuItemSizePrice", back_populates="menu_item")
 
     @property
     def aliases(self) -> list[str]:
@@ -534,7 +535,7 @@ class MenuItemAlias(Base):
     __tablename__ = "menu_item_aliases"
 
     id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     alias = Column(String(100), nullable=False, unique=True)  # Globally unique
     created_at = Column(DateTime, server_default=func.now())
 
@@ -554,7 +555,7 @@ class Category(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     # Relationship to menu items via join table
-    menu_item_categories = relationship("MenuItemCategory", back_populates="category", cascade="all, delete-orphan")
+    menu_item_categories = relationship("MenuItemCategory", back_populates="category")
 
     @property
     def menu_items(self) -> list:
@@ -567,8 +568,8 @@ class MenuItemCategory(Base):
     __tablename__ = "menu_item_categories"
 
     id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
-    category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="RESTRICT"), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
 
     # Unique constraint: a menu item can only be in a category once
@@ -595,8 +596,8 @@ class MenuItemIngredient(Base):
     __tablename__ = "menu_item_ingredients"
 
     id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False)
-    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="RESTRICT"), nullable=False)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="RESTRICT"), nullable=False)
     quantity = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -619,7 +620,7 @@ class MenuItemStoreAvailability(Base):
     __tablename__ = "menu_item_store_availability"
 
     id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="RESTRICT"), nullable=False)
     store_id = Column(String, nullable=False, index=True)
     is_available = Column(Boolean, nullable=False, default=True)
 
@@ -678,12 +679,12 @@ class Ingredient(Base):
 
     # relationships
     store_availability = relationship("IngredientStoreAvailability", back_populates="ingredient", cascade="all, delete-orphan")
-    item_type_links = relationship("ItemTypeIngredient", back_populates="ingredient", cascade="all, delete-orphan")
+    item_type_links = relationship("ItemTypeIngredient", back_populates="ingredient")
     # Alias and must_match child tables
     alias_records = relationship("IngredientAlias", back_populates="ingredient", cascade="all, delete-orphan")
     must_match_records = relationship("IngredientMustMatch", back_populates="ingredient", cascade="all, delete-orphan")
     # Menu items that contain this ingredient by default
-    menu_item_links = relationship("MenuItemIngredient", back_populates="ingredient", cascade="all, delete-orphan")
+    menu_item_links = relationship("MenuItemIngredient", back_populates="ingredient")
     # Unit relationship
     unit_rel = relationship("IngredientUnit", back_populates="ingredients")
 
@@ -816,8 +817,8 @@ class ItemTypeIngredient(Base):
     __tablename__ = "item_type_ingredients"
 
     id = Column(Integer, primary_key=True, index=True)
-    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=False)
-    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), nullable=False)
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="RESTRICT"), nullable=False)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="RESTRICT"), nullable=False)
 
     # Grouping - which selector/category this appears in
     # e.g., 'milk', 'sweetener', 'syrup', 'spread', 'protein', 'topping', 'cheese'
@@ -1123,7 +1124,7 @@ class MenuItemSizePrice(Base):
     __tablename__ = "menu_item_size_prices"
 
     id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="RESTRICT"), nullable=False, index=True)
     size_id = Column(Integer, ForeignKey("menu_item_sizes.id", ondelete="CASCADE"), nullable=False, index=True)
     price = Column(Float, nullable=False)
     created_at = Column(DateTime, server_default=func.now())

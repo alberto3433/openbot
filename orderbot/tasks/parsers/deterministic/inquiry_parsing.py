@@ -14,7 +14,8 @@ This module contains functions for parsing non-order queries including:
 import re
 import logging
 
-from orderbot.menu_data_cache import menu_cache, singularize
+from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import singularize
 
 from ...schemas import OpenInputResponse
 

@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 import re
 
-from orderbot.menu_data_cache import menu_cache, singularize
+from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import singularize
 from orderbot.exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)

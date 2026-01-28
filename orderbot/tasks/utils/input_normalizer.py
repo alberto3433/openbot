@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 
-from orderbot.menu_data_cache import singularize
+from orderbot.cache.base import singularize
 from orderbot.tasks.normalization import normalize_for_option_match as _normalize_for_option_match
 from orderbot.tasks.parsers.quantity_utils import extract_leading_quantity
 

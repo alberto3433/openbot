@@ -36,7 +36,7 @@ def _pluralize_display_name(display_name: str) -> str:
         "Extra Shot" -> "Extra Shots"
         "Chocolate Chips" -> "Chocolate Chips" (already plural)
     """
-    from ..cache.base import pluralize, singularize
+    from orderbot.cache.base import pluralize, singularize
 
     if not display_name:
         return display_name

@@ -304,7 +304,7 @@ def get_item_slots(item: ItemTask) -> list[ItemSlotDefinition]:
         return [slot for _, slot in slots]
 
     except Exception as e:
-        logger.warning(f"Failed to load slots for item type {item_type}: {e}")
+        logger.warning("Failed to load slots for item type %s: %s", item_type, e)
         return []
 
 

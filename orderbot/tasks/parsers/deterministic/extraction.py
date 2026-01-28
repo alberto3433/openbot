@@ -179,7 +179,7 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
                 instruction = f"{qualifier} {item}"
             if instruction not in instructions:
                 instructions.append(instruction)
-                logger.debug(f"Extracted special instruction: '{instruction}' from input")
+                logger.debug("Extracted special instruction: '%s' from input", instruction)
 
     # Check standalone patterns (e.g., "leave room", "cut in half", "melted")
     # Data-driven: patterns loaded from database via menu_cache
@@ -189,7 +189,7 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
             instruction = match.group(0).strip()
             if instruction and instruction not in instructions:
                 instructions.append(instruction)
-                logger.debug(f"Extracted standalone instruction: '{instruction}' from input")
+                logger.debug("Extracted standalone instruction: '%s' from input", instruction)
 
     return instructions
 

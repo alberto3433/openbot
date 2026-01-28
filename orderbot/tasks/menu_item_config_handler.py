@@ -14,7 +14,8 @@ Designed to be generic and work with any item type that has DB-defined attribute
 import logging
 import re
 
-from orderbot.menu_data_cache import menu_cache, singularize, pluralize
+from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import singularize, pluralize
 from .models import OrderTask, MenuItemTask
 from .normalization import normalize_for_option_match
 from .schemas import StateMachineResult, OrderPhase, Selection

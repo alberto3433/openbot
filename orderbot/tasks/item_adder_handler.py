@@ -18,8 +18,8 @@ from .schemas import OrderPhase, StateMachineResult, Selection
 from .handler_config import HandlerConfig
 from .disambiguation_handler import DisambiguationHandler
 from .mixins import MenuDataMixin
-from ..menu_data_cache import menu_cache
-from ..cache.base import get_singular_plural_variants
+from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import get_singular_plural_variants
 
 logger = logging.getLogger(__name__)
 

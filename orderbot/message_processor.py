@@ -257,7 +257,7 @@ class MessageProcessor:
 
     def _get_random_store_id(self) -> str:
         """Get a random store ID."""
-        from .main import get_random_store_id
+        from .config import get_random_store_id
         return get_random_store_id()
 
     # -------------------------------------------------------------------------

@@ -64,13 +64,13 @@ load_dotenv()
 import logging
 import pathlib
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import Dict
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -175,7 +175,6 @@ async def lifespan(app: FastAPI):
     # Start background refresh task (runs daily at 3 AM)
     def get_db_session():
         """Context manager for database sessions."""
-        from contextlib import contextmanager
         @contextmanager
         def _session():
             db = SessionLocal()
@@ -252,7 +251,6 @@ class AdminStaticProtectionMiddleware(BaseHTTPMiddleware):
         # Block direct access to admin files in /static/
         if path.startswith("/static/admin_") and path.endswith(".html"):
             page_name = path.replace("/static/admin_", "").replace(".html", "")
-            from fastapi.responses import RedirectResponse
             return RedirectResponse(url=f"/admin-ui/{page_name}", status_code=302)
 
         return await call_next(request)
@@ -290,7 +288,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/", include_in_schema=False)
 def root(request: Request):
     """Redirect root to static index page, preserving query parameters."""
-    from fastapi.responses import RedirectResponse
     url = "/static/index.html"
     if request.query_params:
         url += f"?{request.query_params}"

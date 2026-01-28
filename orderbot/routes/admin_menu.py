@@ -45,7 +45,7 @@ Usage:
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -83,9 +83,6 @@ admin_menu_router = APIRouter(prefix="/admin/menu", tags=["Admin - Menu"])
 # =============================================================================
 # Helper Functions
 # =============================================================================
-
-from typing import Optional
-
 
 def _set_menu_item_aliases(db: Session, item: MenuItem, aliases_str: Optional[str]) -> None:
     """

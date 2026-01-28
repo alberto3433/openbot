@@ -8,14 +8,10 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-from typing import TYPE_CHECKING
 
 from .models import OrderTask
 from .schemas import OrderPhase
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 slot_logger = logging.getLogger("orderbot.slots")

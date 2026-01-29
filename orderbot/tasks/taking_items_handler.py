@@ -46,6 +46,7 @@ from .parsers.quantity_utils import (
 )
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list
+from .normalization import format_slug_for_display
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -1610,7 +1611,7 @@ class TakingItemsHandler(MenuDataMixin):
                             slug=sel.slug,
                             category=sel.category,
                             quantity=sel.quantity or 1,
-                            display_name=sel.slug.replace("_", " ").title(),
+                            display_name=format_slug_for_display(sel.slug, check_cache=False),
                         )
 
                     # Update single_select attributes from selections (e.g., spread)
@@ -2158,6 +2159,7 @@ class TakingItemsHandler(MenuDataMixin):
 
         # 3. Call add_item with all attribute_values as kwargs
         #    The receiver (_extract_pre_filled_attributes) filters to valid attributes
+        #    Pass unavailable_selections so it's set BEFORE get_first_question() is called
         result = self.item_adder_handler.add_item(
             item_type=item.item_type,
             order=order,
@@ -2165,6 +2167,7 @@ class TakingItemsHandler(MenuDataMixin):
             item_name=item.item_name,
             extracted_selections=selections if _has_any_selections(selections) else None,
             original_input=item.original_text,
+            unavailable_selections=item.unavailable_selections if item.unavailable_selections else None,
             **item.attribute_values,  # Data-driven: pass all, receiver filters (backward compat)
         )
         order = result.order
@@ -2177,11 +2180,8 @@ class TakingItemsHandler(MenuDataMixin):
 
         # 5. Build summary if item was added
         if items_after > items_before:
-            # Copy unavailable_selections from parsed item to MenuItemTask
-            # This enables helpful "We don't have X - we have Y or Z" messaging
-            last_item = order.items.items[-1]
-            if isinstance(last_item, MenuItemTask) and item.unavailable_selections:
-                last_item.unavailable_selections = item.unavailable_selections.copy()
+            # Note: unavailable_selections is now passed to add_item and set before
+            # get_first_question() is called, so it's already on the MenuItemTask
 
             summary = _build_item_summary(item)
             return order, summary, None

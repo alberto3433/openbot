@@ -14,8 +14,107 @@ import logging
 from typing import Callable
 
 from .mixins import MenuDataMixin
+from .normalization import normalize_to_slug
+from .modifier_utils import extract_modifier_slug_and_quantity, extract_modifier_price
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Helper Functions for Option Matching
+# =============================================================================
+
+def _normalize_option_for_matching(option: dict) -> tuple[str, str]:
+    """Normalize an option dict for matching against user input.
+
+    Extracts and normalizes both slug and display_name from an option dict
+    for consistent comparison during price lookups.
+
+    Args:
+        option: Option dict with optional "slug" and "display_name" keys
+
+    Returns:
+        Tuple of (normalized_slug, normalized_display_name) where both have
+        dashes and spaces converted to underscores, lowercased.
+
+    Examples:
+        >>> _normalize_option_for_matching({"slug": "oat-milk", "display_name": "Oat Milk"})
+        ("oat_milk", "oat_milk")
+        >>> _normalize_option_for_matching({"slug": "vanilla_syrup"})
+        ("vanilla_syrup", "")
+    """
+    opt_slug = (option.get("slug") or "").lower().replace("-", "_")
+    opt_name = (option.get("display_name") or "").lower().replace("-", "_").replace(" ", "_")
+    return opt_slug, opt_name
+
+
+def _lookup_option_price_in_attributes(
+    attributes: list[dict],
+    normalized_value: str,
+    raw_value_lower: str,
+    *,
+    target_attr_slug: str | None = None,
+    modifier_type_hint: str | None = None,
+) -> tuple[float | None, str | None]:
+    """Search attributes for an option matching the given value and return its price.
+
+    This is the unified option price lookup used by all pricing methods. It searches
+    through attribute options for a match by slug or display_name.
+
+    Args:
+        attributes: List of attribute dicts, each with "slug" and "options" keys
+        normalized_value: Value normalized via normalize_to_slug() for slug matching
+        raw_value_lower: Original value lowercased for display_name matching
+        target_attr_slug: If provided, only search this specific attribute
+        modifier_type_hint: If provided, filter attributes by this type hint
+
+    Returns:
+        Tuple of (price, attr_slug) where price is the found price_modifier/price,
+        or (None, None) if no match found.
+
+    Examples:
+        >>> attrs = [{"slug": "size", "options": [{"slug": "large", "price_modifier": 0.90}]}]
+        >>> _lookup_option_price_in_attributes(attrs, "large", "large")
+        (0.90, "size")
+    """
+    for attr in attributes:
+        if not isinstance(attr, dict):
+            continue
+
+        attr_slug = attr.get("slug", "")
+
+        # Filter by target attribute if specified
+        if target_attr_slug and attr_slug != target_attr_slug:
+            continue
+
+        # Filter by modifier type hint if specified
+        if modifier_type_hint:
+            if modifier_type_hint not in attr_slug and attr_slug != modifier_type_hint:
+                # Also check if attribute contains options with this modifier category
+                from orderbot.menu_data_cache import menu_cache
+                if not menu_cache.attribute_contains_modifier_category(attr_slug, modifier_type_hint):
+                    continue
+
+        options = attr.get("options", [])
+        for opt in options:
+            if not isinstance(opt, dict):
+                continue
+
+            opt_slug, opt_name = _normalize_option_for_matching(opt)
+            opt_display_lower = (opt.get("display_name") or "").lower()
+
+            # Match by normalized slug, normalized display_name, or raw lowercase value
+            if (opt_slug == normalized_value or
+                opt_name == normalized_value or
+                opt_slug == raw_value_lower or
+                opt_display_lower == raw_value_lower or
+                raw_value_lower in opt_slug):
+                # Check both keys: "price_modifier" for attribute options,
+                # "price" for ingredient-based options
+                price = opt.get("price_modifier") or opt.get("price") or 0.0
+                return price, attr_slug
+
+    return None, None
 
 
 class PricingEngine(MenuDataMixin):
@@ -163,8 +262,8 @@ class PricingEngine(MenuDataMixin):
         if not option_value:
             return 0.0
 
+        normalized = normalize_to_slug(option_value)
         option_lower = option_value.lower().strip()
-        normalized = option_lower.replace(" ", "_").replace("-", "_")
 
         if not self._menu_data:
             logger.warning("No menu_data available for attribute upcharge lookup")
@@ -174,18 +273,15 @@ class PricingEngine(MenuDataMixin):
         type_data = item_types.get(item_type, {})
         attributes = type_data.get("attributes", [])
 
-        for attr in attributes:
-            if attr.get("slug") == attr_slug:
-                options = attr.get("options", [])
-                for opt in options:
-                    opt_slug = (opt.get("slug") or "").lower().replace("-", "_")
-                    opt_name = (opt.get("display_name") or "").lower().replace(" ", "_")
+        price, _ = _lookup_option_price_in_attributes(
+            attributes,
+            normalized,
+            option_lower,
+            target_attr_slug=attr_slug,
+        )
 
-                    if opt_slug == normalized or opt_name == normalized or \
-                       opt_slug == option_lower:
-                        # Check both keys: "price_modifier" for attribute options,
-                        # "price" for ingredient-based options
-                        return opt.get("price_modifier") or opt.get("price") or 0.0
+        if price is not None:
+            return price
 
         # Not found - log and return 0.0
         logger.debug(
@@ -221,8 +317,8 @@ class PricingEngine(MenuDataMixin):
         if not modifier_name:
             return 0.0
 
+        normalized = normalize_to_slug(modifier_name)
         modifier_lower = modifier_name.lower().strip()
-        normalized = modifier_lower.replace(" ", "_").replace("-", "_")
 
         if not self._menu_data:
             raise ValueError(
@@ -249,38 +345,20 @@ class PricingEngine(MenuDataMixin):
             )
 
         attributes = type_data.get("attributes", [])
-        for attr in attributes:
-            if not isinstance(attr, dict):
-                continue
 
-            attr_slug = attr.get("slug", "")
+        price, attr_slug = _lookup_option_price_in_attributes(
+            attributes,
+            normalized,
+            modifier_lower,
+            modifier_type_hint=modifier_type,
+        )
 
-            # If modifier_type specified, only check matching attributes
-            if modifier_type and modifier_type not in attr_slug and attr_slug != modifier_type:
-                # Also check attributes that contain options with this modifier category
-                # (e.g., milk_sweetener_syrup contains milk, syrup, and sweetener options)
-                from orderbot.menu_data_cache import menu_cache
-                if not menu_cache.attribute_contains_modifier_category(attr_slug, modifier_type):
-                    continue
-
-            options = attr.get("options", [])
-            for opt in options:
-                if not isinstance(opt, dict):
-                    continue
-
-                opt_slug = (opt.get("slug") or "").lower().replace("-", "_")
-                opt_name = (opt.get("display_name") or "").lower().replace(" ", "_")
-
-                if opt_slug == normalized or opt_name == normalized or \
-                   opt_slug == modifier_lower or modifier_lower in opt_slug:
-                    # Check both keys: "price_modifier" for attribute options,
-                    # "price" for ingredient-based options
-                    price = opt.get("price_modifier") or opt.get("price") or 0.0
-                    logger.debug(
-                        "Found modifier price: %s = $%.2f (from %s.%s)",
-                        modifier_name, price, item_type, attr_slug
-                    )
-                    return price
+        if price is not None:
+            logger.debug(
+                "Found modifier price: %s = $%.2f (from %s.%s)",
+                modifier_name, price, item_type, attr_slug
+            )
+            return price
 
         # Not found in this item type - return 0.0 (modifier is free or unconfigured)
         # This is not an error - some modifiers may not have prices
@@ -318,8 +396,8 @@ class PricingEngine(MenuDataMixin):
         from orderbot.menu_data_cache import menu_cache
         canonical_name = menu_cache.normalize_modifier(modifier_lower)
 
-        # Convert to slug format for matching: lowercase + spaces/dashes to underscores
-        normalized = canonical_name.lower().replace("-", "_").replace(" ", "_")
+        # Convert to slug format for matching
+        normalized = normalize_to_slug(canonical_name)
 
         if not self._menu_data:
             raise ValueError(
@@ -347,26 +425,18 @@ class PricingEngine(MenuDataMixin):
 
         attributes = type_data.get("attributes", [])
 
-        # Search through all attributes for this item type
-        for attr in attributes:
-            options = attr.get("options", [])
-            for opt in options:
-                if not isinstance(opt, dict):
-                    continue
-                opt_slug = (opt.get("slug") or "").lower().replace("-", "_")
-                opt_name = (opt.get("display_name") or "").lower().replace("-", "_").replace(" ", "_")
+        price, attr_slug = _lookup_option_price_in_attributes(
+            attributes,
+            normalized,
+            modifier_lower,
+        )
 
-                # Match by slug or display_name (normalized)
-                if opt_slug == normalized or opt_name == normalized or \
-                   opt_slug == modifier_lower or (opt.get("display_name") or "").lower() == modifier_lower:
-                    # Check both keys: "price_modifier" for attribute options,
-                    # "price" for ingredient-based options
-                    price = opt.get("price_modifier") or opt.get("price") or 0.0
-                    logger.debug(
-                        "Found modifier price: %s = $%.2f (from %s.%s)",
-                        modifier_name, price, item_type, attr.get("slug")
-                    )
-                    return price
+        if price is not None:
+            logger.debug(
+                "Found modifier price: %s = $%.2f (from %s.%s)",
+                modifier_name, price, item_type, attr_slug
+            )
+            return price
 
         # Not found in this item type - return 0.0 (modifier is free or unconfigured)
         logger.debug(
@@ -424,18 +494,26 @@ class PricingEngine(MenuDataMixin):
             # Check if item has variant-based pricing (e.g., size_prices)
             # If so, the variant dimension is already factored into the base price
             uses_variant_pricing = False
-            variant_attr = None  # The attribute covered by variant pricing (e.g., "size")
+            variant_attr = None  # The attribute covered by variant pricing
 
-            # Try to get size from attribute_values for variant lookup
-            size_value = attr_values.get("size")
-            size_price, size_data = self.lookup_size_price(item.menu_item_name, size_value)
+            # Look up menu item to check for size-based pricing
+            menu_item = self._lookup_menu_item(item.menu_item_name)
+            size_prices = menu_item.get("size_prices") if menu_item else None
 
-            if size_price is not None:
-                base_price = size_price
-                uses_variant_pricing = True
-                variant_attr = "size"
+            if size_prices:
+                # Derive variant attribute from size_category_slug (e.g., "size")
+                variant_attr = menu_item.get("size_category_slug")
+                variant_value = attr_values.get(variant_attr) if variant_attr else None
+                size_price, size_data = self.lookup_size_price(item.menu_item_name, variant_value)
+
+                if size_price is not None:
+                    base_price = size_price
+                    uses_variant_pricing = True
+                else:
+                    # Traditional pricing: base_price from menu item
+                    base_price = self.lookup_base_price(item.menu_item_name)
             else:
-                # Traditional pricing: base_price from menu item
+                # No variant pricing - use traditional base_price
                 base_price = self.lookup_base_price(item.menu_item_name)
 
         total = base_price
@@ -484,10 +562,15 @@ class PricingEngine(MenuDataMixin):
                             total += price
                             priced_slugs.add(item_val)
                     elif isinstance(item_val, dict):
-                        slug = item_val.get("slug") or ""
-                        qty = item_val.get("quantity", 1) or 1
+                        slug, qty = extract_modifier_slug_and_quantity(item_val)
                         if slug:
-                            price = self.lookup_modifier_price(slug, item_type)
+                            stored_price = extract_modifier_price(item_val)
+                            if stored_price is not None:
+                                price = stored_price
+                            else:
+                                price = self.lookup_modifier_price(slug, item_type)
+                                if price > 0:
+                                    item_val["price"] = price
                             total += price * qty
                             priced_slugs.add(slug)
 
@@ -514,19 +597,21 @@ class PricingEngine(MenuDataMixin):
             if not isinstance(modifier, dict):
                 continue
 
-            slug = modifier.get("slug") or ""
+            slug, quantity = extract_modifier_slug_and_quantity(modifier)
             if not slug or slug in priced_slugs:
                 continue
 
-            quantity = modifier.get("quantity", 1) or 1
+            # Use stored price if available; only look up from DB if missing
+            stored_price = extract_modifier_price(modifier)
+            if stored_price is not None:
+                price = stored_price
+            else:
+                price = self.lookup_modifier_price(slug, item_type)
+                # Update the modifier's stored price so it displays in UI
+                if price > 0:
+                    modifier["price"] = price
 
-            # Look up price for this modifier
-            price = self.lookup_modifier_price(slug, item_type)
             total += price * quantity
-
-            # Update the modifier's stored price so it displays in UI
-            if price > 0:
-                modifier["price"] = price
 
         # =====================================================================
         # 4. Update item price

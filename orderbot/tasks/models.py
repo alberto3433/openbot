@@ -27,6 +27,21 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
+def _format_slug_for_display(slug: str) -> str:
+    """Convert a slug to human-readable display name.
+
+    This is a local version to avoid circular imports with normalization.py.
+    Converts underscores to spaces and applies title case.
+
+    Args:
+        slug: The slug to format (e.g., "garlic_bagel", "vanilla_syrup")
+
+    Returns:
+        Human-readable display name (e.g., "Garlic Bagel", "Vanilla Syrup")
+    """
+    return slug.replace("_", " ").title()
+
+
 def _pluralize_display_name(display_name: str) -> str:
     """Pluralize a display name by pluralizing the last word.
 
@@ -409,11 +424,11 @@ class MenuItemTask(ItemTask):
         if not display_name:
             # Handle boolean slugs specially
             if slug == "yes":
-                display_name = category.replace("_", " ").title()
+                display_name = _format_slug_for_display(category)
             elif slug == "no":
-                display_name = f"Not {category.replace('_', ' ').title()}"
+                display_name = f"Not {_format_slug_for_display(category)}"
             else:
-                display_name = slug.replace("_", " ").title()
+                display_name = _format_slug_for_display(slug)
 
         # Build selection entry
         selection = {

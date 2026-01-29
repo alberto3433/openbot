@@ -18,7 +18,7 @@ from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import singularize, pluralize
 from .models import OrderTask, MenuItemTask
 from .pending_fields import PendingField
-from .normalization import normalize_for_option_match
+from .normalization import normalize_for_option_match, format_slug_for_display
 from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .parsers.quantity_utils import extract_leading_quantity
@@ -933,7 +933,7 @@ class MenuItemConfigHandler(BaseHandler):
 
             # Build display name for acknowledgment using database lookup
             display_name = sel.display_name or menu_cache.get_ingredient_display_name(sel.slug)
-            added_items.append(display_name or sel.slug.replace("_", " ").title())
+            added_items.append(display_name or format_slug_for_display(sel.slug, check_cache=False))
 
         # Build acknowledgment string
         if not added_items:

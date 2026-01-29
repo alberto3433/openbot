@@ -395,9 +395,9 @@ class ModifierChangeHandler:
         )
 
         # For multi-select attributes (like syrup), use add_selection with quantity
-        # Include unified beverage category 'milk_sweetener_syrup'
-        multi_select_categories = ["syrup", "sweetener", "extras", "milk_sweetener_syrup"]
-        if isinstance(item, MenuItemTask) and attr_slug in multi_select_categories:
+        # Data-driven: get multi-select attribute slugs from database configuration
+        multi_select_slugs = menu_cache.get_multi_select_attribute_slugs(item_type_slug) if item_type_slug else set()
+        if isinstance(item, MenuItemTask) and attr_slug in multi_select_slugs:
             # Normalize the slug: "vanilla syrups" -> "vanilla_syrup"
             modifier_slug = normalized_value.replace(" ", "_")
             if modifier_slug.endswith("s") and not modifier_slug.endswith("ss"):
@@ -530,10 +530,12 @@ class ModifierChangeHandler:
         """Build a response message for a change."""
         display_name = self._get_attr_display_name(attr_slug)
 
-        # Use item summary for beverage attributes
-        if isinstance(item, MenuItemTask) and item.has_attribute("size"):
-            summary = item.get_summary()
-            return f"Sure, I've changed that to {summary}. Anything else?"
+        # Use item summary for beverage items (data-driven check)
+        if isinstance(item, MenuItemTask) and item.menu_item_type:
+            modifier_category = menu_cache.get_modifier_category(item.menu_item_type)
+            if modifier_category == "beverage":
+                summary = item.get_summary()
+                return f"Sure, I've changed that to {summary}. Anything else?"
 
         # Format value for display
         display_value = new_value

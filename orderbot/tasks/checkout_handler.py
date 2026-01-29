@@ -47,6 +47,7 @@ from .parsers.llm_parsers import (
 )
 from ..address_service import complete_address
 from .handler_config import BaseHandler
+from .normalization import format_slug_for_display
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -775,7 +776,7 @@ class CheckoutHandler(BaseHandler):
         menu_item_name = prev_item.get("menu_item_name")
         # Derive name from item_type if not provided
         if not menu_item_name and item_type:
-            menu_item_name = menu_cache.get_item_type_display_name(item_type) or item_type.replace("_", " ").title()
+            menu_item_name = menu_cache.get_item_type_display_name(item_type) or format_slug_for_display(item_type, check_cache=False)
         menu_item_name = menu_item_name or "Item"
         price = prev_item.get("price", 0)
 

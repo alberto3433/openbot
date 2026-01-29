@@ -122,6 +122,7 @@ class UnifiedItemConverter:
             "modifiers", "free_details", "base_price",
             "line_total", "item_config", "attribute_values", "customization_offered",
             "display_name", "item_modifiers",  # item_modifiers handled separately
+            "is_signature",  # Metadata, not a configurable attribute
         }
         for source in (item_dict, item_config):
             for key, value in source.items():
@@ -202,13 +203,13 @@ class UnifiedItemConverter:
                                 "category": category,
                                 "quantity": 1,
                                 "price": 0,
-                                "display_name": str(v).replace("_", " ").title(),
+                                "display_name": format_slug_for_display(str(v), check_cache=False),
                             })
                             stored_keys.add((v_slug, category))
             else:
                 slug = str(value)
                 if (slug, category) not in stored_keys:
-                    display_name = str(value).replace("_", " ").title()
+                    display_name = format_slug_for_display(str(value), check_cache=False)
                     price = attribute_values.get(f"{category}_price", 0) or attribute_values.get(f"{category}_upcharge", 0) or 0
                     selections.append({
                         "slug": slug,
@@ -228,6 +229,7 @@ class UnifiedItemConverter:
             quantity=item_dict.get("quantity", 1),
             modifiers=selections,
             customization_offered=item_dict.get("customization_offered", False),
+            is_signature=item_config.get("is_signature", item_dict.get("is_signature", False)),
         )
         self._restore_common_fields(menu_item, item_dict)
         return menu_item
@@ -306,13 +308,15 @@ class UnifiedItemConverter:
         customization_offered = getattr(item, 'customization_offered', False)
 
         # Get base_price from pricing engine if available, or from item
-        # Data-driven: lookup by menu_item_name and size (if present)
+        # Data-driven: lookup by menu_item_name and variant attribute (if present)
         base_price = getattr(item, 'base_price', None)
         if base_price is None and pricing and hasattr(pricing, 'lookup_base_price') and menu_item_name:
             try:
-                # Pass size from attribute_values for size-based pricing
-                size_name = attribute_values.get('size')
-                base_price = pricing.lookup_base_price(menu_item_name, size_name)
+                # Derive variant attribute from menu_item's size_category_slug
+                menu_item = pricing._lookup_menu_item(menu_item_name)
+                variant_attr = menu_item.get("size_category_slug") if menu_item and menu_item.get("size_prices") else None
+                variant_value = attribute_values.get(variant_attr) if variant_attr else None
+                base_price = pricing.lookup_base_price(menu_item_name, variant_value)
             except (ValueError, KeyError):
                 # Item not in menu data, will fall back to unit_price
                 pass
@@ -359,6 +363,7 @@ class UnifiedItemConverter:
             "item_modifiers": item_modifiers,  # Unified modifiers for persistence
             "attribute_values": attribute_values,
             "base_price": base_price,
+            "is_signature": getattr(item, 'is_signature', False),
             **{k: v for k, v in attribute_values.items() if v is not None},
         }
         result["item_config"] = item_config

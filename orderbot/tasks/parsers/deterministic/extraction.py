@@ -472,7 +472,7 @@ def extract_attribute_values(
             "slug": slug,
             "display_name": cand.option.get("display_name", slug),
             "quantity": quantity,
-            "price": cand.option.get("price", 0),
+            "price": cand.option.get("price") or cand.option.get("price_modifier") or 0,
             "category": cand.option.get("category"),
         }
 

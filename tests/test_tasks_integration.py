@@ -74,7 +74,12 @@ def get_mock_bagel_attributes():
 
 
 def get_mock_coffee_attributes():
-    """Return mock attribute data for sized_beverage (coffee) item type."""
+    """Return mock attribute data for sized_beverage (coffee) item type.
+
+    NOTE: Temperature (hot/iced) is NO LONGER a separate attribute.
+    It's now baked into the menu item name (e.g., "Hot Latte", "Iced Coffee").
+    Display orders match the real database.
+    """
     return {
         "size": {
             "slug": "size",
@@ -89,25 +94,13 @@ def get_mock_coffee_attributes():
                 {"slug": "large", "display_name": "Large", "price": 1.00},
             ],
         },
-        "temperature": {
-            "slug": "temperature",
-            "display_name": "Temperature",
-            "question_text": "Hot or iced?",
-            "ask_in_conversation": True,
-            "input_type": "single_select",
-            "display_order": 2,
-            "options": [
-                {"slug": "hot", "display_name": "Hot", "price": 0},
-                {"slug": "iced", "display_name": "Iced", "price": 0.50},
-            ],
-        },
         "milk_sweetener_syrup": {
             "slug": "milk_sweetener_syrup",
             "display_name": "Milk, Sweetener, or Syrup",
             "question_text": "Any milk, sweetener, or syrup?",
             "ask_in_conversation": True,
             "input_type": "multi_select",
-            "display_order": 4,
+            "display_order": 3,
             "allow_none": True,
             "is_global_attribute": True,
             "options": [
@@ -120,6 +113,30 @@ def get_mock_coffee_attributes():
                 {"slug": "caramel_syrup", "display_name": "Caramel Syrup", "price": 0.75, "category": "syrup"},
                 {"slug": "hazelnut_syrup", "display_name": "Hazelnut Syrup", "price": 0.75, "category": "syrup"},
             ],
+        },
+        "shots": {
+            "slug": "shots",
+            "display_name": "Extra Shots",
+            "question_text": "Would you like an espresso shot?",
+            "ask_in_conversation": True,
+            "input_type": "quantity",
+            "display_order": 5,
+        },
+        "decaf": {
+            "slug": "decaf",
+            "display_name": "Decaf",
+            "question_text": "Would you like it decaf?",
+            "ask_in_conversation": False,
+            "input_type": "boolean",
+            "display_order": 5,
+        },
+        "style": {
+            "slug": "style",
+            "display_name": "Style",
+            "question_text": None,
+            "ask_in_conversation": False,
+            "input_type": "single_select",
+            "display_order": 4,
         },
     }
 
@@ -2883,16 +2900,25 @@ class TestCoffeeSize:
     """Tests for _handle_coffee_size."""
 
     def test_small_size_selected(self):
-        """Test selecting small size."""
+        """Test selecting small size.
+
+        Temperature (hot/iced) is now part of the menu item name (e.g. 'Hot Latte'),
+        not a separate attribute. After size, the next question is milk/sweetener/syrup.
+        Size is NOT pre-set — the item starts without a size so the handler sets it.
+        """
         from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import CoffeeItemTask
+        from orderbot.tasks.models import OrderTask, MenuItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.pending_field = "sized_beverage:size"
 
-        coffee = CoffeeItemTask(drink_type="latte")
+        coffee = MenuItemTask(
+            menu_item_name="Hot Latte",
+            menu_item_type="sized_beverage",
+            quantity=1,
+            unit_price=0.0,
+        )
         coffee.mark_in_progress()
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
@@ -2900,20 +2926,29 @@ class TestCoffeeSize:
         result = sm.configuring_item_handler.handle_configuring_item("small please", order)
 
         assert coffee["size"] == "small"
-        assert order.pending_field in ("coffee_style", "menu_item_attr_iced", "menu_item_attr_temperature", "sized_beverage:temperature", "sized_beverage:iced")
-        assert "hot or iced" in result.message.lower()
+        assert order.pending_field == "sized_beverage:milk_sweetener_syrup"
+        assert "milk" in result.message.lower() or "sweetener" in result.message.lower() or "syrup" in result.message.lower()
 
     def test_large_size_selected(self):
-        """Test selecting large size."""
+        """Test selecting large size.
+
+        Temperature (hot/iced) is now part of the menu item name (e.g. 'Hot Coffee'),
+        not a separate attribute. After size, the next question is milk/sweetener/syrup.
+        Size is NOT pre-set — the item starts without a size so the handler sets it.
+        """
         from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import CoffeeItemTask
+        from orderbot.tasks.models import OrderTask, MenuItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.pending_field = "sized_beverage:size"
 
-        coffee = CoffeeItemTask(drink_type="drip coffee")
+        coffee = MenuItemTask(
+            menu_item_name="Hot Coffee",
+            menu_item_type="sized_beverage",
+            quantity=1,
+            unit_price=0.0,
+        )
         coffee.mark_in_progress()
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
@@ -2921,7 +2956,7 @@ class TestCoffeeSize:
         result = sm.configuring_item_handler.handle_configuring_item("I'll take a large", order)
 
         assert coffee["size"] == "large"
-        assert "hot or iced" in result.message.lower()
+        assert "milk" in result.message.lower() or "sweetener" in result.message.lower() or "syrup" in result.message.lower()
 
     def test_invalid_size_reprompts(self, menu_cache_loaded):
         """Test that invalid size re-prompts user.

@@ -246,6 +246,9 @@ class ItemAdderHandler(MenuDataMixin):
         # Get extracted_selections from kwargs if provided
         extracted_selections = kwargs.get("extracted_selections")
 
+        # Get unavailable_selections from kwargs (for "We don't have X" messaging)
+        unavailable_selections = kwargs.get("unavailable_selections")
+
         logger.info(
             "ADD ITEM: type=%s, name=%s, qty=%d, pre_filled=%s",
             item_type, item_name, quantity,
@@ -260,6 +263,7 @@ class ItemAdderHandler(MenuDataMixin):
             user_input=kwargs.get("original_input"),
             pre_filled_attributes=pre_filled_attributes if pre_filled_attributes else None,
             extracted_selections=extracted_selections,
+            unavailable_selections=unavailable_selections,
         )
 
         return result
@@ -612,6 +616,7 @@ class ItemAdderHandler(MenuDataMixin):
         user_input: str | None = None,
         pre_filled_attributes: dict | None = None,
         extracted_selections: list[Selection] | None = None,
+        unavailable_selections: dict | None = None,
     ) -> StateMachineResult:
         """
         Create an item and start its configuration flow if needed.
@@ -626,6 +631,8 @@ class ItemAdderHandler(MenuDataMixin):
             user_input: Original user input for attribute extraction (optional)
             pre_filled_attributes: Dict of attribute values to pre-fill (optional)
             extracted_selections: List of Selection objects to apply (optional)
+            unavailable_selections: Dict of attr_slug -> {attempted_slug, attempted_display}
+                for options user tried that aren't available (e.g., "medium" size)
 
         Returns:
             StateMachineResult with next question or confirmation
@@ -670,6 +677,11 @@ class ItemAdderHandler(MenuDataMixin):
             # Apply extracted selections if provided
             if extracted_selections and self.menu_item_handler:
                 self.menu_item_handler._apply_selections(item, extracted_selections)
+
+            # Set unavailable_selections (for "We don't have X" messaging)
+            # Must be set BEFORE get_first_question() is called
+            if unavailable_selections:
+                item.unavailable_selections = unavailable_selections.copy()
 
             # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
             # This prevents asking questions already answered by the item name

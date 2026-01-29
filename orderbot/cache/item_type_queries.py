@@ -212,6 +212,29 @@ class ItemTypeQueryMixin:
         metadata = self._global_attribute_metadata.get(attr_slug, {})
         return metadata.get("input_type") == "multi_select"
 
+    def get_multi_select_attribute_slugs(self, item_type_slug: str) -> set[str]:
+        """Get all multi-select attribute slugs for an item type.
+
+        This is used to determine which attributes support adding multiple
+        selections (e.g., syrups, sweeteners, extras).
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            Set of attribute slugs that are multi-select type.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        result: set[str] = set()
+        attrs = self.get_item_type_attributes(item_type_slug)
+        for attr_slug, attr_config in attrs.items():
+            if attr_config.get("input_type") == "multi_select":
+                result.add(attr_slug)
+        return result
+
     def attribute_contains_modifier_category(self, attr_slug: str, modifier_category: str) -> bool:
         """Check if an attribute contains options with a given modifier category.
 

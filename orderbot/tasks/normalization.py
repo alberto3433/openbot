@@ -196,6 +196,33 @@ def normalize_for_match(s: str) -> str:
     return s.replace("&", "and").replace(" ", "")
 
 
+def normalize_to_slug(text: str) -> str:
+    """
+    Normalize text to slug format for matching against database slugs.
+
+    This is the canonical way to convert user input or display names to
+    slug format for option matching. Handles:
+    - Lowercase conversion
+    - Whitespace stripping
+    - Spaces and dashes converted to underscores
+
+    Args:
+        text: The text to normalize (e.g., "Vanilla Syrup", "oat-milk")
+
+    Returns:
+        Slug-formatted string (e.g., "vanilla_syrup", "oat_milk")
+
+    Examples:
+        >>> normalize_to_slug("Vanilla Syrup")
+        "vanilla_syrup"
+        >>> normalize_to_slug("oat-milk")
+        "oat_milk"
+        >>> normalize_to_slug("  Extra Shot  ")
+        "extra_shot"
+    """
+    return text.lower().strip().replace(" ", "_").replace("-", "_")
+
+
 def format_slug_for_display(
     slug: str,
     category: str | None = None,

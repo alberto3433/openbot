@@ -72,18 +72,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from . import __version__
 from .auth import verify_admin_credentials
 from .config import (
     CORS_ORIGINS,
-    RATE_LIMIT_ENABLED,
     ADMIN_PAGES,
 )
 from .logging_config import setup_logging
+from .rate_limiting import limiter
 
 # Import routers
 from .routes import (
@@ -120,21 +119,6 @@ from fastapi import APIRouter
 setup_logging()
 logger = logging.getLogger(__name__)
 
-
-# =============================================================================
-# Rate Limiting
-# =============================================================================
-
-def get_session_id_or_ip(request: Request) -> str:
-    """Get rate limit key from session_id or fall back to IP."""
-    if hasattr(request.state, "body_json") and request.state.body_json:
-        session_id = request.state.body_json.get("session_id")
-        if session_id:
-            return f"session:{session_id}"
-    return get_remote_address(request)
-
-
-limiter = Limiter(key_func=get_session_id_or_ip, enabled=RATE_LIMIT_ENABLED)
 
 
 # =============================================================================

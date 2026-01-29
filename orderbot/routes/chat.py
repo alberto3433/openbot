@@ -62,8 +62,6 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from ..config import get_rate_limit_chat, get_random_store_id
@@ -95,19 +93,7 @@ chat_router = APIRouter(prefix="/chat", tags=["Chat"])
 # Rate Limiting Setup
 # =============================================================================
 
-def get_session_id_or_ip(request: Request) -> str:
-    """Get rate limit key from session_id or fall back to IP."""
-    if hasattr(request.state, "body_json") and request.state.body_json:
-        session_id = request.state.body_json.get("session_id")
-        if session_id:
-            return f"session:{session_id}"
-    return get_remote_address(request)
-
-
-# Import limiter from main app (will be set up there)
-# For now, create a placeholder that will be replaced
-from ..config import RATE_LIMIT_ENABLED
-limiter = Limiter(key_func=get_session_id_or_ip, enabled=RATE_LIMIT_ENABLED)
+from ..rate_limiting import limiter
 
 
 # =============================================================================

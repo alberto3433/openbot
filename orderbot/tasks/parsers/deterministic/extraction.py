@@ -244,19 +244,33 @@ def extract_attribute_values(
     negated_attrs: set[str] = set()
     for attr_slug, attr_config in attributes.items():
         attr_display = attr_config.get("display_name", attr_slug).lower()
+
+        # Build set of name variants to check for negation.
+        # Users say "no spread" not "no spread type", so we try multiple forms.
+        names_to_check = {attr_display}
+        # Also try slug with underscores as spaces (e.g., "spread_type" -> "spread type")
+        names_to_check.add(attr_slug.replace("_", " ").lower())
+        # Also try display name without trailing "type"/"choice" suffix
+        for suffix in (" type", " choice"):
+            if attr_display.endswith(suffix):
+                names_to_check.add(attr_display[:-len(suffix)].strip())
+
         # Match patterns like "no spread", "without spread", "skip spread"
-        negation_pattern = rf'\b(?:no|without|skip)\s+{re.escape(attr_display)}\b'
-        if re.search(negation_pattern, input_lower, re.IGNORECASE):
-            # Set to None for ALL attribute types when explicitly negated.
-            # This follows the codebase convention where None triggers the
-            # "_declined" marker in MenuItemTask.__setitem__, which marks
-            # the attribute as "answered" so the slot orchestrator won't ask.
-            result[attr_slug] = None
-            negated_attrs.add(attr_slug)
-            logger.debug(
-                "Negation detected for attribute '%s': setting to None (declined)",
-                attr_slug
-            )
+        for name in names_to_check:
+            negation_pattern = rf'\b(?:no|without|skip)\s+{re.escape(name)}\b'
+            if re.search(negation_pattern, input_lower, re.IGNORECASE):
+                # Set to None for ALL attribute types when explicitly negated.
+                # This follows the codebase convention where None triggers the
+                # "_declined" marker in MenuItemTask.__setitem__, which marks
+                # the attribute as "answered" so the slot orchestrator won't ask.
+                result[attr_slug] = None
+                negated_attrs.add(attr_slug)
+                logger.debug(
+                    "Negation detected for attribute '%s' (matched '%s'): "
+                    "setting to None (declined)",
+                    attr_slug, name
+                )
+                break
 
     def check_plural_boundary(text: str, start: int, end: int) -> tuple[bool, int]:
         """Check if match is at word boundary, allowing for plural suffixes.

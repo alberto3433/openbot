@@ -353,7 +353,7 @@ class ItemAdderHandler(MenuDataMixin):
 
         attrs = {}
         for key, value in kwargs.items():
-            if value is not None and key in known_attrs:
+            if key in known_attrs:
                 attrs[key] = value
 
         return attrs
@@ -664,8 +664,7 @@ class ItemAdderHandler(MenuDataMixin):
             # Apply pre-filled attributes
             if pre_filled_attributes:
                 for attr_name, attr_value in pre_filled_attributes.items():
-                    if attr_value is not None:
-                        item[attr_name] = attr_value
+                    item[attr_name] = attr_value
 
             # Apply extracted selections if provided
             if extracted_selections and self.menu_item_handler:

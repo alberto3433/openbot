@@ -270,8 +270,9 @@ class UnifiedItemConverter:
         item_modifiers = item.modifiers or []
         for mod in item_modifiers:
             # Skip name-forming categories (e.g., bread) - already in display name
+            # Exception: signature items keep their name, so show bread as a sub-line
             mod_category = mod.get("category", "")
-            if menu_cache.is_name_forming_category(mod_category):
+            if menu_cache.is_name_forming_category(mod_category) and not item.is_signature:
                 continue
 
             mod_slug = mod.get("slug", "")

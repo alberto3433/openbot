@@ -13,6 +13,7 @@ from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending_field
 from .schemas import OrderPhase, StateMachineResult
+from .utils.text import format_english_list
 from ..menu_data_cache import menu_cache
 
 if TYPE_CHECKING:
@@ -197,15 +198,12 @@ class CheckoutUtilsHandler:
 
             # Build summary based on the number of items configured
             num_items = len(config_names)
-            if num_items == 2:
-                summary = f"Great, {config_names[0]} and {config_names[1]} - both added."
-            elif num_items == 3:
-                summary = f"Great, {config_names[0]}, {config_names[1]}, and {config_names[2]} - all added."
-            elif num_items > 3:
-                items_str = ", ".join(config_names[:-1]) + f", and {config_names[-1]}"
-                summary = f"Great, {items_str} - all added."
-            else:
+            if num_items == 1:
                 summary = f"Great, {config_names[0]} added."
+            elif num_items == 2:
+                summary = f"Great, {format_english_list(config_names)} - both added."
+            else:
+                summary = f"Great, {format_english_list(config_names)} - all added."
 
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(

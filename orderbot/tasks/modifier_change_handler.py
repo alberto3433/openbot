@@ -22,6 +22,8 @@ from .normalization import (
     get_attribute_display_name as _get_attr_display_name_from_db,
 )
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
+from .parsers.quantity_utils import BASIC_WORD_TO_NUM
+from .utils.text import format_english_list
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 
@@ -321,11 +323,7 @@ class ModifierChangeHandler:
             value = match.group(2)
         else:
             # Check for word prefix
-            quantity_map = {
-                "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-                "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-                "double": 2, "triple": 3, "quad": 4, "quadruple": 4,
-            }
+            quantity_map = BASIC_WORD_TO_NUM
             for word, qty in quantity_map.items():
                 if value.startswith(word + " "):
                     quantity = qty
@@ -596,10 +594,9 @@ class ModifierChangeHandler:
 
         # Build error message dynamically from possible attributes
         attr_names = [self._get_attr_display_name(attr) for attr in possible_attributes]
-        if len(attr_names) == 2:
-            options_str = f"the {attr_names[0]} or the {attr_names[1]}"
-        elif len(attr_names) > 2:
-            options_str = ", ".join(f"the {n}" for n in attr_names[:-1]) + f", or the {attr_names[-1]}"
+        if len(attr_names) >= 2:
+            prefixed = [f"the {n}" for n in attr_names]
+            options_str = format_english_list(prefixed, conjunction="or")
         else:
             options_str = "which option"
 

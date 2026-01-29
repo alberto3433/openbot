@@ -36,7 +36,7 @@ from .parsers import (
     TAX_QUESTION_PATTERN,
 )
 from .parsers.deterministic import MAKE_IT_N_PATTERN
-from .parsers.quantity_utils import parse_make_it_n_quantity
+from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity
 from .parsers.llm_parsers import (
     parse_delivery_choice,
     parse_name,
@@ -114,6 +114,30 @@ class CheckoutHandler(BaseHandler):
         self._last_order_type = ctx.last_order_type
         self._menu_data = ctx.menu_data
 
+    def _finalize_order(
+        self,
+        order: OrderTask,
+        contact_value: str,
+        contact_type: str,
+    ) -> None:
+        """Finalize order: set payment, store contact, generate order number.
+
+        Args:
+            order: The order to finalize.
+            contact_value: Validated phone number or email address.
+            contact_type: Either "phone" or "email".
+        """
+        order.payment.method = "card_link"
+        if contact_type == "phone":
+            order.customer_info.phone = contact_value
+        else:
+            order.customer_info.email = contact_value
+        order.payment.payment_link_destination = contact_value
+        order.checkout.generate_order_number()
+        order.checkout.confirmed = True
+        if self._transition_to_next_slot:
+            self._transition_to_next_slot(order)
+
     def handle_delivery(
         self,
         user_input: str,
@@ -121,7 +145,7 @@ class CheckoutHandler(BaseHandler):
     ) -> StateMachineResult:
         """Handle pickup/delivery selection and address collection."""
         # Handle address confirmation for repeat orders
-        if order.pending_field == "address_confirmation":
+        if order.pending_field == PendingField.ADDRESS_CONFIRMATION:
             lower_input = user_input.lower().strip()
             # Check for affirmative response
             if lower_input in ("yes", "yeah", "yep", "correct", "that's right", "thats right", "right", "yes please", "yea"):
@@ -200,7 +224,7 @@ class CheckoutHandler(BaseHandler):
                 if last_address:
                     # Pre-fill the address and ask for confirmation
                     order.delivery_method.address.street = last_address
-                    order.pending_field = "address_confirmation"
+                    order.pending_field = PendingField.ADDRESS_CONFIRMATION
                     return StateMachineResult(
                         message=f"I have {last_address}. Is that correct?",
                         order=order,
@@ -338,12 +362,7 @@ class CheckoutHandler(BaseHandler):
                         message=error_message,
                         order=order,
                     )
-                order.customer_info.phone = validated_phone
-                order.payment.payment_link_destination = validated_phone
-                order.checkout.generate_order_number()
-                order.checkout.confirmed = True  # Now fully confirmed
-                if self._transition_to_next_slot:
-                    self._transition_to_next_slot(order)  # Should be COMPLETE
+                self._finalize_order(order, validated_phone, "phone")
                 return StateMachineResult(
                     message=f"Your order number is {order.checkout.short_order_number}. "
                            f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
@@ -373,12 +392,7 @@ class CheckoutHandler(BaseHandler):
                         message=error_message,
                         order=order,
                     )
-                order.customer_info.email = validated_email
-                order.payment.payment_link_destination = validated_email
-                order.checkout.generate_order_number()
-                order.checkout.confirmed = True  # Now fully confirmed
-                if self._transition_to_next_slot:
-                    self._transition_to_next_slot(order)  # Should be COMPLETE
+                self._finalize_order(order, validated_email, "email")
                 return StateMachineResult(
                     message=f"Your order number is {order.checkout.short_order_number}. "
                            f"We'll send the confirmation to {validated_email}. "
@@ -424,13 +438,7 @@ class CheckoutHandler(BaseHandler):
             )
 
         # Store validated phone and complete the order
-        order.customer_info.phone = validated_phone
-        order.payment.payment_link_destination = validated_phone
-        order.checkout.generate_order_number()
-        order.checkout.confirmed = True  # Now fully confirmed
-        if self._transition_to_next_slot:
-            self._transition_to_next_slot(order)  # Should be COMPLETE
-
+        self._finalize_order(order, validated_phone, "phone")
         return StateMachineResult(
             message=f"Your order number is {order.checkout.short_order_number}. "
                    f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
@@ -462,13 +470,7 @@ class CheckoutHandler(BaseHandler):
             )
 
         # Store validated/normalized email and complete the order
-        order.customer_info.email = validated_email
-        order.payment.payment_link_destination = validated_email
-        order.checkout.generate_order_number()
-        order.checkout.confirmed = True  # Now fully confirmed
-        if self._transition_to_next_slot:
-            self._transition_to_next_slot(order)  # Should be COMPLETE
-
+        self._finalize_order(order, validated_email, "email")
         return StateMachineResult(
             message=f"Your order number is {order.checkout.short_order_number}. "
                    f"We'll send the confirmation to {validated_email}. "
@@ -532,16 +534,7 @@ class CheckoutHandler(BaseHandler):
 
     def _handle_make_it_n(self, match, order: OrderTask) -> StateMachineResult | None:
         """Handle 'make it N' pattern to duplicate items."""
-        num_str = None
-        for i in range(1, 8):
-            if match.group(i):
-                num_str = match.group(i).lower()
-                break
-
-        if not num_str:
-            return None
-
-        target_qty = parse_make_it_n_quantity(num_str)
+        target_qty = extract_make_it_n_target(match)
         if not target_qty:
             return None
 
@@ -659,13 +652,7 @@ class CheckoutHandler(BaseHandler):
 
             if email:
                 # Auto-send to email
-                order.payment.method = "card_link"
-                order.customer_info.email = email
-                order.payment.payment_link_destination = email
-                order.checkout.generate_order_number()
-                order.checkout.confirmed = True
-                if self._transition_to_next_slot:
-                    self._transition_to_next_slot(order)
+                self._finalize_order(order, email, "email")
                 return StateMachineResult(
                     message=f"An email with a payment link has been sent to {email}. "
                            f"Your order number is {order.checkout.short_order_number}. "
@@ -675,13 +662,7 @@ class CheckoutHandler(BaseHandler):
                 )
             elif phone:
                 # Auto-send to phone
-                order.payment.method = "card_link"
-                order.customer_info.phone = phone
-                order.payment.payment_link_destination = phone
-                order.checkout.generate_order_number()
-                order.checkout.confirmed = True
-                if self._transition_to_next_slot:
-                    self._transition_to_next_slot(order)
+                self._finalize_order(order, phone, "phone")
                 return StateMachineResult(
                     message=f"A text with a payment link has been sent to {phone}. "
                            f"Your order number is {order.checkout.short_order_number}. "

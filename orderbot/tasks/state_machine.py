@@ -73,7 +73,7 @@ from .parsers import (
     parse_open_input,
     parse_confirmation,
 )
-from .parsers.quantity_utils import parse_make_it_n_quantity
+from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity
 
 logger = logging.getLogger(__name__)
 
@@ -414,46 +414,40 @@ class OrderStateMachine:
         from .parsers.deterministic import MAKE_IT_N_PATTERN
         make_it_n_match = MAKE_IT_N_PATTERN.match(user_input.strip())
         if make_it_n_match and order.items.get_item_count() > 0:
-            num_str = None
-            for i in range(1, 8):
-                if make_it_n_match.group(i):
-                    num_str = make_it_n_match.group(i).lower()
-                    break
-            if num_str:
-                target_qty = parse_make_it_n_quantity(num_str)
-                if target_qty:
-                    active_items = order.items.get_active_items()
-                    if active_items:
-                        last_item = active_items[-1]
-                        last_item_name = last_item.get_summary()
+            target_qty = extract_make_it_n_target(make_it_n_match)
+            if target_qty:
+                active_items = order.items.get_active_items()
+                if active_items:
+                    last_item = active_items[-1]
+                    last_item_name = last_item.get_summary()
 
-                        # Count how many of this same item are already in the order
-                        current_count = sum(
-                            1 for item in active_items
-                            if item.get_summary() == last_item_name
-                        )
+                    # Count how many of this same item are already in the order
+                    current_count = sum(
+                        1 for item in active_items
+                        if item.get_summary() == last_item_name
+                    )
 
-                        # Only add enough to reach the target
-                        added_count = target_qty - current_count
+                    # Only add enough to reach the target
+                    added_count = target_qty - current_count
 
-                        if added_count <= 0:
-                            # Already have enough or more
-                            msg = f"You already have {current_count} {last_item_name}. Anything else?"
-                            order.add_message("assistant", msg)
-                            return StateMachineResult(message=msg, order=order)
-
-                        for _ in range(added_count):
-                            order.items.add_item(last_item.duplicate())
-
-                        logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
-
-                        if added_count == 1:
-                            msg = f"I've added another {last_item_name}, so that's {target_qty} total. Anything else?"
-                        else:
-                            msg = f"I've added {added_count} more {last_item_name}, so that's {target_qty} total. Anything else?"
-
+                    if added_count <= 0:
+                        # Already have enough or more
+                        msg = f"You already have {current_count} {last_item_name}. Anything else?"
                         order.add_message("assistant", msg)
                         return StateMachineResult(message=msg, order=order)
+
+                    for _ in range(added_count):
+                        order.items.add_item(last_item.duplicate())
+
+                    logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
+
+                    if added_count == 1:
+                        msg = f"I've added another {last_item_name}, so that's {target_qty} total. Anything else?"
+                    else:
+                        msg = f"I've added {added_count} more {last_item_name}, so that's {target_qty} total. Anything else?"
+
+                    order.add_message("assistant", msg)
+                    return StateMachineResult(message=msg, order=order)
 
         # Derive phase from OrderTask state via orchestrator
         # Note: is_configuring_item() takes precedence (based on pending_item_ids)

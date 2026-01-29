@@ -605,11 +605,18 @@ class MenuItemTask(ItemTask):
     def get_display_name(self) -> str:
         """Get display name for this menu item.
 
-        For items with name-forming modifiers (like bread type), uses the
-        ingredient's display name instead of the generic menu item name.
+        For signature items, always returns the menu item name (e.g.,
+        "The Classic BEC") — bread appears as a modifier sub-line instead.
+
+        For non-signature items with name-forming modifiers (like bread type),
+        uses the ingredient's display name instead of the generic menu item name.
 
         Example: A "Bagel" with bread="garlic_bagel" returns "Garlic Bagel"
         """
+        # Signature items always keep their name
+        if self.is_signature:
+            return self.menu_item_name
+
         # Check for name-forming category modifiers (e.g., bread type)
         for sel in self.modifiers:
             category = sel.get("category", "")

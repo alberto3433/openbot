@@ -178,8 +178,8 @@ class PricingEngine(MenuDataMixin):
             if attr.get("slug") == attr_slug:
                 options = attr.get("options", [])
                 for opt in options:
-                    opt_slug = opt.get("slug", "").lower().replace("-", "_")
-                    opt_name = opt.get("display_name", "").lower().replace(" ", "_")
+                    opt_slug = (opt.get("slug") or "").lower().replace("-", "_")
+                    opt_name = (opt.get("display_name") or "").lower().replace(" ", "_")
 
                     if opt_slug == normalized or opt_name == normalized or \
                        opt_slug == option_lower:
@@ -268,8 +268,8 @@ class PricingEngine(MenuDataMixin):
                 if not isinstance(opt, dict):
                     continue
 
-                opt_slug = opt.get("slug", "").lower().replace("-", "_")
-                opt_name = opt.get("display_name", "").lower().replace(" ", "_")
+                opt_slug = (opt.get("slug") or "").lower().replace("-", "_")
+                opt_name = (opt.get("display_name") or "").lower().replace(" ", "_")
 
                 if opt_slug == normalized or opt_name == normalized or \
                    opt_slug == modifier_lower or modifier_lower in opt_slug:
@@ -351,12 +351,14 @@ class PricingEngine(MenuDataMixin):
         for attr in attributes:
             options = attr.get("options", [])
             for opt in options:
-                opt_slug = opt.get("slug", "").lower().replace("-", "_")
-                opt_name = opt.get("display_name", "").lower().replace("-", "_").replace(" ", "_")
+                if not isinstance(opt, dict):
+                    continue
+                opt_slug = (opt.get("slug") or "").lower().replace("-", "_")
+                opt_name = (opt.get("display_name") or "").lower().replace("-", "_").replace(" ", "_")
 
                 # Match by slug or display_name (normalized)
                 if opt_slug == normalized or opt_name == normalized or \
-                   opt_slug == modifier_lower or opt.get("display_name", "").lower() == modifier_lower:
+                   opt_slug == modifier_lower or (opt.get("display_name") or "").lower() == modifier_lower:
                     # Check both keys: "price_modifier" for attribute options,
                     # "price" for ingredient-based options
                     price = opt.get("price_modifier") or opt.get("price") or 0.0

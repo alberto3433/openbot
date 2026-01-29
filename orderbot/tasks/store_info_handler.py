@@ -18,6 +18,7 @@ from .models import OrderTask
 from .schemas import StateMachineResult
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_item_type_display_name
 from .mixins import MenuDataMixin
+from .utils.text import format_english_list
 
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
 # Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
@@ -266,10 +267,7 @@ class StoreInfoHandler(MenuDataMixin):
                 message = f"Yes! {store_name} delivers to {location_display}. Would you like to place a delivery order?"
             else:
                 store_names = [s.get("name", "Store") for s in delivering_stores]
-                if len(store_names) == 2:
-                    stores_str = f"{store_names[0]} and {store_names[1]}"
-                else:
-                    stores_str = ", ".join(store_names[:-1]) + f", and {store_names[-1]}"
+                stores_str = format_english_list(store_names)
                 message = f"Yes! We can deliver to {location_display} from {stores_str}. Would you like to place a delivery order?"
             return StateMachineResult(message=message, order=order)
 
@@ -303,10 +301,7 @@ class StoreInfoHandler(MenuDataMixin):
                 message = f"Yes! {store_name} delivers to {neighborhood}. Would you like to place a delivery order?"
             else:
                 store_names = [s.get("name", "Store") for s in delivering_stores]
-                if len(store_names) == 2:
-                    stores_str = f"{store_names[0]} and {store_names[1]}"
-                else:
-                    stores_str = ", ".join(store_names[:-1]) + f", and {store_names[-1]}"
+                stores_str = format_english_list(store_names)
                 message = f"Yes! We can deliver to {neighborhood} from {stores_str}. Would you like to place a delivery order?"
             return StateMachineResult(message=message, order=order)
 
@@ -440,24 +435,14 @@ class StoreInfoHandler(MenuDataMixin):
 
         if len(items_list) <= DEFAULT_PAGINATION_SIZE:
             # Show all items, no pagination needed
-            if len(items_list) == 1:
-                items_str = items_list[0]
-            elif len(items_list) == 2:
-                items_str = f"{items_list[0]} and {items_list[1]}"
-            else:
-                items_str = ", ".join(items_list[:-1]) + f", and {items_list[-1]}"
+            items_str = format_english_list(items_list)
 
             order.clear_menu_pagination()
             message = f"For {display_name.lower()}, we have {items_str}. {prompt_suffix}"
         else:
             # Show first batch with pagination
             first_batch = items_list[:DEFAULT_PAGINATION_SIZE]
-            if len(first_batch) == 1:
-                items_str = first_batch[0]
-            elif len(first_batch) == 2:
-                items_str = f"{first_batch[0]} and {first_batch[1]}"
-            else:
-                items_str = ", ".join(first_batch[:-1]) + f", and {first_batch[-1]}"
+            items_str = format_english_list(first_batch)
 
             # Set pagination state for "what else" follow-ups
             order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(items_list))
@@ -501,12 +486,7 @@ class StoreInfoHandler(MenuDataMixin):
 
             # Format a sample of ingredients (limit to 4 for readability)
             ingredient_list = sorted(ingredients)[:4]
-            if len(ingredient_list) == 1:
-                ingredients_str = ingredient_list[0]
-            elif len(ingredient_list) == 2:
-                ingredients_str = f"{ingredient_list[0]} or {ingredient_list[1]}"
-            else:
-                ingredients_str = ", ".join(ingredient_list[:-1]) + f", or {ingredient_list[-1]}"
+            ingredients_str = format_english_list(ingredient_list, conjunction="or")
 
             parts.append(f"• {display_name}: {ingredients_str}")
 

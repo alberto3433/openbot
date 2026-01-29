@@ -44,6 +44,7 @@ from .parsers.quantity_utils import (
     parse_make_it_n_quantity,
 )
 from .mixins import MenuDataMixin
+from .utils.text import format_english_list
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -76,7 +77,7 @@ def _get_dynamic_help_text() -> str:
             if len(display_names) > 3:
                 items_text = ", ".join(display_names[:3]) + ", and more"
             else:
-                items_text = ", ".join(display_names[:-1]) + f", and {display_names[-1]}" if len(display_names) > 1 else display_names[0]
+                items_text = format_english_list(display_names)
             return f"I can help you order {items_text} from our menu. Just tell me what you'd like!"
         else:
             return "I can help you order from our menu. Just tell me what you'd like!"
@@ -2111,7 +2112,7 @@ class TakingItemsHandler(MenuDataMixin):
                 items_list += f", and {len(matches) - display_count} more"
             else:
                 # "Item1, Item2, Item3, Item4, Item5, or Item6"
-                items_list = ", ".join(item_names[:-1]) + f", or {item_names[-1]}"
+                items_list = format_english_list(item_names, conjunction="or")
 
             msg = f"For items with {ingredient}, we have: {items_list}. Which would you like?"
 
@@ -2278,13 +2279,8 @@ class TakingItemsHandler(MenuDataMixin):
 
         # If no items need configuration, return simple confirmation
         if not items_needing_config:
-            if len(summaries) == 1:
-                response = f"Got it, {summaries[0]}. Anything else?"
-            elif len(summaries) == 2:
-                response = f"Got it, {summaries[0]} and {summaries[1]}. Anything else?"
-            else:
-                items_str = ", ".join(summaries[:-1]) + f", and {summaries[-1]}"
-                response = f"Got it, {items_str}. Anything else?"
+            items_str = format_english_list(summaries)
+            response = f"Got it, {items_str}. Anything else?"
             return StateMachineResult(message=response, order=order)
 
         # Queue items 2+ for later configuration

@@ -24,6 +24,7 @@ from .parsers.quantity_utils import extract_leading_quantity
 from .parsers import extract_attribute_values
 from .handler_config import BaseHandler
 from .utils import OptionMatcher, InputNormalizer
+from .utils.text import format_english_list
 
 logger = logging.getLogger(__name__)
 
@@ -349,18 +350,12 @@ class MenuItemConfigHandler(BaseHandler):
     def _format_options_list(self, options: list[dict]) -> str:
         """Format a list of options for display."""
         names = [opt["display_name"] for opt in options]
-        if len(names) <= 2:
-            return " or ".join(names)
-        return ", ".join(names[:-1]) + f", or {names[-1]}"
+        return format_english_list(names, conjunction="or")
 
     def _format_attributes_list(self, attributes: list[dict]) -> str:
         """Format a list of attributes for the customization menu."""
         names = [attr["display_name"] for attr in attributes]
-        if len(names) == 1:
-            return names[0]
-        if len(names) == 2:
-            return f"{names[0]} or {names[1]}"
-        return ", ".join(names[:-1]) + f", or {names[-1]}"
+        return format_english_list(names, conjunction="or")
 
     # =========================================================================
     # Options Inquiry and Pagination
@@ -572,10 +567,7 @@ class MenuItemConfigHandler(BaseHandler):
         names = [opt["display_name"] for opt in options]
         if len(names) == 0:
             return "That's all the options."
-        if len(names) == 1:
-            options_str = names[0]
-        else:
-            options_str = ", ".join(names[:-1]) + f", or {names[-1]}"
+        options_str = format_english_list(names, conjunction="or")
 
         if is_first_page:
             if has_more:
@@ -684,10 +676,8 @@ class MenuItemConfigHandler(BaseHandler):
             ]
 
             # Build helpful message
-            if len(available) == 2:
-                opts_str = f"{available[0]} or {available[1]}"
-            elif len(available) <= 4:
-                opts_str = ", ".join(available[:-1]) + f", or {available[-1]}"
+            if len(available) <= 4:
+                opts_str = format_english_list(available, conjunction="or")
             else:
                 # Too many options - just name the attribute
                 opts_str = None
@@ -712,12 +702,18 @@ class MenuItemConfigHandler(BaseHandler):
         input_type = attr.get("input_type", "single_select")
         attr_name = attr["display_name"].lower()
 
-        # Determine if we're configuring multiple items of same type
+        # Determine if we're configuring multiple items
         multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
+        config_names = order.multi_item_config_names or []
 
         # Calculate ordinal position of this item among same-type items
         ordinal = "first"  # default
         item_num = 1  # default
+        item_display = item.get_display_name()
+        # Does this item's name appear more than once in the config list?
+        item_name_count = sum(1 for n in config_names if n == item_display)
+        has_duplicates = item_name_count > 1
+
         if multi_count > 1:
             # Find all items of the same type
             same_type_items = [
@@ -731,20 +727,28 @@ class MenuItemConfigHandler(BaseHandler):
             )
             ordinal = MessageBuilder.get_ordinal(item_num)
 
+        # Decide how to refer to the item in the question:
+        # - Item name appears multiple times → "the first bagel" (ordinal + name)
+        # - Item name is unique in order → "the bagel" (just name)
+        # - Single item → no prefix needed
+        item_ref = item_display.lower()
+
         # Use DB's question_text if available, otherwise generate a natural question
         db_question = attr.get("question_text")
         if db_question and multi_count <= 1:
             question = db_question
         elif input_type == "boolean":
-            # Simple yes/no question - use ordinal for multi-item
-            if multi_count > 1:
-                question = f"Would you like the {ordinal} one {attr_name}?"
+            if has_duplicates:
+                question = f"For the {ordinal} {item_ref}, would you like it {attr_name}?"
+            elif multi_count > 1:
+                question = f"For the {item_ref}, would you like it {attr_name}?"
             else:
                 question = f"Would you like it {attr_name}?"
         else:
-            # For select types, ask naturally without listing options
-            if multi_count > 1:
-                question = f"For the {ordinal} one, what kind of {attr_name} would you like?"
+            if has_duplicates:
+                question = f"For the {ordinal} {item_ref}, what kind of {attr_name} would you like?"
+            elif multi_count > 1:
+                question = f"For the {item_ref}, what kind of {attr_name} would you like?"
             else:
                 question = f"What kind of {attr_name} would you like?"
 
@@ -753,34 +757,38 @@ class MenuItemConfigHandler(BaseHandler):
             if multi_count > 1:
                 if item_num == 1:
                     # First item acknowledgment
-                    config_names = order.multi_item_config_names or []
                     all_same_name = len(set(config_names)) == 1
 
                     if all_same_name:
                         # All identical: "Got it, two Plain Bagels."
                         quantity_word = _number_to_word(multi_count)
-                        item_name = item.get_display_name()
-                        # Pluralize using centralized function
-                        item_name = pluralize(item_name)
+                        item_name = pluralize(item_display)
                         item_desc = f"{quantity_word} {item_name}"
                     else:
-                        # Different items: "Got it, Plain Bagel and Hot Coffee."
-                        if len(config_names) == 2:
-                            item_desc = f"{config_names[0]} and {config_names[1]}"
-                        else:
-                            item_desc = ", ".join(config_names[:-1]) + f", and {config_names[-1]}"
+                        # Mixed items: collapse duplicates, e.g. "two Bagels and Hot Coffee"
+                        from collections import Counter
+                        name_counts = Counter(config_names)
+                        desc_parts = []
+                        for cname, ccount in name_counts.items():
+                            if ccount > 1:
+                                qty_word = _number_to_word(ccount)
+                                desc_parts.append(f"{qty_word} {pluralize(cname)}")
+                            else:
+                                desc_parts.append(cname)
+                        item_desc = format_english_list(desc_parts)
                     question = f"Got it, {item_desc}. {question}"
                 else:
-                    # Subsequent items: "For the second Everything Bagel, would you like that scooped?"
-                    item_desc = f"the {ordinal} {item.get_display_name()}"
-                    # Adjust question to use "that" instead of "the {ordinal} one"
+                    # Subsequent items
+                    if has_duplicates:
+                        item_desc = f"the {ordinal} {item_display}"
+                    else:
+                        item_desc = f"the {item_display.lower()}"
                     if input_type == "boolean":
                         question = f"For {item_desc}, would you like that {attr_name}?"
                     else:
                         question = f"For {item_desc}, what kind of {attr_name} would you like?"
             else:
-                item_desc = item.get_display_name()
-                question = f"Got it, {item_desc}. {question}"
+                question = f"Got it, {item_display}. {question}"
 
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
@@ -1822,12 +1830,7 @@ class MenuItemConfigHandler(BaseHandler):
                         name = f"{qty} {name}"
                     display_names.append(name)
 
-                if len(display_names) == 1:
-                    ack_text = display_names[0]
-                elif len(display_names) == 2:
-                    ack_text = f"{display_names[0]} and {display_names[1]}"
-                else:
-                    ack_text = ", ".join(display_names[:-1]) + f", and {display_names[-1]}"
+                ack_text = format_english_list(display_names)
 
                 # NOTE: Do NOT call _extract_and_apply_selections here.
                 # Multi-select input has been fully handled above. Extracting
@@ -1975,13 +1978,7 @@ class MenuItemConfigHandler(BaseHandler):
         attr_name = attr["display_name"].lower()
         available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
         if available and len(available) <= 4:
-            # Format as comma-separated list with "or" before last
-            if len(available) == 1:
-                options_str = available[0]
-            elif len(available) == 2:
-                options_str = f"{available[0]} or {available[1]}"
-            else:
-                options_str = ", ".join(available[:-1]) + f", or {available[-1]}"
+            options_str = format_english_list(available, conjunction="or")
             message = f"Sorry, we don't have {user_input}. Our {attr_name} options are: {options_str}."
         else:
             # Too many options - direct to asking for options list
@@ -2084,12 +2081,7 @@ class MenuItemConfigHandler(BaseHandler):
         Returns:
             Formatted string like "A, B, C, or D"
         """
-        if len(options) == 1:
-            return options[0]
-        elif len(options) == 2:
-            return f"{options[0]} or {options[1]}"
-        else:
-            return ", ".join(options[:-1]) + f", or {options[-1]}"
+        return format_english_list(options, conjunction="or")
 
     def _check_partial_match(
         self,

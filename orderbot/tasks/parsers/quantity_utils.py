@@ -205,3 +205,22 @@ def parse_make_it_n_quantity(num_str: str) -> int | None:
 
     # Only return for quantities >= 2 (make it 1 doesn't make sense)
     return qty if qty >= 2 else None
+
+
+def extract_make_it_n_target(match: re.Match) -> int | None:
+    """Extract target quantity from a MAKE_IT_N_PATTERN match.
+
+    Scans capture groups 1-7 for the first non-None group and parses it
+    as a quantity via parse_make_it_n_quantity.
+
+    Args:
+        match: A regex match object from MAKE_IT_N_PATTERN.
+
+    Returns:
+        Target quantity (>= 2) if found, None otherwise.
+    """
+    for i in range(1, 8):
+        group = match.group(i)
+        if group:
+            return parse_make_it_n_quantity(group.lower())
+    return None

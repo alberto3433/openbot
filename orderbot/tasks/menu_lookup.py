@@ -12,6 +12,7 @@ import re
 
 from .normalization import normalize_for_match
 from .mixins import MenuDataMixin
+from .utils.text import format_english_list
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
@@ -466,12 +467,7 @@ class MenuLookup(MenuDataMixin):
             return ""
 
         # Format as natural language list
-        if len(item_names) == 1:
-            return item_names[0]
-        elif len(item_names) == 2:
-            return f"{item_names[0]} or {item_names[1]}"
-        else:
-            return ", ".join(item_names[:-1]) + f", or {item_names[-1]}"
+        return format_english_list(item_names, conjunction="or")
 
     def get_not_found_message(self, item_name: str) -> tuple[str, str | None]:
         """

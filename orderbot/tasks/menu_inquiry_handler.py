@@ -24,6 +24,7 @@ from .parsers.constants import (
     get_item_type_display_name,
 )
 from .mixins import MenuDataMixin
+from .utils.text import format_english_list
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -164,12 +165,7 @@ class MenuInquiryHandler(MenuDataMixin):
         if has_more:
             item_list.append(f"...and {remaining} more")
 
-        if len(item_list) == 1:
-            return item_list[0], has_more
-        elif len(item_list) == 2:
-            return f"{item_list[0]} and {item_list[1]}", has_more
-        else:
-            return ", ".join(item_list[:-1]) + f", and {item_list[-1]}", has_more
+        return format_english_list(item_list), has_more
 
     def handle_more_menu_items(self, order: OrderTask, category: str | None = None) -> StateMachineResult:
         """Handle 'show more' menu requests.
@@ -276,12 +272,7 @@ class MenuInquiryHandler(MenuDataMixin):
         remaining = len(matches) - (offset + len(next_items))
 
         # Format the list
-        if len(item_names) == 1:
-            items_list = item_names[0]
-        elif len(item_names) == 2:
-            items_list = f"{item_names[0]} and {item_names[1]}"
-        else:
-            items_list = ", ".join(item_names[:-1]) + f", and {item_names[-1]}"
+        items_list = format_english_list(item_names)
 
         # Update or clear pagination state
         if remaining > 0:
@@ -382,12 +373,7 @@ class MenuInquiryHandler(MenuDataMixin):
             order.set_menu_pagination(category, new_offset, len(items_list))
         else:
             # Last batch
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]} and {batch[1]}"
-            else:
-                items_str = ", ".join(batch[:-1]) + f", and {batch[-1]}"
+            items_str = format_english_list(batch)
             order.clear_menu_pagination()
 
         # Build response
@@ -526,7 +512,7 @@ class MenuInquiryHandler(MenuDataMixin):
             if len(item_names) > 3:
                 items_list = ", ".join(item_names[:3]) + ", and others"
             elif len(item_names) > 1:
-                items_list = ", ".join(item_names[:-1]) + f", and {item_names[-1]}"
+                items_list = format_english_list(item_names)
             elif item_names:
                 items_list = item_names[0]
             else:
@@ -666,10 +652,7 @@ class MenuInquiryHandler(MenuDataMixin):
                 else:
                     options.append(f"{label} (included)")
 
-            if len(options) == 2:
-                options_text = f"{options[0]} or {options[1]}"
-            else:
-                options_text = ", ".join(options[:-1]) + f", or {options[-1]}"
+            options_text = format_english_list(options, conjunction="or")
 
             return StateMachineResult(
                 message=f"Are you asking about {name} as {options_text}?",
@@ -821,12 +804,7 @@ class MenuInquiryHandler(MenuDataMixin):
             order.set_menu_pagination(category_key, DEFAULT_PAGINATION_SIZE, len(items))
         else:
             # All items fit in one response
-            if len(item_names) == 1:
-                items_list = item_names[0]
-            elif len(item_names) == 2:
-                items_list = f"{item_names[0]} and {item_names[1]}"
-            else:
-                items_list = ", ".join(item_names[:-1]) + f", and {item_names[-1]}"
+            items_list = format_english_list(item_names)
 
             order.clear_menu_pagination()
 

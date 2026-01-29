@@ -15,6 +15,7 @@ from .models import (
     OrderTask,
     MenuItemTask,
 )
+from .parsers.quantity_utils import BASIC_WORD_TO_NUM
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
 
@@ -77,12 +78,7 @@ class OrderUtilsHandler:
         ]
 
         # Number word to int mapping
-        number_map = {
-            "two": 2, "2": 2,
-            "three": 3, "3": 3,
-            "four": 4, "4": 4,
-            "five": 5, "5": 5,
-        }
+        number_map = {**BASIC_WORD_TO_NUM, **{str(n): n for n in range(2, 11)}}
 
         target_quantity = None
         item_name = None

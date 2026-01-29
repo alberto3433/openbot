@@ -11,6 +11,7 @@ import logging
 import re
 
 from .models import OrderTask, MenuItemTask, parse_pending_field
+from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
 from .parsers.deterministic.patterns import parse_can_you_make_it
@@ -377,27 +378,27 @@ class ConfiguringItemHandler:
         interpret input as answers for the pending field. No new items.
         """
         # Handle generic item selection when multiple options were presented
-        if order.pending_field == "item_selection":
+        if order.pending_field == PendingField.ITEM_SELECTION:
             return self._handle_item_selection(user_input, order)
 
         # Handle modifier selection (disambiguation for modifiers like "cream cheese")
-        if order.pending_field == "modifier_selection":
+        if order.pending_field == PendingField.MODIFIER_SELECTION:
             return self._handle_modifier_selection(user_input, order)
 
         # Handle duplicate selection when user said "another one" with multiple items in cart
-        if order.pending_field == "duplicate_selection":
+        if order.pending_field == PendingField.DUPLICATE_SELECTION:
             return self.taking_items_handler.handle_duplicate_selection(user_input, order)
 
         # Handle "same thing" clarification when user has both previous order AND cart items
-        if order.pending_field == "same_thing_clarification":
+        if order.pending_field == PendingField.SAME_THING_CLARIFICATION:
             return self.taking_items_handler.handle_same_thing_clarification(user_input, order)
 
         # Handle suggested item confirmation ("Would you like to order one?" -> "yes" / "give me one")
-        if order.pending_field == "confirm_suggested_item":
+        if order.pending_field == PendingField.CONFIRM_SUGGESTED_ITEM:
             return self.taking_items_handler.handle_confirm_suggested_item(user_input, order)
 
         # Handle item switch confirmation ("can you make it X?" -> similar item found)
-        if order.pending_field == "confirm_item_switch":
+        if order.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
             return self._handle_confirm_item_switch(user_input, order)
 
         item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
@@ -462,7 +463,7 @@ class ConfiguringItemHandler:
         if (modifier_category
             and self.taking_items_handler
             and self.taking_items_handler.store_info_handler
-            and order.pending_field != "customization_checkpoint"
+            and order.pending_field != PendingField.CUSTOMIZATION_CHECKPOINT
             and not pending_is_attr_config):
             logger.info("MODIFIER INQUIRY during config: category='%s'", modifier_category)
             return self.taking_items_handler.store_info_handler.handle_modifier_inquiry(
@@ -472,14 +473,14 @@ class ConfiguringItemHandler:
             )
 
         # Route to field-specific handler
-        if order.pending_field == "side_choice":
+        if order.pending_field == PendingField.SIDE_CHOICE:
             return self.config_helper_handler.handle_side_choice(user_input, item, order)
 
         # Handle menu item configuration (deli sandwiches, etc.)
-        if order.pending_field == "customization_checkpoint":
+        if order.pending_field == PendingField.CUSTOMIZATION_CHECKPOINT:
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
                 return self.menu_item_handler.handle_customization_checkpoint(user_input, item, order)
-        elif order.pending_field == "customization_selection":
+        elif order.pending_field == PendingField.CUSTOMIZATION_SELECTION:
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
                 return self.menu_item_handler.handle_customization_selection(user_input, item, order)
 
@@ -497,7 +498,7 @@ class ConfiguringItemHandler:
         # This is set when a menu item is in the config queue and asked an abbreviated question
         # like "And what type of bread for the {item_name}?" - we need to capture the answer
         # and continue with the full configuration flow
-        elif order.pending_field == "menu_item_config":
+        elif order.pending_field == PendingField.MENU_ITEM_CONFIG:
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
                 # Capture any attributes mentioned in user input (e.g., bread type)
                 self.menu_item_handler.capture_attributes_from_input(user_input, item)
@@ -665,7 +666,7 @@ class ConfiguringItemHandler:
             # Set state to wait for side choice
             order.set_phase(OrderPhase.CONFIGURING_ITEM)
             order.pending_item_id = first_item.id
-            order.pending_field = "side_choice"
+            order.pending_field = PendingField.SIDE_CHOICE
             return StateMachineResult(
                 message=question,
                 order=order,
@@ -830,7 +831,7 @@ class ConfiguringItemHandler:
                 )
                 # Offer to switch
                 order.pending_switch_item = similar_item
-                order.pending_field = "confirm_item_switch"
+                order.pending_field = PendingField.CONFIRM_ITEM_SWITCH
                 return StateMachineResult(
                     message=(
                         f"{item.menu_item_name} isn't available {modifier}, "
@@ -1045,7 +1046,7 @@ class ConfiguringItemHandler:
         """
         # Store the modifier options for disambiguation
         order.pending_item_options = matches
-        order.pending_field = "modifier_selection"
+        order.pending_field = PendingField.MODIFIER_SELECTION
         order.pending_modifier_target_item_index = order.items.items.index(item)
 
         # Build disambiguation message

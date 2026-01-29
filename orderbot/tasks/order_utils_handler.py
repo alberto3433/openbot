@@ -11,6 +11,7 @@ import logging
 import re
 from typing import Callable, TYPE_CHECKING
 
+from ..cache.base import pluralize
 from .models import (
     OrderTask,
     MenuItemTask,
@@ -207,7 +208,7 @@ class OrderUtilsHandler:
         lines = ["So far you have:"]
         for summary, count in item_counts.items():
             if count > 1:
-                plural = f"{summary}s" if not summary.endswith("s") else summary
+                plural = pluralize(summary)
                 lines.append(f"• {count} {plural}")
             else:
                 lines.append(f"• {summary}")

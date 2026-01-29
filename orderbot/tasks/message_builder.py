@@ -9,6 +9,7 @@ Extracted from state_machine.py for better separation of concerns.
 
 from collections import defaultdict
 
+from ..cache.base import pluralize
 from .checkout_messages import CheckoutMessages
 from .models import OrderTask
 from .schemas import OrderPhase
@@ -71,7 +72,7 @@ class MessageBuilder:
             count = data["count"]
             if count > 1:
                 # Pluralize: "3 cokes" instead of "3× coke"
-                plural = f"{summary}s" if not summary.endswith("s") else summary
+                plural = pluralize(summary)
                 lines.append(f"• {count} {plural}")
             else:
                 lines.append(f"• {summary}")

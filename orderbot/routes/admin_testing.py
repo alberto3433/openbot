@@ -38,6 +38,7 @@ Usage:
 """
 
 import logging
+import re
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -81,20 +82,11 @@ def reset_customer(
     from sqlalchemy import func
 
     # Normalize phone number for matching
-    normalized_phone = phone.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+    normalized_phone = re.sub(r'[\-\s()]', '', phone)
     phone_suffix = normalized_phone[-10:] if len(normalized_phone) >= 10 else normalized_phone
 
-    # Build normalized phone column for comparison
-    normalized_db_phone = func.replace(
-        func.replace(
-            func.replace(
-                func.replace(Order.phone, "-", ""),
-                " ", ""
-            ),
-            "(", ""
-        ),
-        ")", ""
-    )
+    # Build normalized phone column for comparison (PostgreSQL regexp_replace)
+    normalized_db_phone = func.regexp_replace(Order.phone, r'[\-\s\(\)]', '', 'g')
 
     # Find and delete orders
     orders_to_delete = db.query(Order).filter(

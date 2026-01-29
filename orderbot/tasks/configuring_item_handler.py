@@ -130,7 +130,7 @@ def _is_valid_answer_for_pending_field(user_input: str, pending_field: str | Non
 
     # Handle customization_checkpoint and customization_selection specially
     # These are open-ended fields where any valid ingredient is a valid answer
-    if attr_slug in ("customization_checkpoint", "customization_selection"):
+    if attr_slug in (PendingField.CUSTOMIZATION_CHECKPOINT, PendingField.CUSTOMIZATION_SELECTION):
         # Check if this is a known ingredient (toppings, proteins, cheeses, etc.)
         try:
             if menu_cache.is_known_modifier(answer_value):
@@ -290,7 +290,7 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
 
         # During customization_checkpoint or customization_selection, "add X" commands are valid
         # The bot is specifically offering options like "Add Egg, Extra Cheese, Toppings"
-        if attr_slug in ("customization_checkpoint", "customization_selection"):
+        if attr_slug in (PendingField.CUSTOMIZATION_CHECKPOINT, PendingField.CUSTOMIZATION_SELECTION):
             # Allow "what X do you have?" questions - user is asking about offered options
             if re.search(r"what \w+ do you have", input_lower):
                 return False
@@ -409,6 +409,59 @@ class ConfiguringItemHandler:
                 order=order,
             )
 
+        interceptor_result = self._check_config_interceptors(user_input, item, order)
+        if interceptor_result:
+            return interceptor_result
+
+        # Route to field-specific handler
+        if order.pending_field == PendingField.SIDE_CHOICE:
+            return self.config_helper_handler.handle_side_choice(user_input, item, order)
+
+        # Handle menu item configuration (deli sandwiches, etc.)
+        if order.pending_field == PendingField.CUSTOMIZATION_CHECKPOINT:
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                return self.menu_item_handler.handle_customization_checkpoint(user_input, item, order)
+        elif order.pending_field == PendingField.CUSTOMIZATION_SELECTION:
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                return self.menu_item_handler.handle_customization_selection(user_input, item, order)
+
+        # Data-driven routing: pending_field format is "item_type:attr_slug"
+        # Parse the pending_field and route to the appropriate handler
+        item_type_slug, attr_slug = parse_pending_field(order.pending_field)
+        if item_type_slug and attr_slug and isinstance(item, MenuItemTask) and self.menu_item_handler:
+            logger.debug(
+                "Routing '%s' through unified handler for %s attr=%s",
+                order.pending_field, item_type_slug, attr_slug
+            )
+            return self.menu_item_handler.handle_attribute_input(user_input, item, order, attr_slug)
+
+        # Handle queued menu item configuration (abbreviated flow from checkout_utils_handler)
+        # This is set when a menu item is in the config queue and asked an abbreviated question
+        # like "And what type of bread for the {item_name}?" - we need to capture the answer
+        # and continue with the full configuration flow
+        elif order.pending_field == PendingField.MENU_ITEM_CONFIG:
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                # Capture any attributes mentioned in user input (e.g., bread type)
+                self.menu_item_handler.capture_attributes_from_input(user_input, item)
+                # Continue with full configuration flow - this will ask the next
+                # unanswered mandatory attribute (e.g., toasted) or move to checkout
+                return self.menu_item_handler.get_first_question(item, order)
+
+        # Default: unknown pending_field, advance to next question
+        order.clear_pending()
+        return self.checkout_utils_handler.get_next_question(order)
+
+    def _check_config_interceptors(
+        self, user_input: str, item, order: OrderTask
+    ) -> StateMachineResult | None:
+        """Run pre-routing interceptors during item configuration.
+
+        Checks for cancellation, change requests, off-topic input,
+        and modifier inquiries before routing to field-specific handlers.
+
+        Returns:
+            StateMachineResult if an interceptor handled the input, None to continue.
+        """
         # Check for cancellation requests BEFORE routing to field-specific handlers
         # This allows "remove the coffee", "cancel this", "remove the coffees" etc. during configuration
         cancel_result = self.config_helper_handler.check_cancellation_during_config(user_input, item, order)
@@ -472,43 +525,7 @@ class ConfiguringItemHandler:
                 order,
             )
 
-        # Route to field-specific handler
-        if order.pending_field == PendingField.SIDE_CHOICE:
-            return self.config_helper_handler.handle_side_choice(user_input, item, order)
-
-        # Handle menu item configuration (deli sandwiches, etc.)
-        if order.pending_field == PendingField.CUSTOMIZATION_CHECKPOINT:
-            if isinstance(item, MenuItemTask) and self.menu_item_handler:
-                return self.menu_item_handler.handle_customization_checkpoint(user_input, item, order)
-        elif order.pending_field == PendingField.CUSTOMIZATION_SELECTION:
-            if isinstance(item, MenuItemTask) and self.menu_item_handler:
-                return self.menu_item_handler.handle_customization_selection(user_input, item, order)
-
-        # Data-driven routing: pending_field format is "item_type:attr_slug"
-        # Parse the pending_field and route to the appropriate handler
-        item_type_slug, attr_slug = parse_pending_field(order.pending_field)
-        if item_type_slug and attr_slug and isinstance(item, MenuItemTask) and self.menu_item_handler:
-            logger.debug(
-                "Routing '%s' through unified handler for %s attr=%s",
-                order.pending_field, item_type_slug, attr_slug
-            )
-            return self.menu_item_handler.handle_attribute_input(user_input, item, order, attr_slug)
-
-        # Handle queued menu item configuration (abbreviated flow from checkout_utils_handler)
-        # This is set when a menu item is in the config queue and asked an abbreviated question
-        # like "And what type of bread for the {item_name}?" - we need to capture the answer
-        # and continue with the full configuration flow
-        elif order.pending_field == PendingField.MENU_ITEM_CONFIG:
-            if isinstance(item, MenuItemTask) and self.menu_item_handler:
-                # Capture any attributes mentioned in user input (e.g., bread type)
-                self.menu_item_handler.capture_attributes_from_input(user_input, item)
-                # Continue with full configuration flow - this will ask the next
-                # unanswered mandatory attribute (e.g., toasted) or move to checkout
-                return self.menu_item_handler.get_first_question(item, order)
-
-        # Default: unknown pending_field, advance to next question
-        order.clear_pending()
-        return self.checkout_utils_handler.get_next_question(order)
+        return None
 
     def _handle_item_selection(
         self,

@@ -17,6 +17,7 @@ import re
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import singularize, pluralize
 from .models import OrderTask, MenuItemTask
+from .pending_fields import PendingField
 from .normalization import normalize_for_option_match
 from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
@@ -822,7 +823,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
-        order.pending_field = "customization_checkpoint"
+        order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
 
         # List available customization options
         options_list = self._format_attributes_list(unanswered_optional)
@@ -938,11 +939,8 @@ class MenuItemConfigHandler(BaseHandler):
         if not added_items:
             return None
 
-        if len(added_items) == 1:
-            return f"I've added {added_items[0]}. "
-        else:
-            items_str = ", ".join(added_items[:-1]) + f" and {added_items[-1]}"
-            return f"I've added {items_str}. "
+        items_str = format_english_list(added_items)
+        return f"I've added {items_str}. "
 
     def _extract_and_apply_selections(
         self, user_input: str, item: MenuItemTask
@@ -2255,7 +2253,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
-        order.pending_field = "customization_checkpoint"
+        order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
 
         return StateMachineResult(
             message=f"{ack_prefix}Any more changes to that? You can add {options_list}.",
@@ -2315,7 +2313,7 @@ class MenuItemConfigHandler(BaseHandler):
             # If just "yes", list the options
             if user_lower in yes_patterns:
                 options_list = self._format_attributes_list(unanswered)
-                order.pending_field = "customization_selection"
+                order.pending_field = PendingField.CUSTOMIZATION_SELECTION
                 return StateMachineResult(
                     message=f"You can add: {options_list}. What would you like?",
                     order=order,

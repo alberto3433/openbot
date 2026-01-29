@@ -18,6 +18,7 @@ import logging
 from typing import Any
 
 from .models import OrderTask
+from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import _SELECTION_PATTERNS
 
@@ -102,7 +103,7 @@ class DisambiguationHandler:
         matching_items: list[dict],
         order: OrderTask,
         quantity: int = 1,
-        pending_field: str = "item_selection",
+        pending_field: str = PendingField.ITEM_SELECTION,
         modifiers: dict[str, Any] | None = None,
         show_prices: bool = False,
     ) -> StateMachineResult:

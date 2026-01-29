@@ -17,6 +17,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 import uuid
 
+from .pending_fields import PendingField
+
 logger = logging.getLogger(__name__)
 
 
@@ -980,32 +982,23 @@ class OrderTask(BaseTask):
 
     def is_configuring_item(self) -> bool:
         """Check if we're waiting for input on a specific item or menu inquiry."""
-        # Also handle by-pound category selection (no item, just pending_field)
-        if self.pending_field == "by_pound_category":
-            return True
-        # Handle drink selection when multiple options were presented
-        if self.pending_field == "drink_selection":
-            return True
-        # Handle drink type selection (disambiguation like "latte" matching multiple items)
-        if self.pending_field == "drink_type":
-            return True
         # Handle generic item selection (cookies, muffins, etc.) when multiple options presented
-        if self.pending_field == "item_selection":
+        if self.pending_field == PendingField.ITEM_SELECTION:
             return True
         # Handle category inquiry follow-up
-        if self.pending_field == "category_inquiry":
+        if self.pending_field == PendingField.CATEGORY_INQUIRY:
             return True
         # Handle duplicate item selection when multiple items in cart
-        if self.pending_field == "duplicate_selection":
+        if self.pending_field == PendingField.DUPLICATE_SELECTION:
             return True
         # Handle suggested item confirmation ("Would you like to order one?" -> "yes")
-        if self.pending_field == "confirm_suggested_item":
+        if self.pending_field == PendingField.CONFIRM_SUGGESTED_ITEM:
             return True
         # Handle modifier selection (disambiguation like "cream cheese" matching multiple options)
-        if self.pending_field == "modifier_selection":
+        if self.pending_field == PendingField.MODIFIER_SELECTION:
             return True
         # Handle item switch confirmation ("can you make it X?" -> similar item found)
-        if self.pending_field == "confirm_item_switch":
+        if self.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
             return True
         # Handle attribute disambiguation (e.g., "walnut" -> "honey walnut" or "maple raisin walnut")
         if self.pending_attr_disambiguation is not None:

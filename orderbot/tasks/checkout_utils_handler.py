@@ -12,6 +12,7 @@ import logging
 from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending_field
+from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
 from .utils.text import format_english_list
 from ..menu_data_cache import menu_cache
@@ -138,7 +139,7 @@ class CheckoutUtilsHandler:
             # Handle item disambiguation (when a keyword matched multiple menu items)
             if item_type == "item_disambiguation" and order.pending_item_options:
                 logger.info("Processing queued item disambiguation")
-                order.pending_field = "item_selection"
+                order.pending_field = PendingField.ITEM_SELECTION
                 order.set_phase(OrderPhase.CONFIGURING_ITEM)
                 # Build the clarification message
                 option_list = []

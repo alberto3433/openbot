@@ -20,6 +20,7 @@ from .models import (
     MenuItemTask,
     TaskStatus,
 )
+from .pending_fields import PendingField
 from .schemas.phases import OrderPhase
 from .schemas import (
     StateMachineResult,
@@ -953,7 +954,7 @@ class TakingItemsHandler(MenuDataMixin):
                     "count": added_count,
                     "items": item_options,
                 }
-                order.pending_field = "duplicate_selection"
+                order.pending_field = PendingField.DUPLICATE_SELECTION
 
                 # Build the question text
                 question_parts = [f"another {opt['summary']}" for opt in item_options]
@@ -1001,7 +1002,7 @@ class TakingItemsHandler(MenuDataMixin):
                     "has_previous_order": True,
                     "cart_items": item_options,
                 }
-                order.pending_field = "same_thing_clarification"
+                order.pending_field = PendingField.SAME_THING_CLARIFICATION
 
                 # Build the question
                 if len(active_items) == 1:
@@ -1048,7 +1049,7 @@ class TakingItemsHandler(MenuDataMixin):
                         "count": 1,
                         "items": item_options,
                     }
-                    order.pending_field = "duplicate_selection"
+                    order.pending_field = PendingField.DUPLICATE_SELECTION
                     question_parts = [f"another {opt['summary']}" for opt in item_options]
                     question = ", ".join(question_parts) + ", or all the items in your order?"
                     question = question[0].upper() + question[1:]
@@ -1856,7 +1857,7 @@ class TakingItemsHandler(MenuDataMixin):
                                 item_name=modifier,
                                 matching_items=matches,
                                 order=order,
-                                pending_field="modifier_selection",
+                                pending_field=PendingField.MODIFIER_SELECTION,
                                 show_prices=False,
                             )
 
@@ -2094,7 +2095,7 @@ class TakingItemsHandler(MenuDataMixin):
 
             # Store context so "yes" / "give me one" adds this item
             order.pending_suggested_item = item_name
-            order.pending_field = "confirm_suggested_item"
+            order.pending_field = PendingField.CONFIRM_SUGGESTED_ITEM
         else:
             # Multiple items - list them (cap at 6 for initial display)
             display_count = min(6, len(matches))
@@ -2584,7 +2585,7 @@ class TakingItemsHandler(MenuDataMixin):
                     "count": 1,
                     "items": item_options,
                 }
-                order.pending_field = "duplicate_selection"
+                order.pending_field = PendingField.DUPLICATE_SELECTION
                 question_parts = [f"another {opt['summary']}" for opt in item_options]
                 question = ", ".join(question_parts) + ", or all the items?"
                 question = question[0].upper() + question[1:]

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .context import OrderContext
 
 from .checkout_messages import CheckoutMessages
+from .pending_fields import PendingField
 from .models import (
     OrderTask,
     MenuItemTask,

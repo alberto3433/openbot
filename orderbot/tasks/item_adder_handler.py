@@ -14,6 +14,7 @@ from .models import (
     MenuItemTask,
     TaskStatus,
 )
+from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult, Selection
 from .handler_config import HandlerConfig
 from .disambiguation_handler import DisambiguationHandler
@@ -217,7 +218,7 @@ class ItemAdderHandler(MenuDataMixin):
                 quantity=quantity,
                 order=order,
                 modifiers=item_modifiers,
-                pending_field="item_selection",
+                pending_field=PendingField.ITEM_SELECTION,
                 item_type_filter=filter_type,
             )
 
@@ -231,7 +232,7 @@ class ItemAdderHandler(MenuDataMixin):
                 kwargs["item_name"] = canonical_name
             elif item_name_lower and not is_category_reference:
                 # Unknown item - mark for error handling
-                order.pending_field = "item_selection"
+                order.pending_field = PendingField.ITEM_SELECTION
                 order.unknown_item_request = item_name
                 order.set_phase(OrderPhase.CONFIGURING_ITEM)
                 return StateMachineResult(message="", order=order)
@@ -426,7 +427,7 @@ class ItemAdderHandler(MenuDataMixin):
             message, category_for_followup = self.menu_lookup.get_not_found_message(item_name)
             if category_for_followup:
                 # Track state so "yes" response can list items in this category
-                order.pending_field = "category_inquiry"
+                order.pending_field = PendingField.CATEGORY_INQUIRY
                 order.pending_config_queue = [category_for_followup]
             return StateMachineResult(
                 message=message,
@@ -525,7 +526,7 @@ class ItemAdderHandler(MenuDataMixin):
             order.pending_item_id = first_item.id
             # Get side choice attribute configuration from DB
             side_attr = menu_cache.get_side_choice_attribute(category)
-            order.pending_field = side_attr.get("slug", "side_choice") if side_attr else "side_choice"
+            order.pending_field = side_attr.get("slug", PendingField.SIDE_CHOICE) if side_attr else PendingField.SIDE_CHOICE
             # Use question text from DB or fallback
             question = (
                 side_attr.get("question_text")
@@ -716,7 +717,7 @@ class ItemAdderHandler(MenuDataMixin):
         quantity: int,
         order: OrderTask,
         modifiers: dict | None = None,
-        pending_field: str = "item_selection",
+        pending_field: str = PendingField.ITEM_SELECTION,
         item_type_filter: str | None = None,
     ) -> tuple[dict | None, StateMachineResult | None]:
         """
@@ -729,7 +730,7 @@ class ItemAdderHandler(MenuDataMixin):
             quantity: Number of items (stored during disambiguation)
             order: Current order task
             modifiers: Optional dict of modifiers to store during disambiguation (for beverages)
-            pending_field: The pending_field value to use (default: "item_selection")
+            pending_field: The pending_field value to use (default: PendingField.ITEM_SELECTION)
             item_type_filter: Optional item type to filter matches (e.g., "sized_beverage")
 
         Returns:
@@ -759,7 +760,7 @@ class ItemAdderHandler(MenuDataMixin):
                     matching_items=category_items,
                     order=order,
                     quantity=quantity,
-                    pending_field="item_selection",
+                    pending_field=PendingField.ITEM_SELECTION,
                     modifiers=modifiers,
                     show_prices=False,
                 )

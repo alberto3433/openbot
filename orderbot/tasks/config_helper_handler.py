@@ -12,6 +12,7 @@ import logging
 from typing import Optional, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask
+from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN
 from .handler_config import HandlerConfig
@@ -343,7 +344,7 @@ class ConfigHelperHandler:
             return None
 
         # Handle side_choice - query database for the question text
-        if field == "side_choice":
+        if field == PendingField.SIDE_CHOICE:
             if isinstance(item, MenuItemTask) and item.menu_item_type:
                 side_attr = menu_cache.get_side_choice_attribute(item.menu_item_type)
                 if side_attr and side_attr.get("question_text"):

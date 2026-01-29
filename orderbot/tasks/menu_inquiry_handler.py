@@ -18,6 +18,7 @@ from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import singularize
 
 from .models import OrderTask
+from .pending_fields import PendingField
 from .schemas import StateMachineResult
 from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
@@ -734,7 +735,7 @@ class MenuInquiryHandler(MenuDataMixin):
             # Store context so "yes" / "give me one" adds this item
             # Use the actual item name, not the user's query
             order.pending_suggested_item = formatted_name
-            order.pending_field = "confirm_suggested_item"
+            order.pending_field = PendingField.CONFIRM_SUGGESTED_ITEM
         else:
             # Item not found - offer to help find it
             # Get available categories for a helpful suggestion

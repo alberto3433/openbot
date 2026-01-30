@@ -18,6 +18,7 @@ from .normalization import normalize_to_slug
 from .modifier_utils import extract_modifier_slug_and_quantity, extract_modifier_price
 from .utils.cache_helpers import get_item_type_attributes
 from .utils.constants import ATTR_METADATA_SUFFIXES, ATTR_PENDING_PREFIX
+from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,6 @@ def _lookup_option_price_in_attributes(
         if modifier_type_hint:
             if modifier_type_hint not in attr_slug and attr_slug != modifier_type_hint:
                 # Also check if attribute contains options with this modifier category
-                from orderbot.menu_data_cache import menu_cache
                 if not menu_cache.attribute_contains_modifier_category(attr_slug, modifier_type_hint):
                     continue
 
@@ -473,7 +473,6 @@ class PricingEngine(MenuDataMixin):
         modifier_lower = modifier_name.lower().strip()
 
         # First, normalize using database-driven alias lookup (e.g., "lox" -> "Nova Scotia Salmon")
-        from orderbot.menu_data_cache import menu_cache
         canonical_name = menu_cache.normalize_modifier(modifier_lower)
 
         # Convert to slug format for matching

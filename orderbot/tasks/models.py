@@ -18,9 +18,11 @@ from pydantic import BaseModel, Field
 import uuid
 
 from .pending_fields import PendingField
+from orderbot.menu_data_cache import menu_cache
+from orderbot.exceptions import MenuDataNotLoadedError
 
-# Late import to avoid circular import - will be set at module load time
-# after models.py is fully initialized
+# Late import to avoid circular dependency through utils/__init__.py
+# (utils → option_matcher → parsers → schemas → models)
 _is_price_metadata_key = None
 
 def _get_is_price_metadata_key():
@@ -98,8 +100,6 @@ def _is_name_forming_category(category: str) -> bool:
     the base menu item name. For example, "bread" category means
     "Garlic Bagel" instead of "Bagel, Garlic Bagel".
     """
-    from orderbot.menu_data_cache import menu_cache
-    from orderbot.exceptions import MenuDataNotLoadedError
     try:
         return menu_cache.is_name_forming_category(category)
     except MenuDataNotLoadedError:
@@ -410,9 +410,7 @@ class MenuItemTask(ItemTask):
 
         # Look up display name from database if not provided
         if not display_name:
-            from orderbot.exceptions import MenuDataNotLoadedError
             try:
-                from orderbot.menu_data_cache import menu_cache
                 # Try global attribute option lookup first (for bread, size, etc.)
                 display_name = menu_cache.get_global_option_display_name(category, slug)
                 if not display_name:
@@ -601,7 +599,6 @@ class MenuItemTask(ItemTask):
         """
         if not self.menu_item_type:
             return False
-        from orderbot.menu_data_cache import menu_cache
         attrs = menu_cache.get_item_type_attributes(self.menu_item_type)
 
         if attr_slug in attrs:
@@ -645,9 +642,7 @@ class MenuItemTask(ItemTask):
                 # Fall back to looking up from cache
                 slug = sel.get("slug", "")
                 if slug:
-                    from orderbot.exceptions import MenuDataNotLoadedError
                     try:
-                        from orderbot.menu_data_cache import menu_cache
                         ingredient_name = menu_cache.get_ingredient_display_name(slug)
                         if ingredient_name:
                             return ingredient_name

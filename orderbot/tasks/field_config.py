@@ -15,6 +15,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .models import FieldConfig
+from orderbot.menu_data_cache import menu_cache
+from orderbot.exceptions import MenuDataNotLoadedError
 
 
 class ItemTypeConfig(BaseModel):
@@ -127,9 +129,6 @@ def _load_fields_from_db(item_type: str) -> dict[str, FieldConfig]:
     Raises:
         MenuDataNotLoadedError: If no field configs found in database for this item type
     """
-    from orderbot.menu_data_cache import menu_cache
-    from orderbot.exceptions import MenuDataNotLoadedError
-
     # Resolve item type alias to canonical database slug (data-driven)
     db_item_type = menu_cache.resolve_item_type_slug(item_type)
 
@@ -218,8 +217,6 @@ def _get_db_field_config(item_type: str, field_name: str) -> dict | None:
 
     This is the preferred method - directly queries the database cache.
     """
-    from orderbot.menu_data_cache import menu_cache
-
     # Resolve item type alias to canonical database slug (data-driven)
     db_item_type = menu_cache.resolve_item_type_slug(item_type)
 

@@ -573,14 +573,9 @@
             <div class="hint">Category slug to suggest (shows items from this category)</div>
           </div>
           <div class="form-group">
-            <label>Custom Response (Optional)</label>
-            <textarea id="suggestedResponse" rows="3" placeholder="Full custom response to show instead of category items"></textarea>
-            <div class="hint">Leave blank to use default category-based suggestions</div>
-          </div>
-          <div class="form-group">
-            <label>Specific Menu Items (Optional)</label>
-            <input type="text" id="suggestedMenuItems" placeholder='e.g., Muffin, Danish, Cronut'>
-            <div class="hint">Comma-separated list of specific items to suggest</div>
+            <label>Suggested Menu Items</label>
+            <input type="text" id="suggestedMenuItems" placeholder='e.g., Latkes, Hash Browns'>
+            <div class="hint">Comma-separated list of specific items to suggest (e.g., "We don't have X but we have Y, Z")</div>
           </div>
           <div class="form-group">
             <label>
@@ -683,7 +678,7 @@
         html += `<tr>
           <td><strong>${escapeHtml(s.input_pattern)}</strong></td>
           <td><span class="badge badge-${s.match_type}">${s.match_type}</span></td>
-          <td>${s.suggested_category_slug || s.suggested_response ? (s.suggested_category_slug || '(custom)') : '-'}</td>
+          <td>${s.suggested_category_slug || '-'}</td>
           <td><span class="hit-count ${hitClass}">${s.hit_count}</span></td>
           <td><span class="badge badge-${s.is_active ? 'active' : 'inactive'}">${s.is_active ? 'Active' : 'Inactive'}</span></td>
           <td>
@@ -741,7 +736,6 @@
       document.getElementById('inputPattern').value = '';
       document.getElementById('matchType').value = 'exact';
       document.getElementById('suggestedCategory').value = '';
-      document.getElementById('suggestedResponse').value = '';
       document.getElementById('suggestedMenuItems').value = '';
       document.getElementById('isActive').checked = true;
       document.getElementById('suggestionModal').classList.add('active');
@@ -758,7 +752,6 @@
         document.getElementById('inputPattern').value = s.input_pattern;
         document.getElementById('matchType').value = s.match_type;
         document.getElementById('suggestedCategory').value = s.suggested_category_slug || '';
-        document.getElementById('suggestedResponse').value = s.suggested_response || '';
         document.getElementById('suggestedMenuItems').value =
           s.suggested_menu_items ? s.suggested_menu_items.join(', ') : '';
         document.getElementById('isActive').checked = s.is_active;
@@ -783,7 +776,6 @@
         input_pattern: document.getElementById('inputPattern').value,
         match_type: document.getElementById('matchType').value,
         suggested_category_slug: document.getElementById('suggestedCategory').value || null,
-        suggested_response: document.getElementById('suggestedResponse').value || null,
         suggested_menu_items: menuItems,
         is_active: document.getElementById('isActive').checked,
       };

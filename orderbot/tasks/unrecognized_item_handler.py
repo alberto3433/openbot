@@ -167,7 +167,6 @@ class UnrecognizedItemHandler:
                 self._db_session.commit()
                 return {
                     "category_slug": suggestion.suggested_category_slug,
-                    "response": suggestion.suggested_response,
                     "menu_items": suggestion.suggested_menu_items,
                 }
 
@@ -183,7 +182,6 @@ class UnrecognizedItemHandler:
                     self._db_session.commit()
                     return {
                         "category_slug": s.suggested_category_slug,
-                        "response": s.suggested_response,
                         "menu_items": s.suggested_menu_items,
                     }
 
@@ -199,7 +197,6 @@ class UnrecognizedItemHandler:
                     self._db_session.commit()
                     return {
                         "category_slug": s.suggested_category_slug,
-                        "response": s.suggested_response,
                         "menu_items": s.suggested_menu_items,
                     }
 
@@ -215,10 +212,6 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> tuple[str, str | None]:
         """Build response from curated suggestion."""
-        # If there's a full response override, use it
-        if curated.get("response"):
-            return (curated["response"], None)
-
         # If specific menu items are suggested
         if curated.get("menu_items"):
             items = curated["menu_items"]

@@ -102,7 +102,6 @@ def list_suggestions(
             input_pattern=s.input_pattern,
             match_type=s.match_type,
             suggested_category_slug=s.suggested_category_slug,
-            suggested_response=s.suggested_response,
             suggested_menu_items=s.suggested_menu_items,
             hit_count=s.hit_count,
             is_active=s.is_active,
@@ -176,7 +175,6 @@ def get_suggestion(
         input_pattern=suggestion.input_pattern,
         match_type=suggestion.match_type,
         suggested_category_slug=suggestion.suggested_category_slug,
-        suggested_response=suggestion.suggested_response,
         suggested_menu_items=suggestion.suggested_menu_items,
         hit_count=suggestion.hit_count,
         is_active=suggestion.is_active,
@@ -217,7 +215,6 @@ def create_suggestion(
         input_pattern=pattern_normalized,
         match_type=payload.match_type,
         suggested_category_slug=payload.suggested_category_slug,
-        suggested_response=payload.suggested_response,
         suggested_menu_items=payload.suggested_menu_items,
         is_active=payload.is_active,
     )
@@ -228,7 +225,7 @@ def create_suggestion(
     logger.info(
         "Created unrecognized suggestion: '%s' -> %s (id=%d)",
         suggestion.input_pattern,
-        suggestion.suggested_category_slug or suggestion.suggested_response,
+        suggestion.suggested_category_slug or suggestion.suggested_menu_items,
         suggestion.id
     )
 
@@ -237,7 +234,6 @@ def create_suggestion(
         input_pattern=suggestion.input_pattern,
         match_type=suggestion.match_type,
         suggested_category_slug=suggestion.suggested_category_slug,
-        suggested_response=suggestion.suggested_response,
         suggested_menu_items=suggestion.suggested_menu_items,
         hit_count=suggestion.hit_count,
         is_active=suggestion.is_active,
@@ -292,8 +288,6 @@ def update_suggestion(
         suggestion.match_type = payload.match_type
     if payload.suggested_category_slug is not None:
         suggestion.suggested_category_slug = payload.suggested_category_slug
-    if payload.suggested_response is not None:
-        suggestion.suggested_response = payload.suggested_response
     if payload.suggested_menu_items is not None:
         suggestion.suggested_menu_items = payload.suggested_menu_items
     if payload.is_active is not None:
@@ -309,7 +303,6 @@ def update_suggestion(
         input_pattern=suggestion.input_pattern,
         match_type=suggestion.match_type,
         suggested_category_slug=suggestion.suggested_category_slug,
-        suggested_response=suggestion.suggested_response,
         suggested_menu_items=suggestion.suggested_menu_items,
         hit_count=suggestion.hit_count,
         is_active=suggestion.is_active,

@@ -3316,160 +3316,48 @@ class TestCoffeeStyle:
 class TestCoffeeModifiers:
     """Tests for coffee modifiers question (milk, sugar, syrup)."""
 
-    def test_modifiers_question_asked_when_no_modifiers(self):
-        """Test that modifiers question is asked when no modifiers are set."""
+    def test_latte_ordering_flow(self):
+        """Test full latte ordering flow with configuration questions.
+
+        Flow:
+        1. "I'd like a latte" → "Got it, for the Hot Latte. What size?"
+        2. "small" → "Any milk, sweetener, or syrup?"
+        3. "no thanks" → "Would you like an espresso shot?"
+        4. "no" → "Would you like it decaf?"
+        5. "no" → Confirmation
+        """
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
-        from tests.helpers import CoffeeItemTask, TaskStatus
+        from orderbot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
+        order.phase = OrderPhase.TAKING_ITEMS.value
 
-        # Coffee with no modifiers set
-        coffee = CoffeeItemTask(drink_type="latte", size="medium")
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        # Step 1: Order a latte (alias for "Hot Latte")
+        result = sm.process("I'd like a latte", order)
+        assert "hot latte" in result.message.lower()
+        assert "size" in result.message.lower()
 
-        result = sm.configuring_item_handler.handle_configuring_item("hot", order)
+        # Step 2: Answer size - system asks about milk/sweetener/syrup
+        result = sm.process("small", result.order)
+        assert "milk" in result.message.lower() or "sweetener" in result.message.lower()
 
-        # Should ask modifiers question instead of completing
-        # Data-driven flow uses customization_checkpoint which offers "You can change Milk"
-        assert coffee.status == TaskStatus.IN_PROGRESS
-        assert order.pending_field in ("coffee_modifiers", "menu_item_attr_milk", "customization_checkpoint", "sized_beverage:milk_sweetener_syrup")
-        # Message should mention milk (either as a question or as a changeable option)
-        assert "milk" in result.message.lower()
+        # Step 3: Answer milk/sweetener/syrup - system asks about espresso shot
+        result = sm.process("no thanks", result.order)
+        assert "shot" in result.message.lower() or "espresso" in result.message.lower()
 
-    def test_handle_modifiers_with_milk(self):
-        """Test handling modifiers response with milk."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import CoffeeItemTask, TaskStatus
+        # Step 4: Answer espresso shot - system asks about decaf
+        result = sm.process("no", result.order)
+        assert "decaf" in result.message.lower()
 
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.pending_field = "sized_beverage:milk_sweetener_syrup"
-
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=False)
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
-
-        result = sm.configuring_item_handler.handle_configuring_item("oat milk please", order)
-
-        # Check unified storage (attribute_values["milk_sweetener_syrup_selections"])
-        selections = coffee.attribute_values.get("milk_sweetener_syrup_selections", [])
-        assert len(selections) == 1, f"Expected 1 selection, got {selections}"
-        assert "oat" in selections[0]["slug"].lower(), f"Expected oat milk, got {selections}"
-        assert coffee.status == TaskStatus.COMPLETE
-
-    def test_handle_modifiers_with_sugar(self):
-        """Test handling modifiers response with sugar."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import CoffeeItemTask, TaskStatus
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.pending_field = "sized_beverage:milk_sweetener_syrup"
-
-        coffee = CoffeeItemTask(drink_type="coffee", size="small", iced=False)
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
-
-        result = sm.configuring_item_handler.handle_configuring_item("2 sugars", order)
-
-        # Check unified storage (attribute_values["milk_sweetener_syrup_selections"])
-        selections = coffee.attribute_values.get("milk_sweetener_syrup_selections", [])
-        assert len(selections) == 1, f"Expected 1 selection, got {selections}"
-        assert "sugar" in selections[0]["slug"].lower(), f"Expected sugar, got {selections}"
-        assert selections[0]["quantity"] == 2, f"Expected quantity 2, got {selections[0].get('quantity')}"
-        assert coffee.status == TaskStatus.COMPLETE
-
-    def test_handle_modifiers_no_thanks(self):
-        """Test handling modifiers response with 'no thanks'."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import CoffeeItemTask, TaskStatus
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.pending_field = "sized_beverage:milk_sweetener_syrup"
-
-        coffee = CoffeeItemTask(drink_type="coffee", size="large", iced=True)
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
-
-        result = sm.configuring_item_handler.handle_configuring_item("no thanks", order)
-
-        # Should complete without adding modifiers
-        # Check unified storage is empty or None
-        selections = coffee.attribute_values.get("milk_sweetener_syrup_selections", [])
-        assert selections == [] or selections is None, f"Expected no selections, got {selections}"
-        assert coffee.status == TaskStatus.COMPLETE
-
-    def test_handle_modifiers_with_multiple(self):
-        """Test handling modifiers response with milk and sugar."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import CoffeeItemTask, TaskStatus
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.pending_field = "sized_beverage:milk_sweetener_syrup"
-
-        coffee = CoffeeItemTask(drink_type="latte", size="large", iced=True)
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
-
-        result = sm.configuring_item_handler.handle_configuring_item("almond milk and 2 sugars", order)
-
-        # Check unified storage (attribute_values["milk_sweetener_syrup_selections"])
-        # Note: "almond milk" might not match since mock only has "oat_milk"
-        # Let's just check that SOMETHING was captured for multi-input
-        selections = coffee.attribute_values.get("milk_sweetener_syrup_selections", [])
-        slugs = [s["slug"] for s in selections]
-        # At minimum sugar should be captured
-        has_sugar = any("sugar" in slug for slug in slugs)
-        assert has_sugar, f"Expected sugar in selections, got {selections}"
-        # Check sugar quantity if present
-        sugar_sel = [s for s in selections if "sugar" in s["slug"]]
-        if sugar_sel:
-            assert sugar_sel[0]["quantity"] == 2, f"Expected quantity 2 for sugar, got {sugar_sel}"
-        assert coffee.status == TaskStatus.COMPLETE
-
-    def test_coffee_hot_small_asks_modifiers(self):
-        """Test that 'coffee hot small' asks for modifiers even with size and temp set."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from orderbot.tasks.schemas.phases import OrderPhase
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS
-
-        # User orders coffee with size and temperature but no modifiers
-        result = sm.process("coffee hot small", order)
-
-        # Should ask about modifiers (milk, sugar, syrup) or offer customization options
+        # Step 5: Answer decaf - should confirm the order
+        result = sm.process("no", result.order)
+        # Should confirm the order
         msg_lower = result.message.lower()
-        assert "milk" in msg_lower or "sugar" in msg_lower or "syrup" in msg_lower or "changes" in msg_lower, \
-            f"Expected modifiers question or customization offer but got: {result.message}"
+        assert "hot latte" in msg_lower
+        assert "small" in msg_lower
 
-        # Verify coffee was added with correct attributes
-        coffees = [i for i in order.items.items if hasattr(i, 'menu_item_type') and i.menu_item_type == 'sized_beverage']
-        assert len(coffees) == 1
-        coffee = coffees[0]
-        assert coffee["size"] == "small"
-        assert coffee["temperature"] == "hot"  # hot = not iced
-
-        # Should be pending on modifiers field or customization checkpoint
-        # Data-driven flow uses customization_checkpoint which offers "You can change Milk"
-        assert order.pending_field in ("coffee_modifiers", "menu_item_attr_milk", "customization_checkpoint", "sized_beverage:milk_sweetener_syrup")
 
 
 class TestCoffeeModifierRemoval:

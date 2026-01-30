@@ -210,7 +210,6 @@ class TestCuratedSuggestions(TestUnrecognizedItemHandler):
         mock_session = MagicMock()
         mock_suggestion = MagicMock()
         mock_suggestion.suggested_category_slug = "side"
-        mock_suggestion.suggested_response = None
         mock_suggestion.suggested_menu_items = None
         mock_suggestion.hit_count = 0
 
@@ -243,25 +242,9 @@ class TestCuratedSuggestions(TestUnrecognizedItemHandler):
 class TestBuildResponses(TestUnrecognizedItemHandler):
     """Tests for response building methods."""
 
-    def test_build_curated_response_with_override(self, handler, mock_menu_lookup):
-        """Test that response override is used when provided."""
-        curated = {
-            "response": "Sorry, we don't serve croissants. Try our muffins!",
-            "category_slug": None,
-            "menu_items": None,
-        }
-
-        message, category = handler._build_curated_response(
-            "croissant", curated, order_item_count=0
-        )
-
-        assert message == "Sorry, we don't serve croissants. Try our muffins!"
-        assert category is None
-
     def test_build_curated_response_with_menu_items(self, handler, mock_menu_lookup):
         """Test that specific menu items are suggested."""
         curated = {
-            "response": None,
             "category_slug": None,
             "menu_items": ["Blueberry Muffin", "Chocolate Chip Muffin"],
         }
@@ -276,7 +259,6 @@ class TestBuildResponses(TestUnrecognizedItemHandler):
     def test_build_curated_response_with_category(self, handler, mock_menu_lookup):
         """Test that category suggestions work."""
         curated = {
-            "response": None,
             "category_slug": "side",
             "menu_items": None,
         }

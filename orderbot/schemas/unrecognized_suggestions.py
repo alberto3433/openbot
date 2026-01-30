@@ -38,7 +38,6 @@ class UnrecognizedSuggestionOut(BaseModel):
         input_pattern: The pattern to match against user input
         match_type: How to match (exact, prefix, contains)
         suggested_category_slug: Category to suggest (e.g., "pastry", "side")
-        suggested_response: Full custom response override
         suggested_menu_items: List of specific menu items to suggest
         hit_count: How many times this suggestion has been used
         is_active: Whether this suggestion is enabled
@@ -50,7 +49,6 @@ class UnrecognizedSuggestionOut(BaseModel):
     input_pattern: str
     match_type: str
     suggested_category_slug: Optional[str] = None
-    suggested_response: Optional[str] = None
     suggested_menu_items: Optional[List[str]] = None
     hit_count: int
     is_active: bool
@@ -65,7 +63,6 @@ class UnrecognizedSuggestionCreate(BaseModel):
         input_pattern: The pattern to match (required)
         match_type: How to match (default: "exact")
         suggested_category_slug: Category to suggest
-        suggested_response: Full custom response override
         suggested_menu_items: List of specific menu items to suggest
         is_active: Whether this suggestion is enabled (default: True)
 
@@ -73,13 +70,12 @@ class UnrecognizedSuggestionCreate(BaseModel):
         {
             "input_pattern": "croissant",
             "match_type": "exact",
-            "suggested_category_slug": "pastry"
+            "suggested_menu_items": ["Rugelach", "Babka"]
         }
     """
     input_pattern: str
     match_type: str = "exact"
     suggested_category_slug: Optional[str] = None
-    suggested_response: Optional[str] = None
     suggested_menu_items: Optional[List[str]] = None
     is_active: bool = True
 
@@ -93,7 +89,6 @@ class UnrecognizedSuggestionUpdate(BaseModel):
     input_pattern: Optional[str] = None
     match_type: Optional[str] = None
     suggested_category_slug: Optional[str] = None
-    suggested_response: Optional[str] = None
     suggested_menu_items: Optional[List[str]] = None
     is_active: Optional[bool] = None
 

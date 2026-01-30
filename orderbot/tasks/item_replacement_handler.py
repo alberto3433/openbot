@@ -22,6 +22,7 @@ from .parsers import extract_attribute_values
 from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
 from .normalization import format_slug_for_display
 from .checkout_messages import changed_to_anything_else
+from .handler_utils import get_last_item, recalculate_and_summarize
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -73,7 +74,7 @@ class ItemReplacementHandler:
             logger.info("Replacement requested but no items in cart to replace")
             return None, None
 
-        last_item = active_items[-1]
+        last_item = get_last_item(active_items)
         has_new_items = bool(parsed.parsed_items)
 
         # Try attribute value replacement (e.g., "double" for shots)
@@ -215,9 +216,7 @@ class ItemReplacementHandler:
                            attr_slug, old_value, new_value)
 
             # Recalculate price if needed
-            self.pricing.recalculate_item_price(last_item)
-
-            updated_summary = last_item.get_summary()
+            updated_summary = recalculate_and_summarize(last_item, self.pricing)
             return StateMachineResult(
                 message=changed_to_anything_else(updated_summary),
                 order=order,
@@ -310,11 +309,8 @@ class ItemReplacementHandler:
                         # Clear to None if not specified (don't use "none" string)
                         last_item[attr_slug] = None
 
-        # Recalculate price with new modifiers
-        self.pricing.recalculate_item_price(last_item)
-
-        # Return confirmation with updated item
-        updated_summary = last_item.get_summary()
+        # Recalculate price with new modifiers and return confirmation
+        updated_summary = recalculate_and_summarize(last_item, self.pricing)
         return StateMachineResult(
             message=changed_to_anything_else(updated_summary),
             order=order,
@@ -356,9 +352,7 @@ class ItemReplacementHandler:
                 logger.info("Replacement: changed %s from '%s' to '%s'", category, old_value, new_value)
 
                 # Recalculate price if needed
-                self.pricing.recalculate_item_price(last_item)
-
-                updated_summary = last_item.get_summary()
+                updated_summary = recalculate_and_summarize(last_item, self.pricing)
                 return StateMachineResult(
                     message=changed_to_anything_else(updated_summary),
                     order=order,

@@ -50,6 +50,7 @@ from .parsers import (
     ORDERING_LANGUAGE_PATTERN,
 )
 from .parsers.quantity_utils import extract_make_it_n_target
+from .handler_utils import get_last_item
 
 logger = logging.getLogger(__name__)
 
@@ -401,7 +402,7 @@ class OrderStateMachine:
             if target_qty:
                 active_items = order.items.get_active_items()
                 if active_items:
-                    last_item = active_items[-1]
+                    last_item = get_last_item(active_items)
                     last_item_name = last_item.get_summary()
 
                     # Count how many of this same item are already in the order

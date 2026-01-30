@@ -32,7 +32,7 @@ from .parsers import parse_open_input, extract_special_instructions_from_input
 from .item_cancellation_handler import ItemCancellationHandler
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
-from .checkout_messages import got_it_anything_else, ErrorMessages
+from .checkout_messages import got_it_anything_else, ErrorMessages, item_added_anything_else
 from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.quantity_utils import (
     extract_quantity_for_pattern,
@@ -46,6 +46,9 @@ from .handler_utils import (
     build_item_selection_question,
     check_has_active_items,
     match_item_from_options,
+    is_configurable_menu_item,
+    get_last_item,
+    recalculate_and_summarize,
 )
 
 if TYPE_CHECKING:
@@ -620,7 +623,7 @@ class TakingItemsHandler(MenuDataMixin):
                 if target_qty:
                     active_items = order.items.get_active_items()
                     if active_items:
-                        last_item = active_items[-1]
+                        last_item = get_last_item(active_items)
                         last_item_name = last_item.get_summary()
                         added_count = target_qty - 1
 
@@ -656,8 +659,8 @@ class TakingItemsHandler(MenuDataMixin):
         item_modifier_patterns: set[str] = set()
 
         if active_items:
-            last_item = active_items[-1]
-            if isinstance(last_item, MenuItemTask) and last_item.menu_item_type:
+            last_item = get_last_item(active_items)
+            if is_configurable_menu_item(last_item):
                 # Get modifier patterns for this specific item type (data-driven)
                 item_modifier_patterns = _get_all_modifier_patterns_for_item(last_item.menu_item_type)
                 has_item_modifier = any(mod in input_lower for mod in item_modifier_patterns)
@@ -665,7 +668,7 @@ class TakingItemsHandler(MenuDataMixin):
         logger.info("EARLY_MOD_DETECT: has_item_modifier=%s, active_items=%d", has_item_modifier, len(active_items))
 
         if has_item_modifier and active_items:
-            last_item = active_items[-1]
+            last_item = get_last_item(active_items)
             # Check if item accepts input modifiers (data-driven)
             accepts_modifiers = (
                 isinstance(last_item, MenuItemTask) and
@@ -689,19 +692,17 @@ class TakingItemsHandler(MenuDataMixin):
 
         # If it's an "add modifier" pattern OR pure modifier input, modify the last item
         if (is_add_modifier_request or is_pure_modifier_input) and has_item_modifier and active_items:
-            last_item = active_items[-1]
+            last_item = get_last_item(active_items)
             # Check if item accepts input modifiers (data-driven)
             accepts_modifiers = (
-                isinstance(last_item, MenuItemTask) and
-                last_item.menu_item_type and
+                is_configurable_menu_item(last_item) and
                 menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
             )
             if accepts_modifiers:
                 made_change = _add_modifiers_from_input(last_item, input_lower)
 
                 if made_change:
-                    self.pricing.recalculate_item_price(last_item)
-                    updated_summary = last_item.get_summary()
+                    updated_summary = recalculate_and_summarize(last_item, self.pricing)
                     return StateMachineResult(
                         message=f"Sure, I've added that to your {updated_summary}. Anything else?",
                         order=order,
@@ -815,7 +816,7 @@ class TakingItemsHandler(MenuDataMixin):
 
             # Single item in cart - duplicate silently
             if len(active_items) == 1:
-                last_item = active_items[-1]
+                last_item = get_last_item(active_items)
                 last_item_name = last_item.get_summary()
 
                 # Add copies of the last item
@@ -906,12 +907,12 @@ class TakingItemsHandler(MenuDataMixin):
             if has_cart_items:
                 # Reuse duplicate logic: single item = duplicate it, multiple = ask which one
                 if len(active_items) == 1:
-                    last_item = active_items[-1]
+                    last_item = get_last_item(active_items)
                     last_item_name = last_item.get_summary()
                     order.items.add_item(last_item.duplicate())
                     logger.info("'Same thing' with single cart item: duplicated '%s'", last_item_name)
                     return StateMachineResult(
-                        message=f"I've added another {last_item_name}. Anything else?",
+                        message=item_added_anything_else(1, last_item_name),
                         order=order,
                     )
                 else:
@@ -1096,18 +1097,17 @@ class TakingItemsHandler(MenuDataMixin):
         item_modifier_patterns: set[str] = set()
 
         if active_items:
-            last_item_check = active_items[-1]
-            if isinstance(last_item_check, MenuItemTask) and last_item_check.menu_item_type:
+            last_item_check = get_last_item(active_items)
+            if is_configurable_menu_item(last_item_check):
                 # Get modifier patterns for this specific item type (data-driven)
                 item_modifier_patterns = _get_all_modifier_patterns_for_item(last_item_check.menu_item_type)
                 has_item_modifier = any(mod in input_lower for mod in item_modifier_patterns)
 
         if has_item_modifier and active_items:
-            last_item_check = active_items[-1]
+            last_item_check = get_last_item(active_items)
             # Check if item accepts input modifiers (data-driven)
             accepts_modifiers = (
-                isinstance(last_item_check, MenuItemTask) and
-                last_item_check.menu_item_type and
+                is_configurable_menu_item(last_item_check) and
                 menu_cache.item_accepts_input_modifiers(last_item_check.menu_item_type)
             )
             if accepts_modifiers:
@@ -1123,19 +1123,17 @@ class TakingItemsHandler(MenuDataMixin):
 
         # If it's an "add modifier" pattern OR pure modifier input, modify the last item
         if (is_add_modifier_request or is_pure_modifier_input) and has_item_modifier and active_items:
-            last_item = active_items[-1]
+            last_item = get_last_item(active_items)
             # Check if item accepts input modifiers (data-driven)
             accepts_modifiers = (
-                isinstance(last_item, MenuItemTask) and
-                last_item.menu_item_type and
+                is_configurable_menu_item(last_item) and
                 menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
             )
             if accepts_modifiers:
                 made_change = _add_modifiers_from_input(last_item, input_lower)
 
                 if made_change:
-                    self.pricing.recalculate_item_price(last_item)
-                    updated_summary = last_item.get_summary()
+                    updated_summary = recalculate_and_summarize(last_item, self.pricing)
                     return StateMachineResult(
                         message=f"Sure, I've added that to your {updated_summary}. Anything else?",
                         order=order,
@@ -1145,13 +1143,12 @@ class TakingItemsHandler(MenuDataMixin):
         # e.g., "no milk", "without syrup", "remove the sweetener"
         # This is data-driven: patterns generated from database category names
         if active_items:
-            last_item = active_items[-1]
-            if isinstance(last_item, MenuItemTask) and last_item.menu_item_type:
+            last_item = get_last_item(active_items)
+            if is_configurable_menu_item(last_item):
                 removed_category = _match_category_removal_pattern(input_lower, last_item.menu_item_type)
                 if removed_category:
                     if _remove_modifiers_by_category(last_item, removed_category):
-                        self.pricing.recalculate_item_price(last_item)
-                        updated_summary = last_item.get_summary()
+                        updated_summary = recalculate_and_summarize(last_item, self.pricing)
                         category_display = menu_cache.get_ingredient_category_display_name(removed_category)
                         return StateMachineResult(
                             message=f"Sure, I've removed the {category_display.lower()}. Your order is now {updated_summary}. Anything else?",
@@ -1201,9 +1198,7 @@ class TakingItemsHandler(MenuDataMixin):
                         target_item[target_attr] = normalized_modifier
 
                         # Recalculate price
-                        self.pricing.recalculate_item_price(target_item)
-                        updated_summary = target_item.get_summary()
-
+                        updated_summary = recalculate_and_summarize(target_item, self.pricing)
                         category_display = menu_cache.get_ingredient_category_display_name(category)
 
                         if old_value:
@@ -1653,13 +1648,13 @@ class TakingItemsHandler(MenuDataMixin):
         if count == 1:
             logger.info("Added 1 more of '%s' to order (from clarification)", item_name)
             return StateMachineResult(
-                message=f"I've added another {item_name}. Anything else?",
+                message=item_added_anything_else(1, item_name),
                 order=order,
             )
         else:
             logger.info("Added %d more of '%s' to order (from clarification)", count, item_name)
             return StateMachineResult(
-                message=f"I've added {count} more {item_name}. Anything else?",
+                message=item_added_anything_else(count, item_name),
                 order=order,
             )
 
@@ -1729,12 +1724,12 @@ class TakingItemsHandler(MenuDataMixin):
         if len(active_items) == 1:
             item_name = active_items[0].get_summary()
             return StateMachineResult(
-                message=f"I've added another {item_name}. Anything else?",
+                message=item_added_anything_else(1, item_name),
                 order=order,
             )
         else:
             return StateMachineResult(
-                message=f"I've duplicated everything in your order. Anything else?",
+                message="I've duplicated everything in your order. Anything else?",
                 order=order,
             )
 
@@ -1791,12 +1786,12 @@ class TakingItemsHandler(MenuDataMixin):
 
             if len(active_items) == 1:
                 # Single item - duplicate it
-                last_item = active_items[-1]
+                last_item = get_last_item(active_items)
                 last_item_name = last_item.get_summary()
                 order.items.add_item(last_item.duplicate())
                 logger.info("'Same thing' clarified: duplicated single cart item '%s'", last_item_name)
                 return StateMachineResult(
-                    message=f"I've added another {last_item_name}. Anything else?",
+                    message=item_added_anything_else(1, last_item_name),
                     order=order,
                 )
             else:
@@ -1832,7 +1827,7 @@ class TakingItemsHandler(MenuDataMixin):
                 order.items.add_item(item_to_duplicate.duplicate())
                 logger.info("'Same thing' clarified: duplicated specific item '%s'", item_name)
                 return StateMachineResult(
-                    message=f"I've added another {item_name}. Anything else?",
+                    message=item_added_anything_else(1, item_name),
                     order=order,
                 )
 

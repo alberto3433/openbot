@@ -19,6 +19,7 @@ from .schemas import StateMachineResult, OpenInputResponse
 from .pending_fields import PendingField
 from .parsers.quantity_utils import extract_quantity_for_pattern, extract_leading_quantity
 from .checkout_messages import sure_updated_anything_else
+from .handler_utils import get_last_item, is_configurable_menu_item, recalculate_and_summarize
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -148,7 +149,8 @@ class ItemModificationHandler:
             # Implicit target ("add mayo", "add mustard", etc.)
             # Use the last item in the cart regardless of type
             if active_items:
-                return active_items[-1] if isinstance(active_items[-1], MenuItemTask) else None
+                last_item = get_last_item(active_items)
+                return last_item if isinstance(last_item, MenuItemTask) else None
 
         return None
 
@@ -177,9 +179,7 @@ class ItemModificationHandler:
                 return result
 
         # Recalculate price
-        self.pricing.recalculate_item_price(target_item)
-
-        updated_summary = target_item.get_summary()
+        updated_summary = recalculate_and_summarize(target_item, self.pricing)
         logger.info("MODIFY EXISTING: Updated '%s' with add_modifiers=%s",
                    target_item.menu_item_name, parsed.modify_add_modifiers)
         return StateMachineResult(

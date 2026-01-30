@@ -26,6 +26,7 @@ from .parsers.quantity_utils import BASIC_WORD_TO_NUM
 from .utils.text import format_english_list
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
+from .handler_utils import is_configurable_menu_item, get_last_item
 
 logger = logging.getLogger(__name__)
 
@@ -366,7 +367,7 @@ class ModifierChangeHandler:
                     success=False,
                     message="I don't see any items to change. What would you like to order?",
                 )
-            item = active_items[-1]
+            item = get_last_item(active_items)
         else:
             # Find specific active item by ID
             item = order.items.get_active_item_by_id(item_id)
@@ -535,7 +536,7 @@ class ModifierChangeHandler:
         display_name = self._get_attr_display_name(attr_slug)
 
         # Use item summary for beverage items (data-driven check)
-        if isinstance(item, MenuItemTask) and item.menu_item_type:
+        if is_configurable_menu_item(item):
             modifier_category = menu_cache.get_modifier_category(item.menu_item_type)
             if modifier_category == "beverage":
                 summary = item.get_summary()

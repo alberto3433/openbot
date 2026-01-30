@@ -21,6 +21,7 @@ from orderbot.cache.base import singularize
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_quantity
+from .parsers.quantity_utils import parse_numeric_input
 from .utils.text import format_english_list
 
 if TYPE_CHECKING:
@@ -565,7 +566,7 @@ class SelectInputHandler:
             return None
 
         # Parse numeric value from user input
-        parsed_num = self._parse_numeric_input(user_input)
+        parsed_num = parse_numeric_input(user_input)
         if parsed_num is None:
             return None
 
@@ -598,28 +599,6 @@ class SelectInputHandler:
         )
 
         return advance_callback(item, order, attr, display_name)
-
-    def _parse_numeric_input(self, user_input: str) -> int | None:
-        """
-        Parse numeric value from user input.
-
-        Handles both raw digits and word numbers.
-        """
-        from .parsers.quantity_utils import WORD_TO_NUM
-
-        user_lower = user_input.lower().strip()
-
-        # Try raw digit match first
-        digit_match = re.search(r'\b(\d+)\b', user_lower)
-        if digit_match:
-            return int(digit_match.group(1))
-
-        # Try word number match
-        for word, num in sorted(WORD_TO_NUM.items(), key=lambda x: -len(x[0])):
-            if word in user_lower.split():
-                return num
-
-        return None
 
     def _is_affirmative_response(self, user_input: str) -> bool:
         """Check if input is a simple affirmative response."""

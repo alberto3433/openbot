@@ -19,30 +19,25 @@ from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import pluralize
 from .models import OrderTask, MenuItemTask
 from .pending_fields import PendingField
-from .normalization import (
-    format_slug_for_display,
-    strip_ordering_prefix,
-)
-from .schemas import StateMachineResult, OrderPhase, Selection
+from .normalization import strip_ordering_prefix
+from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
-from .parsers import extract_attribute_values
+from .parsers.quantity_utils import parse_numeric_input, extract_leading_quantity
 from .handler_config import BaseHandler
 from .checkout_messages import got_it_anything_else
 from .utils import OptionMatcher, InputNormalizer
-from .utils.text import format_english_list, number_to_word
+from .utils.text import format_english_list
 from .select_input_handler import SelectInputHandler
 from .config_options_inquiry import OptionsInquiryHandler
+from .config_disambiguation import DisambiguationHandler
+from .config_question_builder import QuestionBuilder
+from .config_selection_extractor import SelectionExtractor
 
 logger = logging.getLogger(__name__)
 
 # Maximum character distance between a qualifier (e.g., "extra", "on the side") and
 # an option name for them to be considered associated. Used in _extract_qualifier_for_option.
-# Allows for reasonable spacing like "extra    lettuce" or "lettuce on the side".
 QUALIFIER_PROXIMITY_THRESHOLD = 15
-
-# Note: _ANSWER_PREFIX_PATTERN and _strip_answer_prefix() have been consolidated
-# into normalization.py as _ORDERING_PREFIX_PATTERN and strip_ordering_prefix().
-# Note: _number_to_word() has been consolidated into utils/text.py as number_to_word().
 
 
 class MenuItemConfigHandler(BaseHandler):
@@ -54,18 +49,6 @@ class MenuItemConfigHandler(BaseHandler):
     - What the question text should be (question_text field)
     - What options are valid (attribute_options or item_type_ingredients)
     """
-
-    # Note: SUPPORTED_ITEM_TYPES is now queried from the database via menu_cache.
-    # Item types are configurable if they have linked attributes in the DB.
-    #
-    # NOTE: All legacy attribute aliases have been eliminated:
-    # - Parsers now use canonical keys (bread, spread, etc.)
-    # - Properties (toasted, scooped, decaf, spread) now use the unified modifiers list as backing store
-    # - All customizations are stored in the unified modifiers list with category, slug, quantity, price
-
-    # Note: MODIFIER_EXTRACTION_TYPE is now stored in the item_type_categories table
-    # and queried via menu_cache.get_modifier_category(item_type_slug).
-    # Values: "food" (proteins, cheeses, toppings) or "beverage" (milk, sweetener, syrup)
 
     def __init__(self, config: "HandlerConfig"):
         """
@@ -92,6 +75,34 @@ class MenuItemConfigHandler(BaseHandler):
         self._options_inquiry_handler = OptionsInquiryHandler(
             get_optional_attributes=self._get_optional_attributes,
         )
+        # Sub-handler for disambiguation resolution
+        self._disambiguation_handler = DisambiguationHandler(
+            get_item_type_attributes=self._get_item_type_attributes,
+            format_display_list=self._format_display_list,
+            extract_qualifier_for_option=self._extract_qualifier_for_option,
+            advance_to_next_question=self._advance_to_next_question,
+            get_next_question=self._get_next_question,
+        )
+        # Sub-handler for question building
+        self._question_builder = QuestionBuilder()
+        # Sub-handler for selection extraction
+        self._selection_extractor = SelectionExtractor(pricing=config.pricing)
+
+    def _apply_selections(self, item: "MenuItemTask", selections: list) -> str | None:
+        """
+        Apply parsed selections to a menu item.
+
+        This is a thin wrapper around the selection extractor's apply_selections method,
+        exposed for use by other handlers (e.g., ItemAdderHandler).
+
+        Args:
+            item: The menu item to apply selections to
+            selections: List of Selection objects from parsing
+
+        Returns:
+            Acknowledgment string if selections were applied, None otherwise
+        """
+        return self._selection_extractor.apply_selections(item, selections)
 
     @property
     def process_pending_parsed_items(self) -> "Callable[[OrderTask], StateMachineResult | None] | None":
@@ -209,36 +220,6 @@ class MenuItemConfigHandler(BaseHandler):
         Delegates to InputNormalizer.
         """
         return self._input_normalizer.extract_leading_quantity(user_input)
-
-    def _parse_numeric_input(self, user_input: str) -> int | None:
-        """
-        Parse numeric value from user input. Domain-agnostic.
-
-        Handles both raw digits and word numbers. Used for attributes with
-        numeric option slugs (e.g., shots with options "1", "2", "3", "4").
-
-        Args:
-            user_input: User's input string (e.g., "3", "three", "triple")
-
-        Returns:
-            Integer value if found, None otherwise.
-        """
-        from .parsers.quantity_utils import WORD_TO_NUM
-
-        user_lower = user_input.lower().strip()
-
-        # Try raw digit match first: "3", "2 shots", etc.
-        digit_match = re.search(r'\b(\d+)\b', user_lower)
-        if digit_match:
-            return int(digit_match.group(1))
-
-        # Try word number match: "three", "triple", etc.
-        # Sort by length descending to match longer phrases first
-        for word, num in sorted(WORD_TO_NUM.items(), key=lambda x: -len(x[0])):
-            if word in user_lower.split():
-                return num
-
-        return None
 
     def _match_option_from_input(
         self, user_input: str, options: list[dict]
@@ -372,187 +353,6 @@ class MenuItemConfigHandler(BaseHandler):
         return format_english_list(names, conjunction=conjunction)
 
     # =========================================================================
-    # Question Building Helpers
-    # =========================================================================
-
-    def _handle_unavailable_selection(
-        self, item: MenuItemTask, order: OrderTask, attr: dict
-    ) -> StateMachineResult | None:
-        """
-        Check if user tried to select an unavailable option for this attribute.
-        If so, generate a helpful message showing what's available.
-
-        Returns StateMachineResult if unavailable selection was handled, None otherwise.
-        """
-        attr_slug = attr.get("slug", "")
-        unavail = item.unavailable_selections.get(attr_slug)
-        if not unavail:
-            return None
-
-        attempted = unavail.get("attempted_display", unavail.get("attempted_slug", "that"))
-        options = attr.get("options", [])
-
-        # Get available options (filter out unavailable ones)
-        available = [
-            o.get("display_name", o.get("slug", ""))
-            for o in options
-            if o.get("is_available", True)
-        ]
-
-        # Build helpful message
-        if len(available) <= 4:
-            opts_str = format_english_list(available, conjunction="or")
-        else:
-            # Too many options - just name the attribute
-            opts_str = None
-
-        if opts_str:
-            question = f"We don't have {attempted} - we have {opts_str}. Which would you like?"
-        else:
-            attr_name_lower = attr.get("display_name", attr_slug).lower()
-            question = f"We don't have {attempted}. Which {attr_name_lower} would you like?"
-
-        # Clear so we don't repeat this message
-        del item.unavailable_selections[attr_slug]
-
-        # Set up order state for receiving the answer
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = f"{item.menu_item_type}:{attr_slug}"
-        order.config_options_page = 0
-
-        return StateMachineResult(message=question, order=order)
-
-    def _calculate_item_ordinal(
-        self, item: MenuItemTask, order: OrderTask
-    ) -> tuple[str, int, bool]:
-        """
-        Calculate ordinal position of this item among same-type items.
-
-        Returns:
-            tuple of (ordinal_word, item_number, has_duplicates)
-            - ordinal_word: "first", "second", etc.
-            - item_number: 1-based position
-            - has_duplicates: True if item name appears multiple times
-        """
-        from .message_builder import MessageBuilder
-
-        config_names = order.multi_item_config_names or []
-        multi_count = len(config_names) if config_names else 1
-
-        item_display = item.get_display_name()
-        # Does this item's name appear more than once in the config list?
-        item_name_count = sum(1 for n in config_names if n == item_display)
-        has_duplicates = item_name_count > 1
-
-        ordinal = "first"
-        item_num = 1
-
-        if multi_count > 1:
-            # Find all items of the same type
-            same_type_items = [
-                it for it in order.items.items
-                if isinstance(it, MenuItemTask) and it.menu_item_type == item.menu_item_type
-            ]
-            # Find position of current item
-            item_num = next(
-                (i + 1 for i, it in enumerate(same_type_items) if it.id == item.id),
-                1
-            )
-            ordinal = MessageBuilder.get_ordinal(item_num)
-
-        return ordinal, item_num, has_duplicates
-
-    def _build_base_question(
-        self, attr: dict, item_ref: str, ordinal: str,
-        has_duplicates: bool, multi_count: int
-    ) -> str:
-        """
-        Build the base question text based on input type and item context.
-
-        Args:
-            attr: Attribute configuration dict
-            item_ref: Item display name (lowercase)
-            ordinal: "first", "second", etc.
-            has_duplicates: True if same item appears multiple times
-            multi_count: Total number of items being configured
-        """
-        input_type = attr.get("input_type", "single_select")
-        attr_name = attr["display_name"].lower()
-        db_question = attr.get("question_text")
-
-        # Use DB's question_text if available for single-item orders
-        if db_question and multi_count <= 1:
-            return db_question
-
-        if input_type == "boolean":
-            if has_duplicates:
-                return f"For the {ordinal} {item_ref}, would you like it {attr_name}?"
-            elif multi_count > 1:
-                return f"For the {item_ref}, would you like it {attr_name}?"
-            else:
-                return f"Would you like it {attr_name}?"
-        else:
-            if has_duplicates:
-                return f"For the {ordinal} {item_ref}, what kind of {attr_name} would you like?"
-            elif multi_count > 1:
-                return f"For the {item_ref}, what kind of {attr_name} would you like?"
-            else:
-                return f"What kind of {attr_name} would you like?"
-
-    def _build_first_question_prefix(
-        self, item: MenuItemTask, order: OrderTask, attr: dict,
-        ordinal: str, item_num: int, has_duplicates: bool
-    ) -> str | None:
-        """
-        Build acknowledgment prefix for the first question of each item.
-
-        Returns the prefix string (e.g., "Got it, two Plain Bagels. ") or None
-        if no prefix is needed (for subsequent questions, not first).
-        """
-        config_names = order.multi_item_config_names or []
-        multi_count = len(config_names) if config_names else 1
-        item_display = item.get_display_name()
-        input_type = attr.get("input_type", "single_select")
-        attr_name = attr["display_name"].lower()
-
-        if multi_count > 1:
-            if item_num == 1:
-                # First item acknowledgment
-                all_same_name = len(set(config_names)) == 1
-
-                if all_same_name:
-                    # All identical: "Got it, two Plain Bagels."
-                    quantity_word = number_to_word(multi_count)
-                    item_name = pluralize(item_display)
-                    item_desc = f"{quantity_word} {item_name}"
-                else:
-                    # Mixed items: collapse duplicates
-                    from collections import Counter
-                    name_counts = Counter(config_names)
-                    desc_parts = []
-                    for cname, ccount in name_counts.items():
-                        if ccount > 1:
-                            qty_word = number_to_word(ccount)
-                            desc_parts.append(f"{qty_word} {pluralize(cname)}")
-                        else:
-                            desc_parts.append(cname)
-                    item_desc = format_english_list(desc_parts)
-                return f"Got it, {item_desc}. "
-            else:
-                # Subsequent items - build a replacement question
-                if has_duplicates:
-                    item_desc = f"the {ordinal} {item_display}"
-                else:
-                    item_desc = f"the {item_display.lower()}"
-                if input_type == "boolean":
-                    return f"For {item_desc}, would you like that {attr_name}?"
-                else:
-                    return f"For {item_desc}, what kind of {attr_name} would you like?"
-        else:
-            return f"Got it, for the {item_display}. "
-
-    # =========================================================================
     # Main Entry Point
     # =========================================================================
 
@@ -596,23 +396,23 @@ class MenuItemConfigHandler(BaseHandler):
         For multi-item configurations, uses ordinal references like "the first one", "the second one".
         """
         # Handle unavailable selection first (early return if applicable)
-        unavail_result = self._handle_unavailable_selection(item, order, attr)
+        unavail_result = self._question_builder.handle_unavailable_selection(item, order, attr)
         if unavail_result:
             return unavail_result
 
         # Calculate ordinal position and context for multi-item orders
-        ordinal, item_num, has_duplicates = self._calculate_item_ordinal(item, order)
+        ordinal, item_num, has_duplicates = self._question_builder.calculate_item_ordinal(item, order)
         multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
         item_ref = item.get_display_name().lower()
 
         # Build base question text
-        question = self._build_base_question(
+        question = self._question_builder.build_base_question(
             attr, item_ref, ordinal, has_duplicates, multi_count
         )
 
         # Add acknowledgment prefix for first question of each item
         if is_first_question:
-            prefix = self._build_first_question_prefix(
+            prefix = self._question_builder.build_first_question_prefix(
                 item, order, attr, ordinal, item_num, has_duplicates
             )
             if prefix:
@@ -686,143 +486,6 @@ class MenuItemConfigHandler(BaseHandler):
             message=f"Any more changes to that? You can add {options_list}.",
             order=order,
         )
-
-    # =========================================================================
-    # Modifier Extraction During Configuration
-    # =========================================================================
-
-    def _extract_selections_from_input(
-        self, user_input: str, item_type: str
-    ) -> list[Selection]:
-        """
-        Extract selections from user input based on item type.
-
-        Uses the generic data-driven extract_attribute_values() function which
-        queries the database for what attributes the item type accepts and
-        extracts matching values from the input.
-
-        Args:
-            user_input: Raw user input string
-            item_type: The item type slug (e.g., "deli_sandwich", "espresso")
-
-        Returns:
-            List of Selection objects, empty if no selections found
-        """
-        # Use generic data-driven extraction
-        attr_values = extract_attribute_values(user_input, item_type)
-
-        if not attr_values:
-            return []
-
-        selections: list[Selection] = []
-
-        for attr_slug, value in attr_values.items():
-            if isinstance(value, list):
-                # Multi-select attribute: list of {slug, quantity, display_name, ...}
-                for item in value:
-                    if isinstance(item, dict):
-                        slug = item.get("slug", "")
-                        quantity = item.get("quantity", 1)
-                        category = item.get("category") or attr_slug
-                        price = item.get("price", 0.0)
-                        display_name = item.get("display_name")
-                        if slug:
-                            selections.append(Selection(
-                                slug=slug,
-                                category=category,
-                                quantity=quantity,
-                                price=price,
-                                display_name=display_name,
-                            ))
-            elif isinstance(value, bool):
-                # Boolean attribute - store as yes/no slug
-                selections.append(Selection(
-                    slug="yes" if value else "no",
-                    category=attr_slug,
-                    quantity=1,
-                ))
-            elif isinstance(value, str):
-                # Single-select attribute: just the slug
-                selections.append(Selection(
-                    slug=value,
-                    category=attr_slug,
-                    quantity=1,
-                ))
-
-        if selections:
-            logger.debug("Extracted selections from input: %s", selections)
-
-        return selections
-
-    def _apply_selections(
-        self, item: MenuItemTask, selections: list[Selection]
-    ) -> str | None:
-        """
-        Apply selections to a menu item in a data-driven way.
-
-        Iterates through all selections and applies them generically using the
-        item's add_modifier() method. Prices are looked up from the pricing engine
-        if not already set in the selection.
-
-        Args:
-            item: The menu item to apply selections to
-            selections: List of Selection objects from user input
-
-        Returns:
-            Acknowledgment string if selections were applied, None otherwise
-        """
-        added_items = []
-        item_type = item.menu_item_type
-
-        for sel in selections:
-            # Look up price from pricing engine if not already set
-            price = sel.price
-            if price == 0.0 and self.pricing and item_type:
-                price = self.pricing.lookup_generic_modifier_price(
-                    sel.slug, item_type, sel.category
-                ) or 0.0
-
-            # Use add_selection for unified storage
-            item.add_selection(sel.slug, sel.category, sel.quantity, price)
-
-            # Build display name for acknowledgment using database lookup
-            display_name = sel.display_name or menu_cache.get_ingredient_display_name(sel.slug)
-            added_items.append(display_name or format_slug_for_display(sel.slug, check_cache=False))
-
-        # Build acknowledgment string
-        if not added_items:
-            return None
-
-        items_str = format_english_list(added_items)
-        return f"I've added {items_str}. "
-
-    def _extract_and_apply_selections(
-        self, user_input: str, item: MenuItemTask
-    ) -> str | None:
-        """
-        Extract selections from user input and apply them to the item.
-
-        This is a convenience method that combines extraction and application.
-        Call this after successfully handling an attribute input to capture
-        any additional selections mentioned with the answer.
-
-        Args:
-            user_input: Raw user input string
-            item: The menu item to apply selections to
-
-        Returns:
-            Acknowledgment string if selections were applied, None otherwise
-        """
-        item_type = item.menu_item_type
-        if not item_type:
-            return None
-
-        selections = self._extract_selections_from_input(user_input, item_type)
-        if selections:
-            logger.info("Applying extracted selections to %s: %s", item.menu_item_name, selections)
-            return self._apply_selections(item, selections)
-
-        return None
 
     # =========================================================================
     # Pricing Abstraction
@@ -996,261 +659,6 @@ class MenuItemConfigHandler(BaseHandler):
         return self._get_next_question(order)
 
     # =========================================================================
-    # Disambiguation Resolution
-    # =========================================================================
-
-    def _resolve_disambiguation(
-        self,
-        user_input: str,
-        options: list[dict],
-    ) -> dict | None:
-        """
-        Resolve user's selection from disambiguation options using STRICT matching.
-
-        This is used when we've asked "Did you mean X or Y?" and need to match
-        the user's response to one of the specific options. We use exact matching
-        to avoid "ham" matching "Black Forest Ham".
-
-        Args:
-            user_input: User's response (e.g., "ham", "black forest ham", "first", "1")
-            options: List of option dicts with display_name and slug fields
-
-        Returns:
-            Selected option dict if matched, None if no match found.
-        """
-        input_lower = user_input.lower().strip()
-
-        # Remove common filler words
-        input_lower = input_lower.replace("the ", "").strip()
-        input_lower = input_lower.replace("please", "").strip()
-        input_lower = input_lower.replace("i want ", "").strip()
-        input_lower = input_lower.replace("i'll take ", "").strip()
-        input_lower = input_lower.replace("just ", "").strip()
-
-        # Handle ordinal selections FIRST ("first one", "second one", "1", "2")
-        # This allows quick selection by position
-        ordinal_map = {
-            "first": 0, "1": 0,
-            "second": 1, "2": 1,
-            "third": 2, "3": 2,
-            "fourth": 3, "4": 3,
-        }
-        for word, index in ordinal_map.items():
-            if input_lower == word or input_lower == f"{word} one":
-                if index < len(options):
-                    return options[index]
-
-        # Try EXACT match on display_name (case-insensitive)
-        # "ham" matches "Ham" but NOT "Black Forest Ham"
-        for opt in options:
-            if opt["display_name"].lower() == input_lower:
-                return opt
-
-        # Try EXACT match on slug (with underscores replaced by spaces)
-        for opt in options:
-            slug_readable = opt["slug"].replace("_", " ")
-            if slug_readable == input_lower:
-                return opt
-
-        # Helper to parse aliases from option dict
-        def get_aliases(opt: dict) -> list[str]:
-            aliases_raw = opt.get("aliases", [])
-            if isinstance(aliases_raw, str):
-                if "|" in aliases_raw:
-                    return [a.strip() for a in aliases_raw.split("|") if a.strip()]
-                return [a.strip() for a in aliases_raw.split(",") if a.strip()]
-            return aliases_raw or []
-
-        # Try EXACT match on alias
-        for opt in options:
-            for alias in get_aliases(opt):
-                if alias.lower() == input_lower:
-                    return opt
-
-        # Try if the FULL option name is in the user input
-        # This handles "black forest ham please" → "Black Forest Ham"
-        # But NOT "ham" → "Black Forest Ham" (substring of option name)
-        for opt in options:
-            display_lower = opt["display_name"].lower()
-            if display_lower in input_lower:
-                return opt
-
-        # Try if the FULL alias is in the user input
-        # This handles "sesame sourdough please" → option with alias "sesame sourdough"
-        for opt in options:
-            for alias in get_aliases(opt):
-                alias_lower = alias.lower()
-                if len(alias_lower) >= 3 and alias_lower in input_lower:
-                    return opt
-
-        # NO substring matching in the other direction!
-        # We deliberately don't check if input_lower is in display_name
-        # because that would make "ham" match "Black Forest Ham"
-
-        return None
-
-    def _handle_disambiguation_response(
-        self, user_input: str, order: OrderTask
-    ) -> StateMachineResult | None:
-        """
-        Handle user response to an attribute disambiguation question.
-
-        Checks if there's a pending disambiguation, attempts to resolve
-        the user's selection, applies any stored modifiers, and returns
-        the next question.
-
-        Args:
-            user_input: User's response to disambiguation question
-            order: Current order state
-
-        Returns:
-            StateMachineResult if disambiguation was handled, None if no disambiguation pending
-        """
-        disambiguation = order.pending_attr_disambiguation
-        if not disambiguation:
-            return None
-
-        options = disambiguation.get("options", [])
-        attr_slug = disambiguation.get("attr_slug")
-        stored_modifiers = disambiguation.get("modifiers", {})
-        item_id = disambiguation.get("item_id")
-
-        # Find the item being configured
-        item = order.items.get_item_by_id(item_id) if item_id else None
-        if not item or not isinstance(item, MenuItemTask):
-            logger.warning("Disambiguation item not found: %s", item_id)
-            order.pending_attr_disambiguation = None
-            return self._get_next_question(order)
-
-        # Try to resolve the selection
-        selected = self._resolve_disambiguation(user_input, options)
-
-        if not selected:
-            # Couldn't match - ask again
-            options_text = self._format_display_list(options)
-            return StateMachineResult(
-                message=f"Sorry, I didn't catch that. Did you mean {options_text}?",
-                order=order,
-            )
-
-        # Clear disambiguation state
-        order.pending_attr_disambiguation = None
-
-        # Get the attribute info
-        item_type = item.menu_item_type
-        attrs = self._get_item_type_attributes(item_type)
-        attr = attrs.get(attr_slug, {})
-
-        # Re-extract quantity from user's clarification input (not stored value)
-        # This handles cases like "2 hazelnut syrups" after disambiguation
-        user_lower = user_input.lower()
-
-        # Only extract numeric quantity if category supports it (has quantity_unit)
-        # Use ingredient_category (from Ingredient.category) to look up quantity_unit
-        mod_category = selected.get("ingredient_category") or attr_slug
-        quantity_unit = menu_cache.get_ingredient_category_quantity_unit(mod_category)
-
-        quantity = 1
-        if quantity_unit:
-            quantity = extract_quantity(user_lower, selected["display_name"].lower())
-            if quantity == 1:
-                quantity = extract_quantity(user_lower, selected["slug"].replace("_", " "))
-            if quantity == 1 and selected.get("aliases"):
-                # Also try with ingredient aliases (e.g., "sugar" for "domino_sugar")
-                for alias in selected["aliases"]:
-                    alias_qty = extract_quantity(user_lower, alias.lower())
-                    if alias_qty > 1:
-                        quantity = alias_qty
-                        break
-
-        # Remove stored quantity (no longer needed)
-        stored_modifiers.pop("_quantity", None)
-        qualifier = self._extract_qualifier_for_option(user_input, selected["display_name"])
-
-        opt_price = selected.get("price") or selected.get("price_modifier") or 0
-        selection = {
-            "slug": selected["slug"],
-            "display_name": selected["display_name"],
-            "price": opt_price,
-            "quantity": quantity,
-        }
-        if qualifier:
-            selection["qualifier"] = qualifier
-
-        # Add selection using the unified API
-        item.add_selection(
-            selected["slug"],
-            attr_slug,
-            quantity=quantity,
-            price=opt_price,
-            display_name=selected["display_name"],
-            ingredient_category=selected.get("ingredient_category"),
-        )
-
-        # Apply any stored modifiers (e.g., milk type, sweetener extracted before disambiguation)
-        if stored_modifiers:
-            self._apply_stored_modifiers(item, stored_modifiers)
-
-        # Build acknowledgment
-        ack_name = selected["display_name"]
-        if qualifier:
-            ack_name = f"{ack_name} ({qualifier})"
-        ack_text = f"{quantity} {ack_name}" if quantity > 1 else ack_name
-
-        logger.info(
-            "DISAMBIGUATION RESOLVED: %s -> %s for attr=%s, stored_mods=%s",
-            user_input, selected["display_name"], attr_slug, stored_modifiers
-        )
-
-        return self._advance_to_next_question(item, order, attr, ack_text)
-
-    def _apply_stored_modifiers(self, item: MenuItemTask, modifiers: dict) -> None:
-        """
-        Apply stored modifiers from disambiguation to the item.
-
-        Uses data-driven approach: gets is_multi_select from ingredient_categories
-        table to determine whether to use add_modifier() vs dict-style access.
-
-        Args:
-            item: The item to apply modifiers to
-            modifiers: Dict of modifier values to apply
-        """
-        if not modifiers:
-            return
-
-        from .menu_data_cache import menu_cache
-
-        # Keys that are special metadata, not actual modifier fields
-        skip_keys = {"_quantity"}
-        # Suffix for quantity keys (e.g., "sweetener_quantity")
-        quantity_suffix = "_quantity"
-
-        # Track processed keys to avoid double-processing
-        processed: set[str] = set()
-
-        for key, value in modifiers.items():
-            # Skip special keys, quantity suffixes, and already-processed keys
-            if key in skip_keys or key.endswith(quantity_suffix) or key in processed:
-                continue
-
-            # Normalize key using data-driven field mapping from database
-            normalized_key = menu_cache.resolve_field_to_slug(item.menu_item_type, key)
-
-            # Get field config to determine if this is a multi-select field
-            field_config = menu_cache.get_ingredient_category_field_config(normalized_key)
-            is_multi_select = field_config.get("is_multi_select", False) if field_config else False
-
-            if is_multi_select:
-                # Multi-select: use add_selection with quantity
-                quantity = modifiers.get(f"{key}{quantity_suffix}", 1)
-                item.add_selection(value, normalized_key, quantity, 0.0)
-            else:
-                # Single-select or boolean: use dict-style access
-                item[normalized_key] = value
-
-            processed.add(key)
-
-    # =========================================================================
     # Handle User Input for Different States
     # =========================================================================
 
@@ -1259,7 +667,7 @@ class MenuItemConfigHandler(BaseHandler):
     ) -> StateMachineResult:
         """Handle user input for a specific attribute question."""
         # Check if we're resolving a disambiguation first
-        disambiguation_result = self._handle_disambiguation_response(user_input, order)
+        disambiguation_result = self._disambiguation_handler.handle_disambiguation_response(user_input, order)
         if disambiguation_result:
             return disambiguation_result
 
@@ -1358,7 +766,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Extract and apply any additional selections from the input
         # (e.g., "yes with bacon" -> captures the boolean AND the bacon selection)
-        self._extract_and_apply_selections(user_input, item)
+        self._selection_extractor.extract_and_apply_selections(user_input, item)
 
         return self._advance_to_next_question(item, order, attr)
 
@@ -1435,7 +843,7 @@ class MenuItemConfigHandler(BaseHandler):
             quantity = 1
         else:
             # Try to parse numeric quantity
-            parsed_qty = self._parse_numeric_input(user_input)
+            parsed_qty = parse_numeric_input(user_input)
             if parsed_qty is None:
                 # Couldn't parse - ask for clarification
                 question = attr.get("question_text") or f"How many {attr['display_name'].lower()}?"
@@ -1501,99 +909,9 @@ class MenuItemConfigHandler(BaseHandler):
             options=options,
             advance_callback=self._advance_to_next_question,
             format_display_list_callback=self._format_display_list,
-            extract_selections_callback=self._extract_selections_from_input,
+            extract_selections_callback=self._selection_extractor.extract_selections_from_input,
             extract_qualifier_callback=self._extract_qualifier_for_option,
         )
-
-    # NOTE: _handle_select_input now delegates to SelectInputHandler.
-    # Methods like _check_partial_match and other select input helpers are now in SelectInputHandler.
-    # The helper method _try_numeric_option_match is kept here as it's also used by other code paths.
-
-    def _try_numeric_option_match(
-        self,
-        user_input: str,
-        options: list[dict],
-        item: MenuItemTask,
-        order: OrderTask,
-        attr: dict,
-        attr_slug: str,
-    ) -> StateMachineResult | None:
-        """
-        Try to match user input to options with numeric slugs.
-
-        This enables data-driven handling of numeric attributes like "shots"
-        where options have slugs like "1", "2", "3", "4".
-
-        Matching flow:
-        1. Check if any options have numeric slugs (e.g., "1", "2", "3")
-        2. Parse numeric value from user input using _parse_numeric_input()
-        3. Match to option with that numeric slug
-        4. If found, add the selection with the option's price_modifier
-
-        Args:
-            user_input: User's input string (e.g., "3", "three", "triple shot")
-            options: List of option dicts from the attribute
-            item: The MenuItemTask being configured
-            order: The current OrderTask
-            attr: The attribute configuration dict
-            attr_slug: The attribute slug (e.g., "shots")
-
-        Returns:
-            StateMachineResult if a numeric match was found, None otherwise.
-        """
-        # Check if any options have numeric slugs
-        numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}
-        if not numeric_slugs:
-            return None  # No numeric options, skip this handler
-
-        # Parse numeric value from user input
-        parsed_num = self._parse_numeric_input(user_input)
-        if parsed_num is None:
-            return None  # Couldn't parse a number
-
-        # Find option with matching numeric slug
-        target_slug = str(parsed_num)
-        matched_option = None
-        for opt in options:
-            if opt["slug"] == target_slug:
-                matched_option = opt
-                break
-
-        if not matched_option:
-            # Number parsed but no matching option (e.g., user said "10" but max is "4")
-            # Let the caller handle "no match" response
-            return None
-
-        # Found a match - add the selection
-        opt_price = matched_option.get("price") or matched_option.get("price_modifier") or 0.0
-        display_name = matched_option.get("display_name", f"{parsed_num}")
-
-        item.add_selection(
-            matched_option["slug"],
-            attr_slug,
-            quantity=1,
-            price=opt_price,
-            display_name=display_name,
-        )
-
-        logger.info(
-            "NUMERIC_MATCH: %s=%s (price=$%.2f) from input '%s'",
-            attr_slug, matched_option["slug"], opt_price, user_input
-        )
-
-        return self._advance_to_next_question(item, order, attr, display_name)
-
-    def _is_affirmative_response(self, user_input: str) -> bool:
-        """Check if input is a simple affirmative response (yes, sure, yeah, etc.)
-
-        Args:
-            user_input: The user's input (should be lowercased and stripped)
-
-        Returns:
-            True if the input matches an affirmative pattern
-        """
-        affirmatives = menu_cache.get_response_patterns("affirmative")
-        return user_input in affirmatives
 
     def _format_options_list_for_clarification(self, options: list[str]) -> str:
         """Format options list for clarification question.
@@ -1605,8 +923,6 @@ class MenuItemConfigHandler(BaseHandler):
             Formatted string like "A, B, C, or D"
         """
         return format_english_list(options, conjunction="or")
-
-    # NOTE: _check_partial_match was removed - it's now in SelectInputHandler
 
     def _advance_to_next_question(
         self, item: MenuItemTask, order: OrderTask, current_attr: dict,
@@ -1941,10 +1257,23 @@ class MenuItemConfigHandler(BaseHandler):
         attr_display = attr.get("display_name", attr_slug).lower()
         options_list = ", ".join(c["display_name"] for c in candidates)
 
+        # Extract quantity from original input (e.g., "4 syrups" -> 4)
+        quantity, _ = extract_leading_quantity(original_input)
+        if quantity is None:
+            quantity = 1
+
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
         order.pending_field = f"{item.menu_item_type}:{attr_slug}"
-        order.pending_item_options = [c["display_name"] for c in candidates]
+
+        # Use pending_attr_disambiguation pattern (consistent with select_input_handler)
+        # This stores quantity so it can be applied when user answers
+        order.pending_attr_disambiguation = {
+            "options": candidates,
+            "attr_slug": attr_slug,
+            "modifiers": {"_quantity": quantity},
+            "item_id": item.id,
+        }
 
         return StateMachineResult(
             message=f"Which {attr_display} would you like? {options_list}",
@@ -2077,7 +1406,7 @@ class MenuItemConfigHandler(BaseHandler):
                 # Try numeric matching for options with numeric slugs (e.g., shots: "1", "2", "3")
                 numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}
                 if numeric_slugs:
-                    parsed_num = self._parse_numeric_input(user_clean)
+                    parsed_num = parse_numeric_input(user_clean)
                     if parsed_num is not None:
                         target_slug = str(parsed_num)
                         for opt in options:

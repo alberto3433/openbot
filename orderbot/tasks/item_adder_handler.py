@@ -82,11 +82,16 @@ class ItemAdderHandler(MenuDataMixin):
         Args:
             ctx: OrderContext with db_session and other request-scoped data.
         """
+        logger.debug(
+            "ItemAdderHandler.set_context: ctx.db_session=%s",
+            "set" if ctx.db_session else "None"
+        )
         if ctx.db_session is not None:
             self._db_session = ctx.db_session
             # Update the unrecognized handler's db_session
             if self._unrecognized_handler:
                 self._unrecognized_handler._db_session = ctx.db_session
+                logger.debug("Updated _unrecognized_handler._db_session")
 
     def _infer_attributes_from_item_name(self, item: MenuItemTask) -> None:
         """Infer attribute values from the menu item name.

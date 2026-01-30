@@ -90,42 +90,50 @@ class UnrecognizedItemHandler:
             to hear what items are in a category.
         """
         item_name_normalized = item_name.lower().strip()
+        # Strip filler words for lookup (some, a, an, the)
+        item_name_for_lookup = self._strip_filler_words(item_name_normalized)
+
         order_item_count = 0
         if order and hasattr(order, 'items') and hasattr(order.items, 'items'):
             order_item_count = len(order.items.items)
 
-        # Level 1: Check curated suggestions
-        curated = self._check_curated_suggestions(item_name_normalized)
+        logger.info(
+            "UnrecognizedItemHandler: item_name='%s', normalized='%s', lookup='%s', db_session=%s",
+            item_name, item_name_normalized, item_name_for_lookup, "set" if self._db_session else "None"
+        )
+
+        # Level 1: Check curated suggestions (using cleaned name for lookup)
+        curated = self._check_curated_suggestions(item_name_for_lookup)
         if curated:
             message, category = self._build_curated_response(
                 item_name, curated, order_item_count
             )
             self._log_unrecognized(
-                item_name, item_name_normalized, session_id,
+                item_name, item_name_for_lookup, session_id,
                 order_item_count, "curated", category
             )
             return (message, category)
 
-        # Level 2: Try fuzzy matching
-        fuzzy_matches = self._get_fuzzy_matches(item_name_normalized)
+        # Level 2: Try fuzzy matching (using cleaned name)
+        fuzzy_matches = self._get_fuzzy_matches(item_name_for_lookup)
         if fuzzy_matches:
             message = self._build_fuzzy_response(
                 item_name, fuzzy_matches, order_item_count
             )
             self._log_unrecognized(
-                item_name, item_name_normalized, session_id,
+                item_name, item_name_for_lookup, session_id,
                 order_item_count, "fuzzy", None
             )
             return (message, None)
 
-        # Level 3: LLM category inference
-        inferred_category = self._infer_category_with_llm(item_name_normalized)
+        # Level 3: LLM category inference (using cleaned name)
+        inferred_category = self._infer_category_with_llm(item_name_for_lookup)
         if inferred_category:
             message, category = self._build_inferred_response(
                 item_name, inferred_category, order_item_count
             )
             self._log_unrecognized(
-                item_name, item_name_normalized, session_id,
+                item_name, item_name_for_lookup, session_id,
                 order_item_count, "llm", inferred_category
             )
             return (message, category)
@@ -133,7 +141,7 @@ class UnrecognizedItemHandler:
         # Level 4: Generic fallback
         message = self._build_generic_response(item_name, order_item_count)
         self._log_unrecognized(
-            item_name, item_name_normalized, session_id,
+            item_name, item_name_for_lookup, session_id,
             order_item_count, "generic", None
         )
         return (message, None)
@@ -149,7 +157,10 @@ class UnrecognizedItemHandler:
             Dict with suggestion info if found, None otherwise.
         """
         if not self._db_session:
+            logger.warning("Curated suggestions skipped: no db_session available")
             return None
+
+        logger.debug("Checking curated suggestions for: '%s'", normalized_input)
 
         try:
             from orderbot.models import UnrecognizedItemSuggestion
@@ -212,14 +223,17 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> tuple[str, str | None]:
         """Build response from curated suggestion."""
+        # Clean up item name by removing filler words
+        clean_name = self._strip_filler_words(item_name)
+
         # If specific menu items are suggested
         if curated.get("menu_items"):
             items = curated["menu_items"]
             if isinstance(items, list) and items:
                 item_list = format_english_list(items[:4], conjunction="or")
-                followup = self._get_order_aware_followup(order_item_count)
+                followup = self._get_order_aware_followup(order_item_count, len(items))
                 return (
-                    f"We don't have {item_name}, but we do have {item_list}. {followup}",
+                    f"We don't have {clean_name}, but we do have {item_list}. {followup}",
                     None,
                 )
 
@@ -230,22 +244,24 @@ class UnrecognizedItemHandler:
                 category_slug, limit=4
             )
             if suggestions:
-                followup = self._get_order_aware_followup(order_item_count)
+                # Count suggestions (it's a formatted string, so estimate from commas)
+                num_suggestions = suggestions.count(",") + 1
+                followup = self._get_order_aware_followup(order_item_count, num_suggestions)
                 return (
-                    f"We don't have {item_name}, but we do have {suggestions}. {followup}",
+                    f"We don't have {clean_name}, but we do have {suggestions}. {followup}",
                     None,
                 )
             else:
                 # Return category for follow-up inquiry
                 category_display = self._get_category_display_name(category_slug)
                 return (
-                    f"We don't have {item_name}. Would you like to hear what {category_display} we have?",
+                    f"We don't have {clean_name}. Would you like to hear what {category_display} we have?",
                     category_slug,
                 )
 
         # Fallback if curated entry is incomplete
         return (
-            f"I'm sorry, we don't have {item_name}. Is there something else I can help you with?",
+            f"I'm sorry, we don't have {clean_name}. Is there something else I can help you with?",
             None,
         )
 
@@ -300,9 +316,10 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> str:
         """Build response with fuzzy match suggestions."""
+        clean_name = self._strip_filler_words(item_name)
         match_list = format_english_list(fuzzy_matches, conjunction="or")
-        followup = self._get_order_aware_followup(order_item_count)
-        return f"We don't have {item_name}. Did you mean {match_list}? {followup}"
+        followup = self._get_order_aware_followup(order_item_count, len(fuzzy_matches))
+        return f"We don't have {clean_name}. Did you mean {match_list}? {followup}"
 
     def _infer_category_with_llm(self, normalized_input: str) -> str | None:
         """
@@ -334,21 +351,24 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> tuple[str, str | None]:
         """Build response based on LLM-inferred category."""
+        clean_name = self._strip_filler_words(item_name)
         suggestions = self.menu_lookup.get_suggestions_for_item_type(
             category_slug, limit=4
         )
 
         if suggestions:
             category_display = self._get_category_display_name(category_slug)
-            followup = self._get_order_aware_followup(order_item_count)
+            # Count suggestions from formatted string
+            num_suggestions = suggestions.count(",") + 1
+            followup = self._get_order_aware_followup(order_item_count, num_suggestions)
             return (
-                f"We don't have {item_name}. For {category_display}, we have {suggestions}. {followup}",
+                f"We don't have {clean_name}. For {category_display}, we have {suggestions}. {followup}",
                 None,
             )
         else:
             category_display = self._get_category_display_name(category_slug)
             return (
-                f"We don't have {item_name}. Would you like to hear what {category_display} we have?",
+                f"We don't have {clean_name}. Would you like to hear what {category_display} we have?",
                 category_slug,
             )
 
@@ -358,6 +378,7 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> str:
         """Build generic fallback response with top categories."""
+        clean_name = self._strip_filler_words(item_name)
         # Get available categories
         categories = menu_cache.get_available_menu_categories()
 
@@ -366,23 +387,48 @@ class UnrecognizedItemHandler:
             category_names = list(categories.values())[:4]
             category_list = format_english_list(category_names, conjunction="or")
             return (
-                f"I couldn't find '{item_name}' on our menu. "
+                f"I couldn't find '{clean_name}' on our menu. "
                 f"We have {category_list}. What would you like?"
             )
         else:
             return (
-                f"I'm sorry, I couldn't find '{item_name}' on our menu. "
+                f"I'm sorry, I couldn't find '{clean_name}' on our menu. "
                 f"Could you try again or ask what we have available?"
             )
 
-    def _get_order_aware_followup(self, order_item_count: int) -> str:
-        """Get a context-appropriate follow-up question based on cart state."""
+    def _get_order_aware_followup(self, order_item_count: int, num_alternatives: int = 2) -> str:
+        """Get a context-appropriate follow-up question based on cart state.
+
+        Args:
+            order_item_count: Number of items in the cart
+            num_alternatives: Number of alternatives suggested (1 = "that", 2+ = "those")
+        """
+        is_singular = num_alternatives == 1
+
         if order_item_count == 0:
-            return "Would you like any of those, or can I help you find something else?"
+            if is_singular:
+                return "Would you like that, or can I help you find something else?"
+            else:
+                return "Would you like any of those, or can I help you find something else?"
         elif order_item_count < 3:
-            return "Would any of those work, or is there something else to add?"
+            if is_singular:
+                return "Would that work, or is there something else to add?"
+            else:
+                return "Would any of those work, or is there something else to add?"
         else:
             return "Would you like to add one, or are you ready to check out?"
+
+    def _strip_filler_words(self, item_name: str) -> str:
+        """Strip common filler words from item name for cleaner responses.
+
+        Removes: some, a, an, the (when at the start)
+        "some hash browns" -> "hash browns"
+        "a croissant" -> "croissant"
+        """
+        import re
+        # Strip leading filler words (case-insensitive)
+        cleaned = re.sub(r'^(some|a|an|the)\s+', '', item_name.strip(), flags=re.IGNORECASE)
+        return cleaned or item_name
 
     def _get_category_display_name(self, category_slug: str) -> str:
         """Get display name for a category slug."""

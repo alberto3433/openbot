@@ -185,7 +185,6 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
         if not self.api_key:
             raise ValueError("ElevenLabs API key not found. Set ELEVENLABS_API_KEY environment variable.")
 
-        # TODO: Fetch available voices from ElevenLabs API
         self._voices = [
             Voice("21m00Tcm4TlvDq8ikWAM", "Rachel", "female", "American", "Calm and professional"),
             Voice("AZnzlk1XvdvUeBnXmlld", "Domi", "female", "American", "Strong and confident"),

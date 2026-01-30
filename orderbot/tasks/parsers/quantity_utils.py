@@ -224,3 +224,41 @@ def extract_make_it_n_target(match: re.Match) -> int | None:
         if group:
             return parse_make_it_n_quantity(group.lower())
     return None
+
+
+def parse_numeric_input(user_input: str) -> int | None:
+    """Parse numeric value from user input.
+
+    Handles both raw digits and word numbers. Used for attributes with
+    numeric option slugs (e.g., shots with options "1", "2", "3", "4").
+
+    Args:
+        user_input: User's input string (e.g., "3", "three", "triple")
+
+    Returns:
+        Integer value if found, None otherwise.
+
+    Examples:
+        >>> parse_numeric_input("3")
+        3
+        >>> parse_numeric_input("three shots")
+        3
+        >>> parse_numeric_input("triple")
+        3
+        >>> parse_numeric_input("hello")
+        None
+    """
+    user_lower = user_input.lower().strip()
+
+    # Try raw digit match first: "3", "2 shots", etc.
+    digit_match = re.search(r'\b(\d+)\b', user_lower)
+    if digit_match:
+        return int(digit_match.group(1))
+
+    # Try word number match: "three", "triple", etc.
+    # Sort by length descending to match longer phrases first
+    for word, num in sorted(WORD_TO_NUM.items(), key=lambda x: -len(x[0])):
+        if word in user_lower.split():
+            return num
+
+    return None

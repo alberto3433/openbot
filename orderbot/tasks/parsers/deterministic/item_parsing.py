@@ -458,6 +458,21 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     if not detected_item_type:
         return None
 
+    # 2b. Check if the user's text matches more specific menu items
+    # e.g., "bagel chips" should NOT trigger configurable bagel flow if there are
+    # specific menu items like "Bagel Chips - Salt", "Bagel Chips - BBQ", etc.
+    more_specific_matches = menu_cache.find_items_by_word_match(text_lower)
+    if more_specific_matches:
+        # Check if ANY of the specific matches are from a DIFFERENT item type than detected
+        # This indicates the user likely wants a specific menu item, not a configurable one
+        specific_item_types = {m.get("item_type") for m in more_specific_matches if m.get("item_type")}
+        if specific_item_types and detected_item_type not in specific_item_types:
+            logger.info(
+                "CONFIGURABLE_ITEM: skipping '%s' - found %d more specific menu items with types %s (detected: %s)",
+                text[:50], len(more_specific_matches), specific_item_types, detected_item_type
+            )
+            return None
+
     logger.info("CONFIGURABLE_ITEM: detected type '%s' in '%s'", detected_item_type, text[:50])
 
     # 3. Extract quantity

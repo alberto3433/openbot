@@ -3,6 +3,7 @@ Utility classes extracted from handler modules.
 
 This package contains focused, reusable utilities:
 - OptionMatcher: Unified option matching with multi-phase algorithm
+- OptionMatchingOrchestrator: Higher-level orchestrator for option matching with disambiguation
 - InputNormalizer: Text normalization for option matching
 - format_english_list: Format lists as human-readable English
 - Cache helpers: Validation utilities for menu data access
@@ -15,6 +16,7 @@ Import directly: from .utils.pricing_utils import safe_recalculate_price
 """
 
 from .option_matcher import OptionMatcher
+from .option_matching_orchestrator import OptionMatchingOrchestrator, MatchResult
 from .input_normalizer import InputNormalizer
 from .text import format_english_list
 from .cache_helpers import (
@@ -30,6 +32,8 @@ from .cache_helpers import (
 
 __all__ = [
     "OptionMatcher",
+    "OptionMatchingOrchestrator",
+    "MatchResult",
     "InputNormalizer",
     "format_english_list",
     "ensure_menu_data_loaded",

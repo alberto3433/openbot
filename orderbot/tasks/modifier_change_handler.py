@@ -22,7 +22,7 @@ from .normalization import (
     get_attribute_display_name as _get_attr_display_name_from_db,
 )
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
-from .parsers.quantity_utils import BASIC_WORD_TO_NUM
+from .parsers.quantity_utils import BASIC_WORD_TO_NUM, extract_leading_quantity
 from .utils.text import format_english_list
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
@@ -232,6 +232,7 @@ class ModifierChangeHandler:
         """Strip quantity prefixes like '2 ', 'two ', 'double ' from value.
 
         Also handles pluralization (e.g., "syrups" -> "syrup").
+        Uses BASIC_WORD_TO_NUM from quantity_utils as single source of truth.
 
         Args:
             value: The value to strip quantity from
@@ -244,13 +245,8 @@ class ModifierChangeHandler:
         # Strip numeric prefix: "2 vanilla syrups" -> "vanilla syrups"
         value = re.sub(r"^\d+\s+", "", value)
 
-        # Strip word prefix: "two vanilla syrups" -> "vanilla syrups"
-        quantity_words = [
-            "one", "two", "three", "four", "five", "six",
-            "seven", "eight", "nine", "ten",
-            "double", "triple", "quad", "quadruple",
-        ]
-        for word in quantity_words:
+        # Strip word prefix using BASIC_WORD_TO_NUM (single source of truth)
+        for word in BASIC_WORD_TO_NUM:
             if value.startswith(word + " "):
                 value = value[len(word) + 1:]
                 break
@@ -310,30 +306,17 @@ class ModifierChangeHandler:
     def _extract_quantity_from_value(self, value: str) -> tuple[int, str]:
         """Extract quantity prefix from a value.
 
+        Delegates to extract_leading_quantity from quantity_utils (single source of truth).
+
         Args:
             value: The raw value string (e.g., "2 vanilla syrups")
 
         Returns:
             Tuple of (quantity, stripped_value)
         """
-        value = value.strip()
-        quantity = 1
-
-        # Check for numeric prefix: "2 vanilla syrups"
-        match = re.match(r"^(\d+)\s+(.+)$", value)
-        if match:
-            quantity = int(match.group(1))
-            value = match.group(2)
-        else:
-            # Check for word prefix
-            quantity_map = BASIC_WORD_TO_NUM
-            for word, qty in quantity_map.items():
-                if value.startswith(word + " "):
-                    quantity = qty
-                    value = value[len(word) + 1:]
-                    break
-
-        return quantity, value
+        quantity, remaining = extract_leading_quantity(value)
+        # Default to 1 if no quantity found
+        return (quantity or 1, remaining)
 
     def apply_change(
         self,

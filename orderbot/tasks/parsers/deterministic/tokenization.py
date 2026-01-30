@@ -11,6 +11,7 @@ import logging
 from orderbot.menu_data_cache import menu_cache
 
 from ...schemas import OpenInputResponse
+from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity
 
 from .item_parsing import _detect_item_type, _parse_item_generic, _is_modifier_chain
 
@@ -21,58 +22,8 @@ logger = logging.getLogger(__name__)
 # Constants for Tokenization
 # =============================================================================
 
-# Quantity words mapping
-_QUANTITY_WORDS = {
-    "a": 1, "an": 1, "one": 1,
-    "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12,
-    "dozen": 12, "half dozen": 6,
-}
-
 # Words to skip during tokenization (not meaningful for classification)
 _SKIP_WORDS = {"please", "thanks", "thank", "you", "with", "the", "some", "of"}
-
-
-# =============================================================================
-# Quantity Extraction
-# =============================================================================
-
-def _extract_leading_quantity(text: str) -> tuple[int | None, str]:
-    """Extract leading quantity from text.
-
-    Args:
-        text: Input text like "2 bagels", "a coffee", "three lattes"
-
-    Returns:
-        (quantity, remaining_text) - quantity and text with quantity removed
-
-    Examples:
-        >>> _extract_leading_quantity("2 bagels")
-        (2, "bagels")
-        >>> _extract_leading_quantity("a coffee")
-        (1, "coffee")
-        >>> _extract_leading_quantity("three lattes")
-        (3, "lattes")
-        >>> _extract_leading_quantity("coffee")
-        (None, "coffee")
-    """
-    text = text.strip()
-    text_lower = text.lower()
-
-    # Check for numeric prefix
-    match = re.match(r'^(\d+)\s+', text)
-    if match:
-        return int(match.group(1)), text[match.end():].strip()
-
-    # Check for quantity words
-    for word, qty in sorted(_QUANTITY_WORDS.items(), key=lambda x: -len(x[0])):
-        if text_lower.startswith(word + " "):
-            return qty, text[len(word):].strip()
-        if text_lower == word:
-            return qty, ""
-
-    return None, text
 
 
 # =============================================================================

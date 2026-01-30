@@ -16,7 +16,7 @@ from ..constants import (
     QUALIFIER_PATTERNS,
     SKIP_WORDS,
 )
-from ..quantity_utils import WORD_TO_NUM
+from ..quantity_utils import WORD_TO_NUM, BASIC_WORD_TO_NUM, extract_quantity_word
 
 logger = logging.getLogger(__name__)
 
@@ -337,13 +337,16 @@ def extract_attribute_values(
         return (False, end)
 
     def extract_quantity_before(text: str, pos: int) -> int:
-        """Extract quantity prefix before a match position."""
+        """Extract quantity prefix before a match position.
+
+        Uses BASIC_WORD_TO_NUM from quantity_utils as single source of truth.
+        """
         before_text = text[:pos].strip()
         if not before_text:
             return 1
 
         qty_pattern = re.compile(
-            r'(\d+|one|two|three|four|five|six|double|triple|extra)\s*$',
+            r'(\d+|one|two|three|four|five|six|double|triple|quad|quadruple|extra)\s*$',
             re.IGNORECASE
         )
         qty_match = qty_pattern.search(before_text)
@@ -351,14 +354,10 @@ def extract_attribute_values(
             qty_str = qty_match.group(1).lower()
             if qty_str.isdigit():
                 return int(qty_str)
-            elif qty_str == "double":
-                return 2
-            elif qty_str == "triple":
-                return 3
             elif qty_str == "extra":
-                return 2
+                return 2  # "extra" means 2 in modifier context
             else:
-                return WORD_TO_NUM.get(qty_str, 1)
+                return BASIC_WORD_TO_NUM.get(qty_str, 1)
         return 1
 
     def check_must_match(option: dict, text: str) -> bool:
@@ -664,16 +663,11 @@ def _extract_modifiers_generic(
 
 
 def _extract_quantity(text: str) -> int | None:
-    """Extract quantity from text like '3', 'three', 'a couple of', 'a dozen'."""
-    text = text.lower().strip()
-    text = re.sub(r"\s+of$", "", text)
-    # Normalize whitespace for compound expressions like "a  dozen" -> "a dozen"
-    text = re.sub(r"\s+", " ", text)
+    """Extract quantity from text like '3', 'three', 'a couple of', 'a dozen'.
 
-    if text.isdigit():
-        return int(text)
-
-    return WORD_TO_NUM.get(text)
+    Delegates to extract_quantity_word from quantity_utils (single source of truth).
+    """
+    return extract_quantity_word(text)
 
 
 def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:

@@ -612,10 +612,6 @@ class ItemAdderHandler(MenuDataMixin):
             item_quantity = 1
 
         # Create the items
-        logger.info(
-            "_create_configurable_item: creating %d item(s) with qty=%d each (name=%s, type=%s)",
-            item_count, item_quantity, canonical_name, item_type
-        )
         first_item = None
         for _ in range(item_count):
             item = MenuItemTask(
@@ -658,11 +654,6 @@ class ItemAdderHandler(MenuDataMixin):
             order.items.add_item(item)
             if first_item is None:
                 first_item = item
-
-        logger.info(
-            "_create_configurable_item: done creating items, order now has %d items total",
-            len(order.items.items)
-        )
 
         # If item needs configuration, start the configuration flow
         if needs_configuration and self.menu_item_handler:

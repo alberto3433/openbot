@@ -209,10 +209,10 @@ class ParsedItemProcessor:
             # get_first_question() is called, so it's already on the MenuItemTask
 
             summary = build_item_summary(item)
-            # If result has a message (e.g., unavailable selection prompt), return it
-            # This ensures "We don't have X" messages are shown to the user
-            if result.message:
-                return order, summary, result
+            # Don't return result here - process_items() handles config questions
+            # for ALL items after the loop. Returning here caused early exit,
+            # preventing subsequent items from being processed.
+            # (unavailable_selections messages are handled by get_first_question())
             return order, summary, None
 
         # Item wasn't added (error case) - return empty summary
@@ -278,16 +278,7 @@ class ParsedItemProcessor:
 
         for idx, parsed_item in enumerate(parsed.parsed_items):
             items_before_count = len(order.items.items)
-            logger.info(
-                "Processing parsed_item %d/%d: type=%s, name=%s, qty=%d, order has %d items before",
-                idx + 1, len(parsed.parsed_items), parsed_item.item_type,
-                parsed_item.item_name, parsed_item.quantity, items_before_count
-            )
             order, summary, disambiguation_result = self.add_parsed_item(parsed_item, order)
-            logger.info(
-                "After add_parsed_item %d: order has %d items, summary='%s', disambig=%s",
-                idx + 1, len(order.items.items), summary, bool(disambiguation_result)
-            )
 
             # Check if disambiguation was triggered - return immediately
             if disambiguation_result:
@@ -389,10 +380,7 @@ class ParsedItemProcessor:
             if item and item.status == TaskStatus.IN_PROGRESS:
                 items_needing_config.append((item_id, display_name, item_type))
 
-        logger.info(
-            "Items needing configuration: %d (added_items=%d, summaries=%d)",
-            len(items_needing_config), len(added_items), len(summaries)
-        )
+        logger.info("Items needing configuration: %d", len(items_needing_config))
 
         # If no items need configuration, return simple confirmation
         if not items_needing_config:

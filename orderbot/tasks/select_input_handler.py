@@ -428,7 +428,8 @@ class SelectInputHandler:
         """Handle fallback cases when no match found."""
         # Check for partial matches on option display names
         partial_result = self._check_partial_match(
-            user_lower, options, item, order, attr_slug, format_display_list_callback
+            user_lower, options, item, order, attr_slug, format_display_list_callback,
+            quantity=quantity
         )
         if partial_result:
             return partial_result
@@ -470,6 +471,7 @@ class SelectInputHandler:
         order: OrderTask,
         attr_slug: str,
         format_display_list_callback,
+        quantity: int = 1,
     ) -> StateMachineResult | None:
         """
         Check if user input partially matches option display names.
@@ -523,11 +525,11 @@ class SelectInputHandler:
         # Multiple options match - list them for user
         options_text = format_display_list_callback(matching_options)
 
-        # Store disambiguation state
+        # Store disambiguation state (including quantity from original input)
         order.pending_attr_disambiguation = {
             "options": matching_options,
             "attr_slug": attr_slug,
-            "modifiers": {},
+            "modifiers": {"_quantity": quantity},
             "item_id": item.id,
         }
         order.set_phase(OrderPhase.CONFIGURING_ITEM)

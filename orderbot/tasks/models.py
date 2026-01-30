@@ -412,6 +412,13 @@ class MenuItemTask(ItemTask):
                 # extracted_selections tries to add with the actual qty
                 if quantity > 1 and existing.get("quantity", 1) == 1:
                     existing["quantity"] = quantity
+                # Update price if new price is greater (0.0 means "unknown", positive means "known")
+                # This handles the case where pre_filled adds with price=0, then
+                # extracted_selections tries to add with the actual price
+                if price > 0 and existing.get("price", 0) == 0:
+                    existing["price"] = price
+                    # Also update unit_price since we now have the real price
+                    self.unit_price = (self.unit_price or 0.0) + (price * existing.get("quantity", 1))
                 return
 
         # Look up display name from database if not provided
@@ -919,6 +926,11 @@ class OrderTask(BaseTask):
     # Queue of items that need configuration after the current one is done
     # Each entry is a dict with: item_id, item_type
     pending_config_queue: list[dict] = Field(default_factory=list)
+
+    # Parsed items that haven't been added yet (waiting for disambiguation to resolve)
+    # When user says "latte and bagel" and latte triggers disambiguation,
+    # the bagel ParsedItem is stored here to be processed after disambiguation resolves
+    pending_parsed_items: list[dict] = Field(default_factory=list)
 
     # Modifiers stored during item disambiguation
     # When user says "large iced oat milk latte" and we ask "Latte or Seasonal Matcha Latte?",

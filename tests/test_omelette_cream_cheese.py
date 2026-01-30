@@ -13,17 +13,15 @@ def test_omelette_cream_cheese_pricing(menu_cache_loaded):
     from orderbot.tasks.schemas import OrderPhase
     from orderbot.menu_data_cache import menu_cache
 
-    # Get menu data from cache
-    menu_data = menu_cache.get_menu_index()
-
-    # Create state machine
-    state_machine = OrderStateMachine(menu_data=menu_data)
+    # Create state machine (uses global menu data from menu_cache_loaded fixture)
+    state_machine = OrderStateMachine()
 
     # Create order with omelette already set up for spread choice
     order = OrderTask()
     order.phase = OrderPhase.CONFIGURING_ITEM.value
 
-    # Find an omelette in the menu - items are stored in items_by_type
+    # Find an omelette in the menu - items are stored in global menu data
+    menu_data = menu_cache.get_menu_index()
     omelette_items = menu_data.get('items_by_type', {}).get('omelette', [])
     if not omelette_items:
         pytest.skip("No omelette found in menu")

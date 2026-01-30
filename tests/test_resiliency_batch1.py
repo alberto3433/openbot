@@ -375,25 +375,10 @@ class TestReplacementModificationScenarios:
 
         Omelettes come with a choice of bagel or fruit salad.
         Should NOT ask about toasted (omelettes aren't toasted).
+
+        Uses real database via menu_cache_loaded fixture.
         """
         from orderbot.tasks.models import MenuItemTask
-
-        # Create menu data with an omelette and coffee
-        menu_data = {
-            "all_items": [
-                {"id": 500, "name": "Spinach & Feta Omelette", "base_price": 14.50, "category": "omelette"},
-                {"id": 501, "name": "Coffee", "base_price": 3.45, "category": "sized_beverage"},
-            ],
-            "items_by_type": {
-                "omelette": [
-                    {"id": 500, "name": "Spinach & Feta Omelette", "base_price": 14.50, "category": "omelette"},
-                ],
-                "sized_beverage": [
-                    {"id": 501, "name": "Coffee", "base_price": 3.45, "category": "sized_beverage"},
-                ],
-            },
-            "categories": ["omelette", "sized_beverage"],
-        }
 
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -409,7 +394,7 @@ class TestReplacementModificationScenarios:
         omelette.mark_in_progress()
         order.items.add_item(omelette)
 
-        sm = OrderStateMachine(menu_data=menu_data)
+        sm = OrderStateMachine()
         # User says "and a coffee" to trigger multi-item handling
         result = sm.process("and a coffee", order)
 

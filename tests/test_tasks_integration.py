@@ -2576,7 +2576,7 @@ class TestMenuQuery:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         result = sm.menu_inquiry_handler.handle_menu_query(None, order)
@@ -3787,7 +3787,7 @@ class TestCategoryClarification:
             {"name": "Ginger Ale"},
         ]
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
@@ -3811,7 +3811,7 @@ class TestCategoryClarification:
             {"name": "Lemonade"},
         ]
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
@@ -3825,7 +3825,7 @@ class TestCategoryClarification:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Mock empty category result
@@ -3846,7 +3846,7 @@ class TestCategoryClarification:
             {"name": "Sprite"},
         ]
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=mock_sodas):
@@ -3874,7 +3874,7 @@ class TestPriceInquiry:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Mock resolve_price_inquiry to return "not_found"
@@ -3890,7 +3890,7 @@ class TestPriceInquiry:
         from orderbot.tasks.models import OrderTask
         from orderbot.menu_data_cache import menu_cache
 
-        sm = OrderStateMachine(menu_data={"items_by_type": {}})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Check if sandwich category exists in the database
@@ -3915,7 +3915,7 @@ class TestPriceInquiry:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Mock resolve_price_inquiry to return a category result
@@ -3936,7 +3936,7 @@ class TestPriceInquiry:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Mock resolve_price_inquiry to return a category result
@@ -3957,7 +3957,7 @@ class TestPriceInquiry:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Mock resolve_price_inquiry to return an item result
@@ -3998,7 +3998,7 @@ class TestPriceInquiry:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Mock resolve_price_inquiry to return an item result
@@ -4018,7 +4018,7 @@ class TestPriceInquiry:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Mock resolve_price_inquiry to return an item result
@@ -4057,7 +4057,7 @@ class TestPriceInquiry:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        sm = OrderStateMachine(menu_data={})
+        sm = OrderStateMachine()
         order = OrderTask()
 
         # Mock resolve_price_inquiry to return a category result

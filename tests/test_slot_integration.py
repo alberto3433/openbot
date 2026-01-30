@@ -19,13 +19,8 @@ class TestSlotComparisonLogging:
 
     @pytest.fixture
     def state_machine(self):
-        """Create a state machine with mock menu data."""
-        menu_data = {
-            "bagel_types": ["plain", "everything", "sesame"],
-            "cheese_types": ["plain", "scallion", "veggie"],
-            "menu_items": [],
-        }
-        return OrderStateMachine(menu_data=menu_data)
+        """Create a state machine using real database via menu_cache_loaded fixture."""
+        return OrderStateMachine()
 
     @pytest.fixture
     def capture_slot_logs(self):
@@ -167,12 +162,8 @@ class TestEndToEndFlowWithSlots:
 
     @pytest.fixture
     def state_machine(self):
-        menu_data = {
-            "bagel_types": ["plain", "everything"],
-            "cheese_types": ["plain"],
-            "menu_items": [],
-        }
-        return OrderStateMachine(menu_data=menu_data)
+        """Create a state machine using real database via menu_cache_loaded fixture."""
+        return OrderStateMachine()
 
     def test_simple_pickup_flow_slots(self, state_machine):
         """Verify slots are correctly filled through a simple pickup flow."""

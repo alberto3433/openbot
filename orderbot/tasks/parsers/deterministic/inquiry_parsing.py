@@ -256,11 +256,21 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
             category_info = menu_cache.get_category_keyword_mapping(category_text)
             if category_info:
                 menu_type = category_info["slug"]
-                logger.info("MENU QUERY: '%s' -> menu_query_type=%s", text[:50], menu_type)
+                logger.info("MENU QUERY: '%s' -> menu_query_type=%s (DB category)", text[:50], menu_type)
                 return OpenInputResponse(
                     menu_query=True,
                     menu_query_type=menu_type,
                 )
+
+            # Not in DB category mapping, but still a valid menu inquiry pattern
+            # Return with the extracted category text so handler can do word-boundary search
+            # This handles "what lattes do you have?" where "lattes" isn't a DB category
+            # but should search menu items containing "latte"
+            logger.info("MENU QUERY: '%s' -> menu_query_type=%s (fallback search)", text[:50], category_text)
+            return OpenInputResponse(
+                menu_query=True,
+                menu_query_type=category_text,
+            )
 
     return None
 

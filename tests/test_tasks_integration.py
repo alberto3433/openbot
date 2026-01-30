@@ -6659,3 +6659,55 @@ class TestSpecialsQuery:
             result = parse_open_input_deterministic(inp)
             assert result is not None, f"Expected parse result for '{inp}'"
             assert result.asking_signature_menu, f"Expected asking_signature_menu=True for '{inp}', got {result}"
+
+
+class TestMenuInquiryWordBoundarySearch:
+    """Tests for menu inquiry word-boundary search (e.g., 'what lattes do you have?')."""
+
+    def test_menu_inquiry_does_not_add_to_cart(self):
+        """Test that menu inquiries don't add items to cart."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        # "lattes" is mapped to sized_beverage category in mock, so it returns all beverages
+        # The key test is that it does NOT add to cart
+        result = sm.process("what lattes do you have", order)
+
+        # Should NOT add to cart
+        assert len(order.items.items) == 0, "Should not add items to cart for menu inquiry"
+
+        # Should ask if user wants any
+        msg_lower = result.message.lower()
+        assert "would you like" in msg_lower, f"Expected question prompt, got: {result.message}"
+
+    def test_menu_inquiry_parsing_sets_menu_query(self):
+        """Test that 'what X do you have' sets menu_query=True even for non-DB categories."""
+        from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        test_inputs = [
+            ("what lattes do you have", "lattes"),
+            ("what muffins do you have", "muffins"),
+            ("do you have teas", "teas"),
+        ]
+
+        for inp, expected_type in test_inputs:
+            result = parse_open_input_deterministic(inp)
+            assert result is not None, f"Expected parse result for '{inp}'"
+            assert result.menu_query, f"Expected menu_query=True for '{inp}'"
+            assert result.menu_query_type is not None, f"Expected menu_query_type for '{inp}'"
+
+    def test_order_intent_still_adds_to_cart(self):
+        """Test that 'I want a latte' still adds to cart (order intent, not inquiry)."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        result = sm.process("I want a latte", order)
+
+        # Should add to cart
+        assert len(order.items.items) == 1, "Should add item to cart for order intent"

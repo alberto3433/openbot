@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Unrecognized Item Suggestions</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/admin_common.css">
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+    .nav-group {
+      display: inline-block;
+      position: relative;
+    }
+    .nav-group-label {
+      color: #bbdefb;
+      font-size: 14px;
+      margin-left: 16px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    .nav-group-label:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .nav-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      min-width: 220px;
+      z-index: 1000;
+      padding: 8px 0;
+    }
+    .nav-group:hover .nav-dropdown {
+      display: block;
+    }
+    .nav-dropdown a {
+      display: block;
+      color: #333;
+      padding: 8px 16px;
+      margin: 0;
+      font-size: 13px;
+    }
+    .nav-dropdown a:hover {
+      background: #f5f5f5;
+      color: #1976d2;
+    }
+    .nav-dropdown a.active {
+      background: #e3f2fd;
+      color: #1976d2;
+      font-weight: 500;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #f5f5f5;
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 14px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-body {
+      padding: 20px;
+    }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #d32f2f;
+      color: #fff;
+      border-color: #d32f2f;
+    }
+    .btn.danger:hover {
+      background: #c62828;
+    }
+    .btn.small {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    th {
+      background: #fafafa;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #666;
+    }
+    tr:hover {
+      background: #f9f9f9;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+    .badge-exact { background: #e8f5e9; color: #2e7d32; }
+    .badge-prefix { background: #e3f2fd; color: #1565c0; }
+    .badge-contains { background: #fff3e0; color: #e65100; }
+    .badge-active { background: #e8f5e9; color: #2e7d32; }
+    .badge-inactive { background: #ffebee; color: #c62828; }
+    .badge-curated { background: #e8f5e9; color: #2e7d32; }
+    .badge-fuzzy { background: #e3f2fd; color: #1565c0; }
+    .badge-llm { background: #fff3e0; color: #e65100; }
+    .badge-generic { background: #fce4ec; color: #c2185b; }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+    }
+    /* Modal styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 2000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      font-weight: 600;
+      font-size: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: #666;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+    .filter-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .filter-group select {
+      padding: 6px 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    /* Stats cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 800px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .stat-card .stat-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 8px;
+    }
+    .stat-card .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .stat-card .stat-detail {
+      font-size: 11px;
+      color: #888;
+    }
+    /* Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #e0e0e0;
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 12px 20px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      font-weight: 500;
+      color: #666;
+    }
+    .tab:hover {
+      color: #1976d2;
+    }
+    .tab.active {
+      color: #1976d2;
+      border-bottom-color: #1976d2;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    /* Hit count */
+    .hit-count {
+      font-weight: 600;
+      color: #1976d2;
+    }
+    .hit-count.high {
+      color: #2e7d32;
+    }
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Toast notification container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="app-header">
+    <div>Unrecognized Item Suggestions</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <span class="nav-group">
+        <span class="nav-group-label">Item Types &#9662;</span>
+        <div class="nav-dropdown">
+          <a href="/static/admin_item_types.html">Basic Info</a>
+          <a href="/static/admin_modifiers.html">Modifiers</a>
+        </div>
+      </span>
+      <span class="nav-group">
+        <span class="nav-group-label">Config &#9662;</span>
+        <div class="nav-dropdown">
+          <a href="/static/admin_global_attributes.html">Global Attributes</a>
+          <a href="/static/admin_size_categories.html">Size Categories</a>
+          <a href="/static/admin_modifier_categories.html">Modifier Categories</a>
+          <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
+          <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
+          <a href="/static/admin_overall_categories.html">Overall Categories</a>
+          <a href="/static/admin_response_patterns.html">Response Patterns</a>
+          <a href="/static/admin_unrecognized_suggestions.html" class="active">Unrecognized Suggestions</a>
+        </div>
+      </span>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('suggestions')">Suggestions</div>
+      <div class="tab" onclick="switchTab('logs')">Request Logs</div>
+    </div>
+
+    <!-- Suggestions Tab -->
+    <div id="suggestionsTab" class="tab-content active">
+      <!-- Stats Cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Suggestions</div>
+          <div class="stat-value" id="statTotal">-</div>
+          <div class="stat-detail" id="statActive">Loading...</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Hits</div>
+          <div class="stat-value" id="statHits">-</div>
+          <div class="stat-detail">Times suggestions were used</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">By Match Type</div>
+          <div class="stat-value" id="statMatchType">-</div>
+          <div class="stat-detail" id="statMatchDetail">Loading...</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Categories</div>
+          <div class="stat-value" id="statCategories">-</div>
+          <div class="stat-detail" id="statCategoryDetail">Loading...</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span>Curated Suggestions</span>
+          <button class="btn primary" onclick="openCreateModal()">+ Add Suggestion</button>
+        </div>
+        <div class="section-body">
+          <div class="toolbar">
+            <div class="filter-group">
+              <select id="filterMatchType" onchange="loadSuggestions()">
+                <option value="">All Match Types</option>
+                <option value="exact">Exact</option>
+                <option value="prefix">Prefix</option>
+                <option value="contains">Contains</option>
+              </select>
+              <select id="filterCategory" onchange="loadSuggestions()">
+                <option value="">All Categories</option>
+              </select>
+              <label style="font-size:13px;">
+                <input type="checkbox" id="filterActive" onchange="loadSuggestions()"> Active only
+              </label>
+            </div>
+          </div>
+          <div id="suggestionsTable">
+            <div class="loading">Loading suggestions...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logs Tab -->
+    <div id="logsTab" class="tab-content">
+      <!-- Log Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Requests (7d)</div>
+          <div class="stat-value" id="logStatTotal">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Curated Matches</div>
+          <div class="stat-value" id="logStatCurated">-</div>
+          <div class="stat-detail">Used curated suggestions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Fuzzy Matches</div>
+          <div class="stat-value" id="logStatFuzzy">-</div>
+          <div class="stat-detail">Found similar items</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Generic Fallback</div>
+          <div class="stat-value" id="logStatGeneric">-</div>
+          <div class="stat-detail">No suggestions found</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span>Top Unrecognized Items (Potential Suggestions)</span>
+        </div>
+        <div class="section-body">
+          <p style="color:#666;font-size:13px;margin-bottom:16px;">
+            These items were requested but not found. Consider adding curated suggestions for the most common ones.
+          </p>
+          <div id="topUnrecognized">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span>Recent Requests</span>
+          <div class="filter-group">
+            <select id="filterFallbackLevel" onchange="loadLogs()">
+              <option value="">All Fallback Levels</option>
+              <option value="curated">Curated</option>
+              <option value="fuzzy">Fuzzy</option>
+              <option value="llm">LLM</option>
+              <option value="generic">Generic</option>
+            </select>
+          </div>
+        </div>
+        <div class="section-body">
+          <div id="logsTable">
+            <div class="loading">Loading logs...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create/Edit Modal -->
+  <div id="suggestionModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <span id="modalTitle">Add Suggestion</span>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="suggestionForm">
+          <input type="hidden" id="suggestionId">
+          <div class="form-group">
+            <label>Input Pattern *</label>
+            <input type="text" id="inputPattern" required placeholder="e.g., croissant">
+            <div class="hint">The text to match against user input (lowercase)</div>
+          </div>
+          <div class="form-group">
+            <label>Match Type</label>
+            <select id="matchType">
+              <option value="exact">Exact - Input must exactly match</option>
+              <option value="prefix">Prefix - Input must start with pattern</option>
+              <option value="contains">Contains - Input must contain pattern</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Suggested Category</label>
+            <input type="text" id="suggestedCategory" placeholder="e.g., pastry, side, beverage">
+            <div class="hint">Category slug to suggest (shows items from this category)</div>
+          </div>
+          <div class="form-group">
+            <label>Custom Response (Optional)</label>
+            <textarea id="suggestedResponse" rows="3" placeholder="Full custom response to show instead of category items"></textarea>
+            <div class="hint">Leave blank to use default category-based suggestions</div>
+          </div>
+          <div class="form-group">
+            <label>Specific Menu Items (Optional)</label>
+            <input type="text" id="suggestedMenuItems" placeholder='e.g., Muffin, Danish, Cronut'>
+            <div class="hint">Comma-separated list of specific items to suggest</div>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="isActive" checked> Active
+            </label>
+            <div class="hint">Inactive suggestions won't be used</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn primary" onclick="saveSuggestion()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/admin_common.js"></script>
+  <script>
+    const API_BASE = '/api/v1';
+    let allCategories = [];
+
+    // Tab switching
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      if (tab === 'suggestions') {
+        document.querySelector('.tab:nth-child(1)').classList.add('active');
+        document.getElementById('suggestionsTab').classList.add('active');
+        loadSuggestions();
+        loadSuggestionStats();
+      } else {
+        document.querySelector('.tab:nth-child(2)').classList.add('active');
+        document.getElementById('logsTab').classList.add('active');
+        loadLogStats();
+        loadLogs();
+      }
+    }
+
+    // Toast notifications
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Suggestions
+    async function loadSuggestions() {
+      const matchType = document.getElementById('filterMatchType').value;
+      const category = document.getElementById('filterCategory').value;
+      const activeOnly = document.getElementById('filterActive').checked;
+
+      let url = `${API_BASE}/admin/unrecognized-suggestions?`;
+      if (matchType) url += `match_type=${matchType}&`;
+      if (category) url += `category=${category}&`;
+      if (activeOnly) url += `active_only=true&`;
+
+      try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load suggestions');
+        const data = await res.json();
+        renderSuggestionsTable(data);
+      } catch (err) {
+        document.getElementById('suggestionsTable').innerHTML =
+          `<div class="empty-state">Error loading suggestions: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderSuggestionsTable(suggestions) {
+      if (!suggestions.length) {
+        document.getElementById('suggestionsTable').innerHTML =
+          '<div class="empty-state">No suggestions found. Add your first one!</div>';
+        return;
+      }
+
+      let html = `<table>
+        <thead>
+          <tr>
+            <th>Pattern</th>
+            <th>Match Type</th>
+            <th>Category</th>
+            <th>Hits</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      suggestions.forEach(s => {
+        const hitClass = s.hit_count > 10 ? 'high' : '';
+        html += `<tr>
+          <td><strong>${escapeHtml(s.input_pattern)}</strong></td>
+          <td><span class="badge badge-${s.match_type}">${s.match_type}</span></td>
+          <td>${s.suggested_category_slug || s.suggested_response ? (s.suggested_category_slug || '(custom)') : '-'}</td>
+          <td><span class="hit-count ${hitClass}">${s.hit_count}</span></td>
+          <td><span class="badge badge-${s.is_active ? 'active' : 'inactive'}">${s.is_active ? 'Active' : 'Inactive'}</span></td>
+          <td>
+            <button class="btn small" onclick="editSuggestion(${s.id})">Edit</button>
+            <button class="btn small danger" onclick="deleteSuggestion(${s.id}, '${escapeHtml(s.input_pattern)}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('suggestionsTable').innerHTML = html;
+    }
+
+    async function loadSuggestionStats() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-suggestions/stats`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load stats');
+        const stats = await res.json();
+
+        document.getElementById('statTotal').textContent = stats.total_suggestions;
+        document.getElementById('statActive').textContent = `${stats.active_suggestions} active`;
+        document.getElementById('statHits').textContent = stats.total_hits;
+
+        // Match type breakdown
+        const matchTypes = Object.entries(stats.by_match_type);
+        document.getElementById('statMatchType').textContent = matchTypes.length;
+        document.getElementById('statMatchDetail').textContent =
+          matchTypes.map(([k, v]) => `${k}: ${v}`).join(', ') || 'None';
+
+        // Categories
+        const categories = Object.entries(stats.by_category);
+        document.getElementById('statCategories').textContent = categories.length;
+        document.getElementById('statCategoryDetail').textContent =
+          categories.slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ') || 'None';
+
+        // Populate category filter
+        const categorySelect = document.getElementById('filterCategory');
+        categorySelect.innerHTML = '<option value="">All Categories</option>';
+        categories.forEach(([cat]) => {
+          if (cat !== '(no category)') {
+            categorySelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+          }
+        });
+        allCategories = categories.map(([cat]) => cat).filter(c => c !== '(no category)');
+
+      } catch (err) {
+        console.error('Failed to load suggestion stats:', err);
+      }
+    }
+
+    // Modal handling
+    function openCreateModal() {
+      document.getElementById('modalTitle').textContent = 'Add Suggestion';
+      document.getElementById('suggestionId').value = '';
+      document.getElementById('inputPattern').value = '';
+      document.getElementById('matchType').value = 'exact';
+      document.getElementById('suggestedCategory').value = '';
+      document.getElementById('suggestedResponse').value = '';
+      document.getElementById('suggestedMenuItems').value = '';
+      document.getElementById('isActive').checked = true;
+      document.getElementById('suggestionModal').classList.add('active');
+    }
+
+    async function editSuggestion(id) {
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-suggestions/${id}`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load suggestion');
+        const s = await res.json();
+
+        document.getElementById('modalTitle').textContent = 'Edit Suggestion';
+        document.getElementById('suggestionId').value = s.id;
+        document.getElementById('inputPattern').value = s.input_pattern;
+        document.getElementById('matchType').value = s.match_type;
+        document.getElementById('suggestedCategory').value = s.suggested_category_slug || '';
+        document.getElementById('suggestedResponse').value = s.suggested_response || '';
+        document.getElementById('suggestedMenuItems').value =
+          s.suggested_menu_items ? s.suggested_menu_items.join(', ') : '';
+        document.getElementById('isActive').checked = s.is_active;
+        document.getElementById('suggestionModal').classList.add('active');
+      } catch (err) {
+        showToast('Failed to load suggestion: ' + err.message, 'error');
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('suggestionModal').classList.remove('active');
+    }
+
+    async function saveSuggestion() {
+      const id = document.getElementById('suggestionId').value;
+      const menuItemsRaw = document.getElementById('suggestedMenuItems').value;
+      const menuItems = menuItemsRaw
+        ? menuItemsRaw.split(',').map(s => s.trim()).filter(s => s)
+        : null;
+
+      const payload = {
+        input_pattern: document.getElementById('inputPattern').value,
+        match_type: document.getElementById('matchType').value,
+        suggested_category_slug: document.getElementById('suggestedCategory').value || null,
+        suggested_response: document.getElementById('suggestedResponse').value || null,
+        suggested_menu_items: menuItems,
+        is_active: document.getElementById('isActive').checked,
+      };
+
+      try {
+        const url = id
+          ? `${API_BASE}/admin/unrecognized-suggestions/${id}`
+          : `${API_BASE}/admin/unrecognized-suggestions`;
+        const method = id ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Failed to save');
+        }
+
+        showToast(id ? 'Suggestion updated!' : 'Suggestion created!', 'success');
+        closeModal();
+        loadSuggestions();
+        loadSuggestionStats();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
+    }
+
+    async function deleteSuggestion(id, pattern) {
+      if (!confirm(`Delete suggestion for "${pattern}"?`)) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-suggestions/${id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        if (!res.ok) throw new Error('Failed to delete');
+
+        showToast('Suggestion deleted', 'success');
+        loadSuggestions();
+        loadSuggestionStats();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
+    }
+
+    // Quick add suggestion from logs
+    function quickAddSuggestion(input) {
+      document.getElementById('inputPattern').value = input;
+      openCreateModal();
+    }
+
+    // Logs
+    async function loadLogStats() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-logs/stats?days=7`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load log stats');
+        const stats = await res.json();
+
+        document.getElementById('logStatTotal').textContent = stats.total_requests;
+        document.getElementById('logStatCurated').textContent = stats.by_fallback_level['curated'] || 0;
+        document.getElementById('logStatFuzzy').textContent = stats.by_fallback_level['fuzzy'] || 0;
+        document.getElementById('logStatGeneric').textContent = stats.by_fallback_level['generic'] || 0;
+
+        // Top unrecognized items
+        renderTopUnrecognized(stats.top_unrecognized);
+      } catch (err) {
+        console.error('Failed to load log stats:', err);
+      }
+    }
+
+    function renderTopUnrecognized(items) {
+      if (!items.length) {
+        document.getElementById('topUnrecognized').innerHTML =
+          '<div class="empty-state">No unrecognized items in the last 7 days!</div>';
+        return;
+      }
+
+      let html = `<table>
+        <thead>
+          <tr>
+            <th>Item Requested</th>
+            <th>Count</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      items.forEach(item => {
+        html += `<tr>
+          <td><strong>${escapeHtml(item.input)}</strong></td>
+          <td>${item.count}</td>
+          <td>
+            <button class="btn small primary" onclick="quickAddSuggestion('${escapeHtml(item.input)}')">
+              + Add Suggestion
+            </button>
+          </td>
+        </tr>`;
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('topUnrecognized').innerHTML = html;
+    }
+
+    async function loadLogs() {
+      const fallbackLevel = document.getElementById('filterFallbackLevel').value;
+
+      let url = `${API_BASE}/admin/unrecognized-logs?limit=50&days=7`;
+      if (fallbackLevel) url += `&fallback_level=${fallbackLevel}`;
+
+      try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load logs');
+        const data = await res.json();
+        renderLogsTable(data);
+      } catch (err) {
+        document.getElementById('logsTable').innerHTML =
+          `<div class="empty-state">Error loading logs: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderLogsTable(logs) {
+      if (!logs.length) {
+        document.getElementById('logsTable').innerHTML =
+          '<div class="empty-state">No logs found for the selected period.</div>';
+        return;
+      }
+
+      let html = `<table>
+        <thead>
+          <tr>
+            <th>User Input</th>
+            <th>Fallback</th>
+            <th>Category</th>
+            <th>Cart Items</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      logs.forEach(log => {
+        const time = new Date(log.created_at).toLocaleString();
+        html += `<tr>
+          <td><strong>${escapeHtml(log.user_input)}</strong></td>
+          <td><span class="badge badge-${log.fallback_level}">${log.fallback_level}</span></td>
+          <td>${log.inferred_category || '-'}</td>
+          <td>${log.order_item_count}</td>
+          <td style="font-size:12px;color:#666;">${time}</td>
+        </tr>`;
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('logsTable').innerHTML = html;
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSuggestions();
+      loadSuggestionStats();
+    });
+  </script>
+</body>
+</html>

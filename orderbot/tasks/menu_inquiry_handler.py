@@ -117,17 +117,15 @@ class MenuInquiryHandler(MenuDataMixin):
                 items = items_by_type.get(slug, [])
                 return items, slug
 
-        # FALLBACK: For unrecognized terms, try partial string matching on ALL menu items
-        # This handles "juice", "snapple", "mocha", "chai", etc. without hardcoding item types
-        all_items = []
-        for item_type_items in items_by_type.values():
-            all_items.extend(item_type_items)
-        search_term = menu_query_type.lower()
-        filtered = [
-            item for item in all_items
-            if search_term in item.get("name", "").lower()
-        ]
+        # FALLBACK: For unrecognized terms, search by word-boundary in names AND aliases
+        # This handles "what lattes do you have?" by finding Hot Latte, Iced Latte, etc.
+        # Uses word-boundary matching (not substring) and singularizes the search term
+        filtered = menu_cache.search_menu_items_by_term(menu_query_type)
         if filtered:
+            logger.info(
+                "Menu query fallback: '%s' matched %d items via word-boundary search",
+                menu_query_type, len(filtered)
+            )
             return filtered, menu_query_type
 
         # No matches found

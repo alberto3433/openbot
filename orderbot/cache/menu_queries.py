@@ -338,6 +338,71 @@ class MenuQueryMixin:
 
         return matches
 
+    def search_menu_items_by_term(self, term: str) -> list[dict]:
+        """Search menu items by term in both names AND aliases using word-boundary matching.
+
+        This is designed for menu inquiries like "what lattes do you have?" where we want
+        to find ALL items containing "latte" - not just the first alias match.
+
+        Uses word-boundary matching: "latte" matches "Hot Latte", "Iced Latte"
+        but not "Latteen". Also singularizes the search term.
+
+        Args:
+            term: Search term (e.g., "latte", "muffins", "tea")
+
+        Returns:
+            List of matching menu item dicts from items_by_type, deduplicated by name.
+        """
+        self._ensure_loaded()
+        term_lower = term.lower().strip()
+        term_singular = singularize(term_lower)
+
+        if not term_lower:
+            return []
+
+        # Build word boundary patterns for both original and singular forms
+        patterns = [re.compile(rf'\b{re.escape(term_lower)}\b', re.IGNORECASE)]
+        if term_singular != term_lower:
+            patterns.append(re.compile(rf'\b{re.escape(term_singular)}\b', re.IGNORECASE))
+
+        matches = []
+        seen_names = set()
+
+        # Get all items from menu_data (items_by_type)
+        items_by_type = self._menu_index.get("items_by_type", {}) if self._menu_index else {}
+
+        for type_items in items_by_type.values():
+            for item in type_items:
+                item_name = item.get("name", "")
+                item_name_lower = item_name.lower()
+
+                # Skip if already seen (handles items in multiple categories like signature_items)
+                if item_name_lower in seen_names:
+                    continue
+
+                # Check if term matches item name
+                name_matches = any(p.search(item_name) for p in patterns)
+
+                # Check if term matches any alias for this item
+                alias_matches = False
+                if not name_matches:
+                    # Look up aliases for this item
+                    for type_aliases in self._item_alias_to_canonical_by_type.values():
+                        for alias, canonical in type_aliases.items():
+                            if canonical.lower() == item_name_lower:
+                                # This alias points to our item - check if term matches the alias
+                                if any(p.search(alias) for p in patterns):
+                                    alias_matches = True
+                                    break
+                        if alias_matches:
+                            break
+
+                if name_matches or alias_matches:
+                    seen_names.add(item_name_lower)
+                    matches.append(item)
+
+        return matches
+
     def find_menu_item_matches(self, query: str) -> list[str]:
         """Find menu items that match a partial query.
 

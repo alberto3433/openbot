@@ -72,6 +72,15 @@ CANCEL_ITEM_PATTERN = re.compile(
     r"(?:i\s+)?don'?t\s+want\s+(?:the\s+)?(.+?)(?:\s+anymore)?[\s!.,]*$"
     r"|"
     r"no\s+more\s+(.+?)[\s!.,]*$"
+    r"|"
+    # "can you remove X?", "could you remove X?", "would you remove X?"
+    r"(?:can|could|would)\s+you\s+(?:remove|delete|cancel|take\s+off)\s+(?:the\s+)?(.+?)[\s!.,?]*$"
+    r"|"
+    # "can I remove X?", "could we cancel X?"
+    r"(?:can|could)\s+(?:i|we)\s+(?:remove|delete|cancel|take\s+off)\s+(?:the\s+)?(.+?)[\s!.,?]*$"
+    r"|"
+    # "please remove X", "please cancel X"
+    r"please\s+(?:remove|delete|cancel|take\s+off)\s+(?:the\s+)?(.+?)[\s!.,?]*$"
     r")",
     re.IGNORECASE
 )

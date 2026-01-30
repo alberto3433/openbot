@@ -32,7 +32,7 @@ from .parsers import parse_open_input, extract_special_instructions_from_input
 from .item_cancellation_handler import ItemCancellationHandler
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
-from .checkout_messages import got_it_anything_else
+from .checkout_messages import got_it_anything_else, ErrorMessages
 from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.quantity_utils import (
     extract_quantity_for_pattern,
@@ -1429,6 +1429,49 @@ class TakingItemsHandler(MenuDataMixin):
                         len(remaining_items),
                         [getattr(item, 'item_name', None) or getattr(item, 'item_type', 'unknown') for item in remaining_items]
                     )
+
+                    # Modify message to acknowledge full order (user needs feedback that all items were heard)
+                    # Build simple summary of ALL parsed items (just item names, not full details)
+                    all_item_names = []
+                    for p in parsed.parsed_items:
+                        # Use item_name if available, otherwise item_type display name
+                        name = p.item_name or menu_cache.get_item_type_display_name(p.item_type) or p.item_type
+                        # Add quantity prefix if more than 1
+                        if p.quantity > 1:
+                            name = f"{p.quantity} {name}s" if not name.endswith('s') else f"{p.quantity} {name}"
+                        all_item_names.append(name)
+                    full_order_summary = format_english_list(all_item_names)
+
+                    # Replace "Got it, " prefix with full acknowledgment
+                    # Original: "Got it, for the Plain Bagel. Would you like it scooped?"
+                    # Target: "Got it, a bagel and a latte. For the Plain Bagel, would you like it scooped?"
+                    msg = disambiguation_result.message
+                    if msg.startswith("Got it, for the "):
+                        # Extract item reference and question
+                        rest = msg[16:]  # Remove "Got it, for the "
+                        # rest is now "Plain Bagel. Would you like it scooped?"
+                        # Replace the first ". " with ", " and lowercase the next character
+                        period_pos = rest.find(". ")
+                        if period_pos != -1:
+                            item_ref = rest[:period_pos]  # "Plain Bagel"
+                            question = rest[period_pos + 2:]  # "Would you like it scooped?"
+                            # Lowercase first char of question
+                            if question:
+                                question = question[0].lower() + question[1:]
+                            rest = f"{item_ref}, {question}"
+                        msg = f"Got it, {full_order_summary}. For the {rest}"
+                        disambiguation_result = StateMachineResult(
+                            message=msg,
+                            order=disambiguation_result.order,
+                        )
+                    elif msg.startswith("Got it, "):
+                        # Fallback for other "Got it, " formats
+                        msg = f"Got it, {full_order_summary}. " + msg[8:].capitalize()
+                        disambiguation_result = StateMachineResult(
+                            message=msg,
+                            order=disambiguation_result.order,
+                        )
+
                 return disambiguation_result
 
             # Check if add failed (e.g., item not found on menu)
@@ -1505,7 +1548,7 @@ class TakingItemsHandler(MenuDataMixin):
         if not pending_info:
             order.pending_field = None
             return StateMachineResult(
-                message="Something went wrong. What can I get for you?",
+                message=ErrorMessages.WHAT_CAN_I_GET,
                 order=order,
             )
 
@@ -1669,7 +1712,7 @@ class TakingItemsHandler(MenuDataMixin):
         """Duplicate all items in the cart, matching original quantities."""
         if not active_items:
             return StateMachineResult(
-                message="There's nothing in your order yet. What can I get for you?",
+                message=ErrorMessages.NO_ITEMS_YET,
                 order=order,
             )
 
@@ -1711,7 +1754,7 @@ class TakingItemsHandler(MenuDataMixin):
         if not pending_info:
             order.pending_field = None
             return StateMachineResult(
-                message="Something went wrong. What can I get for you?",
+                message=ErrorMessages.WHAT_CAN_I_GET,
                 order=order,
             )
 

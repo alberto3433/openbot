@@ -20,7 +20,7 @@ from orderbot.cache.base import singularize, get_singular_plural_variants
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse
-from .checkout_messages import ok_removed_anything_else
+from .checkout_messages import ok_removed_anything_else, ErrorMessages
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -191,7 +191,7 @@ class ItemCancellationHandler:
         if not active_items:
             logger.info("Cancellation requested but no items in cart")
             return StateMachineResult(
-                message="There's nothing in your order yet. What can I get for you?",
+                message=ErrorMessages.NO_ITEMS_YET,
                 order=order,
             )
 

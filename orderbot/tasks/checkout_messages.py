@@ -74,3 +74,19 @@ def changed_to_anything_else(item_summary: str) -> str:
         Formatted response string
     """
     return f"Sure, I've changed that to {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+# =============================================================================
+# Error Recovery Messages
+# =============================================================================
+
+class ErrorMessages:
+    """Standard error recovery messages."""
+
+    # Generic recovery prompts for when something goes wrong
+    WHAT_TO_ORDER = "Something went wrong. What would you like to order?"
+    WHAT_CAN_I_GET = "Something went wrong. What can I get for you?"
+    WHAT_ELSE = "Something went wrong. What else can I help with?"
+
+    # Empty cart message
+    NO_ITEMS_YET = "There's nothing in your order yet. What can I get for you?"

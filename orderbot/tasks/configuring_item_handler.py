@@ -13,45 +13,19 @@ import re
 from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
-from .parsers.constants import _SELECTION_PATTERNS
+from .parsers.constants import _SELECTION_PATTERNS, OFF_TOPIC_PATTERNS
+from .handler_utils import format_numbered_options
 from .parsers.deterministic.patterns import parse_can_you_make_it
 from .modifier_change_handler import ChangeRequest
 from .normalization import strip_ordering_prefix
-from .checkout_messages import got_it_anything_else
+from .checkout_messages import got_it_anything_else, ErrorMessages
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import pluralize
 
 logger = logging.getLogger(__name__)
 
 
-# Patterns to detect off-topic requests during configuration
-# These are questions or requests that aren't answers to the current config question
-OFF_TOPIC_PATTERNS = [
-    # Menu inquiries: "what syrups do you have?" / "what sweeteners do you have?"
-    re.compile(r"what (\w+(?:\s+\w+)?)\s+do\s+you\s+(?:have|offer|carry)", re.IGNORECASE),
-    # "what options do you have?" / "what are my options?"
-    re.compile(r"what (?:are (?:my|the) )?options", re.IGNORECASE),
-    # "what can I add?" / "what can I get?"
-    re.compile(r"what (?:can|could)\s+(?:i|you)\s+(?:add|get|put)", re.IGNORECASE),
-    # "do you have vanilla?" / "do you have oat milk?"
-    re.compile(r"do you (?:have|offer|carry)\s+(?:any\s+)?(\w+)", re.IGNORECASE),
-    # "what flavors do you have?" / "what sizes are there?"
-    re.compile(r"what (\w+)\s+(?:are there|do you offer)", re.IGNORECASE),
-    # "can I get vanilla?" / "can I add sugar?"
-    re.compile(r"can\s+(?:i|you)\s+(?:get|add|have)\s+\w+\?", re.IGNORECASE),
-    # "what kinds of X do you have?"
-    re.compile(r"what (?:kind|type|kinds|types)\s+of\s+\w+", re.IGNORECASE),
-    # Modifier additions: "add vanilla syrup" / "add oat milk"
-    re.compile(r"^add\s+\w+", re.IGNORECASE),
-    # "with vanilla" / "with caramel syrup"
-    re.compile(r"^with\s+\w+", re.IGNORECASE),
-    # "put vanilla in it" / "put some sugar"
-    re.compile(r"^put\s+\w+", re.IGNORECASE),
-    # "I want vanilla" / "I'd like oat milk"
-    re.compile(r"^i(?:'?d)?\s*(?:want|like|need)\s+(?:to\s+add\s+)?\w+", re.IGNORECASE),
-    # "make it with vanilla" / "make it iced" (but not "make it small/large")
-    re.compile(r"^make\s+it\s+(?:with\s+)?\w+", re.IGNORECASE),
-]
+# Note: OFF_TOPIC_PATTERNS moved to parsers/constants.py for centralized pattern management.
 
 # Note: _ORDERING_PREFIX_PATTERN and _extract_answer_value() have been consolidated
 # into normalization.py as strip_ordering_prefix().
@@ -487,7 +461,7 @@ class ConfiguringItemHandler:
         if item is None:
             order.clear_pending()
             return StateMachineResult(
-                message="Something went wrong. What would you like to order?",
+                message=ErrorMessages.WHAT_TO_ORDER,
                 order=order,
             )
 
@@ -628,10 +602,9 @@ class ConfiguringItemHandler:
 
         # Reject negative numbers or other invalid input early
         if user_lower.startswith('-') or user_lower.startswith('−'):
-            option_list = [f"{i}. {item.get('name', 'Unknown')}" for i, item in enumerate(options[:6], 1)]
-            options_str = "\n".join(option_list)
+            options_str = format_numbered_options(options)
             return StateMachineResult(
-                message=f"Please choose a number from 1 to {len(options[:6])}:\n{options_str}",
+                message=f"Please choose a number from 1 to {min(len(options), 6)}:\n{options_str}",
                 order=order,
             )
 
@@ -648,10 +621,9 @@ class ConfiguringItemHandler:
                 else:
                     # User selected a number that's out of range - ask again
                     logger.info("ITEM SELECTION: User selected %s but only %d options available", key, len(options))
-                    option_list = [f"{i}. {item.get('name', 'Unknown')}" for i, item in enumerate(options[:6], 1)]
-                    options_str = "\n".join(option_list)
+                    options_str = format_numbered_options(options)
                     return StateMachineResult(
-                        message=f"I only have {len(options[:6])} options. Please choose:\n{options_str}",
+                        message=f"I only have {min(len(options), 6)} options. Please choose:\n{options_str}",
                         order=order,
                     )
 
@@ -672,8 +644,7 @@ class ConfiguringItemHandler:
 
         if not selected_item:
             # Couldn't determine which one - ask again
-            option_list = [f"{i}. {item.get('name', 'Unknown')}" for i, item in enumerate(options[:6], 1)]
-            options_str = "\n".join(option_list)
+            options_str = format_numbered_options(options)
             return StateMachineResult(
                 message=f"I didn't catch which one. Please choose:\n{options_str}",
                 order=order,
@@ -835,7 +806,7 @@ class ConfiguringItemHandler:
             order.pending_modifier_target_item_index = None
             order.pending_modifier_quantity = None
             return StateMachineResult(
-                message="Something went wrong. What else can I help with?",
+                message=ErrorMessages.WHAT_ELSE,
                 order=order,
             )
 

@@ -527,6 +527,39 @@ MODIFIER_INQUIRY_PATTERNS = [
 ]
 
 # =============================================================================
+# Off-Topic Request Patterns (during item configuration)
+# =============================================================================
+
+# Patterns to detect off-topic requests during configuration
+# These are questions or requests that aren't answers to the current config question
+OFF_TOPIC_PATTERNS = [
+    # Menu inquiries: "what syrups do you have?" / "what sweeteners do you have?"
+    re.compile(r"what (\w+(?:\s+\w+)?)\s+do\s+you\s+(?:have|offer|carry)", re.IGNORECASE),
+    # "what options do you have?" / "what are my options?"
+    re.compile(r"what (?:are (?:my|the) )?options", re.IGNORECASE),
+    # "what can I add?" / "what can I get?"
+    re.compile(r"what (?:can|could)\s+(?:i|you)\s+(?:add|get|put)", re.IGNORECASE),
+    # "do you have vanilla?" / "do you have oat milk?"
+    re.compile(r"do you (?:have|offer|carry)\s+(?:any\s+)?(\w+)", re.IGNORECASE),
+    # "what flavors do you have?" / "what sizes are there?"
+    re.compile(r"what (\w+)\s+(?:are there|do you offer)", re.IGNORECASE),
+    # "can I get vanilla?" / "can I add sugar?"
+    re.compile(r"can\s+(?:i|you)\s+(?:get|add|have)\s+\w+\?", re.IGNORECASE),
+    # "what kinds of X do you have?"
+    re.compile(r"what (?:kind|type|kinds|types)\s+of\s+\w+", re.IGNORECASE),
+    # Modifier additions: "add vanilla syrup" / "add oat milk"
+    re.compile(r"^add\s+\w+", re.IGNORECASE),
+    # "with vanilla" / "with caramel syrup"
+    re.compile(r"^with\s+\w+", re.IGNORECASE),
+    # "put vanilla in it" / "put some sugar"
+    re.compile(r"^put\s+\w+", re.IGNORECASE),
+    # "I want vanilla" / "I'd like oat milk"
+    re.compile(r"^i(?:'?d)?\s*(?:want|like|need)\s+(?:to\s+add\s+)?\w+", re.IGNORECASE),
+    # "make it with vanilla" / "make it iced" (but not "make it small/large")
+    re.compile(r"^make\s+it\s+(?:with\s+)?\w+", re.IGNORECASE),
+]
+
+# =============================================================================
 # "Show More" Menu Items Patterns
 # =============================================================================
 

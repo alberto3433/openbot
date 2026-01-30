@@ -79,14 +79,43 @@ def check_has_active_items(order: "OrderTask") -> tuple[list, "StateMachineResul
         - If no items: (empty list, StateMachineResult with error message)
     """
     from .schemas import StateMachineResult
+    from .checkout_messages import ErrorMessages
 
     active_items = order.items.get_active_items()
     if not active_items:
         return [], StateMachineResult(
-            message="There's nothing in your order yet. What can I get for you?",
+            message=ErrorMessages.NO_ITEMS_YET,
             order=order,
         )
     return active_items, None
+
+
+def format_numbered_options(
+    options: list[dict],
+    name_key: str = "name",
+    max_options: int = 6,
+) -> str:
+    """Format a list of options as numbered choices.
+
+    Common pattern used for disambiguation, item selection, and menu displays.
+    Creates output like:
+        1. Plain Bagel
+        2. Everything Bagel
+        3. Sesame Bagel
+
+    Args:
+        options: List of option dicts
+        name_key: Key to use for the display name (default: "name")
+        max_options: Maximum number of options to show (default: 6)
+
+    Returns:
+        Formatted string with numbered options, newline-separated
+    """
+    option_list = [
+        f"{i}. {item.get(name_key, 'Unknown')}"
+        for i, item in enumerate(options[:max_options], 1)
+    ]
+    return "\n".join(option_list)
 
 
 def match_item_from_options(

@@ -21,7 +21,7 @@ from .modifier_operations import find_modifier_match, remove_modifier_from_item
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants
-from .checkout_messages import ok_removed_anything_else
+from .checkout_messages import ok_removed_anything_else, ErrorMessages
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -211,7 +211,7 @@ class ConfigHelperHandler:
         if not active_items:
             order.clear_pending()
             return StateMachineResult(
-                message="There's nothing in your order yet. What can I get for you?",
+                message=ErrorMessages.NO_ITEMS_YET,
                 order=order,
             )
 

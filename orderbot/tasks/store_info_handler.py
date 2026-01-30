@@ -19,6 +19,7 @@ from .schemas import StateMachineResult
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_item_type_display_name
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list
+from orderbot.menu_data_cache import menu_cache
 
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
 # Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
@@ -335,8 +336,6 @@ class StoreInfoHandler(MenuDataMixin):
             menu_item_ids: Menu item IDs when match_type is "menu_items"
             search_term: Original search term (e.g., "bagel", "coffee")
         """
-        from orderbot.menu_data_cache import menu_cache
-
         max_items = 5
 
         # Determine effective search term
@@ -380,8 +379,6 @@ class StoreInfoHandler(MenuDataMixin):
         Returns:
             List of ingredient names that contain the search term.
         """
-        from orderbot.menu_data_cache import menu_cache
-
         search_lower = search_term.lower()
         matching_items = []
 
@@ -408,8 +405,6 @@ class StoreInfoHandler(MenuDataMixin):
         Returns:
             List of item names (in order of IDs provided, skipping not found).
         """
-        from orderbot.menu_data_cache import menu_cache
-
         # Build a lookup from ID to name by iterating through all items
         id_to_name: dict[int, str] = {}
         for item_data in menu_cache._all_menu_items_by_name.values():

@@ -39,8 +39,6 @@ def _get_removable_modifiers() -> set[str]:
         MenuDataNotLoadedError: If menu cache is not loaded or no food categories
             are configured in ingredient_categories table.
     """
-    from orderbot.menu_data_cache import menu_cache
-
     modifiers: set[str] = set()
 
     # Get all food modifier ingredient categories from database
@@ -358,8 +356,6 @@ class ConfigHelperHandler:
         Uses database-driven question lookup for attribute-based fields.
         The pending_field format is "item_type:attr_slug" (e.g., "bagel:toasted").
         """
-        from orderbot.menu_data_cache import menu_cache
-
         field = order.pending_field
         if not field:
             return None

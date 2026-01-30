@@ -160,8 +160,6 @@ def _get_valid_config_answers() -> set[str]:
     Raises:
         MenuDataNotLoadedError: If menu cache is not loaded or configuration data is missing
     """
-    from orderbot.menu_data_cache import menu_cache
-
     # Start with affirmative/negative response patterns from database
     answers = menu_cache.get_response_patterns("affirmative")
     answers.update(menu_cache.get_response_patterns("negative"))
@@ -201,8 +199,6 @@ def _is_off_topic_request(user_input: str, pending_field: str | None = None) -> 
     Returns:
         True if the request is off-topic and should trigger a redirect
     """
-    from orderbot.menu_data_cache import menu_cache
-
     input_lower = user_input.lower().strip()
 
     # Get valid config answers from database (cached)

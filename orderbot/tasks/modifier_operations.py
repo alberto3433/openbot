@@ -62,8 +62,6 @@ def _load_modifier_fields_from_db(item_type_slug: str) -> list[ModifierField]:
     fields are defined for this item type (this is valid - not all item types
     have modifier fields via item_type_ingredients).
     """
-    from orderbot.menu_data_cache import menu_cache
-
     field_configs = menu_cache.get_modifier_fields_for_item_type(item_type_slug)
     if not field_configs:
         return []  # No modifier fields defined for this item type

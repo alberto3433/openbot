@@ -169,6 +169,37 @@ class CheckoutHandler(BaseHandler):
             is_complete=True,
         )
 
+    def _handle_address_confirmation(
+        self, user_input: str, order: OrderTask
+    ) -> StateMachineResult:
+        """Handle user response to address confirmation prompt.
+
+        Called when order.pending_field == ADDRESS_CONFIRMATION.
+        """
+        lower_input = user_input.lower().strip()
+
+        # Check for affirmative response
+        if lower_input in ("yes", "yeah", "yep", "correct", "that's right", "thats right", "right", "yes please", "yea"):
+            order.pending_field = None
+            return self._proceed_after_address(order)
+
+        # Check for negative response - ask for new address
+        if lower_input in ("no", "nope", "different address", "new address", "wrong", "not quite"):
+            order.pending_field = None
+            order.delivery_method.address.street = None
+            return StateMachineResult(message="What's the delivery address?", order=order)
+
+        # Otherwise treat as a new address
+        order.pending_field = None
+        order.delivery_method.address.street = None
+        parsed = parse_delivery_choice(user_input, model=self.model)
+        if parsed.address:
+            result = self._complete_delivery_address(parsed.address, order)
+            if result:
+                return result
+            return self._proceed_after_address(order)
+        return StateMachineResult(message="What's the delivery address?", order=order)
+
     def handle_delivery(
         self,
         user_input: str,
@@ -177,34 +208,7 @@ class CheckoutHandler(BaseHandler):
         """Handle pickup/delivery selection and address collection."""
         # Handle address confirmation for repeat orders
         if order.pending_field == PendingField.ADDRESS_CONFIRMATION:
-            lower_input = user_input.lower().strip()
-            # Check for affirmative response
-            if lower_input in ("yes", "yeah", "yep", "correct", "that's right", "thats right", "right", "yes please", "yea"):
-                order.pending_field = None
-                return self._proceed_after_address(order)
-            # Check for negative response - ask for new address
-            elif lower_input in ("no", "nope", "different address", "new address", "wrong", "not quite"):
-                order.pending_field = None
-                order.delivery_method.address.street = None
-                return StateMachineResult(
-                    message="What's the delivery address?",
-                    order=order,
-                )
-            # Otherwise treat as a new address
-            else:
-                order.pending_field = None
-                order.delivery_method.address.street = None
-                # Fall through to parse as new address
-                parsed = parse_delivery_choice(user_input, model=self.model)
-                if parsed.address:
-                    result = self._complete_delivery_address(parsed.address, order)
-                    if result:
-                        return result
-                    return self._proceed_after_address(order)
-                return StateMachineResult(
-                    message="What's the delivery address?",
-                    order=order,
-                )
+            return self._handle_address_confirmation(user_input, order)
 
         parsed = parse_delivery_choice(user_input, model=self.model)
 
@@ -382,15 +386,11 @@ class CheckoutHandler(BaseHandler):
             order.payment.method = "card_link"
             phone = parsed.phone_number or order.customer_info.phone
             if phone:
-                validated_phone, error_message = validate_phone_number(phone)
-                if error_message:
-                    logger.info("Phone validation failed for '%s': %s", phone, error_message)
+                validated_phone, error = self._validate_contact(phone, validate_phone_number, "phone")
+                if error:
                     if self._transition_to_next_slot:
                         self._transition_to_next_slot(order)
-                    return StateMachineResult(
-                        message=error_message,
-                        order=order,
-                    )
+                    return StateMachineResult(message=error, order=order)
                 return self._complete_order_with_contact(order, validated_phone, "phone")
             else:
                 # Need to ask for phone number - orchestrator will say NOTIFICATION
@@ -405,14 +405,10 @@ class CheckoutHandler(BaseHandler):
             # Email selected - set payment method and check for email
             order.payment.method = "card_link"
             if parsed.email_address:
-                validated_email, error_message = validate_email_address(parsed.email_address)
-                if error_message:
-                    logger.info("Email validation failed for '%s': %s", parsed.email_address, error_message)
+                validated_email, error = self._validate_contact(parsed.email_address, validate_email_address, "email")
+                if error:
                     order.set_phase(OrderPhase.CHECKOUT_EMAIL)
-                    return StateMachineResult(
-                        message=error_message,
-                        order=order,
-                    )
+                    return StateMachineResult(message=error, order=order)
                 return self._complete_order_with_contact(order, validated_email, "email")
             else:
                 # Need to ask for email - explicitly set CHECKOUT_EMAIL phase
@@ -428,53 +424,82 @@ class CheckoutHandler(BaseHandler):
             order=order,
         )
 
-    def handle_phone(
+    def _validate_contact(
+        self, value: str, validator_func: Callable, contact_type: str
+    ) -> tuple[str | None, str | None]:
+        """Validate contact value and log on error.
+
+        Args:
+            value: The contact value to validate
+            validator_func: Validation function (validate_phone_number or validate_email_address)
+            contact_type: Type for logging ('phone' or 'email')
+
+        Returns:
+            Tuple of (validated_value, error_message). If validation fails,
+            validated_value is None and error_message contains the error.
+        """
+        validated, error = validator_func(value)
+        if error:
+            logger.info("%s validation failed for '%s': %s", contact_type.capitalize(), value, error)
+        return validated, error
+
+    def _handle_contact_input(
         self,
         user_input: str,
         order: OrderTask,
+        parser_func: Callable,
+        field_name: str,
+        validator_func: Callable,
+        contact_type: str,
+        retry_message: str,
     ) -> StateMachineResult:
+        """Generic handler for contact info (phone/email) collection.
+
+        Args:
+            user_input: User's raw input
+            order: Current order state
+            parser_func: Parser function (parse_phone or parse_email)
+            field_name: Attribute name on parsed result ('phone' or 'email')
+            validator_func: Validation function for the contact type
+            contact_type: Type string for logging and completion ('phone' or 'email')
+            retry_message: Message to show if parsing fails
+
+        Returns:
+            StateMachineResult with validation error or completed order
+        """
+        parsed = parser_func(user_input, model=self.model)
+        parsed_value = getattr(parsed, field_name, None)
+
+        if not parsed_value:
+            return StateMachineResult(message=retry_message, order=order)
+
+        validated_value, error = self._validate_contact(parsed_value, validator_func, contact_type)
+        if error:
+            return StateMachineResult(message=error, order=order)
+
+        return self._complete_order_with_contact(order, validated_value, contact_type)
+
+    def handle_phone(self, user_input: str, order: OrderTask) -> StateMachineResult:
         """Handle phone number collection for text confirmation."""
-        parsed = parse_phone(user_input, model=self.model)
+        return self._handle_contact_input(
+            user_input, order,
+            parser_func=parse_phone,
+            field_name="phone",
+            validator_func=validate_phone_number,
+            contact_type="phone",
+            retry_message=CheckoutMessages.PHONE_RETRY,
+        )
 
-        if not parsed.phone:
-            return StateMachineResult(
-                message=CheckoutMessages.PHONE_RETRY,
-                order=order,
-            )
-
-        validated_phone, error_message = validate_phone_number(parsed.phone)
-        if error_message:
-            logger.info("Phone validation failed for '%s': %s", parsed.phone, error_message)
-            return StateMachineResult(
-                message=error_message,
-                order=order,
-            )
-
-        return self._complete_order_with_contact(order, validated_phone, "phone")
-
-    def handle_email(
-        self,
-        user_input: str,
-        order: OrderTask,
-    ) -> StateMachineResult:
+    def handle_email(self, user_input: str, order: OrderTask) -> StateMachineResult:
         """Handle email address collection."""
-        parsed = parse_email(user_input, model=self.model)
-
-        if not parsed.email:
-            return StateMachineResult(
-                message=CheckoutMessages.EMAIL_RETRY,
-                order=order,
-            )
-
-        validated_email, error_message = validate_email_address(parsed.email)
-        if error_message:
-            logger.info("Email validation failed for '%s': %s", parsed.email, error_message)
-            return StateMachineResult(
-                message=error_message,
-                order=order,
-            )
-
-        return self._complete_order_with_contact(order, validated_email, "email")
+        return self._handle_contact_input(
+            user_input, order,
+            parser_func=parse_email,
+            field_name="email",
+            validator_func=validate_email_address,
+            contact_type="email",
+            retry_message=CheckoutMessages.EMAIL_RETRY,
+        )
 
     # =========================================================================
     # Order Confirmation Methods (consolidated from confirmation_handler.py)

@@ -241,30 +241,22 @@ class StoreInfoHandler(MenuDataMixin):
             order=order,
         )
 
-    def _check_delivery_for_zip(
-        self, zip_code: str, all_stores: list, order: OrderTask, original_query: str | None = None
+    def _format_delivery_response(
+        self, delivering_stores: list, location_display: str, order: OrderTask
     ) -> StateMachineResult:
-        """Check which stores deliver to a specific zip code.
+        """Format delivery availability response for a location.
 
         Args:
-            zip_code: The zip code to check
-            all_stores: List of all stores with delivery zones
+            delivering_stores: List of stores that deliver to the location
+            location_display: Human-readable location name for messages
             order: Current order state
-            original_query: Original address/location query (for nicer messages)
+
+        Returns:
+            StateMachineResult with appropriate delivery message
         """
-        delivering_stores = []
-        # Use original query in messages if provided, otherwise use zip code
-        location_display = original_query or zip_code
-
-        for store in all_stores:
-            delivery_zips = store.get("delivery_zip_codes", [])
-            if zip_code in delivery_zips:
-                delivering_stores.append(store)
-
         if delivering_stores:
             if len(delivering_stores) == 1:
-                store = delivering_stores[0]
-                store_name = store.get("name", "our store")
+                store_name = delivering_stores[0].get("name", "our store")
                 message = f"Yes! {store_name} delivers to {location_display}. Would you like to place a delivery order?"
             else:
                 store_names = [s.get("name", "Store") for s in delivering_stores]
@@ -272,45 +264,38 @@ class StoreInfoHandler(MenuDataMixin):
                 message = f"Yes! We can deliver to {location_display} from {stores_str}. Would you like to place a delivery order?"
             return StateMachineResult(message=message, order=order)
 
-        # No stores deliver to this zip
+        # No stores deliver to this location
         return StateMachineResult(
             message=f"Unfortunately, we don't currently deliver to {location_display}. You're welcome to place a pickup order instead. Would you like to do that?",
             order=order,
         )
+
+    def _check_delivery_for_zip(
+        self, zip_code: str, all_stores: list, order: OrderTask, original_query: str | None = None
+    ) -> StateMachineResult:
+        """Check which stores deliver to a specific zip code."""
+        delivering_stores = []
+        location_display = original_query or zip_code
+
+        for store in all_stores:
+            delivery_zips = store.get("delivery_zip_codes", [])
+            if zip_code in delivery_zips:
+                delivering_stores.append(store)
+
+        return self._format_delivery_response(delivering_stores, location_display, order)
 
     def _check_delivery_for_neighborhood(
         self, neighborhood: str, zip_codes: list, all_stores: list, order: OrderTask
     ) -> StateMachineResult:
         """Check which stores deliver to any of the neighborhood's zip codes."""
         delivering_stores = []
-        covered_zips = []
 
         for store in all_stores:
             delivery_zips = store.get("delivery_zip_codes", [])
-            matching_zips = [z for z in zip_codes if z in delivery_zips]
-            if matching_zips:
-                if store not in delivering_stores:
-                    delivering_stores.append(store)
-                covered_zips.extend(matching_zips)
+            if any(z in delivery_zips for z in zip_codes):
+                delivering_stores.append(store)
 
-        covered_zips = list(set(covered_zips))  # Remove duplicates
-
-        if delivering_stores:
-            if len(delivering_stores) == 1:
-                store = delivering_stores[0]
-                store_name = store.get("name", "our store")
-                message = f"Yes! {store_name} delivers to {neighborhood}. Would you like to place a delivery order?"
-            else:
-                store_names = [s.get("name", "Store") for s in delivering_stores]
-                stores_str = format_english_list(store_names)
-                message = f"Yes! We can deliver to {neighborhood} from {stores_str}. Would you like to place a delivery order?"
-            return StateMachineResult(message=message, order=order)
-
-        # No stores deliver to this neighborhood
-        return StateMachineResult(
-            message=f"Unfortunately, we don't currently deliver to {neighborhood}. You're welcome to place a pickup order instead. Would you like to do that?",
-            order=order,
-        )
+        return self._format_delivery_response(delivering_stores, neighborhood, order)
 
     # =========================================================================
     # Recommendation Handlers

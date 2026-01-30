@@ -20,6 +20,11 @@ from .handler_config import HandlerConfig
 from .disambiguation_handler import DisambiguationHandler
 from .mixins import MenuDataMixin
 from .checkout_messages import got_it_anything_else
+from .attribute_inference import (
+    infer_attributes_from_item_name,
+    extract_pre_filled_attributes,
+    extract_generic_term,
+)
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
@@ -58,74 +63,12 @@ class ItemAdderHandler(MenuDataMixin):
         self.disambiguation_handler = DisambiguationHandler()
 
     def _infer_attributes_from_item_name(self, item: MenuItemTask) -> None:
+        """Infer attribute values from the menu item name.
+
+        Delegates to attribute_inference.infer_attributes_from_item_name().
+        See that function for full documentation.
         """
-        Infer attribute values from the menu item name using database configuration.
-
-        This is a data-driven approach that scans the item name against attribute
-        options and pre-populates matching values. This prevents asking questions
-        that are already answered by the item name.
-
-        For example:
-        - "Hot Coffee" → temperature = "hot" (if "hot" is an option for temperature)
-        - "Iced Latte" → temperature = "iced"
-        - "Decaf Americano" → decaf = True (if decaf is a boolean attribute)
-
-        Args:
-            item: The MenuItemTask to update with inferred attribute values
-        """
-        logger.info(
-            "INFER_ATTRIBUTES: Called for item_name='%s', item_type='%s'",
-            item.menu_item_name, item.menu_item_type
-        )
-        if not item.menu_item_type or not item.menu_item_name:
-            logger.info("INFER_ATTRIBUTES: Skipping - missing type or name")
-            return
-
-        # Get all attributes for this item type from the database
-        attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
-        if not attrs:
-            logger.info("INFER_ATTRIBUTES: No attributes found for type '%s'", item.menu_item_type)
-            return
-
-        logger.info("INFER_ATTRIBUTES: Found %d attributes for '%s'", len(attrs), item.menu_item_type)
-        item_name_lower = item.menu_item_name.lower()
-
-        for attr_slug, attr_data in attrs.items():
-            # Skip if attribute is already set
-            if attr_slug in item:
-                continue
-
-            options = attr_data.get("options", [])
-            input_type = attr_data.get("input_type", "single_select")
-
-            # For boolean attributes, check if the attribute name appears in item name
-            if input_type == "boolean":
-                attr_display = attr_data.get("display_name", attr_slug).lower()
-                if attr_display in item_name_lower:
-                    item[attr_slug] = True
-                    logger.info(
-                        "Inferred %s=True from item name '%s'",
-                        attr_slug, item.menu_item_name
-                    )
-                continue
-
-            # For select attributes, check if any option appears in item name
-            for opt in options:
-                opt_slug = opt.get("slug", "")
-                opt_display = opt.get("display_name", "").lower()
-                opt_slug_readable = opt_slug.replace("_", " ").lower()
-
-                # Check if option slug or display name appears in item name
-                if (opt_slug_readable in item_name_lower or
-                        opt_display in item_name_lower or
-                        opt_slug.lower() in item_name_lower):
-                    # Set the attribute value
-                    item[attr_slug] = opt_slug
-                    logger.info(
-                        "Inferred %s='%s' from item name '%s'",
-                        attr_slug, opt_slug, item.menu_item_name
-                    )
-                    break  # Only match first option per attribute
+        infer_attributes_from_item_name(item)
 
     def add_item(
         self,
@@ -342,60 +285,16 @@ class ItemAdderHandler(MenuDataMixin):
     def _extract_pre_filled_attributes(self, item_type: str, kwargs: dict) -> dict:
         """Extract pre-filled attributes from kwargs based on item type.
 
-        Extracts only kwargs that match known attribute slugs for the item type.
-        Unknown kwargs are ignored.
-
-        Args:
-            item_type: The item type slug
-            kwargs: Original kwargs with item details
-
-        Returns:
-            Dict of attribute_slug -> value for pre-filling
+        Delegates to attribute_inference.extract_pre_filled_attributes().
         """
-        if not item_type:
-            return {}
-
-        # Get known attributes for this item type from DB
-        known_attrs = set(menu_cache.get_item_type_attributes(item_type).keys())
-
-        attrs = {}
-        for key, value in kwargs.items():
-            if key in known_attrs:
-                attrs[key] = value
-
-        return attrs
+        return extract_pre_filled_attributes(item_type, kwargs)
 
     def _extract_generic_term(self, item_name: str) -> str | None:
         """Extract a generic category term from item_name if present.
 
-        Uses data-driven matching - checks if the term or its suffix matches
-        multiple menu items, indicating it's a generic term that needs disambiguation.
-
-        Returns the generic term for searching, or None if no generic term found.
-
-        Examples:
-        - "chips" -> "chips" (if multiple chip items exist)
-        - "Bagel Chips" -> "chips" (suffix matches multiple items)
-        - "Potato Chips" -> "chips"
-        - "Chocolate Chip Cookie" -> "cookie"
-        - "Turkey Club" -> None (specific item)
+        Delegates to attribute_inference.extract_generic_term().
         """
-        item_lower = item_name.lower().strip()
-
-        # Check if exact term matches multiple menu items
-        matches = menu_cache.search_menu_items_by_name(item_lower)
-        if len(matches) > 1:
-            return item_lower
-
-        # Check if last word is a generic term (matches multiple items)
-        words = item_lower.split()
-        if len(words) > 1:
-            last_word = words[-1]
-            suffix_matches = menu_cache.search_menu_items_by_name(last_word)
-            if len(suffix_matches) > 1:
-                return last_word
-
-        return None
+        return extract_generic_term(item_name)
 
     def add_menu_item(
         self,
@@ -709,7 +608,40 @@ class ItemAdderHandler(MenuDataMixin):
             # Skip if extracted_selections provided - parser already extracted attributes
             if user_input and not extracted_selections:
                 self.menu_item_handler.capture_attributes_from_input(user_input, first_item)
-            # Start configuration flow
+
+            # Check if there are pending parsed items that haven't been added yet
+            # If so, process them first (they were stored during disambiguation)
+            if self.menu_item_handler._process_pending_parsed_items_callback:
+                pending_result = self.menu_item_handler._process_pending_parsed_items_callback(order)
+                if pending_result:
+                    # Queue this item for later and return the pending result
+                    order.queue_item_for_config(first_item.id, item_type, item_name=canonical_name)
+                    logger.info(
+                        "Queued newly selected item %s (%s) - processing pending parsed items first",
+                        canonical_name, first_item.id[:8]
+                    )
+                    return pending_result
+
+            # Check if there are other items queued for configuration
+            # If so, configure them first (they were ordered earlier in the conversation)
+            if order.has_queued_config_items():
+                # Queue this item for later
+                order.queue_item_for_config(first_item.id, item_type, item_name=canonical_name)
+                logger.info(
+                    "Queued newly selected item %s (%s) - processing queued item first",
+                    canonical_name, first_item.id[:8]
+                )
+                # Start config for the first queued item
+                next_config = order.pop_next_config_item()
+                next_item = order.items.get_item_by_id(next_config["item_id"])
+                if next_item and isinstance(next_item, MenuItemTask):
+                    logger.info(
+                        "Processing queued item before new: %s (%s)",
+                        next_config.get("item_name"), next_config["item_id"][:8]
+                    )
+                    return self.menu_item_handler.get_first_question(next_item, order)
+
+            # Start configuration flow for this item
             return self.menu_item_handler.get_first_question(first_item, order)
         else:
             # Not configurable - item is complete

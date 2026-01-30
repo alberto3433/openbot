@@ -16,7 +16,7 @@ from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN
 from .handler_config import HandlerConfig
-from .taking_items_handler import extract_ordinal_reference, find_nth_item_of_type
+from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
 from .modifier_operations import find_modifier_match, remove_modifier_from_item
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError

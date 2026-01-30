@@ -68,7 +68,6 @@ class CheckoutHandler(BaseHandler):
         self,
         config: "HandlerConfig",
         order_utils_handler: "OrderUtilsHandler | None" = None,
-        checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         transition_callback: Callable[[OrderTask], None] | None = None,
         handle_taking_items_with_parsed: Callable[
             [OpenInputResponse, OrderTask, list[Selection] | None, str], StateMachineResult
@@ -80,7 +79,6 @@ class CheckoutHandler(BaseHandler):
         Args:
             config: HandlerConfig with shared dependencies.
             order_utils_handler: Handler for order utilities (tax, quantity changes).
-            checkout_utils_handler: Handler for checkout utilities (order summary).
             transition_callback: Callback function to transition order to next slot.
             handle_taking_items_with_parsed: Callback to handle parsed items during confirmation.
         """
@@ -88,7 +86,6 @@ class CheckoutHandler(BaseHandler):
 
         # Handler-specific dependencies and callbacks
         self.order_utils_handler = order_utils_handler
-        self.checkout_utils_handler = checkout_utils_handler
         self._transition_to_next_slot = transition_callback
         self._handle_taking_items_with_parsed = handle_taking_items_with_parsed
 
@@ -575,9 +572,7 @@ class CheckoutHandler(BaseHandler):
         logger.info("CONFIRMATION: Added %d more of '%s'", added_count, last_item_name)
 
         # Return to confirmation with updated summary
-        summary = ""
-        if self.checkout_utils_handler:
-            summary = self.checkout_utils_handler.build_order_summary(order)
+        summary = self.message_builder.build_order_summary(order)
 
         if added_count == 1:
             return StateMachineResult(
@@ -643,9 +638,7 @@ class CheckoutHandler(BaseHandler):
                     logger.info("CONFIRMATION: Item added, returning to confirmation (orchestrator says ORDER_CONFIRM)")
                     if self._transition_to_next_slot:
                         self._transition_to_next_slot(result.order)
-                    summary = ""
-                    if self.checkout_utils_handler:
-                        summary = self.checkout_utils_handler.build_order_summary(result.order)
+                    summary = self.message_builder.build_order_summary(result.order)
                     logger.info("CONFIRMATION: Built summary, items count = %d", len(result.order.items.items))
                     return StateMachineResult(
                         message=f"{summary}\n\nDoes that look right?",

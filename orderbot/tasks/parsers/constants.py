@@ -425,15 +425,26 @@ def _pluralize(word: str) -> str:
     Pluralize a word using simple English rules.
 
     Rules:
-    - Words ending in 'ch', 'sh', 's', 'x', 'z' get 'es'
+    - Words likely already plural (ending in common plural patterns) are returned as-is
+    - Words ending in 'ch', 'sh', 'ss', 'us', 'x', 'z' get 'es'
     - Words ending in consonant + 'y' get 'ies'
     - Most others get 's'
     """
     if not word:
         return word
 
-    # Words ending in ch, sh, s, x, z get 'es'
-    if word.endswith(('ch', 'sh', 's', 'x', 'z')):
+    # Check if word is likely already plural
+    # Words ending in consonant+s (but not ss, us, is, os) are probably already plural
+    # e.g., "items", "bagels", "drinks" vs "bus", "glass", "thesis"
+    if word.endswith('s') and len(word) > 2:
+        # These endings suggest the word is singular and needs 'es'
+        singular_endings = ('ss', 'us', 'is', 'os')
+        if not word.endswith(singular_endings):
+            # Words like "items", "salads", "drinks" - already plural
+            return word
+
+    # Words ending in ch, sh, ss, us, x, z get 'es'
+    if word.endswith(('ch', 'sh', 'ss', 'us', 'x', 'z')):
         return word + 'es'
 
     # Words ending in consonant + y get 'ies'

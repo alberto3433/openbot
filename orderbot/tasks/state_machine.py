@@ -229,7 +229,6 @@ class OrderStateMachine:
 
         # Phase 3: Wire cross-handler callbacks (circular dependencies)
         self.checkout_handler.order_utils_handler = self.order_utils_handler
-        self.checkout_handler.checkout_utils_handler = self.checkout_utils_handler
         self.checkout_handler._handle_taking_items_with_parsed = self._handle_taking_items_with_parsed
 
         # Phase 4: Handlers that depend on Phase 2 handlers

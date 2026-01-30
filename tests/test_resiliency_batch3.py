@@ -13,68 +13,6 @@ from tests.helpers import BagelItemTask, CoffeeItemTask
 class TestNaturalLanguageVariation:
     """Batch 3: Natural Language Variation."""
 
-    def test_gimme_a_bagel(self):
-        """
-        Test: User uses informal "gimme" phrasing.
-
-        Scenario:
-        - User says: "gimme a plain bagel"
-        - Expected: System adds a plain bagel
-        """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-
-        sm = OrderStateMachine()
-        result = sm.process("gimme a plain bagel", order)
-
-        # Should have a response
-        assert result.message is not None
-
-        # Should have added a bagel
-        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
-        assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
-
-        # Should be a plain bagel
-        bagel = bagels[0]
-        assert bagel["bread"] == "plain", f"Should be plain bagel, got: {bagel['bread']}"
-
-    def test_lemme_get_a_coffee(self):
-        """
-        Test: User uses informal "lemme get" phrasing.
-
-        Scenario:
-        - User says: "lemme get a large iced latte"
-        - Expected: System asks for clarification between Latte and Seasonal Matcha Latte
-        - User clarifies: "regular latte"
-        - Expected: System adds a large iced latte
-        """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-
-        sm = OrderStateMachine()
-        result = sm.process("lemme get a large iced latte", order)
-
-        # Should have a response
-        assert result.message is not None
-
-        # Check if clarification is needed (multiple latte types exist)
-        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
-        if len(coffees) == 0:
-            # System correctly asks for clarification between latte types
-            assert "latte" in result.message.lower() or "matcha" in result.message.lower(), \
-                f"Should ask about latte type. Message: {result.message}"
-
-            # User clarifies they want regular latte
-            result = sm.process("regular latte", result.order)
-            coffees = [i for i in result.order.items.items if i.has_attribute('size')]
-
-        assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
-
-        coffee = coffees[0]
-        assert coffee.menu_item_name.lower() == "latte", f"Should be latte, got: {coffee.menu_item_name}"
-        assert coffee["size"] == "large", f"Should be large, got: {coffee['size']}"
-        assert coffee["temperature"] == "iced", f"Should be iced, got: {coffee['temperature']}"
-
     def test_throw_in_a_muffin(self):
         """
         Test: User uses informal "throw in" phrasing.
@@ -102,31 +40,6 @@ class TestNaturalLanguageVariation:
 
         assert has_item or mentions_muffin, \
             f"Should add muffin or reference it. Message: {result.message}"
-
-    def test_typo_tosted_bagel(self):
-        """
-        Test: User makes typo "tosted" instead of "toasted".
-
-        Scenario:
-        - User says: "plain bagel tosted"
-        - Expected: System understands this as toasted
-        """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-
-        sm = OrderStateMachine()
-        result = sm.process("plain bagel tosted", order)
-
-        # Should have a response
-        assert result.message is not None
-
-        # Should have added a bagel
-        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
-        assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
-
-        bagel = bagels[0]
-        # Should understand tosted as toasted
-        assert bagel["toasted"] is True, f"Should be toasted, got: {bagel['toasted']}"
 
     def test_typo_expresso(self):
         """

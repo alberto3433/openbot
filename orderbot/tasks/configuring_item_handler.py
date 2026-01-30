@@ -206,7 +206,7 @@ class ConfiguringItemHandler:
         if order.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
             return self._handle_confirm_item_switch(user_input, order)
 
-        item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
+        item = order.items.get_item_by_id(order.pending_item_id)
         if item is None:
             order.clear_pending()
             return StateMachineResult(
@@ -725,7 +725,7 @@ class ConfiguringItemHandler:
 
         if is_affirmative:
             # Get the current item being configured and remove it
-            current_item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
+            current_item = order.items.get_item_by_id(order.pending_item_id)
             if current_item:
                 order.items.remove_item(current_item)
 
@@ -751,7 +751,7 @@ class ConfiguringItemHandler:
             # User declined - continue with original item
             order.pending_switch_item = None
             # Get the original item and continue configuration
-            original_item = self.checkout_utils_handler.get_item_by_id(order, order.pending_item_id)
+            original_item = order.items.get_item_by_id(order.pending_item_id)
             if original_item:
                 # Clear the confirm_item_switch field and restore previous config state
                 # Get the next question for the original item

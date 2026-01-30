@@ -305,6 +305,8 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
         for it in all_item_types
         if it.display_name_plural
     }
+    # Add display name for the special signature_items key (already plural, don't re-pluralize)
+    index["item_type_display_names"]["signature_items"] = "signature items"
 
     for item in items:
         # Get item type info if available

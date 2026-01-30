@@ -6,7 +6,7 @@ in different states of the order flow. Each model constrains the possible
 interpretations of user input for a specific context.
 """
 
-from typing import Literal, Union
+from typing import Literal
 from pydantic import BaseModel, Field
 
 

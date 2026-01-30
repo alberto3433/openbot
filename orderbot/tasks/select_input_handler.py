@@ -19,7 +19,7 @@ from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import singularize
 
 from .models import OrderTask, MenuItemTask
-from .schemas import StateMachineResult, OrderPhase, Selection
+from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_quantity
 from .utils.text import format_english_list
 

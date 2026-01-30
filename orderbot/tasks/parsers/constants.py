@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_PAGINATION_SIZE = 5
 
 # =============================================================================
-# Word to Number Mapping (imported from quantity_utils for single source of truth)
+# Quantity Extraction (imported from quantity_utils for single source of truth)
+# Re-exported for other modules that import from constants
 # =============================================================================
 from orderbot.tasks.parsers.quantity_utils import (
     WORD_TO_NUM,

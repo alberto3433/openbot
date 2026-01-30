@@ -154,6 +154,44 @@ class TestDeterministicParserHelpers:
         spread = _get_spread_slug(attrs)
         assert spread == "blueberry_cream_cheese", f"Expected 'blueberry_cream_cheese' but got '{spread}'"
 
+    def test_extract_unavailable_size_option(self):
+        """Test that extraction detects unavailable 'medium' size for sized_beverage.
+
+        Database has medium size with is_available=False. The extraction should
+        detect this and store it in _unavailable_size key for helpful user messaging.
+        """
+        # "medium hot coffee" should detect that medium is unavailable
+        result = extract_attribute_values("medium hot coffee", "sized_beverage")
+
+        # Should have _unavailable_size key with the attempted medium option
+        assert "_unavailable_size" in result, (
+            f"Expected '_unavailable_size' in result, got keys: {list(result.keys())}"
+        )
+        unavail = result["_unavailable_size"]
+        assert unavail["attempted_slug"] == "medium", (
+            f"Expected attempted_slug='medium', got: {unavail}"
+        )
+
+        # Should NOT have size set to medium (since it's unavailable)
+        assert result.get("size") != "medium", (
+            f"Size should NOT be 'medium' since it's unavailable, got: {result.get('size')}"
+        )
+
+    def test_extract_available_size_option(self):
+        """Test that available size options are extracted normally."""
+        # "large hot coffee" should extract size=large (available)
+        result = extract_attribute_values("large hot coffee", "sized_beverage")
+
+        # Should have size=large (single_select returns slug directly)
+        assert result.get("size") == "large", (
+            f"Expected size='large', got: {result.get('size')}"
+        )
+
+        # Should NOT have _unavailable_size
+        assert "_unavailable_size" not in result, (
+            f"Should not have _unavailable_size for available option, got: {result}"
+        )
+
 
 class TestDeterministicParserGreetings:
     """Tests for deterministic parsing of greetings."""
@@ -808,42 +846,42 @@ class TestOrdinalExtractionFromCancelItem:
 
     def test_extract_ordinal_first_bagel(self):
         """Test extracting ordinal from 'first bagel'."""
-        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.item_cancellation_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("first bagel")
         assert ordinal == 1
         assert item_type == "bagel"
 
     def test_extract_ordinal_second_coffee(self):
         """Test extracting ordinal from 'second coffee'."""
-        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.item_cancellation_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("second coffee")
         assert ordinal == 2
         assert item_type == "coffee"
 
     def test_extract_ordinal_3rd_item(self):
         """Test extracting ordinal from '3rd item'."""
-        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.item_cancellation_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("3rd item")
         assert ordinal == 3
         assert item_type == "item"
 
     def test_extract_ordinal_bagel_2(self):
         """Test extracting ordinal from 'bagel 2' (reversed format)."""
-        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.item_cancellation_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("bagel 2")
         assert ordinal == 2
         assert item_type == "bagel"
 
     def test_extract_ordinal_coffee_hash_3(self):
         """Test extracting ordinal from 'coffee #3' (hash format)."""
-        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.item_cancellation_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("coffee #3")
         assert ordinal == 3
         assert item_type == "coffee"
 
     def test_no_ordinal_plain_bagel(self):
         """Test that plain item descriptions return no ordinal."""
-        from orderbot.tasks.taking_items_handler import extract_ordinal_reference
+        from orderbot.tasks.item_cancellation_handler import extract_ordinal_reference
         ordinal, item_type = extract_ordinal_reference("plain bagel")
         assert ordinal is None
         assert item_type == "plain bagel"
@@ -854,7 +892,7 @@ class TestFindNthItemOfType:
 
     def test_find_first_bagel(self):
         """Test finding the first bagel in a list."""
-        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.item_cancellation_handler import find_nth_item_of_type
         from tests.helpers import BagelItemTask, CoffeeItemTask
 
         items = [
@@ -871,7 +909,7 @@ class TestFindNthItemOfType:
 
     def test_find_second_bagel(self):
         """Test finding the second bagel in a list."""
-        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.item_cancellation_handler import find_nth_item_of_type
         from tests.helpers import BagelItemTask, CoffeeItemTask
 
         items = [
@@ -888,7 +926,7 @@ class TestFindNthItemOfType:
 
     def test_find_nth_item_generic(self):
         """Test finding the Nth item regardless of type using 'item' keyword."""
-        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.item_cancellation_handler import find_nth_item_of_type
         from tests.helpers import BagelItemTask, CoffeeItemTask
 
         items = [
@@ -906,7 +944,7 @@ class TestFindNthItemOfType:
 
     def test_find_nth_item_out_of_range(self):
         """Test that out-of-range ordinal returns None."""
-        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.item_cancellation_handler import find_nth_item_of_type
         from tests.helpers import BagelItemTask
 
         items = [
@@ -920,7 +958,7 @@ class TestFindNthItemOfType:
 
     def test_find_item_by_menu_item_name(self):
         """Test finding item by menu_item_name field."""
-        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.item_cancellation_handler import find_nth_item_of_type
         from orderbot.tasks.models import MenuItemTask
 
         # MenuItemTask has menu_item_name field
@@ -936,7 +974,7 @@ class TestFindNthItemOfType:
 
     def test_find_item_by_summary(self):
         """Test finding item by get_summary() content."""
-        from orderbot.tasks.taking_items_handler import find_nth_item_of_type
+        from orderbot.tasks.item_cancellation_handler import find_nth_item_of_type
         from tests.helpers import CoffeeItemTask
 
         # CoffeeItemTask helper creates MenuItemTask with drink_type stored in menu_item_name
@@ -1085,80 +1123,80 @@ class TestSpecialInstructionsExtraction:
 
     def test_light_on_the_cream_cheese(self):
         """Test 'light on the cream cheese' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("plain bagel with light on the cream cheese")
         assert "light cream cheese" in notes
 
     def test_light_cream_cheese_short_form(self):
         """Test 'light cream cheese' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("bagel with light cream cheese")
         assert "light cream cheese" in notes
 
     def test_extra_bacon(self):
         """Test 'extra bacon' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("egg and cheese bagel with extra bacon")
         assert "extra bacon" in notes
 
     def test_lots_of_cream_cheese(self):
         """Test 'lots of cream cheese' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("bagel with lots of cream cheese")
         assert "extra cream cheese" in notes
 
     def test_splash_of_milk(self):
         """Test 'a splash of milk' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("coffee with a splash of milk")
         assert "a splash of milk" in notes
 
     def test_go_easy_on_the_mayo(self):
         """Test 'go easy on the mayo' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("sandwich with go easy on the mayo")
         assert "light mayo" in notes
 
     def test_little_bit_of_sugar(self):
         """Test 'a little sugar' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("coffee with a little sugar")
         assert "a little sugar" in notes
 
     def test_no_onions(self):
         """Test 'no onions' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("bagel with no onions")
         assert "no onions" in notes
 
     def test_hold_the_tomato(self):
         """Test 'hold the tomato' extracts correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("sandwich hold the tomato")
         assert "no tomato" in notes
 
     def test_multiple_notes(self):
         """Test multiple qualifier phrases extract correctly."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("bagel with light cream cheese and extra bacon")
         assert "light cream cheese" in notes
         assert "extra bacon" in notes
 
     def test_no_notes_for_regular_order(self):
         """Test that regular orders without qualifiers have no notes."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("plain bagel with cream cheese")
         assert len(notes) == 0
 
     def test_heavy_on_the_cheese(self):
         """Test 'heavy on the cheese' extracts as extra."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         notes = extract_special_instructions_from_input("bagel heavy on the cheese")
         assert "extra cheese" in notes
 
     def test_multi_item_notes_separated_coffee_only(self):
         """Test that coffee notes filter only includes coffee-related notes."""
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         notes = extract_special_instructions_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
         # Should extract both notes separately
@@ -1188,7 +1226,7 @@ class TestSpecialInstructionsExtraction:
     def test_coffee_with_sugar_on_the_side(self):
         """Test that 'sugar on the side' is captured in order-level special_instructions."""
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         user_input = "large coffee iced sugar on the side"
         result = parse_open_input_deterministic(user_input)
         assert result is not None
@@ -1202,7 +1240,7 @@ class TestSpecialInstructionsExtraction:
     def test_coffee_with_cream_on_the_side(self):
         """Test that 'cream on the side' is captured in order-level special_instructions."""
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         user_input = "large coffee cream on the side"
         result = parse_open_input_deterministic(user_input)
         assert result is not None
@@ -1217,7 +1255,7 @@ class TestSpecialInstructionsExtraction:
     def test_coffee_with_milk_on_the_side(self):
         """Test that 'milk on the side' adds milk AND to order-level special_instructions."""
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
-        from orderbot.tasks.state_machine import extract_special_instructions_from_input
+        from orderbot.tasks.parsers import extract_special_instructions_from_input
         user_input = "coffee milk on the side"
         result = parse_open_input_deterministic(user_input)
         assert result is not None

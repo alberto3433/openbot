@@ -13,7 +13,7 @@ import re
 from .models import OrderTask, MenuItemTask, parse_pending_field
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection
-from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
+from .parsers.constants import _SELECTION_PATTERNS
 from .parsers.deterministic.patterns import parse_can_you_make_it
 from .modifier_change_handler import ChangeRequest
 from .normalization import strip_ordering_prefix

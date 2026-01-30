@@ -14,7 +14,6 @@ from orderbot.cache.base import singularize
 from ...schemas import OpenInputResponse, Selection
 
 from ..constants import (
-    WORD_TO_NUM,
     GRATITUDE_PATTERNS,
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,

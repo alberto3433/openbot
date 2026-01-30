@@ -13,9 +13,7 @@ an exception is raised to fail fast and make the configuration problem visible.
 """
 
 import logging
-import re
 from dataclasses import dataclass
-from typing import Any
 
 from .models import (
     ItemTask,

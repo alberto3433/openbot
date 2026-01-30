@@ -10,8 +10,6 @@ is interpreted in the context of that item - no new items can be created.
 """
 
 import logging
-import re
-import uuid
 
 from .models import (
     OrderTask,
@@ -45,35 +43,13 @@ from .schemas import (
     Selection,
 )
 from .parsers import (
-    # Validators
-    validate_email_address,
-    validate_phone_number,
-    extract_zip_code,
-    validate_delivery_zip_code,
-    # String normalization utilities
-    normalize_for_match,
     # Deterministic parsers - Compiled patterns
     ORDER_STATUS_PATTERN,
     # Unified data-driven pattern for detecting new item orders
     _get_configurable_item_pattern,
     ORDERING_LANGUAGE_PATTERN,
-    # Deterministic parsers - Modifier extraction
-    extract_special_instructions_from_input,
-    # Deterministic parsers - Internal helpers
-    parse_open_input_deterministic,
-    _parse_multi_item_order,
-    _parse_recommendation_inquiry,
-    _parse_item_description_inquiry,
-    _parse_store_info_inquiry,
-    _parse_price_inquiry_deterministic,
-    _parse_soda_deterministic,
-    _parse_configurable_item,
-    # LLM parsers
-    parse_side_choice,
-    parse_open_input,
-    parse_confirmation,
 )
-from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity
+from .parsers.quantity_utils import extract_make_it_n_target
 
 logger = logging.getLogger(__name__)
 

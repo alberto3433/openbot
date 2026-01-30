@@ -15,17 +15,15 @@ import logging
 import re
 
 from orderbot.menu_data_cache import menu_cache
-from orderbot.cache.base import singularize, pluralize
+from orderbot.cache.base import pluralize
 from .models import OrderTask, MenuItemTask
 from .pending_fields import PendingField
 from .normalization import (
-    normalize_for_option_match,
     format_slug_for_display,
     strip_ordering_prefix,
 )
 from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
-from .parsers.quantity_utils import extract_leading_quantity
 from .parsers import extract_attribute_values
 from .handler_config import BaseHandler
 from .checkout_messages import got_it_anything_else
@@ -1629,8 +1627,28 @@ class MenuItemConfigHandler(BaseHandler):
         max_qty = attr.get("max_selections") or 10
 
         # Check for negative responses (skip)
+        # Handles exact matches ("no", "none") and phrases like "no shots", "no extra shots"
         no_patterns = menu_cache.get_response_patterns("negative")
-        if user_lower in no_patterns or user_lower in ("none", "no thanks", "nope"):
+        is_negative = user_lower in no_patterns or user_lower in ("none", "no thanks", "nope")
+
+        # Also check if input starts with a negative pattern followed by the attribute/unit name
+        # e.g., "no shots" when asking about extra shots, "no syrup" when asking about syrup
+        if not is_negative:
+            unit_name_lower = unit_name.lower()
+            attr_name_lower = attr["display_name"].lower()
+            for neg_pattern in no_patterns:
+                # Check patterns like "no shots", "no extra shots", "none of that"
+                if user_lower.startswith(neg_pattern + " "):
+                    remainder = user_lower[len(neg_pattern) + 1:].strip()
+                    # Check if remainder contains the unit name or attribute name
+                    if (unit_name_lower in remainder or
+                        attr_name_lower in remainder or
+                        unit_slug in remainder or
+                        attr_slug in remainder):
+                        is_negative = True
+                        break
+
+        if is_negative:
             # Mark attribute as declined so _get_unanswered_mandatory knows it's answered
             # Using item[attr_slug] = None triggers __setitem__ which adds to modifiers
             item[attr_slug] = None

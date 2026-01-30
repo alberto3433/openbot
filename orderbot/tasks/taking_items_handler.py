@@ -12,8 +12,6 @@ import re
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache
-from orderbot.exceptions import MenuDataNotLoadedError
-from orderbot.cache.base import singularize, get_singular_plural_variants
 
 from .models import (
     OrderTask,
@@ -30,32 +28,19 @@ from .schemas import (
     ParsedItemEntry,
     ParsedItem,
 )
-from .parsers import parse_open_input, extract_attribute_values, extract_special_instructions_from_input
-from .modifier_operations import (
-    find_modifier_on_any_item,
-    remove_modifier_from_item,
-    find_default_ingredient_on_any_item,
-    remove_default_ingredient_from_item,
-)
-from .item_cancellation_handler import (
-    ItemCancellationHandler,
-    extract_ordinal_reference,
-    find_nth_item_of_type,
-)
+from .parsers import parse_open_input, extract_special_instructions_from_input
+from .item_cancellation_handler import ItemCancellationHandler
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
 from .checkout_messages import got_it_anything_else
-from .parsers.constants import ORDINAL_WORDS, ADD_MODIFIER_PATTERNS
-from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
+from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.quantity_utils import (
     extract_quantity_for_pattern,
-    extract_leading_quantity,
     parse_make_it_n_quantity,
 )
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list
 from .utils.constants import is_price_metadata_key
-from .normalization import format_slug_for_display
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig

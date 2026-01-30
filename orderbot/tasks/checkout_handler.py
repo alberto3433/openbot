@@ -13,7 +13,6 @@ Consolidated from checkout_handler.py and confirmation_handler.py.
 """
 
 import logging
-import uuid
 from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -24,7 +23,6 @@ from .pending_fields import PendingField
 from .models import (
     OrderTask,
     MenuItemTask,
-    TaskStatus,
 )
 from .schemas import OrderPhase, StateMachineResult, OpenInputResponse, Selection
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
@@ -37,7 +35,7 @@ from .parsers import (
     TAX_QUESTION_PATTERN,
 )
 from .parsers.deterministic import MAKE_IT_N_PATTERN
-from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity
+from .parsers.quantity_utils import extract_make_it_n_target
 from .parsers.llm_parsers import (
     parse_delivery_choice,
     parse_name,

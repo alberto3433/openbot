@@ -197,7 +197,7 @@ Before committing order handling code:
 Functions encoding knowledge of specific foods (`is_soda_drink()`, `get_coffee_types()`, etc.) are **ONLY allowed in `tests/` directory**—never in `orderbot/`.
 
 ### Legacy Code
-Item-specific handlers exist (`bagel_config_handler.py`, `coffee_config_handler.py`). These are technical debt—do not extend them.
+Legacy item-specific handlers (`bagel_config_handler.py`, `coffee_config_handler.py`) have been removed. All item configuration is now handled by the generic `menu_item_config_handler.py`.
 
 ## Fail Fast on Missing Data
 

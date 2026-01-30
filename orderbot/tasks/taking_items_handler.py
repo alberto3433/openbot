@@ -156,16 +156,8 @@ class TakingItemsHandler(MenuDataMixin):
         self._returning_customer: dict | None = None
         self._set_repeat_info_callback: Callable[[bool, str | None], None] | None = None
 
-    @property
-    def _modifier_category_keywords(self) -> dict[str, str]:
-        """Get modifier category keyword mapping from menu data."""
-        modifier_cats = self._menu_data.get("modifier_categories", {})
-        return modifier_cats.get("keyword_to_category", {})
-
-    @property
-    def _modifier_item_keywords(self) -> dict[str, str]:
-        """Get item keyword to item type slug mapping from menu data."""
-        return self._menu_data.get("item_keywords", {})
+    # Note: _modifier_category_keywords and _modifier_item_keywords are
+    # inherited from MenuDataMixin via BaseHandler
 
     @property
     def _ingredient_to_items(self) -> dict[str, list[dict]]:

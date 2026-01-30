@@ -7,9 +7,11 @@ This package contains focused, reusable utilities:
 - format_english_list: Format lists as human-readable English
 - Cache helpers: Validation utilities for menu data access
 - Constants: Shared constants for attribute processing (import from .constants directly)
+- Pricing utils: Safe pricing operations (import from .pricing_utils directly)
 
-Note: Constants are NOT re-exported here to avoid circular imports.
+Note: Constants and pricing_utils are NOT re-exported here to avoid circular imports.
 Import directly: from .utils.constants import PRICE_SUFFIXES
+Import directly: from .utils.pricing_utils import safe_recalculate_price
 """
 
 from .option_matcher import OptionMatcher

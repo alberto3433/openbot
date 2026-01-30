@@ -23,3 +23,54 @@ class CheckoutMessages:
     EMAIL_FOR_SEND = "What email address should I send it to?"
     PHONE_RETRY = "What's the best phone number to text the order confirmation to?"
     EMAIL_RETRY = "What's the best email address to send the order confirmation to?"
+
+
+def got_it_anything_else(item_description: str) -> str:
+    """Generate a 'Got it, X. Anything else?' response.
+
+    This is the most common response pattern used when acknowledging
+    an item or action and prompting for more items.
+
+    Args:
+        item_description: Description of what was acknowledged (e.g., "Plain Bagel Toasted")
+
+    Returns:
+        Formatted response string like "Got it, Plain Bagel Toasted. Anything else?"
+    """
+    return f"Got it, {item_description}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def ok_removed_anything_else(item_name: str) -> str:
+    """Generate an 'OK, I've removed X. Anything else?' response.
+
+    Args:
+        item_name: Name of what was removed
+
+    Returns:
+        Formatted response string
+    """
+    return f"OK, I've removed the {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def sure_updated_anything_else(item_summary: str) -> str:
+    """Generate a 'Sure, I've updated your X. Anything else?' response.
+
+    Args:
+        item_summary: Summary of the updated item
+
+    Returns:
+        Formatted response string
+    """
+    return f"Sure, I've updated your {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def changed_to_anything_else(item_summary: str) -> str:
+    """Generate a 'Sure, I've changed that to X. Anything else?' response.
+
+    Args:
+        item_summary: Summary of what the item was changed to
+
+    Returns:
+        Formatted response string
+    """
+    return f"Sure, I've changed that to {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"

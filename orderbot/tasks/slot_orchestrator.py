@@ -17,6 +17,7 @@ from .models import (
     ItemTask,
     MenuItemTask,
 )
+from .checkout_messages import CheckoutMessages
 from ..menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
@@ -54,27 +55,27 @@ ORDER_SLOTS: list[SlotDefinition] = [
     SlotDefinition(
         category=SlotCategory.ITEMS,
         field_path="items",
-        question="What can I get for you?",
+        question=CheckoutMessages.WHAT_TO_ORDER,
         required=True,
     ),
     SlotDefinition(
         category=SlotCategory.DELIVERY_METHOD,
         field_path="delivery_method.order_type",
-        question="Is this for pickup or delivery?",
+        question=CheckoutMessages.PICKUP_OR_DELIVERY,
         required=True,
         condition=lambda order: len(order.items.get_active_items()) > 0,
     ),
     SlotDefinition(
         category=SlotCategory.DELIVERY_ADDRESS,
         field_path="delivery_method.address.street",
-        question="What's the delivery address?",
+        question=CheckoutMessages.DELIVERY_ADDRESS,
         required=True,
         condition=lambda order: order.delivery_method.order_type == "delivery",
     ),
     SlotDefinition(
         category=SlotCategory.CUSTOMER_NAME,
         field_path="customer_info.name",
-        question="Can I get a name for the order?",
+        question=CheckoutMessages.NAME,
         required=True,
     ),
     SlotDefinition(

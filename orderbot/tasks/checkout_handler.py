@@ -187,7 +187,7 @@ class CheckoutHandler(BaseHandler):
         if lower_input in ("no", "nope", "different address", "new address", "wrong", "not quite"):
             order.pending_field = None
             order.delivery_method.address.street = None
-            return StateMachineResult(message="What's the delivery address?", order=order)
+            return StateMachineResult(message=CheckoutMessages.DELIVERY_ADDRESS, order=order)
 
         # Otherwise treat as a new address
         order.pending_field = None
@@ -198,7 +198,7 @@ class CheckoutHandler(BaseHandler):
             if result:
                 return result
             return self._proceed_after_address(order)
-        return StateMachineResult(message="What's the delivery address?", order=order)
+        return StateMachineResult(message=CheckoutMessages.DELIVERY_ADDRESS, order=order)
 
     def handle_delivery(
         self,
@@ -224,7 +224,7 @@ class CheckoutHandler(BaseHandler):
                     # Address was set successfully, continue
                     return self._proceed_after_address(order)
                 return StateMachineResult(
-                    message="What's the delivery address?",
+                    message=CheckoutMessages.DELIVERY_ADDRESS,
                     order=order,
                 )
             return StateMachineResult(
@@ -266,7 +266,7 @@ class CheckoutHandler(BaseHandler):
                     )
             # Need to collect address fresh
             return StateMachineResult(
-                message="What's the delivery address?",
+                message=CheckoutMessages.DELIVERY_ADDRESS,
                 order=order,
             )
 

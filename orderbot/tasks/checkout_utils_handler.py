@@ -15,7 +15,7 @@ from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending
 from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
 from .utils.text import format_english_list
-from .checkout_messages import got_it_anything_else
+from .checkout_messages import got_it_anything_else, CheckoutMessages
 from ..menu_data_cache import menu_cache
 
 if TYPE_CHECKING:
@@ -281,7 +281,7 @@ class CheckoutUtilsHandler:
                 # Order type already set to delivery, need address
                 logger.info("CHECKOUT: Asking for delivery address (order_type already set)")
                 return StateMachineResult(
-                    message="What's the delivery address?",
+                    message=CheckoutMessages.DELIVERY_ADDRESS,
                     order=order,
                 )
             else:

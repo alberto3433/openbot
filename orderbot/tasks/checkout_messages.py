@@ -17,12 +17,16 @@ class CheckoutMessages:
     PAYMENT_METHOD = "Can I get a phone number or email to send the order confirmation?"
     PHONE = "What's the best phone number to reach you?"
     EMAIL = "What's your email address?"
+    DELIVERY_ADDRESS = "What's the delivery address?"
 
     # Retry/follow-up messages
     PHONE_FOR_TEXT = "What phone number should I text the confirmation to?"
     EMAIL_FOR_SEND = "What email address should I send it to?"
     PHONE_RETRY = "What's the best phone number to text the order confirmation to?"
     EMAIL_RETRY = "What's the best email address to send the order confirmation to?"
+
+    # Recovery prompts
+    WHAT_TO_ORDER = "What would you like to order?"
 
 
 def got_it_anything_else(item_description: str) -> str:

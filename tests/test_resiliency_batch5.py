@@ -19,7 +19,8 @@ class TestMultiItemOrders:
 
         Scenario:
         - User says: "a plain bagel and a large coffee"
-        - Expected: System adds both items
+        - Expected: System acknowledges both items and starts configuring the first one
+        - Coffee is added after bagel configuration is complete
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -27,15 +28,26 @@ class TestMultiItemOrders:
         sm = OrderStateMachine()
         result = sm.process("a plain bagel and a large coffee", order)
 
-        # Should have a response
+        # Should have a response acknowledging both items
         assert result.message is not None
+        message_lower = result.message.lower()
 
-        # Should have added both items
-        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
-        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
+        # Response should mention both items (e.g., "Got it, bagel and coffee...")
+        assert "bagel" in message_lower and "coffee" in message_lower, \
+            f"Should acknowledge both items. Message: {result.message}"
 
-        assert len(bagels) >= 1, f"Should have added a bagel. Message: {result.message}"
-        assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
+        # Should have added the first item (bagel) and start configuring it
+        items = result.order.items.get_active_items()
+        assert len(items) >= 1, f"Should have added bagel. Message: {result.message}"
+
+        # First item should be the bagel
+        bagel = items[0]
+        assert bagel.menu_item_name == "Bagel", \
+            f"First item should be bagel, got: {bagel.menu_item_name}"
+
+        # Should be asking about toasted for the bagel
+        assert "toasted" in message_lower, \
+            f"Should ask about toasted. Message: {result.message}"
 
     def test_two_different_bagels(self):
         """

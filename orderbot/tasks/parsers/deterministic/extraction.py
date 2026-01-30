@@ -13,10 +13,10 @@ from typing import Any
 from orderbot.menu_data_cache import menu_cache
 
 from ..constants import (
-    WORD_TO_NUM,
     QUALIFIER_PATTERNS,
     SKIP_WORDS,
 )
+from ..quantity_utils import WORD_TO_NUM
 
 logger = logging.getLogger(__name__)
 

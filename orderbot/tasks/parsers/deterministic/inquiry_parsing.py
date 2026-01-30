@@ -174,6 +174,24 @@ def _parse_menu_query_deterministic(text: str) -> OpenInputResponse | None:
     """Parse 'what X do you have?' type menu queries."""
     text_lower = text.lower().strip()
 
+    # Check for specials/signature menu inquiries first
+    # "do you have any specials today?", "what are your specials?", "any specials?"
+    specials_patterns = [
+        re.compile(r"(?:do\s+you\s+have\s+)?(?:any\s+)?specials?\b", re.IGNORECASE),
+        re.compile(r"what(?:'?s|\s+are)\s+(?:your|the)\s+specials?", re.IGNORECASE),
+        re.compile(r"(?:got\s+)?any\s+specials?\s*(?:today|right now)?", re.IGNORECASE),
+        re.compile(r"today'?s?\s+specials?", re.IGNORECASE),
+        re.compile(r"specials?\s+(?:today|of\s+the\s+day)", re.IGNORECASE),
+    ]
+
+    for pattern in specials_patterns:
+        if pattern.search(text_lower):
+            logger.info("SIGNATURE MENU INQUIRY (specials): '%s'", text[:50])
+            return OpenInputResponse(
+                asking_signature_menu=True,
+                signature_menu_type=None,  # None means all signature items
+            )
+
     # Generic terms that should trigger a GENERAL menu listing (all categories)
     # These are not specific category queries - they're asking about the whole menu
     general_menu_terms = {
@@ -616,7 +634,21 @@ def _parse_ingredient_search(
             if result:
                 return result
 
-    # Pattern 3: Standalone ingredient name (e.g., just "chicken")
+    # Pattern 3: Availability questions - "is X available?", "do you have X?"
+    availability_pattern = re.match(
+        r'^(?:is\s+(?:the\s+)?|do\s+you\s+have\s+(?:any\s+)?|got\s+any\s+)(\w+)(?:\s+available)?\s*\??$',
+        text_lower
+    )
+    if availability_pattern:
+        ingredient = availability_pattern.group(1)
+        if ingredient in ingredient_to_items:
+            result = _build_ingredient_search_response(
+                ingredient, ingredient_to_items[ingredient], text_lower, "availability"
+            )
+            if result:
+                return result
+
+    # Pattern 4: Standalone ingredient name (e.g., just "chicken")
     # Only trigger if it's a short phrase (1-3 words) ending with an ingredient
     # This avoids triggering on complex orders
     words = text_lower.split()

@@ -6620,3 +6620,42 @@ class TestUnavailableAttributeOptions:
                     if isinstance(s, dict)
                 )
                 assert splenda_found, f"Expected splenda to be captured, got: {sweeteners}"
+
+
+class TestSpecialsQuery:
+    """Tests for specials/signature menu inquiries."""
+
+    def test_specials_query_returns_signature_items(self):
+        """Test that 'do you have any specials today' returns signature items."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        # Test various specials query phrasings
+        result = sm.process("do you have any specials today", order)
+
+        # Should return a list of signature items
+        msg_lower = result.message.lower()
+        # Check that it's responding with signature items, not asking for an order
+        assert "signature" in msg_lower or "specials" in msg_lower or any(
+            phrase in msg_lower for phrase in ["our", "we have", "are:"]
+        ), f"Expected signature items response, got: {result.message}"
+
+    def test_specials_query_parsing(self):
+        """Test that specials queries are parsed with asking_signature_menu=True."""
+        from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        test_inputs = [
+            "do you have any specials today",
+            "what are your specials",
+            "any specials?",
+            "got any specials today",
+            "today's specials",
+        ]
+
+        for inp in test_inputs:
+            result = parse_open_input_deterministic(inp)
+            assert result is not None, f"Expected parse result for '{inp}'"
+            assert result.asking_signature_menu, f"Expected asking_signature_menu=True for '{inp}', got {result}"

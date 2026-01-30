@@ -1,0 +1,163 @@
+"""
+Handler Utilities.
+
+Shared utility functions used across multiple handlers for common patterns
+like building item option lists, constructing selection questions, and
+checking order state.
+
+These utilities reduce code duplication and provide a single source of truth
+for common handler operations.
+"""
+
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import OrderTask, MenuItemTask
+    from .schemas import StateMachineResult
+
+logger = logging.getLogger(__name__)
+
+
+def build_item_options_list(active_items: list) -> list[dict]:
+    """Build a list of item options for selection UI.
+
+    Creates a standardized list of item information dicts suitable for
+    disambiguation, duplicate selection, and other multi-item scenarios.
+
+    Args:
+        active_items: List of active items in the order (MenuItemTask instances)
+
+    Returns:
+        List of dicts with id, summary, and quantity for each item,
+        in reverse order (most recent first)
+    """
+    item_options = []
+    for item in reversed(active_items):
+        item_options.append({
+            "id": item.id,
+            "summary": item.get_summary(),
+            "quantity": item.quantity,
+        })
+    return item_options
+
+
+def build_item_selection_question(
+    item_options: list[dict],
+    all_option_text: str = "all the items in your order",
+) -> str:
+    """Build a question asking user to select from multiple items.
+
+    Creates a formatted question like:
+    "Another Plain Bagel, another Iced Latte, or all the items in your order?"
+
+    Args:
+        item_options: List of item dicts with 'summary' key
+        all_option_text: Text for the "all items" option (default: "all the items in your order")
+
+    Returns:
+        Formatted question string with first letter capitalized
+    """
+    question_parts = [f"another {opt['summary']}" for opt in item_options]
+    question = ", ".join(question_parts) + f", or {all_option_text}?"
+    # Capitalize first letter
+    return question[0].upper() + question[1:]
+
+
+def check_has_active_items(order: "OrderTask") -> tuple[list, "StateMachineResult | None"]:
+    """Check if order has active items, returning error result if empty.
+
+    Common pattern used throughout handlers to verify the order has items
+    before performing operations on them.
+
+    Args:
+        order: The current order
+
+    Returns:
+        Tuple of (active_items, error_result):
+        - If items exist: (list of items, None)
+        - If no items: (empty list, StateMachineResult with error message)
+    """
+    from .schemas import StateMachineResult
+
+    active_items = order.items.get_active_items()
+    if not active_items:
+        return [], StateMachineResult(
+            message="There's nothing in your order yet. What can I get for you?",
+            order=order,
+        )
+    return active_items, None
+
+
+def match_item_from_options(
+    user_input: str,
+    item_options: list[dict],
+) -> dict | None:
+    """Match user input to one of the provided item options.
+
+    Uses multiple matching strategies:
+    1. Exact summary match
+    2. Numeric selection (1, 2, 3...)
+    3. Word-based partial matching with scoring
+
+    Args:
+        user_input: The user's input text
+        item_options: List of item dicts with 'id', 'summary', 'quantity' keys
+
+    Returns:
+        The matched item dict, or None if no match found
+    """
+    from orderbot.menu_data_cache import menu_cache
+
+    if not item_options or not user_input:
+        return None
+
+    text = user_input.strip().lower()
+
+    # Try numeric selection first (1, 2, 3, etc.)
+    if text.isdigit():
+        idx = int(text) - 1
+        if 0 <= idx < len(item_options):
+            return item_options[idx]
+
+    # Try alias resolution
+    resolved_name, _ = menu_cache.resolve_alias(text)
+    normalized_text = (resolved_name or text).lower()
+
+    # Try exact match on summary
+    for item_info in item_options:
+        summary_lower = item_info["summary"].lower()
+        if normalized_text == summary_lower:
+            return item_info
+
+    # Score-based matching
+    matched_item = None
+    best_match_score = 0
+
+    for item_info in item_options:
+        summary_lower = item_info["summary"].lower()
+        score = 0
+
+        # Check if input is contained in summary or vice versa
+        if normalized_text in summary_lower:
+            score += 3
+        if summary_lower in normalized_text:
+            score += 2
+
+        # Word-level matching
+        input_words = set(normalized_text.split())
+        summary_words = set(summary_lower.split())
+        common_words = input_words & summary_words
+        # Filter out common stop words
+        meaningful_common = {w for w in common_words if len(w) > 2}
+        score += len(meaningful_common)
+
+        if score > best_match_score:
+            best_match_score = score
+            matched_item = item_info
+
+    # Only return if we have a reasonable match
+    if best_match_score >= 2:
+        return matched_item
+
+    return None

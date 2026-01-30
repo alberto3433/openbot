@@ -446,7 +446,12 @@ def extract_attribute_values(
 
         # Check if option is unavailable (e.g., "medium" size doesn't exist)
         # Track the unavailable attempt for helpful user feedback
-        if not cand.option.get("is_available", True):
+        opt_is_available = cand.option.get("is_available", True)
+        logger.debug(
+            "CHECKING CANDIDATE: slug=%s, attr=%s, is_available=%s, option_keys=%s",
+            slug, cand.attr_slug, opt_is_available, list(cand.option.keys())
+        )
+        if not opt_is_available:
             # Mark span as matched to prevent overlapping available options
             matched_spans.append((cand.start, cand.end))
             matched_options_per_attr.setdefault(cand.attr_slug, set()).add(slug)

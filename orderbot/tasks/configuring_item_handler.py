@@ -10,9 +10,9 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 import re
 
-from .models import OrderTask, MenuItemTask, parse_pending_field
+from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .pending_fields import PendingField
-from .schemas import StateMachineResult, OrderPhase, Selection
+from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
 from .parsers.constants import _SELECTION_PATTERNS
 from .parsers.deterministic.patterns import parse_can_you_make_it
 from .modifier_change_handler import ChangeRequest
@@ -340,6 +340,114 @@ class ConfiguringItemHandler:
         # Set via setter after TakingItemsHandler is created (to avoid circular dependency)
         self.taking_items_handler: "TakingItemsHandler | None" = None
 
+    def _process_pending_parsed_items(self, order: OrderTask) -> StateMachineResult | None:
+        """Process any pending parsed items stored during disambiguation.
+
+        When user says "latte and bagel" and latte triggers disambiguation,
+        the bagel's ParsedItem is stored in order.pending_parsed_items.
+        After disambiguation resolves and the latte is configured, this method
+        processes the bagel by adding it to the cart and starting its configuration.
+
+        Args:
+            order: The current order state
+
+        Returns:
+            StateMachineResult if items were processed and need configuration,
+            None if no pending items to process.
+        """
+        if not order.pending_parsed_items or not self.taking_items_handler:
+            return None
+
+        logger.info(
+            "Processing %d pending parsed items after disambiguation",
+            len(order.pending_parsed_items)
+        )
+
+        # Pop all pending items to process
+        pending_items = order.pending_parsed_items
+        order.pending_parsed_items = []
+
+        # Track added items for config queueing
+        added_items: list[tuple[str, str, str]] = []  # (item_id, display_name, item_type)
+
+        for item_dict in pending_items:
+            # Reconstruct ParsedItemEntry from stored dict
+            try:
+                parsed_item = ParsedItemEntry(**item_dict)
+            except Exception as e:
+                logger.warning("Failed to reconstruct ParsedItemEntry: %s", e)
+                continue
+
+            # Process through taking_items_handler._add_parsed_item
+            items_before_count = len(order.items.items)
+            order, summary, disambiguation_result = self.taking_items_handler._add_parsed_item(
+                parsed_item, order
+            )
+
+            # If another disambiguation was triggered, store remaining items and return
+            if disambiguation_result:
+                logger.info("Nested disambiguation triggered for pending item")
+                # Store any remaining pending items
+                remaining_idx = pending_items.index(item_dict) + 1
+                if remaining_idx < len(pending_items):
+                    order.pending_parsed_items = pending_items[remaining_idx:]
+                # Queue already-added items for config
+                for item_id, display_name, item_type in added_items:
+                    item = order.items.get_item_by_id(item_id)
+                    if item and item.status == TaskStatus.IN_PROGRESS:
+                        order.queue_item_for_config(item_id, item_type, item_name=display_name)
+                return disambiguation_result
+
+            # Track newly added items
+            if summary:
+                new_items = order.items.items[items_before_count:]
+                for new_item in new_items:
+                    added_items.append((
+                        new_item.id,
+                        new_item.get_display_name(),
+                        parsed_item.item_type
+                    ))
+                    logger.info(
+                        "Added pending item: %s (%s)",
+                        new_item.get_display_name(),
+                        new_item.id[:8]
+                    )
+
+        # Queue items that need configuration (IN_PROGRESS status)
+        items_needing_config = []
+        for item_id, display_name, item_type in added_items:
+            item = order.items.get_item_by_id(item_id)
+            if item and item.status == TaskStatus.IN_PROGRESS:
+                items_needing_config.append((item_id, display_name, item_type))
+
+        if not items_needing_config:
+            # All items were complete - nothing more to configure
+            return None
+
+        # Queue items 2+ for later configuration
+        for item_id, item_name, item_type in items_needing_config[1:]:
+            order.queue_item_for_config(item_id, item_type, item_name=item_name)
+            logger.info("Queued pending item %s (%s) for config", item_name, item_id[:8])
+
+        # Start configuration for the first item
+        first_item_id, first_item_name, first_item_type = items_needing_config[0]
+        first_item = order.items.get_item_by_id(first_item_id)
+
+        if isinstance(first_item, MenuItemTask) and self.menu_item_handler:
+            logger.info(
+                "Starting configuration for pending item: %s (%s)",
+                first_item_name, first_item_id[:8]
+            )
+            return self.menu_item_handler.get_first_question(first_item, order)
+
+        # Fallback
+        order.pending_item_id = first_item_id
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
+        return StateMachineResult(
+            message=f"Got it, {first_item_name}! Any preferences?",
+            order=order,
+        )
+
     def handle_configuring_item(
         self,
         user_input: str,
@@ -662,6 +770,14 @@ class ConfiguringItemHandler:
                 message=question,
                 order=order,
             )
+
+        # Check if there are pending parsed items that haven't been added yet
+        # This handles the case where disambiguation was triggered and remaining items
+        # in the order were stored (e.g., "latte and bagel" - bagel is stored while
+        # we disambiguate latte type)
+        pending_result = self._process_pending_parsed_items(order)
+        if pending_result:
+            return pending_result
 
         # Check if there are other items queued for configuration
         # This handles the case where disambiguation was triggered after other items

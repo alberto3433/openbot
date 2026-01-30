@@ -41,6 +41,12 @@ from .parsers.quantity_utils import (
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list
 from .utils.constants import is_price_metadata_key
+from .handler_utils import (
+    build_item_options_list,
+    build_item_selection_question,
+    check_has_active_items,
+    match_item_from_options,
+)
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -800,13 +806,10 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Handle "make it 2" / "another one" / "one more" - add more of existing item(s)
         if parsed.duplicate_last_item > 0:
-            active_items = order.items.get_active_items()
-            if not active_items:
+            active_items, error_result = check_has_active_items(order)
+            if error_result:
                 logger.info("'Make it N' / 'another one' requested but no items in cart")
-                return StateMachineResult(
-                    message="There's nothing in your order yet. What can I get for you?",
-                    order=order,
-                )
+                return error_result
 
             added_count = parsed.duplicate_last_item
 
@@ -835,13 +838,7 @@ class TakingItemsHandler(MenuDataMixin):
             # Multiple items in cart - ask which one to duplicate
             else:
                 # Build the clarifying question: "Another [last], another [second-to-last], ... or all items?"
-                item_options = []
-                for item in reversed(active_items):
-                    item_options.append({
-                        "id": item.id,
-                        "summary": item.get_summary(),
-                        "quantity": item.quantity,
-                    })
+                item_options = build_item_options_list(active_items)
 
                 # Store pending state
                 order.pending_duplicate_selection = {
@@ -851,10 +848,7 @@ class TakingItemsHandler(MenuDataMixin):
                 order.pending_field = PendingField.DUPLICATE_SELECTION
 
                 # Build the question text
-                question_parts = [f"another {opt['summary']}" for opt in item_options]
-                question = ", ".join(question_parts) + ", or all the items in your order?"
-                # Capitalize first letter
-                question = question[0].upper() + question[1:]
+                question = build_item_selection_question(item_options)
 
                 logger.info("Asking for duplicate clarification with %d items", len(active_items))
                 return StateMachineResult(
@@ -864,12 +858,9 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Handle "all items" duplicate request
         if parsed.wants_duplicate_all:
-            active_items = order.items.get_active_items()
-            if not active_items:
-                return StateMachineResult(
-                    message="There's nothing in your order yet. What can I get for you?",
-                    order=order,
-                )
+            active_items, error_result = check_has_active_items(order)
+            if error_result:
+                return error_result
             return self._duplicate_all_items(order, active_items)
 
         # Handle repeat order / "same thing" request
@@ -883,14 +874,7 @@ class TakingItemsHandler(MenuDataMixin):
 
             # Case 1: Both previous order AND items in cart - ask for clarification
             if has_previous_order and has_cart_items:
-                # Build item options for cart
-                item_options = []
-                for item in reversed(active_items):
-                    item_options.append({
-                        "id": item.id,
-                        "summary": item.get_summary(),
-                        "quantity": item.quantity,
-                    })
+                item_options = build_item_options_list(active_items)
 
                 order.pending_same_thing_clarification = {
                     "has_previous_order": True,
@@ -932,21 +916,13 @@ class TakingItemsHandler(MenuDataMixin):
                     )
                 else:
                     # Multiple items - ask which one to duplicate
-                    item_options = []
-                    for item in reversed(active_items):
-                        item_options.append({
-                            "id": item.id,
-                            "summary": item.get_summary(),
-                            "quantity": item.quantity,
-                        })
+                    item_options = build_item_options_list(active_items)
                     order.pending_duplicate_selection = {
                         "count": 1,
                         "items": item_options,
                     }
                     order.pending_field = PendingField.DUPLICATE_SELECTION
-                    question_parts = [f"another {opt['summary']}" for opt in item_options]
-                    question = ", ".join(question_parts) + ", or all the items in your order?"
-                    question = question[0].upper() + question[1:]
+                    question = build_item_selection_question(item_options)
                     logger.info("'Same thing' with %d cart items: asking which to duplicate", len(active_items))
                     return StateMachineResult(
                         message=question,
@@ -1367,6 +1343,10 @@ class TakingItemsHandler(MenuDataMixin):
             # get_first_question() is called, so it's already on the MenuItemTask
 
             summary = _build_item_summary(item)
+            # If result has a message (e.g., unavailable selection prompt), return it
+            # This ensures "We don't have X" messages are shown to the user
+            if result.message:
+                return order, summary, result
             return order, summary, None
 
         # Item wasn't added (error case) - return empty summary
@@ -1420,7 +1400,7 @@ class TakingItemsHandler(MenuDataMixin):
         # Clear any previous error
         order.last_add_error = None
 
-        for parsed_item in parsed.parsed_items:
+        for idx, parsed_item in enumerate(parsed.parsed_items):
             items_before_count = len(order.items.items)
             order, summary, disambiguation_result = self._add_parsed_item(parsed_item, order)
 
@@ -1436,6 +1416,19 @@ class TakingItemsHandler(MenuDataMixin):
                     if item and item.status == TaskStatus.IN_PROGRESS:
                         order.queue_item_for_config(item_id, item_type, item_name=display_name)
                         logger.info("Queued %s (%s) for config before disambiguation", display_name, item_id[:8])
+
+                # Store remaining parsed items that haven't been processed yet
+                # Example: "latte and bagel" - latte triggers disambiguation, bagel is stored
+                remaining_items = parsed.parsed_items[idx + 1:]
+                if remaining_items:
+                    order.pending_parsed_items = [
+                        item.model_dump() if hasattr(item, 'model_dump') else item.__dict__
+                        for item in remaining_items
+                    ]
+                    logger.info("Stored %d remaining parsed items for later: %s",
+                        len(remaining_items),
+                        [getattr(item, 'item_name', None) or getattr(item, 'item_type', 'unknown') for item in remaining_items]
+                    )
                 return disambiguation_result
 
             # Check if add failed (e.g., item not found on menu)
@@ -1765,33 +1758,20 @@ class TakingItemsHandler(MenuDataMixin):
                 )
             else:
                 # Multiple items - ask which one
-                item_options = []
-                for item in reversed(active_items):
-                    item_options.append({
-                        "id": item.id,
-                        "summary": item.get_summary(),
-                        "quantity": item.quantity,
-                    })
+                item_options = build_item_options_list(active_items)
                 order.pending_duplicate_selection = {
                     "count": 1,
                     "items": item_options,
                 }
                 order.pending_field = PendingField.DUPLICATE_SELECTION
-                question_parts = [f"another {opt['summary']}" for opt in item_options]
-                question = ", ".join(question_parts) + ", or all the items?"
-                question = question[0].upper() + question[1:]
+                question = build_item_selection_question(item_options, "all the items")
                 return StateMachineResult(
                     message=question,
                     order=order,
                 )
 
         # Try to match user's response to one of the cart items directly
-        matched_item = None
-        for item_info in cart_items:
-            summary_lower = item_info["summary"].lower()
-            if text in summary_lower or summary_lower in text:
-                matched_item = item_info
-                break
+        matched_item = match_item_from_options(text, cart_items)
 
         if matched_item:
             order.pending_same_thing_clarification = None

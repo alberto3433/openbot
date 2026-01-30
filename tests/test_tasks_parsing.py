@@ -1209,7 +1209,7 @@ class TestSpecialInstructionsExtraction:
         Note: The 'splash of milk' phrase is captured as order-level special_instructions.
         Special instructions are no longer stored per-item but at the order level.
         """
-        from orderbot.tasks.state_machine import _parse_multi_item_order, extract_special_instructions_from_input
+        from orderbot.tasks.parsers import _parse_multi_item_order, extract_special_instructions_from_input
         # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         user_input = "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         result = _parse_multi_item_order(user_input)
@@ -1381,7 +1381,7 @@ class TestSpecialInstructionsExtraction:
 
     def test_multi_item_bagel_and_signature_item(self):
         """Test that multi-item parser recognizes speed menu items like The Classic BEC."""
-        from orderbot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.parsers import _parse_multi_item_order
         # Multi-item order: "one bagel and one classic BEC"
         result = _parse_multi_item_order("one bagel and one classic BEC")
         assert result is not None
@@ -1394,7 +1394,7 @@ class TestSpecialInstructionsExtraction:
 
     def test_multi_item_signature_item_and_coffee(self):
         """Test multi-item order with speed menu item and coffee."""
-        from orderbot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.parsers import _parse_multi_item_order
         result = _parse_multi_item_order("the lexington and a latte")
         assert result is not None
         sig_item = get_signature_item(result)
@@ -1422,7 +1422,7 @@ class TestSpecialInstructionsExtraction:
 
     def test_multi_item_coffee_and_bagel_with_butter(self):
         """Test that 'a sesame bagel with butter' captures the sesame bagel type."""
-        from orderbot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.parsers import _parse_multi_item_order
         result = _parse_multi_item_order("a coffee with a little bit of milk and a sesame bagel with butter")
         assert result is not None
         # Coffee should be captured
@@ -1436,7 +1436,7 @@ class TestSpecialInstructionsExtraction:
 
     def test_bagel_with_cream_cheese_is_build_your_own(self):
         """Test that 'an everything bagel with cream cheese' is parsed as build-your-own bagel, not menu item."""
-        from orderbot.tasks.state_machine import _parse_multi_item_order
+        from orderbot.tasks.parsers import _parse_multi_item_order
         result = _parse_multi_item_order("an everything bagel with cream cheese and a coffee")
         assert result is not None
         assert has_coffee(result)
@@ -1483,7 +1483,7 @@ class TestRecommendationInquiryParsing:
     ])
     def test_general_recommendation_patterns(self, text, expected_match_type):
         """Test that general recommendation patterns return 'general' match type."""
-        from orderbot.tasks.state_machine import _parse_recommendation_inquiry
+        from orderbot.tasks.parsers import _parse_recommendation_inquiry
         result = _parse_recommendation_inquiry(text)
         assert result is not None, f"Failed to detect recommendation in: {text}"
         assert result.asks_recommendation is True
@@ -1514,7 +1514,7 @@ class TestRecommendationInquiryParsing:
         These patterns extract a search term and do a data-driven lookup.
         The exact return values depend on database content.
         """
-        from orderbot.tasks.state_machine import _parse_recommendation_inquiry
+        from orderbot.tasks.parsers import _parse_recommendation_inquiry
         result = _parse_recommendation_inquiry(text)
         assert result is not None, f"Failed to detect recommendation in: {text}"
         assert result.asks_recommendation is True
@@ -1545,13 +1545,13 @@ class TestRecommendationInquiryParsing:
     ])
     def test_non_recommendation_not_detected(self, text):
         """Test that order intents are NOT detected as recommendations."""
-        from orderbot.tasks.state_machine import _parse_recommendation_inquiry
+        from orderbot.tasks.parsers import _parse_recommendation_inquiry
         result = _parse_recommendation_inquiry(text)
         assert result is None, f"Incorrectly detected recommendation in: {text}"
 
     def test_recommendation_should_not_add_to_cart(self):
         """Test that recommendation response has no items to add."""
-        from orderbot.tasks.state_machine import _parse_recommendation_inquiry
+        from orderbot.tasks.parsers import _parse_recommendation_inquiry
         result = _parse_recommendation_inquiry("what kind of bagel do you recommend?")
         assert result is not None
         assert result.asks_recommendation is True
@@ -1579,7 +1579,7 @@ class TestItemDescriptionInquiryParsing:
     ])
     def test_item_description_patterns_detected(self, text, expected_item):
         """Test that item description questions are correctly detected."""
-        from orderbot.tasks.state_machine import _parse_item_description_inquiry
+        from orderbot.tasks.parsers import _parse_item_description_inquiry
         result = _parse_item_description_inquiry(text)
         assert result is not None, f"Failed to detect item description inquiry in: {text}"
         assert result.asks_item_description is True
@@ -1600,13 +1600,13 @@ class TestItemDescriptionInquiryParsing:
     ])
     def test_non_description_inquiry_not_detected(self, text):
         """Test that order intents are NOT detected as item description inquiries."""
-        from orderbot.tasks.state_machine import _parse_item_description_inquiry
+        from orderbot.tasks.parsers import _parse_item_description_inquiry
         result = _parse_item_description_inquiry(text)
         assert result is None, f"Incorrectly detected item description inquiry in: {text}"
 
     def test_item_description_should_not_add_to_cart(self):
         """Test that item description response has no items to add."""
-        from orderbot.tasks.state_machine import _parse_item_description_inquiry
+        from orderbot.tasks.parsers import _parse_item_description_inquiry
         result = _parse_item_description_inquiry("what's on the health nut?")
         assert result is not None
         assert result.asks_item_description is True

@@ -137,6 +137,8 @@ async def lifespan(app: FastAPI):
 
     logger.info("Initializing menu data cache...")
     try:
+        # Use a short-lived session for DB operations
+        # Close it before non-DB operations to avoid Neon idle connection timeout
         db = SessionLocal()
         try:
             menu_cache.load_from_db(db, fail_on_error=True)
@@ -145,13 +147,13 @@ async def lifespan(app: FastAPI):
             from .services.helpers import warmup_store_cache
             logger.info("Warming up store info cache...")
             warmup_store_cache(db)
-
-            # Pre-compile parser patterns
-            from .tasks.parsers.deterministic.patterns import warmup_patterns
-            logger.info("Pre-compiling parser patterns...")
-            warmup_patterns()
         finally:
             db.close()
+
+        # Pre-compile parser patterns (no DB needed - close session first to avoid idle timeout)
+        from .tasks.parsers.deterministic.patterns import warmup_patterns
+        logger.info("Pre-compiling parser patterns...")
+        warmup_patterns()
     except Exception as e:
         logger.error("Failed to initialize menu data cache: %s", e)
         raise RuntimeError(f"Server startup failed: Could not load menu data cache: {e}") from e

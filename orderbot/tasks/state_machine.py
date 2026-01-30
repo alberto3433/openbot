@@ -254,6 +254,13 @@ class OrderStateMachine:
 
         # Phase 5: Final cross-handler wiring
         self.configuring_item_handler.taking_items_handler = self.taking_items_handler
+        # Wire up callback for processing pending parsed items after disambiguation
+        # This enables MenuItemConfigHandler to process items that were stored during
+        # multi-item order disambiguation (e.g., "latte and bagel" where bagel is stored
+        # while we disambiguate and configure the latte)
+        self.menu_item_handler.process_pending_parsed_items = (
+            self.configuring_item_handler._process_pending_parsed_items
+        )
 
     @property
     def menu_data(self) -> dict:

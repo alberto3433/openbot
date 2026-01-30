@@ -802,7 +802,7 @@ class MenuItemConfigHandler(BaseHandler):
                 else:
                     return f"For {item_desc}, what kind of {attr_name} would you like?"
         else:
-            return f"Got it, {item_display}. "
+            return f"Got it, for the {item_display}. "
 
     # =========================================================================
     # Main Entry Point
@@ -1961,6 +1961,15 @@ class MenuItemConfigHandler(BaseHandler):
             self._recalculate_item_price(item)
             item.mark_complete()
             order.clear_pending()
+
+            # Check if there are pending parsed items that haven't been added yet
+            # This handles the case where disambiguation was triggered and remaining items
+            # in the order were stored (e.g., "bagel and latte" - latte is stored while
+            # we disambiguate and configure bagel)
+            if self._process_pending_parsed_items_callback:
+                pending_result = self._process_pending_parsed_items_callback(order)
+                if pending_result:
+                    return pending_result
 
             # Check if there are more items to configure (e.g., coffee added with bagel)
             if self._get_next_question:

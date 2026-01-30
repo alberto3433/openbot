@@ -37,7 +37,7 @@ from .modifier_operations import (
     find_default_ingredient_on_any_item,
     remove_default_ingredient_from_item,
 )
-from .parsers.constants import ORDINAL_WORDS
+from .parsers.constants import ORDINAL_WORDS, ADD_MODIFIER_PATTERNS
 from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
 from .parsers.quantity_utils import (
     extract_quantity_for_pattern,
@@ -736,18 +736,8 @@ class TakingItemsHandler(MenuDataMixin):
         input_lower = user_input.lower().strip()
         active_items = order.items.get_active_items()
 
-        add_modifier_patterns = [
-            r"^add\s+",  # "add vanilla syrup"
-            r"^with\s+",  # "with caramel"
-            r"^can\s+(?:i|you)\s+(?:get|add)\s+",  # "can I get vanilla"
-            r"^(?:i'?d?\s+)?like\s+(?:to\s+)?add\s+",  # "I'd like to add vanilla"
-            r"^put\s+",  # "put vanilla in it"
-            r"^can\s+you\s+put\s+",  # "can you put milk in that"
-            r"put\s+.+?\s+in\s+(?:it|that|the|my)",  # "put milk in that"
-        ]
-
         is_add_modifier_request = any(
-            re.search(pattern, input_lower) for pattern in add_modifier_patterns
+            re.search(pattern, input_lower) for pattern in ADD_MODIFIER_PATTERNS
         )
 
         # Check if this is a pure modifier input for the last item (data-driven)
@@ -1916,18 +1906,8 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Check if this looks like a modifier addition for the last item
         # Patterns: "add X", "with X", "can I get X", "I'd like X added"
-        add_modifier_patterns = [
-            r"^add\s+",  # "add vanilla syrup"
-            r"^with\s+",  # "with caramel"
-            r"^can\s+(?:i|you)\s+(?:get|add)\s+",  # "can I get vanilla"
-            r"^(?:i'?d?\s+)?like\s+(?:to\s+)?add\s+",  # "I'd like to add vanilla"
-            r"^put\s+",  # "put vanilla in it"
-            r"^can\s+you\s+put\s+",  # "can you put milk in that"
-            r"put\s+.+?\s+in\s+(?:it|that|the|my)",  # "put milk in that"
-        ]
-
         is_add_modifier_request = any(
-            re.search(pattern, input_lower) for pattern in add_modifier_patterns
+            re.search(pattern, input_lower) for pattern in ADD_MODIFIER_PATTERNS
         )
 
         # Check if this is a pure modifier input for the last item (data-driven)

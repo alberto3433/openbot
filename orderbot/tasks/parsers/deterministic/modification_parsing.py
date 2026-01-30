@@ -19,6 +19,9 @@ from ..constants import (
     WORD_TO_NUM,
     get_known_menu_items,
     clean_extracted_text,
+    SKIP_WORDS,
+    SKIP_WORDS_BASIC,
+    SKIP_WORDS_PREPOSITIONS,
 )
 
 from .extraction import extract_modifiers_with_qualifiers, extract_attribute_values
@@ -49,9 +52,9 @@ def _get_attribute_terminators_pattern() -> str:
     attr_words = menu_cache.get_all_attribute_option_words()
 
     # Filter to reasonable terminators (2+ chars, not common words)
-    skip_words = {'a', 'an', 'the', 'on', 'in', 'to', 'of', 'no', 'yes'}
+    filter_words = SKIP_WORDS_BASIC | SKIP_WORDS_PREPOSITIONS | {'no', 'yes'}
     terminators = {word for word in attr_words.keys()
-                   if len(word) >= 2 and word not in skip_words}
+                   if len(word) >= 2 and word not in filter_words}
 
     # Sort by length descending (longer matches first)
     sorted_terminators = sorted(terminators, key=len, reverse=True)
@@ -157,8 +160,7 @@ def _extract_menu_item_modifications(
         for part in parts:
             part = part.strip()
             # Exclude common non-modifier words
-            skip_words = {'a', 'an', 'the', 'please', 'thanks', 'it', 'that'}
-            if part in skip_words:
+            if part in SKIP_WORDS:
                 continue
 
             matched = match_ingredient(part)

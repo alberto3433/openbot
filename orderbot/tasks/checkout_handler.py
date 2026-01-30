@@ -141,6 +141,36 @@ class CheckoutHandler(BaseHandler):
         if self._transition_to_next_slot:
             self._transition_to_next_slot(order)
 
+    def _complete_order_with_contact(
+        self,
+        order: OrderTask,
+        contact_value: str,
+        contact_type: str,
+    ) -> StateMachineResult:
+        """Finalize order and return completion result with appropriate message.
+
+        Args:
+            order: The order to finalize.
+            contact_value: Validated phone number or email address.
+            contact_type: Either "phone" or "email".
+
+        Returns:
+            StateMachineResult with completion message.
+        """
+        self._finalize_order(order, contact_value, contact_type)
+
+        if contact_type == "phone":
+            confirmation_text = "We'll text you when it's ready."
+        else:
+            confirmation_text = f"We'll send the confirmation to {contact_value}."
+
+        return StateMachineResult(
+            message=f"Your order number is {order.checkout.short_order_number}. "
+                   f"{confirmation_text} Thank you, {order.customer_info.name}!",
+            order=order,
+            is_complete=True,
+        )
+
     def handle_delivery(
         self,
         user_input: str,
@@ -354,24 +384,16 @@ class CheckoutHandler(BaseHandler):
             order.payment.method = "card_link"
             phone = parsed.phone_number or order.customer_info.phone
             if phone:
-                # Validate the phone number
                 validated_phone, error_message = validate_phone_number(phone)
                 if error_message:
                     logger.info("Phone validation failed for '%s': %s", phone, error_message)
-                    # Ask for phone again with the error message
                     if self._transition_to_next_slot:
                         self._transition_to_next_slot(order)
                     return StateMachineResult(
                         message=error_message,
                         order=order,
                     )
-                self._finalize_order(order, validated_phone, "phone")
-                return StateMachineResult(
-                    message=f"Your order number is {order.checkout.short_order_number}. "
-                           f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
-                    order=order,
-                    is_complete=True,
-                )
+                return self._complete_order_with_contact(order, validated_phone, "phone")
             else:
                 # Need to ask for phone number - orchestrator will say NOTIFICATION
                 if self._transition_to_next_slot:
@@ -385,24 +407,15 @@ class CheckoutHandler(BaseHandler):
             # Email selected - set payment method and check for email
             order.payment.method = "card_link"
             if parsed.email_address:
-                # Validate the email address
                 validated_email, error_message = validate_email_address(parsed.email_address)
                 if error_message:
                     logger.info("Email validation failed for '%s': %s", parsed.email_address, error_message)
-                    # Ask for email again with the error message
                     order.set_phase(OrderPhase.CHECKOUT_EMAIL)
                     return StateMachineResult(
                         message=error_message,
                         order=order,
                     )
-                self._finalize_order(order, validated_email, "email")
-                return StateMachineResult(
-                    message=f"Your order number is {order.checkout.short_order_number}. "
-                           f"We'll send the confirmation to {validated_email}. "
-                           f"Thank you, {order.customer_info.name}!",
-                    order=order,
-                    is_complete=True,
-                )
+                return self._complete_order_with_contact(order, validated_email, "email")
             else:
                 # Need to ask for email - explicitly set CHECKOUT_EMAIL phase
                 # (orchestrator maps NOTIFICATION to CHECKOUT_PHONE by default)
@@ -431,7 +444,6 @@ class CheckoutHandler(BaseHandler):
                 order=order,
             )
 
-        # Validate the phone number
         validated_phone, error_message = validate_phone_number(parsed.phone)
         if error_message:
             logger.info("Phone validation failed for '%s': %s", parsed.phone, error_message)
@@ -440,14 +452,7 @@ class CheckoutHandler(BaseHandler):
                 order=order,
             )
 
-        # Store validated phone and complete the order
-        self._finalize_order(order, validated_phone, "phone")
-        return StateMachineResult(
-            message=f"Your order number is {order.checkout.short_order_number}. "
-                   f"We'll text you when it's ready. Thank you, {order.customer_info.name}!",
-            order=order,
-            is_complete=True,
-        )
+        return self._complete_order_with_contact(order, validated_phone, "phone")
 
     def handle_email(
         self,
@@ -463,7 +468,6 @@ class CheckoutHandler(BaseHandler):
                 order=order,
             )
 
-        # Validate the email address
         validated_email, error_message = validate_email_address(parsed.email)
         if error_message:
             logger.info("Email validation failed for '%s': %s", parsed.email, error_message)
@@ -472,15 +476,7 @@ class CheckoutHandler(BaseHandler):
                 order=order,
             )
 
-        # Store validated/normalized email and complete the order
-        self._finalize_order(order, validated_email, "email")
-        return StateMachineResult(
-            message=f"Your order number is {order.checkout.short_order_number}. "
-                   f"We'll send the confirmation to {validated_email}. "
-                   f"Thank you, {order.customer_info.name}!",
-            order=order,
-            is_complete=True,
-        )
+        return self._complete_order_with_contact(order, validated_email, "email")
 
     # =========================================================================
     # Order Confirmation Methods (consolidated from confirmation_handler.py)

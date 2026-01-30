@@ -9,7 +9,6 @@ import re
 import time
 from collections import defaultdict
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .base import build_index_by_key, build_alias_mapping
@@ -1334,8 +1333,6 @@ class LoaderMixin:
 
     def _load_menu_item_categories_from_bulk(self, bulk_data: dict) -> None:
         """Load menu item categories (from bulk)."""
-        from sqlalchemy import func
-
         categories = bulk_data["categories"]
         menu_item_categories = bulk_data["menu_item_categories"]
         item_types = bulk_data["item_types"]

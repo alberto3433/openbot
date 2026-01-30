@@ -20,6 +20,15 @@ from ..exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# Skip Words for Text Processing
+# =============================================================================
+# These are defined here to avoid circular imports with tasks/parsers/constants.py
+# English stop words / union words (language-specific, not domain-specific)
+SKIP_WORDS_BASIC = {'the', 'a', 'an'}
+SKIP_WORDS_CONJUNCTIONS = {'and', 'or', 'with'}
+SKIP_WORDS_PREPOSITIONS = {'on', 'in', 'to', 'of'}
+
 # Shared inflect engine instance (thread-safe for reading)
 _inflect_engine = inflect.engine()
 
@@ -427,7 +436,7 @@ class BaseCacheMixin:
         # - "a", "an", "the" often signify count
         # - "and", "with" are union words joining items or modifiers
         # - "or", "on", "in" are prepositions
-        skip_words = {"the", "a", "an", "with", "and", "or", "on", "in"}
+        skip_words = SKIP_WORDS_BASIC | SKIP_WORDS_CONJUNCTIONS | SKIP_WORDS_PREPOSITIONS
 
         # Build menu item keyword index
         self._menu_item_keyword_index = self._build_index(self._known_menu_items, skip_words)

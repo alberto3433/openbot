@@ -8,12 +8,14 @@ including attributes, modifiers, quantities, and special instructions.
 import re
 import logging
 from collections import namedtuple
+from typing import Any
 
 from orderbot.menu_data_cache import menu_cache
 
 from ..constants import (
     WORD_TO_NUM,
     QUALIFIER_PATTERNS,
+    SKIP_WORDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -168,8 +170,7 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
     for pattern, qualifier in QUALIFIER_PATTERNS:
         for match in re.finditer(pattern, input_lower, re.IGNORECASE):
             item = match.group(1).strip()
-            skip_words = {'the', 'a', 'an', 'and', 'or', 'on', 'with', 'please', 'thanks'}
-            if item.lower() in skip_words:
+            if item.lower() in SKIP_WORDS:
                 continue
             if qualifier == 'no':
                 instruction = f"no {item}"
@@ -201,7 +202,7 @@ def extract_special_instructions_from_input(user_input: str) -> list[str]:
 def extract_attribute_values(
     user_input: str,
     item_type: str,
-) -> dict[str, any]:
+) -> dict[str, Any]:
     """
     Extract attribute values from user input for a specific item type.
 

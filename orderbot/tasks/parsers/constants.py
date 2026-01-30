@@ -86,6 +86,39 @@ def extract_selection_index(user_input: str, max_options: int) -> int | None:
 extract_quantity = extract_quantity_for_pattern
 
 # =============================================================================
+# Skip Words for Parsing
+# =============================================================================
+# Import base skip words from cache.base to avoid circular imports
+# (cache.base cannot import from here, so the canonical definitions live there)
+from orderbot.cache.base import (
+    SKIP_WORDS_BASIC,
+    SKIP_WORDS_CONJUNCTIONS,
+    SKIP_WORDS_PREPOSITIONS,
+)
+
+# Additional filler words for parsing (not needed in cache/base.py)
+SKIP_WORDS_FILLER = {'please', 'thanks', 'it', 'that', 'yes', 'no'}
+
+# Combined set for general-purpose parsing
+SKIP_WORDS = SKIP_WORDS_BASIC | SKIP_WORDS_CONJUNCTIONS | SKIP_WORDS_PREPOSITIONS | SKIP_WORDS_FILLER
+
+# =============================================================================
+# Add Modifier Request Patterns
+# =============================================================================
+
+# Patterns that indicate user wants to add a modifier to an existing item
+# Used in taking_items_handler.py and other modifier detection logic
+ADD_MODIFIER_PATTERNS = [
+    r"^add\s+",  # "add vanilla syrup"
+    r"^with\s+",  # "with caramel"
+    r"^can\s+(?:i|you)\s+(?:get|add)\s+",  # "can I get vanilla"
+    r"^(?:i'?d?\s+)?like\s+(?:to\s+)?add\s+",  # "I'd like to add vanilla"
+    r"^put\s+",  # "put vanilla in it"
+    r"^can\s+you\s+put\s+",  # "can you put milk in that"
+    r"put\s+.+?\s+in\s+(?:it|that|the|my)",  # "put milk in that"
+]
+
+# =============================================================================
 # Regex Patterns
 # =============================================================================
 
@@ -341,6 +374,23 @@ RECOMMENDATION_TERM_PATTERNS = [
 # =============================================================================
 # String Normalization Utilities
 # =============================================================================
+
+
+def normalize_text(text: str) -> str:
+    """
+    Normalize text for comparison by lowercasing and stripping whitespace.
+
+    This is the canonical function for preparing user input for pattern matching,
+    lookups, and comparisons. Using this function ensures consistent normalization
+    across the codebase.
+
+    Args:
+        text: The text to normalize
+
+    Returns:
+        Lowercased, whitespace-stripped text
+    """
+    return text.lower().strip()
 
 
 def clean_extracted_text(text: str) -> str:

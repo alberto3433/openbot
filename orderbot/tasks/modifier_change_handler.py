@@ -358,9 +358,9 @@ class ModifierChangeHandler:
             ChangeResult indicating success/failure and any message
         """
         # Find the target item
-        active_items = order.items.get_active_items()
         if item_id is None:
-            # Use the last item
+            # Use the last active item
+            active_items = order.items.get_active_items()
             if not active_items:
                 return ChangeResult(
                     success=False,
@@ -368,8 +368,8 @@ class ModifierChangeHandler:
                 )
             item = active_items[-1]
         else:
-            # Find specific item by ID
-            item = next((t for t in active_items if t.id == item_id), None)
+            # Find specific active item by ID
+            item = order.items.get_active_item_by_id(item_id)
             if item is None:
                 return ChangeResult(
                     success=False,

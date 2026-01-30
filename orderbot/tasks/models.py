@@ -19,6 +19,18 @@ import uuid
 
 from .pending_fields import PendingField
 
+# Late import to avoid circular import - will be set at module load time
+# after models.py is fully initialized
+_is_price_metadata_key = None
+
+def _get_is_price_metadata_key():
+    """Lazy import of is_price_metadata_key to avoid circular imports."""
+    global _is_price_metadata_key
+    if _is_price_metadata_key is None:
+        from .utils.constants import is_price_metadata_key
+        _is_price_metadata_key = is_price_metadata_key
+    return _is_price_metadata_key
+
 logger = logging.getLogger(__name__)
 
 
@@ -515,7 +527,7 @@ class MenuItemTask(ItemTask):
         # This is for backward compat when code sets attribute_values directly
         for key, val in value.items():
             # Skip metadata keys
-            if key.endswith("_price") or key.endswith("_upcharge"):
+            if _get_is_price_metadata_key()(key):
                 continue
 
             # Remove existing selections for this category
@@ -851,6 +863,13 @@ class ItemsTask(BaseTask):
     def get_item_by_id(self, item_id: str) -> ItemTask | None:
         """Get an item by its ID."""
         for item in self.items:
+            if item.id == item_id:
+                return item
+        return None
+
+    def get_active_item_by_id(self, item_id: str) -> ItemTask | None:
+        """Get an active (non-cancelled) item by its ID."""
+        for item in self.get_active_items():
             if item.id == item_id:
                 return item
         return None

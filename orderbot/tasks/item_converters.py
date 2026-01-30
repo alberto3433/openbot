@@ -19,6 +19,7 @@ from .models import (
     _pluralize_display_name,
 )
 from .normalization import format_slug_for_display
+from .utils.constants import PRICE_SUFFIXES
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
@@ -36,9 +37,6 @@ YES_SLUG = "yes"
 
 NO_SLUG = "no"
 """Canonical slug for boolean False values."""
-
-# Price metadata suffixes used to store upcharges alongside attribute values
-PRICE_SUFFIXES = ("_price", "_upcharge")
 
 
 class UnifiedItemConverter:

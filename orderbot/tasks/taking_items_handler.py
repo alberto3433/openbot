@@ -46,6 +46,7 @@ from .parsers.quantity_utils import (
 )
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list
+from .utils.constants import is_price_metadata_key
 from .normalization import format_slug_for_display
 
 if TYPE_CHECKING:
@@ -523,7 +524,7 @@ def _build_item_summary(item: ParsedItemEntry) -> str:
     attr_displays = []
     for key, value in item.attribute_values.items():
         # Skip internal storage fields
-        if key.endswith("_price") or key.endswith("_upcharge"):
+        if is_price_metadata_key(key):
             continue
 
         if value is True:
@@ -2258,7 +2259,7 @@ class TakingItemsHandler(MenuDataMixin):
         # Data-driven: let MenuItemConfigHandler determine what to ask
         items_needing_config: list[tuple[str, str, str]] = []  # (item_id, display_name, item_type)
         for item_id, display_name, item_type in added_items:
-            item = next((i for i in order.items.items if i.id == item_id), None)
+            item = order.items.get_item_by_id(item_id)
             if item and item.status == TaskStatus.IN_PROGRESS:
                 items_needing_config.append((item_id, display_name, item_type))
 
@@ -2278,7 +2279,7 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Get first item and delegate question to MenuItemConfigHandler
         first_item_id, first_item_name, first_item_type = items_needing_config[0]
-        first_item = next((i for i in order.items.items if i.id == first_item_id), None)
+        first_item = order.items.get_item_by_id(first_item_id)
 
         if isinstance(first_item, MenuItemTask) and self.item_adder_handler and self.item_adder_handler.menu_item_handler:
             return self.item_adder_handler.menu_item_handler.get_first_question(first_item, order)

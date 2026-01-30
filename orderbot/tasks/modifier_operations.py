@@ -24,6 +24,7 @@ from .models import (
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
+from .utils.constants import is_price_metadata_key
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +208,7 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
 
             for attr_key, attr_value in attribute_values.items():
                 # Skip metadata fields
-                if attr_key.endswith("_price"):
+                if is_price_metadata_key(attr_key):
                     continue
 
                 if isinstance(attr_value, list):

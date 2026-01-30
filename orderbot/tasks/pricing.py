@@ -17,6 +17,7 @@ from .mixins import MenuDataMixin
 from .normalization import normalize_to_slug
 from .modifier_utils import extract_modifier_slug_and_quantity, extract_modifier_price
 from .utils.cache_helpers import get_item_type_attributes
+from .utils.constants import ATTR_METADATA_SUFFIXES, ATTR_PENDING_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -509,101 +510,85 @@ class PricingEngine(MenuDataMixin):
     # Unified Price Recalculation (Generic, Data-Driven)
     # =========================================================================
 
-    def recalculate_item_price(self, item) -> float:
-        """Generic price recalculation for any menu item type.
-
-        This is the single entry point for all price recalculation. It calculates
-        price using a fully data-driven approach with no hardcoded attribute names:
-
-        total = base_price + sum(attribute_option.price_modifier for all selected options)
+    def _calculate_base_price(
+        self, item, menu_item: dict | None
+    ) -> tuple[float, bool, str | None, set[str]]:
+        """Calculate base price for an item, handling variant pricing and side items.
 
         Args:
-            item: Any item task (MenuItemTask)
+            item: The menu item task
+            menu_item: Menu item data from cache lookup (may be None)
 
         Returns:
-            The new calculated price
-
-        Raises:
-            ValueError: If base price cannot be looked up or item_type is not set
+            Tuple of (base_price, uses_variant_pricing, variant_attr, included_categories)
+            - base_price: The calculated base price
+            - uses_variant_pricing: True if size/variant pricing was used
+            - variant_attr: The attribute slug covered by variant pricing (e.g., "size")
+            - included_categories: Set of ingredient categories included at no extra charge
         """
-        # Require item_type - no fallbacks
-        item_type = getattr(item, 'menu_item_type', None)
-        if not item_type:
-            raise ValueError(
-                f"Cannot recalculate price for '{getattr(item, 'menu_item_name', 'unknown')}': "
-                "menu_item_type is required but not set on item."
-            )
-
-        # Get attribute values and modifiers from the item
         attr_values = item.attribute_values or {}
-        item_modifiers = item.modifiers or []
-
-        # =====================================================================
-        # 1. Determine base price (respecting variant-based pricing and sides)
-        # =====================================================================
-
-        # Look up menu item for pricing data (needed for both base price and included categories)
-        menu_item = self._lookup_menu_item(item.menu_item_name)
 
         # Get included ingredient categories (for skipping upcharges on included items)
-        # If BEC includes cheese, selecting cheese type shouldn't upcharge
-        included_ingredient_categories: set[str] = set()
+        included_categories: set[str] = set()
         if menu_item:
-            included_ingredient_categories = set(
+            included_categories = set(
                 menu_item.get("included_ingredient_categories", [])
             )
 
-        logger.debug(
-            "recalculate_item_price: item=%s, menu_item_found=%s, included_categories=%s",
-            item.menu_item_name, menu_item is not None, included_ingredient_categories
-        )
-
-        # Side items have base_price = 0 (e.g., bagel side with omelette is free,
-        # but modifiers like spread still cost extra)
+        # Side items have base_price = 0
         is_side_item = getattr(item, 'side_of_item_id', None) is not None
-
         if is_side_item:
-            base_price = 0.0
-            uses_variant_pricing = False
-            variant_attr = None
-        else:
-            # Check if item has variant-based pricing (e.g., size_prices)
-            # If so, the variant dimension is already factored into the base price
-            uses_variant_pricing = False
-            variant_attr = None  # The attribute covered by variant pricing
+            return 0.0, False, None, included_categories
 
-            size_prices = menu_item.get("size_prices") if menu_item else None
+        # Check for variant-based pricing (e.g., size_prices)
+        size_prices = menu_item.get("size_prices") if menu_item else None
 
-            if size_prices:
-                # Derive variant attribute from size_category_slug (e.g., "size")
-                variant_attr = menu_item.get("size_category_slug")
-                variant_value = attr_values.get(variant_attr) if variant_attr else None
-                size_price, size_data = self.lookup_size_price(item.menu_item_name, variant_value)
+        if size_prices:
+            variant_attr = menu_item.get("size_category_slug")
+            variant_value = attr_values.get(variant_attr) if variant_attr else None
+            size_price, _ = self.lookup_size_price(item.menu_item_name, variant_value)
 
-                if size_price is not None:
-                    base_price = size_price
-                    uses_variant_pricing = True
-                else:
-                    # Traditional pricing: base_price from menu item
-                    base_price = self.lookup_base_price(item.menu_item_name)
-            else:
-                # No variant pricing - use traditional base_price
-                base_price = self.lookup_base_price(item.menu_item_name)
+            if size_price is not None:
+                return size_price, True, variant_attr, included_categories
 
-        total = base_price
+        # Traditional pricing: base_price from menu item
+        base_price = self.lookup_base_price(item.menu_item_name)
+        return base_price, False, None, included_categories
 
-        # =====================================================================
-        # 2. Process attribute_values generically (no hardcoded attribute names)
-        # =====================================================================
+    def _apply_attribute_upcharges(
+        self,
+        item_type: str,
+        attr_values: dict,
+        item_modifiers: list,
+        uses_variant_pricing: bool,
+        variant_attr: str | None,
+        included_categories: set[str],
+    ) -> tuple[float, set[str]]:
+        """Apply upcharges for attribute values.
 
-        skip_suffixes = ("_price", "_upcharge", "_choice")
+        Processes all attribute values and calculates their price contributions.
+
+        Args:
+            item_type: The item type slug
+            attr_values: Dict of attribute slug -> value
+            item_modifiers: List of modifier dicts on the item
+            uses_variant_pricing: Whether variant pricing covers an attribute
+            variant_attr: The attribute covered by variant pricing
+            included_categories: Ingredient categories that don't incur charges
+
+        Returns:
+            Tuple of (total_upcharge, priced_slugs)
+            - total_upcharge: Sum of all attribute upcharges
+            - priced_slugs: Set of slugs that have been priced (to avoid double-counting)
+        """
+        total = 0.0
         priced_slugs: set[str] = set()
 
         for attr_slug, attr_value in attr_values.items():
             # Skip metadata/computed fields
-            if any(attr_slug.endswith(suffix) for suffix in skip_suffixes):
+            if any(attr_slug.endswith(suffix) for suffix in ATTR_METADATA_SUFFIXES):
                 continue
-            if attr_slug.startswith("pending_"):
+            if attr_slug.startswith(ATTR_PENDING_PREFIX):
                 continue
 
             # Skip if variant pricing covers this attribute
@@ -616,110 +601,180 @@ class PricingEngine(MenuDataMixin):
             if isinstance(attr_value, str) and attr_value.lower() == "none":
                 continue
 
-            # Handle different value types
-            if isinstance(attr_value, bool) and attr_value is True:
-                # Boolean attributes (e.g., toasted=True) - look up upcharge
+            # Dispatch to type-specific handler
+            upcharge, slugs = self._process_attribute_value(
+                item_type, attr_slug, attr_value, item_modifiers, included_categories
+            )
+            total += upcharge
+            priced_slugs.update(slugs)
+
+        return total, priced_slugs
+
+    def _process_attribute_value(
+        self,
+        item_type: str,
+        attr_slug: str,
+        attr_value,
+        item_modifiers: list,
+        included_categories: set[str],
+    ) -> tuple[float, set[str]]:
+        """Process a single attribute value and return its price contribution.
+
+        Handles different value types: bool, list, str, int/float.
+
+        Returns:
+            Tuple of (upcharge, priced_slugs)
+        """
+        priced_slugs: set[str] = set()
+
+        if isinstance(attr_value, bool) and attr_value is True:
+            # Boolean attributes (e.g., toasted=True)
+            upcharge = self.lookup_attribute_option_upcharge(
+                item_type, attr_slug, "true", included_categories
+            )
+            return upcharge, priced_slugs
+
+        if isinstance(attr_value, list):
+            # Multi-select: sum prices for each item
+            return self._process_list_attribute(
+                item_type, attr_slug, attr_value, included_categories
+            )
+
+        if isinstance(attr_value, (int, float)):
+            # Numeric values - skip (handled via modifiers list)
+            return 0.0, priced_slugs
+
+        if isinstance(attr_value, str):
+            # Single string value
+            return self._process_string_attribute(
+                item_type, attr_slug, attr_value, item_modifiers, included_categories
+            )
+
+        return 0.0, priced_slugs
+
+    def _process_list_attribute(
+        self,
+        item_type: str,
+        attr_slug: str,
+        values: list,
+        included_categories: set[str],
+    ) -> tuple[float, set[str]]:
+        """Process a multi-select attribute value list."""
+        total = 0.0
+        priced_slugs: set[str] = set()
+
+        for item_val in values:
+            if isinstance(item_val, str) and item_val.lower() != "none":
                 upcharge = self.lookup_attribute_option_upcharge(
-                    item_type, attr_slug, "true", included_ingredient_categories
-                )
-                total += upcharge
-
-            elif isinstance(attr_value, list):
-                # Multi-select: sum prices for each item
-                for item_val in attr_value:
-                    if isinstance(item_val, str) and item_val.lower() != "none":
-                        # Try attribute option first, then modifier
-                        upcharge = self.lookup_attribute_option_upcharge(
-                            item_type, attr_slug, item_val, included_ingredient_categories
-                        )
-                        if upcharge > 0:
-                            total += upcharge
-                            priced_slugs.add(item_val)
-                        else:
-                            # Check if this option's ingredient category is included
-                            option_category = self._get_option_ingredient_category(
-                                item_type, attr_slug, item_val
-                            )
-                            if option_category and option_category in included_ingredient_categories:
-                                # Category is included - no charge
-                                priced_slugs.add(item_val)
-                            else:
-                                price = self.lookup_modifier_price(item_val, item_type)
-                                total += price
-                                priced_slugs.add(item_val)
-                    elif isinstance(item_val, dict):
-                        slug, qty = extract_modifier_slug_and_quantity(item_val)
-                        if slug:
-                            stored_price = extract_modifier_price(item_val)
-                            if stored_price is not None:
-                                price = stored_price
-                            else:
-                                price = self.lookup_modifier_price(slug, item_type)
-                                if price > 0:
-                                    item_val["price"] = price
-                            total += price * qty
-                            priced_slugs.add(slug)
-
-            elif isinstance(attr_value, (int, float)):
-                # Numeric values - skip direct pricing (handled via modifiers list)
-                continue
-
-            elif isinstance(attr_value, str):
-                # Single string value - check attribute option first, then modifier
-                # But first: check if this slug exists in item_modifiers with a stored price
-                # If so, skip it here and let Section 3 handle it using stored price × quantity
-                modifier_with_price = next(
-                    (m for m in item_modifiers
-                     if m.get("slug") == attr_value and m.get("price", 0) > 0),
-                    None
-                )
-                if modifier_with_price:
-                    # Skip - Section 3 will use stored price × quantity
-                    logger.debug(
-                        "recalc: skipping %s=%s (has modifier with price)",
-                        attr_slug, attr_value
-                    )
-                    continue
-
-                upcharge = self.lookup_attribute_option_upcharge(
-                    item_type, attr_slug, attr_value, included_ingredient_categories
-                )
-                logger.debug(
-                    "recalc: %s=%s upcharge=%.2f (included_categories=%s)",
-                    attr_slug, attr_value, upcharge, included_ingredient_categories
+                    item_type, attr_slug, item_val, included_categories
                 )
                 if upcharge > 0:
                     total += upcharge
-                    priced_slugs.add(attr_value)
-                    # Update the modifier's price so it displays in UI
-                    for mod in item_modifiers:
-                        if mod.get("slug") == attr_value and not mod.get("price"):
-                            mod["price"] = upcharge
-                            break
+                    priced_slugs.add(item_val)
                 else:
-                    # Check if this option's ingredient category is included
-                    # If so, don't look up modifier price (the $0 upcharge was intentional)
+                    # Check if category is included
                     option_category = self._get_option_ingredient_category(
-                        item_type, attr_slug, attr_value
+                        item_type, attr_slug, item_val
                     )
-                    if option_category and option_category in included_ingredient_categories:
-                        # Category is included - no charge, just mark as priced
-                        priced_slugs.add(attr_value)
+                    if option_category and option_category in included_categories:
+                        priced_slugs.add(item_val)
                     else:
-                        # Not an included category - try modifier price lookup
-                        price = self.lookup_modifier_price(attr_value, item_type)
+                        price = self.lookup_modifier_price(item_val, item_type)
                         total += price
-                        priced_slugs.add(attr_value)
-                        # Update the modifier's price so it displays in UI
-                        if price > 0:
-                            for mod in item_modifiers:
-                                if mod.get("slug") == attr_value and not mod.get("price"):
-                                    mod["price"] = price
-                                    break
+                        priced_slugs.add(item_val)
 
-        # =====================================================================
-        # 3. Process item.modifiers generically (no hardcoded categories)
-        # =====================================================================
+            elif isinstance(item_val, dict):
+                slug, qty = extract_modifier_slug_and_quantity(item_val)
+                if slug:
+                    stored_price = extract_modifier_price(item_val)
+                    if stored_price is not None:
+                        price = stored_price
+                    else:
+                        price = self.lookup_modifier_price(slug, item_type)
+                        if price > 0:
+                            item_val["price"] = price
+                    total += price * qty
+                    priced_slugs.add(slug)
+
+        return total, priced_slugs
+
+    def _process_string_attribute(
+        self,
+        item_type: str,
+        attr_slug: str,
+        attr_value: str,
+        item_modifiers: list,
+        included_categories: set[str],
+    ) -> tuple[float, set[str]]:
+        """Process a single string attribute value."""
+        priced_slugs: set[str] = set()
+
+        # Check if this slug exists in item_modifiers with a stored price
+        # If so, skip - Section 3 will handle it using stored price × quantity
+        modifier_with_price = next(
+            (m for m in item_modifiers
+             if m.get("slug") == attr_value and m.get("price", 0) > 0),
+            None
+        )
+        if modifier_with_price:
+            logger.debug(
+                "recalc: skipping %s=%s (has modifier with price)",
+                attr_slug, attr_value
+            )
+            return 0.0, priced_slugs
+
+        upcharge = self.lookup_attribute_option_upcharge(
+            item_type, attr_slug, attr_value, included_categories
+        )
+        logger.debug(
+            "recalc: %s=%s upcharge=%.2f (included_categories=%s)",
+            attr_slug, attr_value, upcharge, included_categories
+        )
+
+        if upcharge > 0:
+            priced_slugs.add(attr_value)
+            # Update the modifier's price so it displays in UI
+            for mod in item_modifiers:
+                if mod.get("slug") == attr_value and not mod.get("price"):
+                    mod["price"] = upcharge
+                    break
+            return upcharge, priced_slugs
+
+        # Check if category is included
+        option_category = self._get_option_ingredient_category(
+            item_type, attr_slug, attr_value
+        )
+        if option_category and option_category in included_categories:
+            priced_slugs.add(attr_value)
+            return 0.0, priced_slugs
+
+        # Not an included category - try modifier price lookup
+        price = self.lookup_modifier_price(attr_value, item_type)
+        priced_slugs.add(attr_value)
+        if price > 0:
+            for mod in item_modifiers:
+                if mod.get("slug") == attr_value and not mod.get("price"):
+                    mod["price"] = price
+                    break
+        return price, priced_slugs
+
+    def _apply_modifier_prices(
+        self,
+        item_modifiers: list,
+        item_type: str,
+        priced_slugs: set[str],
+    ) -> float:
+        """Apply prices for modifiers not already priced via attributes.
+
+        Args:
+            item_modifiers: List of modifier dicts on the item
+            item_type: The item type slug
+            priced_slugs: Set of slugs already priced (to avoid double-counting)
+
+        Returns:
+            Total price from modifiers
+        """
+        total = 0.0
 
         for modifier in item_modifiers:
             if not isinstance(modifier, dict):
@@ -735,22 +790,73 @@ class PricingEngine(MenuDataMixin):
                 price = stored_price
             else:
                 price = self.lookup_modifier_price(slug, item_type)
-                # Update the modifier's stored price so it displays in UI
                 if price > 0:
                     modifier["price"] = price
 
             total += price * quantity
 
-        # =====================================================================
-        # 4. Update item price
-        # =====================================================================
+        return total
 
+    def recalculate_item_price(self, item) -> float:
+        """Generic price recalculation for any menu item type.
+
+        This is the single entry point for all price recalculation. It calculates
+        price using a fully data-driven approach with no hardcoded attribute names:
+
+        total = base_price + sum(attribute_option.price_modifier) + modifier_prices
+
+        Args:
+            item: Any item task (MenuItemTask)
+
+        Returns:
+            The new calculated price
+
+        Raises:
+            ValueError: If item_type is not set on the item
+        """
+        # Require item_type - no fallbacks
+        item_type = getattr(item, 'menu_item_type', None)
+        if not item_type:
+            raise ValueError(
+                f"Cannot recalculate price for '{getattr(item, 'menu_item_name', 'unknown')}': "
+                "menu_item_type is required but not set on item."
+            )
+
+        # Get attribute values and modifiers from the item
+        attr_values = item.attribute_values or {}
+        item_modifiers = item.modifiers or []
+
+        # Look up menu item for pricing data
+        menu_item = self._lookup_menu_item(item.menu_item_name)
+
+        logger.debug(
+            "recalculate_item_price: item=%s, menu_item_found=%s",
+            item.menu_item_name, menu_item is not None
+        )
+
+        # 1. Calculate base price
+        base_price, uses_variant_pricing, variant_attr, included_categories = \
+            self._calculate_base_price(item, menu_item)
+
+        # 2. Apply attribute upcharges
+        attr_upcharge, priced_slugs = self._apply_attribute_upcharges(
+            item_type, attr_values, item_modifiers,
+            uses_variant_pricing, variant_attr, included_categories
+        )
+
+        # 3. Apply modifier prices (for items not already priced)
+        modifier_total = self._apply_modifier_prices(
+            item_modifiers, item_type, priced_slugs
+        )
+
+        # 4. Calculate and update final price
+        total = base_price + attr_upcharge + modifier_total
         new_price = round(total, 2)
         item.unit_price = new_price
 
         logger.info(
-            "Recalculated price for %s: base=$%.2f -> total=$%.2f",
-            item.menu_item_name, base_price, new_price
+            "Recalculated price for %s: base=$%.2f + attrs=$%.2f + mods=$%.2f = $%.2f",
+            item.menu_item_name, base_price, attr_upcharge, modifier_total, new_price
         )
 
         return new_price

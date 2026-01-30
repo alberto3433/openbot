@@ -22,6 +22,49 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Pattern Matching Helpers
+# =============================================================================
+
+def _compile_word_pattern(text: str) -> re.Pattern:
+    """Compile a case-insensitive word-boundary pattern.
+
+    Args:
+        text: The literal text to match
+
+    Returns:
+        Compiled regex pattern that matches the text with word boundaries
+    """
+    return re.compile(rf'\b{re.escape(text)}\b', re.IGNORECASE)
+
+
+def _find_pattern_matches(
+    patterns: list[str],
+    text: str,
+    info_func: callable = None,
+) -> list[tuple[int, int, str, Any]]:
+    """Find all word-boundary matches for patterns in text.
+
+    Args:
+        patterns: List of patterns to search for
+        text: Text to search in (should be lowercased)
+        info_func: Optional function to get info for each pattern.
+                   If provided, only patterns where info_func returns truthy are included.
+
+    Returns:
+        List of (start, end, pattern, info) tuples for each match.
+        If info_func is None, info will be None.
+    """
+    matches = []
+    for pattern in patterns:
+        pattern_re = _compile_word_pattern(pattern)
+        for match in pattern_re.finditer(text):
+            info = info_func(pattern) if info_func else None
+            if info_func is None or info:
+                matches.append((match.start(), match.end(), pattern, info))
+    return matches
+
+
+# =============================================================================
 # Modifier Qualifier Extraction
 # =============================================================================
 
@@ -63,41 +106,30 @@ def extract_modifiers_with_qualifiers(
         # No qualifiers in database, fall back to simple modifier extraction
         formatted = []
         for modifier in sorted(known_modifiers, key=len, reverse=True):
-            if re.search(rf'\b{re.escape(modifier)}\b', text_lower):
+            if _compile_word_pattern(modifier).search(text_lower):
                 normalized = menu_cache.normalize_modifier(modifier)
                 if normalized not in formatted:
                     formatted.append(normalized)
         return (formatted, None)
 
-    # Track found qualifiers with their positions
-    # Format: [(start, end, pattern, normalized_form, category), ...]
-    found_qualifiers: list[tuple[int, int, str, str, str]] = []
-
-    for pattern in qualifier_patterns:
-        # Find all occurrences of this qualifier pattern
-        pattern_re = re.compile(rf'\b{re.escape(pattern)}\b', re.IGNORECASE)
-        for match in pattern_re.finditer(text_lower):
-            info = menu_cache.get_qualifier_info(pattern)
-            if info:
-                found_qualifiers.append((
-                    match.start(),
-                    match.end(),
-                    pattern,
-                    info["normalized_form"],
-                    info["category"],
-                ))
+    # Find qualifiers with positions using pattern matching helper
+    # Format: [(start, end, pattern, info), ...] where info = {"normalized_form", "category"}
+    raw_qualifier_matches = _find_pattern_matches(
+        qualifier_patterns, text_lower, menu_cache.get_qualifier_info
+    )
+    # Expand to include normalized_form and category
+    found_qualifiers: list[tuple[int, int, str, str, str]] = [
+        (start, end, pattern, info["normalized_form"], info["category"])
+        for start, end, pattern, info in raw_qualifier_matches
+    ]
 
     # Track found modifiers with their positions
     # Format: [(start, end, modifier, normalized), ...]
     found_modifiers: list[tuple[int, int, str, str]] = []
-    matched_spans: list[tuple[int, int]] = []
-
-    # Mark qualifier spans to avoid matching modifiers inside them
-    for start, end, _, _, _ in found_qualifiers:
-        matched_spans.append((start, end))
+    matched_spans: list[tuple[int, int]] = [(start, end) for start, end, _, _, _ in found_qualifiers]
 
     for modifier in sorted(known_modifiers, key=len, reverse=True):
-        pattern_re = re.compile(rf'\b{re.escape(modifier)}\b', re.IGNORECASE)
+        pattern_re = _compile_word_pattern(modifier)
         for match in pattern_re.finditer(text_lower):
             start, end = match.start(), match.end()
             # Check for overlap with existing spans

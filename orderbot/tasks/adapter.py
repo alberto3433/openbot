@@ -23,6 +23,69 @@ logger = logging.getLogger(__name__)
 
 
 # -----------------------------------------------------------------------------
+# Flow State Helpers
+# -----------------------------------------------------------------------------
+
+def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
+    """Restore flow state fields from state_machine_state dict to OrderTask.
+
+    Args:
+        sm_state: The state_machine_state dict from order_dict
+        order: The OrderTask to populate
+    """
+    order.pending_item_ids = sm_state.get("pending_item_ids", [])
+    order.pending_field = sm_state.get("pending_field")
+    order.last_bot_message = sm_state.get("last_bot_message")
+    order.phase = sm_state.get("phase", "greeting")
+    order.pending_config_queue = sm_state.get("pending_config_queue", [])
+    order.pending_item_modifiers = sm_state.get("pending_item_modifiers", {})
+    order.pending_item_options = sm_state.get("pending_item_options", [])
+    order.pending_item_quantity = sm_state.get("pending_item_quantity", 1)
+    order.menu_query_pagination = sm_state.get("menu_query_pagination")
+    order.config_options_page = sm_state.get("config_options_page", 0)
+    order.multi_item_config_names = sm_state.get("multi_item_config_names", [])
+    order.pending_duplicate_selection = sm_state.get("pending_duplicate_selection")
+    order.pending_same_thing_clarification = sm_state.get("pending_same_thing_clarification")
+    order.pending_suggested_item = sm_state.get("pending_suggested_item")
+    order.pending_attr_disambiguation = sm_state.get("pending_attr_disambiguation")
+    order.pending_modifier_quantity = sm_state.get("pending_modifier_quantity")
+    order.pending_modifier_target_item_index = sm_state.get("pending_modifier_target_item_index")
+    order.pending_parsed_items = sm_state.get("pending_parsed_items", [])
+
+
+def _build_flow_state_dict(order: OrderTask) -> dict:
+    """Build state_machine_state dict from OrderTask flow state fields.
+
+    Args:
+        order: The OrderTask to serialize
+
+    Returns:
+        Dict containing all flow state fields
+    """
+    return {
+        "phase": order.phase,
+        "pending_item_ids": order.pending_item_ids,
+        "pending_item_id": order.pending_item_id,
+        "pending_field": order.pending_field,
+        "last_bot_message": order.last_bot_message,
+        "pending_config_queue": order.pending_config_queue,
+        "pending_item_modifiers": order.pending_item_modifiers,
+        "pending_item_options": order.pending_item_options,
+        "pending_item_quantity": order.pending_item_quantity,
+        "menu_query_pagination": order.menu_query_pagination,
+        "config_options_page": order.config_options_page,
+        "multi_item_config_names": order.multi_item_config_names,
+        "pending_duplicate_selection": order.pending_duplicate_selection,
+        "pending_same_thing_clarification": order.pending_same_thing_clarification,
+        "pending_suggested_item": order.pending_suggested_item,
+        "pending_attr_disambiguation": order.pending_attr_disambiguation,
+        "pending_modifier_quantity": order.pending_modifier_quantity,
+        "pending_modifier_target_item_index": order.pending_modifier_target_item_index,
+        "pending_parsed_items": order.pending_parsed_items,
+    }
+
+
+# -----------------------------------------------------------------------------
 # State Conversion: Dict -> OrderTask
 # -----------------------------------------------------------------------------
 
@@ -98,23 +161,7 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
     # Restore flow state (pending fields) from state_machine_state
     sm_state = order_dict.get("state_machine_state", {})
     if sm_state:
-        order.pending_item_ids = sm_state.get("pending_item_ids", [])
-        order.pending_field = sm_state.get("pending_field")
-        order.last_bot_message = sm_state.get("last_bot_message")
-        order.phase = sm_state.get("phase", "greeting")
-        order.pending_config_queue = sm_state.get("pending_config_queue", [])
-        order.pending_item_modifiers = sm_state.get("pending_item_modifiers", {})
-        order.pending_item_options = sm_state.get("pending_item_options", [])
-        order.pending_item_quantity = sm_state.get("pending_item_quantity", 1)
-        order.menu_query_pagination = sm_state.get("menu_query_pagination")
-        order.config_options_page = sm_state.get("config_options_page", 0)
-        order.multi_item_config_names = sm_state.get("multi_item_config_names", [])
-        order.pending_duplicate_selection = sm_state.get("pending_duplicate_selection")
-        order.pending_same_thing_clarification = sm_state.get("pending_same_thing_clarification")
-        order.pending_suggested_item = sm_state.get("pending_suggested_item")
-        order.pending_attr_disambiguation = sm_state.get("pending_attr_disambiguation")
-        order.pending_modifier_quantity = sm_state.get("pending_modifier_quantity")
-        order.pending_modifier_target_item_index = sm_state.get("pending_modifier_target_item_index")
+        _restore_flow_state(sm_state, order)
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
@@ -253,25 +300,6 @@ def order_task_to_dict(
     }
 
     # Save flow state
-    order_dict["state_machine_state"] = {
-        "phase": order.phase,
-        "pending_item_ids": order.pending_item_ids,
-        "pending_item_id": order.pending_item_id,
-        "pending_field": order.pending_field,
-        "last_bot_message": order.last_bot_message,
-        "pending_config_queue": order.pending_config_queue,
-        "pending_item_modifiers": order.pending_item_modifiers,
-        "pending_item_options": order.pending_item_options,
-        "pending_item_quantity": order.pending_item_quantity,
-        "menu_query_pagination": order.menu_query_pagination,
-        "config_options_page": order.config_options_page,
-        "multi_item_config_names": order.multi_item_config_names,
-        "pending_duplicate_selection": order.pending_duplicate_selection,
-        "pending_same_thing_clarification": order.pending_same_thing_clarification,
-        "pending_suggested_item": order.pending_suggested_item,
-        "pending_attr_disambiguation": order.pending_attr_disambiguation,
-        "pending_modifier_quantity": order.pending_modifier_quantity,
-        "pending_modifier_target_item_index": order.pending_modifier_target_item_index,
-    }
+    order_dict["state_machine_state"] = _build_flow_state_dict(order)
 
     return order_dict

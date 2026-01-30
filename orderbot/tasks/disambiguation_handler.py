@@ -25,6 +25,44 @@ from .parsers.constants import _SELECTION_PATTERNS
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Name Matching Helpers
+# =============================================================================
+
+def _get_item_display_name(item) -> str | None:
+    """Extract display name from either a cart item or a dict.
+
+    Args:
+        item: Either a MenuItemTask/ItemTask or a dict with "name" key
+
+    Returns:
+        Lowercased display name, or None if not extractable
+    """
+    if isinstance(item, dict):
+        name = item.get("name", "")
+        return name.lower() if name else None
+
+    # For task objects, try menu_item_name first, then get_display_name
+    if hasattr(item, 'menu_item_name') and item.menu_item_name:
+        return item.menu_item_name.lower()
+    if hasattr(item, 'get_display_name'):
+        return item.get_display_name().lower()
+    return None
+
+
+def _names_match(name1: str, name2: str) -> bool:
+    """Check if two item names match (exact or substring).
+
+    Args:
+        name1: First name (lowercased)
+        name2: Second name (lowercased)
+
+    Returns:
+        True if names match exactly or one is substring of the other
+    """
+    return name1 == name2 or name2 in name1 or name1 in name2
+
+
 class DisambiguationHandler:
     """Handles disambiguation when multiple menu items match user input."""
 
@@ -75,20 +113,14 @@ class DisambiguationHandler:
             The matching item dict if cart match found, None otherwise
         """
         for cart_item in order.items.items:
-            # Get cart item name - all items use menu_item_name
-            cart_name = None
-            if hasattr(cart_item, 'menu_item_name') and cart_item.menu_item_name:
-                cart_name = cart_item.menu_item_name.lower()
-            elif hasattr(cart_item, 'get_display_name'):
-                cart_name = cart_item.get_display_name().lower()
-
+            cart_name = _get_item_display_name(cart_item)
             if not cart_name:
                 continue
 
             # Check if any matching item matches something in the cart
             for match_item in matching_items:
-                match_name = match_item.get("name", "").lower()
-                if cart_name == match_name or match_name in cart_name or cart_name in match_name:
+                match_name = _get_item_display_name(match_item)
+                if match_name and _names_match(cart_name, match_name):
                     logger.info(
                         "DISAMBIGUATION: User already has '%s' in cart, using same item",
                         match_item.get("name")

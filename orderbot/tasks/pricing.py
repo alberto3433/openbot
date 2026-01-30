@@ -51,6 +51,33 @@ def _normalize_option_for_matching(option: dict) -> tuple[str, str]:
     return opt_slug, opt_name
 
 
+def _option_matches_value(option: dict, normalized_value: str, raw_value_lower: str) -> bool:
+    """Check if an option matches by slug, display_name, or raw value.
+
+    Uses multiple matching strategies to handle different input formats:
+    - Normalized slug comparison
+    - Normalized display_name comparison
+    - Raw lowercase value comparison
+    - Substring matching for partial matches
+
+    Args:
+        option: Option dict with "slug" and/or "display_name" keys
+        normalized_value: Value normalized via normalize_to_slug()
+        raw_value_lower: Original value lowercased
+
+    Returns:
+        True if the option matches by any strategy, False otherwise
+    """
+    opt_slug, opt_name = _normalize_option_for_matching(option)
+    opt_display_lower = (option.get("display_name") or "").lower()
+
+    return (opt_slug == normalized_value or
+            opt_name == normalized_value or
+            opt_slug == raw_value_lower or
+            opt_display_lower == raw_value_lower or
+            raw_value_lower in opt_slug)
+
+
 def _lookup_option_price_in_attributes(
     attributes: list[dict],
     normalized_value: str,
@@ -102,15 +129,7 @@ def _lookup_option_price_in_attributes(
             if not isinstance(opt, dict):
                 continue
 
-            opt_slug, opt_name = _normalize_option_for_matching(opt)
-            opt_display_lower = (opt.get("display_name") or "").lower()
-
-            # Match by normalized slug, normalized display_name, or raw lowercase value
-            if (opt_slug == normalized_value or
-                opt_name == normalized_value or
-                opt_slug == raw_value_lower or
-                opt_display_lower == raw_value_lower or
-                raw_value_lower in opt_slug):
+            if _option_matches_value(opt, normalized_value, raw_value_lower):
                 # Check both keys: "price_modifier" for attribute options,
                 # "price" for ingredient-based options
                 price = opt.get("price_modifier") or opt.get("price") or 0.0
@@ -341,14 +360,7 @@ class PricingEngine(MenuDataMixin):
             if attr.get("slug") != attr_slug:
                 continue
             for opt in attr.get("options", []):
-                opt_slug, opt_name = _normalize_option_for_matching(opt)
-                opt_display_lower = (opt.get("display_name") or "").lower()
-                # Match using same logic as _lookup_option_price_in_attributes
-                if (opt_slug == normalized or
-                    opt_name == normalized or
-                    opt_slug == option_lower or
-                    opt_display_lower == option_lower or
-                    option_lower in opt_slug):
+                if _option_matches_value(opt, normalized, option_lower):
                     return opt.get("ingredient_category")
 
         return None

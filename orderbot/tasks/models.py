@@ -828,9 +828,21 @@ class ItemsTask(BaseTask):
         if 0 <= index < len(self.items):
             self.items[index].mark_skipped()
 
+    def _filter_active(self, filter_func: callable = None) -> list[ItemTask]:
+        """Get active items, optionally filtered by a predicate.
+
+        Args:
+            filter_func: Optional predicate to further filter active items
+
+        Returns:
+            List of active (non-skipped) items, filtered if predicate provided
+        """
+        active = [item for item in self.items if item.status != TaskStatus.SKIPPED]
+        return [i for i in active if filter_func(i)] if filter_func else active
+
     def get_active_items(self) -> list[ItemTask]:
         """Get items that are not skipped."""
-        return [item for item in self.items if item.status != TaskStatus.SKIPPED]
+        return self._filter_active()
 
     def get_active_menu_items(self) -> list["MenuItemTask"]:
         """Get active items that are MenuItemTask instances.
@@ -838,10 +850,7 @@ class ItemsTask(BaseTask):
         This is a convenience method for code that needs to filter
         active items to only MenuItemTask (excluding other item types).
         """
-        return [
-            item for item in self.items
-            if item.status != TaskStatus.SKIPPED and isinstance(item, MenuItemTask)
-        ]
+        return self._filter_active(lambda i: isinstance(i, MenuItemTask))
 
     def get_current_item(self) -> ItemTask | None:
         """Get the item currently being worked on (first in_progress)."""
@@ -888,10 +897,8 @@ class ItemsTask(BaseTask):
 
     def get_active_item_by_id(self, item_id: str) -> ItemTask | None:
         """Get an active (non-cancelled) item by its ID."""
-        for item in self.get_active_items():
-            if item.id == item_id:
-                return item
-        return None
+        items = self._filter_active(lambda i: i.id == item_id)
+        return items[0] if items else None
 
 
 # =============================================================================

@@ -7,7 +7,7 @@ This migration changes the must_match to require "lox cream" or "lox cc" so that
 "lox and cream cheese" correctly matches Plain Cream Cheese instead.
 
 Revision ID: fix_lox_cc_mm_01
-Revises: dc9b0e5cf154
+Revises: 241c0e3f580d
 Create Date: 2025-01-30
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'fix_lox_cc_mm_01'
-down_revision = 'dc9b0e5cf154'
+down_revision = '241c0e3f580d'
 branch_labels = None
 depends_on = None
 

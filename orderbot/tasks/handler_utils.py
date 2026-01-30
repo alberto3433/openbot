@@ -269,3 +269,58 @@ def match_item_from_options(
         return matched_item
 
     return None
+
+
+def is_configurable_menu_item(item: any) -> bool:
+    """Check if item is a configurable MenuItemTask with a type.
+
+    Common check used before accessing menu_item_type or applying
+    type-specific configuration logic.
+
+    Args:
+        item: Any item to check
+
+    Returns:
+        True if item is a MenuItemTask with menu_item_type set
+    """
+    from .models import MenuItemTask
+    return isinstance(item, MenuItemTask) and item.menu_item_type is not None
+
+
+def recalculate_and_summarize(
+    item: "MenuItemTask",
+    pricing: any = None,
+) -> str:
+    """Recalculate item price and return its summary.
+
+    Common pattern after modifying an item - recalculate its price
+    and get the updated summary for display.
+
+    Args:
+        item: The item to update
+        pricing: Optional PricingEngine for recalculation
+
+    Returns:
+        The item's summary string
+    """
+    if pricing:
+        pricing.recalculate_item_price(item)
+    return item.get_summary()
+
+
+def get_newly_added_items(
+    order: "OrderTask",
+    items_before_count: int,
+) -> list:
+    """Get items added to order since a given count.
+
+    Used to track items added during a multi-step operation.
+
+    Args:
+        order: The order to check
+        items_before_count: Number of items before the operation
+
+    Returns:
+        List of newly added items
+    """
+    return order.items.items[items_before_count:]

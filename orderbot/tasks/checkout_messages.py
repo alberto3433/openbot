@@ -80,6 +80,37 @@ def changed_to_anything_else(item_summary: str) -> str:
     return f"Sure, I've changed that to {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
+def item_added_anything_else(count: int, item_name: str) -> str:
+    """Generate 'I've added X more Y. Anything else?' response.
+
+    Used when duplicating items in the cart.
+
+    Args:
+        count: Number of items added
+        item_name: Name/summary of the item
+
+    Returns:
+        Formatted response string
+    """
+    if count == 1:
+        return f"I've added another {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
+    return f"I've added {count} more {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def modifier_added_anything_else(item_summary: str) -> str:
+    """Generate 'Sure, I've added that to your X. Anything else?' response.
+
+    Used when adding a modifier to an existing item.
+
+    Args:
+        item_summary: Summary of the modified item
+
+    Returns:
+        Formatted response string
+    """
+    return f"Sure, I've added that to your {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
 # =============================================================================
 # Error Recovery Messages
 # =============================================================================

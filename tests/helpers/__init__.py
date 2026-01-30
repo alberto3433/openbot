@@ -15,7 +15,21 @@ from orderbot.tasks.models import MenuItemTask, TaskStatus
 from .menu_helpers import test_is_soda_drink
 
 # Test item factory functions
-from .item_factories import BagelItemTask, CoffeeItemTask
+from .item_factories import (
+    BagelItemTask,
+    CoffeeItemTask,
+    create_bagel_task,
+    create_coffee_task,
+)
+
+# Menu data factory functions
+from .menu_data_factories import (
+    create_minimal_menu_data,
+    create_bagel_menu_data,
+    create_beverage_menu_data,
+    create_test_menu_data,
+    create_full_menu_data,
+)
 
 # Parsed item query helpers
 from .parsed_item_queries import (
@@ -44,6 +58,14 @@ __all__ = [
     # Test item factory functions
     "BagelItemTask",
     "CoffeeItemTask",
+    "create_bagel_task",
+    "create_coffee_task",
+    # Menu data factory functions
+    "create_minimal_menu_data",
+    "create_bagel_menu_data",
+    "create_beverage_menu_data",
+    "create_test_menu_data",
+    "create_full_menu_data",
     # Parsed item queries
     "get_parsed_items",
     "get_parsed_item",

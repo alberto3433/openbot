@@ -20,6 +20,7 @@ from orderbot.tasks.slot_orchestrator import (
     ItemSlotOrchestrator,
     sync_db_order_to_task,
 )
+from tests.helpers import create_bagel_task, create_coffee_task
 
 
 # =============================================================================
@@ -107,74 +108,11 @@ def mock_get_item_type_attributes(item_type):
         return MOCK_BAGEL_ATTRIBUTES
     elif item_type == "sized_beverage":
         return MOCK_COFFEE_ATTRIBUTES
+    elif item_type == "espresso":
+        return MOCK_COFFEE_ATTRIBUTES  # Espresso drinks use same attributes as sized_beverage
     elif item_type == "omelette":
         return MOCK_OMELETTE_ATTRIBUTES
     return {}
-
-
-# =============================================================================
-# Helper functions to create bagel and coffee tasks
-# =============================================================================
-
-def create_bagel_task(
-    bagel_type: str = None,
-    toasted: bool = None,
-    spread: str = None,
-    extras: list = None,
-    quantity: int = 1,
-    unit_price: float = 0.0,
-) -> MenuItemTask:
-    """Create a MenuItemTask configured as a bagel."""
-    bagel = MenuItemTask(
-        menu_item_name="Bagel",
-        menu_item_type="bagel",
-        quantity=quantity,
-        unit_price=unit_price,
-    )
-    # Set attribute values via dict-style access
-    if toasted is not None:
-        bagel["toasted"] = toasted
-    if spread:
-        bagel["spread_type"] = spread
-    if bagel_type:
-        bagel["bread"] = bagel_type
-    if extras:
-        bagel["toppings"] = extras
-    return bagel
-
-
-def create_coffee_task(
-    drink_type: str = None,
-    size: str = None,
-    iced: bool = None,
-    milk: str = None,
-    sweeteners: list = None,
-    extra_shots: int = 0,
-    quantity: int = 1,
-    unit_price: float = 0.0,
-) -> MenuItemTask:
-    """Create a MenuItemTask configured as a sized beverage (coffee)."""
-    coffee = MenuItemTask(
-        menu_item_name=drink_type or "Coffee",
-        menu_item_type="sized_beverage",
-        quantity=quantity,
-        unit_price=unit_price,
-    )
-    if size:
-        coffee["size"] = size
-    # Temperature (iced/hot) stored as "temperature" attribute with value "iced" or "hot"
-    if iced is not None:
-        coffee["temperature"] = "iced" if iced else "hot"
-    # Milk is now stored via get_selections_by_category("milk"), but for test setup
-    # we can add it as a selection
-    if milk:
-        coffee.add_selection(slug=milk, category="milk")
-    if sweeteners:
-        for sweetener in sweeteners:
-            coffee.add_selection(slug=sweetener, category="sweetener")
-    if extra_shots:
-        coffee["extra_shots"] = extra_shots
-    return coffee
 
 
 class TestSlotOrchestratorBasics:

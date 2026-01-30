@@ -20,79 +20,7 @@ from orderbot.tasks.field_config import (
     get_default_value,
     should_ask_field,
 )
-
-
-# =============================================================================
-# Helper functions to create bagel and coffee tasks (using dict-style access)
-# =============================================================================
-
-def create_bagel_task(
-    bagel_type: str = None,
-    toasted: bool = None,
-    spread: str = None,
-    spread_type: str = None,
-    extras: list = None,
-    quantity: int = 1,
-    unit_price: float = 0.0,
-) -> MenuItemTask:
-    """Create a MenuItemTask configured as a bagel."""
-    bagel = MenuItemTask(
-        menu_item_name="Bagel",
-        menu_item_type="bagel",
-        quantity=quantity,
-        unit_price=unit_price,
-    )
-    # Set values via dict-style access (stored in attribute_values)
-    if toasted is not None:
-        bagel["toasted"] = toasted
-    if spread:
-        bagel["spread_type"] = spread
-    if spread_type:
-        bagel["spread_type"] = spread_type
-    if bagel_type:
-        bagel["bread"] = bagel_type
-    if extras:
-        bagel["toppings"] = extras
-    return bagel
-
-
-def create_coffee_task(
-    drink_type: str = None,
-    size: str = None,
-    iced: bool = None,
-    milk: str = None,
-    sweeteners: list = None,
-    extra_shots: int = 0,
-    decaf: bool = False,
-    quantity: int = 1,
-    unit_price: float = 0.0,
-) -> MenuItemTask:
-    """Create a MenuItemTask configured as a sized beverage (coffee).
-
-    Note: Temperature (iced/hot) is now part of the menu_item_name itself
-    (e.g., "Iced Latte" vs "Hot Latte"), not a separate attribute.
-    """
-    coffee = MenuItemTask(
-        menu_item_name=drink_type or "Coffee",
-        menu_item_type="sized_beverage",
-        quantity=quantity,
-        unit_price=unit_price,
-    )
-    if size:
-        coffee["size"] = size
-    if milk:
-        coffee.add_selection(slug=milk, category="milk")
-    if sweeteners:
-        for s in sweeteners:
-            if isinstance(s, dict):
-                coffee.add_selection(slug=s.get("slug", ""), category="sweetener", quantity=s.get("quantity", 1))
-            else:
-                coffee.add_selection(slug=str(s), category="sweetener")
-    if extra_shots:
-        coffee["extra_shots"] = extra_shots
-    if decaf:
-        coffee["decaf"] = decaf
-    return coffee
+from tests.helpers import create_bagel_task, create_coffee_task
 
 
 # =============================================================================
@@ -323,6 +251,7 @@ class TestCoffeeItemTask:
         """Test default values for coffee task."""
         coffee = create_coffee_task()
         assert coffee.item_type == "menu_item"
+        # Default "Coffee" is not an espresso drink, so it's sized_beverage
         assert coffee.menu_item_type == "sized_beverage"
         assert coffee["size"] is None
         # Note: temperature (iced/hot) is now part of menu_item_name, not a separate attribute

@@ -11,33 +11,7 @@ from unittest.mock import patch, MagicMock
 
 from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
 from orderbot.tasks.models import OrderTask, MenuItemTask, TaskStatus
-
-
-def create_bagel_task(
-    bagel_type: str = None,
-    toasted: bool = None,
-    spread: str = None,
-    extras: list = None,
-    quantity: int = 1,
-    unit_price: float = 0.0,
-) -> MenuItemTask:
-    """Create a MenuItemTask configured as a bagel."""
-    bagel = MenuItemTask(
-        menu_item_name="Bagel",
-        menu_item_type="bagel",
-        quantity=quantity,
-        unit_price=unit_price,
-    )
-    # Set attributes via dict-style access (stored in attribute_values)
-    if toasted is not None:
-        bagel["toasted"] = toasted
-    if spread:
-        bagel["spread_type"] = spread
-    if bagel_type:
-        bagel["bread"] = bagel_type
-    if extras:
-        bagel["toppings"] = extras
-    return bagel
+from tests.helpers import create_bagel_task
 
 
 class TestSlotComparisonLogging:

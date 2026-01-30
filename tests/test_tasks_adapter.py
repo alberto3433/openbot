@@ -15,211 +15,11 @@ from orderbot.tasks.models import (
     MenuItemTask,
 )
 from orderbot.tasks.pricing import PricingEngine
-
-
-# =============================================================================
-# Helper functions to create bagel and coffee tasks
-# =============================================================================
-
-def create_bagel_task(
-    bagel_type: str = None,
-    bagel_type_upcharge: float = 0.0,
-    toasted: bool = None,
-    spread: str = None,
-    spread_price: float = 0.0,
-    extras: list = None,
-    proteins: list = None,
-    quantity: int = 1,
-    unit_price: float = 0.0,
-    base_price: float = 2.20,
-) -> MenuItemTask:
-    """Create a MenuItemTask configured as a bagel.
-
-    Args:
-        bagel_type: Type of bagel (plain, everything, sesame, etc.)
-        bagel_type_upcharge: Price modifier for bagel type
-        toasted: Whether bagel is toasted
-        spread: Spread type (cream cheese, butter, etc.)
-        spread_price: Price modifier for spread
-        extras: List of toppings (tomato, onion, capers)
-        proteins: List of protein modifiers with prices (e.g., [("nova scotia salmon", 6.00)])
-        quantity: Number of bagels
-        unit_price: Final price per bagel (if 0, will be calculated from base + selections)
-        base_price: Base bagel price before modifiers (default $2.20)
-    """
-    bagel = MenuItemTask(
-        menu_item_name="Bagel",
-        menu_item_type="bagel",
-        quantity=quantity,
-        unit_price=base_price,  # Start with base, add_selection will add modifier prices
-        base_price=base_price,
-    )
-    # Set properties via selections API (each add_selection with price adds to unit_price)
-    if toasted is not None:
-        bagel.add_selection("yes" if toasted else "no", "toasted")
-    if spread:
-        bagel.add_selection(spread, "spread", price=spread_price)
-    if bagel_type:
-        bagel.add_selection(bagel_type, "bread", price=bagel_type_upcharge)
-    if extras:
-        for extra in extras:
-            bagel.add_selection(extra, "toppings")
-    if proteins:
-        for protein in proteins:
-            if isinstance(protein, tuple):
-                bagel.add_selection(protein[0], "protein", price=protein[1])
-            else:
-                bagel.add_selection(protein, "protein")
-    # If explicit unit_price was provided and differs from calculated, use it
-    if unit_price > 0 and unit_price != bagel.unit_price:
-        bagel.unit_price = unit_price
-    return bagel
-
-
-def create_coffee_task(
-    drink_type: str = None,
-    size: str = None,
-    iced: bool = None,
-    decaf: bool = False,
-    milk: str = None,
-    milk_upcharge: float = 0.0,
-    sweeteners: list = None,
-    extra_shots: int = 0,
-    quantity: int = 1,
-    unit_price: float = 0.0,
-) -> MenuItemTask:
-    """Create a MenuItemTask configured as a sized beverage (coffee)."""
-    coffee = MenuItemTask(
-        menu_item_name=drink_type or "Coffee",
-        menu_item_type="sized_beverage",
-        quantity=quantity,
-        unit_price=unit_price,
-    )
-    # Set properties via selections API
-    if size:
-        coffee.add_selection(size, "size")
-    if iced is not None:
-        coffee.add_selection("iced" if iced else "hot", "temperature")
-    if decaf:
-        coffee.add_selection("yes" if decaf else "no", "decaf")
-    if milk:
-        coffee.add_selection(slug=milk, category="milk", price=milk_upcharge)
-    if sweeteners:
-        for s in sweeteners:
-            if isinstance(s, dict):
-                coffee.add_selection(slug=s.get("slug", ""), category="sweetener", quantity=s.get("quantity", 1))
-            else:
-                coffee.add_selection(slug=str(s), category="sweetener")
-    if extra_shots:
-        coffee.add_selection(str(extra_shots), "extra_shots")
-    return coffee
-
-
-def create_test_menu_data():
-    """Create menu data for adapter tests with full item_types for pricing lookups."""
-    return {
-        "all_items": [
-            {"id": 1, "name": "Bagel", "base_price": 2.20, "category": "custom_bagels"},
-            {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00, "category": "custom_bagels"},
-            {"id": 3, "name": "Coffee", "base_price": 2.50, "category": "drinks"},
-        ],
-        "custom_bagels": [
-            {"id": 1, "name": "Bagel", "base_price": 2.20},
-        ],
-        # Item types with attribute options for pricing lookups
-        "item_types": {
-            "bagel": {
-                "attributes": [
-                    {
-                        "slug": "bread",  # was bagel_type, renamed to match deli_sandwich
-                        "options": [
-                            {"slug": "plain", "display_name": "Plain", "price_modifier": 0.0},
-                            {"slug": "everything", "display_name": "Everything", "price_modifier": 0.0},
-                            {"slug": "sesame", "display_name": "Sesame", "price_modifier": 0.0},
-                            {"slug": "gluten_free", "display_name": "Gluten Free", "price_modifier": 0.80},
-                        ]
-                    },
-                    {
-                        "slug": "spread",
-                        "options": [
-                            {"slug": "cream_cheese", "display_name": "Cream Cheese", "price_modifier": 1.50},
-                            {"slug": "butter", "display_name": "Butter", "price_modifier": 0.50},
-                            {"slug": "scallion_cream_cheese", "display_name": "Scallion Cream Cheese", "price_modifier": 1.75},
-                        ]
-                    },
-                    {
-                        "slug": "protein",
-                        "options": [
-                            {"slug": "ham", "display_name": "Ham", "price_modifier": 2.00},
-                            {"slug": "bacon", "display_name": "Bacon", "price_modifier": 2.00},
-                            {"slug": "egg", "display_name": "Egg", "price_modifier": 1.50},
-                            {"slug": "nova_scotia_salmon", "display_name": "Nova Scotia Salmon", "price_modifier": 6.00},
-                            {"slug": "turkey", "display_name": "Turkey", "price_modifier": 2.50},
-                        ]
-                    },
-                    {
-                        "slug": "cheese",
-                        "options": [
-                            {"slug": "american", "display_name": "American", "price_modifier": 0.75},
-                            {"slug": "swiss", "display_name": "Swiss", "price_modifier": 0.75},
-                        ]
-                    },
-                    {
-                        "slug": "topping",
-                        "options": [
-                            {"slug": "tomato", "display_name": "Tomato", "price_modifier": 0.50},
-                            {"slug": "onion", "display_name": "Onion", "price_modifier": 0.50},
-                            {"slug": "capers", "display_name": "Capers", "price_modifier": 0.75},
-                        ]
-                    },
-                ]
-            },
-            "sized_beverage": {
-                "attributes": [
-                    {
-                        "slug": "size",
-                        "options": [
-                            {"slug": "small", "display_name": "Small", "price_modifier": 0.0},
-                            {"slug": "large", "display_name": "Large", "price_modifier": 0.90},
-                        ]
-                    },
-                    {
-                        "slug": "milk",
-                        "options": [
-                            {"slug": "whole", "display_name": "Whole Milk", "price_modifier": 0.0},
-                            {"slug": "oat", "display_name": "Oat Milk", "price_modifier": 0.50},
-                            {"slug": "almond", "display_name": "Almond Milk", "price_modifier": 0.50},
-                        ]
-                    },
-                    {
-                        "slug": "syrup",
-                        "options": [
-                            {"slug": "vanilla", "display_name": "Vanilla", "price_modifier": 0.65},
-                            {"slug": "hazelnut", "display_name": "Hazelnut", "price_modifier": 0.65},
-                        ]
-                    },
-                ]
-            },
-            "omelette": {
-                "attributes": [
-                    {
-                        "slug": "side_choice",
-                        "options": [
-                            {"slug": "bagel", "display_name": "Bagel", "price_modifier": 0.0},
-                            {"slug": "toast", "display_name": "Toast", "price_modifier": 0.0},
-                        ]
-                    },
-                    {
-                        "slug": "spread",
-                        "options": [
-                            {"slug": "cream_cheese", "display_name": "Cream Cheese", "price_modifier": 1.50},
-                            {"slug": "butter", "display_name": "Butter", "price_modifier": 0.50},
-                        ]
-                    },
-                ]
-            },
-        },
-    }
+from tests.helpers import (
+    create_bagel_task,
+    create_coffee_task,
+    create_test_menu_data,
+)
 
 
 def create_test_pricing():
@@ -316,10 +116,10 @@ class TestDictToOrderTask:
         assert item.unit_price == 5.99
 
     def test_coffee_item(self):
-        """Test converting a coffee item (now uses MenuItemTask with sized_beverage)."""
+        """Test converting a coffee item (lattes use MenuItemTask with espresso type)."""
         order_dict = {
             "items": [{
-                "item_type": "sized_beverage",
+                "item_type": "espresso",
                 "menu_item_name": "iced latte",
                 "size": "large",
                 "item_config": {
@@ -471,7 +271,8 @@ class TestOrderTaskToDict:
 
         assert len(result["items"]) == 1
         item = result["items"][0]
-        assert item["item_type"] == "sized_beverage"  # Preserves actual menu_item_type
+        # Lattes are espresso drinks
+        assert item["item_type"] == "espresso"
         assert item["menu_item_name"] == "latte"
         # Check attribute_values for stored configuration
         # Note: "iced" property stores as "temperature" in attribute_values

@@ -8,7 +8,7 @@ verifying the gluten free upcharge is properly applied and displayed.
 import pytest
 from orderbot.tasks.state_machine import OrderStateMachine
 from orderbot.tasks.models import OrderTask, MenuItemTask
-from tests.helpers import BagelItemTask
+from tests.helpers import BagelItemTask, create_bagel_menu_data
 from orderbot.tasks.adapter import order_task_to_dict
 from orderbot.tasks.pricing import PricingEngine
 
@@ -21,53 +21,20 @@ SKIP_STATE_MACHINE_TESTS = pytest.mark.skip(
 
 
 def create_test_menu_data():
-    """Create minimal menu data for gluten free bagel tests."""
-    return {
-        "all_items": [
-            {"id": 1, "name": "Bagel", "base_price": 2.20, "category": "custom_bagels"},
-            {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00, "category": "custom_bagels"},
-            {"id": 3, "name": "Plain Bagel", "base_price": 2.20, "category": "custom_bagels"},
-            {"id": 4, "name": "Everything Bagel", "base_price": 2.20, "category": "custom_bagels"},
-            {"id": 5, "name": "The Classic BEC", "base_price": 9.50, "category": "signature_sandwiches"},
-        ],
-        "custom_bagels": [
-            {"id": 1, "name": "Bagel", "base_price": 2.20},
-            {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00},
-            {"id": 3, "name": "Plain Bagel", "base_price": 2.20},
-            {"id": 4, "name": "Everything Bagel", "base_price": 2.20},
-        ],
-        "signature_sandwiches": [
-            {"id": 5, "name": "The Classic BEC", "base_price": 9.50, "requires_bagel_choice": True},
-        ],
-        "bagels": {
-            "plain": {"id": 3, "name": "Plain Bagel", "base_price": 2.20},
-            "everything": {"id": 4, "name": "Everything Bagel", "base_price": 2.20},
-            "gluten free": {"id": 2, "name": "Gluten Free Bagel", "base_price": 3.00},
-        },
-        # Item types with attribute options for pricing lookups
-        "item_types": {
-            "bagel": {
-                "attributes": [
-                    {
-                        "slug": "bread",  # was bagel_type, renamed to match deli_sandwich
-                        "options": [
-                            {"slug": "plain", "display_name": "Plain", "price_modifier": 0.0},
-                            {"slug": "everything", "display_name": "Everything", "price_modifier": 0.0},
-                            {"slug": "sesame", "display_name": "Sesame", "price_modifier": 0.0},
-                            {"slug": "gluten_free", "display_name": "Gluten Free", "price_modifier": 0.80},
-                        ]
-                    },
-                    {
-                        "slug": "spread",
-                        "options": [
-                            {"slug": "cream_cheese", "display_name": "Cream Cheese", "price_modifier": 1.50},
-                            {"slug": "butter", "display_name": "Butter", "price_modifier": 0.50},
-                        ]
-                    },
-                ]
-            },
-        },
-    }
+    """Create minimal menu data for gluten free bagel tests.
+
+    Note: This is a local wrapper that adds signature sandwiches to the
+    standard bagel menu data for the specific needs of these tests.
+    """
+    menu_data = create_bagel_menu_data()
+    # Add signature sandwiches for BEC tests
+    menu_data["all_items"].append(
+        {"id": 5, "name": "The Classic BEC", "base_price": 9.50, "category": "signature_sandwiches"}
+    )
+    menu_data["signature_sandwiches"] = [
+        {"id": 5, "name": "The Classic BEC", "base_price": 9.50, "requires_bagel_choice": True},
+    ]
+    return menu_data
 
 
 class TestGlutenFreeBagelE2E:

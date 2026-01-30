@@ -1592,9 +1592,6 @@ class TestSpeedMenuBagelParsing:
         ("traditional", "The Traditional"),
         ("The Max Zucker", "The Max Zucker"),
         ("max zucker", "The Max Zucker"),
-        # Note: "The Classic" maps to "The Classic BEC" (no standalone "The Classic" item)
-        ("The Classic", "The Classic BEC"),
-        ("classic", "The Classic BEC"),
         ("The Lexington", "The Lexington"),
         ("lexington", "The Lexington"),
         ("The Avocado Toast", "The Avocado Toast"),

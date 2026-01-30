@@ -43,6 +43,7 @@ from .item_cancellation_handler import (
     find_nth_item_of_type,
 )
 from .item_replacement_handler import ItemReplacementHandler
+from .item_modification_handler import ItemModificationHandler
 from .parsers.constants import ORDINAL_WORDS, ADD_MODIFIER_PATTERNS
 from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
 from .parsers.quantity_utils import (
@@ -528,6 +529,10 @@ class TakingItemsHandler(MenuDataMixin):
         # Extracted sub-handlers
         self.item_cancellation_handler = ItemCancellationHandler(pricing=config.pricing)
         self.item_replacement_handler = ItemReplacementHandler(pricing=config.pricing)
+        self.item_modification_handler = ItemModificationHandler(
+            pricing=config.pricing,
+            item_adder_handler=item_adder_handler,
+        )
 
         # Context set per-request
         self._returning_customer: dict | None = None
@@ -1091,208 +1096,8 @@ class TakingItemsHandler(MenuDataMixin):
         order: OrderTask,
         raw_user_input: str | None,
     ) -> StateMachineResult | None:
-        """Handle modification to an existing item in the cart.
-
-        Handles patterns like:
-        - "can I have scallion cream cheese on the cinnamon raisin bagel"
-        - "make the bagel with scallion cream cheese" (implicit target)
-        - "add mayo and mustard" (applies to last item in cart)
-
-        Returns:
-            StateMachineResult if handled, None otherwise.
-        """
-        if not parsed.modify_existing_item:
-            return None
-
-        # Check for qualifier conflicts (e.g., "light extra mayo")
-        # If conflicts exist, ask user for clarification
-        if parsed.modify_qualifier_conflicts:
-            conflict_messages = []
-            for conflict in parsed.modify_qualifier_conflicts:
-                conflict_messages.append(
-                    f"I heard both '{conflict.qualifier1}' and '{conflict.qualifier2}' for the {conflict.modifier}. "
-                    f"Did you want {conflict.qualifier1} {conflict.modifier} or {conflict.qualifier2} {conflict.modifier}?"
-                )
-            # Return first conflict for user to resolve
-            logger.info("QUALIFIER CONFLICT: %s", parsed.modify_qualifier_conflicts)
-            return StateMachineResult(
-                message=conflict_messages[0],
-                order=order,
-            )
-
-        target_desc = (parsed.modify_target_description or "").lower()
-        active_items = order.items.get_active_items()
-
-        # Find the item that matches the target description
-        target_item = None
-        menu_items_in_cart = [i for i in active_items if isinstance(i, MenuItemTask)]
-
-        if target_desc:
-            # Match items by summary (data-driven, works for any item type)
-            for item in menu_items_in_cart:
-                item_summary = item.get_summary().lower()
-                # Match if target description is contained in summary or vice versa
-                if target_desc in item_summary or item_summary in target_desc:
-                    target_item = item
-                    break
-                # Also check if any word from target matches summary
-                target_words = target_desc.split()
-                if any(word in item_summary for word in target_words if len(word) > 2):
-                    target_item = item
-                    break
-            # Also check by item name if no summary matched
-            if not target_item:
-                for item in menu_items_in_cart:
-                    item_name = (item.menu_item_name or "").lower()
-                    if item_name and item_name in target_desc:
-                        target_item = item
-                        break
-            # Check for category reference with single item (e.g., "the bagel" when only one bagel)
-            if not target_item:
-                target_category = menu_cache.is_category_reference(target_desc)
-                if target_category:
-                    matching_type_items = [
-                        i for i in menu_items_in_cart
-                        if i.menu_item_type == target_category
-                    ]
-                    if len(matching_type_items) == 1:
-                        target_item = matching_type_items[0]
-        else:
-            # Implicit target ("add mayo", "add mustard", etc.)
-            # Use the last item in the cart regardless of type
-            if active_items:
-                target_item = active_items[-1]
-
-        if target_item:
-            # Handle MenuItemTask - unified path for all item types
-            if isinstance(target_item, MenuItemTask):
-                # Add modifiers using unified storage (includes spreads, toppings, etc.)
-                if parsed.modify_add_modifiers:
-                    # Build modifier→category lookup (data-driven from database)
-                    modifier_to_category: dict[str, str] = {}
-                    for category in menu_cache.get_all_ingredient_categories():
-                        for ingredient in menu_cache.get_ingredients(category):
-                            modifier_to_category[ingredient.lower()] = category
-
-                    for modifier in parsed.modify_add_modifiers:
-                        # Handle qualified modifiers: "mayo (extra)" -> base="mayo"
-                        modifier_lower = modifier.lower()
-                        base_modifier = modifier_lower.split(" (")[0].strip()
-
-                        # Strip quantity prefix from modifier: "2 vanilla syrups" -> "vanilla syrups"
-                        quantity_from_modifier, base_modifier_stripped = extract_leading_quantity(base_modifier)
-                        if quantity_from_modifier:
-                            base_modifier = base_modifier_stripped
-                        # Also strip trailing 's' for plural: "vanilla syrups" -> "vanilla syrup"
-                        if base_modifier.endswith("s") and not base_modifier.endswith("ss"):
-                            singular = base_modifier[:-1]
-                            # Check if singular form is recognized
-                            if menu_cache.find_matching_ingredients(singular):
-                                base_modifier = singular
-
-                        # Check for multiple matching ingredients (disambiguation)
-                        matches = menu_cache.find_matching_ingredients(base_modifier)
-
-                        if len(matches) == 0:
-                            # Fall back to category lookup for generic modifiers
-                            category = modifier_to_category.get(base_modifier)
-                            if not category:
-                                logger.warning(
-                                    "MODIFY ADD: Skipping modifier '%s' - not found in database",
-                                    modifier,
-                                )
-                                continue
-
-                            # Extract quantity - prefer quantity from modifier prefix
-                            quantity = quantity_from_modifier if quantity_from_modifier else 1
-                            if quantity == 1 and raw_user_input:
-                                quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
-                                if quantity == 1 and "(extra)" in modifier_lower:
-                                    quantity = 2
-
-                            modifier_slug = modifier_lower.replace(" ", "_")
-                            target_item.add_selection(
-                                slug=modifier_slug,
-                                category=category,
-                                display_name=modifier.title(),
-                                quantity=quantity,
-                            )
-                            logger.info("MODIFY ADD: Added '%s' (category=%s, qty=%d) to item", modifier, category, quantity)
-
-                        elif len(matches) == 1:
-                            # Single match - add it directly
-                            match = matches[0]
-                            # Extract quantity - prefer quantity from modifier prefix
-                            quantity = quantity_from_modifier if quantity_from_modifier else 1
-                            if quantity == 1 and raw_user_input:
-                                quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
-                                if quantity == 1 and "(extra)" in modifier_lower:
-                                    quantity = 2
-
-                            target_item.add_selection(
-                                slug=match["slug"],
-                                category=match["category"],
-                                display_name=match["name"],
-                                quantity=quantity,
-                            )
-                            logger.info("MODIFY ADD: Added '%s' (category=%s, qty=%d)", match["name"], match["category"], quantity)
-
-                        else:
-                            # Multiple matches - trigger disambiguation
-                            logger.info(
-                                "MODIFY ADD: Multiple matches for '%s' (%d options), triggering disambiguation",
-                                modifier, len(matches)
-                            )
-
-                            # Store context for when disambiguation resolves
-                            target_item_index = order.items.items.index(target_item)
-                            order.pending_modifier_target_item_index = target_item_index
-                            # Extract quantity - prefer quantity from modifier prefix
-                            quantity = quantity_from_modifier if quantity_from_modifier else 1
-                            if quantity == 1 and raw_user_input:
-                                quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
-                                if quantity == 1 and "(extra)" in modifier_lower:
-                                    quantity = 2
-                            order.pending_modifier_quantity = quantity
-
-                            # Use existing disambiguation handler
-                            return self.item_adder_handler.disambiguation_handler.start_disambiguation(
-                                item_name=modifier,
-                                matching_items=matches,
-                                order=order,
-                                pending_field=PendingField.MODIFIER_SELECTION,
-                                show_prices=False,
-                            )
-
-                # Recalculate price
-                self.pricing.recalculate_item_price(target_item)
-
-                updated_summary = target_item.get_summary()
-                logger.info("MODIFY EXISTING: Updated '%s' with add_modifiers=%s",
-                           target_item.menu_item_name, parsed.modify_add_modifiers)
-                return StateMachineResult(
-                    message=f"Sure, I've updated your {updated_summary}. Anything else?",
-                    order=order,
-                )
-        else:
-            # Couldn't find matching item - inform user
-            if target_desc:
-                logger.warning(
-                    "MODIFY EXISTING: Could not find item matching '%s' in cart",
-                    target_desc
-                )
-                return StateMachineResult(
-                    message=f"I couldn't find a {target_desc} in your order. Would you like to add one?",
-                    order=order,
-                )
-            else:
-                logger.warning("MODIFY EXISTING: No items in cart to modify")
-                return StateMachineResult(
-                    message="I don't see any items in your order to modify. Would you like to add something?",
-                    order=order,
-                )
-
-        return None
+        """Handle modification to existing item - delegates to ItemModificationHandler."""
+        return self.item_modification_handler.handle_modify_existing_item(parsed, order, raw_user_input)
 
     def _handle_add_modifier_to_last_item(
         self,

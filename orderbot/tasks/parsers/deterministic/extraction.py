@@ -469,6 +469,10 @@ def extract_attribute_values(
         matched_options_per_attr.setdefault(cand.attr_slug, set()).add(slug)
 
         quantity = extract_quantity_before(input_lower, cand.start)
+        logger.info(
+            "DEBUG_QTY extract_attribute_values: pattern='%s', slug='%s', quantity=%d, pos=%d",
+            cand.pattern, slug, quantity, cand.start
+        )
         match_data = {
             "slug": slug,
             "display_name": cand.option.get("display_name", slug),

@@ -117,10 +117,15 @@ def build_parsed_item(
                     if isinstance(item, dict):
                         # Use item's category if present and not None, otherwise use outer category
                         item_category = item.get("category") or category
+                        item_quantity = item.get("quantity", 1)
+                        logger.info(
+                            "DEBUG_QTY build_parsed_item: slug='%s', category='%s', quantity_from_dict=%s, quantity_used=%d",
+                            item.get("slug"), item_category, item.get("quantity"), item_quantity
+                        )
                         final_selections.append(Selection(
                             slug=item.get("slug", ""),
                             category=item_category,
-                            quantity=item.get("quantity", 1),
+                            quantity=item_quantity,
                             price=item.get("price", 0.0),
                             display_name=item.get("display_name"),
                         ))
@@ -396,6 +401,15 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # 1. Check for exclusion phrases (e.g., "coffee cake" -> not a coffee beverage)
     if menu_cache.text_matches_exclusion_phrase(text):
         logger.debug("CONFIGURABLE_ITEM: excluded by required_match_phrases: '%s'", text[:50])
+        return None
+
+    # 1a. Check for multi-item patterns that should be handled by _parse_multi_item_order
+    # Pattern: "one X and one Y" or "2 X and 3 Y" - quantity on both sides of "and"
+    # This prevents "one everything bagel and one plain bagel" from being treated as one item
+    qty_words = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|an?)"
+    multi_item_pattern = rf"\b{qty_words}\b.+?\band\b.+?\b{qty_words}\b"
+    if re.search(multi_item_pattern, text_lower):
+        logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern, delegating to multi-item parser: '%s'", text[:50])
         return None
 
     # 1b. Check for signature items FIRST - they take precedence over trigger-based detection

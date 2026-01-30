@@ -405,8 +405,18 @@ class MenuItemTask(ItemTask):
                 for quantity unit lookup. Different from category (attribute slug).
         """
         # Check if already present (same slug and category)
-        if any(s.get("slug") == slug and s.get("category") == category for s in self.modifiers):
-            return
+        for existing in self.modifiers:
+            if existing.get("slug") == slug and existing.get("category") == category:
+                # Update quantity if new quantity is explicitly set (> 1)
+                # This handles the case where pre_filled adds with qty=1, then
+                # extracted_selections tries to add with the actual qty
+                if quantity > 1 and existing.get("quantity", 1) == 1:
+                    logger.info(
+                        "DEBUG_QTY add_selection: UPDATING existing modifier quantity from %d to %d for %s",
+                        existing.get("quantity", 1), quantity, slug
+                    )
+                    existing["quantity"] = quantity
+                return
 
         # Look up display name from database if not provided
         if not display_name:
@@ -440,6 +450,10 @@ class MenuItemTask(ItemTask):
         if ingredient_category:
             selection["ingredient_category"] = ingredient_category
 
+        logger.info(
+            "DEBUG_QTY add_selection: slug='%s', category='%s', quantity=%d, stored=%s",
+            slug, category, quantity, selection
+        )
         self.modifiers.append(selection)
 
         # Update unit_price if selection has a price
@@ -818,6 +832,17 @@ class ItemsTask(BaseTask):
     def get_active_items(self) -> list[ItemTask]:
         """Get items that are not skipped."""
         return [item for item in self.items if item.status != TaskStatus.SKIPPED]
+
+    def get_active_menu_items(self) -> list["MenuItemTask"]:
+        """Get active items that are MenuItemTask instances.
+
+        This is a convenience method for code that needs to filter
+        active items to only MenuItemTask (excluding other item types).
+        """
+        return [
+            item for item in self.items
+            if item.status != TaskStatus.SKIPPED and isinstance(item, MenuItemTask)
+        ]
 
     def get_current_item(self) -> ItemTask | None:
         """Get the item currently being worked on (first in_progress)."""

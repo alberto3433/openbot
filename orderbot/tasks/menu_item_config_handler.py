@@ -998,10 +998,6 @@ class MenuItemConfigHandler(BaseHandler):
                 ) or 0.0
 
             # Use add_selection for unified storage
-            logger.info(
-                "DEBUG_QTY _apply_selections: slug='%s', category='%s', sel.quantity=%d",
-                sel.slug, sel.category, sel.quantity
-            )
             item.add_selection(sel.slug, sel.category, sel.quantity, price)
 
             # Build display name for acknowledgment using database lookup

@@ -411,10 +411,6 @@ class MenuItemTask(ItemTask):
                 # This handles the case where pre_filled adds with qty=1, then
                 # extracted_selections tries to add with the actual qty
                 if quantity > 1 and existing.get("quantity", 1) == 1:
-                    logger.info(
-                        "DEBUG_QTY add_selection: UPDATING existing modifier quantity from %d to %d for %s",
-                        existing.get("quantity", 1), quantity, slug
-                    )
                     existing["quantity"] = quantity
                 return
 
@@ -450,10 +446,6 @@ class MenuItemTask(ItemTask):
         if ingredient_category:
             selection["ingredient_category"] = ingredient_category
 
-        logger.info(
-            "DEBUG_QTY add_selection: slug='%s', category='%s', quantity=%d, stored=%s",
-            slug, category, quantity, selection
-        )
         self.modifiers.append(selection)
 
         # Update unit_price if selection has a price

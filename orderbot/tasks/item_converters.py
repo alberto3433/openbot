@@ -284,10 +284,6 @@ class UnifiedItemConverter:
             mod_display = mod.get("display_name") or format_slug_for_display(mod_slug, mod_category)
             mod_price = mod.get("price", 0) or 0.0
             mod_quantity = mod.get("quantity", 1) or 1
-            logger.info(
-                "DEBUG_QTY to_dict: slug='%s', mod.get('quantity')=%s, mod_quantity=%d, full_mod=%s",
-                mod_slug, mod.get("quantity"), mod_quantity, mod
-            )
 
             # Handle quantity display
             if mod_quantity > 1:

@@ -117,15 +117,10 @@ def build_parsed_item(
                     if isinstance(item, dict):
                         # Use item's category if present and not None, otherwise use outer category
                         item_category = item.get("category") or category
-                        item_quantity = item.get("quantity", 1)
-                        logger.info(
-                            "DEBUG_QTY build_parsed_item: slug='%s', category='%s', quantity_from_dict=%s, quantity_used=%d",
-                            item.get("slug"), item_category, item.get("quantity"), item_quantity
-                        )
                         final_selections.append(Selection(
                             slug=item.get("slug", ""),
                             category=item_category,
-                            quantity=item_quantity,
+                            quantity=item.get("quantity", 1),
                             price=item.get("price", 0.0),
                             display_name=item.get("display_name"),
                         ))

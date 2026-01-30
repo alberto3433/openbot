@@ -16,6 +16,7 @@ from typing import Callable
 from .mixins import MenuDataMixin
 from .normalization import normalize_to_slug
 from .modifier_utils import extract_modifier_slug_and_quantity, extract_modifier_price
+from .utils.cache_helpers import get_item_type_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -383,28 +384,9 @@ class PricingEngine(MenuDataMixin):
                 menu_item.get("included_ingredient_categories", [])
             )
 
-        logger.info(
-            "DEBUG lookup_upcharge_for_item: menu_item=%s found=%s included_categories=%s",
-            menu_item_name, menu_item is not None, included_categories
-        )
-
-        # Also get the option's ingredient category for debugging
-        option_category = self._get_option_ingredient_category(
-            item_type, attr_slug, option_value
-        )
-        logger.info(
-            "DEBUG lookup_upcharge_for_item: option %s.%s=%s has ingredient_category=%s",
-            item_type, attr_slug, option_value, option_category
-        )
-
-        result = self.lookup_attribute_option_upcharge(
+        return self.lookup_attribute_option_upcharge(
             item_type, attr_slug, option_value, included_categories
         )
-        logger.info(
-            "DEBUG lookup_upcharge_for_item: final result for %s.%s=%s -> $%.2f",
-            item_type, attr_slug, option_value, result
-        )
-        return result
 
     def lookup_generic_modifier_price(
         self,
@@ -428,7 +410,7 @@ class PricingEngine(MenuDataMixin):
             Price modifier or 0.0 if not found (modifier is free or unconfigured)
 
         Raises:
-            ValueError: If menu_data is not loaded or item_type doesn't exist
+            MenuDataNotLoadedError: If menu_data is not loaded or item_type doesn't exist
         """
         if not modifier_name:
             return 0.0
@@ -436,31 +418,12 @@ class PricingEngine(MenuDataMixin):
         normalized = normalize_to_slug(modifier_name)
         modifier_lower = modifier_name.lower().strip()
 
-        if not self._menu_data:
-            raise ValueError(
-                f"Cannot look up modifier price for '{modifier_name}'. "
-                "menu_data is required. Ensure menu is loaded."
-            )
-
-        item_types = self._menu_data.get("item_types", {})
-
-        if not item_types:
-            raise ValueError(
-                f"Cannot look up modifier price for '{modifier_name}'. "
-                "menu_data must contain 'item_types' structure. "
-                "Ensure menu is loaded with full item type configuration."
-            )
-
-        type_data = item_types.get(item_type)
-
-        if not type_data or not isinstance(type_data, dict):
-            raise ValueError(
-                f"Item type '{item_type}' not found in menu_data. "
-                f"Cannot look up modifier price for '{modifier_name}'. "
-                f"Available item types: {list(item_types.keys())}"
-            )
-
-        attributes = type_data.get("attributes", [])
+        # Use cache helper for validated attribute lookup (raises MenuDataNotLoadedError)
+        attributes = get_item_type_attributes(
+            self._menu_data,
+            item_type,
+            f"look up modifier price for '{modifier_name}'",
+        )
 
         price, attr_slug = _lookup_option_price_in_attributes(
             attributes,
@@ -504,7 +467,7 @@ class PricingEngine(MenuDataMixin):
             Price modifier (e.g., 2.00 for ham) or 0.0 if modifier is free/unconfigured
 
         Raises:
-            ValueError: If menu_data is not available or item_type doesn't exist
+            MenuDataNotLoadedError: If menu_data is not available or item_type doesn't exist
         """
         modifier_lower = modifier_name.lower().strip()
 
@@ -515,31 +478,12 @@ class PricingEngine(MenuDataMixin):
         # Convert to slug format for matching
         normalized = normalize_to_slug(canonical_name)
 
-        if not self._menu_data:
-            raise ValueError(
-                f"Cannot look up modifier price for '{modifier_name}'. "
-                "menu_data is required. Ensure menu is loaded."
-            )
-
-        item_types = self._menu_data.get("item_types", {})
-
-        if not item_types:
-            raise ValueError(
-                f"Cannot look up modifier price for '{modifier_name}'. "
-                "menu_data must contain 'item_types' structure. "
-                "Ensure menu is loaded with full item type configuration."
-            )
-
-        type_data = item_types.get(item_type)
-
-        if not type_data or not isinstance(type_data, dict):
-            raise ValueError(
-                f"Item type '{item_type}' not found in menu_data. "
-                f"Cannot look up modifier price for '{modifier_name}'. "
-                f"Available item types: {list(item_types.keys())}"
-            )
-
-        attributes = type_data.get("attributes", [])
+        # Use cache helper for validated attribute lookup (raises MenuDataNotLoadedError)
+        attributes = get_item_type_attributes(
+            self._menu_data,
+            item_type,
+            f"look up modifier price for '{modifier_name}'",
+        )
 
         price, attr_slug = _lookup_option_price_in_attributes(
             attributes,
@@ -608,6 +552,11 @@ class PricingEngine(MenuDataMixin):
             included_ingredient_categories = set(
                 menu_item.get("included_ingredient_categories", [])
             )
+
+        logger.debug(
+            "recalculate_item_price: item=%s, menu_item_found=%s, included_categories=%s",
+            item.menu_item_name, menu_item is not None, included_ingredient_categories
+        )
 
         # Side items have base_price = 0 (e.g., bagel side with omelette is free,
         # but modifiers like spread still cost extra)
@@ -687,9 +636,17 @@ class PricingEngine(MenuDataMixin):
                             total += upcharge
                             priced_slugs.add(item_val)
                         else:
-                            price = self.lookup_modifier_price(item_val, item_type)
-                            total += price
-                            priced_slugs.add(item_val)
+                            # Check if this option's ingredient category is included
+                            option_category = self._get_option_ingredient_category(
+                                item_type, attr_slug, item_val
+                            )
+                            if option_category and option_category in included_ingredient_categories:
+                                # Category is included - no charge
+                                priced_slugs.add(item_val)
+                            else:
+                                price = self.lookup_modifier_price(item_val, item_type)
+                                total += price
+                                priced_slugs.add(item_val)
                     elif isinstance(item_val, dict):
                         slug, qty = extract_modifier_slug_and_quantity(item_val)
                         if slug:
@@ -718,18 +675,47 @@ class PricingEngine(MenuDataMixin):
                 )
                 if modifier_with_price:
                     # Skip - Section 3 will use stored price × quantity
+                    logger.debug(
+                        "recalc: skipping %s=%s (has modifier with price)",
+                        attr_slug, attr_value
+                    )
                     continue
 
                 upcharge = self.lookup_attribute_option_upcharge(
                     item_type, attr_slug, attr_value, included_ingredient_categories
                 )
+                logger.debug(
+                    "recalc: %s=%s upcharge=%.2f (included_categories=%s)",
+                    attr_slug, attr_value, upcharge, included_ingredient_categories
+                )
                 if upcharge > 0:
                     total += upcharge
                     priced_slugs.add(attr_value)
+                    # Update the modifier's price so it displays in UI
+                    for mod in item_modifiers:
+                        if mod.get("slug") == attr_value and not mod.get("price"):
+                            mod["price"] = upcharge
+                            break
                 else:
-                    price = self.lookup_modifier_price(attr_value, item_type)
-                    total += price
-                    priced_slugs.add(attr_value)
+                    # Check if this option's ingredient category is included
+                    # If so, don't look up modifier price (the $0 upcharge was intentional)
+                    option_category = self._get_option_ingredient_category(
+                        item_type, attr_slug, attr_value
+                    )
+                    if option_category and option_category in included_ingredient_categories:
+                        # Category is included - no charge, just mark as priced
+                        priced_slugs.add(attr_value)
+                    else:
+                        # Not an included category - try modifier price lookup
+                        price = self.lookup_modifier_price(attr_value, item_type)
+                        total += price
+                        priced_slugs.add(attr_value)
+                        # Update the modifier's price so it displays in UI
+                        if price > 0:
+                            for mod in item_modifiers:
+                                if mod.get("slug") == attr_value and not mod.get("price"):
+                                    mod["price"] = price
+                                    break
 
         # =====================================================================
         # 3. Process item.modifiers generically (no hardcoded categories)

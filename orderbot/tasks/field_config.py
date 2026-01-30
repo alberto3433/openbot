@@ -17,36 +17,6 @@ from pydantic import BaseModel, Field
 from .models import FieldConfig
 
 
-# =============================================================================
-# Field-to-Slug Mapping (delegates to menu_cache)
-# =============================================================================
-
-class _FieldToSlugMapWrapper:
-    """Lazy wrapper that delegates to menu_cache.get_field_to_slug_map.
-
-    This provides a dict-like interface for looking up field-to-slug mappings
-    by item type, without requiring the menu_cache to be loaded at import time.
-    """
-
-    def get(self, item_type: str, default: dict | None = None) -> dict[str, str]:
-        """Get the field-to-slug mapping for an item type.
-
-        Args:
-            item_type: The item type slug (e.g., "bagel", "sized_beverage")
-            default: Default value if no mapping exists
-
-        Returns:
-            Dict mapping code field names to DB attribute slugs
-        """
-        from orderbot.menu_data_cache import menu_cache
-        result = menu_cache.get_field_to_slug_map(item_type)
-        return result if result else (default if default is not None else {})
-
-
-# Singleton instance that can be imported and used like a dict
-_FIELD_TO_SLUG_MAP = _FieldToSlugMapWrapper()
-
-
 class ItemTypeConfig(BaseModel):
     """Configuration for a specific item type (bagel, coffee, etc.)."""
 

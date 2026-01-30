@@ -1102,7 +1102,13 @@ class TakingItemsHandler(MenuDataMixin):
             return self.store_info_handler.handle_customer_service_inquiry(order)
 
         if parsed.asks_recommendation:
-            return self.store_info_handler.handle_recommendation_inquiry(parsed.recommendation_match_type, order)
+            return self.store_info_handler.handle_recommendation_inquiry(
+                match_type=parsed.recommendation_match_type,
+                order=order,
+                item_type_slug=parsed.recommendation_item_type_slug,
+                menu_item_ids=parsed.recommendation_menu_item_ids,
+                search_term=parsed.recommendation_search_term,
+            )
 
         if parsed.asks_item_description:
             return self.menu_inquiry_handler.handle_item_description_inquiry(parsed.item_description_query, order)

@@ -203,7 +203,18 @@ class OrderStateMachine:
         self.pricing = PricingEngine(self._menu_data, self.menu_lookup.lookup_menu_item)
         # Initialize message builder
         self.message_builder = MessageBuilder()
-        # Create shared handler configuration
+        # =====================================================================
+        # Handler Initialization Order
+        # =====================================================================
+        # Handlers are initialized in dependency order. Some callbacks must be
+        # set post-init due to circular dependencies:
+        #   1. checkout_utils_handler.get_next_question -> HandlerConfig
+        #   2. checkout_handler needs order_utils, checkout_utils, taking_items
+        #   3. checkout_utils_handler needs _configure_next_incomplete_item
+        #   4. configuring_item_handler needs taking_items_handler
+        # =====================================================================
+
+        # Create shared handler configuration (callbacks added incrementally)
         self._handler_config = HandlerConfig(
             model=self.model,
             pricing=self.pricing,
@@ -212,54 +223,43 @@ class OrderStateMachine:
             message_builder=self.message_builder,
             check_redirect=_check_redirect_to_pending_item,
         )
-        # Initialize checkout handler (context set per-request in process())
+
+        # Phase 1: Core utility handlers
         self.checkout_handler = CheckoutHandler(
             config=self._handler_config,
             transition_callback=self._transition_to_next_slot,
         )
-        # Initialize checkout utils handler early
         self.checkout_utils_handler = CheckoutUtilsHandler(
             config=self._handler_config,
             transition_to_next_slot=self._transition_to_next_slot,
         )
-        # Update handler config with get_next_question callback (now that checkout_utils_handler exists)
+        # Wire: get_next_question callback (required by other handlers)
         self._handler_config.get_next_question = self.checkout_utils_handler.get_next_question
-        # Initialize store info handler
+
+        # Phase 2: Independent handlers (no cross-dependencies)
         self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
-        # Initialize menu inquiry handler
-        self.menu_inquiry_handler = MenuInquiryHandler(
-            config=self._handler_config,
-        )
-        # Initialize order utils handler
+        self.menu_inquiry_handler = MenuInquiryHandler(config=self._handler_config)
         self.order_utils_handler = OrderUtilsHandler(
             config=self._handler_config,
             build_order_summary=self.checkout_utils_handler.build_order_summary,
         )
-        # Initialize item adder handler
-        self.item_adder_handler = ItemAdderHandler(
-            config=self._handler_config,
-        )
-        # Initialize modifier change handler
+        self.item_adder_handler = ItemAdderHandler(config=self._handler_config)
         self.modifier_change_handler = ModifierChangeHandler(config=self._handler_config)
-        # Initialize config helper handler
         self.config_helper_handler = ConfigHelperHandler(
             config=self._handler_config,
             modifier_change_handler=self.modifier_change_handler,
         )
-        # Set confirmation-related callbacks on checkout_handler (now that dependencies are ready)
+
+        # Phase 3: Wire cross-handler callbacks (circular dependencies)
         self.checkout_handler.order_utils_handler = self.order_utils_handler
         self.checkout_handler.checkout_utils_handler = self.checkout_utils_handler
         self.checkout_handler._handle_taking_items_with_parsed = self._handle_taking_items_with_parsed
-        # Initialize menu item config handler (for deli sandwiches, bagels, coffees, etc.)
-        self.menu_item_handler = MenuItemConfigHandler(
-            config=self._handler_config,
-        )
-        # Set menu_item_handler on item_adder_handler (created earlier)
+
+        # Phase 4: Handlers that depend on Phase 2 handlers
+        self.menu_item_handler = MenuItemConfigHandler(config=self._handler_config)
         self.item_adder_handler.menu_item_handler = self.menu_item_handler
-        # Set unified callback for item configuration (data-driven approach)
         self.checkout_utils_handler._configure_next_incomplete_item = self._configure_next_incomplete_item
 
-        # Initialize configuring item handler
         self.configuring_item_handler = ConfiguringItemHandler(
             config_helper_handler=self.config_helper_handler,
             checkout_utils_handler=self.checkout_utils_handler,
@@ -267,7 +267,6 @@ class OrderStateMachine:
             item_adder_handler=self.item_adder_handler,
             menu_item_handler=self.menu_item_handler,
         )
-        # Initialize taking items handler
         self.taking_items_handler = TakingItemsHandler(
             config=self._handler_config,
             item_adder_handler=self.item_adder_handler,
@@ -276,7 +275,8 @@ class OrderStateMachine:
             checkout_utils_handler=self.checkout_utils_handler,
             checkout_handler=self.checkout_handler,
         )
-        # Set taking_items_handler on configuring_item_handler (after both are created)
+
+        # Phase 5: Final cross-handler wiring
         self.configuring_item_handler.taking_items_handler = self.taking_items_handler
 
     @property
@@ -468,7 +468,7 @@ class OrderStateMachine:
         # The transition to checkout should only happen in _handle_taking_items when
         # the user explicitly says they're done (done_ordering=True).
         if order.phase == OrderPhase.TAKING_ITEMS.value and order.items.get_item_count() > 0:
-            # Stay in TAKING_ITEMS until user says they're done
+            # Intentionally stay in TAKING_ITEMS - don't auto-transition to checkout
             pass
         elif not order.is_configuring_item() and order.phase not in phases_to_preserve:
             self._transition_to_next_slot(order)
@@ -581,16 +581,4 @@ class OrderStateMachine:
         """Delegate to configuring item handler."""
         return self.configuring_item_handler.handle_configuring_item(user_input, order)
 
-    # =========================================================================
-    # NOTE: Confirmation and repeat order methods have been extracted to
-    # confirmation_handler.py
-    # NOTE: By-the-Pound handlers have been extracted to by_pound_handler.py
-    # NOTE: Menu Query, Price Inquiry, Item Description, and Signature Menu
-    # handlers have been extracted to menu_inquiry_handler.py
-    # NOTE: Drink selection handler has been extracted to coffee_config_handler.py
-    # NOTE: Checkout utilities (_get_next_question, _transition_to_checkout,
-    # _build_order_summary, etc.) have been extracted to checkout_utils_handler.py
-    # NOTE: Item adding methods (_add_menu_item, _add_side_item, _add_bagel, etc.)
-    # have been extracted to item_adder_handler.py
-    # =========================================================================
 

@@ -326,15 +326,24 @@ class MenuItemConfigHandler(BaseHandler):
 
         return matched
 
-    def _format_options_list(self, options: list[dict]) -> str:
-        """Format a list of options for display."""
-        names = [opt["display_name"] for opt in options]
-        return format_english_list(names, conjunction="or")
+    def _format_display_list(
+        self,
+        items: list[dict],
+        key: str = "display_name",
+        conjunction: str = "or",
+    ) -> str:
+        """Format a list of items for display.
 
-    def _format_attributes_list(self, attributes: list[dict]) -> str:
-        """Format a list of attributes for the customization menu."""
-        names = [attr["display_name"] for attr in attributes]
-        return format_english_list(names, conjunction="or")
+        Args:
+            items: List of dicts containing the display values
+            key: Key to extract from each dict (default: "display_name")
+            conjunction: Word to join items (default: "or")
+
+        Returns:
+            Formatted string like "A, B, or C"
+        """
+        names = [item.get(key, "") for item in items if item.get(key)]
+        return format_english_list(names, conjunction=conjunction)
 
     # =========================================================================
     # Options Inquiry and Pagination
@@ -594,6 +603,187 @@ class MenuItemConfigHandler(BaseHandler):
         return StateMachineResult(message=message, order=order)
 
     # =========================================================================
+    # Question Building Helpers
+    # =========================================================================
+
+    def _handle_unavailable_selection(
+        self, item: MenuItemTask, order: OrderTask, attr: dict
+    ) -> StateMachineResult | None:
+        """
+        Check if user tried to select an unavailable option for this attribute.
+        If so, generate a helpful message showing what's available.
+
+        Returns StateMachineResult if unavailable selection was handled, None otherwise.
+        """
+        attr_slug = attr.get("slug", "")
+        unavail = item.unavailable_selections.get(attr_slug)
+        if not unavail:
+            return None
+
+        attempted = unavail.get("attempted_display", unavail.get("attempted_slug", "that"))
+        options = attr.get("options", [])
+
+        # Get available options (filter out unavailable ones)
+        available = [
+            o.get("display_name", o.get("slug", ""))
+            for o in options
+            if o.get("is_available", True)
+        ]
+
+        # Build helpful message
+        if len(available) <= 4:
+            opts_str = format_english_list(available, conjunction="or")
+        else:
+            # Too many options - just name the attribute
+            opts_str = None
+
+        if opts_str:
+            question = f"We don't have {attempted} - we have {opts_str}. Which would you like?"
+        else:
+            attr_name_lower = attr.get("display_name", attr_slug).lower()
+            question = f"We don't have {attempted}. Which {attr_name_lower} would you like?"
+
+        # Clear so we don't repeat this message
+        del item.unavailable_selections[attr_slug]
+
+        # Set up order state for receiving the answer
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
+        order.pending_item_id = item.id
+        order.pending_field = f"{item.menu_item_type}:{attr_slug}"
+        order.config_options_page = 0
+
+        return StateMachineResult(message=question, order=order)
+
+    def _calculate_item_ordinal(
+        self, item: MenuItemTask, order: OrderTask
+    ) -> tuple[str, int, bool]:
+        """
+        Calculate ordinal position of this item among same-type items.
+
+        Returns:
+            tuple of (ordinal_word, item_number, has_duplicates)
+            - ordinal_word: "first", "second", etc.
+            - item_number: 1-based position
+            - has_duplicates: True if item name appears multiple times
+        """
+        from .message_builder import MessageBuilder
+
+        config_names = order.multi_item_config_names or []
+        multi_count = len(config_names) if config_names else 1
+
+        item_display = item.get_display_name()
+        # Does this item's name appear more than once in the config list?
+        item_name_count = sum(1 for n in config_names if n == item_display)
+        has_duplicates = item_name_count > 1
+
+        ordinal = "first"
+        item_num = 1
+
+        if multi_count > 1:
+            # Find all items of the same type
+            same_type_items = [
+                it for it in order.items.items
+                if isinstance(it, MenuItemTask) and it.menu_item_type == item.menu_item_type
+            ]
+            # Find position of current item
+            item_num = next(
+                (i + 1 for i, it in enumerate(same_type_items) if it.id == item.id),
+                1
+            )
+            ordinal = MessageBuilder.get_ordinal(item_num)
+
+        return ordinal, item_num, has_duplicates
+
+    def _build_base_question(
+        self, attr: dict, item_ref: str, ordinal: str,
+        has_duplicates: bool, multi_count: int
+    ) -> str:
+        """
+        Build the base question text based on input type and item context.
+
+        Args:
+            attr: Attribute configuration dict
+            item_ref: Item display name (lowercase)
+            ordinal: "first", "second", etc.
+            has_duplicates: True if same item appears multiple times
+            multi_count: Total number of items being configured
+        """
+        input_type = attr.get("input_type", "single_select")
+        attr_name = attr["display_name"].lower()
+        db_question = attr.get("question_text")
+
+        # Use DB's question_text if available for single-item orders
+        if db_question and multi_count <= 1:
+            return db_question
+
+        if input_type == "boolean":
+            if has_duplicates:
+                return f"For the {ordinal} {item_ref}, would you like it {attr_name}?"
+            elif multi_count > 1:
+                return f"For the {item_ref}, would you like it {attr_name}?"
+            else:
+                return f"Would you like it {attr_name}?"
+        else:
+            if has_duplicates:
+                return f"For the {ordinal} {item_ref}, what kind of {attr_name} would you like?"
+            elif multi_count > 1:
+                return f"For the {item_ref}, what kind of {attr_name} would you like?"
+            else:
+                return f"What kind of {attr_name} would you like?"
+
+    def _build_first_question_prefix(
+        self, item: MenuItemTask, order: OrderTask, attr: dict,
+        ordinal: str, item_num: int, has_duplicates: bool
+    ) -> str | None:
+        """
+        Build acknowledgment prefix for the first question of each item.
+
+        Returns the prefix string (e.g., "Got it, two Plain Bagels. ") or None
+        if no prefix is needed (for subsequent questions, not first).
+        """
+        config_names = order.multi_item_config_names or []
+        multi_count = len(config_names) if config_names else 1
+        item_display = item.get_display_name()
+        input_type = attr.get("input_type", "single_select")
+        attr_name = attr["display_name"].lower()
+
+        if multi_count > 1:
+            if item_num == 1:
+                # First item acknowledgment
+                all_same_name = len(set(config_names)) == 1
+
+                if all_same_name:
+                    # All identical: "Got it, two Plain Bagels."
+                    quantity_word = number_to_word(multi_count)
+                    item_name = pluralize(item_display)
+                    item_desc = f"{quantity_word} {item_name}"
+                else:
+                    # Mixed items: collapse duplicates
+                    from collections import Counter
+                    name_counts = Counter(config_names)
+                    desc_parts = []
+                    for cname, ccount in name_counts.items():
+                        if ccount > 1:
+                            qty_word = number_to_word(ccount)
+                            desc_parts.append(f"{qty_word} {pluralize(cname)}")
+                        else:
+                            desc_parts.append(cname)
+                    item_desc = format_english_list(desc_parts)
+                return f"Got it, {item_desc}. "
+            else:
+                # Subsequent items - build a replacement question
+                if has_duplicates:
+                    item_desc = f"the {ordinal} {item_display}"
+                else:
+                    item_desc = f"the {item_display.lower()}"
+                if input_type == "boolean":
+                    return f"For {item_desc}, would you like that {attr_name}?"
+                else:
+                    return f"For {item_desc}, what kind of {attr_name} would you like?"
+        else:
+            return f"Got it, {item_display}. "
+
+    # =========================================================================
     # Main Entry Point
     # =========================================================================
 
@@ -636,143 +826,37 @@ class MenuItemConfigHandler(BaseHandler):
 
         For multi-item configurations, uses ordinal references like "the first one", "the second one".
         """
-        from .message_builder import MessageBuilder
+        # Handle unavailable selection first (early return if applicable)
+        unavail_result = self._handle_unavailable_selection(item, order, attr)
+        if unavail_result:
+            return unavail_result
 
-        attr_slug = attr.get("slug", "")
-
-        # Check if user tried to select an unavailable option for this attribute
-        # If so, generate a helpful message showing what's available
-        unavail = item.unavailable_selections.get(attr_slug)
-        if unavail:
-            attempted = unavail.get("attempted_display", unavail.get("attempted_slug", "that"))
-            options = attr.get("options", [])
-
-            # Get available options (filter out unavailable ones)
-            available = [
-                o.get("display_name", o.get("slug", ""))
-                for o in options
-                if o.get("is_available", True)
-            ]
-
-            # Build helpful message
-            if len(available) <= 4:
-                opts_str = format_english_list(available, conjunction="or")
-            else:
-                # Too many options - just name the attribute
-                opts_str = None
-
-            if opts_str:
-                question = f"We don't have {attempted} - we have {opts_str}. Which would you like?"
-            else:
-                attr_name_lower = attr.get("display_name", attr_slug).lower()
-                question = f"We don't have {attempted}. Which {attr_name_lower} would you like?"
-
-            # Clear so we don't repeat this message
-            del item.unavailable_selections[attr_slug]
-
-            # Set up order state for receiving the answer
-            order.set_phase(OrderPhase.CONFIGURING_ITEM)
-            order.pending_item_id = item.id
-            order.pending_field = f"{item.menu_item_type}:{attr_slug}"
-            order.config_options_page = 0
-
-            return StateMachineResult(message=question, order=order)
-
-        input_type = attr.get("input_type", "single_select")
-        attr_name = attr["display_name"].lower()
-
-        # Determine if we're configuring multiple items
+        # Calculate ordinal position and context for multi-item orders
+        ordinal, item_num, has_duplicates = self._calculate_item_ordinal(item, order)
         multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
-        config_names = order.multi_item_config_names or []
+        item_ref = item.get_display_name().lower()
 
-        # Calculate ordinal position of this item among same-type items
-        ordinal = "first"  # default
-        item_num = 1  # default
-        item_display = item.get_display_name()
-        # Does this item's name appear more than once in the config list?
-        item_name_count = sum(1 for n in config_names if n == item_display)
-        has_duplicates = item_name_count > 1
+        # Build base question text
+        question = self._build_base_question(
+            attr, item_ref, ordinal, has_duplicates, multi_count
+        )
 
-        if multi_count > 1:
-            # Find all items of the same type
-            same_type_items = [
-                it for it in order.items.items
-                if isinstance(it, MenuItemTask) and it.menu_item_type == item.menu_item_type
-            ]
-            # Find position of current item
-            item_num = next(
-                (i + 1 for i, it in enumerate(same_type_items) if it.id == item.id),
-                1
-            )
-            ordinal = MessageBuilder.get_ordinal(item_num)
-
-        # Decide how to refer to the item in the question:
-        # - Item name appears multiple times → "the first bagel" (ordinal + name)
-        # - Item name is unique in order → "the bagel" (just name)
-        # - Single item → no prefix needed
-        item_ref = item_display.lower()
-
-        # Use DB's question_text if available, otherwise generate a natural question
-        db_question = attr.get("question_text")
-        if db_question and multi_count <= 1:
-            question = db_question
-        elif input_type == "boolean":
-            if has_duplicates:
-                question = f"For the {ordinal} {item_ref}, would you like it {attr_name}?"
-            elif multi_count > 1:
-                question = f"For the {item_ref}, would you like it {attr_name}?"
-            else:
-                question = f"Would you like it {attr_name}?"
-        else:
-            if has_duplicates:
-                question = f"For the {ordinal} {item_ref}, what kind of {attr_name} would you like?"
-            elif multi_count > 1:
-                question = f"For the {item_ref}, what kind of {attr_name} would you like?"
-            else:
-                question = f"What kind of {attr_name} would you like?"
-
-        # Add acknowledgment for first question of each item
+        # Add acknowledgment prefix for first question of each item
         if is_first_question:
-            if multi_count > 1:
-                if item_num == 1:
-                    # First item acknowledgment
-                    all_same_name = len(set(config_names)) == 1
-
-                    if all_same_name:
-                        # All identical: "Got it, two Plain Bagels."
-                        quantity_word = number_to_word(multi_count)
-                        item_name = pluralize(item_display)
-                        item_desc = f"{quantity_word} {item_name}"
-                    else:
-                        # Mixed items: collapse duplicates, e.g. "two Bagels and Hot Coffee"
-                        from collections import Counter
-                        name_counts = Counter(config_names)
-                        desc_parts = []
-                        for cname, ccount in name_counts.items():
-                            if ccount > 1:
-                                qty_word = number_to_word(ccount)
-                                desc_parts.append(f"{qty_word} {pluralize(cname)}")
-                            else:
-                                desc_parts.append(cname)
-                        item_desc = format_english_list(desc_parts)
-                    question = f"Got it, {item_desc}. {question}"
+            prefix = self._build_first_question_prefix(
+                item, order, attr, ordinal, item_num, has_duplicates
+            )
+            if prefix:
+                # For subsequent items in multi-item, prefix IS the full question
+                if multi_count > 1 and item_num > 1:
+                    question = prefix
                 else:
-                    # Subsequent items
-                    if has_duplicates:
-                        item_desc = f"the {ordinal} {item_display}"
-                    else:
-                        item_desc = f"the {item_display.lower()}"
-                    if input_type == "boolean":
-                        question = f"For {item_desc}, would you like that {attr_name}?"
-                    else:
-                        question = f"For {item_desc}, what kind of {attr_name} would you like?"
-            else:
-                question = f"Got it, {item_display}. {question}"
+                    question = prefix + question
 
+        # Set up order state for receiving the answer
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
         order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
-        # Reset options page when asking a new attribute question
         order.config_options_page = 0
 
         return StateMachineResult(message=question, order=order)
@@ -804,7 +888,7 @@ class MenuItemConfigHandler(BaseHandler):
         order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
 
         # List available customization options
-        options_list = self._format_attributes_list(unanswered_optional)
+        options_list = self._format_display_list(unanswered_optional)
 
         return StateMachineResult(
             message=f"Any more changes to that? You can add {options_list}.",
@@ -956,100 +1040,25 @@ class MenuItemConfigHandler(BaseHandler):
         """
         Recalculate and update an item's price based on its current state.
 
-        This method provides a generic price recalculation that works with any
-        item type. It delegates to PricingEngine.recalculate_item_price when
-        available (which routes to specialized methods for bagels/beverages).
-        Falls back to local calculation for items without specialized pricing.
+        Delegates to PricingEngine.recalculate_item_price which handles all
+        item types generically using database-driven pricing.
 
         Args:
             item: The menu item to recalculate price for
 
         Returns:
             The new calculated price
+
+        Raises:
+            ValueError: If pricing engine is not available
         """
-        # Use unified pricing method when available
-        if self.pricing:
-            return self.pricing.recalculate_item_price(item)
-
-        # Fallback: generic pricing for DB-driven item types
-        return self._calculate_generic_item_price(item)
-
-    def _calculate_generic_item_price(self, item: MenuItemTask) -> float:
-        """
-        Calculate price for a generic DB-driven item type.
-
-        Sums the base price (from menu item) plus all attribute selection prices
-        stored in attribute_values[*_selections].
-
-        Args:
-            item: The menu item to calculate price for
-
-        Returns:
-            The calculated total price
-        """
-        # Get base price from menu item data
-        base_price = self._get_item_base_price(item)
-        total = base_price
-
-        # Sum up prices from selections
-        for sel in item.modifiers:
-            price = sel.get("price", 0) or 0
-            qty = sel.get("quantity", 1) or 1
-            total += price * qty
-
-        # Round and update
-        new_price = round(total, 2)
-        item.unit_price = new_price
-
-        logger.info(
-            "Recalculated generic item price for %s (%s): base=$%.2f + selections -> total=$%.2f",
-            item.menu_item_name, item.menu_item_type, base_price, new_price
-        )
-
-        return new_price
-
-    def _get_item_base_price(self, item: MenuItemTask) -> float:
-        """
-        Get the base price for an item from menu data.
-
-        Looks up the menu item by ID or name to find its base price.
-        Falls back to calculating from current price minus known selections.
-
-        Args:
-            item: The menu item to get base price for
-
-        Returns:
-            The base price (before any modifier upcharges)
-        """
-        # Try to look up from menu item data
-        if hasattr(item, 'menu_item_id') and item.menu_item_id:
-            menu_index = menu_cache.get_menu_index()
-            if menu_index:
-                # Search through all categories for the menu item
-                for category_data in menu_index.get("categories", {}).values():
-                    for mi in category_data.get("items", []):
-                        if mi.get("id") == item.menu_item_id:
-                            return float(mi.get("base_price", 0))
-
-        # Try by name lookup
-        if hasattr(item, 'menu_item_name') and item.menu_item_name:
-            menu_index = menu_cache.get_menu_index()
-            if menu_index:
-                for category_data in menu_index.get("categories", {}).values():
-                    for mi in category_data.get("items", []):
-                        if mi.get("name", "").lower() == item.menu_item_name.lower():
-                            return float(mi.get("base_price", 0))
-
-        # Fallback: calculate from current price minus selections
-        if item.unit_price:
-            selections_total = 0.0
-            for sel in item.modifiers:
-                price = sel.get("price", 0) or 0
-                qty = sel.get("quantity", 1) or 1
-                selections_total += price * qty
-            return max(0.0, item.unit_price - selections_total)
-
-        return 0.0
+        if not self.pricing:
+            raise ValueError(
+                f"Cannot recalculate price for '{item.menu_item_name}': "
+                "PricingEngine is required but not configured. "
+                "Ensure handler is initialized with pricing in HandlerConfig."
+            )
+        return self.pricing.recalculate_item_price(item)
 
     # =========================================================================
     # Multi-Item Orchestration
@@ -1326,7 +1335,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         if not selected:
             # Couldn't match - ask again
-            options_text = self._format_options_list(options)
+            options_text = self._format_display_list(options)
             return StateMachineResult(
                 message=f"Sorry, I didn't catch that. Did you mean {options_text}?",
                 order=order,
@@ -1720,7 +1729,7 @@ class MenuItemConfigHandler(BaseHandler):
                         "modifiers": {"_quantity": quantity},
                         "item_id": item.id,
                     }
-                    options_text = self._format_options_list(matched_options)
+                    options_text = self._format_display_list(matched_options)
                     return StateMachineResult(
                         message=f"Did you mean {options_text}?",
                         order=order,
@@ -1835,8 +1844,8 @@ class MenuItemConfigHandler(BaseHandler):
             option_price = sel_price or 0.0
             variant_price_applied = False
 
-            if input_type != "multi_select" and option_price == 0 and self.pricing:
-                # Look up price from pricing engine if not set
+            if input_type != "multi_select" and self.pricing:
+                # Look up price from pricing engine
                 # First check for variant pricing (menu_item_size_prices), then fall back to upcharges
                 # Variant pricing: full price per option (from menu_item_size_prices)
                 # Upcharge pricing: base price + modifier (from attribute_options)
@@ -1852,13 +1861,13 @@ class MenuItemConfigHandler(BaseHandler):
                         item.id, attr_slug, matched["slug"], variant_price
                     )
                 else:
-                    # No variant pricing - try upcharge from attribute_options
-                    # Use the method that considers included ingredient categories
+                    # No variant pricing - use upcharge lookup that considers included ingredients
+                    # This handles cases like BEC where cheese is included - no upcharge for cheese type
                     option_price = self.pricing.lookup_attribute_option_upcharge_for_item(
                         item.menu_item_name, item.menu_item_type, attr_slug, matched["slug"]
                     ) or 0.0
                     logger.info(
-                        "DEBUG UPCHARGE: menu_item=%s, item_type=%s, attr=%s, option=%s -> price=%.2f",
+                        "Upcharge lookup: menu_item=%s, item_type=%s, attr=%s, option=%s -> price=%.2f",
                         item.menu_item_name, item.menu_item_type, attr_slug, matched["slug"], option_price
                     )
 
@@ -1925,7 +1934,7 @@ class MenuItemConfigHandler(BaseHandler):
                 attr_slug, [o["display_name"] for o in partial_matches], stored_modifiers
             )
 
-            options_text = self._format_options_list(partial_matches)
+            options_text = self._format_display_list(partial_matches)
             return StateMachineResult(
                 message=f"I found a few options matching that. Did you mean {options_text}?",
                 order=order,
@@ -2136,7 +2145,7 @@ class MenuItemConfigHandler(BaseHandler):
             return None
 
         # Multiple options match - list them for user
-        options_text = self._format_options_list(matching_options)
+        options_text = self._format_display_list(matching_options)
 
         # Store disambiguation state so _handle_disambiguation_response() can resolve it
         order.pending_attr_disambiguation = {
@@ -2232,7 +2241,7 @@ class MenuItemConfigHandler(BaseHandler):
             )
 
         # List remaining options
-        options_list = self._format_attributes_list(unanswered)
+        options_list = self._format_display_list(unanswered)
 
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
@@ -2295,7 +2304,7 @@ class MenuItemConfigHandler(BaseHandler):
         if any(user_lower == p or user_lower.startswith(p + " ") for p in yes_patterns):
             # If just "yes", list the options
             if user_lower in yes_patterns:
-                options_list = self._format_attributes_list(unanswered)
+                options_list = self._format_display_list(unanswered)
                 order.pending_field = PendingField.CUSTOMIZATION_SELECTION
                 return StateMachineResult(
                     message=f"You can add: {options_list}. What would you like?",
@@ -2408,7 +2417,7 @@ class MenuItemConfigHandler(BaseHandler):
             return result
 
         # Couldn't match - inform user we don't have what they asked for
-        options_list = self._format_attributes_list(unanswered)
+        options_list = self._format_display_list(unanswered)
         return StateMachineResult(
             message=f"Sorry, we don't have {user_input}. You can add: {options_list}. What would you like?",
             order=order,
@@ -2433,7 +2442,7 @@ class MenuItemConfigHandler(BaseHandler):
         elif options:
             # Only list options if there are few enough to be helpful
             if len(options) <= DEFAULT_PAGINATION_SIZE:
-                options_text = self._format_options_list(options)
+                options_text = self._format_display_list(options)
                 question = f"What kind of {attr['display_name'].lower()}? ({options_text})"
             else:
                 # Too many options - just ask, user can say "what do you have?" to see list

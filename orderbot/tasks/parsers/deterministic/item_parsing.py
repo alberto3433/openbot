@@ -406,7 +406,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # Sort aliases by length (longest first) for most specific match
     sorted_aliases = sorted(signature_aliases.keys(), key=len, reverse=True)
     for alias in sorted_aliases:
-        if re.search(rf'\b{re.escape(alias)}\b', text_lower):
+        # Allow optional plural suffix (s, es) to match "classic becs" with alias "classic bec"
+        if re.search(rf'\b{re.escape(alias)}(?:e?s)?\b', text_lower):
             signature_item_name = signature_aliases[alias]
             # Look up the item type for this signature item
             signature_item_type = menu_cache.get_item_type_for_menu_item(signature_item_name)

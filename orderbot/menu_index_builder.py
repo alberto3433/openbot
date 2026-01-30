@@ -117,8 +117,10 @@ def _preload_global_attribute_options(db: Session) -> Dict[int, List]:
     # Load ALL options including unavailable ones (for recognition)
     # Unavailable options allow us to detect when user selects them
     # and provide helpful feedback (e.g., "We don't have medium - we have small or large")
+    # Eager-load ingredient relationship for ingredient-linked options
     all_options = (
         db.query(GlobalAttributeOption)
+        .options(joinedload(GlobalAttributeOption.ingredient))
         .order_by(GlobalAttributeOption.global_attribute_id, GlobalAttributeOption.display_order)
         .all()
     )
@@ -235,6 +237,7 @@ def _preload_menu_item_ingredients(db: Session) -> Dict[int, List[Dict[str, Any]
                 "ingredient_id": link.ingredient_id,
                 "ingredient_name": link.ingredient.name,
                 "ingredient_slug": link.ingredient.slug,
+                "ingredient_category": link.ingredient.category,
                 "quantity": link.quantity,
             })
 
@@ -268,6 +271,7 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     preloaded_config_status = _preload_item_type_config_status(db)
     preloaded_ingredients = _preload_all_ingredients(db)
     preloaded_size_prices = _preload_size_prices(db)
+    preloaded_menu_item_ingredients = _preload_menu_item_ingredients(db)
 
     # Load menu items with eager loading for related objects
     items = (
@@ -334,6 +338,16 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
             item_json["size_category_slug"] = size_price_data["size_category_slug"]
             item_json["size_question_text"] = size_price_data["question_text"]
             item_json["size_prices"] = size_price_data["prices"]
+
+        # Add included ingredient categories (for pricing - skip upcharge if already included)
+        # If a menu item includes cheese, selecting cheese type shouldn't upcharge
+        menu_item_ingredients = preloaded_menu_item_ingredients.get(item.id, [])
+        included_categories = set()
+        for ing_info in menu_item_ingredients:
+            if ing_info.get("ingredient_category"):
+                included_categories.add(ing_info["ingredient_category"])
+        if included_categories:
+            item_json["included_ingredient_categories"] = list(included_categories)
 
         # Add to items_by_type grouping for type-specific queries
         if item_type_slug and item_type_slug in index["items_by_type"]:
@@ -440,9 +454,6 @@ def build_menu_index(db: Session, store_id: Optional[str] = None) -> Dict[str, A
     # Build item descriptions mapping for "what's on" queries
     # Maps normalized item names to descriptions
     index["item_descriptions"] = _build_item_descriptions(db)
-
-    # Pre-load menu item ingredients for ingredient-based search
-    preloaded_menu_item_ingredients = _preload_menu_item_ingredients(db)
 
     # Build ingredient-to-items mapping for ingredient-based search
     # When user says "something with chicken", this index helps find matching items
@@ -657,6 +668,27 @@ def _build_item_types_data(
             # Get options from pre-loaded global options
             options = preloaded_global_options.get(global_attr.id, [])
 
+            # Build options with proper slug/display_name derivation from linked ingredient
+            option_dicts = []
+            for opt in options:
+                # Derive slug and display_name from ingredient when linked
+                opt_slug = opt.ingredient.slug if opt.ingredient else opt.slug
+                opt_display_name = opt.ingredient.name if opt.ingredient else opt.display_name
+                opt_ingredient_category = opt.ingredient.category if opt.ingredient else None
+
+                # Skip options with NULL slug (shouldn't happen with proper data)
+                if not opt_slug:
+                    continue
+
+                option_dicts.append({
+                    "slug": opt_slug,
+                    "display_name": opt_display_name or opt_slug,
+                    "price_modifier": opt.price_modifier,
+                    "is_default": opt.is_default,
+                    "is_available": opt.is_available,
+                    "ingredient_category": opt_ingredient_category,
+                })
+
             attr_data = {
                 "slug": global_attr.slug,
                 "display_name": global_attr.display_name,
@@ -666,16 +698,7 @@ def _build_item_types_data(
                 "ask_in_conversation": link.ask_in_conversation,
                 "question_text": link.question_text,
                 "is_global": True,  # Flag to indicate this is from global attributes
-                "options": [
-                    {
-                        "slug": opt.slug,
-                        "display_name": opt.display_name,
-                        "price_modifier": opt.price_modifier,
-                        "is_default": opt.is_default,
-                        "is_available": opt.is_available,
-                    }
-                    for opt in options
-                ],
+                "options": option_dicts,
             }
 
             if global_attr.input_type == "multi_select":

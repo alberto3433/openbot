@@ -368,6 +368,49 @@ def get_primary_item_type_name(db: Session) -> str:
     return "Sandwich"
 
 
+def _check_alias_in_table(
+    db: Session,
+    alias_model: type,
+    alias_lower: str,
+    exclude_id: int | None,
+    fk_column_name: str,
+    entity_type_name: str,
+    entity_name_accessor: str,
+) -> tuple[bool, str | None]:
+    """Check for alias collision in a single alias table.
+
+    Generic helper that checks if an alias already exists in an alias table,
+    optionally excluding a specific entity ID (for update operations).
+
+    Args:
+        db: Database session
+        alias_model: The alias model class (e.g., ItemTypeAlias)
+        alias_lower: Lowercase alias to search for
+        exclude_id: Entity ID to exclude from search (for updates)
+        fk_column_name: Name of the FK column (e.g., "item_type_id")
+        entity_type_name: Human-readable entity type (e.g., "ItemType")
+        entity_name_accessor: Attribute path to get entity name (e.g., "item_type.slug")
+
+    Returns:
+        Tuple of (is_unique, conflict_message)
+        - (True, None) if no collision
+        - (False, message) if collision found
+    """
+    query = db.query(alias_model).filter(
+        func.lower(alias_model.alias) == alias_lower
+    )
+    if exclude_id:
+        query = query.filter(getattr(alias_model, fk_column_name) != exclude_id)
+    existing = query.first()
+    if existing:
+        # Navigate the attribute path (e.g., "item_type.slug" or "option.display_name")
+        entity_name = existing
+        for attr in entity_name_accessor.split("."):
+            entity_name = getattr(entity_name, attr, None)
+        return False, f"Alias already exists on {entity_type_name} '{entity_name}'"
+    return True, None
+
+
 def check_alias_uniqueness(
     db: Session,
     alias: str,
@@ -401,57 +444,21 @@ def check_alias_uniqueness(
     if not alias_lower:
         return True, None
 
-    # Check ItemTypeAlias
-    query = db.query(ItemTypeAlias).filter(
-        func.lower(ItemTypeAlias.alias) == alias_lower
-    )
-    if exclude_item_type_id:
-        query = query.filter(ItemTypeAlias.item_type_id != exclude_item_type_id)
-    existing = query.first()
-    if existing:
-        return False, f"Alias '{alias}' already exists on ItemType '{existing.item_type.slug}'"
+    # Configuration for each alias table to check
+    alias_tables = [
+        (ItemTypeAlias, exclude_item_type_id, "item_type_id", "ItemType", "item_type.slug"),
+        (MenuItemAlias, exclude_menu_item_id, "menu_item_id", "MenuItem", "menu_item.name"),
+        (ModifierCategoryAlias, exclude_modifier_category_id, "modifier_category_id", "ModifierCategory", "modifier_category.slug"),
+        (IngredientAlias, exclude_ingredient_id, "ingredient_id", "Ingredient", "ingredient.name"),
+        (GlobalAttributeOptionAlias, exclude_global_attr_option_id, "global_attribute_option_id", "GlobalAttributeOption", "option.display_name"),
+    ]
 
-    # Check MenuItemAlias
-    query = db.query(MenuItemAlias).filter(
-        func.lower(MenuItemAlias.alias) == alias_lower
-    )
-    if exclude_menu_item_id:
-        query = query.filter(MenuItemAlias.menu_item_id != exclude_menu_item_id)
-    existing = query.first()
-    if existing:
-        return False, f"Alias '{alias}' already exists on MenuItem '{existing.menu_item.name}'"
-
-    # Check ModifierCategoryAlias
-    query = db.query(ModifierCategoryAlias).filter(
-        func.lower(ModifierCategoryAlias.alias) == alias_lower
-    )
-    if exclude_modifier_category_id:
-        query = query.filter(ModifierCategoryAlias.modifier_category_id != exclude_modifier_category_id)
-    existing = query.first()
-    if existing:
-        return False, f"Alias '{alias}' already exists on ModifierCategory '{existing.modifier_category.slug}'"
-
-    # Check IngredientAlias
-    query = db.query(IngredientAlias).filter(
-        func.lower(IngredientAlias.alias) == alias_lower
-    )
-    if exclude_ingredient_id:
-        query = query.filter(IngredientAlias.ingredient_id != exclude_ingredient_id)
-    existing = query.first()
-    if existing:
-        return False, f"Alias '{alias}' already exists on Ingredient '{existing.ingredient.name}'"
-
-    # Check GlobalAttributeOptionAlias
-    query = db.query(GlobalAttributeOptionAlias).filter(
-        func.lower(GlobalAttributeOptionAlias.alias) == alias_lower
-    )
-    if exclude_global_attr_option_id:
-        query = query.filter(
-            GlobalAttributeOptionAlias.global_attribute_option_id != exclude_global_attr_option_id
+    for alias_model, exclude_id, fk_column, entity_type, name_accessor in alias_tables:
+        is_unique, message = _check_alias_in_table(
+            db, alias_model, alias_lower, exclude_id, fk_column, entity_type, name_accessor
         )
-    existing = query.first()
-    if existing:
-        return False, f"Alias '{alias}' already exists on GlobalAttributeOption '{existing.option.display_name}'"
+        if not is_unique:
+            return False, message
 
     return True, None
 

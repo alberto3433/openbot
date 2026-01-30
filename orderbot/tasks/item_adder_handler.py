@@ -326,6 +326,7 @@ class ItemAdderHandler(MenuDataMixin):
                     "is_signature": False,
                 }
             except ValueError:
+                # Price lookup failed - fall through to return zero-price item
                 pass
 
         # Step 4: Return with zero price (item will need configuration or is unknown)

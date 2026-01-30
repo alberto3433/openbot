@@ -316,6 +316,10 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="Item type slug that matched the recommendation search (when recommendation_match_type='item_type')"
     )
+    recommendation_search_term: str | None = Field(
+        default=None,
+        description="Original search term extracted from the user's query (e.g., 'bagel', 'coffee')"
+    )
 
     # Item description inquiries (should NOT add to cart)
     asks_item_description: bool = Field(

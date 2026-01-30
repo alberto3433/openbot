@@ -212,6 +212,7 @@ class ModifierChangeHandler:
                         unique_slugs.append(slug)
                 return True, unique_slugs
         except Exception:
+            # Attribute option check failed - fall through to try alternate parsing
             pass
 
         # Try stripping quantity prefix and re-analyzing
@@ -261,6 +262,7 @@ class ModifierChangeHandler:
                 if menu_cache.find_all_categories_for_ingredient(singular):
                     return singular
             except Exception:
+                # Cache lookup failed - continue without verification
                 pass
 
         # Return stripped value (even if we couldn't verify singular)
@@ -507,6 +509,7 @@ class ModifierChangeHandler:
                     setattr(item, property_name, value)
                     return True
                 except AttributeError:
+                    # Property exists but is read-only - try alternate approaches
                     pass
             # Also try the original attr_slug if different
             if property_name != attr_slug and hasattr(item, attr_slug):
@@ -514,6 +517,7 @@ class ModifierChangeHandler:
                     setattr(item, attr_slug, value)
                     return True
                 except AttributeError:
+                    # Attribute exists but is read-only - fall through to selection API
                     pass
             # Fall back to selection API
             item[attr_slug] = value

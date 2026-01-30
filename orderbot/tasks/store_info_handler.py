@@ -317,20 +317,143 @@ class StoreInfoHandler(MenuDataMixin):
 
     def handle_recommendation_inquiry(
         self,
-        category: str | None,
+        match_type: str | None,
         order: OrderTask,
+        item_type_slug: str | None = None,
+        menu_item_ids: list[int] | None = None,
+        search_term: str | None = None,
     ) -> StateMachineResult:
-        """Handle recommendation questions with a generic response.
+        """Handle recommendation questions with data-driven responses.
 
         IMPORTANT: This should NOT add anything to the cart. It's just answering a question.
         The user needs to explicitly order something after getting the recommendation.
 
         Args:
-            category: Type of recommendation asked (unused - returns generic response)
+            match_type: Type of match ("general", "item_type", or "menu_items")
             order: Current order state (unchanged)
+            item_type_slug: Item type slug when match_type is "item_type"
+            menu_item_ids: Menu item IDs when match_type is "menu_items"
+            search_term: Original search term (e.g., "bagel", "coffee")
         """
+        from orderbot.menu_data_cache import menu_cache
+
+        max_items = 5
+
+        # Determine effective search term
+        effective_term = search_term or item_type_slug
+
+        # ALWAYS search ingredients first if we have a search term
+        # This handles "what bagels do you recommend" -> finds bagel types in bread category
+        if effective_term:
+            ingredient_items = self._search_ingredients_by_term(effective_term, max_items)
+            if ingredient_items:
+                return self._format_recommendation_response(ingredient_items, effective_term, order)
+
+        # Handle specific menu item matches (by ID) - only if no ingredients found
+        if match_type == "menu_items" and menu_item_ids:
+            items = self._get_menu_item_names_by_ids(menu_item_ids[:max_items])
+            if items:
+                return self._format_recommendation_response(items, effective_term, order)
+
+        # Handle item type matches - fall back to menu items by item type
+        if match_type == "item_type" and item_type_slug:
+            menu_items = menu_cache.get_items_by_item_type(item_type_slug)
+            if menu_items:
+                item_names = [item.get("name") for item in menu_items[:max_items] if item.get("name")]
+                if item_names:
+                    display_name = menu_cache.get_item_type_display_name(item_type_slug)
+                    return self._format_recommendation_response(item_names, display_name, order)
+
+        # Generic fallback
         return StateMachineResult(
             message="We have a great selection! What are you in the mood for?",
+            order=order,
+        )
+
+    def _search_ingredients_by_term(self, search_term: str, max_items: int) -> list[str]:
+        """Search all ingredient categories for items containing the search term.
+
+        Args:
+            search_term: Term to search for (e.g., "bagel")
+            max_items: Maximum number of items to return
+
+        Returns:
+            List of ingredient names that contain the search term.
+        """
+        from orderbot.menu_data_cache import menu_cache
+
+        search_lower = search_term.lower()
+        matching_items = []
+
+        # Get all ingredient categories
+        categories = menu_cache.get_all_ingredient_categories()
+
+        for category in categories:
+            details = menu_cache.get_ingredient_details(category)
+            for ingredient in details:
+                name = ingredient.get("name", "")
+                if search_lower in name.lower():
+                    matching_items.append(name)
+                    if len(matching_items) >= max_items:
+                        return matching_items
+
+        return matching_items
+
+    def _get_menu_item_names_by_ids(self, item_ids: list[int]) -> list[str]:
+        """Get menu item names by their IDs.
+
+        Args:
+            item_ids: List of menu item IDs to look up
+
+        Returns:
+            List of item names (in order of IDs provided, skipping not found).
+        """
+        from orderbot.menu_data_cache import menu_cache
+
+        # Build a lookup from ID to name by iterating through all items
+        id_to_name: dict[int, str] = {}
+        for item_data in menu_cache._all_menu_items_by_name.values():
+            item_id = item_data.get("id")
+            if item_id in item_ids:
+                id_to_name[item_id] = item_data.get("name", f"Item {item_id}")
+
+        # Return names in the order of requested IDs
+        return [id_to_name[item_id] for item_id in item_ids if item_id in id_to_name]
+
+    def _format_recommendation_response(
+        self,
+        items: list[str],
+        category_name: str | None,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Format a recommendation response with item names.
+
+        Args:
+            items: List of item names to recommend
+            category_name: Optional category name for context
+            order: Current order state (unchanged)
+        """
+        if not items:
+            return StateMachineResult(
+                message="We have a great selection! What are you in the mood for?",
+                order=order,
+            )
+
+        # Format item list naturally
+        if len(items) == 1:
+            item_list = items[0]
+        elif len(items) == 2:
+            item_list = f"{items[0]} and {items[1]}"
+        else:
+            item_list = ", ".join(items[:-1]) + f", and {items[-1]}"
+
+        if category_name:
+            message = f"Popular {category_name.lower()} options include {item_list}. Would you like one of these?"
+        else:
+            message = f"Popular options include {item_list}. Would you like one of these?"
+
+        return StateMachineResult(
+            message=message,
             order=order,
         )
 

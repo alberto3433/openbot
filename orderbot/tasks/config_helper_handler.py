@@ -17,6 +17,7 @@ from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN
 from .handler_config import HandlerConfig
 from .taking_items_handler import extract_ordinal_reference, find_nth_item_of_type
+from .modifier_operations import find_modifier_match, remove_modifier_from_item
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants
@@ -139,52 +140,72 @@ class ConfigHelperHandler:
                 )
 
         # Check if this is a modifier removal on the current item being configured
-        # Get removable modifiers from database
-        removable_modifiers = _get_removable_modifiers()
+        # Use unified modifier_operations for consistent handling
+        if isinstance(current_item, MenuItemTask):
+            try:
+                modifier_match = find_modifier_match(current_item, cancel_desc)
+                if modifier_match:
+                    removal_result = remove_modifier_from_item(current_item, modifier_match)
+                    if removal_result.success:
+                        removed_modifier_name = removal_result.removed_value or cancel_desc
+                        logger.info(
+                            "Modifier removal during config: removed '%s' from %s",
+                            removed_modifier_name, current_item.menu_item_name
+                        )
 
-        # Handle modifier removal for MenuItemTask
-        # Uses the unified modifiers list for storage
-        if cancel_desc in removable_modifiers and isinstance(current_item, MenuItemTask):
-            modifier_removed = False
-            removed_modifier_name = cancel_desc
+                        # Return to customization checkpoint or continue
+                        question = self.get_current_config_question(order, current_item)
+                        if question:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_modifier_name}. {question}",
+                                order=order,
+                            )
+                        else:
+                            updated_summary = current_item.get_summary()
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_modifier_name}. Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
+                                order=order,
+                            )
+            except MenuDataNotLoadedError:
+                # Menu cache not loaded - fall back to checking removable modifiers set
+                logger.debug("Menu cache not loaded for modifier match - using removable modifiers set")
 
-            # Get singular/plural variants for matching
-            # "eggs" -> ["eggs", "egg"], "cheese" -> ["cheese", "cheeses"]
-            cancel_variants = get_singular_plural_variants(cancel_desc)
+                # Legacy fallback using removable modifiers set
+                removable_modifiers = _get_removable_modifiers()
+                if cancel_desc in removable_modifiers:
+                    cancel_variants = get_singular_plural_variants(cancel_desc)
+                    selections_to_remove = []
+                    removed_modifier_name = cancel_desc
 
-            # Check all selections for ones that match the cancel description
-            selections_to_remove = []
-            for sel in current_item.modifiers:
-                sel_display = sel.get("display_name", "").lower()
-                sel_slug = sel.get("slug", "").lower()
-                sel_category = sel.get("category", "")
-                # Check if this selection matches any cancel variant
-                if (any(v in sel_display for v in cancel_variants) or
-                    any(v in sel_slug for v in cancel_variants)):
-                    selections_to_remove.append((sel_category, sel_slug))
-                    modifier_removed = True
-                    removed_modifier_name = sel.get("display_name", cancel_desc)
-                    logger.info("Modifier removal during config: removed '%s' from %s", removed_modifier_name, current_item.menu_item_name)
+                    for sel in current_item.modifiers:
+                        sel_display = sel.get("display_name", "").lower()
+                        sel_slug = sel.get("slug", "").lower()
+                        sel_category = sel.get("category", "")
+                        if (any(v in sel_display for v in cancel_variants) or
+                            any(v in sel_slug for v in cancel_variants)):
+                            selections_to_remove.append((sel_category, sel_slug))
+                            removed_modifier_name = sel.get("display_name", cancel_desc)
 
-            # Remove matching selections
-            for category, slug in selections_to_remove:
-                current_item.remove_selection(category, slug)
+                    for category, slug in selections_to_remove:
+                        current_item.remove_selection(category, slug)
 
-            if modifier_removed:
-                updated_summary = current_item.get_summary()
-
-                # Return to customization checkpoint or continue
-                question = self.get_current_config_question(order, current_item)
-                if question:
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {removed_modifier_name}. {question}",
-                        order=order,
-                    )
-                else:
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {removed_modifier_name}. Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
-                        order=order,
-                    )
+                    if selections_to_remove:
+                        logger.info(
+                            "Modifier removal during config (fallback): removed '%s' from %s",
+                            removed_modifier_name, current_item.menu_item_name
+                        )
+                        question = self.get_current_config_question(order, current_item)
+                        if question:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_modifier_name}. {question}",
+                                order=order,
+                            )
+                        else:
+                            updated_summary = current_item.get_summary()
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_modifier_name}. Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
+                                order=order,
+                            )
 
         # Get all active items to search through
         active_items = order.items.get_active_items()

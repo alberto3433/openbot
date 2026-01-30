@@ -298,6 +298,7 @@ def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
                     asks_recommendation=True,
                     recommendation_match_type="menu_items",
                     recommendation_menu_item_ids=menu_item_ids,
+                    recommendation_search_term=term_singular,
                 )
 
             # 3b. Fallback: Search item types
@@ -311,6 +312,7 @@ def _parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
                     asks_recommendation=True,
                     recommendation_match_type="item_type",
                     recommendation_item_type_slug=item_type_slug,
+                    recommendation_search_term=term_singular,
                 )
 
             # No matches found, but it's still a recommendation question - return general

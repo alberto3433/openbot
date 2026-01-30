@@ -292,17 +292,6 @@ class MenuItemTask(ItemTask):
     # Unified modifiers list - all customizations (attributes and modifiers)
     modifiers: list[dict] = Field(default_factory=list)  # Stored as dict for serialization
 
-    # Deprecated: use `modifiers` instead
-    @property
-    def selections(self) -> list[dict]:
-        """Deprecated: Use modifiers instead."""
-        return self.modifiers
-
-    @selections.setter
-    def selections(self, value: list[dict]) -> None:
-        """Deprecated: Use modifiers instead."""
-        self.modifiers = value
-
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
 
@@ -607,8 +596,7 @@ class MenuItemTask(ItemTask):
             return True
 
         # Check legacy aliases
-        from orderbot.tasks.field_config import _FIELD_TO_SLUG_MAP
-        field_map = _FIELD_TO_SLUG_MAP.get(self.menu_item_type, {})
+        field_map = menu_cache.get_field_to_slug_map(self.menu_item_type) or {}
         db_slug = field_map.get(attr_slug)
         if db_slug and db_slug in attrs:
             return True

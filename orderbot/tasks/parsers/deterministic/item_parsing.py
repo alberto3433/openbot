@@ -528,18 +528,17 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     )
 
     # 6. Build ParsedItemEntry using build_parsed_item (converts attr_values to selections)
-    parsed_items = [
-        build_parsed_item(
-            item_type=detected_item_type,
-            item_name=item_name,
-            attribute_values=attr_values.copy(),
-            original_text=text,
-            is_signature=is_signature,
-        )
-        for _ in range(quantity)
-    ]
+    # Create single entry with full quantity - ItemAdderHandler handles threshold logic
+    parsed_item = build_parsed_item(
+        item_type=detected_item_type,
+        item_name=item_name,
+        quantity=quantity,
+        attribute_values=attr_values.copy(),
+        original_text=text,
+        is_signature=is_signature,
+    )
 
-    return OpenInputResponse(parsed_items=parsed_items)
+    return OpenInputResponse(parsed_items=[parsed_item])
 
 
 def _match_menu_item_name_for_type(text: str, item_type_slug: str) -> str | None:

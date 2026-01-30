@@ -153,7 +153,7 @@ async def lifespan(app: FastAPI):
             db.close()
 
         # Pre-compile parser patterns (no DB needed - close session first to avoid idle timeout)
-        from .tasks.parsers.deterministic.patterns import warmup_patterns
+        from .tasks.parsers.constants import warmup_patterns
         logger.info("Pre-compiling parser patterns...")
         warmup_patterns()
     except Exception as e:

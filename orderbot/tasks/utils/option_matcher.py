@@ -369,3 +369,58 @@ class OptionMatcher:
             user_input, must_match_list, opt.get("display_name")
         )
         return False
+
+    # =========================================================================
+    # Static Methods for Simple Value Matching
+    # =========================================================================
+
+    @staticmethod
+    def normalize_option(option: dict) -> tuple[str, str]:
+        """Normalize an option dict for matching against user input.
+
+        Extracts and normalizes both slug and display_name from an option dict
+        for consistent comparison during price lookups.
+
+        Args:
+            option: Option dict with optional "slug" and "display_name" keys
+
+        Returns:
+            Tuple of (normalized_slug, normalized_display_name) where both have
+            dashes and spaces converted to underscores, lowercased.
+
+        Examples:
+            >>> OptionMatcher.normalize_option({"slug": "oat-milk", "display_name": "Oat Milk"})
+            ("oat_milk", "oat_milk")
+        """
+        # Import here to avoid circular imports
+        from ..normalization import normalize_to_slug
+        opt_slug = normalize_to_slug(option.get("slug") or "")
+        opt_name = normalize_to_slug(option.get("display_name") or "")
+        return opt_slug, opt_name
+
+    @staticmethod
+    def matches_value(option: dict, normalized_value: str, raw_value_lower: str) -> bool:
+        """Check if an option matches by slug, display_name, or raw value.
+
+        Simple matching for price lookups - uses multiple strategies:
+        - Normalized slug comparison
+        - Normalized display_name comparison
+        - Raw lowercase value comparison
+        - Substring matching for partial matches
+
+        Args:
+            option: Option dict with "slug" and/or "display_name" keys
+            normalized_value: Value normalized via normalize_to_slug()
+            raw_value_lower: Original value lowercased
+
+        Returns:
+            True if the option matches by any strategy, False otherwise
+        """
+        opt_slug, opt_name = OptionMatcher.normalize_option(option)
+        opt_display_lower = (option.get("display_name") or "").lower()
+
+        return (opt_slug == normalized_value or
+                opt_name == normalized_value or
+                opt_slug == raw_value_lower or
+                opt_display_lower == raw_value_lower or
+                raw_value_lower in opt_slug)

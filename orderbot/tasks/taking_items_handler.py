@@ -58,6 +58,7 @@ from .modifier_input_handler import (
 from .parsed_item_processor import ParsedItemProcessor
 from .inquiry_router import InquiryRouter
 from .duplicate_handler import DuplicateHandler
+from .response_utils import is_affirmative
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -689,11 +690,7 @@ class TakingItemsHandler(MenuDataMixin):
         order.pending_suggested_item = None
         order.pending_field = None
 
-        # Check for affirmative response using patterns from database
-        affirmative_patterns = menu_cache.get_response_patterns("affirmative")
-        is_affirmative = any(pattern in user_lower for pattern in affirmative_patterns)
-
-        if is_affirmative and suggested_item:
+        if is_affirmative(user_input) and suggested_item:
             logger.info(
                 "User confirmed suggested item '%s' with response: '%s'",
                 suggested_item, user_input

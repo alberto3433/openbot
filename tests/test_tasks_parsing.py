@@ -251,11 +251,16 @@ class TestDeterministicParserBagelOrders:
         ("five everything bagels", 5),
     ])
     def test_bagel_quantity_extraction(self, text, expected_qty):
-        """Test that bagel quantities are correctly extracted."""
+        """Test that bagel quantities are correctly extracted.
+
+        Parser creates a single ParsedItemEntry with quantity field set.
+        ItemAdderHandler decides whether to create N separate items.
+        """
         result = parse_open_input_deterministic(text)
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
-        assert len(bagels) == expected_qty, f"Expected {expected_qty} bagel(s), got {len(bagels)}"
+        assert len(bagels) == 1, f"Parser should create 1 entry with quantity, got {len(bagels)}"
+        assert bagels[0].quantity == expected_qty, f"Expected quantity={expected_qty}, got {bagels[0].quantity}"
 
     @pytest.mark.parametrize("text,expected_type", [
         ("one plain bagel", "plain_bagel"),
@@ -1697,30 +1702,34 @@ class TestSpeedMenuBagelParsing:
         ("three traditionals", 3),
     ])
     def test_signature_item_with_quantity(self, text, expected_qty):
-        """Test that speed menu items with quantity are correctly parsed."""
+        """Test that speed menu items with quantity are correctly parsed.
+
+        Parser creates a single ParsedItemEntry with quantity field set.
+        ItemAdderHandler decides whether to create N separate items.
+        """
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
         result = parse_open_input_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
-        # Parser creates N separate items for quantity N (each with quantity=1)
-        # Filter by is_signature=True since signature items may have different item_types
+        # Parser creates single entry with quantity field
         sig_items = get_parsed_items(result, is_signature=True)
-        assert len(sig_items) == expected_qty, f"Expected {expected_qty} signature items, got {len(sig_items)}"
+        assert len(sig_items) == 1, f"Parser should create 1 entry with quantity, got {len(sig_items)}"
+        assert sig_items[0].quantity == expected_qty, f"Expected quantity={expected_qty}, got {sig_items[0].quantity}"
 
     def test_signature_item_with_all_options(self):
         """Test parsing speed menu with bagel choice, toasted, and quantity."""
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
         result = parse_open_input_deterministic("2 classic becs on wheat bagels toasted")
         assert result is not None
-        # Parser creates 2 separate items for quantity 2
-        # Filter by is_signature=True since signature items may have different item_types
+        # Parser creates single entry with quantity=2
         sig_items = get_parsed_items(result, is_signature=True)
-        assert len(sig_items) == 2
-        # All items should have the same name, bagel choice, and toasted preference
+        assert len(sig_items) == 1, "Parser should create 1 entry with quantity"
+        assert sig_items[0].quantity == 2, f"Expected quantity=2, got {sig_items[0].quantity}"
+        # Item should have the name, bagel choice, and toasted preference
         # Note: "wheat" maps to "whole_wheat_bagel" slug since there's no separate "wheat" bagel in DB
-        for item in sig_items:
-            assert item.item_name == "The Classic BEC"
-            assert item.attribute_values.get("bread") == "whole_wheat_bagel"
-            assert item.attribute_values.get("toasted") is True
+        item = sig_items[0]
+        assert item.item_name == "The Classic BEC"
+        assert item.attribute_values.get("bread") == "whole_wheat_bagel"
+        assert item.attribute_values.get("toasted") is True
 
     def test_signature_item_parsed_before_bagel_check(self):
         """Test that speed menu items are parsed BEFORE generic bagel check.

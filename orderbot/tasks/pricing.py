@@ -18,64 +18,14 @@ from .normalization import normalize_to_slug
 from .modifier_utils import extract_modifier_slug_and_quantity, extract_modifier_price
 from .utils.cache_helpers import get_item_type_attributes
 from .utils.constants import ATTR_METADATA_SUFFIXES, ATTR_PENDING_PREFIX
+from .utils import OptionMatcher
 from orderbot.menu_data_cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Helper Functions for Option Matching
-# =============================================================================
-
-def _normalize_option_for_matching(option: dict) -> tuple[str, str]:
-    """Normalize an option dict for matching against user input.
-
-    Extracts and normalizes both slug and display_name from an option dict
-    for consistent comparison during price lookups.
-
-    Args:
-        option: Option dict with optional "slug" and "display_name" keys
-
-    Returns:
-        Tuple of (normalized_slug, normalized_display_name) where both have
-        dashes and spaces converted to underscores, lowercased.
-
-    Examples:
-        >>> _normalize_option_for_matching({"slug": "oat-milk", "display_name": "Oat Milk"})
-        ("oat_milk", "oat_milk")
-        >>> _normalize_option_for_matching({"slug": "vanilla_syrup"})
-        ("vanilla_syrup", "")
-    """
-    opt_slug = normalize_to_slug(option.get("slug") or "")
-    opt_name = normalize_to_slug(option.get("display_name") or "")
-    return opt_slug, opt_name
-
-
-def _option_matches_value(option: dict, normalized_value: str, raw_value_lower: str) -> bool:
-    """Check if an option matches by slug, display_name, or raw value.
-
-    Uses multiple matching strategies to handle different input formats:
-    - Normalized slug comparison
-    - Normalized display_name comparison
-    - Raw lowercase value comparison
-    - Substring matching for partial matches
-
-    Args:
-        option: Option dict with "slug" and/or "display_name" keys
-        normalized_value: Value normalized via normalize_to_slug()
-        raw_value_lower: Original value lowercased
-
-    Returns:
-        True if the option matches by any strategy, False otherwise
-    """
-    opt_slug, opt_name = _normalize_option_for_matching(option)
-    opt_display_lower = (option.get("display_name") or "").lower()
-
-    return (opt_slug == normalized_value or
-            opt_name == normalized_value or
-            opt_slug == raw_value_lower or
-            opt_display_lower == raw_value_lower or
-            raw_value_lower in opt_slug)
+# Note: Option matching functions are now in utils/option_matcher.py
+# Use OptionMatcher.matches_value() and OptionMatcher.normalize_option()
 
 
 def _lookup_option_price_in_attributes(
@@ -129,7 +79,7 @@ def _lookup_option_price_in_attributes(
             if not isinstance(opt, dict):
                 continue
 
-            if _option_matches_value(opt, normalized_value, raw_value_lower):
+            if OptionMatcher.matches_value(opt, normalized_value, raw_value_lower):
                 # Check both keys: "price_modifier" for attribute options,
                 # "price" for ingredient-based options
                 price = opt.get("price_modifier") or opt.get("price") or 0.0
@@ -360,7 +310,7 @@ class PricingEngine(MenuDataMixin):
             if attr.get("slug") != attr_slug:
                 continue
             for opt in attr.get("options", []):
-                if _option_matches_value(opt, normalized, option_lower):
+                if OptionMatcher.matches_value(opt, normalized, option_lower):
                     return opt.get("ingredient_category")
 
         return None

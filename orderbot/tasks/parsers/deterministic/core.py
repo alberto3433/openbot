@@ -17,9 +17,6 @@ from ..constants import (
     GRATITUDE_PATTERNS,
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
-)
-
-from .patterns import (
     strip_filler_words,
     MAKE_IT_N_PATTERN,
     REDUCE_TO_ONE_PATTERN,

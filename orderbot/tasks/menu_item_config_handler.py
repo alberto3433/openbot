@@ -33,6 +33,7 @@ from .config_disambiguation import DisambiguationHandler
 from .config_question_builder import QuestionBuilder
 from .config_selection_extractor import SelectionExtractor
 from .direct_option_matcher import DirectOptionMatcher
+from .response_utils import is_negative, is_affirmative
 
 logger = logging.getLogger(__name__)
 
@@ -816,14 +817,14 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Check for negative responses (skip)
         # Handles exact matches ("no", "none") and phrases like "no shots", "no extra shots"
-        no_patterns = menu_cache.get_response_patterns("negative")
-        is_negative = user_lower in no_patterns or user_lower in ("none", "no thanks", "nope")
+        is_neg = is_negative(user_input)
 
         # Also check if input starts with a negative pattern followed by the attribute/unit name
         # e.g., "no shots" when asking about extra shots, "no syrup" when asking about syrup
-        if not is_negative:
+        if not is_neg:
             unit_name_lower = unit_name.lower()
             attr_name_lower = attr["display_name"].lower()
+            no_patterns = menu_cache.get_response_patterns("negative")
             for neg_pattern in no_patterns:
                 # Check patterns like "no shots", "no extra shots", "none of that"
                 if user_lower.startswith(neg_pattern + " "):
@@ -833,10 +834,10 @@ class MenuItemConfigHandler(BaseHandler):
                         attr_name_lower in remainder or
                         unit_slug in remainder or
                         attr_slug in remainder):
-                        is_negative = True
+                        is_neg = True
                         break
 
-        if is_negative:
+        if is_neg:
             # Mark attribute as declined so _get_unanswered_mandatory knows it's answered
             # Using item[attr_slug] = None triggers __setitem__ which adds to modifiers
             item[attr_slug] = None
@@ -845,9 +846,8 @@ class MenuItemConfigHandler(BaseHandler):
         # Check for affirmative responses (quantity=1)
         # Also treat "extra" or "extra <anything>" as affirmative (e.g., "extra shot" = 1 shot)
         # This handles typos like "extra host" as "yes, one"
-        yes_patterns = menu_cache.get_response_patterns("affirmative")
         is_extra_response = user_lower == "extra" or user_lower.startswith("extra ")
-        if user_lower in yes_patterns or is_extra_response:
+        if is_affirmative(user_input) or is_extra_response:
             quantity = 1
         else:
             # Try to parse numeric quantity

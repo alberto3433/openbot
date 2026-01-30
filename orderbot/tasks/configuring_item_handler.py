@@ -12,9 +12,8 @@ import logging
 from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
-from .parsers.constants import _SELECTION_PATTERNS
+from .parsers.constants import _SELECTION_PATTERNS, parse_can_you_make_it
 from .handler_utils import format_numbered_options
-from .parsers.deterministic.patterns import parse_can_you_make_it
 from .modifier_change_handler import ChangeRequest
 from .checkout_messages import got_it_anything_else, ErrorMessages
 from .config_input_validation import (
@@ -717,13 +716,9 @@ class ConfiguringItemHandler:
                 order=order,
             )
 
-        user_lower = user_input.lower().strip()
+        from .response_utils import is_affirmative
 
-        # Check for affirmative response
-        affirmative_patterns = menu_cache.get_response_patterns("affirmative")
-        is_affirmative = any(p in user_lower for p in affirmative_patterns) or user_lower in ("yes", "yeah", "sure", "ok", "okay", "yep", "yup")
-
-        if is_affirmative:
+        if is_affirmative(user_input):
             # Get the current item being configured and remove it
             current_item = order.items.get_item_by_id(order.pending_item_id)
             if current_item:

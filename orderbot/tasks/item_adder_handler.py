@@ -596,15 +596,35 @@ class ItemAdderHandler(MenuDataMixin):
             canonical_name, item_type, price, quantity, is_configurable, skip_config, needs_configuration
         )
 
-        # Create the requested quantity of items
+        # Quantity threshold logic:
+        # - Non-configurable items: always single item with quantity (no config needed)
+        # - Configurable items with qty > 5: single item with quantity (configure once)
+        # - Configurable items with qty <= 5: N separate items (configure each individually)
+        MULTI_CONFIG_THRESHOLD = 5
+
+        if not needs_configuration or quantity > MULTI_CONFIG_THRESHOLD:
+            # Create single item with quantity=N
+            item_count = 1
+            item_quantity = quantity
+        else:
+            # Create N separate items (configure each individually)
+            item_count = quantity
+            item_quantity = 1
+
+        # Create the items
+        logger.info(
+            "_create_configurable_item: creating %d item(s) with qty=%d each (name=%s, type=%s)",
+            item_count, item_quantity, canonical_name, item_type
+        )
         first_item = None
-        for _ in range(quantity):
+        for _ in range(item_count):
             item = MenuItemTask(
                 menu_item_name=canonical_name,
                 menu_item_id=menu_item_id,
                 unit_price=price,
                 menu_item_type=item_type,
                 is_signature=is_signature,
+                quantity=item_quantity,
             )
 
             # Apply pre-filled attributes
@@ -638,6 +658,11 @@ class ItemAdderHandler(MenuDataMixin):
             order.items.add_item(item)
             if first_item is None:
                 first_item = item
+
+        logger.info(
+            "_create_configurable_item: done creating items, order now has %d items total",
+            len(order.items.items)
+        )
 
         # If item needs configuration, start the configuration flow
         if needs_configuration and self.menu_item_handler:

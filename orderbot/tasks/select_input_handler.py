@@ -23,6 +23,7 @@ from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_quantity
 from .parsers.quantity_utils import parse_numeric_input
 from .utils.text import format_english_list
+from .response_utils import is_affirmative
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -442,7 +443,7 @@ class SelectInputHandler:
             return numeric_match
 
         # Check if input is an affirmative response
-        if self._is_affirmative_response(user_lower):
+        if is_affirmative(user_input):
             attr_name = attr["display_name"].lower()
             available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
             if available and len(available) <= 6:
@@ -602,7 +603,3 @@ class SelectInputHandler:
 
         return advance_callback(item, order, attr, display_name)
 
-    def _is_affirmative_response(self, user_input: str) -> bool:
-        """Check if input is a simple affirmative response."""
-        affirmatives = menu_cache.get_response_patterns("affirmative")
-        return user_input in affirmatives

@@ -16,6 +16,7 @@ from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
 from .parsers.deterministic.patterns import parse_can_you_make_it
 from .modifier_change_handler import ChangeRequest
+from .normalization import strip_ordering_prefix
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import pluralize
 
@@ -51,17 +52,8 @@ OFF_TOPIC_PATTERNS = [
     re.compile(r"^make\s+it\s+(?:with\s+)?\w+", re.IGNORECASE),
 ]
 
-# Patterns to strip common ordering prefixes to extract the actual value
-# e.g., "I want avocado" -> "avocado", "give me tomatoes" -> "tomatoes"
-_ORDERING_PREFIX_PATTERN = re.compile(
-    r"^(?:i(?:'?d)?\s*(?:want|like|need|have)|"
-    r"(?:can\s+i\s+(?:get|have))|"
-    r"(?:give\s+me)|"
-    r"(?:make\s+it(?:\s+a)?)|"
-    r"(?:let(?:'?s)?\s+(?:do|go\s+with))|"
-    r"(?:i(?:'?ll)?\s+(?:take|have|get)))\s+",
-    re.IGNORECASE
-)
+# Note: _ORDERING_PREFIX_PATTERN and _extract_answer_value() have been consolidated
+# into normalization.py as strip_ordering_prefix().
 
 # Pattern to detect modifier inquiries like "what toppings do you have?"
 # Captures the category (e.g., "toppings", "sweeteners", "spreads")
@@ -69,21 +61,6 @@ _MODIFIER_INQUIRY_PATTERN = re.compile(
     r"what (\w+(?:\s+\w+)?)\s+do\s+you\s+(?:have|offer|carry)",
     re.IGNORECASE
 )
-
-
-def _extract_answer_value(user_input: str) -> str:
-    """Extract the actual answer value by stripping common ordering prefixes.
-
-    Args:
-        user_input: The user's raw input
-
-    Returns:
-        The input with ordering prefixes stripped, or the original if no prefix found
-    """
-    stripped = _ORDERING_PREFIX_PATTERN.sub("", user_input.strip())
-    # Also strip trailing "please"
-    stripped = re.sub(r"\s+please\s*$", "", stripped, flags=re.IGNORECASE)
-    return stripped.strip()
 
 
 def _detect_modifier_inquiry(user_input: str) -> str | None:
@@ -121,7 +98,7 @@ def _is_valid_answer_for_pending_field(user_input: str, pending_field: str | Non
         return False
 
     # Extract the potential answer value
-    answer_value = _extract_answer_value(user_input).lower()
+    answer_value = strip_ordering_prefix(user_input).lower()
     if not answer_value:
         return False
 

@@ -48,6 +48,7 @@ from .parsers.llm_parsers import (
 from ..address_service import complete_address
 from .handler_config import BaseHandler
 from .normalization import format_slug_for_display
+from .utils.text import number_to_word
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -723,7 +724,7 @@ class CheckoutHandler(BaseHandler):
 
             menu_item_name = prev_item.get("menu_item_name")
             quantity = prev_item.get("quantity", 1)
-            qty_word = self._quantity_to_words(quantity)
+            qty_word = number_to_word(quantity)
 
             # Add item using generic data-driven method
             self._add_repeat_item(prev_item, order, quantity, qty_word, items_added)
@@ -822,9 +823,4 @@ class CheckoutHandler(BaseHandler):
         # Build description using the item's data-driven get_summary() method
         items_added.append(f"{qty_word} {item.get_summary()}")
 
-    @staticmethod
-    def _quantity_to_words(n: int) -> str:
-        """Convert quantity to words for natural speech."""
-        words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
-                 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
-        return words.get(n, str(n))
+    # Note: _quantity_to_words() has been consolidated into utils/text.py as number_to_word().

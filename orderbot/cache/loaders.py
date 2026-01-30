@@ -12,6 +12,8 @@ from collections import defaultdict
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from .base import build_index_by_key, build_alias_mapping
+
 logger = logging.getLogger(__name__)
 
 
@@ -421,12 +423,7 @@ class LoaderMixin:
         }
 
         # Build menu items index by item_type_id for O(1) lookup
-        menu_items_by_type_id: dict[int, list] = {}
-        for item in menu_items:
-            if item.item_type_id:
-                if item.item_type_id not in menu_items_by_type_id:
-                    menu_items_by_type_id[item.item_type_id] = []
-                menu_items_by_type_id[item.item_type_id].append(item)
+        menu_items_by_type_id = build_index_by_key(menu_items, "item_type_id")
 
         for item_type in item_types:
             triggers: set[str] = set()
@@ -775,57 +772,35 @@ class LoaderMixin:
         """Load modifier alias mappings from bulk data."""
         ingredients = bulk_data["ingredients"]
 
-        modifier_aliases: dict[str, str] = {}
-
-        for ing in ingredients:
-            canonical_name = ing.name
-
-            for alias in ing.aliases:
-                alias = alias.strip().lower()
-                if alias:
-                    modifier_aliases[alias] = canonical_name
-
-            name_lower = ing.name.lower()
-            modifier_aliases[name_lower] = canonical_name
-
-        self._modifier_aliases = modifier_aliases
+        # Use helper to build alias mapping (we only need the alias dict, not the set)
+        _, self._modifier_aliases = build_alias_mapping(
+            ingredients, name_attr="name", aliases_attr="aliases"
+        )
 
         logger.debug(
             "Loaded %d modifier aliases (from bulk)",
-            len(modifier_aliases),
+            len(self._modifier_aliases),
         )
 
     def _load_side_items_from_bulk(self, bulk_data: dict) -> None:
         """Load side items and their aliases from bulk data."""
         menu_item_categories = bulk_data["menu_item_categories"]
 
-        side_items: set[str] = set()
-        alias_to_canonical: dict[str, str] = {}
+        # Filter to just the side category items
+        side_menu_items = [
+            mic.menu_item
+            for mic in menu_item_categories
+            if mic.category and mic.category.slug == "side" and mic.menu_item
+        ]
 
-        for mic in menu_item_categories:
-            if mic.category and mic.category.slug == "side":
-                item = mic.menu_item
-                if not item:
-                    continue
-
-                canonical_name = item.name
-                name_lower = canonical_name.lower()
-
-                side_items.add(name_lower)
-                alias_to_canonical[name_lower] = canonical_name
-
-                for alias in item.aliases:
-                    alias = alias.strip().lower()
-                    if alias:
-                        side_items.add(alias)
-                        alias_to_canonical[alias] = canonical_name
-
-        self._side_items = side_items
-        self._side_alias_to_canonical = alias_to_canonical
+        # Use helper to build alias mapping
+        self._side_items, self._side_alias_to_canonical = build_alias_mapping(
+            side_menu_items, name_attr="name", aliases_attr="aliases"
+        )
 
         logger.debug(
             "Loaded %d side item aliases (from bulk)",
-            len(alias_to_canonical),
+            len(self._side_alias_to_canonical),
         )
 
     def _load_category_keywords_from_bulk(self, bulk_data: dict) -> None:

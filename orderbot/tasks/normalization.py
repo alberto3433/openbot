@@ -16,6 +16,44 @@ from orderbot.exceptions import MenuDataNotLoadedError
 logger = logging.getLogger(__name__)
 
 
+# Pattern to strip common ordering prefixes from attribute answers
+# e.g., "make it a double" -> "double", "I want avocado" -> "avocado"
+_ORDERING_PREFIX_PATTERN = re.compile(
+    r"^(?:i(?:'?d)?\s*(?:want|like|need|have)|"
+    r"(?:can\s+i\s+(?:get|have))|"
+    r"(?:give\s+me)|"
+    r"(?:make\s+it(?:\s+a)?)|"
+    r"(?:let(?:'?s)?\s+(?:do|go\s+with))|"
+    r"(?:i(?:'?ll)?\s+(?:take|have|get)))\s+",
+    re.IGNORECASE
+)
+
+
+def strip_ordering_prefix(user_input: str) -> str:
+    """Strip common ordering prefixes from user input.
+
+    Handles patterns like:
+    - "I want avocado" -> "avocado"
+    - "can I get cream cheese" -> "cream cheese"
+    - "make it a double" -> "double"
+    - "I'd like the everything" -> "the everything"
+    - "give me tomatoes" -> "tomatoes"
+    - "let's go with scrambled please" -> "scrambled"
+
+    Also strips trailing "please".
+
+    Args:
+        user_input: The user's raw input
+
+    Returns:
+        The input with ordering prefixes and trailing "please" stripped
+    """
+    stripped = _ORDERING_PREFIX_PATTERN.sub("", user_input.strip())
+    # Also strip trailing "please"
+    stripped = re.sub(r"\s+please\s*$", "", stripped, flags=re.IGNORECASE)
+    return stripped.strip()
+
+
 def _get_negation_patterns() -> frozenset[str]:
     """Load negation patterns from database via cache.
 

@@ -18,51 +18,29 @@ from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import singularize, pluralize
 from .models import OrderTask, MenuItemTask
 from .pending_fields import PendingField
-from .normalization import normalize_for_option_match, format_slug_for_display
+from .normalization import (
+    normalize_for_option_match,
+    format_slug_for_display,
+    strip_ordering_prefix,
+)
 from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .parsers.quantity_utils import extract_leading_quantity
 from .parsers import extract_attribute_values
 from .handler_config import BaseHandler
 from .utils import OptionMatcher, InputNormalizer
-from .utils.text import format_english_list
+from .utils.text import format_english_list, number_to_word
 
 logger = logging.getLogger(__name__)
 
+# Maximum character distance between a qualifier (e.g., "extra", "on the side") and
+# an option name for them to be considered associated. Used in _extract_qualifier_for_option.
+# Allows for reasonable spacing like "extra    lettuce" or "lettuce on the side".
+QUALIFIER_PROXIMITY_THRESHOLD = 15
 
-# Pattern to strip common ordering prefixes from attribute answers
-# e.g., "make it a double" -> "double", "I want avocado" -> "avocado"
-_ANSWER_PREFIX_PATTERN = re.compile(
-    r"^(?:i(?:'?d)?\s*(?:want|like|need|have)|"
-    r"(?:can\s+i\s+(?:get|have))|"
-    r"(?:give\s+me)|"
-    r"(?:make\s+it(?:\s+a)?)|"
-    r"(?:let(?:'?s)?\s+(?:do|go\s+with))|"
-    r"(?:i(?:'?ll)?\s+(?:take|have|get)))\s+",
-    re.IGNORECASE
-)
-
-
-def _strip_answer_prefix(user_input: str) -> str:
-    """Strip common ordering prefixes from attribute answer input.
-
-    Args:
-        user_input: The user's raw input
-
-    Returns:
-        The input with ordering prefixes stripped, or the original if no prefix found
-    """
-    stripped = _ANSWER_PREFIX_PATTERN.sub("", user_input.strip())
-    # Also strip trailing "please"
-    stripped = re.sub(r"\s+please\s*$", "", stripped, flags=re.IGNORECASE)
-    return stripped.strip()
-
-
-def _number_to_word(n: int) -> str:
-    """Convert small integers to words for natural language."""
-    words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
-             6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
-    return words.get(n, str(n))
+# Note: _ANSWER_PREFIX_PATTERN and _strip_answer_prefix() have been consolidated
+# into normalization.py as _ORDERING_PREFIX_PATTERN and strip_ordering_prefix().
+# Note: _number_to_word() has been consolidated into utils/text.py as number_to_word().
 
 
 class MenuItemConfigHandler(BaseHandler):
@@ -302,9 +280,9 @@ class MenuItemConfigHandler(BaseHandler):
                 qual_start, qual_end = match.start(), match.end()
 
                 # Qualifier before option: "extra lettuce", "lots of lettuce"
-                is_before = qual_end <= opt_start and opt_start - qual_end <= 15
+                is_before = qual_end <= opt_start and opt_start - qual_end <= QUALIFIER_PROXIMITY_THRESHOLD
                 # Qualifier after option: "lettuce on the side"
-                is_after = qual_start >= opt_end and qual_start - opt_end <= 15
+                is_after = qual_start >= opt_end and qual_start - opt_end <= QUALIFIER_PROXIMITY_THRESHOLD
 
                 if is_before or is_after:
                     info = menu_cache.get_qualifier_info(pattern)
@@ -762,7 +740,7 @@ class MenuItemConfigHandler(BaseHandler):
 
                     if all_same_name:
                         # All identical: "Got it, two Plain Bagels."
-                        quantity_word = _number_to_word(multi_count)
+                        quantity_word = number_to_word(multi_count)
                         item_name = pluralize(item_display)
                         item_desc = f"{quantity_word} {item_name}"
                     else:
@@ -772,7 +750,7 @@ class MenuItemConfigHandler(BaseHandler):
                         desc_parts = []
                         for cname, ccount in name_counts.items():
                             if ccount > 1:
-                                qty_word = _number_to_word(ccount)
+                                qty_word = number_to_word(ccount)
                                 desc_parts.append(f"{qty_word} {pluralize(cname)}")
                             else:
                                 desc_parts.append(cname)
@@ -1486,7 +1464,7 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Strip common ordering prefixes from the input
         # e.g., "make it a double" -> "double", "give me triple" -> "triple"
-        user_input = _strip_answer_prefix(user_input)
+        user_input = strip_ordering_prefix(user_input)
 
         # NOTE: milk_sweetener_syrup now uses the standard multi_select flow
         # which includes partial matching (e.g., "syrup" lists all syrup options)

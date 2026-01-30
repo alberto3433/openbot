@@ -87,6 +87,106 @@ def pluralize(word: str) -> str:
     return result if result else word + 's'
 
 
+def build_index_by_key(
+    items: list,
+    key_attr: str,
+) -> dict[Any, list]:
+    """Build an index mapping a key attribute to lists of items.
+
+    A common pattern in cache loading is grouping items by a foreign key.
+    This helper replaces the repeated pattern:
+        index = {}
+        for item in items:
+            if item.key_id:
+                if item.key_id not in index:
+                    index[item.key_id] = []
+                index[item.key_id].append(item)
+
+    Args:
+        items: List of objects to index
+        key_attr: Attribute name to group by (e.g., "item_type_id", "ingredient_id")
+
+    Returns:
+        Dict mapping key values to lists of items with that key value.
+        Items with None/falsy key values are excluded.
+
+    Examples:
+        >>> items = [MenuItem(item_type_id=1), MenuItem(item_type_id=1), MenuItem(item_type_id=2)]
+        >>> build_index_by_key(items, "item_type_id")
+        {1: [MenuItem1, MenuItem2], 2: [MenuItem3]}
+    """
+    index: dict[Any, list] = {}
+    for item in items:
+        key = getattr(item, key_attr, None)
+        if key:
+            if key not in index:
+                index[key] = []
+            index[key].append(item)
+    return index
+
+
+def build_alias_mapping(
+    items: list,
+    name_attr: str = "name",
+    aliases_attr: str = "aliases",
+    *,
+    include_without_the: bool = False,
+) -> tuple[set[str], dict[str, str]]:
+    """Build a set of known names/aliases and a mapping from aliases to canonical names.
+
+    A common pattern in cache loading is building alias-to-canonical mappings.
+    This helper consolidates the repeated pattern of iterating items, adding
+    their names and aliases to sets/dicts.
+
+    Args:
+        items: List of objects with name and aliases attributes
+        name_attr: Attribute name for the canonical name (default: "name")
+        aliases_attr: Attribute name for the aliases list (default: "aliases")
+        include_without_the: If True, also add versions without leading "the "
+                             (e.g., "the classic" -> adds both "the classic" and "classic")
+
+    Returns:
+        Tuple of (known_names_set, alias_to_canonical_dict):
+        - known_names_set: Set of all lowercase names and aliases
+        - alias_to_canonical_dict: Dict mapping lowercase alias -> canonical name (original case)
+
+    Examples:
+        >>> items = [MenuItem(name="The Classic", aliases=["classic bec"])]
+        >>> names, mapping = build_alias_mapping(items, include_without_the=True)
+        >>> names
+        {'the classic', 'classic', 'classic bec'}
+        >>> mapping
+        {'the classic': 'The Classic', 'classic': 'The Classic', 'classic bec': 'The Classic'}
+    """
+    known_names: set[str] = set()
+    alias_to_canonical: dict[str, str] = {}
+
+    for item in items:
+        canonical_name = getattr(item, name_attr, None)
+        if not canonical_name:
+            continue
+
+        name_lower = canonical_name.lower()
+        known_names.add(name_lower)
+        alias_to_canonical[name_lower] = canonical_name
+
+        # Optionally add version without "the " prefix
+        if include_without_the and name_lower.startswith("the "):
+            without_the = name_lower[4:]
+            known_names.add(without_the)
+            alias_to_canonical[without_the] = canonical_name
+
+        # Add all aliases
+        aliases = getattr(item, aliases_attr, None) or []
+        for alias in aliases:
+            alias_lower = alias.strip().lower()
+            if alias_lower:
+                known_names.add(alias_lower)
+                alias_to_canonical[alias_lower] = canonical_name
+
+    return known_names, alias_to_canonical
+
+
 def get_singular_plural_variants(word: str) -> list[str]:
     """Get both singular and plural variants of a word for matching.
 

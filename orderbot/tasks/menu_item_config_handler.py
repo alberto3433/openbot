@@ -13,6 +13,7 @@ Designed to be generic and work with any item type that has DB-defined attribute
 
 import logging
 import re
+from typing import Callable, TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import pluralize
@@ -82,6 +83,20 @@ class MenuItemConfigHandler(BaseHandler):
             option_matcher=self._option_matcher,
             input_normalizer=self._input_normalizer,
         )
+        # Callback for processing pending parsed items (set via setter to avoid circular deps)
+        # Used when disambiguation was triggered during multi-item orders and there are
+        # remaining items to process after configuration completes
+        self._process_pending_parsed_items_callback: "Callable[[OrderTask], StateMachineResult | None] | None" = None
+
+    @property
+    def process_pending_parsed_items(self) -> "Callable[[OrderTask], StateMachineResult | None] | None":
+        """Get callback for processing pending parsed items."""
+        return self._process_pending_parsed_items_callback
+
+    @process_pending_parsed_items.setter
+    def process_pending_parsed_items(self, callback: "Callable[[OrderTask], StateMachineResult | None] | None") -> None:
+        """Set callback for processing pending parsed items."""
+        self._process_pending_parsed_items_callback = callback
 
     def supports_item_type(self, item_type_slug: str | None) -> bool:
         """Check if this handler supports the given item type.
@@ -880,6 +895,15 @@ class MenuItemConfigHandler(BaseHandler):
             self._recalculate_item_price(item)
             item.mark_complete()
             order.clear_pending()
+
+            # Check if there are pending parsed items that haven't been added yet
+            # This handles the case where disambiguation was triggered and remaining items
+            # in the order were stored (e.g., "latte and bagel" - bagel is stored while
+            # we disambiguate and configure latte)
+            if self._process_pending_parsed_items_callback:
+                pending_result = self._process_pending_parsed_items_callback(order)
+                if pending_result:
+                    return pending_result
 
             # Check if there are other items queued for configuration
             # This handles the case where disambiguation was triggered after other items
@@ -2361,6 +2385,18 @@ class MenuItemConfigHandler(BaseHandler):
                 # Only capture if we get a unique match (ignore disambiguation cases)
                 matched, _ = self._match_option_from_input(user_input, options)
                 if matched:
+                    # Check if the matched option is available
+                    if not matched.get("is_available", True):
+                        # Store as unavailable selection for helpful messaging
+                        item.unavailable_selections[attr_slug] = {
+                            "attempted_slug": matched["slug"],
+                            "attempted_display": matched.get("display_name", matched["slug"]),
+                        }
+                        logger.info(
+                            "Captured unavailable %s=%s from input (will prompt for alternative)",
+                            attr_slug, matched["slug"]
+                        )
+                        continue  # Don't add the selection
                     opt_price = matched.get("price") or matched.get("price_modifier") or 0
                     item.add_selection(
                         matched["slug"],

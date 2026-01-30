@@ -1717,9 +1717,10 @@ class TestBagelWithCoffeeConfig:
         assert order.pending_field in ("bagel_choice", "menu_item_attr_bread", "bagel:bread")
 
         # Coffee should be in the order (either queued or added as in_progress)
+        # Check for latte items by name since espresso type may not have 'size' attribute
         coffee_items = [
             item for item in order.items.items
-            if item.has_attribute('size')
+            if "latte" in item.menu_item_name.lower()
         ]
         # With disambiguation, coffee is added directly to items as in_progress
         assert len(coffee_items) == 1, "Expected one coffee item in order"
@@ -6524,3 +6525,57 @@ class TestUnavailableAttributeOptions:
         )
 
         assert entry.unavailable_selections == {"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
+
+    def test_medium_coffee_e2e_shows_unavailable_message(self):
+        """E2E test: 'medium hot coffee' should show 'We don't have medium' message.
+
+        This tests the full flow from user input through state machine to the
+        response message, ensuring unavailable options are detected and
+        communicated helpfully.
+        """
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+
+        # Process user input with unavailable "medium" size
+        result = sm.process("medium hot coffee with 2 splendas", order)
+
+        # Debug: check what was set on the item
+        if result.order.items.items:
+            item = result.order.items.items[0]
+            print(f"\nDEBUG: item.unavailable_selections = {item.unavailable_selections}")
+            print(f"DEBUG: item.modifiers = {item.modifiers}")
+            print(f"DEBUG: 'size' in item = {'size' in item}")
+            print(f"DEBUG: item.get('size') = {item.get('size')}")
+
+        # Also check what the parser returned
+        from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
+        parsed = parse_open_input_deterministic("medium hot coffee with 2 splendas")
+        if parsed and parsed.parsed_items:
+            pi = parsed.parsed_items[0]
+            print(f"\nDEBUG PARSED: unavailable_selections = {pi.unavailable_selections}")
+            print(f"DEBUG PARSED: selections = {pi.selections}")
+
+        # The result should mention that medium is not available
+        # and list the available options (Small, Large)
+        msg_lower = result.message.lower()
+        assert "don't have medium" in msg_lower or "no medium" in msg_lower, (
+            f"Expected message about medium being unavailable, got: {result.message}"
+        )
+        assert "small" in msg_lower or "large" in msg_lower, (
+            f"Expected available sizes in message, got: {result.message}"
+        )
+
+        # The sweetener (2 splendas) should still be captured even though size is unavailable
+        if result.order.items.items:
+            item = result.order.items.items[0]
+            sweeteners = item.get("sweetener", [])
+            if sweeteners:
+                # Check if splenda was captured
+                splenda_found = any(
+                    s.get("slug") == "splenda" for s in sweeteners
+                    if isinstance(s, dict)
+                )
+                assert splenda_found, f"Expected splenda to be captured, got: {sweeteners}"

@@ -1633,10 +1633,10 @@ class MenuItemConfigHandler(BaseHandler):
                 order=order,
             )
 
-        # Calculate total price and add selection
+        # Add selection with per-unit price
         # Note: Don't include quantity in display_name - the display layer handles that
         # But DO pluralize the name when quantity > 1
-        total_price = quantity * unit_price
+        # Store per-unit price; the pricing engine will multiply by quantity
         if quantity > 1:
             display_name = pluralize(unit_name)
         else:
@@ -1646,13 +1646,13 @@ class MenuItemConfigHandler(BaseHandler):
             unit_slug,
             attr_slug,
             quantity=quantity,
-            price=total_price,
+            price=unit_price,  # Per-unit price, not total
             display_name=display_name,
         )
 
         logger.info(
-            "QUANTITY_INPUT: %s=%d (price=$%.2f) from input '%s'",
-            attr_slug, quantity, total_price, user_input
+            "QUANTITY_INPUT: %s=%d (unit_price=$%.2f, total=$%.2f) from input '%s'",
+            attr_slug, quantity, unit_price, quantity * unit_price, user_input
         )
 
         # Build acknowledgment with quantity prefix and pluralization

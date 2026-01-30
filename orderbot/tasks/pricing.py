@@ -580,6 +580,17 @@ class PricingEngine(MenuDataMixin):
 
             elif isinstance(attr_value, str):
                 # Single string value - check attribute option first, then modifier
+                # But first: check if this slug exists in item_modifiers with quantity > 1
+                # If so, skip it here and let Section 3 handle it with proper quantity
+                modifier_with_qty = next(
+                    (m for m in item_modifiers
+                     if m.get("slug") == attr_value and m.get("quantity", 1) > 1),
+                    None
+                )
+                if modifier_with_qty:
+                    # Skip - Section 3 will handle this with proper quantity multiplication
+                    continue
+
                 upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, attr_value)
                 if upcharge > 0:
                     total += upcharge

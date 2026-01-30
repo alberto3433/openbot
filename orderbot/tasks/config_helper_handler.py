@@ -22,6 +22,7 @@ from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants
 from .checkout_messages import ok_removed_anything_else, ErrorMessages
+from .handler_utils import is_configurable_menu_item, get_last_item
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -363,7 +364,7 @@ class ConfigHelperHandler:
 
         # Handle side_choice - query database for the question text
         if field == PendingField.SIDE_CHOICE:
-            if isinstance(item, MenuItemTask) and item.menu_item_type:
+            if is_configurable_menu_item(item):
                 side_attr = menu_cache.get_side_choice_attribute(item.menu_item_type)
                 if side_attr and side_attr.get("question_text"):
                     return side_attr["question_text"]
@@ -376,7 +377,7 @@ class ConfigHelperHandler:
             item_type, attr_slug = field.split(":", 1)
         else:
             # Legacy format without colon - try to infer from item
-            if isinstance(item, MenuItemTask) and item.menu_item_type:
+            if is_configurable_menu_item(item):
                 item_type = item.menu_item_type
                 attr_slug = field
             else:
@@ -493,7 +494,8 @@ class ConfigHelperHandler:
         if change_request.is_ambiguous:
             # Find the target item
             active_items = order.items.get_active_items()
-            item_id = active_items[-1].id if active_items else None
+            last_item = get_last_item(active_items)
+            item_id = last_item.id if last_item else None
 
             # Store clarification state
             order.pending_change_clarification = {

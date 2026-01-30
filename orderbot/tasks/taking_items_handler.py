@@ -32,6 +32,7 @@ from .parsers import parse_open_input, extract_special_instructions_from_input
 from .item_cancellation_handler import ItemCancellationHandler
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
+from .unrecognized_item_handler import UnrecognizedItemHandler
 from .checkout_messages import got_it_anything_else, ErrorMessages, item_added_anything_else
 from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.quantity_utils import (
@@ -62,7 +63,65 @@ logger = logging.getLogger(__name__)
 # Helper Functions
 # =============================================================================
 
-def _get_dynamic_help_text() -> str:
+# =============================================================================
+# Order Attempt Detection
+# =============================================================================
+
+# Patterns that indicate user is trying to order something
+ORDER_ATTEMPT_PATTERNS = [
+    re.compile(r"^(?:i(?:'?d| would)?\s+(?:like|want|love)|(?:can|could)\s+i\s+(?:have|get)|"
+               r"(?:give|get)\s+me|i(?:'?ll)?\s+(?:have|take|get)|"
+               r"(?:let\s+me\s+(?:have|get)))\s+(.+)", re.IGNORECASE),
+    re.compile(r"^(?:(?:one|two|three|a|an|some)\s+)?(.+?)(?:\s+please)?$", re.IGNORECASE),
+]
+
+def _extract_order_item_name(text: str) -> str | None:
+    """Extract the item name from an ordering phrase.
+
+    Args:
+        text: User input like "I want home fries" or "can I have a croissant"
+
+    Returns:
+        The item name (e.g., "home fries", "croissant") or None if not an order.
+    """
+    text = text.strip()
+
+    # Try explicit order patterns first
+    for pattern in ORDER_ATTEMPT_PATTERNS[:-1]:  # Skip the fallback pattern
+        match = pattern.match(text)
+        if match:
+            item = match.group(1).strip()
+            # Clean up common suffixes
+            item = re.sub(r"\s+please\s*$", "", item, flags=re.IGNORECASE)
+            item = re.sub(r"\s+thanks?\s*$", "", item, flags=re.IGNORECASE)
+            if item and len(item) > 1:
+                return item
+
+    return None
+
+
+def _looks_like_order_attempt(text: str) -> bool:
+    """Check if text looks like user is trying to order something.
+
+    Args:
+        text: User input
+
+    Returns:
+        True if the input looks like an order attempt.
+    """
+    text_lower = text.lower().strip()
+
+    # Check for common order phrases
+    order_indicators = [
+        "i want", "i'd like", "i would like", "i'll have", "i'll take",
+        "can i have", "can i get", "could i have", "could i get",
+        "give me", "get me", "let me have", "let me get",
+        "i need", "i'll get", "i'll order",
+    ]
+    return any(indicator in text_lower for indicator in order_indicators)
+
+
+
     """Generate help text dynamically from database item types.
 
     Returns a help message listing available item categories from the database
@@ -528,6 +587,11 @@ class TakingItemsHandler(MenuDataMixin):
             pricing=config.pricing,
             item_adder_handler=item_adder_handler,
         )
+
+        # Unrecognized item handler - reuse from item_adder_handler which has db_session
+        self._unrecognized_handler: UnrecognizedItemHandler | None = None
+        if item_adder_handler and hasattr(item_adder_handler, '_unrecognized_handler'):
+            self._unrecognized_handler = item_adder_handler._unrecognized_handler
 
         # Context set per-request
         self._returning_customer: dict | None = None
@@ -1022,6 +1086,25 @@ class TakingItemsHandler(MenuDataMixin):
             )
 
         if parsed.unclear or parsed.is_greeting:
+            # Check if user is trying to order something we don't recognize
+            # e.g., "I want home fries", "can I have a croissant"
+            if parsed.unclear and raw_user_input and self._unrecognized_handler:
+                if _looks_like_order_attempt(raw_user_input):
+                    item_name = _extract_order_item_name(raw_user_input)
+                    if item_name:
+                        logger.info("Detected order attempt for unrecognized item: '%s'", item_name)
+                        message, category_for_followup = self._unrecognized_handler.get_not_found_response(
+                            item_name, order=order
+                        )
+                        if category_for_followup:
+                            # Track state so "yes" response can list items in this category
+                            order.pending_field = PendingField.CATEGORY_INQUIRY
+                            order.pending_config_queue = [category_for_followup]
+                        return StateMachineResult(
+                            message=message,
+                            order=order,
+                        )
+
             return StateMachineResult(
                 message="What can I get for you?",
                 order=order,

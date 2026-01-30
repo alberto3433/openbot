@@ -21,6 +21,7 @@ from orderbot.cache.base import singularize, get_singular_plural_variants
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse
 from .checkout_messages import ok_removed_anything_else, ErrorMessages
+from .handler_utils import get_last_item
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -251,7 +252,7 @@ class ItemCancellationHandler:
         if parsed.cancel_item != "__last_item__" or not active_items:
             return None
 
-        last_item = active_items[-1]
+        last_item = get_last_item(active_items)
         removed_name = last_item.get_summary()
         idx = order.items.items.index(last_item)
         order.items.remove_item(idx)

@@ -290,6 +290,7 @@ class OrderStateMachine:
         self,
         store_info: dict | None,
         returning_customer: dict | None,
+        db_session=None,
     ) -> OrderContext:
         """
         Create and distribute context to all handlers.
@@ -300,6 +301,7 @@ class OrderStateMachine:
         Args:
             store_info: Store configuration (delivery zones, tax rates, etc.)
             returning_customer: Returning customer data if available
+            db_session: SQLAlchemy session for database operations (request-scoped)
 
         Returns:
             The created OrderContext for reference
@@ -322,6 +324,7 @@ class OrderStateMachine:
             last_order_type=getattr(self, '_last_order_type', None),
             menu_data=self._menu_data,
             set_repeat_info_callback=set_repeat_info,
+            db_session=db_session,
         )
 
         # Store on instance for reference
@@ -334,6 +337,7 @@ class OrderStateMachine:
         self.order_utils_handler.set_context(ctx)
         self.checkout_utils_handler.set_context(ctx)
         self.taking_items_handler.set_context(ctx)
+        self.item_adder_handler.set_context(ctx)
 
         return ctx
 
@@ -343,6 +347,7 @@ class OrderStateMachine:
         order: OrderTask | None = None,
         returning_customer: dict | None = None,
         store_info: dict | None = None,
+        db_session=None,
     ) -> StateMachineResult:
         """
         Process user input through the state machine.
@@ -352,6 +357,7 @@ class OrderStateMachine:
             order: Current order (None for new conversation)
             returning_customer: Returning customer data (name, phone, last_order_items)
             store_info: Store configuration (delivery_zip_codes, tax rates, etc.)
+            db_session: SQLAlchemy session for database operations (request-scoped)
 
         Returns:
             StateMachineResult with response message and updated order
@@ -366,7 +372,7 @@ class OrderStateMachine:
             self._last_order_type = None
 
         # Update all handlers with unified context
-        self._update_handler_context(store_info, returning_customer)
+        self._update_handler_context(store_info, returning_customer, db_session)
 
         # Add user message to history
         order.add_message("user", user_input)

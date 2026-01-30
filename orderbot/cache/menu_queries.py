@@ -525,3 +525,54 @@ class MenuQueryMixin:
                 "menu_item_keywords": len(self._menu_item_keyword_index),
             },
         }
+
+    def get_all_menu_item_names(self) -> list[str]:
+        """Get all menu item display names for fuzzy matching.
+
+        Returns:
+            List of all menu item names (original casing preserved).
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        # Extract unique display names from _menu_items
+        names = set()
+        for item_data in self._menu_items.values():
+            name = item_data.get("name")
+            if name:
+                names.add(name)
+        return sorted(names)
+
+    def get_categories_for_inference(self) -> list[dict]:
+        """Get menu categories in a format suitable for LLM inference.
+
+        Returns:
+            List of dicts with 'slug' and 'display_name' for each category.
+            Suitable for passing to llm_category_inference.infer_item_category().
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+
+        categories = []
+
+        # Add high-level menu categories (Category table)
+        for slug, display_name in self._available_categories.items():
+            categories.append({
+                "slug": slug,
+                "display_name": display_name,
+            })
+
+        # Add item types as categories (ItemType table)
+        for item_type_slug, item_type_info in self._item_type_displays.items():
+            display_name = item_type_info.get("display_name") or item_type_slug.replace("_", " ").title()
+            # Avoid duplicates
+            if not any(c["slug"] == item_type_slug for c in categories):
+                categories.append({
+                    "slug": item_type_slug,
+                    "display_name": display_name,
+                })
+
+        return categories

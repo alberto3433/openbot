@@ -8,6 +8,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+from typing import TYPE_CHECKING
 
 from .models import (
     OrderTask,
@@ -25,8 +26,12 @@ from .attribute_inference import (
     extract_pre_filled_attributes,
     extract_generic_term,
 )
+from .unrecognized_item_handler import UnrecognizedItemHandler
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
+
+if TYPE_CHECKING:
+    from .context import OrderContext
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +48,7 @@ class ItemAdderHandler(MenuDataMixin):
         self,
         config: HandlerConfig,
         menu_item_handler: "MenuItemConfigHandler | None" = None,
+        db_session=None,
     ):
         """
         Initialize the item adder handler.
@@ -50,10 +56,12 @@ class ItemAdderHandler(MenuDataMixin):
         Args:
             config: HandlerConfig with shared dependencies.
             menu_item_handler: Unified handler for all item configuration.
+            db_session: Optional SQLAlchemy session for database operations.
         """
         self.menu_lookup = config.menu_lookup
         self.pricing = config.pricing
         self._get_next_question = config.get_next_question
+        self._db_session = db_session
 
         # Unified configuration handler for all item types
         self.menu_item_handler = menu_item_handler
@@ -61,6 +69,24 @@ class ItemAdderHandler(MenuDataMixin):
 
         # Generic disambiguation handler
         self.disambiguation_handler = DisambiguationHandler()
+
+        # Unrecognized item handler with fallback chain
+        self._unrecognized_handler = UnrecognizedItemHandler(
+            menu_lookup=self.menu_lookup,
+            db_session=db_session,
+        )
+
+    def set_context(self, ctx: "OrderContext") -> None:
+        """Set per-request context including db_session.
+
+        Args:
+            ctx: OrderContext with db_session and other request-scoped data.
+        """
+        if ctx.db_session is not None:
+            self._db_session = ctx.db_session
+            # Update the unrecognized handler's db_session
+            if self._unrecognized_handler:
+                self._unrecognized_handler._db_session = ctx.db_session
 
     def _infer_attributes_from_item_name(self, item: MenuItemTask) -> None:
         """Infer attribute values from the menu item name.
@@ -242,6 +268,7 @@ class ItemAdderHandler(MenuDataMixin):
                 "base_price": menu_data.get("base_price", 0),
                 "id": menu_data.get("id"),
                 "is_signature": menu_data.get("is_signature", False),
+                "skip_config": menu_data.get("skip_config", False),
             }
 
         # Step 2: Check if this is a configurable item type (has conversation attributes)
@@ -327,9 +354,12 @@ class ItemAdderHandler(MenuDataMixin):
         if disambiguation_result:
             return disambiguation_result
 
-        # If item not found, provide helpful suggestions
+        # If item not found, provide helpful suggestions using hybrid handler
         if not menu_item:
-            message, category_for_followup = self.menu_lookup.get_not_found_message(item_name)
+            session_id = getattr(order, 'session_id', None)
+            message, category_for_followup = self._unrecognized_handler.get_not_found_response(
+                item_name, order=order, session_id=session_id
+            )
             if category_for_followup:
                 # Track state so "yes" response can list items in this category
                 order.pending_field = PendingField.CATEGORY_INQUIRY
@@ -477,10 +507,12 @@ class ItemAdderHandler(MenuDataMixin):
         # Look up the side item in the menu
         menu_item = self.menu_lookup.lookup_menu_item(side_item_name)
 
-        # If item not found, return error message
+        # If item not found, return error message using hybrid handler
         if not menu_item:
             logger.warning("Side item not found: '%s' - rejecting", side_item_name)
-            message, _ = self.menu_lookup.get_not_found_message(side_item_name)
+            message, _ = self._unrecognized_handler.get_not_found_response(
+                side_item_name, order=order
+            )
             return (None, message)
 
         # Use canonical name and price from menu

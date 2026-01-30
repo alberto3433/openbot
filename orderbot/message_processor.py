@@ -137,6 +137,7 @@ class MessageProcessor:
             menu_data=menu_index,
             store_info=store_info,
             returning_customer=returning_customer,
+            db_session=self.db,
         )
 
         # 5. Update history

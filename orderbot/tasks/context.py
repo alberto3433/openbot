@@ -33,3 +33,6 @@ class OrderContext:
 
     # Callback to update repeat order info (used by taking_items_handler)
     set_repeat_info_callback: Callable[[bool, str | None], None] | None = None
+
+    # Database session for handlers that need DB access (request-scoped)
+    db_session: Any = None

@@ -1,0 +1,441 @@
+"""
+Unrecognized Item Handler.
+
+Provides a 4-level fallback chain for handling menu items that aren't found:
+1. Curated suggestions - Check unrecognized_item_suggestions table
+2. Fuzzy matching - Find similar menu items by string similarity
+3. LLM category inference - Minimal prompt to infer category
+4. Generic fallback - Show top menu categories
+
+This module is order-state aware, adjusting responses based on cart contents.
+"""
+
+import logging
+from typing import Optional
+
+from orderbot.menu_data_cache import menu_cache
+from orderbot.cache.base import singularize
+
+from .menu_lookup import MenuLookup
+from .utils.text import format_english_list
+
+logger = logging.getLogger(__name__)
+
+
+class UnrecognizedItemHandler:
+    """
+    Handles unrecognized menu item requests with intelligent fallbacks.
+
+    Uses a 4-level fallback chain:
+    1. Curated suggestions from database
+    2. Fuzzy string matching against menu items
+    3. LLM-based category inference
+    4. Generic category suggestions
+    """
+
+    # Fuzzy matching threshold (0-100)
+    FUZZY_THRESHOLD = 75
+
+    # Maximum fuzzy matches to show
+    MAX_FUZZY_MATCHES = 3
+
+    def __init__(
+        self,
+        menu_lookup: MenuLookup,
+        db_session=None,
+    ):
+        """
+        Initialize the handler.
+
+        Args:
+            menu_lookup: MenuLookup instance for suggestions
+            db_session: Optional SQLAlchemy session for database queries
+        """
+        self.menu_lookup = menu_lookup
+        self._db_session = db_session
+        self._rapidfuzz_available = self._check_rapidfuzz()
+
+    def _check_rapidfuzz(self) -> bool:
+        """Check if rapidfuzz is available for fuzzy matching."""
+        try:
+            import rapidfuzz
+            return True
+        except ImportError:
+            logger.debug("rapidfuzz not available, fuzzy matching disabled")
+            return False
+
+    def get_not_found_response(
+        self,
+        item_name: str,
+        order=None,
+        session_id: str | None = None,
+    ) -> tuple[str, str | None]:
+        """
+        Generate a helpful response when an item isn't found on the menu.
+
+        Uses a 4-level fallback chain:
+        1. Check curated suggestions table
+        2. Try fuzzy matching against menu items
+        3. Use LLM to infer category
+        4. Fall back to generic category suggestions
+
+        Args:
+            item_name: The name of the item the user requested
+            order: Optional OrderTask for context-aware responses
+            session_id: Optional session ID for analytics logging
+
+        Returns:
+            Tuple of (message, category_slug_for_followup).
+            category_slug_for_followup is set when asking if user wants
+            to hear what items are in a category.
+        """
+        item_name_normalized = item_name.lower().strip()
+        order_item_count = 0
+        if order and hasattr(order, 'items') and hasattr(order.items, 'items'):
+            order_item_count = len(order.items.items)
+
+        # Level 1: Check curated suggestions
+        curated = self._check_curated_suggestions(item_name_normalized)
+        if curated:
+            message, category = self._build_curated_response(
+                item_name, curated, order_item_count
+            )
+            self._log_unrecognized(
+                item_name, item_name_normalized, session_id,
+                order_item_count, "curated", category
+            )
+            return (message, category)
+
+        # Level 2: Try fuzzy matching
+        fuzzy_matches = self._get_fuzzy_matches(item_name_normalized)
+        if fuzzy_matches:
+            message = self._build_fuzzy_response(
+                item_name, fuzzy_matches, order_item_count
+            )
+            self._log_unrecognized(
+                item_name, item_name_normalized, session_id,
+                order_item_count, "fuzzy", None
+            )
+            return (message, None)
+
+        # Level 3: LLM category inference
+        inferred_category = self._infer_category_with_llm(item_name_normalized)
+        if inferred_category:
+            message, category = self._build_inferred_response(
+                item_name, inferred_category, order_item_count
+            )
+            self._log_unrecognized(
+                item_name, item_name_normalized, session_id,
+                order_item_count, "llm", inferred_category
+            )
+            return (message, category)
+
+        # Level 4: Generic fallback
+        message = self._build_generic_response(item_name, order_item_count)
+        self._log_unrecognized(
+            item_name, item_name_normalized, session_id,
+            order_item_count, "generic", None
+        )
+        return (message, None)
+
+    def _check_curated_suggestions(self, normalized_input: str) -> dict | None:
+        """
+        Check the curated suggestions table for a matching pattern.
+
+        Args:
+            normalized_input: Lowercase, stripped item name
+
+        Returns:
+            Dict with suggestion info if found, None otherwise.
+        """
+        if not self._db_session:
+            return None
+
+        try:
+            from orderbot.models import UnrecognizedItemSuggestion
+
+            # Try exact match first
+            suggestion = self._db_session.query(UnrecognizedItemSuggestion).filter(
+                UnrecognizedItemSuggestion.is_active == True,
+                UnrecognizedItemSuggestion.match_type == "exact",
+                UnrecognizedItemSuggestion.input_pattern == normalized_input,
+            ).first()
+
+            if suggestion:
+                # Increment hit count
+                suggestion.hit_count += 1
+                self._db_session.commit()
+                return {
+                    "category_slug": suggestion.suggested_category_slug,
+                    "response": suggestion.suggested_response,
+                    "menu_items": suggestion.suggested_menu_items,
+                }
+
+            # Try prefix match
+            suggestions = self._db_session.query(UnrecognizedItemSuggestion).filter(
+                UnrecognizedItemSuggestion.is_active == True,
+                UnrecognizedItemSuggestion.match_type == "prefix",
+            ).all()
+
+            for s in suggestions:
+                if normalized_input.startswith(s.input_pattern):
+                    s.hit_count += 1
+                    self._db_session.commit()
+                    return {
+                        "category_slug": s.suggested_category_slug,
+                        "response": s.suggested_response,
+                        "menu_items": s.suggested_menu_items,
+                    }
+
+            # Try contains match
+            suggestions = self._db_session.query(UnrecognizedItemSuggestion).filter(
+                UnrecognizedItemSuggestion.is_active == True,
+                UnrecognizedItemSuggestion.match_type == "contains",
+            ).all()
+
+            for s in suggestions:
+                if s.input_pattern in normalized_input:
+                    s.hit_count += 1
+                    self._db_session.commit()
+                    return {
+                        "category_slug": s.suggested_category_slug,
+                        "response": s.suggested_response,
+                        "menu_items": s.suggested_menu_items,
+                    }
+
+        except Exception as e:
+            logger.warning("Failed to query curated suggestions: %s", e)
+
+        return None
+
+    def _build_curated_response(
+        self,
+        item_name: str,
+        curated: dict,
+        order_item_count: int,
+    ) -> tuple[str, str | None]:
+        """Build response from curated suggestion."""
+        # If there's a full response override, use it
+        if curated.get("response"):
+            return (curated["response"], None)
+
+        # If specific menu items are suggested
+        if curated.get("menu_items"):
+            items = curated["menu_items"]
+            if isinstance(items, list) and items:
+                item_list = format_english_list(items[:4], conjunction="or")
+                followup = self._get_order_aware_followup(order_item_count)
+                return (
+                    f"We don't have {item_name}, but we do have {item_list}. {followup}",
+                    None,
+                )
+
+        # If a category is suggested
+        category_slug = curated.get("category_slug")
+        if category_slug:
+            suggestions = self.menu_lookup.get_suggestions_for_item_type(
+                category_slug, limit=4
+            )
+            if suggestions:
+                followup = self._get_order_aware_followup(order_item_count)
+                return (
+                    f"We don't have {item_name}, but we do have {suggestions}. {followup}",
+                    None,
+                )
+            else:
+                # Return category for follow-up inquiry
+                category_display = self._get_category_display_name(category_slug)
+                return (
+                    f"We don't have {item_name}. Would you like to hear what {category_display} we have?",
+                    category_slug,
+                )
+
+        # Fallback if curated entry is incomplete
+        return (
+            f"I'm sorry, we don't have {item_name}. Is there something else I can help you with?",
+            None,
+        )
+
+    def _get_fuzzy_matches(self, normalized_input: str) -> list[str]:
+        """
+        Find similar menu items using fuzzy string matching.
+
+        Args:
+            normalized_input: Lowercase, stripped item name
+
+        Returns:
+            List of similar menu item names (up to MAX_FUZZY_MATCHES).
+        """
+        if not self._rapidfuzz_available:
+            return []
+
+        try:
+            from rapidfuzz import fuzz, process
+
+            # Get all menu item names
+            all_names = menu_cache.get_all_menu_item_names()
+            if not all_names:
+                return []
+
+            # Use token_sort_ratio for better matching of word order variations
+            # e.g., "muffin blueberry" matches "Blueberry Muffin"
+            matches = process.extract(
+                normalized_input,
+                all_names,
+                scorer=fuzz.token_sort_ratio,
+                limit=self.MAX_FUZZY_MATCHES + 2,  # Get extra to filter
+            )
+
+            # Filter by threshold and return names only
+            good_matches = []
+            for name, score, _ in matches:
+                if score >= self.FUZZY_THRESHOLD:
+                    good_matches.append(name)
+                    if len(good_matches) >= self.MAX_FUZZY_MATCHES:
+                        break
+
+            return good_matches
+
+        except Exception as e:
+            logger.warning("Fuzzy matching failed: %s", e)
+            return []
+
+    def _build_fuzzy_response(
+        self,
+        item_name: str,
+        fuzzy_matches: list[str],
+        order_item_count: int,
+    ) -> str:
+        """Build response with fuzzy match suggestions."""
+        match_list = format_english_list(fuzzy_matches, conjunction="or")
+        followup = self._get_order_aware_followup(order_item_count)
+        return f"We don't have {item_name}. Did you mean {match_list}? {followup}"
+
+    def _infer_category_with_llm(self, normalized_input: str) -> str | None:
+        """
+        Use LLM to infer what category the item might belong to.
+
+        Args:
+            normalized_input: Lowercase, stripped item name
+
+        Returns:
+            Category slug if inference succeeds, None otherwise.
+        """
+        try:
+            from .parsers.llm_category_inference import infer_item_category
+
+            categories = menu_cache.get_categories_for_inference()
+            if not categories:
+                return None
+
+            return infer_item_category(normalized_input, categories)
+
+        except Exception as e:
+            logger.warning("LLM category inference failed: %s", e)
+            return None
+
+    def _build_inferred_response(
+        self,
+        item_name: str,
+        category_slug: str,
+        order_item_count: int,
+    ) -> tuple[str, str | None]:
+        """Build response based on LLM-inferred category."""
+        suggestions = self.menu_lookup.get_suggestions_for_item_type(
+            category_slug, limit=4
+        )
+
+        if suggestions:
+            category_display = self._get_category_display_name(category_slug)
+            followup = self._get_order_aware_followup(order_item_count)
+            return (
+                f"We don't have {item_name}. For {category_display}, we have {suggestions}. {followup}",
+                None,
+            )
+        else:
+            category_display = self._get_category_display_name(category_slug)
+            return (
+                f"We don't have {item_name}. Would you like to hear what {category_display} we have?",
+                category_slug,
+            )
+
+    def _build_generic_response(
+        self,
+        item_name: str,
+        order_item_count: int,
+    ) -> str:
+        """Build generic fallback response with top categories."""
+        # Get available categories
+        categories = menu_cache.get_available_menu_categories()
+
+        if categories:
+            # Show top 3-4 categories
+            category_names = list(categories.values())[:4]
+            category_list = format_english_list(category_names, conjunction="or")
+            return (
+                f"I couldn't find '{item_name}' on our menu. "
+                f"We have {category_list}. What would you like?"
+            )
+        else:
+            return (
+                f"I'm sorry, I couldn't find '{item_name}' on our menu. "
+                f"Could you try again or ask what we have available?"
+            )
+
+    def _get_order_aware_followup(self, order_item_count: int) -> str:
+        """Get a context-appropriate follow-up question based on cart state."""
+        if order_item_count == 0:
+            return "Would you like any of those, or can I help you find something else?"
+        elif order_item_count < 3:
+            return "Would any of those work, or is there something else to add?"
+        else:
+            return "Would you like to add one, or are you ready to check out?"
+
+    def _get_category_display_name(self, category_slug: str) -> str:
+        """Get display name for a category slug."""
+        # Try category keywords first
+        info = menu_cache.get_category_keyword_mapping(category_slug)
+        if info:
+            return info.get("display_name_plural") or info.get("display_name", category_slug)
+
+        # Try item type display
+        display = menu_cache.get_item_type_display_name(category_slug)
+        if display:
+            return display
+
+        # Fallback: format slug
+        return category_slug.replace("_", " ")
+
+    def _log_unrecognized(
+        self,
+        user_input: str,
+        normalized_input: str,
+        session_id: str | None,
+        order_item_count: int,
+        fallback_level: str,
+        inferred_category: str | None,
+    ) -> None:
+        """Log unrecognized item request for analytics."""
+        if not self._db_session:
+            return
+
+        try:
+            from orderbot.models import UnrecognizedItemLog
+
+            log_entry = UnrecognizedItemLog(
+                user_input=user_input[:500],  # Truncate if needed
+                normalized_input=normalized_input[:200],
+                session_id=session_id,
+                order_item_count=order_item_count,
+                fallback_level=fallback_level,
+                inferred_category=inferred_category,
+            )
+            self._db_session.add(log_entry)
+            self._db_session.commit()
+
+        except Exception as e:
+            logger.warning("Failed to log unrecognized item: %s", e)
+            try:
+                self._db_session.rollback()
+            except Exception:
+                pass

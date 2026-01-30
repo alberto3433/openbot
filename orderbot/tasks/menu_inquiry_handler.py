@@ -86,15 +86,20 @@ class MenuInquiryHandler(MenuDataMixin):
         """Get items and display name for a menu category.
 
         Uses DB-driven approach with lookup_type:
-        1. Look up category in menu_cache.get_category_keyword_mapping()
-        2. If lookup_type=="category", query via MenuItemCategory join table
-        3. If lookup_type=="item_type", query by item_type_id
-        4. Fall back to partial string matching on all drinks
+        1. Check if menu_query_type is a direct slug in items_by_type (for pagination)
+        2. Look up category in menu_cache.get_category_keyword_mapping()
+        3. If lookup_type=="category", query via MenuItemCategory join table
+        4. If lookup_type=="item_type", query by item_type_id
+        5. Fall back to partial string matching on all drinks
 
         Returns:
             Tuple of (items list, category_key for pagination)
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
+
+        # First check if it's a direct item_type slug (used in pagination state)
+        if menu_query_type in items_by_type:
+            return items_by_type[menu_query_type], menu_query_type
 
         # Look up category info from DB-loaded cache
         category_info = menu_cache.get_category_keyword_mapping(menu_query_type)

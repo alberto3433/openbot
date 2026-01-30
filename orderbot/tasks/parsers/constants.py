@@ -346,6 +346,8 @@ RECOMMENDATION_GENERAL_PATTERNS = [
     re.compile(r"what\s+(?:do\s+you\s+)?recommend\s+for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),
     re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular)\s+for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),
     re.compile(r"recommend\s+(?:something\s+)?for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),
+    # Specials inquiry - "do you have any specials today?", "any specials?"
+    re.compile(r"(?:do\s+you\s+have\s+)?(?:any\s+)?specials?\s*(?:today|right\s+now)?\??$", re.IGNORECASE),
 ]
 
 # Term-extracting recommendation patterns - data-driven item/type lookup

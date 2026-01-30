@@ -45,6 +45,7 @@ from .parsers.llm_parsers import (
 )
 from ..address_service import complete_address
 from .handler_config import BaseHandler
+from .handler_utils import get_last_item
 from .normalization import format_slug_for_display
 from .utils.text import number_to_word
 
@@ -564,7 +565,7 @@ class CheckoutHandler(BaseHandler):
         if not active_items:
             return None
 
-        last_item = active_items[-1]
+        last_item = get_last_item(active_items)
         last_item_name = last_item.get_summary()
         added_count = target_qty - 1
 

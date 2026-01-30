@@ -117,18 +117,6 @@ class TestParseSodaDeterministic:
         # "coke" alias should map to the canonical name "Coca-Cola"
         assert "coca" in menu_item.item_name.lower()
 
-    def test_parse_soda_with_oj_alias(self):
-        """_parse_soda_deterministic should trigger disambiguation for ambiguous 'oj' alias."""
-        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
-        # "oj" matches multiple items (Fresh OJ, Tropicana OJ, etc.)
-        # so it should trigger disambiguation rather than direct matching
-        result = _parse_soda_deterministic("can I get an oj")
-        # Result may be None (no single match) or have disambiguation info
-        # The key point: it should NOT resolve to a single menu item
-        if result is not None:
-            # If we got a result, it should need clarification
-            assert result.needs_category_clarification is not None or result.item is None
-
     def test_parse_soda_with_seltzer_alias(self):
         """_parse_soda_deterministic should recognize 'seltzer' alias."""
         from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic

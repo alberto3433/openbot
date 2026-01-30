@@ -59,6 +59,7 @@ def process_message_with_state_machine(
     menu_data: Dict = None,
     store_info: Dict = None,
     returning_customer: Dict[str, Any] = None,
+    db_session=None,
 ) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]:
     """
     Process a user message using the state machine.
@@ -73,6 +74,7 @@ def process_message_with_state_machine(
         menu_data: Menu data for pricing
         store_info: Store information (currently unused)
         returning_customer: Returning customer data (name, phone, last_order_items)
+        db_session: SQLAlchemy session for database operations (request-scoped)
 
     Returns:
         Tuple of (reply, updated_order_state_dict, actions)
@@ -100,6 +102,7 @@ def process_message_with_state_machine(
         order=order,
         returning_customer=returning_customer,
         store_info=store_info,
+        db_session=db_session,
     )
 
     # Convert state back to dict (phase and pending fields are stored in OrderTask)

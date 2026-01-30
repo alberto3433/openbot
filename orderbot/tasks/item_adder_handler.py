@@ -19,6 +19,7 @@ from .schemas import OrderPhase, StateMachineResult, Selection
 from .handler_config import HandlerConfig
 from .disambiguation_handler import DisambiguationHandler
 from .mixins import MenuDataMixin
+from .checkout_messages import got_it_anything_else
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
@@ -713,14 +714,29 @@ class ItemAdderHandler(MenuDataMixin):
         else:
             # Not configurable - item is complete
             order.clear_pending()
+
+            # Check if there are other items queued for configuration
+            # This handles the case where disambiguation was triggered after other items
+            # were already added (e.g., "an everything bagel and a latte")
+            if order.has_queued_config_items() and self.menu_item_handler:
+                next_config = order.pop_next_config_item()
+                next_item = order.items.get_item_by_id(next_config["item_id"])
+                if next_item and isinstance(next_item, MenuItemTask):
+                    logger.info(
+                        "Processing queued item after non-configurable: %s (%s)",
+                        next_config.get("item_name"), next_config["item_id"][:8]
+                    )
+                    return self.menu_item_handler.get_first_question(next_item, order)
+
+            # No queued items - return confirmation
             if quantity > 1:
                 return StateMachineResult(
-                    message=f"Got it, {quantity} {canonical_name}. Anything else?",
+                    message=got_it_anything_else(f"{quantity} {canonical_name}"),
                     order=order,
                 )
             else:
                 return StateMachineResult(
-                    message=f"Got it, {canonical_name}. Anything else?",
+                    message=got_it_anything_else(canonical_name),
                     order=order,
                 )
 

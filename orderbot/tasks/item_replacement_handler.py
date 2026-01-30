@@ -21,6 +21,7 @@ from .schemas import StateMachineResult, OpenInputResponse, Selection
 from .parsers import extract_attribute_values
 from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
 from .normalization import format_slug_for_display
+from .checkout_messages import changed_to_anything_else
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -168,7 +169,7 @@ class ItemReplacementHandler:
                         self.pricing.recalculate_item_price(last_item)
 
                     return StateMachineResult(
-                        message=f"Changed to {opt.get('display_name', opt['slug'])}. Anything else?",
+                        message=changed_to_anything_else(opt.get('display_name', opt['slug'])),
                         order=order,
                     )
 
@@ -218,7 +219,7 @@ class ItemReplacementHandler:
 
             updated_summary = last_item.get_summary()
             return StateMachineResult(
-                message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                message=changed_to_anything_else(updated_summary),
                 order=order,
             )
 
@@ -315,7 +316,7 @@ class ItemReplacementHandler:
         # Return confirmation with updated item
         updated_summary = last_item.get_summary()
         return StateMachineResult(
-            message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+            message=changed_to_anything_else(updated_summary),
             order=order,
         )
 
@@ -359,7 +360,7 @@ class ItemReplacementHandler:
 
                 updated_summary = last_item.get_summary()
                 return StateMachineResult(
-                    message=f"Sure, I've changed that to {updated_summary}. Anything else?",
+                    message=changed_to_anything_else(updated_summary),
                     order=order,
                 )
 

@@ -182,6 +182,57 @@ class OptionMatcher:
 
         return matched
 
+    def match_multiple_with_disambiguation(
+        self, user_input: str, options: list[dict]
+    ) -> tuple[list[dict], list[dict]]:
+        """
+        Match options with disambiguation detection for multi-select attributes.
+
+        This method distinguishes between:
+        1. User explicitly listing multiple items: "bacon and turkey bacon" → add both
+        2. User saying one ambiguous term: "bacon" → ask disambiguation
+
+        Returns:
+            (matched_options, disambiguation_candidates) tuple:
+            - ([opt1, opt2], []) = multiple distinct matches from explicit input, add all
+            - ([opt1], []) = single match, add it
+            - ([], [opt1, opt2, opt3]) = single ambiguous term matches multiple, need disambiguation
+        """
+        user_raw_lower = user_input.lower().strip()
+
+        # Check if input has explicit separators (user listing multiple items)
+        separators = [" and ", ", ", " & ", " with "]
+        has_separator = any(sep in user_raw_lower for sep in separators)
+
+        if has_separator:
+            # User explicitly listed multiple items - match all without disambiguation
+            matched = self.match_multiple(user_input, options)
+            return (matched, [])
+
+        # Single term - check for exact match first
+        exact_match = self._phase_raw_exact_match(user_raw_lower, options, user_input)
+        if exact_match:
+            return ([exact_match], [])
+
+        # Check normalized exact match
+        user_normalized = self.normalizer.normalize_for_matching(user_input)
+        exact_match = self._phase_normalized_exact_match(user_normalized, options, user_input)
+        if exact_match:
+            return ([exact_match], [])
+
+        # No exact match - check for partial matches
+        partial_matches = self._phase_partial_input_in_option(user_normalized, options, user_input)
+
+        if len(partial_matches) == 0:
+            # No matches at all
+            return ([], [])
+        elif len(partial_matches) == 1:
+            # Single partial match - use it
+            return (partial_matches, [])
+        else:
+            # Multiple partial matches from single term - need disambiguation
+            return ([], partial_matches)
+
     # =========================================================================
     # Matching Phases
     # =========================================================================

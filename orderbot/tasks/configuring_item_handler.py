@@ -17,6 +17,7 @@ from .parsers.constants import extract_selection_index, _SELECTION_PATTERNS
 from .parsers.deterministic.patterns import parse_can_you_make_it
 from .modifier_change_handler import ChangeRequest
 from .normalization import strip_ordering_prefix
+from .checkout_messages import got_it_anything_else
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import pluralize
 
@@ -662,10 +663,24 @@ class ConfiguringItemHandler:
                 order=order,
             )
 
+        # Check if there are other items queued for configuration
+        # This handles the case where disambiguation was triggered after other items
+        # were already added (e.g., "an everything bagel and a latte")
+        if order.has_queued_config_items() and self.menu_item_handler:
+            next_config = order.pop_next_config_item()
+            next_item = order.items.get_item_by_id(next_config["item_id"])
+            if next_item and isinstance(next_item, MenuItemTask):
+                logger.info(
+                    "Processing queued item after disambiguation: %s (%s)",
+                    next_config.get("item_name"), next_config["item_id"][:8]
+                )
+                return self.menu_item_handler.get_first_question(next_item, order)
+
         # Return to taking items phase for items not requiring side choice
         order.set_phase(OrderPhase.TAKING_ITEMS)
+        item_description = f"{quantity} {pluralize(selected_name) if quantity > 1 else selected_name}"
         return StateMachineResult(
-            message=f"Got it, {quantity} {pluralize(selected_name) if quantity > 1 else selected_name}. Anything else?",
+            message=got_it_anything_else(item_description),
             order=order,
         )
 
@@ -893,7 +908,7 @@ class ConfiguringItemHandler:
             # Fallback - just acknowledge
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
-                message=f"Got it, {switch_item.get('name')}. Anything else?",
+                message=got_it_anything_else(switch_item.get('name')),
                 order=order,
             )
         else:

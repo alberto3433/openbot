@@ -28,6 +28,7 @@ from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .parsers.quantity_utils import extract_leading_quantity
 from .parsers import extract_attribute_values
 from .handler_config import BaseHandler
+from .checkout_messages import got_it_anything_else
 from .utils import OptionMatcher, InputNormalizer
 from .utils.text import format_english_list, number_to_word
 from .select_input_handler import SelectInputHandler
@@ -880,10 +881,24 @@ class MenuItemConfigHandler(BaseHandler):
             item.customization_offered = True
             self._recalculate_item_price(item)
             item.mark_complete()
-            order.set_phase(OrderPhase.TAKING_ITEMS)
             order.clear_pending()
+
+            # Check if there are other items queued for configuration
+            # This handles the case where disambiguation was triggered after other items
+            # were already added (e.g., "an everything bagel and a latte")
+            if order.has_queued_config_items():
+                next_config = order.pop_next_config_item()
+                next_item = order.items.get_item_by_id(next_config["item_id"])
+                if next_item and isinstance(next_item, MenuItemTask):
+                    logger.info(
+                        "Processing queued item after completing %s: %s (%s)",
+                        item.get_display_name(), next_config.get("item_name"), next_config["item_id"][:8]
+                    )
+                    return self.get_first_question(next_item, order)
+
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
-                message=f"Got it, {item.get_summary()}. Anything else?",
+                message=got_it_anything_else(item.get_summary()),
                 order=order,
             )
 
@@ -1203,7 +1218,7 @@ class MenuItemConfigHandler(BaseHandler):
             order.set_phase(OrderPhase.TAKING_ITEMS)
 
             return StateMachineResult(
-                message=f"Got it, {summary}. Anything else?",
+                message=got_it_anything_else(summary),
                 order=order,
             )
 
@@ -1915,7 +1930,7 @@ class MenuItemConfigHandler(BaseHandler):
             # No more items to configure - go back to taking items
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
-                message=f"Got it, {item.get_summary()}. Anything else?",
+                message=got_it_anything_else(item.get_summary()),
                 order=order,
             )
 
@@ -1984,7 +1999,7 @@ class MenuItemConfigHandler(BaseHandler):
                         return next_result
                 order.set_phase(OrderPhase.TAKING_ITEMS)
                 return StateMachineResult(
-                    message=f"Got it, {item.get_summary()}. Anything else?",
+                    message=got_it_anything_else(item.get_summary()),
                     order=order,
                 )
 
@@ -2003,7 +2018,17 @@ class MenuItemConfigHandler(BaseHandler):
                     user_clean = user_clean[4:].strip()
 
                 if input_type == "multi_select":
-                    matched_opts = self._match_multiple_options_from_input(user_clean, options)
+                    # Use disambiguation-aware matching for multi-select
+                    matched_opts, disambiguation = self._option_matcher.match_multiple_with_disambiguation(
+                        user_clean, options
+                    )
+
+                    if disambiguation:
+                        # Single ambiguous term matches multiple options - ask user to clarify
+                        return self._ask_disambiguation_for_options(
+                            item, order, attr, disambiguation, user_input
+                        )
+
                     if matched_opts:
                         # Apply matched options directly
                         display_parts = []
@@ -2090,6 +2115,43 @@ class MenuItemConfigHandler(BaseHandler):
 
         return StateMachineResult(message=question, order=order)
 
+    def _ask_disambiguation_for_options(
+        self,
+        item: MenuItemTask,
+        order: OrderTask,
+        attr: dict,
+        candidates: list[dict],
+        original_input: str,
+    ) -> StateMachineResult:
+        """Ask user to clarify which option they meant when input is ambiguous.
+
+        Called when a single term like "bacon" matches multiple options
+        (e.g., Bacon, Turkey Bacon, Applewood Smoked Bacon).
+
+        Args:
+            item: The menu item being configured
+            order: Current order task
+            attr: The attribute dict (e.g., meat attribute)
+            candidates: List of options that matched the ambiguous input
+            original_input: The original user input for context
+
+        Returns:
+            StateMachineResult asking user to choose between candidates
+        """
+        attr_slug = attr.get("slug", "option")
+        attr_display = attr.get("display_name", attr_slug).lower()
+        options_list = ", ".join(c["display_name"] for c in candidates)
+
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
+        order.pending_item_id = item.id
+        order.pending_field = f"{item.menu_item_type}:{attr_slug}"
+        order.pending_item_options = [c["display_name"] for c in candidates]
+
+        return StateMachineResult(
+            message=f"Which {attr_display} would you like? {options_list}",
+            order=order,
+        )
+
     def _try_direct_option_match(
         self,
         user_input: str,
@@ -2127,8 +2189,17 @@ class MenuItemConfigHandler(BaseHandler):
             input_type = attr.get("input_type", "single_select")
 
             if input_type == "multi_select":
-                # For multi_select, try to match multiple options
-                matched = self._match_multiple_options_from_input(user_clean, options)
+                # For multi_select, use disambiguation-aware matching
+                matched, disambiguation = self._option_matcher.match_multiple_with_disambiguation(
+                    user_clean, options
+                )
+
+                if disambiguation:
+                    # Single ambiguous term matches multiple options - ask user to clarify
+                    return self._ask_disambiguation_for_options(
+                        item, order, attr, disambiguation, user_input
+                    )
+
                 if matched:
                     # Get existing selections for this category
                     existing_selections = item.get_selections(attr_slug)

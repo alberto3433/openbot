@@ -20,6 +20,7 @@ from orderbot.cache.base import singularize, get_singular_plural_variants
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse
+from .checkout_messages import ok_removed_anything_else
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -259,7 +260,7 @@ class ItemCancellationHandler:
         remaining_items = order.items.get_active_items()
         if remaining_items:
             return StateMachineResult(
-                message=f"OK, I've removed the {removed_name}. Anything else?",
+                message=ok_removed_anything_else(removed_name),
                 order=order,
             )
         else:
@@ -398,7 +399,7 @@ class ItemCancellationHandler:
             remaining_items = order.items.get_active_items()
             if remaining_items:
                 return StateMachineResult(
-                    message=f"OK, I've removed the {removed_name}. Anything else?",
+                    message=ok_removed_anything_else(removed_name),
                     order=order,
                 )
             else:

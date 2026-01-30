@@ -18,6 +18,7 @@ from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse
 from .pending_fields import PendingField
 from .parsers.quantity_utils import extract_quantity_for_pattern, extract_leading_quantity
+from .checkout_messages import sure_updated_anything_else
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -182,7 +183,7 @@ class ItemModificationHandler:
         logger.info("MODIFY EXISTING: Updated '%s' with add_modifiers=%s",
                    target_item.menu_item_name, parsed.modify_add_modifiers)
         return StateMachineResult(
-            message=f"Sure, I've updated your {updated_summary}. Anything else?",
+            message=sure_updated_anything_else(updated_summary),
             order=order,
         )
 

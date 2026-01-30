@@ -43,8 +43,7 @@ class TestMultiItemOrders:
 
         Scenario:
         - User says: "one everything bagel and one plain bagel"
-        - Expected: System adds at least one bagel (current limitation: parser
-                    tracks one bagel at a time for multi-item orders)
+        - Expected: System adds both bagels with correct bread types
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -55,18 +54,17 @@ class TestMultiItemOrders:
         # Should have a response
         assert result.message is not None
 
-        # Should have added at least one bagel
-        # Note: Current parser limitation - only one bagel tracked in multi-item orders
-        # The second bagel type may need a follow-up interaction
+        # Should have added both bagels
         bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
         total_quantity = sum(b.quantity for b in bagels)
 
-        assert total_quantity >= 1, f"Should have at least 1 bagel, got {total_quantity}"
+        assert total_quantity == 2, f"Should have 2 bagels, got {total_quantity}"
 
-        # Should have recognized at least one type
+        # Should have recognized both types
         types = [b["bread"] for b in bagels]
-        assert len(types) >= 1 and types[0] in ["everything", "plain"], \
-            f"Should have recognized a bagel type. Types: {types}"
+        assert len(types) == 2, f"Should have 2 bagel types, got {len(types)}"
+        assert any("everything" in t for t in types), f"Should have everything bagel. Types: {types}"
+        assert any("plain" in t for t in types), f"Should have plain bagel. Types: {types}"
 
     def test_comma_separated_items(self):
         """

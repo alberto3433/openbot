@@ -44,6 +44,7 @@ from .item_cancellation_handler import (
 )
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
+from .checkout_messages import got_it_anything_else
 from .parsers.constants import ORDINAL_WORDS, ADD_MODIFIER_PATTERNS
 from .parsers.deterministic.patterns import REPLACE_ITEM_PATTERN
 from .parsers.quantity_utils import (
@@ -1441,6 +1442,15 @@ class TakingItemsHandler(MenuDataMixin):
             # Check if disambiguation was triggered - return immediately
             if disambiguation_result:
                 logger.info("Disambiguation triggered for item, returning result")
+                # Before returning, queue any items already added that need configuration.
+                # This ensures they're not forgotten when disambiguation resolves.
+                # Example: "everything bagel and a latte" - bagel is added first,
+                # then latte triggers disambiguation. Without this, bagel config is skipped.
+                for item_id, display_name, item_type in added_items:
+                    item = order.items.get_item_by_id(item_id)
+                    if item and item.status == TaskStatus.IN_PROGRESS:
+                        order.queue_item_for_config(item_id, item_type, item_name=display_name)
+                        logger.info("Queued %s (%s) for config before disambiguation", display_name, item_id[:8])
                 return disambiguation_result
 
             # Check if add failed (e.g., item not found on menu)
@@ -1478,8 +1488,7 @@ class TakingItemsHandler(MenuDataMixin):
         # If no items need configuration, return simple confirmation
         if not items_needing_config:
             items_str = format_english_list(summaries)
-            response = f"Got it, {items_str}. Anything else?"
-            return StateMachineResult(message=response, order=order)
+            return StateMachineResult(message=got_it_anything_else(items_str), order=order)
 
         # Queue items 2+ for later configuration
         order.multi_item_config_names = [name for _, name, _ in items_needing_config]

@@ -21,6 +21,7 @@ from .modifier_operations import find_modifier_match, remove_modifier_from_item
 from orderbot.menu_data_cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants
+from .checkout_messages import ok_removed_anything_else
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -128,7 +129,7 @@ class ConfigHelperHandler:
             remaining = order.items.get_active_items()
             if remaining:
                 return StateMachineResult(
-                    message=f"OK, I've removed the {item_name}. Anything else?",
+                    message=ok_removed_anything_else(item_name),
                     order=order,
                 )
             else:
@@ -238,7 +239,7 @@ class ConfigHelperHandler:
                 remaining = order.items.get_active_items()
                 if remaining:
                     return StateMachineResult(
-                        message=f"OK, I've removed the {removed_name}. Anything else?",
+                        message=ok_removed_anything_else(removed_name),
                         order=order,
                     )
                 else:

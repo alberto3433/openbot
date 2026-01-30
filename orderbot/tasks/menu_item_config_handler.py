@@ -1853,9 +1853,14 @@ class MenuItemConfigHandler(BaseHandler):
                     )
                 else:
                     # No variant pricing - try upcharge from attribute_options
-                    option_price = self.pricing.lookup_attribute_option_upcharge(
-                        item.menu_item_type, attr_slug, matched["slug"]
+                    # Use the method that considers included ingredient categories
+                    option_price = self.pricing.lookup_attribute_option_upcharge_for_item(
+                        item.menu_item_name, item.menu_item_type, attr_slug, matched["slug"]
                     ) or 0.0
+                    logger.info(
+                        "DEBUG UPCHARGE: menu_item=%s, item_type=%s, attr=%s, option=%s -> price=%.2f",
+                        item.menu_item_name, item.menu_item_type, attr_slug, matched["slug"], option_price
+                    )
 
             # Add selection using unified API
             # Note: add_selection handles price accumulation automatically for non-variant pricing

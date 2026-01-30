@@ -43,8 +43,8 @@ def _normalize_option_for_matching(option: dict) -> tuple[str, str]:
         >>> _normalize_option_for_matching({"slug": "vanilla_syrup"})
         ("vanilla_syrup", "")
     """
-    opt_slug = (option.get("slug") or "").lower().replace("-", "_")
-    opt_name = (option.get("display_name") or "").lower().replace("-", "_").replace(" ", "_")
+    opt_slug = normalize_to_slug(option.get("slug") or "")
+    opt_name = normalize_to_slug(option.get("display_name") or "")
     return opt_slug, opt_name
 
 
@@ -245,19 +245,27 @@ class PricingEngine(MenuDataMixin):
         item_type: str,
         attr_slug: str,
         option_value: str,
+        included_ingredient_categories: set[str] | None = None,
     ) -> float:
         """Look up price modifier for an attribute option.
 
         Generic method to get upcharges for any attribute option (size, bread type,
         milk, syrup, etc.) from the database.
 
+        If the menu item already includes an ingredient in the same category as the
+        selected option, the upcharge is skipped (returns 0.0). This handles cases
+        like BEC where cheese is included - selecting cheese type shouldn't upcharge.
+
         Args:
             item_type: Item type slug (e.g., "bagel", "sized_beverage")
             attr_slug: Attribute slug (e.g., "size", "bread", "milk")
             option_value: Selected option value (e.g., "large", "gluten_free", "oat")
+            included_ingredient_categories: Set of ingredient categories already
+                included in the menu item's base price (e.g., {"cheese", "protein"})
 
         Returns:
-            Price modifier (upcharge) for the option, or 0.0 if not found
+            Price modifier (upcharge) for the option, or 0.0 if not found or if
+            the option's category is already included in the menu item
         """
         if not option_value:
             return 0.0
@@ -281,6 +289,17 @@ class PricingEngine(MenuDataMixin):
         )
 
         if price is not None:
+            # Check if this option's ingredient category is already included
+            if included_ingredient_categories:
+                option_category = self._get_option_ingredient_category(
+                    item_type, attr_slug, option_value
+                )
+                if option_category and option_category in included_ingredient_categories:
+                    logger.debug(
+                        "Skipping upcharge for %s.%s=%s - category '%s' is included",
+                        item_type, attr_slug, option_value, option_category
+                    )
+                    return 0.0
             return price
 
         # Not found - log and return 0.0
@@ -289,6 +308,103 @@ class PricingEngine(MenuDataMixin):
             item_type, attr_slug, option_value
         )
         return 0.0
+
+    def _get_option_ingredient_category(
+        self,
+        item_type: str,
+        attr_slug: str,
+        option_value: str,
+    ) -> str | None:
+        """Get the ingredient_category for an attribute option.
+
+        Used to determine if an option belongs to a category that's already
+        included in the menu item's base price.
+
+        Args:
+            item_type: Item type slug
+            attr_slug: Attribute slug
+            option_value: Selected option value
+
+        Returns:
+            The ingredient category string (e.g., "cheese") or None if not found
+        """
+        normalized = normalize_to_slug(option_value)
+        option_lower = option_value.lower().strip()
+
+        item_types = self._menu_data.get("item_types", {})
+        type_data = item_types.get(item_type, {})
+        attributes = type_data.get("attributes", [])
+
+        for attr in attributes:
+            if attr.get("slug") != attr_slug:
+                continue
+            for opt in attr.get("options", []):
+                opt_slug, opt_name = _normalize_option_for_matching(opt)
+                opt_display_lower = (opt.get("display_name") or "").lower()
+                # Match using same logic as _lookup_option_price_in_attributes
+                if (opt_slug == normalized or
+                    opt_name == normalized or
+                    opt_slug == option_lower or
+                    opt_display_lower == option_lower or
+                    option_lower in opt_slug):
+                    return opt.get("ingredient_category")
+
+        return None
+
+    def lookup_attribute_option_upcharge_for_item(
+        self,
+        menu_item_name: str,
+        item_type: str,
+        attr_slug: str,
+        option_value: str,
+    ) -> float:
+        """Look up upcharge for an attribute option, considering included ingredients.
+
+        Convenience method that automatically looks up the menu item's included
+        ingredient categories and applies the "included = no upcharge" logic.
+
+        Use this method when you have the menu item name but don't have the
+        included categories already computed.
+
+        Args:
+            menu_item_name: Name of the menu item (for looking up included categories)
+            item_type: Item type slug
+            attr_slug: Attribute slug
+            option_value: Selected option value
+
+        Returns:
+            Price modifier (upcharge) for the option, or 0.0 if included
+        """
+        # Look up the menu item to get included ingredient categories
+        menu_item = self._lookup_menu_item(menu_item_name)
+        included_categories: set[str] = set()
+        if menu_item:
+            included_categories = set(
+                menu_item.get("included_ingredient_categories", [])
+            )
+
+        logger.info(
+            "DEBUG lookup_upcharge_for_item: menu_item=%s found=%s included_categories=%s",
+            menu_item_name, menu_item is not None, included_categories
+        )
+
+        # Also get the option's ingredient category for debugging
+        option_category = self._get_option_ingredient_category(
+            item_type, attr_slug, option_value
+        )
+        logger.info(
+            "DEBUG lookup_upcharge_for_item: option %s.%s=%s has ingredient_category=%s",
+            item_type, attr_slug, option_value, option_category
+        )
+
+        result = self.lookup_attribute_option_upcharge(
+            item_type, attr_slug, option_value, included_categories
+        )
+        logger.info(
+            "DEBUG lookup_upcharge_for_item: final result for %s.%s=%s -> $%.2f",
+            item_type, attr_slug, option_value, result
+        )
+        return result
 
     def lookup_generic_modifier_price(
         self,
@@ -482,6 +598,17 @@ class PricingEngine(MenuDataMixin):
         # 1. Determine base price (respecting variant-based pricing and sides)
         # =====================================================================
 
+        # Look up menu item for pricing data (needed for both base price and included categories)
+        menu_item = self._lookup_menu_item(item.menu_item_name)
+
+        # Get included ingredient categories (for skipping upcharges on included items)
+        # If BEC includes cheese, selecting cheese type shouldn't upcharge
+        included_ingredient_categories: set[str] = set()
+        if menu_item:
+            included_ingredient_categories = set(
+                menu_item.get("included_ingredient_categories", [])
+            )
+
         # Side items have base_price = 0 (e.g., bagel side with omelette is free,
         # but modifiers like spread still cost extra)
         is_side_item = getattr(item, 'side_of_item_id', None) is not None
@@ -496,8 +623,6 @@ class PricingEngine(MenuDataMixin):
             uses_variant_pricing = False
             variant_attr = None  # The attribute covered by variant pricing
 
-            # Look up menu item to check for size-based pricing
-            menu_item = self._lookup_menu_item(item.menu_item_name)
             size_prices = menu_item.get("size_prices") if menu_item else None
 
             if size_prices:
@@ -545,7 +670,9 @@ class PricingEngine(MenuDataMixin):
             # Handle different value types
             if isinstance(attr_value, bool) and attr_value is True:
                 # Boolean attributes (e.g., toasted=True) - look up upcharge
-                upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, "true")
+                upcharge = self.lookup_attribute_option_upcharge(
+                    item_type, attr_slug, "true", included_ingredient_categories
+                )
                 total += upcharge
 
             elif isinstance(attr_value, list):
@@ -553,7 +680,9 @@ class PricingEngine(MenuDataMixin):
                 for item_val in attr_value:
                     if isinstance(item_val, str) and item_val.lower() != "none":
                         # Try attribute option first, then modifier
-                        upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, item_val)
+                        upcharge = self.lookup_attribute_option_upcharge(
+                            item_type, attr_slug, item_val, included_ingredient_categories
+                        )
                         if upcharge > 0:
                             total += upcharge
                             priced_slugs.add(item_val)
@@ -580,18 +709,20 @@ class PricingEngine(MenuDataMixin):
 
             elif isinstance(attr_value, str):
                 # Single string value - check attribute option first, then modifier
-                # But first: check if this slug exists in item_modifiers with quantity > 1
-                # If so, skip it here and let Section 3 handle it with proper quantity
-                modifier_with_qty = next(
+                # But first: check if this slug exists in item_modifiers with a stored price
+                # If so, skip it here and let Section 3 handle it using stored price × quantity
+                modifier_with_price = next(
                     (m for m in item_modifiers
-                     if m.get("slug") == attr_value and m.get("quantity", 1) > 1),
+                     if m.get("slug") == attr_value and m.get("price", 0) > 0),
                     None
                 )
-                if modifier_with_qty:
-                    # Skip - Section 3 will handle this with proper quantity multiplication
+                if modifier_with_price:
+                    # Skip - Section 3 will use stored price × quantity
                     continue
 
-                upcharge = self.lookup_attribute_option_upcharge(item_type, attr_slug, attr_value)
+                upcharge = self.lookup_attribute_option_upcharge(
+                    item_type, attr_slug, attr_value, included_ingredient_categories
+                )
                 if upcharge > 0:
                     total += upcharge
                     priced_slugs.add(attr_value)

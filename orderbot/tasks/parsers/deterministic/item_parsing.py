@@ -28,6 +28,7 @@ from .extraction import (
     _extract_quantity,
     _extract_by_pound_info,
 )
+from .instructions_extraction import extract_special_instructions_from_input
 
 # Import from specialized modules
 from .item_building import build_parsed_item
@@ -254,6 +255,9 @@ def _parse_item_generic(
             slug=mod, category=category, quantity=1
         ))
 
+    # Extract item-level special instructions (e.g., "room for cream", "extra hot")
+    special_instructions = extract_special_instructions_from_input(text)
+
     return build_parsed_item(
         item_type=item_type,
         item_name=item_name,
@@ -262,6 +266,7 @@ def _parse_item_generic(
         modifiers=modifier_selections,
         is_signature=is_signature,
         original_text=text,
+        special_instructions=special_instructions,
     )
 
 
@@ -449,9 +454,12 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         if name_lower in signature_items or item_name in signature_items.values():
             is_signature = True
 
+    # 5b. Extract item-level special instructions (e.g., "room for cream", "extra hot")
+    special_instructions = extract_special_instructions_from_input(text)
+
     logger.info(
-        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, is_signature=%s",
-        detected_item_type, quantity, item_name, list(attr_values.keys()), is_signature
+        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, is_signature=%s, instructions=%s",
+        detected_item_type, quantity, item_name, list(attr_values.keys()), is_signature, special_instructions
     )
 
     # 6. Build ParsedItemEntry using build_parsed_item (converts attr_values to selections)
@@ -463,6 +471,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         attribute_values=attr_values.copy(),
         original_text=text,
         is_signature=is_signature,
+        special_instructions=special_instructions,
     )
 
     return OpenInputResponse(parsed_items=[parsed_item])

@@ -228,6 +228,7 @@ class UnifiedItemConverter:
             modifiers=selections,
             customization_offered=item_dict.get("customization_offered", False),
             is_signature=item_config.get("is_signature", item_dict.get("is_signature", False)),
+            special_instructions=item_dict.get("special_instructions") or [],
         )
         self._restore_common_fields(menu_item, item_dict)
         return menu_item
@@ -339,6 +340,7 @@ class UnifiedItemConverter:
             "removed_ingredients": removed_ingredients,
             "attribute_values": attribute_values,
             "customization_offered": customization_offered,
+            "special_instructions": getattr(item, 'special_instructions', []) or [],
         })
 
         # Data-driven: output DB-defined attributes at top level

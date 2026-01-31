@@ -153,16 +153,17 @@ class TestReplacementModificationScenarios:
 
         Scenario:
         - User says: "decaf coffee"
-        - System asks for size: "What size would you like?"
+        - System recognizes "Hot Coffee" menu item with decaf modifier
+        - System asks for size: "What size?"
         - User says: "large"
-        - System asks for style: "Would you like that hot or iced?"
-        - User says: "hot"
-        - System asks for modifiers: "Would you like any milk, sugar or syrup?"
+        - System asks for modifiers: "Any milk, sweetener, or syrup?"
         - User says: "no"
-        - Expected: Coffee item has decaf=True, size=large, iced=False
+        - System asks about espresso shots
+        - User says: "no"
+        - Expected: Coffee item has decaf=True, size=large
 
-        Note: DB only has "small" and "large" sizes (no "medium").
-        Phase 6 migration routes beverages through MenuItemConfigHandler.
+        Note: Temperature is now part of the menu item name (Hot Coffee vs Iced Coffee),
+        not a separate attribute. DB only has "small" and "large" sizes.
         """
         from orderbot.tasks.adapter import order_task_to_dict
 
@@ -183,33 +184,23 @@ class TestReplacementModificationScenarios:
         assert coffees[0]["decaf"] is True, f"Decaf should be True from initial order, got: {coffees[0]['decaf']}"
 
         # Step 2: Answer size - use "large" which is a valid DB option
-        # (MenuItemConfigHandler uses DB options directly, not LLM parsing)
         result = sm.process("large", result.order)
 
-        # Should ask for hot/iced (temperature attribute)
-        assert "hot" in result.message.lower() or "iced" in result.message.lower() or "temperature" in result.message.lower(), \
-            f"Should ask for hot/iced, got: {result.message}"
+        # Should ask for milk/sweetener/syrup (no temperature question anymore)
+        assert any(word in result.message.lower() for word in ["milk", "sweetener", "syrup"]), \
+            f"Should ask for milk/sweetener/syrup, got: {result.message}"
 
-        # Check decaf is still True
+        # Check decaf is still True and size is set
         coffees = [i for i in result.order.items.items if i.has_attribute('size')]
         assert coffees[0]["decaf"] is True, f"Decaf should still be True after size, got: {coffees[0]['decaf']}"
-        # Size is stored in attribute_values
         size_val = coffees[0]["size"]
         assert size_val == "large", f"Size should be large, got: {size_val}"
 
-        # Step 3: Answer hot/iced - MenuItemConfigHandler uses boolean attribute handling
-        result = sm.process("hot", result.order)
+        # Step 3: Skip milk/sweetener/syrup
+        result = sm.process("no", result.order)
 
-        # After temperature, may ask for modifiers or be done
-        # Check that we got past temperature by verifying temperature is set
-        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
-        coffee = coffees[0]
-        # Temperature is stored in attribute_values
-        temp_val = coffee["temperature"]
-        assert temp_val == "hot", f"Temperature should be 'hot', got: {temp_val}"
-
-        # Step 4: If there are optional modifier questions, answer no
-        if "milk" in result.message.lower() or "sugar" in result.message.lower() or "modifier" in result.message.lower():
+        # Step 4: Skip espresso shots if asked
+        if "shot" in result.message.lower():
             result = sm.process("no", result.order)
 
         # Coffee should now be complete or asking "anything else?"
@@ -218,19 +209,14 @@ class TestReplacementModificationScenarios:
 
         final_coffee = coffees[0]
         assert final_coffee["decaf"] is True, f"Decaf should be True after config, got: {final_coffee['decaf']}"
-        # Size is stored in attribute_values
         final_size = final_coffee["size"]
         assert final_size == "large", f"Size should be large, got: {final_size}"
-        final_temp = final_coffee["temperature"]
-        assert final_temp == "hot", f"Temperature should be 'hot', got: {final_temp}"
-        # Item may or may not be complete depending on optional modifiers
-        # assert final_coffee.status == TaskStatus.COMPLETE, f"Coffee should be complete, got: {final_coffee.status}"
 
-        # Also verify the adapter output includes "decaf" in free_details
+        # Also verify the adapter output includes decaf=True
         order_dict = order_task_to_dict(result.order)
         coffee_item = order_dict["items"][0]
-        assert "decaf" in coffee_item.get("free_details", []), \
-            f"Expected 'decaf' in free_details, got: {coffee_item.get('free_details', [])}"
+        assert coffee_item.get("decaf") is True, \
+            f"Expected decaf=True in adapter output, got: {coffee_item.get('decaf')}"
 
     def test_change_quantity_make_it_two(self):
         """

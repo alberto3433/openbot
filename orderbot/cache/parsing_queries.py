@@ -114,6 +114,9 @@ class ParsingQueryMixin:
     def get_standalone_instruction_patterns(self) -> list[Pattern]:
         """Get compiled patterns for standalone instructions.
 
+        Returns individual patterns (without ^ and $ anchors) that can be used
+        to search for instructions within a larger input text.
+
         Returns:
             List of compiled regex patterns for standalone instructions.
 
@@ -123,9 +126,13 @@ class ParsingQueryMixin:
         self._ensure_loaded()
         patterns = []
 
-        instruction_regex = self._response_regex_compiled.get("standalone_instruction")
-        if instruction_regex:
-            patterns.append(instruction_regex)
+        # Return individual patterns without anchors (for searching within text)
+        raw_patterns = self._response_regex_raw.get("standalone_instruction", [])
+        for pattern_str in raw_patterns:
+            try:
+                patterns.append(re.compile(pattern_str, re.IGNORECASE))
+            except re.error:
+                pass
 
         return patterns
 

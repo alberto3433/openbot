@@ -224,6 +224,9 @@ class ItemAdderHandler(MenuDataMixin):
         # Get unavailable_selections from kwargs (for "We don't have X" messaging)
         unavailable_selections = kwargs.get("unavailable_selections")
 
+        # Get special_instructions from kwargs (e.g., "room for cream", "extra hot")
+        special_instructions = kwargs.get("special_instructions")
+
         logger.info(
             "ADD ITEM: type=%s, name=%s, qty=%d, pre_filled=%s",
             item_type, item_name, quantity,
@@ -239,6 +242,7 @@ class ItemAdderHandler(MenuDataMixin):
             pre_filled_attributes=pre_filled_attributes if pre_filled_attributes else None,
             extracted_selections=extracted_selections,
             unavailable_selections=unavailable_selections,
+            special_instructions=special_instructions,
         )
 
         return result
@@ -555,6 +559,7 @@ class ItemAdderHandler(MenuDataMixin):
         pre_filled_attributes: dict | None = None,
         extracted_selections: list[Selection] | None = None,
         unavailable_selections: dict | None = None,
+        special_instructions: list[str] | None = None,
     ) -> StateMachineResult:
         """
         Create an item and start its configuration flow if needed.
@@ -571,6 +576,7 @@ class ItemAdderHandler(MenuDataMixin):
             extracted_selections: List of Selection objects to apply (optional)
             unavailable_selections: Dict of attr_slug -> {attempted_slug, attempted_display}
                 for options user tried that aren't available (e.g., "medium" size)
+            special_instructions: List of special instruction strings (e.g., "room for cream")
 
         Returns:
             StateMachineResult with next question or confirmation
@@ -636,6 +642,10 @@ class ItemAdderHandler(MenuDataMixin):
             # Must be set BEFORE get_first_question() is called
             if unavailable_selections:
                 item.unavailable_selections = unavailable_selections.copy()
+
+            # Set special_instructions (e.g., "room for cream", "extra hot")
+            if special_instructions:
+                item.special_instructions = list(special_instructions)
 
             # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
             # This prevents asking questions already answered by the item name

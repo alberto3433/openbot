@@ -17,6 +17,7 @@ def build_parsed_item(
     original_text: str | None = None,
     is_signature: bool = False,
     weight_unit: str | None = None,
+    special_instructions: list[str] | None = None,
     # Backward compatibility - convert to selections internally
     attribute_values: dict | None = None,
     modifiers: list[Selection] | None = None,
@@ -39,6 +40,7 @@ def build_parsed_item(
         original_text: Original user input (for disambiguation context)
         is_signature: Whether this is a signature/speed menu item
         weight_unit: For by-pound items (e.g., "1/4 lb")
+        special_instructions: List of special instruction strings (e.g., "room for cream")
         attribute_values: DEPRECATED - Dict of attribute slug -> value
         modifiers: DEPRECATED - List of Selection objects (old parameter name)
 
@@ -116,4 +118,5 @@ def build_parsed_item(
         is_signature=is_signature,
         weight_unit=weight_unit,
         unavailable_selections=unavailable_selections,
+        special_instructions=special_instructions or [],
     )

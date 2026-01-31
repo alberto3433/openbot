@@ -130,6 +130,9 @@ class ParsedItemEntry(BaseModel):
     # Used to show helpful "We don't have X - we have Y or Z" messages
     unavailable_selections: dict[str, dict] = Field(default_factory=dict)
 
+    # Item-level special instructions (e.g., "room for cream", "extra hot")
+    special_instructions: list[str] = Field(default_factory=list)
+
     def get_selection(self, category: str) -> Selection | None:
         """Get first selection for a category (for single-select attributes)."""
         for sel in self.selections:

@@ -193,6 +193,7 @@ class ParsedItemProcessor:
             extracted_selections=selections if has_any_selections(selections) else None,
             original_input=item.original_text,
             unavailable_selections=item.unavailable_selections if item.unavailable_selections else None,
+            special_instructions=item.special_instructions if item.special_instructions else None,
             **item.attribute_values,  # Data-driven: pass all, receiver filters (backward compat)
         )
         order = result.order

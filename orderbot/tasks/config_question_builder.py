@@ -197,7 +197,17 @@ class QuestionBuilder:
                             qty_word = number_to_word(ccount)
                             desc_parts.append(f"{qty_word} {pluralize(cname)}")
                         else:
-                            desc_parts.append(cname)
+                            # Include special instructions for this item
+                            matching_item = next(
+                                (it for it in order.items.items
+                                 if it.get_display_name() == cname and it.special_instructions),
+                                None
+                            )
+                            if matching_item and matching_item.special_instructions:
+                                instructions_str = ", ".join(matching_item.special_instructions)
+                                desc_parts.append(f"{instructions_str} {cname}")
+                            else:
+                                desc_parts.append(cname)
                     item_desc = format_english_list(desc_parts)
                 return f"Got it, {item_desc}. "
             else:
@@ -211,4 +221,11 @@ class QuestionBuilder:
                 else:
                     return f"For {item_desc}, what kind of {attr_name} would you like?"
         else:
-            return f"Got it, for the {item_display}. "
+            # Single item - include special instructions if present
+            if item.special_instructions:
+                instructions_str = ", ".join(item.special_instructions)
+                # Format: "Got it, for the Hot Coffee with room for cream."
+                item_desc = f"{item_display} with {instructions_str}"
+            else:
+                item_desc = item_display
+            return f"Got it, for the {item_desc}. "

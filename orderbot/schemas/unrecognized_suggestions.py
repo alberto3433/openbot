@@ -37,8 +37,9 @@ class UnrecognizedSuggestionOut(BaseModel):
         id: Database primary key
         input_pattern: The pattern to match against user input
         match_type: How to match (exact, prefix, contains)
-        suggested_category_slug: Category to suggest (e.g., "pastry", "side")
-        suggested_menu_items: List of specific menu items to suggest
+        suggested_item_type_id: FK to item_types table
+        suggested_item_type_slug: Item type slug (derived from relationship)
+        suggested_menu_item_names: List of menu item names (derived from relationship)
         hit_count: How many times this suggestion has been used
         is_active: Whether this suggestion is enabled
         created_at: When the suggestion was created
@@ -48,11 +49,35 @@ class UnrecognizedSuggestionOut(BaseModel):
     id: int
     input_pattern: str
     match_type: str
-    suggested_category_slug: Optional[str] = None
-    suggested_menu_items: Optional[List[str]] = None
+    suggested_item_type_id: Optional[int] = None
+    suggested_item_type_slug: Optional[str] = None
+    suggested_menu_item_names: Optional[List[str]] = None
     hit_count: int
     is_active: bool
     created_at: Optional[datetime] = None
+
+    @classmethod
+    def from_db(cls, db_obj) -> "UnrecognizedSuggestionOut":
+        """Create from database object with relationships."""
+        item_type_slug = None
+        if db_obj.suggested_item_type:
+            item_type_slug = db_obj.suggested_item_type.slug
+
+        menu_item_names = None
+        if db_obj.suggested_menu_items:
+            menu_item_names = [item.name for item in db_obj.suggested_menu_items]
+
+        return cls(
+            id=db_obj.id,
+            input_pattern=db_obj.input_pattern,
+            match_type=db_obj.match_type,
+            suggested_item_type_id=db_obj.suggested_item_type_id,
+            suggested_item_type_slug=item_type_slug,
+            suggested_menu_item_names=menu_item_names,
+            hit_count=db_obj.hit_count,
+            is_active=db_obj.is_active,
+            created_at=db_obj.created_at,
+        )
 
 
 class UnrecognizedSuggestionCreate(BaseModel):
@@ -62,21 +87,21 @@ class UnrecognizedSuggestionCreate(BaseModel):
     Attributes:
         input_pattern: The pattern to match (required)
         match_type: How to match (default: "exact")
-        suggested_category_slug: Category to suggest
-        suggested_menu_items: List of specific menu items to suggest
+        suggested_item_type_slug: Item type slug to suggest (looked up to get FK)
+        suggested_menu_item_names: List of menu item names to suggest (looked up to get FKs)
         is_active: Whether this suggestion is enabled (default: True)
 
     Example:
         {
             "input_pattern": "croissant",
             "match_type": "exact",
-            "suggested_menu_items": ["Rugelach", "Babka"]
+            "suggested_menu_item_names": ["Rugelach", "Babka"]
         }
     """
     input_pattern: str
     match_type: str = "exact"
-    suggested_category_slug: Optional[str] = None
-    suggested_menu_items: Optional[List[str]] = None
+    suggested_item_type_slug: Optional[str] = None
+    suggested_menu_item_names: Optional[List[str]] = None
     is_active: bool = True
 
 
@@ -88,8 +113,8 @@ class UnrecognizedSuggestionUpdate(BaseModel):
     """
     input_pattern: Optional[str] = None
     match_type: Optional[str] = None
-    suggested_category_slug: Optional[str] = None
-    suggested_menu_items: Optional[List[str]] = None
+    suggested_item_type_slug: Optional[str] = None
+    suggested_menu_item_names: Optional[List[str]] = None
     is_active: Optional[bool] = None
 
 

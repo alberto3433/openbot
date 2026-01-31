@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..db.models import UnrecognizedItemSuggestion, UnrecognizedItemLog
+from ..db.models import UnrecognizedItemSuggestion, UnrecognizedItemLog, ItemType, MenuItem
 from ..schemas.unrecognized_suggestions import (
     UnrecognizedSuggestionOut,
     UnrecognizedSuggestionCreate,
@@ -71,7 +71,7 @@ def list_suggestions(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
     match_type: Optional[str] = Query(None, description="Filter by match type"),
-    category: Optional[str] = Query(None, description="Filter by category slug"),
+    category: Optional[str] = Query(None, description="Filter by item type slug"),
     active_only: bool = Query(False, description="Only show active suggestions"),
 ) -> List[UnrecognizedSuggestionOut]:
     """List all unrecognized item suggestions."""
@@ -86,7 +86,8 @@ def list_suggestions(
         query = query.filter(UnrecognizedItemSuggestion.match_type == match_type)
 
     if category:
-        query = query.filter(UnrecognizedItemSuggestion.suggested_category_slug == category)
+        # Filter by item type slug via join
+        query = query.join(ItemType).filter(ItemType.slug == category)
 
     if active_only:
         query = query.filter(UnrecognizedItemSuggestion.is_active == True)
@@ -96,19 +97,7 @@ def list_suggestions(
         UnrecognizedItemSuggestion.input_pattern
     ).all()
 
-    return [
-        UnrecognizedSuggestionOut(
-            id=s.id,
-            input_pattern=s.input_pattern,
-            match_type=s.match_type,
-            suggested_category_slug=s.suggested_category_slug,
-            suggested_menu_items=s.suggested_menu_items,
-            hit_count=s.hit_count,
-            is_active=s.is_active,
-            created_at=s.created_at,
-        )
-        for s in suggestions
-    ]
+    return [UnrecognizedSuggestionOut.from_db(s) for s in suggestions]
 
 
 @admin_unrecognized_suggestions_router.get("/stats", response_model=UnrecognizedSuggestionStats)
@@ -129,10 +118,10 @@ def get_suggestion_stats(
     for s in suggestions:
         by_match_type[s.match_type] = by_match_type.get(s.match_type, 0) + 1
 
-    # Group by category
+    # Group by category (using relationship)
     by_category: dict[str, int] = {}
     for s in suggestions:
-        cat = s.suggested_category_slug or "(no category)"
+        cat = s.suggested_item_type.slug if s.suggested_item_type else "(no category)"
         by_category[cat] = by_category.get(cat, 0) + 1
 
     # Top hits
@@ -149,7 +138,7 @@ def get_suggestion_stats(
                 "id": s.id,
                 "input_pattern": s.input_pattern,
                 "hit_count": s.hit_count,
-                "category": s.suggested_category_slug,
+                "category": s.suggested_item_type.slug if s.suggested_item_type else None,
             }
             for s in top_hits
         ],
@@ -170,16 +159,7 @@ def get_suggestion(
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
 
-    return UnrecognizedSuggestionOut(
-        id=suggestion.id,
-        input_pattern=suggestion.input_pattern,
-        match_type=suggestion.match_type,
-        suggested_category_slug=suggestion.suggested_category_slug,
-        suggested_menu_items=suggestion.suggested_menu_items,
-        hit_count=suggestion.hit_count,
-        is_active=suggestion.is_active,
-        created_at=suggestion.created_at,
-    )
+    return UnrecognizedSuggestionOut.from_db(suggestion)
 
 
 @admin_unrecognized_suggestions_router.post("", response_model=UnrecognizedSuggestionOut, status_code=201)
@@ -211,13 +191,40 @@ def create_suggestion(
             detail=f"Pattern '{pattern_normalized}' with match_type '{payload.match_type}' already exists"
         )
 
+    # Look up item type by slug if provided
+    item_type_id = None
+    if payload.suggested_item_type_slug:
+        item_type = db.query(ItemType).filter(
+            ItemType.slug == payload.suggested_item_type_slug
+        ).first()
+        if not item_type:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Item type '{payload.suggested_item_type_slug}' not found"
+            )
+        item_type_id = item_type.id
+
+    # Look up menu items by name if provided
+    menu_items = []
+    if payload.suggested_menu_item_names:
+        for name in payload.suggested_menu_item_names:
+            menu_item = db.query(MenuItem).filter(MenuItem.name == name).first()
+            if not menu_item:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Menu item '{name}' not found"
+                )
+            menu_items.append(menu_item)
+
     suggestion = UnrecognizedItemSuggestion(
         input_pattern=pattern_normalized,
         match_type=payload.match_type,
-        suggested_category_slug=payload.suggested_category_slug,
-        suggested_menu_items=payload.suggested_menu_items,
+        suggested_item_type_id=item_type_id,
         is_active=payload.is_active,
     )
+    if menu_items:
+        suggestion.suggested_menu_items = menu_items
+
     db.add(suggestion)
     db.commit()
     db.refresh(suggestion)
@@ -225,20 +232,11 @@ def create_suggestion(
     logger.info(
         "Created unrecognized suggestion: '%s' -> %s (id=%d)",
         suggestion.input_pattern,
-        suggestion.suggested_category_slug or suggestion.suggested_menu_items,
+        payload.suggested_item_type_slug or payload.suggested_menu_item_names,
         suggestion.id
     )
 
-    return UnrecognizedSuggestionOut(
-        id=suggestion.id,
-        input_pattern=suggestion.input_pattern,
-        match_type=suggestion.match_type,
-        suggested_category_slug=suggestion.suggested_category_slug,
-        suggested_menu_items=suggestion.suggested_menu_items,
-        hit_count=suggestion.hit_count,
-        is_active=suggestion.is_active,
-        created_at=suggestion.created_at,
-    )
+    return UnrecognizedSuggestionOut.from_db(suggestion)
 
 
 @admin_unrecognized_suggestions_router.put("/{suggestion_id}", response_model=UnrecognizedSuggestionOut)
@@ -286,10 +284,36 @@ def update_suggestion(
         suggestion.input_pattern = new_pattern
     if payload.match_type is not None:
         suggestion.match_type = payload.match_type
-    if payload.suggested_category_slug is not None:
-        suggestion.suggested_category_slug = payload.suggested_category_slug
-    if payload.suggested_menu_items is not None:
-        suggestion.suggested_menu_items = payload.suggested_menu_items
+
+    # Update item type FK if provided
+    if payload.suggested_item_type_slug is not None:
+        if payload.suggested_item_type_slug == "":
+            # Clear the item type
+            suggestion.suggested_item_type_id = None
+        else:
+            item_type = db.query(ItemType).filter(
+                ItemType.slug == payload.suggested_item_type_slug
+            ).first()
+            if not item_type:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Item type '{payload.suggested_item_type_slug}' not found"
+                )
+            suggestion.suggested_item_type_id = item_type.id
+
+    # Update menu items relationship if provided
+    if payload.suggested_menu_item_names is not None:
+        menu_items = []
+        for name in payload.suggested_menu_item_names:
+            menu_item = db.query(MenuItem).filter(MenuItem.name == name).first()
+            if not menu_item:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Menu item '{name}' not found"
+                )
+            menu_items.append(menu_item)
+        suggestion.suggested_menu_items = menu_items
+
     if payload.is_active is not None:
         suggestion.is_active = payload.is_active
 
@@ -298,16 +322,7 @@ def update_suggestion(
 
     logger.info("Updated unrecognized suggestion: '%s' (id=%d)", suggestion.input_pattern, suggestion.id)
 
-    return UnrecognizedSuggestionOut(
-        id=suggestion.id,
-        input_pattern=suggestion.input_pattern,
-        match_type=suggestion.match_type,
-        suggested_category_slug=suggestion.suggested_category_slug,
-        suggested_menu_items=suggestion.suggested_menu_items,
-        hit_count=suggestion.hit_count,
-        is_active=suggestion.is_active,
-        created_at=suggestion.created_at,
-    )
+    return UnrecognizedSuggestionOut.from_db(suggestion)
 
 
 @admin_unrecognized_suggestions_router.delete("/{suggestion_id}", status_code=204)

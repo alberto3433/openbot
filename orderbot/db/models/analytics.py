@@ -7,13 +7,24 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    ForeignKey,
     Integer,
-    JSON,
     String,
+    Table,
     func,
 )
+from sqlalchemy.orm import relationship
 
 from .base import Base
+
+
+# Junction table for many-to-many relationship between suggestions and menu items
+unrecognized_suggestion_menu_items = Table(
+    "unrecognized_suggestion_menu_items",
+    Base.metadata,
+    Column("suggestion_id", Integer, ForeignKey("unrecognized_item_suggestions.id", ondelete="CASCADE"), primary_key=True),
+    Column("menu_item_id", Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class UnrecognizedItemSuggestion(Base):
@@ -34,11 +45,14 @@ class UnrecognizedItemSuggestion(Base):
     id = Column(Integer, primary_key=True, index=True)
     input_pattern = Column(String(200), nullable=False, index=True)
     match_type = Column(String(20), nullable=False, default="exact")
-    suggested_category_slug = Column(String(50), nullable=True, index=True)
-    suggested_menu_items = Column(JSON, nullable=True)  # Specific items to suggest
+    suggested_item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="SET NULL"), nullable=True, index=True)
     hit_count = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    suggested_item_type = relationship("ItemType", lazy="joined")
+    suggested_menu_items = relationship("MenuItem", secondary=unrecognized_suggestion_menu_items, lazy="joined")
 
 
 class UnrecognizedItemLog(Base):

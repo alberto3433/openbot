@@ -209,8 +209,11 @@ class TestCuratedSuggestions(TestUnrecognizedItemHandler):
         # Create a mock session with query result
         mock_session = MagicMock()
         mock_suggestion = MagicMock()
-        mock_suggestion.suggested_category_slug = "side"
-        mock_suggestion.suggested_menu_items = None
+        # Mock the relationships (new FK-based structure)
+        mock_item_type = MagicMock()
+        mock_item_type.slug = "side"
+        mock_suggestion.suggested_item_type = mock_item_type
+        mock_suggestion.suggested_menu_items = []  # Empty relationship list
         mock_suggestion.hit_count = 0
 
         mock_query = MagicMock()

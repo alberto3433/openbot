@@ -176,10 +176,7 @@ class UnrecognizedItemHandler:
                 # Increment hit count
                 suggestion.hit_count += 1
                 self._db_session.commit()
-                return {
-                    "category_slug": suggestion.suggested_category_slug,
-                    "menu_items": suggestion.suggested_menu_items,
-                }
+                return self._extract_suggestion_data(suggestion)
 
             # Try prefix match
             suggestions = self._db_session.query(UnrecognizedItemSuggestion).filter(
@@ -191,10 +188,7 @@ class UnrecognizedItemHandler:
                 if normalized_input.startswith(s.input_pattern):
                     s.hit_count += 1
                     self._db_session.commit()
-                    return {
-                        "category_slug": s.suggested_category_slug,
-                        "menu_items": s.suggested_menu_items,
-                    }
+                    return self._extract_suggestion_data(s)
 
             # Try contains match
             suggestions = self._db_session.query(UnrecognizedItemSuggestion).filter(
@@ -206,15 +200,36 @@ class UnrecognizedItemHandler:
                 if s.input_pattern in normalized_input:
                     s.hit_count += 1
                     self._db_session.commit()
-                    return {
-                        "category_slug": s.suggested_category_slug,
-                        "menu_items": s.suggested_menu_items,
-                    }
+                    return self._extract_suggestion_data(s)
 
         except Exception as e:
             logger.warning("Failed to query curated suggestions: %s", e)
 
         return None
+
+    def _extract_suggestion_data(self, suggestion) -> dict:
+        """Extract category slug and menu items from a suggestion object.
+
+        Args:
+            suggestion: UnrecognizedItemSuggestion model instance
+
+        Returns:
+            Dict with category_slug and menu_items list
+        """
+        # Get category slug from the related item_type
+        category_slug = None
+        if suggestion.suggested_item_type:
+            category_slug = suggestion.suggested_item_type.slug
+
+        # Get menu item names from the relationship
+        menu_items = None
+        if suggestion.suggested_menu_items:
+            menu_items = [item.name for item in suggestion.suggested_menu_items]
+
+        return {
+            "category_slug": category_slug,
+            "menu_items": menu_items,
+        }
 
     def _build_curated_response(
         self,

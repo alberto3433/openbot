@@ -210,7 +210,7 @@ def parse_make_it_n_quantity(num_str: str) -> int | None:
 def extract_make_it_n_target(match: re.Match) -> int | None:
     """Extract target quantity from a MAKE_IT_N_PATTERN match.
 
-    Scans capture groups 1-7 for the first non-None group and parses it
+    Scans all capture groups for the first non-None group and parses it
     as a quantity via parse_make_it_n_quantity.
 
     Args:
@@ -219,7 +219,7 @@ def extract_make_it_n_target(match: re.Match) -> int | None:
     Returns:
         Target quantity (>= 2) if found, None otherwise.
     """
-    for i in range(1, 8):
+    for i in range(1, 10):
         group = match.group(i)
         if group:
             return parse_make_it_n_quantity(group.lower())

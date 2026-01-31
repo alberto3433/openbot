@@ -142,6 +142,8 @@ def strip_filler_words(text: str) -> str:
 # "Make it 2" pattern - user wants to change quantity of last item to N
 MAKE_IT_N_PATTERN = re.compile(
     r"^(?:"
+    r"actually\s+make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
     r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
     r"|"
     r"i'?ll\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"

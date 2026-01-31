@@ -49,6 +49,10 @@ This project is in active testing/development. Backward compatibility is not a c
 # Run all tests
 python -m pytest
 
+# Run all tests with categorized failure report (use when asked to "run the test suite")
+# See tests/CLAUDE.md for full report format specification
+python -m pytest --tb=short -q
+
 # Run specific test file / pattern / single test
 python -m pytest tests/test_tasks_parsing.py -v
 python -m pytest -k "bagel" -v
@@ -248,3 +252,22 @@ Don't say "fixed" until user verifies. If you can't verify, say "I've made the c
 
 ### 5. Post-Fix Cleanup
 After fixing with failed attempts: identify failed vs. actual fix changes, revert unnecessary changes, verify tests pass.
+
+## Test Suite Report Format
+
+When asked to run the full test suite, generate a categorized failure report. See `tests/CLAUDE.md` for the complete format specification.
+
+**Quick reference:**
+1. Run: `python -m pytest --tb=short -q`
+2. Categorize failures by root cause (pricing errors, item type detection, modifier handling, etc.)
+3. Show table with: Test | Input | Expected | Actual
+4. Show totals by category
+
+**Common root cause categories:**
+- Pricing Errors - Missing prices, wrong calculations
+- Item Type Detection - Wrong item type detected
+- Modifier Removal/Add - "without X" or "add X" not working
+- Question Ordering - Wrong attribute question asked
+- Side Item Recognition - Side items not found
+- Multi-item Parsing - Multiple items in one input fail
+- Domain Data Leakage - Hardcoded domain data in production code

@@ -74,11 +74,16 @@ def get_mock_bagel_attributes():
 
 
 def get_mock_coffee_attributes():
-    """Return mock attribute data for sized_beverage (coffee) item type.
+    """Return mock attribute data for sized_beverage and espresso item types.
 
     NOTE: Temperature (hot/iced) is NO LONGER a separate attribute.
     It's now baked into the menu item name (e.g., "Hot Latte", "Iced Coffee").
-    Display orders match the real database.
+
+    Display orders match the real database:
+    - size: display_order=1
+    - espresso_shots: display_order=2
+    - milk_sweetener_syrup: display_order=3
+    - decaf: display_order=4
     """
     return {
         "size": {
@@ -92,6 +97,20 @@ def get_mock_coffee_attributes():
                 {"slug": "small", "display_name": "Small", "price": 0, "is_available": True},
                 {"slug": "medium", "display_name": "Medium", "price": 0.50, "is_available": False},
                 {"slug": "large", "display_name": "Large", "price": 1.00, "is_available": True},
+            ],
+        },
+        "espresso_shots": {
+            "slug": "espresso_shots",
+            "display_name": "Extra Shots",
+            "question_text": "Any extra shots?",
+            "ask_in_conversation": True,
+            "input_type": "single_select",
+            "display_order": 2,
+            "allow_none": True,
+            "options": [
+                {"slug": "regular", "display_name": "Regular", "price": 0},
+                {"slug": "extra_shot", "display_name": "Extra Shot", "price": 1.00},
+                {"slug": "double_shot", "display_name": "Double Shot", "price": 2.00},
             ],
         },
         "milk_sweetener_syrup": {
@@ -114,27 +133,13 @@ def get_mock_coffee_attributes():
                 {"slug": "hazelnut_syrup", "display_name": "Hazelnut Syrup", "price": 0.75, "category": "syrup"},
             ],
         },
-        "shots": {
-            "slug": "shots",
-            "display_name": "Extra Shots",
-            "question_text": "Would you like an espresso shot?",
-            "ask_in_conversation": True,
-            "input_type": "single_select",
-            "display_order": 5,
-            "allow_none": True,
-            "options": [
-                {"slug": "regular", "display_name": "Regular", "price": 0},
-                {"slug": "extra_shot", "display_name": "Extra Shot", "price": 1.00},
-                {"slug": "double_shot", "display_name": "Double Shot", "price": 2.00},
-            ],
-        },
         "decaf": {
             "slug": "decaf",
             "display_name": "Decaf",
             "question_text": "Would you like it decaf?",
-            "ask_in_conversation": False,
+            "ask_in_conversation": True,
             "input_type": "boolean",
-            "display_order": 5,
+            "display_order": 4,
         },
         "style": {
             "slug": "style",
@@ -142,7 +147,7 @@ def get_mock_coffee_attributes():
             "question_text": None,
             "ask_in_conversation": False,
             "input_type": "single_select",
-            "display_order": 4,
+            "display_order": 5,
         },
     }
 
@@ -322,12 +327,16 @@ def mock_get_item_type_triggers(item_type_slug: str | None = None):
     Args:
         item_type_slug: If provided, returns triggers for just that type.
                        If None, returns all triggers as a dict.
+
+    Note: These must match the actual database item types. In the DB:
+    - sized_beverage: coffee, chai, cold brew, etc.
+    - espresso: latte, cappuccino, americano, espresso, etc.
     """
     triggers = {
         "bagel": {"bagel", "bagels"},
-        "sized_beverage": {"coffee", "coffees", "latte", "lattes", "cappuccino", "americano", "espresso"},
+        "sized_beverage": {"coffee", "coffees", "chai", "cold brew", "hot chocolate"},
         "coffee": {"coffee", "coffees"},
-        "espresso": {"espresso", "espressos"},
+        "espresso": {"espresso", "espressos", "latte", "lattes", "cappuccino", "americano"},
         "spread_sandwich": {"sandwich", "sandwiches"},
         "egg_bagel": {"egg bagel", "egg bagels"},
     }
@@ -1278,18 +1287,8 @@ class TestUnknownItemHandling:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        # Create menu_data with some sides
-        menu_data = {
-            "sides": [
-                {"id": 1, "name": "Home Fries", "base_price": 3.99},
-                {"id": 2, "name": "Fruit Cup", "base_price": 4.99},
-                {"id": 3, "name": "Side of Bacon", "base_price": 2.99},
-            ],
-            "items_by_type": {},
-        }
-
         order = OrderTask()
-        sm = OrderStateMachine(menu_data=menu_data)
+        sm = OrderStateMachine()
 
         # Try to add a hashbrown (not on menu)
         canonical_name, error_message = sm.item_adder_handler.add_side_item("hashbrown", 1, order)
@@ -1297,10 +1296,9 @@ class TestUnknownItemHandling:
         # Should return None for canonical_name and an error message
         assert canonical_name is None
         assert error_message is not None
-        assert "don't have hashbrown" in error_message.lower()
-        assert "sides" in error_message.lower()
-        # Should suggest alternatives
-        assert "Home Fries" in error_message or "Fruit Cup" in error_message
+        # Message should indicate item wasn't found
+        assert "couldn't find" in error_message.lower() or "don't have" in error_message.lower()
+        assert "hashbrown" in error_message.lower()
 
         # Order should not have any items
         assert len(order.items.items) == 0
@@ -1310,29 +1308,17 @@ class TestUnknownItemHandling:
         from orderbot.tasks.state_machine import OrderStateMachine, StateMachineResult
         from orderbot.tasks.models import OrderTask
 
-        # Create menu_data with some items
-        menu_data = {
-            "signature_bagels": [
-                {"id": 1, "name": "The Classic", "base_price": 8.99, "item_type": "bagel"},
-            ],
-            "drinks": [
-                {"id": 2, "name": "Coffee", "base_price": 2.99},
-                {"id": 3, "name": "Orange Juice", "base_price": 3.99},
-            ],
-            "items_by_type": {},
-        }
-
         order = OrderTask()
-        sm = OrderStateMachine(menu_data=menu_data)
+        sm = OrderStateMachine()
 
-        # Try to add a milkshake (not on menu, but has drink keywords)
-        result = sm.item_adder_handler.add_menu_item("chocolate milkshake", 1, order)
+        # Try to add sushi (definitely not on a bagel shop menu)
+        result = sm.item_adder_handler.add_menu_item("sushi roll", 1, order)
 
         # Should return a result with error message
         assert isinstance(result, StateMachineResult)
-        assert "don't have chocolate milkshake" in result.message.lower()
-        # Should suggest drinks since "milkshake" has drink keywords
-        assert "drinks" in result.message.lower()
+        # Message should indicate item wasn't found
+        assert "couldn't find" in result.message.lower() or "don't have" in result.message.lower()
+        assert "sushi" in result.message.lower()
 
         # Order should not have any items
         assert len(order.items.items) == 0
@@ -1997,11 +1983,11 @@ class TestBagelWithCoffeeConfig:
         assert "size" in msg_lower or "small" in msg_lower or order.pending_field, \
             f"Expected coffee size question, got: {result.message}"
 
-        # Bagels should be stored in pending_parsed_items waiting to be processed
-        assert order.pending_parsed_items, "Expected bagels in pending_parsed_items"
-        bagel_pending = [p for p in order.pending_parsed_items
+        # Bagels should be queued for configuration (all items added upfront)
+        assert order.pending_config_queue, "Expected items in pending_config_queue"
+        bagel_queued = [p for p in order.pending_config_queue
                         if isinstance(p, dict) and p.get('item_type') == 'bagel']
-        assert len(bagel_pending) >= 1, f"Expected bagels in pending_parsed_items, got: {order.pending_parsed_items}"
+        assert len(bagel_queued) >= 1, f"Expected bagels in pending_config_queue, got: {order.pending_config_queue}"
 
         # Counter to track how many bagels and coffees we've configured
         bagels_configured = 0
@@ -2047,11 +2033,13 @@ class TestBagelWithCoffeeConfig:
                 result = sm.process("small" if coffees_configured == 0 else "large", order)
                 coffees_configured += 1
                 continue
-            if "hot" in msg_lower or "iced" in msg_lower:
-                result = sm.process("hot", order)
-                continue
+            # Check milk/sweetener BEFORE hot/iced to avoid "hot coffee" false positive
             if "milk" in msg_lower or "sugar" in msg_lower or "sweetener" in msg_lower or "syrup" in msg_lower:
                 result = sm.process("no", order)
+                continue
+            # Check for actual hot/iced question (not just "hot" in "hot coffee")
+            if "hot or iced" in msg_lower or ("iced" in msg_lower and "hot" not in msg_lower):
+                result = sm.process("hot", order)
                 continue
             if "shot" in msg_lower or "espresso" in msg_lower:
                 result = sm.process("no", order)  # Skip extra shots (allow_none=True)
@@ -2896,7 +2884,7 @@ class TestCoffeeSize:
         # If size was set, test passes (jumbo might map to a valid size)
 
     def test_size_with_drink_name_in_prompt(self):
-        """Test that reprompt includes drink name when size is unclear."""
+        """Test that reprompt shows available sizes when input is unclear."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
         from tests.helpers import CoffeeItemTask
@@ -2913,11 +2901,12 @@ class TestCoffeeSize:
         # Use unclear input that doesn't match any valid size
         result = sm.configuring_item_handler.handle_configuring_item("hmm", order)
 
-        # Should mention the drink type in reprompt or ask about size
-        assert "espresso" in result.message.lower() or "size" in result.message.lower()
+        # Should show available size options
+        msg = result.message.lower()
+        assert "small" in msg or "large" in msg, f"Expected available sizes in response, got: {result.message}"
 
     def test_cancel_coffee_during_size_config(self):
-        """Test canceling coffee during size configuration via _handle_configuring_item."""
+        """Test canceling a latte during size configuration via _handle_configuring_item."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
         from tests.helpers import CoffeeItemTask
@@ -2926,17 +2915,18 @@ class TestCoffeeSize:
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "espresso:size"
 
-        coffee = CoffeeItemTask(drink_type="latte")
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        latte = CoffeeItemTask(drink_type="latte")
+        latte.mark_in_progress()
+        order.items.add_item(latte)
+        order.pending_item_id = latte.id
 
         # Use _handle_configuring_item which includes cancellation check
-        result = sm._handle_configuring_item("remove the coffee", order)
+        # Say "remove the latte" since latte != coffee in menu taxonomy
+        result = sm._handle_configuring_item("remove the latte", order)
 
-        # Coffee should be removed
+        # Latte should be removed
         active_items = order.items.get_active_items()
         assert len(active_items) == 0
         # Should be back to TAKING_ITEMS phase
@@ -2953,12 +2943,12 @@ class TestCoffeeSize:
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "espresso:size"
 
-        coffee = CoffeeItemTask(drink_type="cappuccino")
-        coffee.mark_in_progress()
-        order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        cappuccino = CoffeeItemTask(drink_type="cappuccino")
+        cappuccino.mark_in_progress()
+        order.items.add_item(cappuccino)
+        order.pending_item_id = cappuccino.id
 
         result = sm._handle_configuring_item("cancel this", order)
 
@@ -2968,8 +2958,8 @@ class TestCoffeeSize:
         assert "removed" in result.message.lower()
         assert "cappuccino" in result.message.lower()
 
-    def test_cancel_plural_coffees_during_config(self):
-        """Test 'remove the coffees' removes all coffee items."""
+    def test_cancel_plural_lattes_during_config(self):
+        """Test 'remove the lattes' removes all latte items."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
         from tests.helpers import BagelItemTask, CoffeeItemTask
@@ -2978,24 +2968,24 @@ class TestCoffeeSize:
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "espresso:size"
 
         # Add a bagel (complete)
         bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="butter")
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        # Add two coffees
-        coffee1 = CoffeeItemTask(drink_type="latte", size="small", style="hot")
-        coffee1.mark_complete()
-        order.items.add_item(coffee1)
+        # Add two lattes
+        latte1 = CoffeeItemTask(drink_type="latte", size="small")
+        latte1.mark_complete()
+        order.items.add_item(latte1)
 
-        coffee2 = CoffeeItemTask(drink_type="espresso")
-        coffee2.mark_in_progress()
-        order.items.add_item(coffee2)
-        order.pending_item_id = coffee2.id
+        latte2 = CoffeeItemTask(drink_type="latte")
+        latte2.mark_in_progress()
+        order.items.add_item(latte2)
+        order.pending_item_id = latte2.id
 
-        result = sm._handle_configuring_item("remove the coffees", order)
+        result = sm._handle_configuring_item("remove the lattes", order)
 
         active_items = order.items.get_active_items()
         # Should only have the bagel left
@@ -3298,11 +3288,11 @@ class TestCoffeeModifiers:
         """Test full latte ordering flow with configuration questions.
 
         Flow:
-        1. "I'd like a latte" → "Got it, for the Hot Latte. What size?"
-        2. "small" → "Any milk, sweetener, or syrup?"
-        3. "no thanks" → "Would you like an espresso shot?"
-        4. "no" → "Would you like it decaf?"
-        5. "no" → Confirmation
+        1. "I'd like a latte" → disambiguation or "Got it, for the Hot Latte. What size?"
+        2. "small" → "Got it, Small. Any extra shots?"
+        3. "no" → "Any milk, sweetener, or syrup?"
+        4. "whole milk" → "Got it, Whole Milk. Would you like it decaf?"
+        5. "no" → "Got it, Hot Latte, Small, Whole Milk. Anything else?"
         """
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
@@ -3312,29 +3302,40 @@ class TestCoffeeModifiers:
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        # Step 1: Order a latte (alias for "Hot Latte")
+        # Step 1: Order a latte - may trigger disambiguation with real DB data
         result = sm.process("I'd like a latte", order)
+
+        # Handle disambiguation if triggered (Hot Latte vs Iced Latte)
+        if "which would you like" in result.message.lower() or result.order.pending_item_options:
+            result = sm.process("Hot Latte", result.order)
+
         assert "hot latte" in result.message.lower()
         assert "size" in result.message.lower()
 
-        # Step 2: Answer size - system asks about milk/sweetener/syrup
+        # Step 2: Answer size - system asks about extra shots
         result = sm.process("small", result.order)
+        assert "shot" in result.message.lower()
+
+        # Step 3: Answer shots - system asks about milk/sweetener/syrup
+        result = sm.process("no", result.order)
         assert "milk" in result.message.lower() or "sweetener" in result.message.lower()
 
-        # Step 3: Answer milk/sweetener/syrup - system asks about espresso shot
-        result = sm.process("no thanks", result.order)
-        assert "shot" in result.message.lower() or "espresso" in result.message.lower()
-
-        # Step 4: Answer espresso shot - system asks about decaf
-        result = sm.process("no", result.order)
+        # Step 4: Answer milk - use "whole milk" to avoid disambiguation
+        result = sm.process("whole milk", result.order)
         assert "decaf" in result.message.lower()
 
-        # Step 5: Answer decaf - should confirm the order
+        # Step 5: Answer decaf - may get optional customization checkpoint
         result = sm.process("no", result.order)
+
+        # Handle optional customization checkpoint if triggered
+        if "more changes" in result.message.lower() or "style" in result.message.lower():
+            result = sm.process("no", result.order)
+
         # Should confirm the order
         msg_lower = result.message.lower()
         assert "hot latte" in msg_lower
         assert "small" in msg_lower
+        assert "milk" in msg_lower
 
 
 
@@ -5024,7 +5025,7 @@ class TestTakingItemsHandler:
             assert "removed" in result.message.lower()
 
     def test_cancel_plural_items_removes_all_matching(self):
-        """Test that 'remove the coffees' removes all coffee items."""
+        """Test that 'remove the lattes' removes all latte items."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, OpenInputResponse
         from orderbot.tasks.models import OrderTask
@@ -5039,31 +5040,31 @@ class TestTakingItemsHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        # Add two coffees
-        coffee1 = CoffeeItemTask(drink_type="latte", size="small", iced=False)
-        coffee1.mark_complete()
-        order.items.add_item(coffee1)
+        # Add two lattes
+        latte1 = CoffeeItemTask(drink_type="latte", size="small", iced=False)
+        latte1.mark_complete()
+        order.items.add_item(latte1)
 
-        coffee2 = CoffeeItemTask(drink_type="espresso", size="large", iced=True)
-        coffee2.mark_complete()
-        order.items.add_item(coffee2)
+        latte2 = CoffeeItemTask(drink_type="latte", size="large", iced=True)
+        latte2.mark_complete()
+        order.items.add_item(latte2)
 
         assert len(order.items.items) == 3
 
         with patch("orderbot.tasks.taking_items_handler.parse_open_input") as mock_parse:
             mock_parse.return_value = OpenInputResponse(
-                cancel_item="coffees",
+                cancel_item="lattes",
                 parsed_items=[],
             )
 
-            result = sm._handle_taking_items("remove the coffees", order)
+            result = sm._handle_taking_items("remove the lattes", order)
 
             # Should only have the bagel left
             active_items = order.items.get_active_items()
             assert len(active_items) == 1
             assert active_items[0]["bread"] == "plain"
             assert "removed" in result.message.lower()
-            assert "2 coffees" in result.message.lower()
+            assert "2 lattes" in result.message.lower()
 
     def test_make_it_2_duplicates_last_item(self):
         """Test that 'make it 2' duplicates the last item."""

@@ -71,3 +71,92 @@ Tests that create database records (item types, menu items, orders, etc.) **MUST
    ```
 
 5. **Never leave test data in production DB** - The same database is used for development, so leftover test data pollutes the menu.
+
+## Full Test Suite Report Format
+
+When asked to run the full test suite, generate a report in this format:
+
+### 1. Run Command
+```bash
+python -m pytest --tb=short -q 2>&1
+```
+
+### 2. Report Structure
+
+```
+# Test Suite Report
+
+## Summary
+- **Total**: X tests
+- **Passed**: X
+- **Failed**: X
+- **Skipped**: X
+- **XFailed**: X (expected failures)
+
+## Failed Tests by Root Cause
+
+### Category 1: [Root Cause Description]
+**Affected tests**: X
+
+| Test | Input | Expected | Actual |
+|------|-------|----------|--------|
+| test_name | "user input" | expected behavior | actual behavior |
+
+### Category 2: [Root Cause Description]
+...
+
+## Totals by Category
+| Root Cause | Count |
+|------------|-------|
+| Category 1 | X |
+| Category 2 | X |
+| **Total Failed** | **X** |
+```
+
+### 3. Root Cause Categories to Use
+
+Categorize failures into these common root causes:
+
+1. **Item Type Detection** - Wrong item type detected (e.g., espresso vs sized_beverage)
+2. **Pricing Errors** - Missing prices, wrong calculations
+3. **Modifier Handling** - Add/remove modifier failures
+4. **Question Ordering** - Wrong attribute question asked
+5. **Cancellation/Removal** - Cancel commands not working
+6. **Menu Query** - Menu inquiry responses incorrect
+7. **Parsing Issues** - Input not parsed correctly
+8. **Side Item Handling** - Side items not recognized
+9. **Multi-item Parsing** - Multiple items in one input fail
+10. **Spread/Attribute Handling** - Attribute value issues
+11. **Domain Data Leakage** - Hardcoded domain data in production code
+12. **Other** - Miscellaneous failures
+
+### 4. Extracting Input/Expected/Actual
+
+From the pytest assertion output, extract:
+- **Input**: The user input string being tested (from test setup or assertion message)
+- **Expected**: What the assertion expected (left side of `==`, or described in assertion message)
+- **Actual**: What the code produced (right side of `==`, or the actual value shown)
+
+Example assertion output:
+```
+E   AssertionError: Expected milk/sweetener/syrup question, got: Got it, for the Espresso. What size?
+```
+→ Input: "espresso" | Expected: milk/sweetener/syrup question | Actual: "What size?"
+
+Example assertion output:
+```
+E   assert 'true' is True
+```
+→ Input: "make it a decaf" | Expected: decaf=True (bool) | Actual: decaf='true' (string)
+
+### 5. Example Report Entry
+
+```markdown
+### Item Type Detection Issues
+**Affected tests**: 5
+
+| Test | Input | Expected | Actual |
+|------|-------|----------|--------|
+| test_another_espresso_creates_menu_item_task | "another espresso" | item_type='espresso' | item_type='sized_beverage' |
+| test_parse_open_input_detects_another_espresso | "another espresso" | item_type='espresso' | item_type='sized_beverage' |
+```

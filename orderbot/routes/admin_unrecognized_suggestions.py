@@ -145,6 +145,32 @@ def get_suggestion_stats(
     )
 
 
+@admin_unrecognized_suggestions_router.get("/lookups/item-types", response_model=List[dict])
+def get_item_types_for_dropdown(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[dict]:
+    """Get all item types for dropdown selection."""
+    item_types = db.query(ItemType).order_by(ItemType.display_name).all()
+    return [
+        {"slug": it.slug, "display_name": it.display_name}
+        for it in item_types
+    ]
+
+
+@admin_unrecognized_suggestions_router.get("/lookups/menu-items", response_model=List[dict])
+def get_menu_items_for_dropdown(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[dict]:
+    """Get all menu items for dropdown selection."""
+    menu_items = db.query(MenuItem).order_by(MenuItem.name).all()
+    return [
+        {"id": mi.id, "name": mi.name}
+        for mi in menu_items
+    ]
+
+
 @admin_unrecognized_suggestions_router.get("/{suggestion_id}", response_model=UnrecognizedSuggestionOut)
 def get_suggestion(
     suggestion_id: int,

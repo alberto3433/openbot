@@ -266,6 +266,76 @@
       color: #888;
       margin-top: 4px;
     }
+    /* Multi-select with tags */
+    .multi-select-container {
+      position: relative;
+    }
+    .selected-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+      min-height: 24px;
+    }
+    .selected-tags:empty::before {
+      content: 'No items selected';
+      color: #999;
+      font-size: 12px;
+      font-style: italic;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      gap: 6px;
+    }
+    .tag-remove {
+      cursor: pointer;
+      font-weight: bold;
+      color: #1565c0;
+      line-height: 1;
+    }
+    .tag-remove:hover {
+      color: #c62828;
+    }
+    .multi-select-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+    }
+    .multi-select-dropdown.open {
+      display: block;
+    }
+    .multi-select-option {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .multi-select-option:hover {
+      background: #f5f5f5;
+    }
+    .multi-select-option.selected {
+      background: #e3f2fd;
+    }
+    .multi-select-empty {
+      padding: 12px;
+      color: #999;
+      font-size: 13px;
+      text-align: center;
+    }
     .toolbar {
       display: flex;
       justify-content: space-between;
@@ -569,13 +639,19 @@
           </div>
           <div class="form-group">
             <label>Suggested Category</label>
-            <input type="text" id="suggestedCategory" placeholder="e.g., pastry, side, beverage">
-            <div class="hint">Category slug to suggest (shows items from this category)</div>
+            <select id="suggestedCategory">
+              <option value="">-- None --</option>
+            </select>
+            <div class="hint">Item type to suggest (shows items from this category)</div>
           </div>
           <div class="form-group">
             <label>Suggested Menu Items</label>
-            <input type="text" id="suggestedMenuItems" placeholder='e.g., Latkes, Hash Browns'>
-            <div class="hint">Comma-separated list of specific items to suggest (e.g., "We don't have X but we have Y, Z")</div>
+            <div class="multi-select-container" id="menuItemsMultiSelect">
+              <div class="selected-tags" id="selectedMenuItemTags"></div>
+              <input type="text" id="menuItemSearch" placeholder="Type to search menu items..." autocomplete="off">
+              <div class="multi-select-dropdown" id="menuItemsDropdown"></div>
+            </div>
+            <div class="hint">Click items to add, click × to remove</div>
           </div>
           <div class="form-group">
             <label>
@@ -596,6 +672,9 @@
   <script>
     const API_BASE = '/api/v1';
     let allCategories = [];
+    let allItemTypes = [];
+    let allMenuItems = [];
+    let selectedMenuItems = [];  // Currently selected menu item names
 
     // Tab switching
     function switchTab(tab) {
@@ -678,7 +757,7 @@
         html += `<tr>
           <td><strong>${escapeHtml(s.input_pattern)}</strong></td>
           <td><span class="badge badge-${s.match_type}">${s.match_type}</span></td>
-          <td>${s.suggested_category_slug || '-'}</td>
+          <td>${s.suggested_item_type_slug || '-'}</td>
           <td><span class="hit-count ${hitClass}">${s.hit_count}</span></td>
           <td><span class="badge badge-${s.is_active ? 'active' : 'inactive'}">${s.is_active ? 'Active' : 'Inactive'}</span></td>
           <td>
@@ -736,7 +815,10 @@
       document.getElementById('inputPattern').value = '';
       document.getElementById('matchType').value = 'exact';
       document.getElementById('suggestedCategory').value = '';
-      document.getElementById('suggestedMenuItems').value = '';
+      // Clear multi-select
+      selectedMenuItems = [];
+      renderSelectedTags();
+      document.getElementById('menuItemSearch').value = '';
       document.getElementById('isActive').checked = true;
       document.getElementById('suggestionModal').classList.add('active');
     }
@@ -751,9 +833,13 @@
         document.getElementById('suggestionId').value = s.id;
         document.getElementById('inputPattern').value = s.input_pattern;
         document.getElementById('matchType').value = s.match_type;
-        document.getElementById('suggestedCategory').value = s.suggested_category_slug || '';
-        document.getElementById('suggestedMenuItems').value =
-          s.suggested_menu_items ? s.suggested_menu_items.join(', ') : '';
+        document.getElementById('suggestedCategory').value = s.suggested_item_type_slug || '';
+
+        // Set selected menu items
+        selectedMenuItems = s.suggested_menu_item_names || [];
+        renderSelectedTags();
+        document.getElementById('menuItemSearch').value = '';
+
         document.getElementById('isActive').checked = s.is_active;
         document.getElementById('suggestionModal').classList.add('active');
       } catch (err) {
@@ -767,16 +853,12 @@
 
     async function saveSuggestion() {
       const id = document.getElementById('suggestionId').value;
-      const menuItemsRaw = document.getElementById('suggestedMenuItems').value;
-      const menuItems = menuItemsRaw
-        ? menuItemsRaw.split(',').map(s => s.trim()).filter(s => s)
-        : null;
 
       const payload = {
         input_pattern: document.getElementById('inputPattern').value,
         match_type: document.getElementById('matchType').value,
-        suggested_category_slug: document.getElementById('suggestedCategory').value || null,
-        suggested_menu_items: menuItems,
+        suggested_item_type_slug: document.getElementById('suggestedCategory').value || null,
+        suggested_menu_item_names: selectedMenuItems.length > 0 ? selectedMenuItems : null,
         is_active: document.getElementById('isActive').checked,
       };
 
@@ -935,10 +1017,110 @@
       document.getElementById('logsTable').innerHTML = html;
     }
 
+    // Load dropdown options from API
+    async function loadDropdownOptions() {
+      try {
+        // Load item types
+        const itemTypesRes = await fetch(`${API_BASE}/admin/unrecognized-suggestions/lookups/item-types`, { credentials: 'include' });
+        if (itemTypesRes.ok) {
+          allItemTypes = await itemTypesRes.json();
+          const categorySelect = document.getElementById('suggestedCategory');
+          categorySelect.innerHTML = '<option value="">-- None --</option>';
+          allItemTypes.forEach(it => {
+            categorySelect.innerHTML += `<option value="${it.slug}">${escapeHtml(it.display_name)}</option>`;
+          });
+        }
+
+        // Load menu items
+        const menuItemsRes = await fetch(`${API_BASE}/admin/unrecognized-suggestions/lookups/menu-items`, { credentials: 'include' });
+        if (menuItemsRes.ok) {
+          allMenuItems = await menuItemsRes.json();
+        }
+      } catch (err) {
+        console.error('Failed to load dropdown options:', err);
+      }
+    }
+
+    // Multi-select menu items functions
+    function renderSelectedTags() {
+      const container = document.getElementById('selectedMenuItemTags');
+      container.innerHTML = selectedMenuItems.map((name, idx) =>
+        `<span class="tag">${escapeHtml(name)}<span class="tag-remove" data-idx="${idx}">&times;</span></span>`
+      ).join('');
+    }
+
+    function renderMenuItemsDropdown(filter = '') {
+      const dropdown = document.getElementById('menuItemsDropdown');
+      const filterLower = filter.toLowerCase();
+      const filtered = allMenuItems.filter(mi =>
+        mi.name.toLowerCase().includes(filterLower) && !selectedMenuItems.includes(mi.name)
+      );
+
+      if (filtered.length === 0) {
+        dropdown.innerHTML = '<div class="multi-select-empty">No matching items</div>';
+      } else {
+        dropdown.innerHTML = filtered.slice(0, 20).map(mi =>
+          `<div class="multi-select-option" data-name="${escapeHtml(mi.name)}">${escapeHtml(mi.name)}</div>`
+        ).join('');
+      }
+    }
+
+    function setupMenuItemsMultiSelect() {
+      const searchInput = document.getElementById('menuItemSearch');
+      const dropdown = document.getElementById('menuItemsDropdown');
+      const tagsContainer = document.getElementById('selectedMenuItemTags');
+
+      searchInput.addEventListener('focus', () => {
+        renderMenuItemsDropdown(searchInput.value);
+        dropdown.classList.add('open');
+      });
+
+      searchInput.addEventListener('input', () => {
+        renderMenuItemsDropdown(searchInput.value);
+        dropdown.classList.add('open');
+      });
+
+      // Handle clicking on dropdown options (event delegation)
+      dropdown.addEventListener('click', (e) => {
+        const option = e.target.closest('.multi-select-option');
+        if (option) {
+          const name = option.dataset.name;
+          if (name && !selectedMenuItems.includes(name)) {
+            selectedMenuItems.push(name);
+            renderSelectedTags();
+            searchInput.value = '';
+            renderMenuItemsDropdown('');
+          }
+        }
+      });
+
+      // Handle removing tags (event delegation)
+      tagsContainer.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tag-remove')) {
+          const idx = parseInt(e.target.dataset.idx, 10);
+          if (!isNaN(idx) && idx >= 0 && idx < selectedMenuItems.length) {
+            selectedMenuItems.splice(idx, 1);
+            renderSelectedTags();
+            renderMenuItemsDropdown(searchInput.value);
+          }
+        }
+      });
+
+      // Close dropdown when clicking outside
+      document.addEventListener('click', (e) => {
+        const container = document.getElementById('menuItemsMultiSelect');
+        if (!container.contains(e.target)) {
+          dropdown.classList.remove('open');
+        }
+      });
+    }
+
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
+      loadDropdownOptions();
       loadSuggestions();
       loadSuggestionStats();
+      setupMenuItemsMultiSelect();
     });
   </script>
 </body>

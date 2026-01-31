@@ -835,15 +835,25 @@ class MenuItemConfigHandler(BaseHandler):
             unanswered_mandatory = self._get_unanswered_mandatory(item, item_type)
             if unanswered_mandatory:
                 next_attr = unanswered_mandatory[0]
-                return self._ask_attribute_question(item, order, next_attr)
+                result = self._ask_attribute_question(item, order, next_attr)
+                # Prepend acknowledgment if provided
+                if matched_choice and result.message:
+                    result.message = f"Got it, {matched_choice}. {result.message}"
+                return result
             else:
                 # All mandatory done for this item
                 if use_multi_item_orchestration:
                     # Use multi-item orchestration to check for more items
-                    return self.configure_next_incomplete_item(order, item_type)
+                    result = self.configure_next_incomplete_item(order, item_type)
+                    if matched_choice and result.message:
+                        result.message = f"Got it, {matched_choice}. {result.message}"
+                    return result
                 else:
                     # Single-item flow - go to checkpoint
-                    return self._ask_customization_checkpoint(item, order)
+                    result = self._ask_customization_checkpoint(item, order)
+                    if matched_choice and result.message:
+                        result.message = f"Got it, {matched_choice}. {result.message}"
+                    return result
         else:
             # Just answered an optional question, ask for more customizations
             return self._ask_more_customizations(item, order, matched_choice)

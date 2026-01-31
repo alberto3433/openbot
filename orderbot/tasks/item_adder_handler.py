@@ -113,6 +113,7 @@ class ItemAdderHandler(MenuDataMixin):
         item_type: str,
         order: OrderTask,
         quantity: int = 1,
+        skip_first_question: bool = False,
         **kwargs,
     ) -> StateMachineResult:
         """
@@ -125,6 +126,8 @@ class ItemAdderHandler(MenuDataMixin):
         Args:
             item_type: The item type slug (e.g., "bagel", "sized_beverage", "deli_sandwich")
             order: The current order
+            skip_first_question: If True, don't ask the first config question immediately.
+                Used when adding multiple items - questions are asked after all items are added.
             quantity: Number of items to add (default 1)
             **kwargs: Item-specific parameters:
                 - item_name: Menu item name (e.g., "Iced Latte", "Turkey Club")
@@ -250,6 +253,7 @@ class ItemAdderHandler(MenuDataMixin):
             extracted_selections=extracted_selections,
             unavailable_selections=unavailable_selections,
             special_instructions=special_instructions,
+            skip_first_question=skip_first_question,
         )
 
         return result
@@ -516,6 +520,7 @@ class ItemAdderHandler(MenuDataMixin):
         extracted_selections: list[Selection] | None = None,
         unavailable_selections: dict | None = None,
         special_instructions: list[str] | None = None,
+        skip_first_question: bool = False,
     ) -> StateMachineResult:
         """
         Create an item and start its configuration flow if needed.
@@ -628,6 +633,18 @@ class ItemAdderHandler(MenuDataMixin):
             if user_input and not extracted_selections:
                 self.menu_item_handler.capture_attributes_from_input(user_input, first_item)
 
+            # If skip_first_question=True, return without asking config question.
+            # This is used when adding multiple items - all items are added first,
+            # then process_items() calls get_first_question after all are added.
+            if skip_first_question:
+                logger.info(
+                    "skip_first_question=True: added %s (%s), deferring config question",
+                    canonical_name, first_item.id[:8]
+                )
+                # Return a result without a message - just the updated order
+                # The caller (process_items) will handle asking questions
+                return StateMachineResult(message="", order=order)
+
             # Check if there are pending parsed items that haven't been added yet
             # If so, process them first (they were stored during disambiguation)
             if self.menu_item_handler._process_pending_parsed_items_callback:
@@ -665,6 +682,15 @@ class ItemAdderHandler(MenuDataMixin):
         else:
             # Not configurable - item is complete
             order.clear_pending()
+
+            # If skip_first_question=True, return without confirmation message.
+            # This is used when adding multiple items - confirmation comes after all added.
+            if skip_first_question:
+                logger.info(
+                    "skip_first_question=True: added non-configurable %s (%s)",
+                    canonical_name, first_item.id[:8]
+                )
+                return StateMachineResult(message="", order=order)
 
             # Check if there are other items queued for configuration
             # This handles the case where disambiguation was triggered after other items

@@ -185,10 +185,13 @@ class ParsedItemProcessor:
         # 3. Call add_item with all attribute_values as kwargs
         #    The receiver (_extract_pre_filled_attributes) filters to valid attributes
         #    Pass unavailable_selections so it's set BEFORE get_first_question() is called
+        #    Pass skip_first_question=True so all items are added first, then config questions
+        #    are asked by process_items() after all items are added
         result = self.item_adder_handler.add_item(
             item_type=item.item_type,
             order=order,
             quantity=item.quantity,
+            skip_first_question=True,  # Defer config questions until all items are added
             item_name=item.item_name,
             extracted_selections=selections if has_any_selections(selections) else None,
             original_input=item.original_text,

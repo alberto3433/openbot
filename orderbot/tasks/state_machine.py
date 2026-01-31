@@ -354,15 +354,9 @@ class OrderStateMachine:
                 return result
             # If no result, the response wasn't understood - fall through to normal processing
 
-        # Check for modifier change requests (works when not mid-configuration)
-        if order.items.get_item_count() > 0 and not order.is_configuring_item():
-            change_result = self.config_helper_handler.handle_modifier_change_request(user_input, order)
-            if change_result:
-                order.add_message("assistant", change_result.message)
-                return change_result
-
         # Check for "make it 2" pattern early (works from any state with items)
-        # This must be before phase routing to catch it no matter what phase we're in
+        # This must be BEFORE modifier change requests to prevent "actually make that two"
+        # from being matched as a modifier change (with "two" parsed as the modifier value)
         from .parsers.deterministic import MAKE_IT_N_PATTERN
         make_it_n_match = MAKE_IT_N_PATTERN.match(user_input.strip())
         if make_it_n_match and order.items.get_item_count() > 0:
@@ -400,6 +394,13 @@ class OrderStateMachine:
 
                     order.add_message("assistant", msg)
                     return StateMachineResult(message=msg, order=order)
+
+        # Check for modifier change requests (works when not mid-configuration)
+        if order.items.get_item_count() > 0 and not order.is_configuring_item():
+            change_result = self.config_helper_handler.handle_modifier_change_request(user_input, order)
+            if change_result:
+                order.add_message("assistant", change_result.message)
+                return change_result
 
         # Derive phase from OrderTask state via orchestrator
         # Note: is_configuring_item() takes precedence (based on pending_item_ids)

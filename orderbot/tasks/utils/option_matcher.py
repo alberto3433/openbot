@@ -8,10 +8,22 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass, field
 
 from .input_normalizer import InputNormalizer
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class MultiMatchResult:
+    """Result of matching multiple options with unmatched token tracking."""
+
+    matched: list[dict] = field(default_factory=list)
+    """Options that matched."""
+
+    unmatched: list[str] = field(default_factory=list)
+    """Tokens that didn't match anything (excluding stopwords)."""
 
 
 class OptionMatcher:
@@ -181,6 +193,99 @@ class OptionMatcher:
                         break
 
         return matched
+
+    def match_multiple_with_unmatched(
+        self, user_input: str, options: list[dict]
+    ) -> MultiMatchResult:
+        """
+        Match ALL options in user input and track unmatched tokens.
+
+        Like match_multiple(), but also returns tokens that didn't match anything.
+        Useful for reporting "Sorry, we don't have X" for unrecognized modifiers.
+
+        Args:
+            user_input: User input that may contain multiple modifiers
+            options: List of available options to match against
+
+        Returns:
+            MultiMatchResult with:
+            - matched: List of options that matched
+            - unmatched: List of tokens that didn't match (excluding stopwords)
+
+        Examples:
+            >>> result = matcher.match_multiple_with_unmatched("milk and honey", options)
+            >>> result.matched  # [whole_milk_option]
+            >>> result.unmatched  # ["honey"]
+        """
+        # Get matched options using existing method
+        matched = self.match_multiple(user_input, options)
+
+        # Tokenize input to track which tokens were consumed
+        tokens = self.normalizer.tokenize_multi_input(user_input)
+
+        # Stopwords to ignore when reporting unmatched
+        stopwords = {"and", "with", "some", "a", "the", "please", "also", "too", "extra"}
+
+        # Build set of matched identifiers for checking
+        matched_identifiers: set[str] = set()
+        for opt in matched:
+            matched_identifiers.add(opt["display_name"].lower())
+            matched_identifiers.add(opt["slug"].lower())
+            matched_identifiers.add(opt["slug"].replace("_", " ").lower())
+            for alias in self._get_aliases(opt):
+                matched_identifiers.add(alias.lower())
+
+        # Find unmatched tokens
+        unmatched: list[str] = []
+        for token in tokens:
+            token_lower = token.lower().strip()
+
+            # Skip stopwords
+            if token_lower in stopwords:
+                continue
+
+            # Skip if empty or too short
+            if len(token_lower) < 2:
+                continue
+
+            # Strip leading quantity from token for matching (e.g., "2 milks" -> "milks")
+            _, token_without_qty = self.normalizer.extract_leading_quantity(token)
+            token_without_qty_lower = token_without_qty.lower().strip() if token_without_qty else token_lower
+
+            # Also try singularized form
+            token_singular = self.normalizer.singularize(token_without_qty_lower)
+
+            # Check if this token was consumed by any match
+            token_consumed = False
+
+            # Direct match check (try original, without quantity, and singular forms)
+            check_values = {token_lower, token_without_qty_lower, token_singular}
+            for check_val in check_values:
+                if check_val in matched_identifiers:
+                    token_consumed = True
+                    break
+
+            if not token_consumed:
+                # Check if token appears in any matched identifier (partial match)
+                for identifier in matched_identifiers:
+                    for check_val in check_values:
+                        if self._is_whole_word_match(check_val, identifier):
+                            token_consumed = True
+                            break
+                        if self._is_whole_word_match(identifier, check_val):
+                            token_consumed = True
+                            break
+                    if token_consumed:
+                        break
+
+            if not token_consumed:
+                # Report the token without quantity
+                if token_without_qty and token_without_qty_lower not in stopwords:
+                    unmatched.append(token_without_qty)
+                elif token_lower not in stopwords:
+                    unmatched.append(token)
+
+        return MultiMatchResult(matched=matched, unmatched=unmatched)
 
     def match_multiple_with_disambiguation(
         self, user_input: str, options: list[dict]

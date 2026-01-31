@@ -141,11 +141,13 @@ class SelectInputHandler:
         extract_qualifier_callback,
     ) -> StateMachineResult:
         """Handle multi_select input type."""
-        matched_options = self._option_matcher.match_multiple(user_input, options)
+        match_result = self._option_matcher.match_multiple_with_unmatched(user_input, options)
+        matched_options = match_result.matched
+        unmatched_tokens = match_result.unmatched
         logger.info(
-            "MULTI_SELECT MATCH for %s: input='%s', found %d matches: %s",
+            "MULTI_SELECT MATCH for %s: input='%s', found %d matches: %s, unmatched: %s",
             attr_slug, user_input, len(matched_options),
-            [o["slug"] for o in matched_options]
+            [o["slug"] for o in matched_options], unmatched_tokens
         )
 
         # DISAMBIGUATION: Check if any single token matched multiple options
@@ -310,6 +312,43 @@ class SelectInputHandler:
                 display_names.append(name)
 
             ack_text = format_english_list(display_names)
+
+            # If there are unmatched tokens, stay on current question and show options
+            if unmatched_tokens:
+                unmatched_text = format_english_list(unmatched_tokens, conjunction="or")
+
+                # Get available options (excluding already selected ones)
+                selected_slugs = {sel.get("slug") for sel in all_selections}
+                available = [
+                    opt for opt in options
+                    if opt.get("is_available", True) and opt["slug"] not in selected_slugs
+                ]
+
+                if not available:
+                    # All options selected, can advance
+                    ack_text = f"{ack_text}. Sorry, we don't have {unmatched_text}"
+                    return advance_callback(item, order, attr, ack_text)
+
+                # Build options list with pagination
+                if len(available) <= DEFAULT_PAGINATION_SIZE:
+                    names = [opt["display_name"] for opt in available]
+                    options_str = format_english_list(names, conjunction="or")
+                    message = (
+                        f"Got it, {ack_text}. Sorry, we don't have {unmatched_text}. "
+                        f"We have {options_str}. Anything else?"
+                    )
+                else:
+                    first_page = available[:DEFAULT_PAGINATION_SIZE]
+                    names = [opt["display_name"] for opt in first_page]
+                    options_str = format_english_list(names, conjunction="and")
+                    message = (
+                        f"Got it, {ack_text}. Sorry, we don't have {unmatched_text}. "
+                        f"We have {options_str}, and more. Do you want one of these or do you want to hear more options?"
+                    )
+                    order.config_options_page = 1
+
+                return StateMachineResult(message=message, order=order)
+
             return advance_callback(item, order, attr, ack_text)
 
         # No matches - fall through to single select handling
@@ -532,7 +571,7 @@ class SelectInputHandler:
             first_page = available[:DEFAULT_PAGINATION_SIZE]
             names = [opt["display_name"] for opt in first_page]
             options_str = format_english_list(names, conjunction="and")
-            message = f"Sorry, we don't have {user_input}. We have {options_str}, and more. Do you want me to give you more?"
+            message = f"Sorry, we don't have {user_input}. We have {options_str}, and more. Do you want one of these or do you want to hear more options?"
             # Set pagination state so "yes" / "more options" works on next turn
             order.config_options_page = 1
 

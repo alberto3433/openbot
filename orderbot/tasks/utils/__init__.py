@@ -15,7 +15,7 @@ Import directly: from .utils.constants import PRICE_SUFFIXES
 Import directly: from .utils.pricing_utils import safe_recalculate_price
 """
 
-from .option_matcher import OptionMatcher
+from .option_matcher import OptionMatcher, MultiMatchResult
 from .option_matching_orchestrator import OptionMatchingOrchestrator, MatchResult
 from .input_normalizer import InputNormalizer
 from .text import format_english_list, format_numbered_list
@@ -32,6 +32,7 @@ from .cache_helpers import (
 
 __all__ = [
     "OptionMatcher",
+    "MultiMatchResult",
     "OptionMatchingOrchestrator",
     "MatchResult",
     "InputNormalizer",

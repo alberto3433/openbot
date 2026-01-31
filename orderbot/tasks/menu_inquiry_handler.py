@@ -528,11 +528,11 @@ class MenuInquiryHandler(MenuDataMixin):
             has_more = remaining > 0
 
             if has_more:
-                # Format with "and X more" indicator
+                # Format with "and others" indicator
                 if len(batch) == 1:
-                    items_list = f"{batch[0]}, and {remaining} more"
+                    items_list = f"{batch[0]}, and others"
                 else:
-                    items_list = ", ".join(batch) + f", and {remaining} more"
+                    items_list = ", ".join(batch) + ", and others"
 
                 # Save pagination state for "what else" follow-ups
                 order.set_menu_pagination(

@@ -549,7 +549,7 @@ class StoreInfoHandler(MenuDataMixin):
 
             # Set pagination state for "what else" follow-ups
             order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(items_list))
-            message = f"For {display_name.lower()}, we have {items_str}, and more. {prompt_suffix}"
+            message = f"For {display_name.lower()}, we have {items_str}, and more. Would you like one of these, or want to hear more?"
 
         return StateMachineResult(message=message, order=order)
 

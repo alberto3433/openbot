@@ -287,9 +287,10 @@ def remove_modifier_from_item(
         if isinstance(attr_value, list):
             # Remove specific item from list
             if match.matched_value:
-                new_list = [v for v in attr_value if str(v).lower() != match.matched_value.lower()]
-                if len(new_list) < len(attr_value):
-                    attribute_values[match.attribute_key] = new_list
+                # Use remove_selection to properly update the underlying modifiers list
+                # (attribute_values is a computed property - modifying the returned dict doesn't persist)
+                removed = item.remove_selection(match.attribute_key, match.matched_value)
+                if removed:
                     logger.info(
                         "Removed '%s' from attribute_values['%s'] for %s",
                         match.matched_value, match.attribute_key, type(item).__name__

@@ -28,6 +28,11 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
     both item names and their aliases.
     """
     text_lower = text.lower()
+
+    # Strip ordering phrases and articles (same as _extract_menu_item_from_text)
+    text_lower = re.sub(r'^(i\s+want\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)', '', text_lower)
+    text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
+
     soda_types = menu_cache.get_item_names("beverage")
 
     drink_type = None

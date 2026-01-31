@@ -55,9 +55,8 @@ from .extraction import (
 # =============================================================================
 # Item Parsing Module Exports
 # =============================================================================
+from .item_building import build_parsed_item
 from .item_parsing import (
-    # Generic item builder
-    build_parsed_item,
     # Item type detection
     _detect_item_type,
     _is_modifier_chain,
@@ -65,16 +64,20 @@ from .item_parsing import (
     # Main item parsers
     _parse_item_generic,
     _parse_configurable_item,
-    _parse_soda_deterministic,
     _parse_split_quantity_items,
-    _parse_by_pound_order,
     # Internal helpers
     _match_menu_item_name_for_type,
+)
+from .soda_parsing import _parse_soda_deterministic
+from .by_pound_parsing import (
+    _parse_by_pound_order,
+    _find_by_weight_item,
+    BY_POUND_PATTERN,
+)
+from .split_quantity_parsing import (
     _count_split_indicators,
     _get_initial_part,
     _split_into_parts,
-    _find_by_weight_item,
-    BY_POUND_PATTERN,
 )
 
 # =============================================================================

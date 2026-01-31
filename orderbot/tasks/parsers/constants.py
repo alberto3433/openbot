@@ -59,30 +59,6 @@ _SELECTION_PATTERNS: list[tuple[str, int]] = sorted([
 ], key=lambda x: len(x[0]), reverse=True)
 
 
-def extract_selection_index(user_input: str, max_options: int) -> int | None:
-    """Extract a 0-indexed selection from user input.
-
-    Handles patterns like "the first one", "number 2", "third", "3", etc.
-    Returns None if no valid selection is found or if selection is out of range.
-
-    Args:
-        user_input: The user's input string
-        max_options: Maximum number of options (selections >= max_options are invalid)
-
-    Returns:
-        0-indexed selection, or None if not found/invalid
-    """
-    user_lower = user_input.lower().strip()
-
-    for pattern, index in _SELECTION_PATTERNS:
-        if pattern in user_lower:
-            if index < max_options:
-                return index
-            return None  # Out of range
-
-    return None
-
-
 # Re-export extract_quantity_for_pattern as extract_quantity for backward compatibility
 extract_quantity = extract_quantity_for_pattern
 

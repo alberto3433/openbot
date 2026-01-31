@@ -194,20 +194,23 @@ def CoffeeItemTask(
         item.add_selection("iced" if iced else "hot", "temperature")
     if decaf:
         item.add_selection("yes" if decaf else "no", "decaf")
+    # Use milk_sweetener_syrup as category for all milk/sweetener/syrup selections
+    # This matches the database schema where espresso items have a single multi-select
+    # attribute called milk_sweetener_syrup that holds all three types
     if milk:
-        item.add_selection(slug=milk, category="milk", price=milk_upcharge)
+        item.add_selection(slug=milk, category="milk_sweetener_syrup", price=milk_upcharge)
     if sweeteners:
         for s in sweeteners:
             if isinstance(s, dict):
-                item.add_selection(slug=s.get("slug", ""), category="sweetener", quantity=s.get("quantity", 1))
+                item.add_selection(slug=s.get("slug", ""), category="milk_sweetener_syrup", quantity=s.get("quantity", 1))
             else:
-                item.add_selection(slug=str(s), category="sweetener")
+                item.add_selection(slug=str(s), category="milk_sweetener_syrup")
     if flavor_syrups:
         for s in flavor_syrups:
             if isinstance(s, dict):
-                item.add_selection(slug=s.get("slug", ""), category="syrup", quantity=s.get("quantity", 1))
+                item.add_selection(slug=s.get("slug", ""), category="milk_sweetener_syrup", quantity=s.get("quantity", 1))
             else:
-                item.add_selection(slug=str(s), category="syrup")
+                item.add_selection(slug=str(s), category="milk_sweetener_syrup")
     if extra_shots:
         item.add_selection(str(extra_shots), "extra_shots")
 

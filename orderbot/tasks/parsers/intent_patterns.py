@@ -1,0 +1,394 @@
+"""
+Intent Patterns.
+
+Regex patterns for detecting user intents/actions:
+- Replace/change item
+- Cancel/remove item
+- Quantity changes (make it N, reduce to one, one more)
+- Duplicate operations
+- Order status queries
+- Tax questions
+- Ordering language detection
+- Configurable item detection
+"""
+
+import re
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Replace Item Patterns
+# =============================================================================
+
+# Replace item patterns: "make it a X instead", "change it to X", "actually X instead", etc.
+REPLACE_ITEM_PATTERN = re.compile(
+    r"^(?:"
+    # "make it X", "make that X", "make this X" - requires "make it/that/this"
+    r"make\s+(?:it|that|this)\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "can you make it X?", "could you make it X?" - requires "can/could you make it/that/this"
+    r"(?:can|could)\s+you\s+make\s+(?:it|that|this)\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "change it to X", "change to X" - requires "change"
+    r"change\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "switch to X", "switch it to X" - requires "switch"
+    r"switch\s+(?:it\s+)?(?:to\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "swap for X", "swap it for X" - requires "swap"
+    r"swap\s+(?:it\s+)?(?:for\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "replace with X", "replace it with X" - requires "replace"
+    r"replace\s+(?:it\s+)?(?:with\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "actually X", "no X", "nope X", "wait X" - requires one of these words
+    r"(?:actually|nope|wait)[,]?\s+(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "no X" but NOT "no more X" (which is cancellation)
+    r"no[,]?\s+(?!more\s)(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "i meant X" - requires "i meant"
+    r"i\s+meant\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    r"|"
+    # "X instead" - requires "instead" at end
+    r"(?:a\s+)?(.+?)\s+instead[\s!.,?]*$"
+    r")",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
+# Cancel/Remove Item Patterns
+# =============================================================================
+
+CANCEL_ITEM_PATTERN = re.compile(
+    r"^(?:"
+    r"cancel\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    r"remove\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    r"delete\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    r"clear\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    r"take\s+(?:off\s+)?(?:the\s+)?(.+?)(?:\s+off)?[\s!.,]*$"
+    r"|"
+    r"never\s*mind\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    r"forget\s+(?:about\s+)?(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    r"scratch\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
+    r"(?:i\s+)?don'?t\s+want\s+(?:the\s+)?(.+?)(?:\s+anymore)?[\s!.,]*$"
+    r"|"
+    r"no\s+more\s+(.+?)[\s!.,]*$"
+    r"|"
+    # "can you remove X?", "could you remove X?", "would you remove X?"
+    r"(?:can|could|would)\s+you\s+(?:remove|delete|cancel|take\s+off)\s+(?:the\s+)?(.+?)[\s!.,?]*$"
+    r"|"
+    # "can I remove X?", "could we cancel X?"
+    r"(?:can|could)\s+(?:i|we)\s+(?:remove|delete|cancel|take\s+off)\s+(?:the\s+)?(.+?)[\s!.,?]*$"
+    r"|"
+    # "please remove X", "please cancel X"
+    r"please\s+(?:remove|delete|cancel|take\s+off)\s+(?:the\s+)?(.+?)[\s!.,?]*$"
+    r")",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
+# Filler Words Pattern
+# =============================================================================
+
+# Filler words pattern - words that add no meaning and should be stripped before parsing
+FILLER_WORDS_PATTERN = re.compile(
+    r"^(?:"
+    r"actually,\s*"  # "actually," with comma is filler
+    r"|actually\s+(?=cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)"
+    r"|oh[,\s]+"
+    r"|wait,\s*"
+    r"|um+[,\s]+"
+    r"|uh+[,\s]+"
+    r"|hmm+[,\s]+"
+    r"|well[,\s]+"
+    r"|so[,\s]+"
+    r"|ok(?:ay)?[,\s]+"
+    r"|hey[,\s]+"
+    r"|like[,\s]+"
+    r"|sorry[,\s]+"
+    r")",
+    re.IGNORECASE
+)
+
+
+def strip_filler_words(text: str) -> str:
+    """Remove common filler words from the start of user input."""
+    result = text
+    while True:
+        match = FILLER_WORDS_PATTERN.match(result)
+        if match:
+            result = result[match.end():].strip()
+        else:
+            break
+    return result
+
+
+# =============================================================================
+# Quantity Change Patterns
+# =============================================================================
+
+# "Make it 2" pattern - user wants to change quantity of last item to N
+MAKE_IT_N_PATTERN = re.compile(
+    r"^(?:"
+    r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"i'?ll\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"i\s+(?:want|need)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"(?:can|could|may)\s+i\s+(?:get|have)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"actually\s+(?:let'?s?\s+(?:do|get|have)\s+)?(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"(?:give|get)\s+me\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"let'?s?\s+(?:do|have|get|make\s+it)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+of\s+(?:those|them|that)"
+    r")"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+# "just one" / "only one" pattern - reduces quantity to 1
+REDUCE_TO_ONE_PATTERN = re.compile(
+    r"^(?:"
+    r"actually\s+(?:just|only)\s+(?:one|1)(?:\s+(\w+))?"
+    r"|"
+    r"(?:just|only)\s+(?:one|1)(?:\s+(\w+))?"
+    r"|"
+    r"make\s+(?:it|that)\s+(?:just|only)\s+(?:one|1)(?:\s+(\w+))?"
+    r"|"
+    r"i\s+(?:only|just)\s+(?:want|need|wanted)\s+(?:one|1)(?:\s+(\w+))?"
+    r"|"
+    r"(?:one|1)(?:\s+(\w+))?\s+is\s+(?:enough|fine|good)"
+    r")"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+# "one more" / "another" pattern - adds 1 more of the last item
+ONE_MORE_PATTERN = re.compile(
+    r"^(?:"
+    r"(?:and\s+)?one\s+more(?:\s+of\s+(?:those|them|that))?"
+    r"|"
+    r"(?:and\s+)?another(?:\s+one(?:\s+of\s+(?:those|them|that))?)?"
+    r"|"
+    r"add\s+(?:one\s+more|another)"
+    r"|"
+    r"(?:one|1)\s+more\s+(?:of\s+)?(?:those|them|that)"
+    r")"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+# Generic pattern for "another X" / "one more X"
+ANOTHER_ITEM_PATTERN = re.compile(
+    r"^(?:and\s+)?(?:one\s+more|another)\s+"
+    r"(\w+)"
+    r"s?"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
+# Duplicate Patterns
+# =============================================================================
+
+# "all items" / "everything" pattern for duplicating entire cart
+DUPLICATE_ALL_PATTERN = re.compile(
+    r"^(?:"
+    r"all\s+(?:the\s+)?(?:items?|of\s+(?:them|those)|things?)"
+    r"|"
+    r"everything(?:\s+(?:in\s+(?:the\s+)?(?:cart|order)|again))?"
+    r"|"
+    r"(?:the\s+)?(?:whole|entire)\s+(?:order|cart)"
+    r")"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
+# Configuration Request Patterns
+# =============================================================================
+
+# "Can you make it X?" pattern for configuration
+CAN_YOU_MAKE_IT_PATTERN = re.compile(
+    r"^(?:"
+    r"(?:can|could)\s+(?:you|i)\s+(?:make|get|have)\s+(?:it|that|this)\s+(.+?)"
+    r"|"
+    r"(?:is|are)\s+(?:it|that|this|they)\s+available\s+(.+?)"
+    r"|"
+    r"(?:do|does)\s+(?:it|that|this)\s+come\s+(?:in\s+)?(.+?)"
+    r")"
+    r"[\s?!.,]*$",
+    re.IGNORECASE
+)
+
+
+def parse_can_you_make_it(text: str) -> str | None:
+    """Parse 'can you make it X?' style requests and extract the modifier."""
+    match = CAN_YOU_MAKE_IT_PATTERN.match(text.strip())
+    if match:
+        modifier = next((g for g in match.groups() if g), None)
+        if modifier:
+            return modifier.strip().rstrip('?.,!')
+    return None
+
+
+# =============================================================================
+# Order/Tax Status Patterns
+# =============================================================================
+
+# Tax question pattern
+TAX_QUESTION_PATTERN = re.compile(
+    r"(?:"
+    r"what(?:'?s| is)\s+(?:my|the)\s+total\s+(?:with|including)\s+tax"
+    r"|"
+    r"how\s+much\s+(?:will\s+it\s+be\s+)?(?:with|including)\s+tax"
+    r"|"
+    r"what(?:'?s| is)\s+(?:my|the)\s+total"
+    r"|"
+    r"(?:the\s+)?total\s+(?:with|including)\s+tax"
+    r"|"
+    r"(?:with|including)\s+tax\??"
+    r")",
+    re.IGNORECASE
+)
+
+# Order status pattern
+ORDER_STATUS_PATTERN = re.compile(
+    r"(?:"
+    r"what(?:'?s| is)\s+(?:my|the)\s+order"
+    r"|"
+    r"what(?:'?s| is| do i have)\s+in\s+(?:my|the)\s+(?:cart|order)"
+    r"|"
+    r"what\s+(?:have\s+i|did\s+i)\s+order"
+    r"|"
+    r"(?:read|say)\s+(?:back\s+)?(?:my|the)\s+order"
+    r"|"
+    r"repeat\s+(?:my|the)\s+order\s+back"
+    r"|"
+    r"(?:can|could)\s+you\s+(?:read|repeat|tell\s+me)\s+(?:my|the)\s+order"
+    r"|"
+    r"(?:my\s+)?order\s+so\s+far"
+    r"|"
+    r"what\s+(?:do\s+i\s+have|have\s+i\s+got)\s+so\s+far"
+    r")",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
+# Add More Patterns
+# =============================================================================
+
+ADD_MORE_PATTERN = re.compile(
+    r"(?:can\s+you\s+|could\s+you\s+|please\s+)?"
+    r"(?:add|throw\s+in|get\s+me|give\s+me|i(?:'?d|\s+would)?\s+(?:like|want))"
+    r"\s+"
+    r"(?:"
+    r"(?:a\s+)?(?:third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
+    r"|"
+    r"(?:another|one\s+more|an?\s+additional)"
+    r")"
+    r"(?:\s+(?:one|1))?"
+    r"(?:\s+(.+?))?$",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
+# Ordering Language Pattern
+# =============================================================================
+
+ORDERING_LANGUAGE_PATTERN = re.compile(
+    r"(?:"
+    r"i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)"
+    r"|(?:can|could|may)\s+i\s+(?:get|have)"
+    r"|give\s+me"
+    r"|let\s*(?:me|'s)\s*(?:get|have)"
+    r")",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
+# Configurable Item Pattern (Lazy Built from Database)
+# =============================================================================
+
+_CONFIGURABLE_ITEM_PATTERN_CACHE: re.Pattern | None = None
+
+
+def _get_menu_cache():
+    """Get the menu cache singleton, returns None if not available."""
+    try:
+        from orderbot.menu_data_cache import menu_cache
+        if menu_cache.is_loaded:
+            return menu_cache
+    except ImportError:
+        pass
+    return None
+
+
+def _get_configurable_item_pattern() -> re.Pattern:
+    """Get regex pattern for detecting configurable item orders from database.
+
+    Builds a unified pattern matching item type triggers and attribute options.
+    """
+    global _CONFIGURABLE_ITEM_PATTERN_CACHE
+    if _CONFIGURABLE_ITEM_PATTERN_CACHE is not None:
+        return _CONFIGURABLE_ITEM_PATTERN_CACHE
+
+    cache = _get_menu_cache()
+    if not cache:
+        # Return a pattern that matches nothing if cache not loaded
+        return re.compile(r"(?!)")
+
+    keywords: set[str] = set()
+
+    # 1. Item type triggers
+    all_triggers = cache.get_item_type_triggers()
+    for triggers in all_triggers.values():
+        keywords.update(triggers)
+
+    # 2. Attribute option words
+    attr_options = cache.get_all_attribute_option_words()
+    keywords.update(attr_options.keys())
+
+    # 3. Item names from configurable types
+    configurable_names = cache.get_configurable_item_names()
+    keywords.update(configurable_names)
+
+    # Filter empty strings and very short words
+    keywords = {k for k in keywords if k and len(k) >= 2}
+
+    # Sort by length descending
+    sorted_keywords = sorted(keywords, key=len, reverse=True)
+
+    # Build pattern
+    keywords_pattern = "|".join(re.escape(k) for k in sorted_keywords)
+    _CONFIGURABLE_ITEM_PATTERN_CACHE = re.compile(
+        rf"\b({keywords_pattern})\b",
+        re.IGNORECASE
+    )
+    return _CONFIGURABLE_ITEM_PATTERN_CACHE
+
+
+def warmup_patterns() -> None:
+    """Pre-compile lazy patterns at startup."""
+    _get_configurable_item_pattern()

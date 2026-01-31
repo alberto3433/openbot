@@ -476,7 +476,10 @@ class ConfigHelperHandler:
         )
 
         if result.success:
-            msg = f"{result.message} Anything else?"
+            # Don't append "Anything else?" if message already ends with it
+            msg = result.message
+            if not msg.rstrip().endswith("Anything else?"):
+                msg = f"{msg} Anything else?"
             return StateMachineResult(message=msg, order=order)
         else:
             return StateMachineResult(message=result.message, order=order)
@@ -554,7 +557,10 @@ class ConfigHelperHandler:
             )
 
             if result.success:
-                msg = f"{result.message} Anything else?"
+                # Don't append "Anything else?" if message already ends with it
+                msg = result.message
+                if not msg.rstrip().endswith("Anything else?"):
+                    msg = f"{msg} Anything else?"
                 return StateMachineResult(message=msg, order=order)
             else:
                 return StateMachineResult(message=result.message, order=order)

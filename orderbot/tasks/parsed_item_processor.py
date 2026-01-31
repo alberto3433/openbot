@@ -207,6 +207,15 @@ class ParsedItemProcessor:
         if items_after > items_before:
             summary = build_item_summary(item)
 
+            # If add_item returned a result with a message (e.g., "We don't have X"),
+            # return it so it's not lost. This handles the case where _create_configurable_item
+            # already called get_first_question and returned an "unavailable" message.
+            # The caller (process_items) will return this message directly instead of
+            # calling get_first_question again (which would lose the message since
+            # unavailable_selections is cleared after generating the message).
+            if result.message:
+                return order, summary, result
+
             # Return None as third element so process_items() continues to add ALL items
             # before starting configuration. The third element is ONLY for true disambiguation
             # (when no item was added and we need to ask which item the user meant).

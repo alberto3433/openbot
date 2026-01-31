@@ -311,6 +311,11 @@ def mock_get_configurable_item_type_slugs():
     return {"bagel", "sized_beverage", "coffee", "espresso", "spread_sandwich", "egg_bagel"}
 
 
+def mock_get_configurable_item_types():
+    """Return mock set of configurable item types (same as slugs for tests)."""
+    return {"bagel", "sized_beverage", "coffee", "espresso", "spread_sandwich", "egg_bagel"}
+
+
 def mock_get_item_type_triggers(item_type_slug: str | None = None):
     """Return mock item type triggers for parser detection.
 
@@ -345,6 +350,7 @@ def mock_menu_cache_attributes(monkeypatch):
     monkeypatch.setattr(menu_cache, "get_category_keyword_mapping", mock_get_category_keyword_mapping)
     # Mock configurable item type detection - required for parser to detect "coffee" as sized_beverage
     monkeypatch.setattr(menu_cache, "get_configurable_item_type_slugs", mock_get_configurable_item_type_slugs)
+    monkeypatch.setattr(menu_cache, "get_configurable_item_types", mock_get_configurable_item_types)
     monkeypatch.setattr(menu_cache, "get_item_type_triggers", mock_get_item_type_triggers)
     # Mock the functions in parsers.constants module
     import orderbot.tasks.parsers.constants as parser_constants

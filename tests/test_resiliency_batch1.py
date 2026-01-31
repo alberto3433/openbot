@@ -107,8 +107,11 @@ class TestReplacementModificationScenarios:
         assert len(coffees) == 1, "Should still have 1 coffee"
 
         updated_coffee = coffees[0]
-        milk_mods = updated_coffee.get_selections("milk")
-        assert len(milk_mods) == 1 and milk_mods[0]["slug"] == "oat", f"Milk should be oat, got: {milk_mods}"
+        # Use milk_sweetener_syrup category which matches the database schema
+        milk_mods = updated_coffee.get_selections("milk_sweetener_syrup")
+        # Filter to just milk selections (not sweeteners/syrups)
+        milk_slugs = [m["slug"] for m in milk_mods if m["slug"] in ("oat", "oat_milk", "whole", "skim", "almond", "soy")]
+        assert len(milk_slugs) == 1 and milk_slugs[0] in ("oat", "oat_milk"), f"Milk should be oat, got: {milk_mods}"
         assert updated_coffee["size"] == "medium", "Size should be preserved"
         assert updated_coffee.menu_item_name == "latte", "Drink type should be preserved"
 

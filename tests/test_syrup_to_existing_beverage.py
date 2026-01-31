@@ -722,3 +722,149 @@ class TestChangeRequestWithQuantity:
         assert "Syrups" in summary, (
             f"Expected pluralized 'Syrups' in summary but got: {summary}"
         )
+
+
+class TestSyrupDisambiguationWithMultiInput:
+    """Test that '2 syrups' triggers disambiguation instead of adding all syrups."""
+
+    def test_oat_milk_and_2_syrups_triggers_disambiguation(self):
+        """
+        Scenario (the bug being fixed):
+        - User configures a latte, answers size and iced questions
+        - Bot asks about milk/sweetener/syrup
+        - User says: "oat milk and 2 syrups"
+        - Expected: Bot adds oat milk, then asks "Which syrups?"
+        - Bug was: Bot added ALL 4 syrups instead of asking which ones
+
+        Root cause: The disambiguation check only triggered when the ENTIRE input
+        was a single token. For "oat milk and 2 syrups", it's 2 tokens, so it
+        skipped disambiguation even though "syrups" matched all syrup options.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        # Create a latte that is already configured up to milk/sweetener/syrup question
+        latte = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="sized_beverage",
+        )
+        latte.attribute_values["size"] = "large"
+        latte.attribute_values["iced"] = True
+        order.items.add_item(latte)
+        order.pending_item_id = latte.id
+        order.pending_field = "sized_beverage:milk_sweetener_syrup"
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        sm = OrderStateMachine()
+
+        # Say "oat milk and 2 syrups" - should add oat milk and ask which syrups
+        result = sm.process("oat milk and 2 syrups", order)
+
+        # Should be asking about syrups (disambiguation)
+        msg_lower = result.message.lower()
+        assert "syrup" in msg_lower, (
+            f"Expected syrup disambiguation question, got: {result.message}"
+        )
+        assert "?" in result.message or "which" in msg_lower, (
+            f"Expected disambiguation question, got: {result.message}"
+        )
+
+        # The order should have pending disambiguation
+        assert result.order.pending_attr_disambiguation is not None, (
+            "Expected pending disambiguation to be set"
+        )
+        disambig = result.order.pending_attr_disambiguation
+        assert disambig.get("attr_slug") == "milk_sweetener_syrup", (
+            f"Expected attr_slug='milk_sweetener_syrup', got: {disambig.get('attr_slug')}"
+        )
+
+        # Should NOT have added all syrups
+        item = result.order.items.items[0]
+        syrup_mods = [m for m in (item.modifiers or [])
+                      if m.get("ingredient_category") == "syrup"]
+        # Bug would add 4 syrups; fix should add 0 (waiting for disambiguation)
+        assert len(syrup_mods) == 0, (
+            f"Expected 0 syrups before disambiguation, but got {len(syrup_mods)}: {syrup_mods}"
+        )
+
+        # Should have added oat milk (ingredient_category is 'milk')
+        milk_mods = [m for m in (item.modifiers or [])
+                     if m.get("ingredient_category") == "milk"]
+        assert len(milk_mods) == 1, f"Expected 1 milk modifier, got: {milk_mods}"
+        assert "oat" in milk_mods[0].get("slug", "").lower(), (
+            f"Expected oat milk, got: {milk_mods[0]}"
+        )
+
+    def test_2_syrups_single_input_triggers_disambiguation(self):
+        """
+        Simpler case: user just says "2 syrups" - should trigger disambiguation.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        latte = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="sized_beverage",
+        )
+        latte.attribute_values["size"] = "large"
+        latte.attribute_values["iced"] = True
+        order.items.add_item(latte)
+        order.pending_item_id = latte.id
+        order.pending_field = "sized_beverage:milk_sweetener_syrup"
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        sm = OrderStateMachine()
+
+        # Say "2 syrups" - should ask which syrups
+        result = sm.process("2 syrups", order)
+
+        # Should be asking about syrups (disambiguation)
+        msg_lower = result.message.lower()
+        assert "syrup" in msg_lower, (
+            f"Expected syrup disambiguation question, got: {result.message}"
+        )
+
+        # Should have disambiguation pending with quantity=2
+        assert result.order.pending_attr_disambiguation is not None
+        disambig = result.order.pending_attr_disambiguation
+        assert disambig.get("modifiers", {}).get("_quantity", 1) == 2, (
+            f"Expected quantity 2 in disambiguation, got: {disambig.get('modifiers')}"
+        )
+
+    def test_2_vanilla_syrups_no_disambiguation(self):
+        """
+        When user specifies which syrup, no disambiguation needed.
+        "2 vanilla syrups" should add 2 vanilla syrups directly.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        latte = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="sized_beverage",
+        )
+        latte.attribute_values["size"] = "large"
+        latte.attribute_values["iced"] = True
+        order.items.add_item(latte)
+        order.pending_item_id = latte.id
+        order.pending_field = "sized_beverage:milk_sweetener_syrup"
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+
+        sm = OrderStateMachine()
+
+        # Say "2 vanilla syrups" - specific, no disambiguation needed
+        result = sm.process("2 vanilla syrups", order)
+
+        # Should NOT have disambiguation pending
+        assert result.order.pending_attr_disambiguation is None, (
+            f"Did not expect disambiguation, but got: {result.order.pending_attr_disambiguation}"
+        )
+
+        # Should have added vanilla syrup with quantity 2
+        item = result.order.items.items[0]
+        vanilla_mods = [m for m in (item.modifiers or [])
+                        if "vanilla" in m.get("slug", "").lower()]
+        assert len(vanilla_mods) == 1, f"Expected 1 vanilla syrup, got: {vanilla_mods}"
+        assert vanilla_mods[0].get("quantity") == 2, (
+            f"Expected quantity 2, got: {vanilla_mods[0].get('quantity')}"
+        )

@@ -426,7 +426,7 @@ class TestFullFlowIntegration:
 
         # Step 3: Should be in disambiguation state with bagel chips variants
         assert fresh_order.pending_field == "item_selection"
-        assert len(fresh_order.pending_item_options) >= 4
+        assert len(fresh_order.pending_item_options) >= 3  # DB has 3 variants: BBQ, Salt, Sea Salt & Vinegar
 
         # Verify only bagel chips variants (not potato chips, etc.)
         option_names = [opt['name'] for opt in fresh_order.pending_item_options]

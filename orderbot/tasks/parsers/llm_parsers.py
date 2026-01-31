@@ -32,6 +32,7 @@ from .deterministic import (
     parse_open_input_deterministic,
     _parse_multi_item_order,
     _parse_configurable_item,
+    REPLACE_ITEM_PATTERN,
 )
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,35 @@ def parse_open_input(
         ingredient_to_items: Mapping of ingredient names to menu items containing them
             (e.g., {"chicken": [{"name": "Chicken Salad Sandwich", ...}]})
     """
+    import re
+
+    # Check for replacement patterns FIRST, before configurable item parsing
+    # This ensures "No, I said plain bagel" triggers replacement, not a new item
+    replace_match = REPLACE_ITEM_PATTERN.match(user_input)
+    if replace_match:
+        replacement_item = None
+        for i in range(1, 11):  # 10 capture groups in REPLACE_ITEM_PATTERN
+            if replace_match.group(i):
+                replacement_item = replace_match.group(i)
+                break
+        if replacement_item:
+            replacement_item = replacement_item.strip()
+            replacement_item = re.sub(r"^(?:a|an)\s+", "", replacement_item, flags=re.IGNORECASE)
+            logger.info("Replacement pattern detected early, item='%s'", replacement_item)
+
+            # Parse the replacement item
+            parsed_replacement = parse_open_input_deterministic(
+                replacement_item,
+                modifier_category_keywords=modifier_category_keywords,
+                modifier_item_keywords=modifier_item_keywords,
+                ingredient_to_items=ingredient_to_items,
+            )
+            if parsed_replacement:
+                parsed_replacement.replace_last_item = True
+                return parsed_replacement
+
+            return OpenInputResponse(replace_last_item=True)
+
     # Check if input likely contains multiple items
     input_lower = user_input.lower()
     # Clean up common phrases that contain "and" but aren't multi-item orders

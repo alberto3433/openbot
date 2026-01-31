@@ -20,6 +20,7 @@ from .models import MenuItemTask
 from .normalization import (
     resolve_to_canonical,
     get_attribute_display_name as _get_attr_display_name_from_db,
+    format_slug_for_display,
 )
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
 from .parsers.quantity_utils import BASIC_WORD_TO_NUM, extract_leading_quantity
@@ -525,15 +526,22 @@ class ModifierChangeHandler:
                 summary = item.get_summary()
                 return f"Sure, I've changed that to {summary}. Anything else?"
 
-        # Format value for display
+        # Format value for display - convert slugs to human-readable names
         display_value = new_value
         if isinstance(new_value, bool):
             display_value = "yes" if new_value else "no"
         elif new_value is None:
             display_value = "none"
+        elif isinstance(new_value, str):
+            display_value = format_slug_for_display(new_value, check_cache=False)
+
+        # Format old value for display
+        old_display = old_value
+        if isinstance(old_value, str):
+            old_display = format_slug_for_display(old_value, check_cache=False)
 
         if old_value:
-            return f"Got it, I've changed the {display_name} from {old_value} to {display_value}."
+            return f"Got it, I've changed the {display_name} from {old_display} to {display_value}."
         else:
             return f"Got it, {display_value} {display_name}."
 

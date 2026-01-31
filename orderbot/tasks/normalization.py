@@ -116,8 +116,8 @@ def resolve_to_canonical(
 
     Uses menu_cache.resolve_option_by_alias() to find canonical option values
     from the database. Handles special cases:
-    - Negation patterns ("no", "none", "black") return None for nullable attrs
     - Boolean attributes return True/False based on option match
+    - Negation patterns ("no", "none", "plain" when alone) return None for nullable attrs
     - Falls back to cleaned input if no option match found
 
     Args:
@@ -129,11 +129,6 @@ def resolve_to_canonical(
         Normalized value: canonical option slug, boolean, None, or cleaned input
     """
     value_clean = value.lower().strip()
-
-    # Check for negation patterns - user wants to remove/clear the attribute
-    first_word = value_clean.split()[0] if value_clean else ""
-    if first_word in _get_negation_patterns():
-        return None
 
     # Get attribute info to check input_type
     attr_info = _get_attribute_info(attr_slug, item_type_slug)
@@ -153,6 +148,22 @@ def resolve_to_canonical(
     option = menu_cache.resolve_option_by_alias(attr_slug, value_clean)
     if option:
         return option.get("slug", value_clean)
+
+    # Try ingredient/modifier normalization for attributes that use ingredient values
+    # (e.g., bread attribute uses ingredient table: "plain bagel" -> "plain_bagel")
+    normalized = menu_cache.normalize_modifier(value_clean)
+    if normalized != value_clean:
+        # Found a match - convert display name to slug format
+        # "Plain Bagel" -> "plain_bagel"
+        return normalized.lower().replace(" ", "_")
+
+    # Check for negation patterns AFTER trying option matching
+    # This prevents "plain bagel" from being misinterpreted as negation
+    # just because "plain" is a skip pattern - we want to match it as a valid bread type
+    # Only check negation if the ENTIRE value is a negation pattern (not just first word)
+    negation_patterns = _get_negation_patterns()
+    if value_clean in negation_patterns:
+        return None
 
     # Return the cleaned value as fallback
     return value_clean

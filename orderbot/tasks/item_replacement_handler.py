@@ -305,9 +305,7 @@ class ItemReplacementHandler:
                     cat_selections = [s.slug for s in selections if s.category == category]
                     if cat_selections:
                         last_item[attr_slug] = cat_selections[0]
-                    else:
-                        # Clear to None if not specified (don't use "none" string)
-                        last_item[attr_slug] = None
+                    # Don't clear unmentioned attributes - only update what was explicitly specified
 
         # Recalculate price with new modifiers and return confirmation
         updated_summary = recalculate_and_summarize(last_item, self.pricing)

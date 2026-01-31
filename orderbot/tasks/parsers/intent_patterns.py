@@ -46,11 +46,11 @@ REPLACE_ITEM_PATTERN = re.compile(
     # "actually X", "no X", "nope X", "wait X" - requires one of these words
     r"(?:actually|nope|wait)[,]?\s+(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
-    # "no X" but NOT "no more X" (which is cancellation)
-    r"no[,]?\s+(?!more\s)(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    # "no X" but NOT "no more X" (cancellation) or "no, I said/meant X" (handled separately)
+    r"no[,]?\s+(?!more\s)(?!i\s+(?:said|meant)\s)(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
-    # "i meant X" - requires "i meant"
-    r"i\s+meant\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    # "i meant X", "i said X", "no, i said X" - requires "i meant" or "i said"
+    r"(?:no[,]?\s+)?i\s+(?:meant|said)\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "X instead" - requires "instead" at end
     r"(?:a\s+)?(.+?)\s+instead[\s!.,?]*$"

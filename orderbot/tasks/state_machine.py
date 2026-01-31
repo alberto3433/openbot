@@ -21,19 +21,8 @@ from .context import OrderContext
 from .pricing import PricingEngine
 from .menu_lookup import MenuLookup
 from .message_builder import MessageBuilder
-from .checkout_handler import CheckoutHandler
-from .menu_item_config_handler import MenuItemConfigHandler
-from .store_info_handler import StoreInfoHandler
-from .menu_inquiry_handler import MenuInquiryHandler
-from .order_utils_handler import OrderUtilsHandler
-from .item_adder_handler import ItemAdderHandler
-from .checkout_utils_handler import CheckoutUtilsHandler
-from .config_helper_handler import ConfigHelperHandler
-from .modifier_change_handler import ModifierChangeHandler
-from .slot_orchestration_handler import SlotOrchestrationHandler
-from .configuring_item_handler import ConfiguringItemHandler
-from .taking_items_handler import TakingItemsHandler
 from .handler_config import HandlerConfig
+from .handler_registry import HandlerRegistry
 
 # Import from new modular structure
 from .schemas import (
@@ -172,26 +161,13 @@ class OrderStateMachine:
         # Use provided menu_data, fall back to global, then empty dict
         self._menu_data = menu_data if menu_data is not None else (_global_menu_data or {})
         self.model = model
-        # Initialize slot orchestration handler early (needed for callbacks)
-        self.slot_orchestration_handler = SlotOrchestrationHandler()
-        # Initialize menu lookup engine
-        self.menu_lookup = MenuLookup(self._menu_data)
-        # Initialize pricing engine with menu lookup callback
-        self.pricing = PricingEngine(self._menu_data, self.menu_lookup.lookup_menu_item)
-        # Initialize message builder
-        self.message_builder = MessageBuilder()
-        # =====================================================================
-        # Handler Initialization Order
-        # =====================================================================
-        # Handlers are initialized in dependency order. Some callbacks must be
-        # set post-init due to circular dependencies:
-        #   1. checkout_utils_handler.get_next_question -> HandlerConfig
-        #   2. checkout_handler needs order_utils, checkout_utils, taking_items
-        #   3. checkout_utils_handler needs _configure_next_incomplete_item
-        #   4. configuring_item_handler needs taking_items_handler
-        # =====================================================================
 
-        # Create shared handler configuration (callbacks added incrementally)
+        # Initialize core components
+        self.menu_lookup = MenuLookup(self._menu_data)
+        self.pricing = PricingEngine(self._menu_data, self.menu_lookup.lookup_menu_item)
+        self.message_builder = MessageBuilder()
+
+        # Create shared handler configuration
         self._handler_config = HandlerConfig(
             model=self.model,
             pricing=self.pricing,
@@ -201,66 +177,62 @@ class OrderStateMachine:
             check_redirect=_check_redirect_to_pending_item,
         )
 
-        # Phase 1: Core utility handlers
-        self.checkout_handler = CheckoutHandler(
+        # Initialize all handlers via registry
+        self._registry = HandlerRegistry(
             config=self._handler_config,
             transition_callback=self._transition_to_next_slot,
-        )
-        self.checkout_utils_handler = CheckoutUtilsHandler(
-            config=self._handler_config,
-            transition_to_next_slot=self._transition_to_next_slot,
-        )
-        # Wire: get_next_question callback (required by other handlers)
-        self._handler_config.get_next_question = self.checkout_utils_handler.get_next_question
-
-        # Phase 2: Independent handlers (no cross-dependencies)
-        self.store_info_handler = StoreInfoHandler(menu_data=self._menu_data)
-        self.menu_inquiry_handler = MenuInquiryHandler(config=self._handler_config)
-        self.order_utils_handler = OrderUtilsHandler(
-            config=self._handler_config,
-            build_order_summary=self.checkout_utils_handler.build_order_summary,
-        )
-        self.item_adder_handler = ItemAdderHandler(config=self._handler_config)
-        self.modifier_change_handler = ModifierChangeHandler(config=self._handler_config)
-        self.config_helper_handler = ConfigHelperHandler(
-            config=self._handler_config,
-            modifier_change_handler=self.modifier_change_handler,
+            handle_taking_items_with_parsed=self._handle_taking_items_with_parsed,
+            configure_next_incomplete_item=self._configure_next_incomplete_item,
         )
 
-        # Phase 3: Wire cross-handler callbacks (circular dependencies)
-        self.checkout_handler.order_utils_handler = self.order_utils_handler
-        self.checkout_handler._handle_taking_items_with_parsed = self._handle_taking_items_with_parsed
+    # Handler accessors via registry
+    @property
+    def slot_orchestration_handler(self):
+        return self._registry.slot_orchestration
 
-        # Phase 4: Handlers that depend on Phase 2 handlers
-        self.menu_item_handler = MenuItemConfigHandler(config=self._handler_config)
-        self.item_adder_handler.menu_item_handler = self.menu_item_handler
-        self.checkout_utils_handler._configure_next_incomplete_item = self._configure_next_incomplete_item
+    @property
+    def checkout_handler(self):
+        return self._registry.checkout
 
-        self.configuring_item_handler = ConfiguringItemHandler(
-            config_helper_handler=self.config_helper_handler,
-            checkout_utils_handler=self.checkout_utils_handler,
-            modifier_change_handler=self.modifier_change_handler,
-            item_adder_handler=self.item_adder_handler,
-            menu_item_handler=self.menu_item_handler,
-        )
-        self.taking_items_handler = TakingItemsHandler(
-            config=self._handler_config,
-            item_adder_handler=self.item_adder_handler,
-            menu_inquiry_handler=self.menu_inquiry_handler,
-            store_info_handler=self.store_info_handler,
-            checkout_utils_handler=self.checkout_utils_handler,
-            checkout_handler=self.checkout_handler,
-        )
+    @property
+    def checkout_utils_handler(self):
+        return self._registry.checkout_utils
 
-        # Phase 5: Final cross-handler wiring
-        self.configuring_item_handler.taking_items_handler = self.taking_items_handler
-        # Wire up callback for processing pending parsed items after disambiguation
-        # This enables MenuItemConfigHandler to process items that were stored during
-        # multi-item order disambiguation (e.g., "latte and bagel" where bagel is stored
-        # while we disambiguate and configure the latte)
-        self.menu_item_handler.process_pending_parsed_items = (
-            self.configuring_item_handler._process_pending_parsed_items
-        )
+    @property
+    def store_info_handler(self):
+        return self._registry.store_info
+
+    @property
+    def menu_inquiry_handler(self):
+        return self._registry.menu_inquiry
+
+    @property
+    def order_utils_handler(self):
+        return self._registry.order_utils
+
+    @property
+    def item_adder_handler(self):
+        return self._registry.item_adder
+
+    @property
+    def modifier_change_handler(self):
+        return self._registry.modifier_change
+
+    @property
+    def config_helper_handler(self):
+        return self._registry.config_helper
+
+    @property
+    def menu_item_handler(self):
+        return self._registry.menu_item
+
+    @property
+    def configuring_item_handler(self):
+        return self._registry.configuring_item
+
+    @property
+    def taking_items_handler(self):
+        return self._registry.taking_items
 
     @property
     def menu_data(self) -> dict:
@@ -279,11 +251,7 @@ class OrderStateMachine:
             self._handler_config,
             self.menu_lookup,
             self.pricing,
-            self.store_info_handler,
-            self.menu_inquiry_handler,
-            self.item_adder_handler,
-            self.taking_items_handler,
-        ]
+        ] + self._registry.get_menu_data_handlers()
 
     def _update_handler_context(
         self,
@@ -330,13 +298,8 @@ class OrderStateMachine:
         self._returning_customer = returning_customer
         self._store_info = store_info or {}
 
-        # Distribute to all handlers
-        self.checkout_handler.set_context(ctx)
-        self.store_info_handler.set_context(ctx)
-        self.order_utils_handler.set_context(ctx)
-        self.checkout_utils_handler.set_context(ctx)
-        self.taking_items_handler.set_context(ctx)
-        self.item_adder_handler.set_context(ctx)
+        # Distribute to all handlers via registry
+        self._registry.distribute_context(ctx)
 
         return ctx
 
@@ -569,5 +532,3 @@ class OrderStateMachine:
     ) -> StateMachineResult:
         """Delegate to configuring item handler."""
         return self.configuring_item_handler.handle_configuring_item(user_input, order)
-
-

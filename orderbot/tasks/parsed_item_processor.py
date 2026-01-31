@@ -205,14 +205,15 @@ class ParsedItemProcessor:
 
         # 5. Build summary if item was added
         if items_after > items_before:
-            # Note: unavailable_selections is now passed to add_item and set before
-            # get_first_question() is called, so it's already on the MenuItemTask
-
             summary = build_item_summary(item)
-            # Don't return result here - process_items() handles config questions
-            # for ALL items after the loop. Returning here caused early exit,
-            # preventing subsequent items from being processed.
-            # (unavailable_selections messages are handled by get_first_question())
+
+            # If add_item() returned a result with a message (e.g., from handle_unavailable_selection),
+            # pass it through so the caller can use it instead of calling get_first_question() again.
+            # This preserves "We don't have Medium" messages that were already generated.
+            if result and result.message:
+                return order, summary, result
+
+            # Otherwise return None so process_items() handles config questions for ALL items
             return order, summary, None
 
         # Item wasn't added (error case) - return empty summary

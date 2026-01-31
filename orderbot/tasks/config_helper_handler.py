@@ -139,9 +139,24 @@ class ConfigHelperHandler:
                     order=order,
                 )
 
+        # Check if cancel_desc matches an ITEM TYPE (e.g., "bagels", "coffees")
+        # If so, skip modifier removal - user wants to remove items, not modifiers
+        cancel_variants = get_singular_plural_variants(cancel_desc)
+        matches_item_type = False
+        for variant in cancel_variants:
+            category_mapping = menu_cache.get_category_keyword_mapping(variant)
+            if category_mapping:
+                matches_item_type = True
+                logger.info(
+                    "Cancel during config: '%s' matches item type '%s' - skipping modifier removal",
+                    cancel_desc, category_mapping.get("slug")
+                )
+                break
+
         # Check if this is a modifier removal on the current item being configured
         # Use unified modifier_operations for consistent handling
-        if isinstance(current_item, MenuItemTask):
+        # But SKIP if cancel_desc matches an item type (user wants to remove items, not modifiers)
+        if isinstance(current_item, MenuItemTask) and not matches_item_type:
             try:
                 modifier_match = find_modifier_match(current_item, cancel_desc)
                 if modifier_match:

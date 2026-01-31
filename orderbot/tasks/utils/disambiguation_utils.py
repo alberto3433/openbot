@@ -8,6 +8,8 @@ between attribute options).
 
 import logging
 
+from .text import format_numbered_list
+
 logger = logging.getLogger(__name__)
 
 # Selection patterns for ordinal/number matching
@@ -237,15 +239,9 @@ def format_options_list(
     Returns:
         Formatted string with numbered options
     """
-    lines = []
-    for i, opt in enumerate(options, 1):
-        name = opt.get(name_key, "Unknown")
-        if show_prices:
-            price = opt.get(price_key, 0)
-            if price > 0:
-                lines.append(f"{i}. {name} (${price:.2f})")
-            else:
-                lines.append(f"{i}. {name}")
-        else:
-            lines.append(f"{i}. {name}")
-    return "\n".join(lines)
+    return format_numbered_list(
+        options,
+        name_key=name_key,
+        show_prices=show_prices,
+        price_key=price_key,
+    )

@@ -18,7 +18,7 @@ Import directly: from .utils.pricing_utils import safe_recalculate_price
 from .option_matcher import OptionMatcher
 from .option_matching_orchestrator import OptionMatchingOrchestrator, MatchResult
 from .input_normalizer import InputNormalizer
-from .text import format_english_list
+from .text import format_english_list, format_numbered_list
 from .cache_helpers import (
     ensure_menu_data_loaded,
     ensure_item_types_loaded,
@@ -36,6 +36,7 @@ __all__ = [
     "MatchResult",
     "InputNormalizer",
     "format_english_list",
+    "format_numbered_list",
     "ensure_menu_data_loaded",
     "ensure_item_types_loaded",
     "get_item_type_config",

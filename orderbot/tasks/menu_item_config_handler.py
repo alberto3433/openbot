@@ -16,13 +16,11 @@ import re
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache
-from orderbot.cache.base import pluralize
 from .models import OrderTask, MenuItemTask
 from .pending_fields import PendingField
 from .normalization import strip_ordering_prefix
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
-from .parsers.quantity_utils import parse_numeric_input, extract_leading_quantity
 from .handler_config import BaseHandler
 from .checkout_messages import got_it_anything_else
 from .utils import OptionMatcher, InputNormalizer
@@ -809,17 +807,6 @@ class MenuItemConfigHandler(BaseHandler):
             extract_selections_callback=self._selection_extractor.extract_selections_from_input,
             extract_qualifier_callback=self._extract_qualifier_for_option,
         )
-
-    def _format_options_list_for_clarification(self, options: list[str]) -> str:
-        """Format options list for clarification question.
-
-        Args:
-            options: List of option display names
-
-        Returns:
-            Formatted string like "A, B, C, or D"
-        """
-        return format_english_list(options, conjunction="or")
 
     def _advance_to_next_question(
         self, item: MenuItemTask, order: OrderTask, current_attr: dict,

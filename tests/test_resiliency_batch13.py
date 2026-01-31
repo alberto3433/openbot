@@ -74,11 +74,8 @@ class TestPreparationPreferences:
         # Should have a bagel with cream cheese
         assert len(bagels) >= 1, f"Should add bagel. Message: {result.message}"
         bagel = bagels[0]
-        # Should have cream cheese noted somehow
-        has_cc = (
-            bagel["spread_type"] == "cream cheese" or
-            "cream cheese" in (bagel.special_instructions or "") or
-            "cream cheese" in str(bagel["toppings"] or [])
-        )
-        assert has_cc or "cream cheese" in result.message.lower(), \
-            f"Should note cream cheese. Message: {result.message}"
+        # Should have cream cheese noted somehow (check spread field)
+        spread = bagel["spread"] or ""
+        # Spread slug will be something like "plain_cream_cheese" or "cream_cheese"
+        assert "cream" in spread.lower(), \
+            f"Should have cream cheese spread. Spread: {spread}, Message: {result.message}"

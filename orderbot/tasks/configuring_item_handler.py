@@ -12,8 +12,8 @@ import logging
 from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
-from .parsers.constants import (
-    SELECTION_PATTERNS,
+from .parsers.selection_patterns import SELECTION_PATTERNS
+from .parsers.intent_patterns import (
     parse_can_you_make_it,
     ANOTHER_ITEM_PATTERN,
     ONE_MORE_PATTERN,

@@ -91,6 +91,9 @@ class MenuItemTask(ItemTask):
     # this holds the ID of the parent item
     side_of_item_id: str | None = None
 
+    # Item-level special instructions (e.g., "room for cream", "extra hot")
+    special_instructions: list[str] = Field(default_factory=list)
+
     # -------------------------------------------------------------------------
     # Side item helpers
     # -------------------------------------------------------------------------

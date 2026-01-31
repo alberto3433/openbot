@@ -16,9 +16,13 @@ import re
 from typing import TYPE_CHECKING
 
 from orderbot.menu_data_cache import menu_cache
-from orderbot.cache.base import singularize
 
 from .models import OrderTask, MenuItemTask
+from .selection_utils import (
+    extract_meaningful_words,
+    find_partial_matches,
+    find_numeric_options,
+)
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.constants import extract_quantity
 from .parsers.quantity_utils import parse_numeric_input
@@ -144,10 +148,12 @@ class SelectInputHandler:
             [o["slug"] for o in matched_options]
         )
 
-        # DISAMBIGUATION: If multiple options matched but user input was a single token
-        # (not compound like "ham and bacon"), ask for clarification
+        # DISAMBIGUATION: Check if any single token matched multiple options
+        # This handles cases like "oat milk and 2 syrups" where "syrups" matches all syrup options
+        tokens = self._input_normalizer.tokenize_multi_input(user_input)
+
         if len(matched_options) > 1:
-            tokens = self._input_normalizer.tokenize_multi_input(user_input)
+            # Case 1: Single token input matched multiple options
             is_single_token = len(tokens) <= 1
             if is_single_token:
                 logger.info(
@@ -166,6 +172,63 @@ class SelectInputHandler:
                     message=f"Did you mean {options_text}?",
                     order=order,
                 )
+
+            # Case 2: Multi-token input but ONE token matched multiple options
+            # Check each token individually to see if any single token caused multiple matches
+            for token in tokens:
+                token_matches = self._option_matcher.match_multiple(token, options)
+                if len(token_matches) > 1:
+                    # This single token matched multiple options - need disambiguation
+                    # Extract quantity from token (e.g., "2 syrups" -> 2)
+                    token_qty, _ = self._input_normalizer.extract_leading_quantity(token)
+                    if token_qty == 1:
+                        token_qty = quantity  # Fall back to overall quantity
+
+                    logger.info(
+                        "MULTI_SELECT DISAMBIGUATION: token '%s' matched %d options: %s",
+                        token, len(token_matches), [o["display_name"] for o in token_matches]
+                    )
+
+                    # Apply non-ambiguous matches first (other tokens that matched exactly one option)
+                    for other_token in tokens:
+                        if other_token == token:
+                            continue
+                        other_matches = self._option_matcher.match_multiple(other_token, options)
+                        if len(other_matches) == 1:
+                            opt = other_matches[0]
+                            existing_slugs = {sel.get("slug") for sel in item.get_selections(attr_slug)}
+                            if opt["slug"] not in existing_slugs:
+                                opt_price = opt.get("price") or opt.get("price_modifier") or 0
+                                if opt_price == 0 and self.pricing:
+                                    opt_price = self.pricing.lookup_generic_modifier_price(
+                                        opt["slug"], item.menu_item_type
+                                    ) or 0.0
+                                item.add_selection(
+                                    opt["slug"],
+                                    attr_slug,
+                                    quantity=1,
+                                    price=opt_price,
+                                    display_name=opt["display_name"],
+                                    ingredient_category=opt.get("ingredient_category"),
+                                )
+                                logger.info(
+                                    "MULTI_SELECT: added unambiguous match '%s' before disambiguation",
+                                    opt["display_name"]
+                                )
+
+                    # Store disambiguation state for the ambiguous token
+                    order.pending_attr_disambiguation = {
+                        "options": token_matches,
+                        "attr_slug": attr_slug,
+                        "modifiers": {"_quantity": token_qty},
+                        "item_id": item.id,
+                    }
+                    options_text = format_display_list_callback(token_matches)
+                    attr_display = attr.get("display_name", attr_slug).lower()
+                    return StateMachineResult(
+                        message=f"Which {attr_display}? {options_text}",
+                        order=order,
+                    )
 
         if matched_options:
             # Get existing selections for this category
@@ -480,38 +543,13 @@ class SelectInputHandler:
         For example:
         - "syrup" -> matches "vanilla syrup", "caramel syrup", "hazelnut syrup"
         """
-        stop_words = {
-            "what", "which", "do", "you", "have", "are", "the", "a", "an",
-            "is", "there", "any", "some", "can", "i", "get", "want", "like",
-            "options", "option", "choices", "choice", "available", "kind",
-            "kinds", "type", "types", "of", "for", "with", "please", "thanks",
-        }
-
-        user_lower = user_input.lower().strip()
-
-        # Extract meaningful words
-        words = [
-            word.strip("?.,!") for word in user_lower.split()
-            if len(word.strip("?.,!")) >= 3 and word.strip("?.,!") not in stop_words
-        ]
-
+        # Extract meaningful words using utility function
+        words = extract_meaningful_words(user_input)
         if not words:
             return None
 
-        matching_options = []
-        matched_term = None
-
-        for word in words:
-            singular_word = singularize(word)
-
-            for opt in options:
-                display_lower = opt["display_name"].lower()
-
-                if singular_word in display_lower or word in display_lower:
-                    if opt not in matching_options:
-                        matching_options.append(opt)
-                        if not matched_term:
-                            matched_term = singular_word
+        # Find partial matches using utility function
+        matching_options, matched_term = find_partial_matches(words, options)
 
         if not matching_options:
             return None
@@ -563,8 +601,8 @@ class SelectInputHandler:
         This enables data-driven handling of numeric attributes like "shots"
         where options have slugs like "1", "2", "3", "4".
         """
-        # Check if any options have numeric slugs
-        numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}
+        # Check if any options have numeric slugs (using utility function)
+        numeric_slugs = find_numeric_options(options)
         if not numeric_slugs:
             return None
 

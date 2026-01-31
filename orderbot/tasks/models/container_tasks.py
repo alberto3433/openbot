@@ -382,9 +382,9 @@ class OrderTask(BaseTask):
             count = data["count"]
             total_price = data["total_price"]
             if count > 1:
-                lines.append(f"- {count}x {summary} - ${total_price:.2f}")
+                lines.append(f"- {count}x {summary} — ${total_price:.2f}")
             else:
-                lines.append(f"- {summary} - ${total_price:.2f}")
+                lines.append(f"- {summary} — ${total_price:.2f}")
 
         return "\n".join(lines)
 
@@ -392,13 +392,13 @@ class OrderTask(BaseTask):
         """Get progress summary for each sub-task."""
         def status_emoji(task: BaseTask) -> str:
             if task.status == TaskStatus.COMPLETE:
-                return "+"
+                return "✅"
             elif task.status == TaskStatus.IN_PROGRESS:
-                return "~"
+                return "🔄"
             elif task.status == TaskStatus.SKIPPED:
-                return ">"
+                return "⏭️"
             else:
-                return "-"
+                return "⏳"
 
         return {
             "items": f"{status_emoji(self.items)} Items ({len(self.items.get_active_items())})",

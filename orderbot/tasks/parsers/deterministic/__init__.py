@@ -14,9 +14,9 @@ Modules:
 """
 
 # =============================================================================
-# Patterns Module Exports (now consolidated in constants.py)
+# Patterns Module Exports
 # =============================================================================
-from ..constants import (
+from ..intent_patterns import (
     # Main patterns used by state machine and handlers
     REPLACE_ITEM_PATTERN,
     CANCEL_ITEM_PATTERN,

@@ -16,7 +16,7 @@ from orderbot.cache import menu_cache
 from .schemas import StateMachineResult, OrderPhase
 from .pending_fields import PendingField
 from .checkout_messages import got_it_anything_else
-from .parsers.constants import extract_quantity
+from .parsers.constants import extract_quantity_for_pattern
 
 if TYPE_CHECKING:
     from .models import OrderTask, MenuItemTask
@@ -371,9 +371,9 @@ class CustomizationCheckpointHandler:
                 display_parts = []
                 for opt in matched_opts:
                     opt_name = opt["display_name"]
-                    opt_quantity = extract_quantity(user_clean, opt_name.lower())
+                    opt_quantity = extract_quantity_for_pattern(user_clean, opt_name.lower())
                     if opt_quantity == 1:
-                        opt_quantity = extract_quantity(user_clean, opt["slug"].replace("_", " "))
+                        opt_quantity = extract_quantity_for_pattern(user_clean, opt["slug"].replace("_", " "))
                     if opt_quantity == 1 and quantity > 1:
                         opt_quantity = quantity
                     opt_price = opt.get("price") or opt.get("price_modifier") or 0

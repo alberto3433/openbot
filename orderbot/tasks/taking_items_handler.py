@@ -474,10 +474,15 @@ class TakingItemsHandler(MenuDataMixin):
 
         if parsed.unclear or parsed.is_greeting:
             # Check if user is trying to order something we don't recognize
-            # e.g., "I want home fries", "can I have a croissant"
+            # e.g., "I want home fries", "can I have a croissant", or just "pepsi"
             if parsed.unclear and raw_user_input and self._unrecognized_handler:
-                if looks_like_order_attempt(raw_user_input):
-                    item_name = extract_order_item_name(raw_user_input)
+                text_stripped = raw_user_input.strip()
+                is_order_attempt = looks_like_order_attempt(raw_user_input)
+                is_known_unrecognized = self._is_known_unrecognized_item(text_stripped)
+
+                if is_order_attempt or is_known_unrecognized:
+                    # For order attempts with phrases, extract item name; for bare items, use text directly
+                    item_name = extract_order_item_name(raw_user_input) if is_order_attempt else text_stripped
                     if item_name:
                         logger.info("Detected order attempt for unrecognized item: '%s'", item_name)
                         message, category_for_followup = self._unrecognized_handler.get_not_found_response(
@@ -501,6 +506,23 @@ class TakingItemsHandler(MenuDataMixin):
             message="I didn't catch that. What would you like to order?",
             order=order,
         )
+
+    def _is_known_unrecognized_item(self, text: str) -> bool:
+        """Check if text matches a known unrecognized item pattern.
+
+        This allows bare item names like "pepsi" to trigger the unrecognized
+        item handler even without ordering language like "I want".
+
+        Args:
+            text: User input text (should be stripped)
+
+        Returns:
+            True if the text matches a curated unrecognized item suggestion.
+        """
+        if not self._unrecognized_handler or not self._unrecognized_handler._db_session:
+            return False
+        curated = self._unrecognized_handler._check_curated_suggestions(text.lower().strip())
+        return curated is not None
 
     # =========================================================================
     # Extracted Handler Methods (delegate to sub-handlers)

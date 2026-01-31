@@ -18,7 +18,6 @@ def build_parsed_item(
     is_signature: bool = False,
     weight_unit: str | None = None,
     special_instructions: list[str] | None = None,
-    # Backward compatibility - convert to selections internally
     attribute_values: dict | None = None,
     modifiers: list[Selection] | None = None,
 ) -> ParsedItemEntry:
@@ -29,8 +28,7 @@ def build_parsed_item(
     It accepts any item_type, any attribute names, any modifier categories.
 
     All customizations should be provided via the `selections` parameter.
-    The `attribute_values` and `modifiers` parameters are deprecated and
-    provided for backward compatibility during migration.
+    The `attribute_values` parameter converts dict to selections internally.
 
     Args:
         item_type: The item type slug
@@ -41,8 +39,8 @@ def build_parsed_item(
         is_signature: Whether this is a signature/speed menu item
         weight_unit: For by-pound items (e.g., "1/4 lb")
         special_instructions: List of special instruction strings (e.g., "room for cream")
-        attribute_values: DEPRECATED - Dict of attribute slug -> value
-        modifiers: DEPRECATED - List of Selection objects (old parameter name)
+        attribute_values: Dict of attribute slug -> value (converted to selections)
+        modifiers: List of Selection objects to add
 
     Returns:
         ParsedItemEntry with all fields populated
@@ -69,7 +67,7 @@ def build_parsed_item(
     if selections:
         final_selections.extend(selections)
 
-    # Backward compat: convert attribute_values dict to selections
+    # Convert attribute_values dict to selections
     if clean_attribute_values:
         for category, value in clean_attribute_values.items():
             if value is None:
@@ -105,7 +103,7 @@ def build_parsed_item(
                 # Single-select: just the slug
                 final_selections.append(Selection(slug=value, category=category))
 
-    # Backward compat: add modifiers if provided
+    # Add modifiers if provided
     if modifiers:
         final_selections.extend(modifiers)
 

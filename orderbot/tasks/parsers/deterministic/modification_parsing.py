@@ -22,8 +22,8 @@ from ..constants import (
     SKIP_WORDS,
     SKIP_WORDS_BASIC,
     SKIP_WORDS_PREPOSITIONS,
-    ADD_MORE_PATTERN,
 )
+from ..intent_patterns import ADD_MORE_PATTERN
 
 from .extraction import extract_modifiers_with_qualifiers, extract_attribute_values
 

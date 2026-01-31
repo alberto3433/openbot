@@ -12,7 +12,7 @@ from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from .schemas import StateMachineResult
-from .parsers.constants import extract_quantity
+from .parsers.constants import extract_quantity_for_pattern
 from .utils.disambiguation_utils import (
     normalize_input,
     match_by_ordinal,
@@ -185,13 +185,13 @@ class ConfigDisambiguationHandler:
 
         quantity = 1
         if quantity_unit:
-            quantity = extract_quantity(user_lower, selected["display_name"].lower())
+            quantity = extract_quantity_for_pattern(user_lower, selected["display_name"].lower())
             if quantity == 1:
-                quantity = extract_quantity(user_lower, selected["slug"].replace("_", " "))
+                quantity = extract_quantity_for_pattern(user_lower, selected["slug"].replace("_", " "))
             if quantity == 1 and selected.get("aliases"):
                 # Also try with ingredient aliases (e.g., "sugar" for "domino_sugar")
                 for alias in selected["aliases"]:
-                    alias_qty = extract_quantity(user_lower, alias.lower())
+                    alias_qty = extract_quantity_for_pattern(user_lower, alias.lower())
                     if alias_qty > 1:
                         quantity = alias_qty
                         break

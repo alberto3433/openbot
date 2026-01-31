@@ -47,7 +47,7 @@ def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:
         Tuple of (ordinal_index, item_type_keyword).
         ordinal_index is 1-based (1st, 2nd, etc.) or None if no ordinal found.
     """
-    from .parsers.constants import ORDINAL_WORDS
+    from .parsers.selection_patterns import ORDINAL_WORDS
 
     desc_lower = cancel_desc.lower().strip()
     words = desc_lower.split()

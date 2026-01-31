@@ -24,7 +24,7 @@ from .selection_utils import (
     find_numeric_options,
 )
 from .schemas import StateMachineResult, OrderPhase
-from .parsers.constants import extract_quantity
+from .parsers.constants import extract_quantity_for_pattern
 from .parsers.quantity_utils import parse_numeric_input
 from .utils.text import format_english_list
 from .response_utils import is_affirmative
@@ -249,12 +249,12 @@ class SelectInputHandler:
                     opt_quantity = 1
                     if quantity_unit:
                         # Extract quantity specific to this option
-                        opt_quantity = extract_quantity(user_lower, opt["display_name"].lower())
+                        opt_quantity = extract_quantity_for_pattern(user_lower, opt["display_name"].lower())
                         if opt_quantity == 1:
-                            opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
+                            opt_quantity = extract_quantity_for_pattern(user_lower, opt["slug"].replace("_", " "))
                         if opt_quantity == 1 and opt.get("aliases"):
                             for alias in opt["aliases"]:
-                                alias_qty = extract_quantity(user_lower, alias.lower())
+                                alias_qty = extract_quantity_for_pattern(user_lower, alias.lower())
                                 if alias_qty > 1:
                                     opt_quantity = alias_qty
                                     break

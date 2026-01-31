@@ -3,11 +3,11 @@
 import logging
 
 from ....schemas import OpenInputResponse
-from ...constants import (
+from ...constants import clean_extracted_text
+from ...inquiry_patterns import (
     DELIVERY_ZONE_PATTERNS,
     STORE_HOURS_PATTERNS,
     STORE_LOCATION_PATTERNS,
-    clean_extracted_text,
 )
 
 logger = logging.getLogger(__name__)

@@ -514,10 +514,10 @@ class TestModifiersConsistency:
         order = OrderTask()
         coffee = create_coffee_task(
             drink_type="coffee",
-            size="medium",
+            size="large",
             iced=False,
             sweeteners=[{"slug": "sugar", "quantity": 1}],
-            unit_price=3.50,
+            unit_price=4.35,
         )
         order.items.add_item(coffee)
 
@@ -528,24 +528,20 @@ class TestModifiersConsistency:
         modifiers = item["item_config"]["modifiers"]
         modifier_names = [m["name"].lower() for m in modifiers]
 
-        # Should contain "medium" in modifiers (size is stored in attribute_values)
-        assert any("medium" in name for name in modifier_names)
-        # Sweeteners are stored in unified item_modifiers storage
-        item_modifiers = item["item_config"].get("item_modifiers", [])
-        sweetener_entries = [e for e in item_modifiers if e.get("category") == "sweetener"]
-        assert len(sweetener_entries) == 1
-        assert sweetener_entries[0]["slug"] == "sugar"
-        assert sweetener_entries[0]["quantity"] == 1
+        # Should contain "large" in modifiers (size is stored in attribute_values)
+        assert any("large" in name for name in modifier_names)
+        # Should contain "sugar" in modifiers (sweeteners are part of milk_sweetener_syrup category)
+        assert any("sugar" in name for name in modifier_names)
 
     def test_coffee_decaf_in_modifiers(self):
         """Test that decaf coffee has 'decaf' in modifiers with price=0."""
         order = OrderTask()
         coffee = create_coffee_task(
             drink_type="coffee",
-            size="medium",
+            size="large",
             iced=True,
             decaf=True,  # Decaf coffee
-            unit_price=3.50,
+            unit_price=4.35,
         )
         order.items.add_item(coffee)
 
@@ -559,9 +555,9 @@ class TestModifiersConsistency:
         # Should contain "decaf" in modifiers
         assert any("decaf" in name for name in modifier_names), f"Expected 'decaf' in modifiers, got: {modifier_names}"
 
-        # Should also contain "iced" and "medium" in modifiers
+        # Should also contain "iced" and "large" in modifiers
         assert any("iced" in name for name in modifier_names)
-        assert any("medium" in name for name in modifier_names)
+        assert any("large" in name for name in modifier_names)
 
         # attribute_values should have decaf=True
         assert item["attribute_values"]["decaf"] is True

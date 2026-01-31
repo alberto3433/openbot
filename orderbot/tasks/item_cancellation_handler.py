@@ -210,9 +210,26 @@ class ItemCancellationHandler:
         order: OrderTask,
         active_items: list,
     ) -> StateMachineResult | None:
-        """Try to remove a modifier from an item."""
+        """Try to remove a modifier from an item.
+
+        Skip modifier removal if the cancel term matches an ITEM TYPE (e.g., "bagel").
+        This prevents "remove the bagel" from removing the "plain_bagel" bread modifier
+        instead of removing the bagel item from the cart.
+        """
         if not active_items:
             return None
+
+        # Check if cancel term matches an item type - if so, skip modifier removal
+        # User wants to remove an item, not a modifier
+        cancel_variants = get_singular_plural_variants(parsed.cancel_item)
+        for variant in cancel_variants:
+            category_mapping = menu_cache.get_category_keyword_mapping(variant)
+            if category_mapping:
+                logger.info(
+                    "Cancellation: '%s' matches item type '%s' - skipping modifier removal",
+                    parsed.cancel_item, category_mapping.get("slug")
+                )
+                return None  # Skip modifier removal, let item removal handle it
 
         modifier_match = find_modifier_on_any_item(active_items, parsed.cancel_item)
         if modifier_match:

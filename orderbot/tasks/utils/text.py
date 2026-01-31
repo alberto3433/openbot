@@ -58,6 +58,31 @@ def format_english_list(items: list[str], conjunction: str = "and") -> str:
     return ", ".join(items[:-1]) + f", {conjunction} {items[-1]}"
 
 
+def format_display_list(
+    items: list[dict],
+    key: str = "display_name",
+    conjunction: str = "or",
+) -> str:
+    """Format a list of dicts for display.
+
+    Extracts a specific key from each dict and formats as English list.
+
+    Args:
+        items: List of dicts containing the display values
+        key: Key to extract from each dict (default: "display_name")
+        conjunction: Word to join items (default: "or")
+
+    Returns:
+        Formatted string like "A, B, or C"
+
+    Examples:
+        >>> format_display_list([{"display_name": "Apple"}, {"display_name": "Banana"}])
+        'Apple or Banana'
+    """
+    names = [item.get(key, "") for item in items if item.get(key)]
+    return format_english_list(names, conjunction=conjunction)
+
+
 def format_numbered_list(
     items: list[dict] | list[str],
     name_key: str = "name",

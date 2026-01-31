@@ -24,7 +24,7 @@ from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
 from .handler_config import BaseHandler
 from .checkout_messages import got_it_anything_else
 from .utils import OptionMatcher, InputNormalizer
-from .utils.text import format_english_list
+from .utils.text import format_english_list, format_display_list
 from .select_input_handler import SelectInputHandler
 from .config_options_inquiry import OptionsInquiryHandler
 from .config_disambiguation import DisambiguationHandler
@@ -342,16 +342,9 @@ class MenuItemConfigHandler(BaseHandler):
     ) -> str:
         """Format a list of items for display.
 
-        Args:
-            items: List of dicts containing the display values
-            key: Key to extract from each dict (default: "display_name")
-            conjunction: Word to join items (default: "or")
-
-        Returns:
-            Formatted string like "A, B, or C"
+        Delegates to utils.text.format_display_list.
         """
-        names = [item.get(key, "") for item in items if item.get(key)]
-        return format_english_list(names, conjunction=conjunction)
+        return format_display_list(items, key=key, conjunction=conjunction)
 
     # =========================================================================
     # Main Entry Point

@@ -27,6 +27,7 @@ from .attribute_inference import (
     extract_generic_term,
 )
 from .unrecognized_item_handler import UnrecognizedItemHandler
+from .order_item_builder import OrderItemBuilder
 from orderbot.menu_data_cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
@@ -69,6 +70,12 @@ class ItemAdderHandler(MenuDataMixin):
 
         # Generic disambiguation handler
         self.disambiguation_handler = DisambiguationHandler()
+
+        # Order item builder for creating menu item dicts
+        self._item_builder = OrderItemBuilder(
+            menu_lookup_func=self.menu_lookup.lookup_menu_item if self.menu_lookup else None,
+            pricing=self.pricing,
+        )
 
         # Unrecognized item handler with fallback chain
         self._unrecognized_handler = UnrecognizedItemHandler(
@@ -255,7 +262,7 @@ class ItemAdderHandler(MenuDataMixin):
     ) -> dict:
         """Build menu_item dict for _create_configurable_item().
 
-        Uses unified price lookup for all item types - no category-specific branching.
+        Delegates to OrderItemBuilder.
 
         Args:
             item_type: The item type slug
@@ -265,58 +272,7 @@ class ItemAdderHandler(MenuDataMixin):
         Returns:
             Dict with name, item_type, base_price, id, is_signature
         """
-        # Use item_name from kwargs if provided (may have been canonicalized)
-        lookup_name = kwargs.get("item_name") or item_name
-
-        # Step 1: Try menu lookup (works for all menu-backed items)
-        menu_data = self.menu_lookup.lookup_menu_item(lookup_name) if self.menu_lookup else None
-        if menu_data:
-            return {
-                "name": menu_data.get("name", lookup_name),
-                "item_type": menu_data.get("item_type") or item_type,
-                "base_price": menu_data.get("base_price", 0),
-                "id": menu_data.get("id"),
-                "is_signature": menu_data.get("is_signature", False),
-                "skip_config": menu_data.get("skip_config", False),
-            }
-
-        # Step 2: Check if this is a configurable item type (has conversation attributes)
-        # These use the item type display name and pricing engine instead of menu lookup
-        is_configurable_type = item_type and menu_cache.has_conversation_attributes(item_type)
-        if is_configurable_type:
-            canonical_name = menu_cache.get_item_type_display_name(item_type) or lookup_name
-            base_price = self.pricing.lookup_base_price(canonical_name) if self.pricing else 0.0
-            return {
-                "name": canonical_name,
-                "item_type": item_type,
-                "base_price": base_price,
-                "id": None,
-                "is_signature": False,
-            }
-
-        # Step 3: Try pricing engine as fallback
-        if self.pricing:
-            try:
-                base_price = self.pricing.lookup_base_price(lookup_name)
-                return {
-                    "name": lookup_name,
-                    "item_type": item_type,
-                    "base_price": base_price,
-                    "id": None,
-                    "is_signature": False,
-                }
-            except ValueError:
-                # Price lookup failed - fall through to return zero-price item
-                pass
-
-        # Step 4: Return with zero price (item will need configuration or is unknown)
-        return {
-            "name": lookup_name,
-            "item_type": item_type,
-            "base_price": 0,
-            "id": None,
-            "is_signature": False,
-        }
+        return self._item_builder.build_menu_item_dict(item_type, item_name, kwargs)
 
     def _extract_pre_filled_attributes(self, item_type: str, kwargs: dict) -> dict:
         """Extract pre-filled attributes from kwargs based on item type.

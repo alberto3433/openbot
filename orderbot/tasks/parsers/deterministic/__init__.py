@@ -67,7 +67,7 @@ from .item_parsing import (
     # Internal helpers
     _match_menu_item_name_for_type,
 )
-from .soda_parsing import _parse_soda_deterministic
+from .simple_item_parsing import _parse_simple_item_deterministic, _parse_soda_deterministic
 from .by_pound_parsing import (
     _parse_by_pound_order,
     _find_by_weight_item,

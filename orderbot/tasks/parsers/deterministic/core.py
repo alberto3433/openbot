@@ -402,11 +402,11 @@ def parse_open_input_deterministic(
     if multi_item_result:
         return multi_item_result
 
-    # Check for soda/bottled drink order (more specific names like "Snapple Iced Tea")
-    soda_result = _parse_soda_deterministic(text)
-    if soda_result:
-        logger.info("DETERMINISTIC SODA: matched '%s'", text[:50])
-        return soda_result
+    # Check for simple items (beverages, pastries, sides, etc. - no config needed)
+    simple_result = _parse_soda_deterministic(text)  # TODO: rename variable after transition
+    if simple_result:
+        logger.info("DETERMINISTIC SIMPLE ITEM: matched '%s'", text[:50])
+        return simple_result
 
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])

@@ -83,6 +83,23 @@ class ItemTypeCoreQueryMixin:
         self._ensure_loaded()
         return self._configurable_item_types.copy()
 
+    def get_simple_item_types(self) -> set[str]:
+        """Get item types that have no attributes to ask about.
+
+        These are "simple" items like beverages, pastries, sides that
+        can be added to an order without configuration questions.
+
+        Returns:
+            Set of item type slugs that are NOT configurable.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        all_types = self.get_all_item_type_slugs()
+        configurable = self._configurable_item_types
+        return all_types - configurable
+
     def item_type_has_side_choice(self, item_type_slug: str) -> bool:
         """Check if an item type has a side choice attribute.
 

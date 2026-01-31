@@ -32,7 +32,7 @@ from .instructions_extraction import extract_special_instructions_from_input
 
 # Import from specialized modules
 from .item_building import build_parsed_item
-from .soda_parsing import _parse_soda_deterministic
+from .simple_item_parsing import _parse_simple_item_deterministic as _parse_soda_deterministic
 from .by_pound_parsing import _parse_by_pound_order, BY_POUND_PATTERN
 from .split_quantity_parsing import _parse_split_quantity_items as _parse_split_quantity_items_impl
 

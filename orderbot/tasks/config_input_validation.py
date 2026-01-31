@@ -13,7 +13,7 @@ import re
 from orderbot.cache import menu_cache
 from .models import parse_pending_field
 from .pending_fields import PendingField
-from .parsers.constants import OFF_TOPIC_PATTERNS
+from .parsers.inquiry_patterns import OFF_TOPIC_PATTERNS
 from .normalization import strip_ordering_prefix
 
 logger = logging.getLogger(__name__)

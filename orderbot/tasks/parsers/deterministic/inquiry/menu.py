@@ -6,7 +6,8 @@ import re
 from orderbot.cache import menu_cache
 
 from ....schemas import OpenInputResponse
-from ...constants import MORE_MENU_ITEMS_PATTERNS, clean_extracted_text
+from ...constants import clean_extracted_text
+from ...inquiry_patterns import MORE_MENU_ITEMS_PATTERNS
 
 logger = logging.getLogger(__name__)
 

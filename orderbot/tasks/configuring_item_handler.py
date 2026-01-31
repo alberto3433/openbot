@@ -13,7 +13,7 @@ from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
 from .parsers.constants import (
-    _SELECTION_PATTERNS,
+    SELECTION_PATTERNS,
     parse_can_you_make_it,
     ANOTHER_ITEM_PATTERN,
     ONE_MORE_PATTERN,
@@ -375,11 +375,11 @@ class ConfiguringItemHandler:
             )
 
         # Try to match by number (1, 2, 3, "first", "second", etc.)
-        # Uses shared _SELECTION_PATTERNS from constants (sorted by length descending)
+        # Uses shared SELECTION_PATTERNS from constants (sorted by length descending)
         selected_item = None
 
         # Check for number/ordinal selection (longer patterns first)
-        for key, idx in _SELECTION_PATTERNS:
+        for key, idx in SELECTION_PATTERNS:
             if key in user_lower:
                 if idx < len(options):
                     selected_item = options[idx]

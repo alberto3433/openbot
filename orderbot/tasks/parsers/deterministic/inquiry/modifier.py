@@ -3,7 +3,8 @@
 import logging
 
 from ....schemas import OpenInputResponse
-from ...constants import MODIFIER_INQUIRY_PATTERNS, clean_extracted_text
+from ...constants import clean_extracted_text
+from ...inquiry_patterns import MODIFIER_INQUIRY_PATTERNS
 
 logger = logging.getLogger(__name__)
 

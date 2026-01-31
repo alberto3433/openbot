@@ -36,5 +36,3 @@ SELECTION_PATTERNS: list[tuple[str, int]] = sorted([
     ("the sixth", 5), ("number six", 5), ("number 6", 5), ("sixth", 5), ("six", 5), ("6", 5),
 ], key=lambda x: len(x[0]), reverse=True)
 
-# Backward compatibility alias
-_SELECTION_PATTERNS = SELECTION_PATTERNS

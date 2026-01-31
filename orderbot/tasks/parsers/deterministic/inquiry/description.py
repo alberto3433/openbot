@@ -4,7 +4,8 @@ import logging
 import re
 
 from ....schemas import OpenInputResponse
-from ...constants import ITEM_DESCRIPTION_PATTERNS, clean_extracted_text
+from ...constants import clean_extracted_text
+from ...inquiry_patterns import ITEM_DESCRIPTION_PATTERNS
 
 logger = logging.getLogger(__name__)
 

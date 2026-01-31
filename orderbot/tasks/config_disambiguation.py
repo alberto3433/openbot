@@ -285,5 +285,3 @@ class ConfigDisambiguationHandler:
             processed.add(key)
 
 
-# Backwards compatibility alias
-DisambiguationHandler = ConfigDisambiguationHandler

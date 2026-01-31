@@ -20,14 +20,14 @@ from .models import OrderTask, MenuItemTask
 from .pending_fields import PendingField
 from .normalization import strip_ordering_prefix
 from .schemas import StateMachineResult, OrderPhase
-from .parsers.constants import extract_quantity, DEFAULT_PAGINATION_SIZE
+from .parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
 from .handler_config import BaseHandler
 from .checkout_messages import got_it_anything_else
 from .utils import OptionMatcher, InputNormalizer
 from .utils.text import format_english_list, format_display_list
 from .select_input_handler import SelectInputHandler
 from .config_options_inquiry import OptionsInquiryHandler
-from .config_disambiguation import DisambiguationHandler
+from .config_disambiguation import ConfigDisambiguationHandler
 from .config_question_builder import QuestionBuilder
 from .config_selection_extractor import SelectionExtractor
 from .direct_option_matcher import DirectOptionMatcher
@@ -78,7 +78,7 @@ class MenuItemConfigHandler(BaseHandler):
             get_optional_attributes=self._get_optional_attributes,
         )
         # Sub-handler for disambiguation resolution
-        self._disambiguation_handler = DisambiguationHandler(
+        self._disambiguation_handler = ConfigDisambiguationHandler(
             get_item_type_attributes=self._get_item_type_attributes,
             format_display_list=self._format_display_list,
             extract_qualifier_for_option=self._extract_qualifier_for_option,

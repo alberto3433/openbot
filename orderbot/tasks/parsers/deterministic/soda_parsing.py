@@ -42,9 +42,16 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
             break
 
     if not drink_type:
-        # Try word-boundary matching on item names FIRST
-        # This handles cases like "orange juice" matching "Fresh Squeezed Orange Juice"
-        # but NOT matching "Apple Juice" or "Cranberry Juice"
+        # FIRST: Check if this is EXACTLY a generic category term (like just "soda")
+        # Use is_category_reference for exact matching - "soda" matches but "cream soda" does not
+        category_slug = menu_cache.is_category_reference(text_lower)
+        if category_slug:
+            logger.info("Deterministic parse: exact generic category term '%s', needs clarification", category_slug)
+            return OpenInputResponse(needs_category_clarification=category_slug)
+
+        # THEN: Try word-boundary matching for specific items
+        # This handles cases like "cream soda" matching "Dr. Brown's Cream Soda"
+        # or "orange juice" matching "Fresh Squeezed Orange Juice"
         word_matches = menu_cache.find_items_by_word_match(text_lower)
         if word_matches:
             # Found items containing this phrase - use original term for disambiguation
@@ -54,13 +61,6 @@ def _parse_soda_deterministic(text: str) -> OpenInputResponse | None:
             )
             drink_type = text_lower
         else:
-            # Only fall back to generic category clarification if no specific items match
-            # This prevents "orange juice" from triggering "show all juices" when
-            # specific orange juice items exist
-            category_slug = menu_cache.get_category_needing_clarification(text_lower)
-            if category_slug:
-                logger.info("Deterministic parse: detected generic category term '%s', needs clarification", category_slug)
-                return OpenInputResponse(needs_category_clarification=category_slug)
             return None
 
     # Resolve alias to canonical menu item name from database (e.g., "coke" -> "Coca-Cola")

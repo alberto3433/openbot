@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Callable
 
 from .schemas import StateMachineResult, OrderPhase
-from .parsers.constants import extract_quantity
+from .parsers.constants import extract_quantity_for_pattern
 from .parsers.quantity_utils import parse_numeric_input, extract_leading_quantity
 from .utils import OptionMatchingOrchestrator, OptionMatcher
 
@@ -142,9 +142,9 @@ class DirectOptionMatcher:
             opt_name = opt["display_name"]
             qualifier = self._extract_qualifier(user_input, opt_name)
             # Extract quantity for this specific option
-            opt_quantity = extract_quantity(user_lower, opt_name.lower())
+            opt_quantity = extract_quantity_for_pattern(user_lower, opt_name.lower())
             if opt_quantity == 1:
-                opt_quantity = extract_quantity(user_lower, opt["slug"].replace("_", " "))
+                opt_quantity = extract_quantity_for_pattern(user_lower, opt["slug"].replace("_", " "))
 
             if qualifier:
                 display = f"{opt_name} ({qualifier})"

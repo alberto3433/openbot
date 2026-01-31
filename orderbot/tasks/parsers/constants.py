@@ -37,11 +37,8 @@ from orderbot.tasks.parsers.quantity_utils import (
 from .selection_patterns import (
     ORDINAL_WORDS,
     SELECTION_PATTERNS,
-    _SELECTION_PATTERNS,  # Backward compatibility alias
 )
 
-# Re-export extract_quantity_for_pattern as extract_quantity for backward compatibility
-extract_quantity = extract_quantity_for_pattern
 
 # =============================================================================
 # Skip Words for Parsing

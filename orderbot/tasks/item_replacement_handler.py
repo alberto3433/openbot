@@ -19,7 +19,7 @@ from orderbot.cache import menu_cache
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse, Selection
 from .parsers import extract_attribute_values
-from .parsers.constants import REPLACE_ITEM_PATTERN
+from .parsers.intent_patterns import REPLACE_ITEM_PATTERN
 from .normalization import format_slug_for_display
 from .checkout_messages import changed_to_anything_else
 from .handler_utils import get_last_item, recalculate_and_summarize

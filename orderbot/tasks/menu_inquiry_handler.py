@@ -511,22 +511,37 @@ class MenuInquiryHandler(MenuDataMixin):
         category_items = menu_cache.get_items_by_category(category_slug)
 
         if category_items:
-            # Get just the names of a few items (max 6)
-            item_names = [item.get("name", "") for item in category_items[:6]]
-            # Filter out empty names and format nicely
-            item_names = [name for name in item_names if name]
-            if len(item_names) > 3:
-                items_list = ", ".join(item_names[:3]) + ", and others"
-            elif len(item_names) > 1:
-                items_list = format_english_list(item_names)
-            elif item_names:
-                items_list = item_names[0]
-            else:
+            # Get all item names, filter out empty
+            all_item_names = [item.get("name", "") for item in category_items]
+            all_item_names = [name for name in all_item_names if name]
+
+            if not all_item_names:
                 # No valid item names - generic response
                 return StateMachineResult(
                     message="I don't have that available right now. What else can I get you?",
                     order=order,
                 )
+
+            # Paginate: show only DEFAULT_PAGINATION_SIZE items at a time
+            batch = all_item_names[:DEFAULT_PAGINATION_SIZE]
+            remaining = len(all_item_names) - len(batch)
+            has_more = remaining > 0
+
+            if has_more:
+                # Format with "and X more" indicator
+                if len(batch) == 1:
+                    items_list = f"{batch[0]}, and {remaining} more"
+                else:
+                    items_list = ", ".join(batch) + f", and {remaining} more"
+
+                # Save pagination state for "what else" follow-ups
+                order.set_menu_pagination(
+                    category_slug, DEFAULT_PAGINATION_SIZE, len(all_item_names)
+                )
+            else:
+                # All items fit in one response
+                items_list = format_english_list(batch)
+                order.clear_menu_pagination()
 
             return StateMachineResult(
                 message=f"What kind? We have {items_list}.",

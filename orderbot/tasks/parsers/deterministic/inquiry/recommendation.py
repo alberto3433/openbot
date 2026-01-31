@@ -7,7 +7,7 @@ from orderbot.cache.base import singularize
 from orderbot.cache import menu_cache
 
 from ....schemas import OpenInputResponse
-from ...constants import RECOMMENDATION_GENERAL_PATTERNS, RECOMMENDATION_TERM_PATTERNS
+from ...inquiry_patterns import RECOMMENDATION_GENERAL_PATTERNS, RECOMMENDATION_TERM_PATTERNS
 
 logger = logging.getLogger(__name__)
 

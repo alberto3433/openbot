@@ -168,3 +168,34 @@ class OptionQueryMixin:
                         answers.add(f"un{display_name}")
 
         return answers
+
+    def get_unavailable_size_terms(self) -> dict[str, str]:
+        """Get unavailable size terms mapped to their display names.
+
+        Returns terms (slugs and aliases) for size options where is_available=False.
+        Used to detect when users request sizes not on our menu.
+
+        Returns:
+            Dict mapping lowercase term -> display name
+            e.g., {"medium": "Medium", "med": "Medium", "tall": "Tall"}
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        result: dict[str, str] = {}
+
+        options = self._global_attribute_options.get("size", [])
+        for opt in options:
+            if not opt.get("is_available", True):
+                slug = opt.get("slug", "")
+                display_name = opt.get("display_name", slug)
+                if slug:
+                    result[slug.lower()] = display_name
+                # Also add aliases
+                aliases = opt.get("aliases")
+                if aliases:
+                    for alias in aliases:
+                        result[alias.lower()] = display_name
+
+        return result

@@ -400,26 +400,14 @@ def extract_attribute_values(
     # If user mentions a common size term (medium, regular, tall, etc.) that isn't
     # in our menu options, store it so the handler can say "We don't have medium"
     if "size" in attributes and "size" not in result and "_unavailable_size" not in result:
-        # Common size terms that users might say
-        common_size_terms = {
-            "medium": "Medium",
-            "med": "Medium",
-            "regular": "Regular",
-            "reg": "Regular",
-            "tall": "Tall",
-            "grande": "Grande",
-            "venti": "Venti",
-            "extra large": "Extra Large",
-            "xl": "Extra Large",
-            "xs": "Extra Small",
-            "extra small": "Extra Small",
-        }
+        # Get unavailable size terms from database
+        unavailable_size_terms = menu_cache.get_unavailable_size_terms()
 
-        for term, display in common_size_terms.items():
+        for term, display in unavailable_size_terms.items():
             # Word boundary match
             pattern = re.compile(rf'\b{re.escape(term)}\b', re.IGNORECASE)
             if pattern.search(input_lower):
-                # Check if this term is NOT a known size option
+                # Check if this term is NOT a known size option for this item
                 known_slugs = {opt.get("slug", "").lower() for opt in attributes["size"].get("options", [])}
                 known_displays = {opt.get("display_name", "").lower() for opt in attributes["size"].get("options", [])}
 

@@ -20,29 +20,23 @@ from typing import Any
 from .models import OrderTask
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
-from .parsers.constants import _SELECTION_PATTERNS
+from .utils.disambiguation_utils import (
+    normalize_input,
+    match_by_ordinal,
+    match_by_name_exact,
+    match_by_name_in_input,
+    match_by_word,
+    format_options_list,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Name Matching Helpers
-# =============================================================================
-
 def _get_item_display_name(item) -> str | None:
-    """Extract display name from either a cart item or a dict.
-
-    Args:
-        item: Either a MenuItemTask/ItemTask or a dict with "name" key
-
-    Returns:
-        Lowercased display name, or None if not extractable
-    """
+    """Extract display name from either a cart item or a dict."""
     if isinstance(item, dict):
         name = item.get("name", "")
         return name.lower() if name else None
-
-    # For task objects, try menu_item_name first, then get_display_name
     if hasattr(item, 'menu_item_name') and item.menu_item_name:
         return item.menu_item_name.lower()
     if hasattr(item, 'get_display_name'):
@@ -51,23 +45,12 @@ def _get_item_display_name(item) -> str | None:
 
 
 def _names_match(name1: str, name2: str) -> bool:
-    """Check if two item names match (exact or substring).
-
-    Args:
-        name1: First name (lowercased)
-        name2: Second name (lowercased)
-
-    Returns:
-        True if names match exactly or one is substring of the other
-    """
+    """Check if two item names match (exact or substring)."""
     return name1 == name2 or name2 in name1 or name1 in name2
 
 
 class DisambiguationHandler:
     """Handles disambiguation when multiple menu items match user input."""
-
-    # Number/ordinal patterns for selection - imported from constants to avoid duplication
-    NUMBER_PATTERNS = _SELECTION_PATTERNS
 
     MAX_OPTIONS = 6
 
@@ -194,7 +177,7 @@ class DisambiguationHandler:
     ) -> dict | None:
         """Resolve user's disambiguation selection.
 
-        Tries to match user input to one of the pending options.
+        Uses shared matching utilities for ordinal and name matching.
 
         Args:
             user_input: User's response to disambiguation question
@@ -206,77 +189,49 @@ class DisambiguationHandler:
         if not order.pending_item_options:
             return None
 
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_input(user_input)
         options = order.pending_item_options
 
-        # Reject negative numbers or other invalid input
-        if user_lower.startswith('-') or user_lower.startswith('−'):
-            return None
+        # Try ordinal matching first ("1", "first", etc.)
+        match = match_by_ordinal(user_lower, options, name_key="name")
+        if match:
+            logger.info("DISAMBIGUATION: Selected '%s' by ordinal", match.get("name"))
+            return match
 
-        # Try to match by number/ordinal
-        for key, idx in self.NUMBER_PATTERNS:
-            if key in user_lower:
-                if idx < len(options):
-                    logger.info(
-                        "DISAMBIGUATION: User selected option %d ('%s') by number",
-                        idx + 1,
-                        options[idx].get("name")
-                    )
-                    return options[idx]
-                else:
-                    # Out of range - return None to trigger re-ask
-                    logger.info(
-                        "DISAMBIGUATION: User selected %s but only %d options available",
-                        key,
-                        len(options)
-                    )
-                    return None
+        # Try exact name match
+        match = match_by_name_exact(user_lower, options, name_key="name")
+        if match:
+            logger.info("DISAMBIGUATION: Selected '%s' by exact name", match.get("name"))
+            return match
 
-        # Try to match by name
-        for option in options:
-            option_name = option.get("name", "").lower()
-            # Check if option name is in user input or vice versa
-            # Require minimum length to avoid false matches
-            if len(user_lower) >= 3 and (option_name in user_lower or user_lower in option_name):
-                logger.info(
-                    "DISAMBIGUATION: User selected '%s' by name match",
-                    option.get("name")
-                )
-                return option
+        # Try name-in-input match (e.g., "I'll take the classic bec" -> "The Classic BEC")
+        match = match_by_name_in_input(user_lower, options, name_key="name")
+        if match:
+            logger.info("DISAMBIGUATION: Selected '%s' by name in input", match.get("name"))
+            return match
 
-            # Also try matching individual words
-            for word in user_lower.split():
-                if len(word) >= 3 and word in option_name:
-                    logger.info(
-                        "DISAMBIGUATION: User selected '%s' by word match '%s'",
-                        option.get("name"),
-                        word
-                    )
-                    return option
+        # Try word matching
+        match = match_by_word(user_lower, options, name_key="name")
+        if match:
+            logger.info("DISAMBIGUATION: Selected '%s' by word match", match.get("name"))
+            return match
 
-        logger.info("DISAMBIGUATION: Could not match user input '%s' to any option", user_input[:50])
+        logger.info("DISAMBIGUATION: Could not match '%s' to any option", user_input[:50])
         return None
 
     def get_reask_message(self, order: OrderTask, show_prices: bool = False) -> str:
-        """Get message to re-ask disambiguation question.
-
-        Args:
-            order: Current order task with pending_item_options
-            show_prices: Whether to show prices in the options list
-
-        Returns:
-            Message string asking user to choose again
-        """
+        """Get message to re-ask disambiguation question."""
         options = order.pending_item_options or []
-        options_str = self._format_options(options[:self.MAX_OPTIONS], show_prices)
+        options_str = format_options_list(
+            options[:self.MAX_OPTIONS],
+            name_key="name",
+            show_prices=show_prices,
+            price_key="base_price",
+        )
         return f"I didn't catch which one. Please choose:\n{options_str}"
 
     def clear_disambiguation_state(self, order: OrderTask) -> None:
-        """Clear all disambiguation-related state from the order.
-
-        Args:
-            order: Current order task
-        """
+        """Clear all disambiguation-related state from the order."""
         order.pending_item_options = []
         order.pending_item_quantity = 1
         order.pending_item_modifiers = {}
@@ -284,24 +239,10 @@ class DisambiguationHandler:
         logger.info("DISAMBIGUATION: Cleared pending state")
 
     def _format_options(self, options: list[dict], show_prices: bool = False) -> str:
-        """Format options list for display.
-
-        Args:
-            options: List of menu item dicts
-            show_prices: Whether to include prices
-
-        Returns:
-            Formatted string with numbered options
-        """
-        option_list = []
-        for i, item in enumerate(options, 1):
-            name = item.get("name", "Unknown")
-            if show_prices:
-                price = item.get("base_price", 0)
-                if price > 0:
-                    option_list.append(f"{i}. {name} (${price:.2f})")
-                else:
-                    option_list.append(f"{i}. {name}")
-            else:
-                option_list.append(f"{i}. {name}")
-        return "\n".join(option_list)
+        """Format options list for display."""
+        return format_options_list(
+            options,
+            name_key="name",
+            show_prices=show_prices,
+            price_key="base_price",
+        )

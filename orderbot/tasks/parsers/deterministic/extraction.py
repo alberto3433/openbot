@@ -594,6 +594,44 @@ def extract_attribute_values(
                     )
                     break
 
+    # Phase 6: Detect unrecognized size terms
+    # If user mentions a common size term (medium, regular, tall, etc.) that isn't
+    # in our menu options, store it so the handler can say "We don't have medium"
+    if "size" in attributes and "size" not in result and "_unavailable_size" not in result:
+        # Common size terms that users might say
+        common_size_terms = {
+            "medium": "Medium",
+            "med": "Medium",
+            "regular": "Regular",
+            "reg": "Regular",
+            "tall": "Tall",
+            "grande": "Grande",
+            "venti": "Venti",
+            "extra large": "Extra Large",
+            "xl": "Extra Large",
+            "xs": "Extra Small",
+            "extra small": "Extra Small",
+        }
+
+        for term, display in common_size_terms.items():
+            # Word boundary match
+            pattern = re.compile(rf'\b{re.escape(term)}\b', re.IGNORECASE)
+            if pattern.search(input_lower):
+                # Check if this term is NOT a known size option
+                known_slugs = {opt.get("slug", "").lower() for opt in attributes["size"].get("options", [])}
+                known_displays = {opt.get("display_name", "").lower() for opt in attributes["size"].get("options", [])}
+
+                if term.lower() not in known_slugs and term.lower() not in known_displays:
+                    result["_unavailable_size"] = {
+                        "attempted_slug": term,
+                        "attempted_display": display,
+                    }
+                    logger.info(
+                        "Unrecognized size term detected: '%s' (not in menu options)",
+                        term
+                    )
+                    break
+
     logger.debug(
         "Extracted attribute values for %s: %s",
         item_type, result

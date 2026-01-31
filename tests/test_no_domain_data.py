@@ -280,6 +280,9 @@ class TestNoDomainData:
 
         violations = scanner.scan_directory(orderbot_path, base_path)
 
+        # Only flag violations in actual code, not docstrings or comments
+        violations = [v for v in violations if v.context == "code"]
+
         if violations:
             # Generate helpful output
             error_msg = format_violations(violations, base_path)

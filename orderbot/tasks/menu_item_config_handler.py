@@ -34,6 +34,8 @@ from .config_question_builder import QuestionBuilder
 from .config_selection_extractor import SelectionExtractor
 from .direct_option_matcher import DirectOptionMatcher
 from .response_utils import is_negative, is_affirmative
+from .quantity_input_handler import QuantityInputHandler
+from .customization_checkpoint_handler import CustomizationCheckpointHandler
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +95,29 @@ class MenuItemConfigHandler(BaseHandler):
         self._direct_option_matcher = DirectOptionMatcher(
             option_matcher=self._option_matcher,
             extract_qualifier_callback=self._extract_qualifier_for_option,
-            match_option_callback=self._match_option_from_input,
+            match_option_callback=self._option_matcher.match_single,
             ask_more_customizations_callback=self._ask_more_customizations,
+        )
+        # Sub-handler for quantity input (shots, syrups, etc.)
+        self._quantity_input_handler = QuantityInputHandler(
+            advance_callback=self._advance_to_next_question,
+        )
+        # Sub-handler for customization checkpoint (optional modifiers)
+        self._customization_checkpoint_handler = CustomizationCheckpointHandler(
+            options_inquiry_handler=self._options_inquiry_handler,
+            option_matcher=self._option_matcher,
+            recalculate_item_price=self._recalculate_item_price,
+            get_unanswered_optional=self._get_unanswered_optional,
+            get_optional_attributes=self._get_optional_attributes,
+            format_display_list=self._format_display_list,
+            match_attribute_from_input=self._match_attribute_from_input,
+            extract_quantity_from_input=self._extract_quantity_from_input,
+            ask_disambiguation_for_options=self._ask_disambiguation_for_options,
+            ask_customization_checkpoint=self._ask_customization_checkpoint,
+            ask_optional_attribute=self._ask_optional_attribute,
+            try_direct_option_match=self._try_direct_option_match,
+            get_next_question=self._get_next_question,
+            process_pending_parsed_items_callback=None,  # Set via setter
         )
 
     def _apply_selections(self, item: "MenuItemTask", selections: list) -> str | None:
@@ -122,6 +145,8 @@ class MenuItemConfigHandler(BaseHandler):
     def process_pending_parsed_items(self, callback: "Callable[[OrderTask], StateMachineResult | None] | None") -> None:
         """Set callback for processing pending parsed items."""
         self._process_pending_parsed_items_callback = callback
+        # Also update the customization checkpoint handler
+        self._customization_checkpoint_handler._process_pending_parsed_items_callback = callback
 
     def supports_item_type(self, item_type_slug: str | None) -> bool:
         """Check if this handler supports the given item type.
@@ -230,37 +255,6 @@ class MenuItemConfigHandler(BaseHandler):
         """
         return self._input_normalizer.extract_leading_quantity(user_input)
 
-    def _match_option_from_input(
-        self, user_input: str, options: list[dict]
-    ) -> tuple[dict | None, list[dict]]:
-        """
-        Try to match user input to an option with smart partial matching.
-
-        Delegates to OptionMatcher.match_single().
-        """
-        return self._option_matcher.match_single(user_input, options)
-
-    def _tokenize_multi_input(self, user_input: str) -> list[str]:
-        """
-        Tokenize compound input into individual items.
-
-        Delegates to InputNormalizer.
-        """
-        return self._input_normalizer.tokenize_multi_input(user_input)
-
-    def _match_multiple_options_from_input(
-        self, user_input: str, options: list[dict]
-    ) -> list[dict]:
-        """
-        Match ALL options mentioned in user input (for multi_select attributes).
-
-        Delegates to OptionMatcher.match_multiple().
-        """
-        return self._option_matcher.match_multiple(user_input, options)
-
-    def _is_whole_word_match(self, needle: str, haystack: str) -> bool:
-        """Check if needle appears as a whole word/phrase in haystack."""
-        return self._option_matcher._is_whole_word_match(needle, haystack)
 
     def _extract_qualifier_for_option(self, user_input: str, option_name: str) -> str | None:
         """
@@ -333,10 +327,10 @@ class MenuItemConfigHandler(BaseHandler):
 
             # Partial match: user input is a word in the attribute name
             # e.g., "cheese" matches "Extra Cheese", "egg" matches "Add Egg"
-            if self._is_whole_word_match(user_lower, display_lower):
+            if self._option_matcher._is_whole_word_match(user_lower, display_lower):
                 matched.append(attr)
                 continue
-            if self._is_whole_word_match(user_lower, slug_readable):
+            if self._option_matcher._is_whole_word_match(user_lower, slug_readable):
                 matched.append(attr)
                 continue
 
@@ -789,116 +783,11 @@ class MenuItemConfigHandler(BaseHandler):
     ) -> StateMachineResult:
         """Handle quantity-based input (e.g., shots).
 
-        This input type interprets:
-        - Negative responses ("no", "none") as skip
-        - Affirmative responses ("yes", "sure") as quantity=1
-        - Numeric words ("double", "triple", "two") as that quantity
-        - Digits ("2", "3") as that quantity
-
-        Uses the first available option for unit price and display name.
-        Validates against max_selections from the attribute config.
+        Delegates to QuantityInputHandler.
         """
-        attr_slug = attr["slug"]
-        user_lower = user_input.lower().strip()
-
-        # Get unit option (first available option defines unit price and name)
-        available_options = [opt for opt in options if opt.get("is_available", True)]
-        if not available_options:
-            logger.warning("No available options for quantity attribute %s", attr_slug)
-            return self._advance_to_next_question(item, order, attr)
-
-        unit_option = available_options[0]
-        unit_price = unit_option.get("price") or unit_option.get("price_modifier") or 0.0
-        unit_name = unit_option.get("display_name", attr["display_name"])
-        unit_slug = unit_option.get("slug", attr_slug)
-
-        # Get max quantity from attribute config
-        max_qty = attr.get("max_selections") or 10
-
-        # Check for negative responses (skip)
-        # Handles exact matches ("no", "none") and phrases like "no shots", "no extra shots"
-        is_neg = is_negative(user_input)
-
-        # Also check if input starts with a negative pattern followed by the attribute/unit name
-        # e.g., "no shots" when asking about extra shots, "no syrup" when asking about syrup
-        if not is_neg:
-            unit_name_lower = unit_name.lower()
-            attr_name_lower = attr["display_name"].lower()
-            no_patterns = menu_cache.get_response_patterns("negative")
-            for neg_pattern in no_patterns:
-                # Check patterns like "no shots", "no extra shots", "none of that"
-                if user_lower.startswith(neg_pattern + " "):
-                    remainder = user_lower[len(neg_pattern) + 1:].strip()
-                    # Check if remainder contains the unit name or attribute name
-                    if (unit_name_lower in remainder or
-                        attr_name_lower in remainder or
-                        unit_slug in remainder or
-                        attr_slug in remainder):
-                        is_neg = True
-                        break
-
-        if is_neg:
-            # Mark attribute as declined so _get_unanswered_mandatory knows it's answered
-            # Using item[attr_slug] = None triggers __setitem__ which adds to modifiers
-            item[attr_slug] = None
-            return self._advance_to_next_question(item, order, attr)
-
-        # Check for affirmative responses (quantity=1)
-        # Also treat "extra" or "extra <anything>" as affirmative (e.g., "extra shot" = 1 shot)
-        # This handles typos like "extra host" as "yes, one"
-        is_extra_response = user_lower == "extra" or user_lower.startswith("extra ")
-        if is_affirmative(user_input) or is_extra_response:
-            quantity = 1
-        else:
-            # Try to parse numeric quantity
-            parsed_qty = parse_numeric_input(user_input)
-            if parsed_qty is None:
-                # Couldn't parse - ask for clarification
-                question = attr.get("question_text") or f"How many {attr['display_name'].lower()}?"
-                return StateMachineResult(
-                    message=f"Sorry, I didn't catch that. {question}",
-                    order=order,
-                )
-            quantity = parsed_qty
-
-        # Validate quantity
-        if quantity < 1:
-            return self._advance_to_next_question(item, order, attr)
-        if quantity > max_qty:
-            return StateMachineResult(
-                message=f"Sorry, the maximum is {max_qty}. How many would you like?",
-                order=order,
-            )
-
-        # Add selection with per-unit price
-        # Note: Don't include quantity in display_name - the display layer handles that
-        # But DO pluralize the name when quantity > 1
-        # Store per-unit price; the pricing engine will multiply by quantity
-        if quantity > 1:
-            display_name = pluralize(unit_name)
-        else:
-            display_name = unit_name
-
-        item.add_selection(
-            unit_slug,
-            attr_slug,
-            quantity=quantity,
-            price=unit_price,  # Per-unit price, not total
-            display_name=display_name,
+        return self._quantity_input_handler.handle_quantity_input(
+            user_input, item, order, attr, options
         )
-
-        logger.info(
-            "QUANTITY_INPUT: %s=%d (unit_price=$%.2f, total=$%.2f) from input '%s'",
-            attr_slug, quantity, unit_price, quantity * unit_price, user_input
-        )
-
-        # Build acknowledgment with quantity prefix and pluralization
-        if quantity > 1:
-            plural_name = pluralize(unit_name)
-            ack_text = f"{quantity} {plural_name}"
-        else:
-            ack_text = unit_name
-        return self._advance_to_next_question(item, order, attr, ack_text)
 
     def _handle_select_input(
         self,
@@ -1018,199 +907,24 @@ class MenuItemConfigHandler(BaseHandler):
     def handle_customization_checkpoint(
         self, user_input: str, item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
-        """Handle user response to customization checkpoint."""
-        user_lower = user_input.lower().strip()
-        item_type = item.menu_item_type
+        """Handle user response to customization checkpoint.
 
-        # Check for "no" or "done" - user doesn't want to customize further
-        no_patterns = menu_cache.get_response_patterns("negative")
-        is_declining = (
-            any(user_lower == p or user_lower.startswith(p) for p in no_patterns)
-            or menu_cache.is_done(user_lower)
-        )
-        if is_declining:
-            # Recalculate price and complete
-            self._recalculate_item_price(item)
-            item.mark_complete()
-            order.clear_pending()
-
-            # Check if there are pending parsed items that haven't been added yet
-            # This handles the case where disambiguation was triggered and remaining items
-            # in the order were stored (e.g., "bagel and latte" - latte is stored while
-            # we disambiguate and configure bagel)
-            if self._process_pending_parsed_items_callback:
-                pending_result = self._process_pending_parsed_items_callback(order)
-                if pending_result:
-                    return pending_result
-
-            # Check if there are more items to configure (e.g., coffee added with bagel)
-            if self._get_next_question:
-                next_result = self._get_next_question(order)
-                # If there's another item to configure, return that
-                if next_result and next_result.order.pending_field:
-                    return next_result
-
-            # No more items to configure - go back to taking items
-            order.set_phase(OrderPhase.TAKING_ITEMS)
-            return StateMachineResult(
-                message=got_it_anything_else(item.get_summary()),
-                order=order,
-            )
-
-        unanswered = self._get_unanswered_optional(item, item_type)
-
-        # Check for options inquiry about ANY attribute (not just unanswered)
-        # e.g., "what condiments do you have?" even after adding salt
-        all_optional = self._get_optional_attributes(item_type)
-        inquiry_attr = self._options_inquiry_handler.detect_options_inquiry_for_attribute(user_input, all_optional)
-        if inquiry_attr:
-            options = inquiry_attr.get("options", [])
-            if options:
-                order.pending_field = f"{item_type}:{inquiry_attr['slug']}"
-                return self._options_inquiry_handler.handle_options_inquiry(
-                    item, order, inquiry_attr, options, is_show_more=False
-                )
-
-        # Check for "yes" - user wants to see the list
-        yes_patterns = menu_cache.get_response_patterns("affirmative")
-        if any(user_lower == p or user_lower.startswith(p + " ") for p in yes_patterns):
-            # If just "yes", list the options
-            if user_lower in yes_patterns:
-                options_list = self._format_display_list(unanswered)
-                order.pending_field = PendingField.CUSTOMIZATION_SELECTION
-                return StateMachineResult(
-                    message=f"You can add: {options_list}. What would you like?",
-                    order=order,
-                )
-
-        # Try to match specific attribute(s) from input
-        matched_attrs = self._match_attribute_from_input(user_input, unanswered)
-
-        if matched_attrs:
-            attr = matched_attrs[0]
-
-            # Check if user is asking about options ("what condiments do you have?")
-            # rather than selecting an attribute to configure
-            if self._options_inquiry_handler.is_options_inquiry(user_input, topic=attr.get("display_name", "")):
-                options = attr.get("options", [])
-                if options:
-                    # Set pending_field to this attribute so "what else?" goes through
-                    # _handle_attribute_answer() which has show-more pagination logic
-                    order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
-                    return self._options_inquiry_handler.handle_options_inquiry(item, order, attr, options, is_show_more=False)
-
-            # For boolean attributes, set value directly without asking
-            if attr.get("input_type") == "boolean":
-                attr_slug = attr.get("slug")
-                # Check for negation patterns ("no decaf", "not sliced", "without decaf")
-                negation_pattern = rf"\b(no|not|without|skip)\s+{re.escape(attr_slug)}\b"
-                is_negated = bool(re.search(negation_pattern, user_lower, re.IGNORECASE))
-                item[attr_slug] = not is_negated
-
-                # Recalculate price and check if more to configure
-                self._recalculate_item_price(item)
-                remaining = self._get_unanswered_optional(item, item_type)
-                if remaining:
-                    return self._ask_customization_checkpoint(item, order)
-
-                # No more optional attributes - complete the item
-                item.mark_complete()
-                order.clear_pending()
-                if self._get_next_question:
-                    next_result = self._get_next_question(order)
-                    if next_result and next_result.order.pending_field:
-                        return next_result
-                order.set_phase(OrderPhase.TAKING_ITEMS)
-                return StateMachineResult(
-                    message=got_it_anything_else(item.get_summary()),
-                    order=order,
-                )
-
-            # Non-boolean attribute - check if user also specified an option value
-            # e.g., "american cheese" should apply "american" directly, not ask "What kind?"
-            attr_slug = attr["slug"]
-            options = attr.get("options", [])
-            input_type = attr.get("input_type", "single_select")
-            # Extract quantity and use remaining text for option matching
-            # e.g., "2 egg whites" → quantity=2, remaining="egg whites"
-            quantity, remaining_text = self._extract_quantity_from_input(user_input)
-
-            if options:
-                user_clean = remaining_text.lower().strip()
-                if user_clean.startswith("add "):
-                    user_clean = user_clean[4:].strip()
-
-                if input_type == "multi_select":
-                    # Use disambiguation-aware matching for multi-select
-                    matched_opts, disambiguation = self._option_matcher.match_multiple_with_disambiguation(
-                        user_clean, options
-                    )
-
-                    if disambiguation:
-                        # Single ambiguous term matches multiple options - ask user to clarify
-                        return self._ask_disambiguation_for_options(
-                            item, order, attr, disambiguation, user_input
-                        )
-
-                    if matched_opts:
-                        # Apply matched options directly
-                        display_parts = []
-                        for opt in matched_opts:
-                            opt_name = opt["display_name"]
-                            opt_quantity = extract_quantity(user_clean, opt_name.lower())
-                            if opt_quantity == 1:
-                                opt_quantity = extract_quantity(user_clean, opt["slug"].replace("_", " "))
-                            if opt_quantity == 1 and quantity > 1:
-                                opt_quantity = quantity
-                            opt_price = opt.get("price") or opt.get("price_modifier") or 0
-                            item.add_selection(
-                                opt["slug"], attr_slug,
-                                quantity=opt_quantity, price=opt_price,
-                                display_name=opt_name,
-                            )
-                            display = f"{opt_quantity} {opt_name}" if opt_quantity > 1 else opt_name
-                            display_parts.append(display)
-                        display_text = ", ".join(display_parts)
-                        return self._ask_more_customizations(item, order, f"{display_text} added")
-                else:
-                    # single_select
-                    matched_opt, _ = self._match_option_from_input(user_clean, options)
-                    if matched_opt:
-                        opt_name = matched_opt["display_name"]
-                        opt_price = matched_opt.get("price") or matched_opt.get("price_modifier") or 0
-                        item.add_selection(
-                            matched_opt["slug"], attr_slug,
-                            quantity=quantity, price=opt_price,
-                            display_name=opt_name,
-                        )
-                        display = f"{quantity} {opt_name}" if quantity > 1 else opt_name
-                        return self._ask_more_customizations(item, order, f"{display} added")
-
-            # No option matched - ask for the option
-            # Store quantity so it can be applied when user answers
-            if quantity > 1:
-                order.pending_modifier_quantity = quantity
-            return self._ask_optional_attribute(item, order, attr)
-
-        # Try to match option values directly (e.g., "add a little mayo" -> mayo in condiments)
-        # This allows users to specify options without naming the attribute
-        result = self._try_direct_option_match(user_input, unanswered, item, order)
-        if result:
-            return result
-
-        # Couldn't match - inform user we don't have what they asked for
-        options_list = self._format_display_list(unanswered)
-        return StateMachineResult(
-            message=f"Sorry, we don't have {user_input}. You can add: {options_list}. What would you like?",
-            order=order,
+        Delegates to CustomizationCheckpointHandler for the actual logic.
+        """
+        return self._customization_checkpoint_handler.handle_customization_checkpoint(
+            user_input, item, order
         )
 
     def handle_customization_selection(
         self, user_input: str, item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
-        """Handle user selecting which attribute to customize from the list."""
-        # This is essentially the same as checkpoint handling
-        return self.handle_customization_checkpoint(user_input, item, order)
+        """Handle user selecting which attribute to customize from the list.
+
+        Delegates to CustomizationCheckpointHandler for the actual logic.
+        """
+        return self._customization_checkpoint_handler.handle_customization_selection(
+            user_input, item, order
+        )
 
     def _ask_optional_attribute(
         self, item: MenuItemTask, order: OrderTask, attr: dict
@@ -1310,7 +1024,7 @@ class MenuItemConfigHandler(BaseHandler):
 
             elif input_type in ("single_select", "multi_select") and options:
                 # Only capture if we get a unique match (ignore disambiguation cases)
-                matched, _ = self._match_option_from_input(user_input, options)
+                matched, _ = self._option_matcher.match_single(user_input, options)
                 if matched:
                     # Check if the matched option is available
                     if not matched.get("is_available", True):

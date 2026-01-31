@@ -278,15 +278,19 @@ class TestDeterministicParserBagelOrders:
         assert bagel.attribute_values.get("bread") == expected_type
 
     def test_bagel_with_toasted(self):
-        """Test parsing bagel with toasted preference."""
+        """Test parsing bagel with toasted preference.
+
+        Parser returns 1 item with quantity=2. The state machine later
+        splits this into separate items when adding to the order.
+        """
         result = parse_open_input_deterministic("two plain bagels toasted")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
-        assert len(bagels) == 2
-        # Both should be plain and toasted
-        for bagel in bagels:
-            assert bagel.attribute_values.get("bread") == "plain_bagel"
-            assert bagel.attribute_values.get("toasted") is True
+        assert len(bagels) == 1
+        bagel = bagels[0]
+        assert bagel.quantity == 2
+        assert bagel.attribute_values.get("bread") == "plain_bagel"
+        assert bagel.attribute_values.get("toasted") is True
 
     def test_bagel_with_comma_separated_modifiers(self):
         """Test bagel with modifiers separated by commas - regression test.

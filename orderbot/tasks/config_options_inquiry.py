@@ -69,6 +69,8 @@ class OptionsInquiryHandler:
             "options",
             "list them",
             "what choices",
+            "what are my choices",
+            "what are the choices",
             "what can i choose",
             "what can i get",
             "show me",

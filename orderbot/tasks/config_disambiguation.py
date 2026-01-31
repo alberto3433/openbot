@@ -13,16 +13,24 @@ from typing import Callable, TYPE_CHECKING
 from orderbot.menu_data_cache import menu_cache
 from .schemas import StateMachineResult
 from .parsers.constants import extract_quantity
+from .utils.disambiguation_utils import (
+    normalize_input,
+    match_by_ordinal,
+    match_by_name_exact,
+    match_by_alias_exact,
+    match_by_name_in_input,
+    get_aliases,
+)
 
 if TYPE_CHECKING:
     from .models import OrderTask, MenuItemTask
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["DisambiguationHandler"]
+__all__ = ["ConfigDisambiguationHandler", "DisambiguationHandler"]
 
 
-class DisambiguationHandler:
+class ConfigDisambiguationHandler:
     """
     Handles disambiguation resolution during menu item configuration.
 
@@ -63,9 +71,11 @@ class DisambiguationHandler:
         """
         Resolve user's selection from disambiguation options using STRICT matching.
 
-        This is used when we've asked "Did you mean X or Y?" and need to match
-        the user's response to one of the specific options. We use exact matching
-        to avoid "ham" matching "Black Forest Ham".
+        Uses shared matching utilities but with strict rules:
+        - Matches ordinals ("1", "first")
+        - Matches exact name/slug/alias
+        - Matches if full option name is in input ("black forest ham please" -> "Black Forest Ham")
+        - Does NOT match if input is substring of name ("ham" should NOT match "Black Forest Ham")
 
         Args:
             user_input: User's response (e.g., "ham", "black forest ham", "first", "1")
@@ -74,65 +84,30 @@ class DisambiguationHandler:
         Returns:
             Selected option dict if matched, None if no match found.
         """
-        input_lower = user_input.lower().strip()
+        input_lower = normalize_input(user_input)
 
-        # Remove common filler words
-        input_lower = input_lower.replace("the ", "").strip()
-        input_lower = input_lower.replace("please", "").strip()
-        input_lower = input_lower.replace("i want ", "").strip()
-        input_lower = input_lower.replace("i'll take ", "").strip()
-        input_lower = input_lower.replace("just ", "").strip()
+        # Try ordinal matching first
+        match = match_by_ordinal(input_lower, options, name_key="display_name")
+        if match:
+            return match
 
-        # Handle ordinal selections FIRST ("first one", "second one", "1", "2")
-        # This allows quick selection by position
-        ordinal_map = {
-            "first": 0, "1": 0,
-            "second": 1, "2": 1,
-            "third": 2, "3": 2,
-            "fourth": 3, "4": 3,
-        }
-        for word, index in ordinal_map.items():
-            if input_lower == word or input_lower == f"{word} one":
-                if index < len(options):
-                    return options[index]
+        # Try exact name/slug matching
+        match = match_by_name_exact(input_lower, options, name_key="display_name", slug_key="slug")
+        if match:
+            return match
 
-        # Try EXACT match on display_name (case-insensitive)
-        # "ham" matches "Ham" but NOT "Black Forest Ham"
-        for opt in options:
-            if opt["display_name"].lower() == input_lower:
-                return opt
+        # Try exact alias matching
+        match = match_by_alias_exact(input_lower, options)
+        if match:
+            return match
 
-        # Try EXACT match on slug (with underscores replaced by spaces)
-        for opt in options:
-            slug_readable = opt["slug"].replace("_", " ")
-            if slug_readable == input_lower:
-                return opt
+        # Try if FULL option name is in user input
+        # ("black forest ham please" -> "Black Forest Ham")
+        match = match_by_name_in_input(input_lower, options, name_key="display_name")
+        if match:
+            return match
 
-        # Helper to parse aliases from option dict
-        def get_aliases(opt: dict) -> list[str]:
-            aliases_raw = opt.get("aliases", [])
-            if isinstance(aliases_raw, str):
-                if "|" in aliases_raw:
-                    return [a.strip() for a in aliases_raw.split("|") if a.strip()]
-                return [a.strip() for a in aliases_raw.split(",") if a.strip()]
-            return aliases_raw or []
-
-        # Try EXACT match on alias
-        for opt in options:
-            for alias in get_aliases(opt):
-                if alias.lower() == input_lower:
-                    return opt
-
-        # Try if the FULL option name is in the user input
-        # This handles "black forest ham please" → "Black Forest Ham"
-        # But NOT "ham" → "Black Forest Ham" (substring of option name)
-        for opt in options:
-            display_lower = opt["display_name"].lower()
-            if display_lower in input_lower:
-                return opt
-
-        # Try if the FULL alias is in the user input
-        # This handles "sesame sourdough please" → option with alias "sesame sourdough"
+        # Try if FULL alias is in user input
         for opt in options:
             for alias in get_aliases(opt):
                 alias_lower = alias.lower()
@@ -308,3 +283,7 @@ class DisambiguationHandler:
                 item[normalized_key] = value
 
             processed.add(key)
+
+
+# Backwards compatibility alias
+DisambiguationHandler = ConfigDisambiguationHandler

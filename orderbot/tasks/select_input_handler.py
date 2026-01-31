@@ -24,7 +24,7 @@ from .selection_utils import (
     find_numeric_options,
 )
 from .schemas import StateMachineResult, OrderPhase
-from .parsers.constants import extract_quantity_for_pattern
+from .parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
 from .parsers.quantity_utils import parse_numeric_input
 from .utils.text import format_english_list
 from .response_utils import is_affirmative
@@ -516,14 +516,25 @@ class SelectInputHandler:
                     order=order,
                 )
 
-        # No match at all - inform user
+        # No match at all - show first page of options directly
         attr_name = attr["display_name"].lower()
-        available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
-        if available and len(available) <= 4:
-            options_str = format_english_list(available, conjunction="or")
-            message = f"Sorry, we don't have {user_input}. Our {attr_name} options are: {options_str}."
+        available = [opt for opt in options if opt.get("is_available", True)]
+
+        if not available:
+            message = f"Sorry, we don't have {user_input} and there are no {attr_name} options available."
+        elif len(available) <= DEFAULT_PAGINATION_SIZE:
+            # Show all options
+            names = [opt["display_name"] for opt in available]
+            options_str = format_english_list(names, conjunction="or")
+            message = f"Sorry, we don't have {user_input}. We have {options_str}."
         else:
-            message = f"Sorry, we don't have {user_input}. You can ask 'what options?' to see our {attr_name} choices."
+            # Show first page with pagination
+            first_page = available[:DEFAULT_PAGINATION_SIZE]
+            names = [opt["display_name"] for opt in first_page]
+            options_str = format_english_list(names, conjunction="and")
+            message = f"Sorry, we don't have {user_input}. We have {options_str}, and more. Do you want me to give you more?"
+            # Set pagination state so "yes" / "more options" works on next turn
+            order.config_options_page = 1
 
         return StateMachineResult(message=message, order=order)
 

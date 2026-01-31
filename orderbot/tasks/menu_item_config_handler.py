@@ -688,7 +688,10 @@ class MenuItemConfigHandler(BaseHandler):
         # (Only for select types with options)
         if options and input_type in ("single_select", "multi_select"):
             # Check if user is asking for more options (pagination)
-            if order.config_options_page > 0 and self._options_inquiry_handler.is_show_more_request(user_input):
+            # Accept both explicit "show more" phrases AND affirmative responses (e.g., "yes" after "do you want more?")
+            if order.config_options_page > 0 and (
+                self._options_inquiry_handler.is_show_more_request(user_input) or is_affirmative(user_input)
+            ):
                 return self._options_inquiry_handler.handle_options_inquiry(item, order, attr, options, is_show_more=True)
 
             # Check if user is asking about available options

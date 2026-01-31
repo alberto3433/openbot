@@ -2326,7 +2326,7 @@ class TestCheeseChoice:
         assert bagel.attribute_values.get("cheese") == "muenster"
 
     def test_invalid_cheese_prompts_again(self):
-        """Test that invalid cheese type re-prompts user."""
+        """Test that invalid cheese type shows available options directly."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
         from tests.helpers import BagelItemTask
@@ -2343,10 +2343,12 @@ class TestCheeseChoice:
 
         result = sm.configuring_item_handler.handle_configuring_item("brie", order)
 
-        # Should re-prompt, not add cheese
+        # Should not add invalid cheese
         toppings = bagel["toppings"] or []
         assert len(toppings) == 0
-        assert "What kind of cheese" in result.message
+        # New behavior: shows available options directly instead of re-asking
+        assert "Sorry, we don't have brie" in result.message
+        assert "We have" in result.message
         assert bagel["needs_cheese_clarification"] is True
 
 

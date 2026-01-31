@@ -43,8 +43,10 @@ class TestReplacementModificationScenarios:
         updated_bagel = bagels[0]
         assert updated_bagel["bread"] == "plain", "Bagel type should be preserved"
         assert updated_bagel["toasted"] is True, "Toasted should be preserved"
-        # Spread is stored as spread="cream cheese" + spread_type="veggie" = "veggie cream cheese"
-        assert updated_bagel["spread_type"] == "veggie", f"Spread type should be veggie, got: {updated_bagel['spread_type']}"
+        # Spread is stored in the "spread" attribute - should now be veggie/vegetable cream cheese
+        spread = updated_bagel["spread"]
+        assert "veggie" in spread.lower() or "vegetable" in spread.lower(), \
+            f"Spread should be veggie cream cheese, got: {spread}"
 
     def test_change_coffee_size_small_to_large(self):
         """

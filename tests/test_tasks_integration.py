@@ -299,10 +299,36 @@ def mock_get_known_menu_items():
     return {
         "bagel", "plain bagel", "everything bagel", "sesame bagel",
         "latte", "cappuccino", "espresso", "americano",
+        "hot coffee", "iced coffee", "hot latte", "iced latte",
         "bacon egg & cheese", "sausage egg & cheese",
         "the classic", "the leo",
         "chips", "cookie", "brownie",
     }
+
+
+def mock_get_configurable_item_type_slugs():
+    """Return mock set of configurable item type slugs."""
+    return {"bagel", "sized_beverage", "coffee", "espresso", "spread_sandwich", "egg_bagel"}
+
+
+def mock_get_item_type_triggers(item_type_slug: str | None = None):
+    """Return mock item type triggers for parser detection.
+
+    Args:
+        item_type_slug: If provided, returns triggers for just that type.
+                       If None, returns all triggers as a dict.
+    """
+    triggers = {
+        "bagel": {"bagel", "bagels"},
+        "sized_beverage": {"coffee", "coffees", "latte", "lattes", "cappuccino", "americano", "espresso"},
+        "coffee": {"coffee", "coffees"},
+        "espresso": {"espresso", "espressos"},
+        "spread_sandwich": {"sandwich", "sandwiches"},
+        "egg_bagel": {"egg bagel", "egg bagels"},
+    }
+    if item_type_slug is not None:
+        return triggers.get(item_type_slug, set())
+    return triggers
 
 
 # =============================================================================
@@ -317,6 +343,9 @@ def mock_menu_cache_attributes(monkeypatch):
     monkeypatch.setattr(menu_cache, "_is_loaded", True)
     monkeypatch.setattr(menu_cache, "get_item_type_attributes", mock_get_item_type_attributes)
     monkeypatch.setattr(menu_cache, "get_category_keyword_mapping", mock_get_category_keyword_mapping)
+    # Mock configurable item type detection - required for parser to detect "coffee" as sized_beverage
+    monkeypatch.setattr(menu_cache, "get_configurable_item_type_slugs", mock_get_configurable_item_type_slugs)
+    monkeypatch.setattr(menu_cache, "get_item_type_triggers", mock_get_item_type_triggers)
     # Mock the functions in parsers.constants module
     import orderbot.tasks.parsers.constants as parser_constants
     # Mock signature items and known menu items - required for multi-item parsing

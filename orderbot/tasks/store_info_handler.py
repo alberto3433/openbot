@@ -348,11 +348,8 @@ class StoreInfoHandler(MenuDataMixin):
                     display_name = menu_cache.get_item_type_display_name(item_type_slug)
                     return self._format_recommendation_response(item_names, display_name, order)
 
-        # Generic fallback
-        return StateMachineResult(
-            message="We have a great selection! What are you in the mood for?",
-            order=order,
-        )
+        # Generic fallback - show item types to help user decide
+        return self._format_item_type_suggestions(order)
 
     def _search_ingredients_by_term(self, search_term: str, max_items: int) -> list[str]:
         """Search all ingredient categories for items containing the search term.
@@ -414,10 +411,7 @@ class StoreInfoHandler(MenuDataMixin):
             order: Current order state (unchanged)
         """
         if not items:
-            return StateMachineResult(
-                message="We have a great selection! What are you in the mood for?",
-                order=order,
-            )
+            return self._format_item_type_suggestions(order)
 
         # Format item list naturally
         if len(items) == 1:
@@ -431,6 +425,62 @@ class StoreInfoHandler(MenuDataMixin):
             message = f"Popular {category_name.lower()} options include {item_list}. Would you like one of these?"
         else:
             message = f"Popular options include {item_list}. Would you like one of these?"
+
+        return StateMachineResult(
+            message=message,
+            order=order,
+        )
+
+    def _format_item_type_suggestions(self, order: OrderTask) -> StateMachineResult:
+        """Format a response with item type suggestions for generic recommendation requests.
+
+        Shows up to 5 item types (plural display names), with pagination support
+        for the rest via "what else" follow-ups.
+
+        Args:
+            order: Current order state
+        """
+        # Get all item types and their display names
+        all_slugs = sorted(menu_cache.get_all_item_type_slugs())
+        item_types_with_names = []
+
+        for slug in all_slugs:
+            display_name = menu_cache.get_item_type_display_name(slug, plural=True)
+            # Skip if display name is just the slug (not user-friendly)
+            if display_name and display_name != slug:
+                item_types_with_names.append((slug, display_name))
+
+        if not item_types_with_names:
+            return StateMachineResult(
+                message="We have a great selection! What are you in the mood for?",
+                order=order,
+            )
+
+        # Show first 5 item types
+        page_size = DEFAULT_PAGINATION_SIZE
+        first_page = item_types_with_names[:page_size]
+        has_more = len(item_types_with_names) > page_size
+
+        # Format the list
+        type_names = [name for _, name in first_page]
+        if len(type_names) == 1:
+            type_list = type_names[0]
+        elif len(type_names) == 2:
+            type_list = f"{type_names[0]} and {type_names[1]}"
+        else:
+            type_list = ", ".join(type_names[:-1]) + f", and {type_names[-1]}"
+
+        # Build message
+        message = f"We have a great selection! What are you in the mood for? We have {type_list}"
+        if has_more:
+            message += ", and more"
+            # Store pagination state for "what else" follow-ups
+            order.menu_query_pagination = {
+                "type": "item_types",
+                "items": [name for _, name in item_types_with_names],
+                "offset": page_size,
+            }
+        message += "."
 
         return StateMachineResult(
             message=message,

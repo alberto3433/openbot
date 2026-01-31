@@ -121,6 +121,7 @@ class UnifiedItemConverter:
             "line_total", "item_config", "attribute_values", "customization_offered",
             "display_name", "item_modifiers",  # item_modifiers handled separately
             "is_signature",  # Metadata, not a configurable attribute
+            "special_instructions",  # Handled separately, not an attribute
         }
         for source in (item_dict, item_config):
             for key, value in source.items():

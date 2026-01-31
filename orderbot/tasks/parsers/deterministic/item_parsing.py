@@ -11,7 +11,7 @@ Main entry point: _parse_configurable_item()
 import re
 import logging
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from ...schemas import (
     OpenInputResponse,

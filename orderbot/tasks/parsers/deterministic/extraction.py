@@ -14,7 +14,7 @@ import logging
 from collections import namedtuple
 from typing import Any
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from ..quantity_utils import WORD_TO_NUM, BASIC_WORD_TO_NUM, extract_quantity_word
 

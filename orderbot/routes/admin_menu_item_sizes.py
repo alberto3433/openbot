@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import MenuItemSizeCategory, MenuItemSize, MenuItemSizePrice
+from ..db.models import MenuItemSizeCategory, MenuItemSize, MenuItemSizePrice
 from ..schemas.menu_item_sizes import (
     SizeCategoryCreate,
     SizeCategoryUpdate,

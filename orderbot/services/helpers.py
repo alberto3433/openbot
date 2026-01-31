@@ -58,7 +58,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from ..models import (
+from ..db.models import (
     Company,
     GlobalAttributeOptionAlias,
     IngredientAlias,

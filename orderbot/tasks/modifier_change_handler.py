@@ -24,7 +24,7 @@ from .normalization import (
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
 from .parsers.quantity_utils import BASIC_WORD_TO_NUM, extract_leading_quantity
 from .utils.text import format_english_list
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from .handler_utils import is_configurable_menu_item, get_last_item
 

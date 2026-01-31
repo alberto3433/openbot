@@ -66,7 +66,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import (
+from ..db.models import (
     GlobalAttributeOption,
     Ingredient,
     IngredientAlias,

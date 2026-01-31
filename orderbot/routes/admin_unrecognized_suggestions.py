@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import UnrecognizedItemSuggestion, UnrecognizedItemLog
+from ..db.models import UnrecognizedItemSuggestion, UnrecognizedItemLog
 from ..schemas.unrecognized_suggestions import (
     UnrecognizedSuggestionOut,
     UnrecognizedSuggestionCreate,

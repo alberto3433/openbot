@@ -8,7 +8,7 @@ of user input to support multi-item order parsing.
 import re
 import logging
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from ...schemas import OpenInputResponse
 from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity

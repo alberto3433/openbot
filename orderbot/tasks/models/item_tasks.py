@@ -8,7 +8,7 @@ import uuid
 
 from pydantic import Field
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 
 from .base import BaseTask

@@ -44,7 +44,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from ..models import Order, OrderItem, Store
+from ..db.models import Order, OrderItem, Store
 
 
 logger = logging.getLogger(__name__)

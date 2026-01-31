@@ -2,13 +2,12 @@
 Deterministic Parser Package.
 
 This package contains all deterministic (non-LLM) parsing functions for user input.
-All exports maintain backward compatibility with the original deterministic.py module.
 
 Modules:
 - patterns: Compiled regex patterns and pattern utilities
 - extraction: Attribute/modifier extraction from text
 - item_parsing: Single item order parsing (configurable items, sodas, by-pound)
-- inquiry_parsing: Non-order queries (price, menu, recommendations, store info)
+- inquiry: Non-order queries (price, menu, recommendations, store info)
 - modification_parsing: Modifications to existing items
 - tokenization: Multi-item order tokenization and parsing
 - core: Main entry point orchestrating all sub-parsers
@@ -83,16 +82,16 @@ from .split_quantity_parsing import (
 # =============================================================================
 # Inquiry Parsing Module Exports
 # =============================================================================
-from .inquiry_parsing import (
-    _parse_price_inquiry_deterministic,
-    _parse_menu_query_deterministic,
-    _parse_recommendation_inquiry,
-    _parse_store_info_inquiry,
-    _parse_item_description_inquiry,
-    _parse_modifier_inquiry,
-    _parse_more_menu_items,
-    _parse_ingredient_search,
-    _get_order_signals,
+from .inquiry import (
+    parse_price_inquiry,
+    parse_menu_query,
+    parse_recommendation_inquiry,
+    parse_store_info_inquiry,
+    parse_item_description_inquiry,
+    parse_modifier_inquiry,
+    parse_more_menu_items,
+    parse_ingredient_search,
+    get_order_signals,
 )
 
 # =============================================================================
@@ -172,15 +171,15 @@ __all__ = [
     "_find_by_weight_item",
     "BY_POUND_PATTERN",
     # Inquiry parsing
-    "_parse_price_inquiry_deterministic",
-    "_parse_menu_query_deterministic",
-    "_parse_recommendation_inquiry",
-    "_parse_store_info_inquiry",
-    "_parse_item_description_inquiry",
-    "_parse_modifier_inquiry",
-    "_parse_more_menu_items",
-    "_parse_ingredient_search",
-    "_get_order_signals",
+    "parse_price_inquiry",
+    "parse_menu_query",
+    "parse_recommendation_inquiry",
+    "parse_store_info_inquiry",
+    "parse_item_description_inquiry",
+    "parse_modifier_inquiry",
+    "parse_more_menu_items",
+    "parse_ingredient_search",
+    "get_order_signals",
     # Modification parsing
     "_extract_menu_item_modifications",
     "_parse_modify_existing_item",

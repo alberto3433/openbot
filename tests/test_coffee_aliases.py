@@ -17,13 +17,13 @@ class TestGetConfigurableItemNames:
 
     def test_get_configurable_item_names_returns_set(self):
         """get_configurable_item_names should return a set."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         result = menu_cache.get_configurable_item_names()
         assert isinstance(result, set)
 
     def test_get_configurable_item_names_includes_beverage_items(self):
         """get_configurable_item_names should include sized_beverage item names from database."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         # These are actual item names from the database (lowercase)
         assert "hot latte" in item_names
@@ -34,7 +34,7 @@ class TestGetConfigurableItemNames:
 
     def test_get_configurable_item_names_includes_beverage_aliases(self):
         """get_configurable_item_names should include aliases from database."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         # These are aliases, not the actual item names
         assert "chai" in item_names  # alias for Chai Tea
@@ -44,14 +44,14 @@ class TestGetConfigurableItemNames:
 
     def test_get_configurable_item_names_includes_matcha_latte(self):
         """get_configurable_item_names should include the Seasonal Matcha Latte."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         assert "seasonal matcha latte" in item_names
         assert "matcha latte" in item_names  # alias
 
     def test_get_configurable_item_names_includes_bagel_items(self):
         """get_configurable_item_names should include bagel item names."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         # Bagels are configurable items - check for bagel-related items
         # Note: Individual bagel types (plain, everything) are attribute options,
@@ -61,7 +61,7 @@ class TestGetConfigurableItemNames:
 
     def test_get_configurable_item_names_excludes_soda_drinks(self):
         """get_configurable_item_names should not include non-configurable items like sodas."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         # These are beverages (item_type='beverage'), not sized_beverage
         # They don't have askable attributes so should not be included
@@ -154,7 +154,7 @@ class TestConfigurableItemAliasesIntegration:
 
     def test_tea_variations_recognized(self):
         """Various tea drinks should be recognized."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         # Full names
         assert "hot tea" in item_names
@@ -167,7 +167,7 @@ class TestConfigurableItemAliasesIntegration:
 
     def test_espresso_variations_recognized(self):
         """Espresso drinks should be recognized."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         assert "espresso" in item_names
         # Note: "double espresso" and "triple espresso" are now modifiers,
@@ -175,7 +175,7 @@ class TestConfigurableItemAliasesIntegration:
 
     def test_hot_chocolate_aliases(self):
         """Hot chocolate should be recognized by various terms."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         assert "hot chocolate" in item_names
         assert "hot cocoa" in item_names
@@ -183,7 +183,7 @@ class TestConfigurableItemAliasesIntegration:
 
     def test_cold_brew_recognized(self):
         """Cold brew should be recognized."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         assert "cold brew" in item_names
 

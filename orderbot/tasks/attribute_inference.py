@@ -14,7 +14,7 @@ Key functions:
 import logging
 from typing import TYPE_CHECKING
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 if TYPE_CHECKING:
     from .models import MenuItemTask

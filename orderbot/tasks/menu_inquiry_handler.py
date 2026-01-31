@@ -14,7 +14,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 
 from .models import OrderTask

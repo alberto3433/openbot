@@ -17,7 +17,7 @@ Usage:
 
 from sqlalchemy.orm import Session
 
-from ..models import ItemTypeGlobalAttribute
+from ..db.models import ItemTypeGlobalAttribute
 
 
 def has_linked_attributes(item_type_id: int, db: Session) -> bool:

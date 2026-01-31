@@ -10,7 +10,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from .schemas import StateMachineResult
 from .parsers.constants import extract_quantity
 from .utils.disambiguation_utils import (

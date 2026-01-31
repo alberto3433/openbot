@@ -38,7 +38,7 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 from fastapi import HTTPException
 
-from ..models import ModifierCategory, ModifierCategoryAlias
+from ..db.models import ModifierCategory, ModifierCategoryAlias
 from ..schemas.modifiers import (
     ModifierCategoryOut,
     ModifierCategoryCreate,

@@ -17,7 +17,7 @@ def ensure_cache_loaded(menu_cache_loaded):
 def test_coffee_filtering_excludes_boxed_coffee():
     """When user says just 'coffee', boxed coffee items with required_match_phrases should be filtered out."""
     from orderbot.tasks.menu_lookup import MenuLookup
-    from orderbot.menu_data_cache import menu_cache
+    from orderbot.cache import menu_cache
 
     menu_data = menu_cache.get_menu_index()
     lookup = MenuLookup(menu_data)
@@ -65,7 +65,7 @@ def test_coffee_filtering_excludes_boxed_coffee():
 def test_boxed_coffee_matches_when_user_says_boxed():
     """When user says 'boxed coffee', boxed coffee items should match."""
     from orderbot.tasks.menu_lookup import MenuLookup
-    from orderbot.menu_data_cache import menu_cache
+    from orderbot.cache import menu_cache
 
     menu_data = menu_cache.get_menu_index()
     lookup = MenuLookup(menu_data)

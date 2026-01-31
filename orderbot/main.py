@@ -134,7 +134,7 @@ async def lifespan(app: FastAPI):
     logger.info("Orderbot API starting up")
 
     # Initialize menu data cache from database
-    from .menu_data_cache import menu_cache
+    from .cache import menu_cache
     from .db import SessionLocal
 
     logger.info("Initializing menu data cache...")

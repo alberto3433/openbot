@@ -20,8 +20,8 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from .models import SessionAnalytics, Company
-from .menu_data_cache import menu_cache
+from .db.models import SessionAnalytics, Company
+from .cache import menu_cache
 from .email_service import send_payment_link_email
 from .tasks.state_machine_adapter import process_message_with_state_machine
 from .services.helpers import lookup_customer_by_phone, build_store_info

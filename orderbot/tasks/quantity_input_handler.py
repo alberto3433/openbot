@@ -8,7 +8,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 import logging
 from typing import TYPE_CHECKING, Callable
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.cache.base import pluralize
 
 from .models import OrderTask, MenuItemTask

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from orderbot.models import Base, ChatSession
+from orderbot.db.models import Base, ChatSession
 from orderbot.services.session import (
     get_or_create_session,
     save_session,

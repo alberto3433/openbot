@@ -3,7 +3,7 @@
 import logging
 import re
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from ....schemas import OpenInputResponse
 

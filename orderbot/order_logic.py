@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import Dict, Any, Optional, List
 
-from .menu_data_cache import menu_cache
+from .cache import menu_cache
 
 
 def _find_menu_item(menu_index: Dict[str, Any], item_name: str) -> Optional[Dict[str, Any]]:

@@ -26,7 +26,7 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-from ..models import ModifierQualifier
+from ..db.models import ModifierQualifier
 from ..schemas.modifier_qualifiers import (
     ModifierQualifierCreate,
     ModifierQualifierUpdate,

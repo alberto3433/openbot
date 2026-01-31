@@ -337,7 +337,7 @@ _CONFIGURABLE_ITEM_PATTERN_CACHE: re.Pattern | None = None
 def _get_menu_cache():
     """Get the menu cache singleton, returns None if not available."""
     try:
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         if menu_cache.is_loaded:
             return menu_cache
     except ImportError:

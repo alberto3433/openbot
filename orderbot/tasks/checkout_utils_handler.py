@@ -16,7 +16,7 @@ from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
 from .utils.text import format_english_list
 from .checkout_messages import got_it_anything_else, CheckoutMessages
-from ..menu_data_cache import menu_cache
+from ..cache import menu_cache
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig

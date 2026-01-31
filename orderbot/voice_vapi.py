@@ -25,9 +25,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import ChatSession, Store, Company, SessionAnalytics
-from .menu_index_builder import get_menu_version
-from .menu_data_cache import menu_cache
+from .db.models import ChatSession, Store, Company, SessionAnalytics
+from .menu_index import get_menu_version
+from .cache import menu_cache
 from .services.helpers import lookup_customer_by_phone
 
 

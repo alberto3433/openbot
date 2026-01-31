@@ -18,7 +18,7 @@ from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN
 from .handler_config import HandlerConfig
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
 from .modifier_operations import find_modifier_match, remove_modifier_from_item
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants
 from .checkout_messages import ok_removed_anything_else, ErrorMessages

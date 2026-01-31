@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import (
+from ..db.models import (
     GlobalAttribute,
     GlobalAttributeOption,
     GlobalAttributeOptionAlias,

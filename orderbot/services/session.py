@@ -88,7 +88,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..config import SESSION_TTL_SECONDS, SESSION_MAX_CACHE_SIZE
-from ..models import ChatSession
+from ..db.models import ChatSession
 
 
 logger = logging.getLogger(__name__)

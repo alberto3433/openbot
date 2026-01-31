@@ -10,7 +10,7 @@ Extracted from configuring_item_handler.py for better separation of concerns.
 import logging
 import re
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from .models import parse_pending_field
 from .pending_fields import PendingField
 from .parsers.constants import OFF_TOPIC_PATTERNS

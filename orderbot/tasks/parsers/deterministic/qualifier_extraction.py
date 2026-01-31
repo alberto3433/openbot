@@ -8,7 +8,7 @@ from user input text.
 import re
 import logging
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 logger = logging.getLogger(__name__)
 

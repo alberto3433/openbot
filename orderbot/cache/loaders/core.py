@@ -141,7 +141,7 @@ class LoaderMixin(
         Returns:
             Dict with pre-loaded data for use by other loader methods.
         """
-        from ...models import (
+        from ...db.models import (
             GlobalAttribute, GlobalAttributeOption, Ingredient,
             ItemType, ItemTypeGlobalAttribute, MenuItem, ItemTypeIngredient,
             Category, MenuItemCategory, ResponsePattern, ModifierQualifier,
@@ -286,7 +286,7 @@ class LoaderMixin(
 
     def _load_menu_index(self, db: Session) -> None:
         """Load and cache the menu index."""
-        from ...menu_index_builder import build_menu_index
+        from ...menu_index import build_menu_index
 
         logger.info("Building menu index (this may take a moment)...")
         start = time.time()

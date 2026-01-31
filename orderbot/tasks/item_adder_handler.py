@@ -28,7 +28,7 @@ from .attribute_inference import (
 )
 from .unrecognized_item_handler import UnrecognizedItemHandler
 from .order_item_builder import OrderItemBuilder
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
 if TYPE_CHECKING:

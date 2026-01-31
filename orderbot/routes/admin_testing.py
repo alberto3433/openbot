@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import Order
+from ..db.models import Order
 
 
 logger = logging.getLogger(__name__)

@@ -66,7 +66,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_rate_limit_chat, get_random_store_id
 from ..db import get_db
-from ..models import SessionAnalytics
+from ..db.models import SessionAnalytics
 from ..services.session import get_or_create_session, save_session
 from ..services.helpers import (
     lookup_customer_by_phone,

@@ -4,7 +4,7 @@ Utility functions for the models module.
 
 import logging
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)

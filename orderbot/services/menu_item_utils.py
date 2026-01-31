@@ -129,7 +129,7 @@ def _get_ingredient_aliases(ingredient_name: str) -> list[str]:
     Returns:
         List of lowercase aliases (e.g., ["american", "american cheese"])
     """
-    from orderbot.menu_data_cache import menu_cache
+    from orderbot.cache import menu_cache
 
     try:
         # Get all aliases (alias -> canonical_name mapping)

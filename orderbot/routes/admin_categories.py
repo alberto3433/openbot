@@ -21,7 +21,7 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 from fastapi import HTTPException
 
-from ..models import Category, MenuItemCategory
+from ..db.models import Category, MenuItemCategory
 from ..schemas.categories import (
     CategoryCreate,
     CategoryUpdate,

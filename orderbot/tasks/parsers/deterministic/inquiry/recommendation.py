@@ -4,7 +4,7 @@ import logging
 import re
 
 from orderbot.cache.base import singularize
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from ....schemas import OpenInputResponse
 from ...constants import RECOMMENDATION_GENERAL_PATTERNS, RECOMMENDATION_TERM_PATTERNS

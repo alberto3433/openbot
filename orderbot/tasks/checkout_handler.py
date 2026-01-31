@@ -26,7 +26,7 @@ from .models import (
 )
 from .schemas import OrderPhase, StateMachineResult, OpenInputResponse, Selection
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
-from ..menu_data_cache import menu_cache
+from ..cache import menu_cache
 from .parsers import (
     validate_email_address,
     validate_phone_number,

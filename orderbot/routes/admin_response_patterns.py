@@ -47,7 +47,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import ResponsePattern
+from ..db.models import ResponsePattern
 from ..schemas.response_patterns import (
     ResponsePatternOut,
     ResponsePatternCreate,

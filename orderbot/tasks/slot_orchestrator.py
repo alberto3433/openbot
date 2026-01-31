@@ -18,7 +18,7 @@ from .models import (
     MenuItemTask,
 )
 from .checkout_messages import CheckoutMessages
-from ..menu_data_cache import menu_cache
+from ..cache import menu_cache
 
 logger = logging.getLogger(__name__)
 

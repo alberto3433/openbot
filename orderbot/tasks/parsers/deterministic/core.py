@@ -8,7 +8,7 @@ all sub-parsers to parse user input without LLM calls.
 import re
 import logging
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 
 from ...schemas import OpenInputResponse, Selection
@@ -33,15 +33,15 @@ from .item_parsing import (
     _parse_split_quantity_items,
     _parse_by_pound_order,
 )
-from .inquiry_parsing import (
-    _parse_price_inquiry_deterministic,
-    _parse_menu_query_deterministic,
-    _parse_recommendation_inquiry,
-    _parse_store_info_inquiry,
-    _parse_item_description_inquiry,
-    _parse_modifier_inquiry,
-    _parse_more_menu_items,
-    _parse_ingredient_search,
+from .inquiry import (
+    parse_price_inquiry,
+    parse_menu_query,
+    parse_recommendation_inquiry,
+    parse_store_info_inquiry,
+    parse_item_description_inquiry,
+    parse_modifier_inquiry,
+    parse_more_menu_items,
+    parse_ingredient_search,
 )
 from .modification_parsing import (
     _extract_menu_item_modifications,
@@ -117,12 +117,12 @@ def parse_open_input_deterministic(
     text = strip_filler_words(text)
 
     # Check for price inquiries
-    price_result = _parse_price_inquiry_deterministic(text)
+    price_result = parse_price_inquiry(text)
     if price_result:
         return price_result
 
     # Check for add-modifier patterns ("add bacon", "extra cheese", "more cheese")
-    # This MUST run BEFORE _parse_more_menu_items() because "more cheese" would otherwise
+    # This MUST run BEFORE parse_more_menu_items() because "more cheese" would otherwise
     # be caught by the "^more\b" pattern in MORE_MENU_ITEMS_PATTERNS
     add_modifier_result = _parse_add_modifier_to_item(text)
     if add_modifier_result:
@@ -130,38 +130,38 @@ def parse_open_input_deterministic(
 
     # Check for "show more" menu requests BEFORE menu queries
     # "what other pastries do you have?" should be pagination, not a new query
-    more_items_result = _parse_more_menu_items(text)
+    more_items_result = parse_more_menu_items(text)
     if more_items_result:
         return more_items_result
 
     # Check for menu category queries ("what sweets do you have?", "what desserts do you have?")
-    menu_query_result = _parse_menu_query_deterministic(text)
+    menu_query_result = parse_menu_query(text)
     if menu_query_result:
         return menu_query_result
 
     # Check for recommendation questions
-    recommendation_result = _parse_recommendation_inquiry(text)
+    recommendation_result = parse_recommendation_inquiry(text)
     if recommendation_result:
         return recommendation_result
 
     # Check for store info inquiries
-    store_info_result = _parse_store_info_inquiry(text)
+    store_info_result = parse_store_info_inquiry(text)
     if store_info_result:
         return store_info_result
 
     # Check for item description inquiries
-    item_desc_result = _parse_item_description_inquiry(text)
+    item_desc_result = parse_item_description_inquiry(text)
     if item_desc_result:
         return item_desc_result
 
     # Check for modifier/add-on inquiries
-    modifier_inquiry_result = _parse_modifier_inquiry(text, modifier_category_keywords, modifier_item_keywords)
+    modifier_inquiry_result = parse_modifier_inquiry(text, modifier_category_keywords, modifier_item_keywords)
     if modifier_inquiry_result:
         return modifier_inquiry_result
 
     # Check for ingredient-based menu search
     # When user says "chicken" or "something with bacon", show matching items
-    ingredient_search_result = _parse_ingredient_search(text, ingredient_to_items)
+    ingredient_search_result = parse_ingredient_search(text, ingredient_to_items)
     if ingredient_search_result:
         return ingredient_search_result
 

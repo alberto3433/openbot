@@ -9,7 +9,7 @@ reserved for sized beverages).
 import re
 import logging
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from ...schemas import OpenInputResponse
 from ..constants import WORD_TO_NUM

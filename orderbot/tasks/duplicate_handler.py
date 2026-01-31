@@ -14,7 +14,7 @@ Extracted from taking_items_handler.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from .pending_fields import PendingField
 from .schemas import StateMachineResult
 from .checkout_messages import ErrorMessages, item_added_anything_else

@@ -1492,8 +1492,8 @@ class TestRecommendationInquiryParsing:
     ])
     def test_general_recommendation_patterns(self, text, expected_match_type):
         """Test that general recommendation patterns return 'general' match type."""
-        from orderbot.tasks.parsers import _parse_recommendation_inquiry
-        result = _parse_recommendation_inquiry(text)
+        from orderbot.tasks.parsers import parse_recommendation_inquiry
+        result = parse_recommendation_inquiry(text)
         assert result is not None, f"Failed to detect recommendation in: {text}"
         assert result.asks_recommendation is True
         assert result.recommendation_match_type == expected_match_type
@@ -1523,8 +1523,8 @@ class TestRecommendationInquiryParsing:
         These patterns extract a search term and do a data-driven lookup.
         The exact return values depend on database content.
         """
-        from orderbot.tasks.parsers import _parse_recommendation_inquiry
-        result = _parse_recommendation_inquiry(text)
+        from orderbot.tasks.parsers import parse_recommendation_inquiry
+        result = parse_recommendation_inquiry(text)
         assert result is not None, f"Failed to detect recommendation in: {text}"
         assert result.asks_recommendation is True
         # Should have a match type (general, menu_items, or item_type)
@@ -1554,14 +1554,14 @@ class TestRecommendationInquiryParsing:
     ])
     def test_non_recommendation_not_detected(self, text):
         """Test that order intents are NOT detected as recommendations."""
-        from orderbot.tasks.parsers import _parse_recommendation_inquiry
-        result = _parse_recommendation_inquiry(text)
+        from orderbot.tasks.parsers import parse_recommendation_inquiry
+        result = parse_recommendation_inquiry(text)
         assert result is None, f"Incorrectly detected recommendation in: {text}"
 
     def test_recommendation_should_not_add_to_cart(self):
         """Test that recommendation response has no items to add."""
-        from orderbot.tasks.parsers import _parse_recommendation_inquiry
-        result = _parse_recommendation_inquiry("what kind of bagel do you recommend?")
+        from orderbot.tasks.parsers import parse_recommendation_inquiry
+        result = parse_recommendation_inquiry("what kind of bagel do you recommend?")
         assert result is not None
         assert result.asks_recommendation is True
         # Should NOT have any items flagged for adding
@@ -1588,8 +1588,8 @@ class TestItemDescriptionInquiryParsing:
     ])
     def test_item_description_patterns_detected(self, text, expected_item):
         """Test that item description questions are correctly detected."""
-        from orderbot.tasks.parsers import _parse_item_description_inquiry
-        result = _parse_item_description_inquiry(text)
+        from orderbot.tasks.parsers import parse_item_description_inquiry
+        result = parse_item_description_inquiry(text)
         assert result is not None, f"Failed to detect item description inquiry in: {text}"
         assert result.asks_item_description is True
         assert result.item_description_query == expected_item
@@ -1609,14 +1609,14 @@ class TestItemDescriptionInquiryParsing:
     ])
     def test_non_description_inquiry_not_detected(self, text):
         """Test that order intents are NOT detected as item description inquiries."""
-        from orderbot.tasks.parsers import _parse_item_description_inquiry
-        result = _parse_item_description_inquiry(text)
+        from orderbot.tasks.parsers import parse_item_description_inquiry
+        result = parse_item_description_inquiry(text)
         assert result is None, f"Incorrectly detected item description inquiry in: {text}"
 
     def test_item_description_should_not_add_to_cart(self):
         """Test that item description response has no items to add."""
-        from orderbot.tasks.parsers import _parse_item_description_inquiry
-        result = _parse_item_description_inquiry("what's on the health nut?")
+        from orderbot.tasks.parsers import parse_item_description_inquiry
+        result = parse_item_description_inquiry("what's on the health nut?")
         assert result is not None
         assert result.asks_item_description is True
         # Should NOT have any items flagged for adding

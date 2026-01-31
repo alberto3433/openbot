@@ -25,7 +25,7 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-from ..models import IngredientCategory
+from ..db.models import IngredientCategory
 from ..schemas.ingredient_categories import (
     IngredientCategoryCreate,
     IngredientCategoryUpdate,

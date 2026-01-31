@@ -16,7 +16,7 @@ load_dotenv()
 
 from sqlalchemy.orm import Session
 from orderbot.db import SessionLocal, engine
-from orderbot.models import (
+from orderbot.db.models import (
     Base, MenuItem, ItemType, Ingredient, Company, Store,
     ItemTypeAttribute
 )

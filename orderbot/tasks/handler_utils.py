@@ -187,7 +187,7 @@ def resolve_and_normalize(text: str) -> str:
     Returns:
         Normalized name (lowercase), resolved if it was an alias
     """
-    from orderbot.menu_data_cache import menu_cache
+    from orderbot.cache import menu_cache
 
     text_lower = (text or "").lower().strip()
     if not text_lower:
@@ -215,7 +215,7 @@ def match_item_from_options(
     Returns:
         The matched item dict, or None if no match found
     """
-    from orderbot.menu_data_cache import menu_cache
+    from orderbot.cache import menu_cache
 
     if not item_options or not user_input:
         return None

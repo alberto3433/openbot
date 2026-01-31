@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Callable, TYPE_CHECKING, Any
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from .schemas import StateMachineResult, OrderPhase
 from .pending_fields import PendingField

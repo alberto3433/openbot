@@ -12,7 +12,12 @@ import logging
 from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
-from .parsers.constants import _SELECTION_PATTERNS, parse_can_you_make_it
+from .parsers.constants import (
+    _SELECTION_PATTERNS,
+    parse_can_you_make_it,
+    ANOTHER_ITEM_PATTERN,
+    ONE_MORE_PATTERN,
+)
 from .handler_utils import format_numbered_options
 from .modifier_change_handler import ChangeRequest
 from .checkout_messages import got_it_anything_else, ErrorMessages
@@ -21,7 +26,7 @@ from .config_input_validation import (
     is_valid_answer_for_pending_field,
     is_off_topic_request,
 )
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.cache.base import pluralize
 
 logger = logging.getLogger(__name__)
@@ -271,6 +276,19 @@ class ConfiguringItemHandler:
         cancel_result = self.config_helper_handler.check_cancellation_during_config(user_input, item, order)
         if cancel_result:
             return cancel_result
+
+        # Check for "another item" request - redirect to finish current config first
+        # e.g., "another latte" or "one more bagel" while configuring size
+        another_match = ANOTHER_ITEM_PATTERN.match(user_input)
+        one_more_match = ONE_MORE_PATTERN.match(user_input)
+        if another_match or one_more_match:
+            item_name = item.get_display_name()
+            current_question = self.config_helper_handler.get_current_config_question(order, item)
+            if current_question:
+                message = f"Let's finish customizing the {item_name}. {current_question}"
+            else:
+                message = f"Let's finish customizing the {item_name} first."
+            return StateMachineResult(message=message, order=order)
 
         # Context-aware check: if input could be a valid answer to the current question,
         # skip change request and off-topic detection. This prevents "I want avocado" from

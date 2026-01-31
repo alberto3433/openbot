@@ -12,7 +12,7 @@ Extracted from taking_items_handler.py for better separation of concerns.
 import logging
 from typing import TYPE_CHECKING
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse

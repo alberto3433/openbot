@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from orderbot.db import SessionLocal
-from orderbot.models import MenuItem, Ingredient, IngredientAlias, MenuItemIngredient
+from orderbot.db.models import MenuItem, Ingredient, IngredientAlias, MenuItemIngredient
 
 # Word to number mapping
 WORD_TO_NUM = {

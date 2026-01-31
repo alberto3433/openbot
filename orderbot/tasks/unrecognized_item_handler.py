@@ -13,7 +13,7 @@ This module is order-state aware, adjusting responses based on cart contents.
 import logging
 from typing import Optional
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 
 from .menu_lookup import MenuLookup
@@ -163,7 +163,7 @@ class UnrecognizedItemHandler:
         logger.debug("Checking curated suggestions for: '%s'", normalized_input)
 
         try:
-            from orderbot.models import UnrecognizedItemSuggestion
+            from orderbot.db.models import UnrecognizedItemSuggestion
 
             # Try exact match first
             suggestion = self._db_session.query(UnrecognizedItemSuggestion).filter(
@@ -459,7 +459,7 @@ class UnrecognizedItemHandler:
             return
 
         try:
-            from orderbot.models import UnrecognizedItemLog
+            from orderbot.db.models import UnrecognizedItemLog
 
             log_entry = UnrecognizedItemLog(
                 user_input=user_input[:500],  # Truncate if needed

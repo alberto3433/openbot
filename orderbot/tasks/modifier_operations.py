@@ -20,7 +20,7 @@ from .models import (
     MenuItemTask,
 )
 from orderbot.exceptions import MenuDataNotLoadedError
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 from .utils.constants import is_price_metadata_key
 

@@ -6,7 +6,7 @@ the order handling code. Provides simple helper functions for checking
 if user input matches affirmative, negative, or other response patterns.
 """
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 __all__ = [
     "is_affirmative",

@@ -15,7 +15,7 @@ import logging
 import re
 from typing import Callable, TYPE_CHECKING
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from .models import OrderTask, MenuItemTask
 from .pending_fields import PendingField
 from .normalization import strip_ordering_prefix

@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from orderbot.models import Base, MenuItem, Order, OrderItem
+from orderbot.db.models import Base, MenuItem, Order, OrderItem
 from orderbot.schemas.menu import MenuItemOut
 from orderbot.schemas.orders import (
     OrderSummaryOut,
@@ -76,7 +76,7 @@ class TestPydanticV2ModelValidate:
 
     def test_menu_item_out_model_validate(self, db_session):
         """MenuItemOut.model_validate should work with MenuItem ORM object."""
-        from orderbot.models import ItemType, Company, MenuItemSizeCategory, MenuItemSize, MenuItemSizePrice
+        from orderbot.db.models import ItemType, Company, MenuItemSizeCategory, MenuItemSize, MenuItemSizePrice
 
         # Get or create required fixtures
         # 1. ItemType for category derivation

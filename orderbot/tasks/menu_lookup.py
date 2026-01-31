@@ -13,7 +13,7 @@ import re
 from .normalization import normalize_for_match
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
 logger = logging.getLogger(__name__)

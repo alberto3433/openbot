@@ -8,7 +8,7 @@ including adding modifiers, extracting modifications, and "add more" requests.
 import re
 import logging
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 from ...schemas import (
     OpenInputResponse,

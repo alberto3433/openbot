@@ -1,5 +1,6 @@
 import os
 import pytest
+import filelock
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -7,6 +8,23 @@ from sqlalchemy.orm import sessionmaker
 
 # Load environment variables from .env file
 load_dotenv()
+
+
+def get_worker_lock_dir(tmp_path_factory):
+    """Get a shared lock directory for all xdist workers.
+
+    When running with pytest-xdist, each worker has its own tmp directory.
+    We use the parent of these directories as a shared location for locks.
+    """
+    # Get the root temp directory shared by all workers
+    return tmp_path_factory.getbasetemp().parent
+
+
+def get_session_lock(tmp_path_factory, lock_name: str):
+    """Get a file lock that coordinates across xdist workers."""
+    lock_dir = get_worker_lock_dir(tmp_path_factory)
+    lock_file = lock_dir / f"{lock_name}.lock"
+    return filelock.FileLock(str(lock_file), timeout=120)
 
 
 def create_test_engine(database_url: str):
@@ -35,11 +53,14 @@ TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATAB
 
 
 @pytest.fixture(scope="session")
-def _app_client_session():
+def _app_client_session(tmp_path_factory):
     """Session-scoped FastAPI TestClient setup.
 
     Creates the TestClient once for the entire test session to avoid
     restarting the server (lifespan events) for every test.
+
+    Uses file locking to coordinate database initialization across
+    pytest-xdist workers, preventing race conditions.
     """
     if not TEST_DATABASE_URL:
         pytest.skip("TEST_DATABASE_URL or DATABASE_URL environment variable required")
@@ -47,7 +68,7 @@ def _app_client_session():
     # Lazy imports to avoid requiring DATABASE_URL for non-db tests
     import orderbot.db as db
     import orderbot.config as config_mod
-    from orderbot.models import Base, MenuItem
+    from orderbot.db.models import Base, MenuItem
     from orderbot.main import app
 
     # Store original values
@@ -65,52 +86,56 @@ def _app_client_session():
     db.engine = engine
     db.SessionLocal = TestingSessionLocal
 
-    # Create tables (including ChatSession)
-    Base.metadata.create_all(bind=engine)
+    # Use file lock to coordinate database setup across xdist workers
+    # This prevents multiple workers from racing to create tables/seed data
+    db_lock = get_session_lock(tmp_path_factory, "db_setup")
+    with db_lock:
+        # Create tables (including ChatSession)
+        Base.metadata.create_all(bind=engine)
 
-    # Seed minimal menu (using get-or-create to avoid duplicates)
-    session = TestingSessionLocal()
+        # Seed minimal menu (using get-or-create to avoid duplicates)
+        session = TestingSessionLocal()
 
-    test_menu_items = [
-        {
-            "name": "Turkey Club",
-            "is_signature": True,
-            "available_qty": 5,
-        },
-        {
-            "name": "Veggie Delight",
-            "is_signature": True,
-            "available_qty": 10,
-        },
-        {
-            "name": "Italian Stallion",
-            "is_signature": True,
-            "available_qty": 10,
-        },
-        {
-            "name": "Custom Sandwich",
-            "is_signature": False,
-            "available_qty": 100,
-        },
-        {
-            "name": "soda",
-            "is_signature": False,
-            "available_qty": 10,
-        },
-        {
-            "name": "Chips",
-            "is_signature": False,
-            "available_qty": 40,
-        },
-    ]
+        test_menu_items = [
+            {
+                "name": "Turkey Club",
+                "is_signature": True,
+                "available_qty": 5,
+            },
+            {
+                "name": "Veggie Delight",
+                "is_signature": True,
+                "available_qty": 10,
+            },
+            {
+                "name": "Italian Stallion",
+                "is_signature": True,
+                "available_qty": 10,
+            },
+            {
+                "name": "Custom Sandwich",
+                "is_signature": False,
+                "available_qty": 100,
+            },
+            {
+                "name": "soda",
+                "is_signature": False,
+                "available_qty": 10,
+            },
+            {
+                "name": "Chips",
+                "is_signature": False,
+                "available_qty": 40,
+            },
+        ]
 
-    for item_data in test_menu_items:
-        existing = session.query(MenuItem).filter(MenuItem.name == item_data["name"]).first()
-        if not existing:
-            session.add(MenuItem(**item_data))
+        for item_data in test_menu_items:
+            existing = session.query(MenuItem).filter(MenuItem.name == item_data["name"]).first()
+            if not existing:
+                session.add(MenuItem(**item_data))
 
-    session.commit()
-    session.close()
+        session.commit()
+        session.close()
 
     # Override FastAPI DB dependency
     def override_get_db():
@@ -160,7 +185,7 @@ def admin_auth():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def menu_cache_loaded():
+def menu_cache_loaded(tmp_path_factory):
     """Load the menu cache and menu data from the database for all tests.
 
     This is a session-scoped autouse fixture so the cache is loaded once at the
@@ -169,26 +194,34 @@ def menu_cache_loaded():
 
     Also builds the menu_index dict and sets it as global menu_data for
     OrderStateMachine to use when tests don't explicitly pass menu_data.
+
+    Uses file locking to coordinate cache loading across pytest-xdist workers,
+    preventing race conditions during parallel test execution.
     """
     if not TEST_DATABASE_URL:
         pytest.skip("DATABASE_URL environment variable required - spread/bagel types are loaded from database")
 
-    from orderbot.menu_data_cache import menu_cache
-    from orderbot.menu_index_builder import build_menu_index
+    from orderbot.cache import menu_cache
+    from orderbot.menu_index import build_menu_index
     from orderbot.tasks.state_machine import set_global_menu_data
 
     engine = create_test_engine(TEST_DATABASE_URL)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-    db = TestingSessionLocal()
-    try:
-        # Load menu cache (spread types, bagel types, etc.)
-        menu_cache.load_from_db(db, fail_on_error=True)
+    # Use file lock to coordinate menu cache loading across xdist workers
+    # Each worker still loads into its own process memory, but this prevents
+    # database connection pool exhaustion during parallel initialization
+    cache_lock = get_session_lock(tmp_path_factory, "menu_cache")
+    with cache_lock:
+        db = TestingSessionLocal()
+        try:
+            # Load menu cache (spread types, bagel types, etc.)
+            menu_cache.load_from_db(db, fail_on_error=True)
 
-        # Build menu index dict and set as global for OrderStateMachine
-        menu_data = build_menu_index(db)
-        set_global_menu_data(menu_data)
-    finally:
-        db.close()
+            # Build menu index dict and set as global for OrderStateMachine
+            menu_data = build_menu_index(db)
+            set_global_menu_data(menu_data)
+        finally:
+            db.close()
 
     return menu_cache

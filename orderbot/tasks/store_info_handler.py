@@ -19,7 +19,7 @@ from .schemas import StateMachineResult
 from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_item_type_display_name
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 
 # Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
 # Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
@@ -563,7 +563,7 @@ class StoreInfoHandler(MenuDataMixin):
         Fully data-driven: queries the database for which ingredient categories
         are valid for this item type and builds the message dynamically.
         """
-        from ..menu_data_cache import menu_cache
+        from ..cache import menu_cache
 
         item_type_display = get_item_type_display_name(item_type)
 

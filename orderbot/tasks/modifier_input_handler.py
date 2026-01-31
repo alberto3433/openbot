@@ -11,7 +11,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.quantity_utils import extract_quantity_for_pattern
 from .handler_utils import (

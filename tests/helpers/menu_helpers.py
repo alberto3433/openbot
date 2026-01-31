@@ -29,7 +29,7 @@ def test_is_soda_drink(drink_type: str | None) -> bool:
     drink_lower = drink_type.lower().strip()
 
     # Import here to avoid circular imports and keep this test-only
-    from orderbot.menu_data_cache import menu_cache
+    from orderbot.cache import menu_cache
 
     # Configurable items (coffee, latte, tea, etc.) are NEVER sodas - they need configuration
     # This prevents "Coffee" from matching "Bottled Coffee" in beverage types

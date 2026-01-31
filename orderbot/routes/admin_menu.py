@@ -52,7 +52,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..models import (
+from ..db.models import (
     MenuItem,
     MenuItemAlias,
     MenuItemCategory,
@@ -71,7 +71,7 @@ from ..schemas.menu import (
     MenuItemIngredientOut,
 )
 from ..services.helpers import validate_aliases
-from ..menu_data_cache import menu_cache
+from ..cache import menu_cache
 
 
 logger = logging.getLogger(__name__)
@@ -432,7 +432,7 @@ def update_menu_item(
     # Note: base_price is now computed from size_prices, not stored directly
     # If base_price is provided without size_prices, create/update the default size price
     if payload.base_price is not None and not payload.size_prices:
-        from orderbot.models import MenuItemSizePrice
+        from orderbot.db.models import MenuItemSizePrice
         # Find existing "each" price or create one
         each_price = next((sp for sp in item.size_prices if sp.size_id == 6), None)
         if each_price:
@@ -474,14 +474,33 @@ def delete_menu_item(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
 ) -> None:
-    """Delete a menu item. Requires admin authentication."""
+    """Delete a menu item and all related records. Requires admin authentication."""
     item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
 
-    logger.info("Deleting menu item: %s (id=%d)", item.name, item.id)
-    db.delete(item)
-    db.commit()
+    item_name = item.name
+    logger.info("Deleting menu item: %s (id=%d)", item_name, item_id)
+
+    try:
+        # Delete related records first (tables with foreign keys to menu_items)
+        # These must be deleted before the menu item due to FK constraints
+        db.query(MenuItemSizePrice).filter(MenuItemSizePrice.menu_item_id == item_id).delete()
+        db.query(MenuItemAlias).filter(MenuItemAlias.menu_item_id == item_id).delete()
+        db.query(MenuItemCategory).filter(MenuItemCategory.menu_item_id == item_id).delete()
+        db.query(MenuItemIngredient).filter(MenuItemIngredient.menu_item_id == item_id).delete()
+
+        # Now delete the menu item itself
+        db.delete(item)
+        db.commit()
+        logger.info("Successfully deleted menu item: %s (id=%d)", item_name, item_id)
+    except Exception as e:
+        db.rollback()
+        logger.error("Failed to delete menu item %s (id=%d): %s", item_name, item_id, str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete menu item: {str(e)}"
+        )
 
     return None
 

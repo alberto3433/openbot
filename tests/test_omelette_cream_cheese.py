@@ -12,7 +12,7 @@ def test_omelette_cream_cheese_pricing(menu_cache_loaded):
     from orderbot.tasks.state_machine import OrderStateMachine
     from orderbot.tasks.models import OrderTask, MenuItemTask
     from orderbot.tasks.schemas import OrderPhase
-    from orderbot.menu_data_cache import menu_cache
+    from orderbot.cache import menu_cache
 
     # Create state machine (uses global menu data from menu_cache_loaded fixture)
     state_machine = OrderStateMachine()

@@ -17,13 +17,13 @@ class TestGetSodaTypes:
 
     def test_get_soda_types_returns_set(self):
         """get_item_names('beverage') should return a set."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         result = menu_cache.get_item_names("beverage")
         assert isinstance(result, set)
 
     def test_get_soda_types_includes_item_names(self):
         """get_item_names('beverage') should include beverage item names from database."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         soda_types = menu_cache.get_item_names("beverage")
         # These are actual item names from the database (lowercase)
         assert "coca-cola" in soda_types
@@ -32,7 +32,7 @@ class TestGetSodaTypes:
 
     def test_get_soda_types_includes_aliases(self):
         """get_item_names('beverage') should include aliases from database."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         soda_types = menu_cache.get_item_names("beverage")
         # These are aliases, not the actual item names
         assert "coke" in soda_types  # alias for Coca-Cola
@@ -43,7 +43,7 @@ class TestGetSodaTypes:
 
     def test_get_soda_types_excludes_nonexistent_items(self):
         """get_item_names('beverage') should not include items not in the database."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         soda_types = menu_cache.get_item_names("beverage")
         # These are not in the Zucker's menu
         assert "pepsi" not in soda_types
@@ -146,7 +146,7 @@ class TestSodaAliasesIntegration:
 
     def test_dr_browns_aliases(self):
         """Dr. Brown's sodas should be recognized by various spellings."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         soda_types = menu_cache.get_item_names("beverage")
         # Original name (lowercase)
         assert "dr. brown's cel-ray" in soda_types
@@ -157,7 +157,7 @@ class TestSodaAliasesIntegration:
 
     def test_water_aliases(self):
         """Water should be recognized by various terms."""
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
         soda_types = menu_cache.get_item_names("beverage")
         assert "bottled water" in soda_types
         assert "water" in soda_types

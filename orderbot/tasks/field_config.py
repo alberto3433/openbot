@@ -15,7 +15,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .models import FieldConfig
-from orderbot.menu_data_cache import menu_cache
+from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 
 

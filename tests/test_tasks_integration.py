@@ -343,7 +343,7 @@ def mock_get_item_type_triggers(item_type_slug: str | None = None):
 @pytest.fixture(autouse=True)
 def mock_menu_cache_attributes(monkeypatch):
     """Auto-use fixture to mock menu_cache methods for all tests."""
-    from orderbot.menu_data_cache import menu_cache
+    from orderbot.cache import menu_cache
     # Set _is_loaded to True so methods return mock data instead of empty sets
     monkeypatch.setattr(menu_cache, "_is_loaded", True)
     monkeypatch.setattr(menu_cache, "get_item_type_attributes", mock_get_item_type_attributes)
@@ -3003,6 +3003,116 @@ class TestCoffeeSize:
         assert "removed" in result.message.lower()
 
 
+class TestAnotherItemDuringConfig:
+    """Tests for handling 'another X' requests during item configuration.
+
+    When a user says 'another latte' while being asked about the size of the
+    current latte, we should redirect them to finish the current item first
+    rather than treating it as an invalid size answer.
+    """
+
+    def test_another_item_redirects_to_finish_config(self):
+        """Test that 'another latte' during config redirects to finish current item."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import CoffeeItemTask
+        from orderbot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "sized_beverage:size"
+
+        coffee = CoffeeItemTask(drink_type="latte")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.configuring_item_handler._check_config_interceptors(
+            "another latte", coffee, order
+        )
+
+        # Should redirect to finish config, not treat as invalid size
+        assert result is not None
+        assert "finish customizing" in result.message.lower()
+        assert "latte" in result.message.lower()
+
+    def test_one_more_bagel_redirects_to_finish_config(self):
+        """Test that 'one more bagel' during config redirects to finish current item."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
+        from orderbot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "bagel:toasted"
+
+        bagel = BagelItemTask(bagel_type="plain")
+        bagel.mark_in_progress()
+        order.items.add_item(bagel)
+        order.pending_item_id = bagel.id
+
+        result = sm.configuring_item_handler._check_config_interceptors(
+            "one more bagel", bagel, order
+        )
+
+        # Should redirect to finish config
+        assert result is not None
+        assert "finish customizing" in result.message.lower()
+        assert "bagel" in result.message.lower()
+
+    def test_another_one_redirects_to_finish_config(self):
+        """Test that 'another one' during config redirects to finish current item."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import CoffeeItemTask
+        from orderbot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "sized_beverage:size"
+
+        coffee = CoffeeItemTask(drink_type="espresso")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.configuring_item_handler._check_config_interceptors(
+            "and another", coffee, order
+        )
+
+        # Should redirect to finish config
+        assert result is not None
+        assert "finish customizing" in result.message.lower()
+
+    def test_valid_size_answer_not_intercepted(self):
+        """Test that valid size answers like 'small' are NOT intercepted."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import CoffeeItemTask
+        from orderbot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CONFIGURING_ITEM.value
+        order.pending_field = "sized_beverage:size"
+
+        coffee = CoffeeItemTask(drink_type="latte")
+        coffee.mark_in_progress()
+        order.items.add_item(coffee)
+        order.pending_item_id = coffee.id
+
+        result = sm.configuring_item_handler._check_config_interceptors(
+            "small", coffee, order
+        )
+
+        # Valid answer should NOT be intercepted (returns None)
+        assert result is None
+
+
 # =============================================================================
 # Coffee Style Handler Tests
 # =============================================================================
@@ -3754,7 +3864,7 @@ class TestPriceInquiry:
         """Test that 'sandwich' asks what kind when there are multiple types."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5126,7 +5236,7 @@ class TestEspressoItemTypeConsistency:
         This ensures data schema consistency - options loaded from cache have all
         required fields for proper option matching (must_match filters like "oat milk").
         """
-        from orderbot.menu_data_cache import menu_cache
+        from orderbot.cache import menu_cache
 
         # Get milk_sweetener_syrup options (used for espresso)
         options = menu_cache.get_global_attribute_options("milk_sweetener_syrup")

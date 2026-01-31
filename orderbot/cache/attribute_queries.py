@@ -1,0 +1,276 @@
+"""
+Attribute query mixin for MenuDataCache.
+
+Contains methods for querying item type attributes and their configurations.
+"""
+
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+class AttributeQueryMixin:
+    """Mixin containing attribute-related query methods."""
+
+    def get_item_type_attributes(self, item_type_slug: str) -> dict:
+        """Get all attribute configurations for an item type.
+
+        All attributes are pre-loaded at startup via _preload_all_item_type_attributes().
+        No lazy loading or runtime database queries are needed.
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            Dict mapping attr_slug -> attr_config dict.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._item_type_attributes.get(item_type_slug, {})
+
+    def has_conversation_attributes(self, item_type_slug: str) -> bool:
+        """Check if an item type has any ask_in_conversation attributes.
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            True if the item type has conversational attributes.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        attrs = self.get_item_type_attributes(item_type_slug)
+        for attr_config in attrs.values():
+            if attr_config.get("ask_in_conversation", False):
+                return True
+        return False
+
+    def get_attribute_input_type(self, item_type_slug: str, attribute_slug: str) -> str | None:
+        """Get the input type for a specific attribute.
+
+        Args:
+            item_type_slug: The item type slug
+            attribute_slug: The attribute slug
+
+        Returns:
+            The input type (e.g., "single_select", "multi_select", "boolean") or None.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        attrs = self.get_item_type_attributes(item_type_slug)
+        attr = attrs.get(attribute_slug, {})
+        return attr.get("input_type")
+
+    def get_attribute_for_category(self, item_type_slug: str, category_slug: str) -> str | None:
+        """Get the attribute slug that handles a given ingredient category.
+
+        Args:
+            item_type_slug: The item type slug
+            category_slug: The ingredient category slug
+
+        Returns:
+            The attribute slug, or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        attrs = self.get_item_type_attributes(item_type_slug)
+        for attr_slug, attr_config in attrs.items():
+            if attr_config.get("ingredient_group") == category_slug:
+                return attr_slug
+        return None
+
+    def get_field_to_slug_map(self, item_type_slug: str) -> dict[str, str]:
+        """Get the field name to attribute slug mapping for an item type.
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            Dict mapping field names to attribute slugs.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        # Ensure attributes are loaded first
+        self.get_item_type_attributes(item_type_slug)
+        return self._field_to_slug_map.get(item_type_slug, {}).copy()
+
+    def resolve_field_to_slug(self, item_type_slug: str, field_name: str) -> str:
+        """Resolve a field name to its canonical attribute slug.
+
+        Args:
+            item_type_slug: The item type slug
+            field_name: The field name (may be category or attribute slug)
+
+        Returns:
+            The canonical attribute slug.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        field_map = self.get_field_to_slug_map(item_type_slug)
+        return field_map.get(field_name, field_name)
+
+    def get_field_config(self, item_type_slug: str, field_slug: str) -> dict | None:
+        """Get configuration for a specific attribute field.
+
+        Args:
+            item_type_slug: The item type slug
+            field_slug: The field/attribute slug
+
+        Returns:
+            The field config dict or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        attrs = self.get_item_type_attributes(item_type_slug)
+        return attrs.get(field_slug)
+
+    def get_all_field_configs(self, item_type_slug: str) -> dict:
+        """Get all field configurations for an item type.
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            Dict mapping field slug to config dict.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self.get_item_type_attributes(item_type_slug)
+
+    def get_modifier_fields_for_item_type(self, item_type_slug: str) -> list[dict]:
+        """Get modifier field definitions for an item type.
+
+        Returns fields that load from ingredients, ordered by display_order.
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            List of modifier field config dicts.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        attrs = self.get_item_type_attributes(item_type_slug)
+        result = []
+        for attr_slug, attr_config in attrs.items():
+            if attr_config.get("loads_from_ingredients"):
+                result.append(attr_config)
+        return sorted(result, key=lambda x: x.get("display_order", 999))
+
+    def is_multi_select_attribute(self, attr_slug: str) -> bool:
+        """Check if an attribute is a multi-select type.
+
+        Args:
+            attr_slug: The attribute slug
+
+        Returns:
+            True if the attribute is multi-select type.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        metadata = self._global_attribute_metadata.get(attr_slug, {})
+        return metadata.get("input_type") == "multi_select"
+
+    def get_multi_select_attribute_slugs(self, item_type_slug: str) -> set[str]:
+        """Get all multi-select attribute slugs for an item type.
+
+        This is used to determine which attributes support adding multiple
+        selections (e.g., syrups, sweeteners, extras).
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            Set of attribute slugs that are multi-select type.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        result: set[str] = set()
+        attrs = self.get_item_type_attributes(item_type_slug)
+        for attr_slug, attr_config in attrs.items():
+            if attr_config.get("input_type") == "multi_select":
+                result.add(attr_slug)
+        return result
+
+    def attribute_contains_modifier_category(self, attr_slug: str, modifier_category: str) -> bool:
+        """Check if an attribute contains options with a given modifier category.
+
+        Args:
+            attr_slug: The attribute slug
+            modifier_category: The modifier category slug
+
+        Returns:
+            True if the attribute has options with that modifier category.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        attr_set = self._modifier_category_to_attrs.get(modifier_category, set())
+        return attr_slug in attr_set
+
+    def get_attribute_display_name(self, attr_slug: str) -> str:
+        """Get the display name for a global attribute.
+
+        Args:
+            attr_slug: The attribute slug
+
+        Returns:
+            The display name, or the slug if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        metadata = self._global_attribute_metadata.get(attr_slug, {})
+        return metadata.get("display_name", attr_slug)
+
+    def get_property_name_for_attribute(self, attr_slug: str) -> str:
+        """Get the Python property name for an attribute slug.
+
+        Args:
+            attr_slug: The attribute slug
+
+        Returns:
+            The property name, or the slug itself if no mapping.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._global_attribute_property_names.get(attr_slug, attr_slug)
+
+    def get_all_global_attribute_aliases(self) -> dict[str, str]:
+        """Get all global attribute aliases.
+
+        Returns:
+            Dict mapping alias -> attribute slug.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._global_attribute_aliases.copy()

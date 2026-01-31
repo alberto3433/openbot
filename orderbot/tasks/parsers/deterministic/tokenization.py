@@ -591,9 +591,17 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             return True
 
         other_tokens = [t for t in tokens[1:] if t.token_type != "separator"]
-        if other_tokens and all(_is_potential_modifier(t.original) for t in other_tokens):
-            logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
-            return None
+        # Only skip if ALL other tokens are classified as "modifier" or "attribute" type
+        # If any token is classified as "item" type, it's a real multi-item order
+        if other_tokens:
+            # Check if any token is already classified as "item" - if so, it's multi-item
+            any_item_tokens = any(t.token_type == "item" for t in other_tokens)
+            if any_item_tokens:
+                # At least one other token is an item - proceed with multi-item parsing
+                pass
+            elif all(_is_potential_modifier(t.original) for t in other_tokens):
+                logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
+                return None
 
     # --- Step 4: Recombine modifier tokens with their items ---
     combined_tokens = _recombine_tokens(tokens)

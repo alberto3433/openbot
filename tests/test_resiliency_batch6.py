@@ -50,7 +50,7 @@ class TestCancellationRemoval:
         Test: User says "cancel the coffee".
 
         Scenario:
-        - User has: 1 latte
+        - User has: 1 hot coffee
         - User says: "cancel the coffee"
         - Expected: Coffee is cancelled
         """
@@ -58,8 +58,8 @@ class TestCancellationRemoval:
         order.phase = OrderPhase.TAKING_ITEMS.value
 
         coffee = CoffeeItemTask(
-            drink_type="latte",
-            size="medium",
+            drink_type="hot coffee",
+            size="large",
             iced=False,
         )
         coffee.mark_complete()

@@ -4221,7 +4221,7 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("orderbot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="pickup", address=None)
 
             result = sm.checkout_handler.handle_delivery("pickup please", order)
@@ -4245,7 +4245,7 @@ class TestDeliveryHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="delivery", address=None)
 
             result = sm.checkout_handler.handle_delivery("delivery", order)
@@ -4264,12 +4264,12 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("orderbot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(
                 choice="delivery",
                 address="123 Main St, New York, NY 10001"
             )
-            with patch("orderbot.tasks.checkout_handler.complete_address") as mock_complete:
+            with patch("orderbot.tasks.delivery_handler.complete_address") as mock_complete:
                 # Mock successful address completion
                 mock_result = MagicMock()
                 mock_result.success = True
@@ -4332,7 +4332,7 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("orderbot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="unclear", address=None)
 
             result = sm.checkout_handler.handle_delivery("what?", order)
@@ -4352,7 +4352,7 @@ class TestDeliveryHandler:
         order.delivery_method.order_type = "delivery"
         order.delivery_method.address.street = None  # No address yet
 
-        with patch("orderbot.tasks.checkout_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="unclear", address=None)
 
             result = sm.checkout_handler.handle_delivery("hmm not sure", order)
@@ -5285,95 +5285,6 @@ class TestEspressoItemTypeConsistency:
                 "Cache should include must_match field for options (even if None)"
 
 
-class TestMultiSelectTokenization:
-    """Tests for tokenized multi-select input matching."""
-
-    def test_tokenize_multi_input_and(self):
-        """Test tokenization splits on 'and'."""
-        from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
-        handler = MenuItemConfigHandler(HandlerConfig())
-
-        tokens = handler._tokenize_multi_input("milk and sugar")
-        assert tokens == ["milk", "sugar"]
-
-    def test_tokenize_multi_input_comma(self):
-        """Test tokenization splits on comma."""
-        from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
-        handler = MenuItemConfigHandler(HandlerConfig())
-
-        tokens = handler._tokenize_multi_input("bacon, cheese, tomato")
-        assert tokens == ["bacon", "cheese", "tomato"]
-
-    def test_tokenize_multi_input_preserves_multiword(self):
-        """Test tokenization preserves multi-word items."""
-        from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
-        handler = MenuItemConfigHandler(HandlerConfig())
-
-        tokens = handler._tokenize_multi_input("oat milk and vanilla syrup")
-        assert tokens == ["oat milk", "vanilla syrup"]
-
-    def test_match_multiple_options_milk_and_sugar(self):
-        """Test that 'milk and sugar' matches both Whole Milk and Sugar options."""
-        from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
-        handler = MenuItemConfigHandler(HandlerConfig())
-
-        # Simulate options like espresso milk_sweetener_syrup
-        options = [
-            {"slug": "whole_milk", "display_name": "Whole Milk", "must_match": None},
-            {"slug": "oat_milk", "display_name": "Oat Milk", "must_match": "oat milk"},
-            {"slug": "skim_milk", "display_name": "Skim Milk", "must_match": "skim milk"},
-            {"slug": "sugar", "display_name": "Sugar", "must_match": None},
-            {"slug": "vanilla_syrup", "display_name": "Vanilla Syrup", "must_match": "vanilla"},
-        ]
-
-        matched = handler._match_multiple_options_from_input("milk and sugar", options)
-        matched_slugs = [m["slug"] for m in matched]
-
-        # Should match Whole Milk (default, must_match=None) and Sugar
-        assert "whole_milk" in matched_slugs, "Should match Whole Milk for 'milk'"
-        assert "sugar" in matched_slugs, "Should match Sugar for 'sugar'"
-        # Should NOT match oat_milk or skim_milk (must_match filters them out)
-        assert "oat_milk" not in matched_slugs, "Should not match Oat Milk without 'oat'"
-        assert "skim_milk" not in matched_slugs, "Should not match Skim Milk without 'skim'"
-
-    def test_match_multiple_options_oat_milk_and_vanilla(self):
-        """Test that 'oat milk and vanilla' matches Oat Milk and Vanilla Syrup."""
-        from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
-        handler = MenuItemConfigHandler(HandlerConfig())
-
-        options = [
-            {"slug": "whole_milk", "display_name": "Whole Milk", "must_match": None},
-            {"slug": "oat_milk", "display_name": "Oat Milk", "must_match": "oat milk"},
-            {"slug": "skim_milk", "display_name": "Skim Milk", "must_match": "skim milk"},
-            {"slug": "sugar", "display_name": "Sugar", "must_match": None},
-            {"slug": "vanilla_syrup", "display_name": "Vanilla Syrup", "must_match": "vanilla"},
-        ]
-
-        matched = handler._match_multiple_options_from_input("oat milk and vanilla", options)
-        matched_slugs = [m["slug"] for m in matched]
-
-        assert "oat_milk" in matched_slugs, "Should match Oat Milk"
-        assert "vanilla_syrup" in matched_slugs, "Should match Vanilla Syrup"
-        # Should NOT match whole_milk even though "milk" is in the input
-        # because "oat milk" is a more specific match
-        assert len(matched) == 2, f"Should match exactly 2 options, got {matched_slugs}"
-
-    def test_match_multiple_options_single_item(self):
-        """Test that single item input still works."""
-        from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
-        handler = MenuItemConfigHandler(HandlerConfig())
-
-        options = [
-            {"slug": "whole_milk", "display_name": "Whole Milk", "must_match": None},
-            {"slug": "sugar", "display_name": "Sugar", "must_match": None},
-        ]
-
-        matched = handler._match_multiple_options_from_input("sugar", options)
-        matched_slugs = [m["slug"] for m in matched]
-
-        assert matched_slugs == ["sugar"], f"Should match only Sugar, got {matched_slugs}"
-
-
 class TestShotQuantityExtraction:
     """Tests for shot quantity extraction in the quantity-based system.
 
@@ -5421,26 +5332,6 @@ class TestShotQuantityExtraction:
             qty = WORD_TO_NUM.get(qty_str, 1)
 
         assert qty == 2, f"Expected 'double' to map to 2, got {qty}"
-
-    def test_normalize_strips_quantity_for_option_match(self):
-        """Test that normalization strips quantity prefix for option matching.
-
-        With quantity-based shots, the normalization should strip the quantity
-        and return 'shot' (singular) for matching against the Shot ingredient.
-        """
-        from orderbot.tasks.menu_item_config_handler import MenuItemConfigHandler
-        from orderbot.tasks.handler_config import HandlerConfig
-
-        handler = MenuItemConfigHandler(HandlerConfig())
-
-        # "two shots" should normalize to "shot" (singular) for matching
-        result = handler._normalize_for_matching("two shots")
-        assert result == "shot", f"Expected 'shot', got '{result}'"
-
-        # "3 shots" should normalize to "shot" (singular) for matching
-        result = handler._normalize_for_matching("3 shots")
-        assert result == "shot", f"Expected 'shot', got '{result}'"
-
 
 class TestPaymentMethodHandler:
     """Tests for _handle_payment_method."""

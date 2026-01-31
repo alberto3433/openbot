@@ -207,13 +207,11 @@ class ParsedItemProcessor:
         if items_after > items_before:
             summary = build_item_summary(item)
 
-            # If add_item() returned a result with a message (e.g., from handle_unavailable_selection),
-            # pass it through so the caller can use it instead of calling get_first_question() again.
-            # This preserves "We don't have Medium" messages that were already generated.
-            if result and result.message:
-                return order, summary, result
-
-            # Otherwise return None so process_items() handles config questions for ALL items
+            # Return None as third element so process_items() continues to add ALL items
+            # before starting configuration. The third element is ONLY for true disambiguation
+            # (when no item was added and we need to ask which item the user meant).
+            # Config questions (like "Would you like it toasted?") are handled AFTER all items
+            # are added, via items_needing_config logic in process_items().
             return order, summary, None
 
         # Item wasn't added (error case) - return empty summary

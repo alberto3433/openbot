@@ -107,7 +107,7 @@ class DeliveryHandler(BaseHandler):
                 message=self._message_builder.get_delivery_question(
                     self._is_repeat_order,
                     self._last_order_type,
-                ) if self._message_builder else CheckoutMessages.DELIVERY_QUESTION,
+                ) if self._message_builder else CheckoutMessages.PICKUP_OR_DELIVERY,
                 order=order,
             )
 

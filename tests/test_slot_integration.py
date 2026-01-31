@@ -48,15 +48,8 @@ class TestSlotComparisonLogging:
         """Verify slot comparison runs on greeting."""
         order = OrderTask()
 
-        # Process a greeting
-        with patch("orderbot.tasks.state_machine.parse_open_input") as mock_parse:
-            mock_parse.return_value = MagicMock(
-                is_greeting=True,
-                unclear=False,
-                new_menu_item=None,
-                wants_checkout=False,
-            )
-            result = state_machine.process("hi", order)
+        # Process a greeting - the state machine will parse internally
+        result = state_machine.process("hi", order)
 
         # Should have logged slot comparison
         assert len(capture_slot_logs) > 0

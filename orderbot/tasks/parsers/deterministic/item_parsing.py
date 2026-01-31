@@ -320,6 +320,14 @@ def _parse_item_generic(
         if not item_name:
             item_name = detected_name
 
+    # If item_name is just the item_type trigger word (e.g., 'bagel'), try to resolve
+    # it to a proper menu item name (e.g., 'Bagel') using the same logic as
+    # _parse_configurable_item. This ensures consistent behavior for multi-item orders.
+    if item_name and item_type and item_name.lower() in (item_type.lower(), item_type.lower().replace("_", " ")):
+        resolved_name = _match_menu_item_name_for_type(text, item_type)
+        if resolved_name:
+            item_name = resolved_name
+
     # Extract quantity from text
     quantity = 1
     qty_match = re.match(r'^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+dozen|half\s+a\s+dozen|a\s+couple(?:\s+of)?)\s+', text_lower)
@@ -399,13 +407,41 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         return None
 
     # 1a. Check for multi-item patterns that should be handled by _parse_multi_item_order
-    # Pattern: "one X and one Y" or "2 X and 3 Y" - quantity on both sides of "and"
+    # Pattern 1: "one X and one Y" or "2 X and 3 Y" - quantity on both sides of "and"
     # This prevents "one everything bagel and one plain bagel" from being treated as one item
     qty_words = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|an?)"
     multi_item_pattern = rf"\b{qty_words}\b.+?\band\b.+?\b{qty_words}\b"
     if re.search(multi_item_pattern, text_lower):
-        logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern, delegating to multi-item parser: '%s'", text[:50])
+        logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty on both sides), delegating to multi-item parser: '%s'", text[:50])
         return None
+
+    # Pattern 2: Same item type trigger appears on BOTH sides of " and "
+    # This catches "plain bagel and everything bagel" where no explicit quantities are used
+    # but the same item type keyword appears twice (once on each side)
+    if " and " in text_lower:
+        parts = text_lower.split(" and ", 1)
+        if len(parts) == 2:
+            left_part, right_part = parts
+            # Check if the same configurable item type trigger appears in both parts
+            configurable_slugs = menu_cache.get_configurable_item_type_slugs()
+            for item_type_slug in configurable_slugs:
+                triggers = menu_cache.get_item_type_triggers(item_type_slug)
+                for trigger in triggers:
+                    trigger_lower = trigger.lower()
+                    # Skip very short triggers that might cause false positives
+                    if len(trigger_lower) < 3:
+                        continue
+                    # Check if trigger appears as word boundary in BOTH parts
+                    trigger_pattern = rf'\b{re.escape(trigger_lower)}s?\b'
+                    left_match = re.search(trigger_pattern, left_part)
+                    right_match = re.search(trigger_pattern, right_part)
+                    if left_match and right_match:
+                        logger.debug(
+                            "CONFIGURABLE_ITEM: skipping multi-item pattern (trigger '%s' on both sides), "
+                            "delegating to multi-item parser: '%s'",
+                            trigger, text[:50]
+                        )
+                        return None
 
     # 1b. Check for signature items FIRST - they take precedence over trigger-based detection
     # This prevents "The Classic BEC on a wheat bagel" from matching "omelette" due to "bagel"

@@ -267,6 +267,13 @@ class UnifiedItemConverter:
         for mod in item_modifications:
             modifiers.append({"name": mod, "price": 0})
 
+        # Add special instructions (e.g., "room for cream", "extra hot") - free, shown in cart
+        item_special_instructions = getattr(item, 'special_instructions', []) or []
+        for instruction in item_special_instructions:
+            # Format for display: title case
+            display_instruction = instruction.title() if instruction else instruction
+            modifiers.append({"name": display_instruction, "price": 0})
+
         # Process modifiers from the unified modifiers field
         item_modifiers = item.modifiers or []
         for mod in item_modifiers:

@@ -641,3 +641,28 @@ class MenuQueryMixin:
                 })
 
         return categories
+
+    def get_menu_item_default_ingredients(self, menu_item_id: int) -> list[dict]:
+        """Get default ingredients for a signature menu item.
+
+        Loads from menu_item_ingredients junction table, which stores the
+        default configuration for signature items like "The Classic BEC".
+
+        Args:
+            menu_item_id: The database ID of the menu item
+
+        Returns:
+            List of dicts with ingredient information:
+            [{
+                "ingredient_id": int,
+                "ingredient_slug": str,
+                "ingredient_name": str,
+                "ingredient_category": str,  # e.g., "bread", "protein", "cheese"
+                "quantity": int,
+            }]
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._menu_item_default_ingredients.get(menu_item_id, [])

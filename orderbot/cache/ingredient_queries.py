@@ -97,6 +97,22 @@ class IngredientQueryMixin:
         self._ensure_loaded()
         return set(self._ingredients_by_category.keys())
 
+    def get_modifier_to_category_map(self) -> dict[str, str]:
+        """Get pre-built mapping of modifier names to their categories.
+
+        This is more efficient than calling get_ingredient_category() repeatedly
+        when you need to look up categories for multiple modifiers.
+
+        Returns:
+            Dict mapping lowercase modifier name/alias to category slug.
+            Example: {"bacon": "protein", "cheddar": "cheese", "lox": "protein"}
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._modifier_to_category.copy()
+
     def get_ingredient_category(self, ingredient_name: str) -> str | None:
         """Get the category of an ingredient by name.
 

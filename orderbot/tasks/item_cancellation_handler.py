@@ -20,7 +20,7 @@ from orderbot.cache.base import singularize, get_singular_plural_variants
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse
-from .checkout_messages import ok_removed_anything_else, ErrorMessages
+from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
 from .handler_utils import get_last_item
 from .modifier_operations import (
     find_modifier_on_any_item,
@@ -528,6 +528,6 @@ class ItemCancellationHandler:
         else:
             logger.info("Cancellation: couldn't find item matching '%s'", cancel_item_desc)
             return StateMachineResult(
-                message=f"I couldn't find {parsed.cancel_item} in your order. What would you like to do?",
+                message=item_not_found_in_order(parsed.cancel_item),
                 order=order,
             )

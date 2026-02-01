@@ -414,6 +414,11 @@ class ItemAdderHandler(MenuDataMixin):
                 modifications=modifications or [],  # User modifications like "with mayo and mustard"
                 is_signature=is_signature,  # Signature item flag from menu data
             )
+            # Populate default ingredients for signature items FIRST
+            # This must happen before applying user selections so user selections
+            # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
+            if is_signature and menu_item_id:
+                self._populate_signature_defaults(item)
             # Apply pre-filled attributes
             if attributes:
                 for attr_name, attr_value in attributes.items():
@@ -510,6 +515,62 @@ class ItemAdderHandler(MenuDataMixin):
         logger.info("Added %d side item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
         return (canonical_name, None)
 
+    def _populate_signature_defaults(self, item: MenuItemTask) -> None:
+        """Load default ingredients for a signature item and populate as selections.
+
+        Loads from menu_item_ingredients junction table and adds each ingredient
+        as a selection with is_default=True. Default ingredients are included in
+        the base price (price=0.0) and won't trigger upsell questions.
+
+        Args:
+            item: The MenuItemTask to populate with default ingredients.
+        """
+        if not item.menu_item_id or not item.menu_item_type:
+            return
+
+        defaults = menu_cache.get_menu_item_default_ingredients(item.menu_item_id)
+        if not defaults:
+            logger.debug(
+                "No default ingredients found for signature item: %s (id=%s)",
+                item.menu_item_name, item.menu_item_id
+            )
+            return
+
+        logger.info(
+            "Populating %d default ingredients for signature item: %s",
+            len(defaults), item.menu_item_name
+        )
+
+        for default in defaults:
+            # Map ingredient category to attribute slug
+            attr_slug = menu_cache.get_attribute_for_ingredient_category(
+                item.menu_item_type,
+                default["ingredient_category"]
+            )
+            if not attr_slug:
+                logger.warning(
+                    "No attribute mapping for ingredient category '%s' on item type '%s'",
+                    default["ingredient_category"], item.menu_item_type
+                )
+                continue
+
+            # Add as selection with is_default=True
+            # Price is 0.0 because defaults are included in base price
+            item.add_selection(
+                slug=default["ingredient_slug"],
+                category=attr_slug,
+                quantity=default.get("quantity", 1),
+                price=0.0,
+                display_name=default["ingredient_name"],
+                ingredient_category=default["ingredient_category"],
+                is_default=True,
+            )
+
+            logger.debug(
+                "  Added default: %s (%s) -> attr=%s",
+                default["ingredient_name"], default["ingredient_slug"], attr_slug
+            )
+
     # =========================================================================
     # Generic Item Creation (Data-Driven)
     # =========================================================================
@@ -597,12 +658,18 @@ class ItemAdderHandler(MenuDataMixin):
                 quantity=item_quantity,
             )
 
+            # Populate default ingredients for signature items FIRST
+            # This must happen before applying user selections so user selections
+            # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
+            if is_signature and menu_item_id:
+                self._populate_signature_defaults(item)
+
             # Apply pre-filled attributes
             if pre_filled_attributes:
                 for attr_name, attr_value in pre_filled_attributes.items():
                     item[attr_name] = attr_value
 
-            # Apply extracted selections if provided
+            # Apply extracted selections if provided (these replace/add to defaults)
             if extracted_selections and self.menu_item_handler:
                 self.menu_item_handler._apply_selections(item, extracted_selections)
 

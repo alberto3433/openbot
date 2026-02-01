@@ -324,3 +324,38 @@ class MenuItemLoaderMixin:
             len(all_items),
             len(keyword_index),
         )
+
+    def _load_menu_item_default_ingredients_from_bulk(self, bulk_data: dict) -> None:
+        """Load default ingredients for signature menu items (from bulk).
+
+        Populates _menu_item_default_ingredients: menu_item_id -> list of ingredient dicts
+        Each dict contains: ingredient_id, ingredient_slug, ingredient_name, ingredient_category, quantity
+        """
+        menu_item_ingredients = bulk_data.get("menu_item_ingredients", [])
+
+        defaults_by_item: dict[int, list[dict]] = {}
+
+        for link in menu_item_ingredients:
+            if not link.menu_item or not link.ingredient:
+                continue
+
+            menu_item_id = link.menu_item_id
+            ingredient = link.ingredient
+
+            if menu_item_id not in defaults_by_item:
+                defaults_by_item[menu_item_id] = []
+
+            defaults_by_item[menu_item_id].append({
+                "ingredient_id": ingredient.id,
+                "ingredient_slug": ingredient.slug,
+                "ingredient_name": ingredient.name,
+                "ingredient_category": ingredient.category,
+                "quantity": link.quantity or 1,
+            })
+
+        self._menu_item_default_ingredients = defaults_by_item
+
+        logger.debug(
+            "Loaded default ingredients for %d menu items (from bulk)",
+            len(defaults_by_item),
+        )

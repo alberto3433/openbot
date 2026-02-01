@@ -18,7 +18,7 @@ from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse
 from .pending_fields import PendingField
 from .parsers.quantity_utils import extract_quantity_for_pattern, extract_leading_quantity
-from .checkout_messages import sure_updated_anything_else
+from .checkout_messages import sure_updated_anything_else, item_not_found_would_you_like_to_add
 from .handler_utils import get_last_item, is_configurable_menu_item, recalculate_and_summarize
 
 if TYPE_CHECKING:
@@ -165,11 +165,8 @@ class ItemModificationHandler:
         if not parsed.modify_add_modifiers:
             return None
 
-        # Build modifier→category lookup (data-driven from database)
-        modifier_to_category: dict[str, str] = {}
-        for category in menu_cache.get_all_ingredient_categories():
-            for ingredient in menu_cache.get_ingredients(category):
-                modifier_to_category[ingredient.lower()] = category
+        # Use pre-built modifier→category lookup from cache
+        modifier_to_category = menu_cache.get_modifier_to_category_map()
 
         for modifier in parsed.modify_add_modifiers:
             result = self._add_single_modifier(
@@ -312,7 +309,7 @@ class ItemModificationHandler:
                 target_desc
             )
             return StateMachineResult(
-                message=f"I couldn't find a {target_desc} in your order. Would you like to add one?",
+                message=item_not_found_would_you_like_to_add(target_desc),
                 order=order,
             )
         else:

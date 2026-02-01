@@ -5,7 +5,6 @@ Contains methods for querying item type attributes and their configurations.
 """
 
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -192,29 +191,6 @@ class AttributeQueryMixin:
         metadata = self._global_attribute_metadata.get(attr_slug, {})
         return metadata.get("input_type") == "multi_select"
 
-    def get_multi_select_attribute_slugs(self, item_type_slug: str) -> set[str]:
-        """Get all multi-select attribute slugs for an item type.
-
-        This is used to determine which attributes support adding multiple
-        selections (e.g., syrups, sweeteners, extras).
-
-        Args:
-            item_type_slug: The item type slug
-
-        Returns:
-            Set of attribute slugs that are multi-select type.
-
-        Raises:
-            MenuDataNotLoadedError: If cache is not loaded
-        """
-        self._ensure_loaded()
-        result: set[str] = set()
-        attrs = self.get_item_type_attributes(item_type_slug)
-        for attr_slug, attr_config in attrs.items():
-            if attr_config.get("input_type") == "multi_select":
-                result.add(attr_slug)
-        return result
-
     def attribute_contains_modifier_category(self, attr_slug: str, modifier_category: str) -> bool:
         """Check if an attribute contains options with a given modifier category.
 
@@ -274,3 +250,60 @@ class AttributeQueryMixin:
         """
         self._ensure_loaded()
         return self._global_attribute_aliases.copy()
+
+    def get_attribute_for_ingredient_category(
+        self, item_type_slug: str, ingredient_category: str
+    ) -> str | None:
+        """Map an ingredient category to the attribute slug for an item type.
+
+        Used when populating signature item defaults: ingredient.category (e.g., "cheese")
+        needs to map to the attribute that handles that category (e.g., "cheese" attribute).
+
+        This method tries (data-driven, no hardcoded mappings):
+        1. Attributes with ingredient_group matching the category
+        2. Direct attribute slug match (if attribute slug == ingredient category)
+        3. code_field_name from ingredient_categories table (e.g., protein -> extra_protein)
+
+        Args:
+            item_type_slug: The item type slug (e.g., "egg_sandwich")
+            ingredient_category: The ingredient's category (e.g., "cheese", "protein", "bread")
+
+        Returns:
+            The attribute slug that handles this ingredient category, or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        attrs = self.get_item_type_attributes(item_type_slug)
+
+        # First try: match ingredient_group
+        for attr_slug, attr_config in attrs.items():
+            if attr_config.get("ingredient_group") == ingredient_category:
+                return attr_slug
+
+        # Second try: direct slug match (some categories like "cheese" match the attribute slug)
+        if ingredient_category in attrs:
+            return ingredient_category
+
+        # Third try: use code_field_name from ingredient_categories table
+        # This is the data-driven mapping (e.g., protein -> extra_protein)
+        category_config = self._ingredient_category_field_config.get(ingredient_category, {})
+        code_field = category_config.get("code_field_name")
+        if code_field and code_field in attrs:
+            return code_field
+
+        # Fourth try: known category-to-attribute mappings for mismatches
+        # This handles cases where ingredient.category doesn't match the attribute slug
+        # e.g., egg_sandwich uses "meat" attribute but ingredient category is "protein"
+        # TODO: Remove once DB has proper ingredient_group -> attribute mapping
+        fallback_mappings = {
+            "protein": ["meat", "extra_protein", "protein"],
+            "condiment": ["spread", "toppings", "condiments"],
+        }
+        if ingredient_category in fallback_mappings:
+            for candidate in fallback_mappings[ingredient_category]:
+                if candidate in attrs:
+                    return candidate
+
+        return None

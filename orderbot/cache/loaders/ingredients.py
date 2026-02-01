@@ -138,6 +138,9 @@ class IngredientLoaderMixin:
         ingredients_by_category: dict[str, set[str]] = {}
         ingredient_details_by_category: dict[str, list[dict]] = {}
 
+        # Also build reverse mapping: modifier -> category
+        modifier_to_category: dict[str, str] = {}
+
         for ing in ingredients:
             category = ing.category
             if not category:
@@ -149,12 +152,14 @@ class IngredientLoaderMixin:
 
             name_lower = ing.name.lower()
             ingredients_by_category[category].add(name_lower)
+            modifier_to_category[name_lower] = category
 
             patterns = [name_lower]
             for alias in ing.aliases:
                 alias_lower = alias.strip().lower()
                 if alias_lower:
                     ingredients_by_category[category].add(alias_lower)
+                    modifier_to_category[alias_lower] = category
                     patterns.append(alias_lower)
 
             ingredient_details_by_category[category].append({
@@ -165,6 +170,7 @@ class IngredientLoaderMixin:
 
         self._ingredients_by_category = ingredients_by_category
         self._ingredient_details_by_category = ingredient_details_by_category
+        self._modifier_to_category = modifier_to_category
 
         logger.debug(
             "Loaded generic ingredients (from bulk) for %d categories",

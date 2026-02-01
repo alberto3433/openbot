@@ -180,6 +180,7 @@ class MenuItemTask(ItemTask):
         price: float = 0.0,
         display_name: str | None = None,
         ingredient_category: str | None = None,
+        is_default: bool = False,
     ) -> None:
         """Add a selection to the item.
 
@@ -191,6 +192,8 @@ class MenuItemTask(ItemTask):
             display_name: Human-readable name (looked up from cache if not provided)
             ingredient_category: The ingredient's category (e.g., "syrup", "sweetener")
                 for quantity unit lookup. Different from category (attribute slug).
+            is_default: True if this selection is a default ingredient for a signature item.
+                Used for "already comes with X" messaging when user mentions a default.
         """
         # Check if already present (same slug and category)
         for existing in self.modifiers:
@@ -240,6 +243,8 @@ class MenuItemTask(ItemTask):
         }
         if ingredient_category:
             selection["ingredient_category"] = ingredient_category
+        if is_default:
+            selection["is_default"] = True
 
         self.modifiers.append(selection)
 

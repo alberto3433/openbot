@@ -97,6 +97,9 @@ class LoaderMixin(
                 # Load modifier categories (toppings, proteins, milks, etc.)
                 self._load_modifier_categories_from_bulk(bulk_data)
 
+                # Load menu item default ingredients (for signature items)
+                self._load_menu_item_default_ingredients_from_bulk(bulk_data)
+
                 # Price inquiry support (pre-compute resolved prices)
                 self._load_priced_attributes_from_bulk(bulk_data)
                 self._load_resolved_item_prices_from_bulk(bulk_data)
@@ -146,6 +149,7 @@ class LoaderMixin(
             ItemType, ItemTypeGlobalAttribute, MenuItem, ItemTypeIngredient,
             Category, MenuItemCategory, ResponsePattern, ModifierQualifier,
             ModifierCategory, IngredientCategory, GlobalAttributeAlias,
+            MenuItemIngredient,
         )
 
         start_time = time.time()
@@ -255,6 +259,16 @@ class LoaderMixin(
             .all()
         )
 
+        # 14. Load menu item ingredients (default ingredients for signature items)
+        menu_item_ingredients = (
+            db.query(MenuItemIngredient)
+            .options(
+                joinedload(MenuItemIngredient.menu_item),
+                joinedload(MenuItemIngredient.ingredient),
+            )
+            .all()
+        )
+
         elapsed = time.time() - start_time
         logger.info(
             "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
@@ -282,6 +296,7 @@ class LoaderMixin(
             "modifier_categories": modifier_categories_list,
             "ingredient_categories": ingredient_categories,
             "global_attr_aliases": global_attr_aliases,
+            "menu_item_ingredients": menu_item_ingredients,
         }
 
     def _load_menu_index(self, db: Session) -> None:

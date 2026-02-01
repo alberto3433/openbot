@@ -125,3 +125,49 @@ class ErrorMessages:
 
     # Empty cart message
     NO_ITEMS_YET = "There's nothing in your order yet. What can I get for you?"
+
+
+# =============================================================================
+# "Not Found" Messages
+# =============================================================================
+
+def item_not_found_in_order(item_desc: str) -> str:
+    """Generate "I couldn't find X in your order" message.
+
+    Args:
+        item_desc: Description of what wasn't found (e.g., "a bagel", "the latte")
+
+    Returns:
+        Formatted message with recovery prompt
+    """
+    return f"I couldn't find {item_desc} in your order. What would you like to do?"
+
+
+def item_not_found_on_menu(item_name: str, suggestion: str | None = None) -> str:
+    """Generate "I couldn't find X on our menu" message.
+
+    Args:
+        item_name: Name of the item that wasn't found
+        suggestion: Optional suggestion text to append
+
+    Returns:
+        Formatted message, optionally with suggestion
+    """
+    base = f"I couldn't find '{item_name}' on our menu."
+    if suggestion:
+        return f"{base} {suggestion}"
+    return f"{base} What would you like to order?"
+
+
+def item_not_found_would_you_like_to_add(item_desc: str) -> str:
+    """Generate "I couldn't find X. Would you like to add one?" message.
+
+    Used when user tries to modify an item not in their order.
+
+    Args:
+        item_desc: Description of what wasn't found
+
+    Returns:
+        Formatted message offering to add the item
+    """
+    return f"I couldn't find a {item_desc} in your order. Would you like to add one?"

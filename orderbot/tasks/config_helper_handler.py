@@ -21,7 +21,7 @@ from .modifier_operations import find_modifier_match, remove_modifier_from_item
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants
-from .checkout_messages import ok_removed_anything_else, ErrorMessages
+from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
 from .handler_utils import is_configurable_menu_item, get_last_item
 
 if TYPE_CHECKING:
@@ -359,7 +359,7 @@ class ConfigHelperHandler:
         else:
             # Couldn't find a matching item
             return StateMachineResult(
-                message=f"I couldn't find {cancel_desc} in your order. What would you like to do?",
+                message=item_not_found_in_order(cancel_desc),
                 order=order,
             )
 
@@ -467,12 +467,14 @@ class ConfigHelperHandler:
         # Apply the change
         item_id = clarification.get("item_id")
         new_value = clarification.get("new_value", "")
+        target = clarification.get("target")
 
         result = self.modifier_change_handler.apply_change(
             order=order,
             item_id=item_id,
             attr_slug=attr_slug,
             new_value=new_value,
+            target=target,
         )
 
         if result.success:
@@ -520,6 +522,7 @@ class ConfigHelperHandler:
                 "new_value": change_request.new_value,
                 "possible_attributes": list(change_request.possible_attributes),
                 "item_id": item_id,
+                "target": change_request.target,
             }
 
             msg = self.modifier_change_handler.generate_clarification_message(change_request)
@@ -554,6 +557,7 @@ class ConfigHelperHandler:
                 item_id=None,  # Last item
                 attr_slug=attr_slug,
                 new_value=change_request.new_value,
+                target=change_request.target,
             )
 
             if result.success:

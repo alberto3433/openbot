@@ -492,16 +492,44 @@ def find_default_ingredient_match(
             logger.debug("Ingredient '%s' already removed from item", removed)
             return None
 
-    # Look up default ingredients from database
-    from ..services.menu_item_utils import find_default_ingredient_match as find_db_match
+    # Look up default ingredients from cache
+    from ..cache import menu_cache
 
-    match = find_db_match(menu_item_id, user_input)
-    if match:
-        return DefaultIngredientMatch(
-            ingredient_name=match['name'],
-            attribute_slug=match['attribute_slug'],
-            item=item,
-        )
+    defaults = menu_cache.get_menu_item_default_ingredients(menu_item_id)
+    if not defaults:
+        return None
+
+    # Try to match user input against default ingredients
+    for default in defaults:
+        ingredient_name = default["ingredient_name"]
+        name_lower = ingredient_name.lower()
+
+        # Direct match
+        if normalized_input == name_lower:
+            return DefaultIngredientMatch(
+                ingredient_name=ingredient_name,
+                attribute_slug=default["ingredient_category"],
+                item=item,
+            )
+
+        # Partial match (e.g., "bacon" matches "Applewood Smoked Bacon")
+        if normalized_input in name_lower or name_lower in normalized_input:
+            return DefaultIngredientMatch(
+                ingredient_name=ingredient_name,
+                attribute_slug=default["ingredient_category"],
+                item=item,
+            )
+
+        # Check aliases for this ingredient
+        all_aliases = menu_cache.get_ingredient_aliases()
+        for alias, canonical in all_aliases.items():
+            if canonical.lower() == name_lower:
+                if normalized_input == alias or alias in normalized_input:
+                    return DefaultIngredientMatch(
+                        ingredient_name=ingredient_name,
+                        attribute_slug=default["ingredient_category"],
+                        item=item,
+                    )
 
     return None
 

@@ -43,6 +43,29 @@ orderbot/cache/base.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/cache/attribute_queries.py:
+  - term: protein
+    context: all
+    reason: "Fallback mapping for ingredient_category -> attribute_slug - TODO: add DB mapping"
+  - term: meat
+    context: all
+    reason: "Fallback mapping for ingredient_category -> attribute_slug - TODO: add DB mapping"
+  - term: extra_protein
+    context: all
+    reason: "Fallback mapping for ingredient_category -> attribute_slug - TODO: add DB mapping"
+  - term: condiment
+    context: all
+    reason: "Fallback mapping for ingredient_category -> attribute_slug - TODO: add DB mapping"
+  - term: spread
+    context: all
+    reason: "Fallback mapping for ingredient_category -> attribute_slug - TODO: add DB mapping"
+  - term: toppings
+    context: all
+    reason: "Fallback mapping for ingredient_category -> attribute_slug - TODO: add DB mapping"
+  - term: condiments
+    context: all
+    reason: "Fallback mapping for ingredient_category -> attribute_slug - TODO: add DB mapping"
+
 orderbot/cache/category_queries.py:
   - term: bagels
     context: all
@@ -719,17 +742,6 @@ orderbot/services/item_type_helpers.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: sized_beverage
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-
-orderbot/services/menu_item_utils.py:
-  - term: bacon
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: scooped
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: toasted
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 

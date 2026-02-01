@@ -356,6 +356,8 @@ class BaseCacheMixin:
         self._item_alias_to_canonical_by_type: dict[str, dict[str, str]] = {}  # item_type_slug -> {alias -> canonical}
         # Ingredients by category (protein, cheese, topping, spread, etc.)
         self._ingredients_by_category: dict[str, set[str]] = {}  # category -> set of names/aliases
+        # Reverse mapping: modifier name -> category (for quick lookups)
+        self._modifier_to_category: dict[str, str] = {}  # lowercase modifier -> category slug
         # Ingredient details by category (for generic modifier handling)
         # category -> list of {slug, name, aliases: [pattern, ...]}
         self._ingredient_details_by_category: dict[str, list[dict]] = {}
@@ -411,6 +413,11 @@ class BaseCacheMixin:
 
         # Menu items cache (for get_items_by_item_type)
         self._menu_items: dict[str, dict] = {}
+
+        # Menu item default ingredients (for signature items)
+        # Maps menu_item_id -> list of default ingredient dicts
+        # Each dict: {ingredient_id, ingredient_slug, ingredient_name, ingredient_category, quantity}
+        self._menu_item_default_ingredients: dict[int, list[dict]] = {}
 
         # Metadata
         self._last_refresh: datetime | None = None

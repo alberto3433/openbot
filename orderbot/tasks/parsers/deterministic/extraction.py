@@ -464,28 +464,43 @@ def _extract_modifiers_generic(
     # Build set of all attribute option slugs for this item type (normalized to match ingredients)
     # This lets us detect when an ingredient category overlaps with attribute options
     attr_option_slugs: set[str] = set()
-    for attr_config in menu_cache.get_item_type_attributes(item_type).values():
+    item_type_attrs = menu_cache.get_item_type_attributes(item_type)
+    for attr_config in item_type_attrs.values():
         for opt in attr_config.get("options", []):
             slug = opt.get("slug", "")
             # Normalize: "oat_milk" -> "oat milk"
             attr_option_slugs.add(slug.replace("_", " ").lower())
 
+    # Build set of attribute slugs for this item type
+    # Categories that match attribute slugs should be skipped entirely
+    # (e.g., "bread" category for bagels is the "bread" attribute)
+    attr_slugs = set(item_type_attrs.keys())
+
+    # Get ingredients that are valid for this specific item type (from item_type_ingredients)
+    # This ensures we only extract modifiers that make sense for this item type
+    valid_ingredients_by_category = menu_cache.get_ingredients_by_category_for_item_type(item_type)
+
     # Extract modifiers from categories that aren't handled as attributes
     for category in menu_cache.get_ordered_ingredient_categories(modifier_type):
-        ingredients = menu_cache.get_ingredients(category)
-
-        # Check if this category's ingredients overlap with attribute options
-        # If so, skip - those are handled via extract_attribute_values
-        category_overlaps_attrs = any(
-            ing.lower() in attr_option_slugs or ing.lower().replace(" ", "_") in attr_option_slugs
-            for ing in ingredients
-        )
-        if category_overlaps_attrs:
+        # Skip categories that are directly used as attributes for this item type
+        # (e.g., "bread", "spread", "cheese" for bagels)
+        if category in attr_slugs:
             continue
 
-        for ingredient in ingredients:
-            if ingredient.lower() in text_lower:
-                found_modifiers.append(ingredient.lower())
+        # Only use ingredients that are valid for this item type
+        valid_ingredients = valid_ingredients_by_category.get(category, set())
+        if not valid_ingredients:
+            continue
+
+        for ingredient in valid_ingredients:
+            ing_lower = ingredient.lower()
+            # Skip ingredients that overlap with attribute options - those are handled
+            # via extract_attribute_values
+            if ing_lower in attr_option_slugs or ing_lower.replace(" ", "_") in attr_option_slugs:
+                continue
+
+            if ing_lower in text_lower:
+                found_modifiers.append(ing_lower)
 
     return found_modifiers
 

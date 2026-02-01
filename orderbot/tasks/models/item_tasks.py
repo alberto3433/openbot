@@ -279,6 +279,20 @@ class MenuItemTask(ItemTask):
             i += 1
         return removed_any
 
+    def find_modifier_by_slug(self, slug: str) -> dict | None:
+        """Find a modifier by its slug.
+
+        Args:
+            slug: The slug to search for (e.g., "egg", "bacon")
+
+        Returns:
+            The modifier dict if found, None otherwise
+        """
+        for mod in self.modifiers:
+            if mod.get("slug") == slug:
+                return mod
+        return None
+
     # -------------------------------------------------------------------------
     # Dict-style access API (primary interface)
     # -------------------------------------------------------------------------

@@ -51,6 +51,11 @@ class GlobalAttribute(Base):
     # If null, uses slug as property name
     property_name = Column(String(50), nullable=True)
 
+    # Link to ingredient slug that this attribute modifies
+    # When set, selecting an option (e.g., "3_eggs") updates the existing
+    # ingredient modifier's quantity instead of creating a duplicate entry
+    modifies_ingredient_slug = Column(String(100), nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

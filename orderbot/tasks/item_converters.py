@@ -277,11 +277,21 @@ class UnifiedItemConverter:
 
         # Process modifiers from the unified modifiers field
         item_modifiers = item.modifiers or []
+
+        # Get item type attributes to check for modifies_ingredient_slug
+        item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}
+
         for mod in item_modifiers:
             # Skip name-forming categories (e.g., bread) - already in display name
             # Exception: signature items keep their name, so show bread as a sub-line
             mod_category = mod.get("category", "")
             if menu_cache.is_name_forming_category(mod_category) and not item.is_signature:
+                continue
+
+            # Skip attribute selections that modify ingredients (shown via the updated modifier)
+            # e.g., skip "egg_quantity=3_eggs" since the egg modifier already shows "3 Eggs"
+            attr_config = item_attrs.get(mod_category, {})
+            if attr_config.get("modifies_ingredient_slug"):
                 continue
 
             mod_slug = mod.get("slug", "")
@@ -296,18 +306,27 @@ class UnifiedItemConverter:
 
             # Handle quantity display
             if mod_quantity > 1:
-                # Use ingredient_category for quantity unit lookup (e.g., "syrup" has "pump")
-                # Fall back to mod_category if ingredient_category not set
-                ing_category = mod.get("ingredient_category") or mod_category
-                quantity_unit = menu_cache.get_ingredient_category_quantity_unit(ing_category)
-                if quantity_unit:
-                    # Format: "2 pumps of Vanilla Syrup"
-                    unit_plural = quantity_unit + "s" if mod_quantity > 1 else quantity_unit
-                    mod_display = f"{mod_quantity} {unit_plural} of {mod_display}"
+                # Check if display name already includes the quantity (e.g., "3 Eggs")
+                # In that case, don't re-format and don't multiply price
+                import re
+                leading_qty_match = re.match(r'^(\d+)\s+', mod_display)
+                if leading_qty_match and int(leading_qty_match.group(1)) == mod_quantity:
+                    # Display name already has quantity prefix - don't re-format
+                    # Price is already the total upcharge, not per-unit
+                    pass
                 else:
-                    # Fallback: "2 Vanilla Syrups"
-                    mod_display = f"{mod_quantity} {_pluralize_display_name(mod_display)}"
-                mod_price = mod_price * mod_quantity
+                    # Use ingredient_category for quantity unit lookup (e.g., "syrup" has "pump")
+                    # Fall back to mod_category if ingredient_category not set
+                    ing_category = mod.get("ingredient_category") or mod_category
+                    quantity_unit = menu_cache.get_ingredient_category_quantity_unit(ing_category)
+                    if quantity_unit:
+                        # Format: "2 pumps of Vanilla Syrup"
+                        unit_plural = quantity_unit + "s" if mod_quantity > 1 else quantity_unit
+                        mod_display = f"{mod_quantity} {unit_plural} of {mod_display}"
+                    else:
+                        # Fallback: "2 Vanilla Syrups"
+                        mod_display = f"{mod_quantity} {_pluralize_display_name(mod_display)}"
+                    mod_price = mod_price * mod_quantity
 
             if mod_display:
                 modifiers.append({"name": mod_display, "price": mod_price})

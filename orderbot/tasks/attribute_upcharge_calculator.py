@@ -194,6 +194,8 @@ class AttributeUpchargeCalculator:
                 "recalc: skipping %s=%s (has modifier with price)",
                 attr_slug, attr_value
             )
+            # Mark as priced so it won't be double-counted in other sections
+            priced_slugs.add(attr_value)
             return 0.0, priced_slugs
 
         upcharge = self._pricing.lookup_attribute_option_upcharge(

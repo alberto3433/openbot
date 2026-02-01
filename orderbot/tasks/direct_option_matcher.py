@@ -193,13 +193,89 @@ class DirectOptionMatcher:
         if matched_opt:
             opt_name = matched_opt["display_name"]
             qualifier = self._extract_qualifier(user_input, opt_name)
+            opt_price = matched_opt.get("price") or matched_opt.get("price_modifier") or 0
+
+            # Check if this attribute modifies an existing ingredient
+            modifies_slug = attr.get("modifies_ingredient_slug")
+            if modifies_slug:
+                # Parse quantity from option slug (e.g., "3_eggs" -> 3)
+                new_quantity = self._parse_quantity_from_slug(matched_opt["slug"])
+
+                # Find and update existing modifier
+                existing_mod = item.find_modifier_by_slug(modifies_slug)
+                if existing_mod:
+                    old_price = existing_mod.get("price", 0)
+
+                    # Get or store the base quantity (original default from signature item)
+                    # This is needed to calculate total upcharge from the baseline
+                    base_quantity = existing_mod.get("_base_quantity")
+                    if base_quantity is None:
+                        # First time modifying - store the original quantity as baseline
+                        base_quantity = existing_mod.get("quantity", 1)
+                        existing_mod["_base_quantity"] = base_quantity
+
+                    # Calculate TOTAL upcharge from baseline (not incremental)
+                    # The option's price_modifier may be 0 if it's the default for another item type
+                    # (e.g., 3_eggs is default for omelette but extra for egg_sandwich)
+                    # So we calculate: (new_quantity - base_quantity) * per_unit_price
+                    extra_from_base = new_quantity - base_quantity
+                    if extra_from_base > 0:
+                        # Get per-unit price from attribute options
+                        per_unit_price = self._get_per_unit_price_from_options(attr.get("options", []))
+                        total_upcharge = extra_from_base * per_unit_price
+                    else:
+                        total_upcharge = 0.0
+
+                    existing_mod["quantity"] = new_quantity
+                    # Set price on modifier for display purposes (total upcharge, not per-unit)
+                    existing_mod["price"] = total_upcharge
+
+                    # Update unit_price: add new upcharge minus previous upcharge
+                    item.unit_price = (item.unit_price or 0.0) + total_upcharge - old_price
+
+                    # Get base display name (without quantity prefix)
+                    # e.g., "3 Eggs" -> "Egg", "Egg" -> "Egg"
+                    import re
+                    base_display = existing_mod.get("display_name", modifies_slug.title())
+                    base_display = re.sub(r'^\d+\s+', '', base_display)  # Remove leading "N "
+                    if base_display.endswith("s") and len(base_display) > 1:
+                        base_display = base_display[:-1]  # Remove trailing 's' to get singular
+
+                    # Format display based on quantity
+                    if new_quantity > 1:
+                        # Pluralize: "Egg" -> "Eggs"
+                        if not base_display.endswith("s"):
+                            display = f"{new_quantity} {base_display}s"
+                        else:
+                            display = f"{new_quantity} {base_display}"
+                    else:
+                        display = base_display
+                    existing_mod["display_name"] = display
+
+                    # Track in attribute_values via a modifier entry for this attr_slug
+                    # We add a tracking entry WITHOUT price (to avoid double-counting)
+                    # The price is already on the existing modifier
+                    item.add_selection(
+                        matched_opt["slug"],
+                        attr_slug,
+                        quantity=1,
+                        price=0,  # Don't double-count price
+                        display_name=display,
+                    )
+
+                    logger.info(
+                        "Updated modifier %s quantity: %d -> %d (base=%d, via %s=%s, upcharge=$%.2f)",
+                        modifies_slug, base_quantity, new_quantity, base_quantity, attr_slug, matched_opt["slug"], total_upcharge
+                    )
+                    return self._ask_more_customizations(item, order, f"{display}")
+
+            # Default behavior for non-ingredient-modifying attributes
             if qualifier:
                 display = f"{opt_name} ({qualifier})"
             else:
                 display = opt_name
 
             # Add selection using unified API
-            opt_price = matched_opt.get("price") or matched_opt.get("price_modifier") or 0
             item.add_selection(
                 matched_opt["slug"],
                 attr_slug,
@@ -240,6 +316,62 @@ class DirectOptionMatcher:
                         return self._ask_more_customizations(item, order, f"{display_name} added")
 
         return None
+
+    def _parse_quantity_from_slug(self, slug: str) -> int:
+        """Parse quantity from option slug like '3_eggs' -> 3.
+
+        Supports formats:
+        - '3_eggs' -> 3
+        - '3eggs' -> 3
+        - '3' -> 3
+
+        Returns 1 if no quantity found.
+        """
+        import re
+        match = re.match(r'^(\d+)', slug)
+        if match:
+            return int(match.group(1))
+        return 1
+
+    def _get_per_unit_price_from_options(self, options: list[dict]) -> float:
+        """Calculate per-unit price from attribute options.
+
+        Looks at consecutive options and calculates the price difference per unit.
+        For example, if 4_eggs costs $1.50 and 5_eggs costs $3.00,
+        the per-unit price is ($3.00 - $1.50) / (5 - 4) = $1.50.
+
+        Returns 0.0 if cannot determine per-unit price.
+        """
+        if not options or len(options) < 2:
+            return 0.0
+
+        # Build list of (quantity, price) tuples
+        qty_price_pairs = []
+        for opt in options:
+            qty = self._parse_quantity_from_slug(opt.get("slug", ""))
+            price = opt.get("price_modifier") or opt.get("price") or 0.0
+            if qty > 0:
+                qty_price_pairs.append((qty, price))
+
+        # Sort by quantity
+        qty_price_pairs.sort(key=lambda x: x[0])
+
+        # Find two consecutive options with different prices to calculate per-unit price
+        for i in range(len(qty_price_pairs) - 1):
+            qty1, price1 = qty_price_pairs[i]
+            qty2, price2 = qty_price_pairs[i + 1]
+            qty_diff = qty2 - qty1
+            price_diff = price2 - price1
+            if qty_diff > 0 and price_diff > 0:
+                return price_diff / qty_diff
+
+        # Fallback: if all options have prices, use the first non-zero price
+        for qty, price in qty_price_pairs:
+            if price > 0:
+                # Assume this is the price for 1 extra unit
+                return price
+
+        return 0.0
 
     def _ask_disambiguation_for_options(
         self,

@@ -441,14 +441,21 @@ class StoreInfoHandler(MenuDataMixin):
             order: Current order state
         """
         # Get all item types and their display names
+        # Filter to only customer-facing item types (not ingredient categories)
         all_slugs = sorted(menu_cache.get_all_item_type_slugs())
         item_types_with_names = []
 
         for slug in all_slugs:
             display_name = menu_cache.get_item_type_display_name(slug, plural=True)
-            # Skip if display name is just the slug (not user-friendly)
-            if display_name and display_name != slug:
-                item_types_with_names.append((slug, display_name))
+            # Skip if:
+            # 1. No display name
+            # 2. Display name is just the slug
+            # 3. Display name starts with lowercase (internal/ingredient category)
+            if not display_name or display_name == slug:
+                continue
+            if display_name[0].islower():
+                continue
+            item_types_with_names.append((slug, display_name))
 
         if not item_types_with_names:
             return StateMachineResult(

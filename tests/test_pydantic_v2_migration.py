@@ -24,6 +24,63 @@ from orderbot.schemas.orders import (
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 
+def _cleanup_test_data(session):
+    """Clean up test data created by pydantic migration tests."""
+    from orderbot.db.models import (
+        MenuItem, ItemType, MenuItemSizePrice, MenuItemSize,
+        MenuItemSizeCategory, Order, OrderItem
+    )
+    try:
+        # Delete in correct order (respect FK constraints)
+        # 1. OrderItems (references Order)
+        session.query(OrderItem).filter(
+            OrderItem.menu_item_name.in_(["Test Sandwich", "Test Sandwich Pydantic"])
+        ).delete(synchronize_session=False)
+
+        # 2. Orders with test customer
+        session.query(Order).filter(
+            Order.customer_name == "Test Customer"
+        ).delete(synchronize_session=False)
+
+        # 3. MenuItemSizePrice (references MenuItem and MenuItemSize)
+        test_menu_item = session.query(MenuItem).filter(
+            MenuItem.name == "Test Sandwich Pydantic"
+        ).first()
+        if test_menu_item:
+            session.query(MenuItemSizePrice).filter(
+                MenuItemSizePrice.menu_item_id == test_menu_item.id
+            ).delete(synchronize_session=False)
+
+        # 4. MenuItem
+        session.query(MenuItem).filter(
+            MenuItem.name == "Test Sandwich Pydantic"
+        ).delete(synchronize_session=False)
+
+        # 5. MenuItemSize (references MenuItemSizeCategory)
+        test_size_cat = session.query(MenuItemSizeCategory).filter(
+            MenuItemSizeCategory.slug == "test_each"
+        ).first()
+        if test_size_cat:
+            session.query(MenuItemSize).filter(
+                MenuItemSize.category_id == test_size_cat.id
+            ).delete(synchronize_session=False)
+
+        # 6. MenuItemSizeCategory
+        session.query(MenuItemSizeCategory).filter(
+            MenuItemSizeCategory.slug == "test_each"
+        ).delete(synchronize_session=False)
+
+        # 7. ItemType
+        session.query(ItemType).filter(
+            ItemType.slug == "test_sandwich_pydantic"
+        ).delete(synchronize_session=False)
+
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Failed to clean up pydantic test data: {e}")
+
+
 @pytest.fixture
 def db_session():
     """Create a PostgreSQL database session for testing."""
@@ -35,8 +92,11 @@ def db_session():
     Base.metadata.create_all(bind=engine)
 
     session = SessionLocal()
-    yield session
-    session.close()
+    try:
+        yield session
+    finally:
+        _cleanup_test_data(session)
+        session.close()
 
 
 class TestPydanticV2ConfigDict:

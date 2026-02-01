@@ -2187,12 +2187,13 @@ class TestDuplicatePatterns:
         # Note: The old hardcoded mapping returned "coffee" but the database uses "sized_beverage"
         ("another coffee", "sized_beverage"),
         ("one more coffee", "sized_beverage"),
-        ("another latte", "sized_beverage"),
-        ("one more latte", "sized_beverage"),
-        ("another cappuccino", "sized_beverage"),
-        ("another espresso", "espresso"),  # Espresso has its own item type in the database
-        ("another americano", "sized_beverage"),
         ("another tea", "sized_beverage"),
+        # Espresso-based drinks use "espresso_based" item type (have size, unlike plain espresso)
+        ("another latte", "espresso_based"),
+        ("one more latte", "espresso_based"),
+        ("another cappuccino", "espresso_based"),
+        ("another americano", "espresso_based"),
+        ("another espresso", "espresso"),  # Plain espresso has its own item type (no size)
     ])
     def test_another_item_type_detected(self, text, expected_type):
         """Test that 'another <item>' patterns are detected with correct item type.

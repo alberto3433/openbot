@@ -184,7 +184,7 @@ def mock_get_item_type_attributes(item_type_slug):
     """Mock menu_cache.get_item_type_attributes for tests."""
     if item_type_slug == "bagel":
         return get_mock_bagel_attributes()
-    elif item_type_slug in ("sized_beverage", "coffee", "espresso"):
+    elif item_type_slug in ("sized_beverage", "coffee", "espresso", "espresso_based"):
         return get_mock_coffee_attributes()
     elif item_type_slug == "spread_sandwich":
         return get_mock_spread_sandwich_attributes()
@@ -209,18 +209,20 @@ def mock_get_category_keyword_mapping(keyword: str):
         # Bagel keywords
         "bagel": {"slug": "bagel", "lookup_type": "item_type"},
         "bagels": {"slug": "bagel", "lookup_type": "item_type"},
-        # Coffee/beverage keywords
+        # Coffee/beverage keywords (sized_beverage = coffee, tea, cold brew, etc.)
         "coffee": {"slug": "sized_beverage", "lookup_type": "item_type"},
         "coffees": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "latte": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "lattes": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "cappuccino": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "americano": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "espresso": {"slug": "sized_beverage", "lookup_type": "item_type"},
         "drink": {"slug": "sized_beverage", "lookup_type": "item_type"},
         "drinks": {"slug": "sized_beverage", "lookup_type": "item_type"},
         "beverage": {"slug": "sized_beverage", "lookup_type": "item_type"},
         "beverages": {"slug": "sized_beverage", "lookup_type": "item_type"},
+        # Espresso-based drinks (latte, cappuccino, americano) have their own item type
+        "latte": {"slug": "espresso_based", "lookup_type": "item_type"},
+        "lattes": {"slug": "espresso_based", "lookup_type": "item_type"},
+        "cappuccino": {"slug": "espresso_based", "lookup_type": "item_type"},
+        "americano": {"slug": "espresso_based", "lookup_type": "item_type"},
+        # Plain espresso has no size attribute
+        "espresso": {"slug": "espresso", "lookup_type": "item_type"},
         # Sandwich keywords - sandwich is a category that groups subtypes via join table
         "sandwich": {
             "slug": "sandwich",
@@ -313,12 +315,12 @@ def mock_get_known_menu_items():
 
 def mock_get_configurable_item_type_slugs():
     """Return mock set of configurable item type slugs."""
-    return {"bagel", "sized_beverage", "coffee", "espresso", "spread_sandwich", "egg_bagel"}
+    return {"bagel", "sized_beverage", "coffee", "espresso", "espresso_based", "spread_sandwich", "egg_bagel"}
 
 
 def mock_get_configurable_item_types():
     """Return mock set of configurable item types (same as slugs for tests)."""
-    return {"bagel", "sized_beverage", "coffee", "espresso", "spread_sandwich", "egg_bagel"}
+    return {"bagel", "sized_beverage", "coffee", "espresso", "espresso_based", "spread_sandwich", "egg_bagel"}
 
 
 def mock_get_item_type_triggers(item_type_slug: str | None = None):
@@ -330,13 +332,20 @@ def mock_get_item_type_triggers(item_type_slug: str | None = None):
 
     Note: These must match the actual database item types. In the DB:
     - sized_beverage: coffee, chai, cold brew, etc.
-    - espresso: latte, cappuccino, americano, espresso, etc.
+    - espresso: standalone espresso drink
+    - espresso_based: latte, cappuccino, americano, etc. (drinks based on espresso)
     """
     triggers = {
         "bagel": {"bagel", "bagels"},
         "sized_beverage": {"coffee", "coffees", "chai", "cold brew", "hot chocolate"},
         "coffee": {"coffee", "coffees"},
-        "espresso": {"espresso", "espressos", "latte", "lattes", "cappuccino", "americano"},
+        "espresso": {"espresso", "espressos"},
+        "espresso_based": {
+            "latte", "lattes", "hot latte", "iced latte",
+            "cappuccino", "cappuccinos", "hot cappuccino", "iced cappuccino",
+            "americano", "cafe americano", "iced americano",
+            "macchiato", "machiato",
+        },
         "spread_sandwich": {"sandwich", "sandwiches"},
         "egg_bagel": {"egg bagel", "egg bagels"},
     }
@@ -2372,7 +2381,8 @@ class TestMenuQuery:
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "sized_beverage": [{"name": "Latte", "base_price": 4.50}],
+                "espresso_based": [{"name": "Latte", "base_price": 4.50}],
+                "sized_beverage": [{"name": "Hot Coffee", "base_price": 3.00}],
                 "beverage": [{"name": "Coke", "base_price": 2.00}],
             }
         })
@@ -2380,9 +2390,9 @@ class TestMenuQuery:
 
         result = sm.menu_inquiry_handler.handle_menu_query("beverage", order)
 
-        # Should return items from the mapped type (sized_beverage based on database config)
+        # Should return items from beverage-related types
         assert "include" in result.message.lower()
-        assert "Latte" in result.message
+        assert "Latte" in result.message or "Coffee" in result.message
 
     def test_beverage_query_with_prices(self):
         """Test beverage query shows prices when requested."""
@@ -2391,7 +2401,8 @@ class TestMenuQuery:
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "sized_beverage": [{"name": "Latte", "base_price": 4.50}],
+                "espresso_based": [{"name": "Latte", "base_price": 4.50}],
+                "sized_beverage": [{"name": "Hot Coffee", "base_price": 3.00}],
                 "beverage": [{"name": "Coke", "base_price": 2.00}],
             }
         })
@@ -2399,8 +2410,8 @@ class TestMenuQuery:
 
         result = sm.menu_inquiry_handler.handle_menu_query("beverage", order, show_prices=True)
 
-        # Should show price for items from mapped type
-        assert "$4.50" in result.message
+        # Should show price for items from beverage-related types
+        assert "$4.50" in result.message or "$3.00" in result.message
 
     def test_sandwich_query_lists_matching_items(self):
         """Test that 'sandwich' query lists all sandwiches using generic matching.

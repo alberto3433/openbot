@@ -171,14 +171,19 @@ def CoffeeItemTask(
         **kwargs: Additional attribute values to set
 
     Returns:
-        MenuItemTask with appropriate menu_item_type ("espresso" for lattes/cappuccinos, "sized_beverage" for coffee/tea)
+        MenuItemTask with appropriate menu_item_type ("espresso_based" for lattes/cappuccinos, "espresso" for plain espresso, "sized_beverage" for coffee/tea)
     """
     # Determine item type based on drink type
-    # Espresso-based drinks: latte, cappuccino, americano, espresso, macchiato, matcha latte
-    espresso_drinks = {"latte", "cappuccino", "americano", "espresso", "macchiato", "matcha latte", "matcha"}
+    # Plain espresso has its own type (no size attribute)
+    # Espresso-based drinks (latte, cappuccino, etc.) have size attribute
     drink_type_lower = (drink_type or "").lower()
-    is_espresso_drink = any(e in drink_type_lower for e in espresso_drinks)
-    menu_item_type = "espresso" if is_espresso_drink else "sized_beverage"
+
+    if drink_type_lower == "espresso":
+        menu_item_type = "espresso"
+    elif any(e in drink_type_lower for e in {"latte", "cappuccino", "americano", "macchiato", "matcha"}):
+        menu_item_type = "espresso_based"
+    else:
+        menu_item_type = "sized_beverage"
 
     item = MenuItemTask(
         menu_item_name=drink_type or "Coffee",

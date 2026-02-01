@@ -183,20 +183,23 @@ class AttributeUpchargeCalculator:
         priced_slugs: set[str] = set()
 
         # Check if this slug exists in item_modifiers with a stored price
-        # If so, skip - Section 3 will handle it using stored price x quantity
+        # If so, use the stored price x quantity and mark as priced
         modifier_with_price = next(
             (m for m in item_modifiers
              if m.get("slug") == attr_value and m.get("price", 0) > 0),
             None
         )
         if modifier_with_price:
+            slug, quantity = extract_modifier_slug_and_quantity(modifier_with_price)
+            price = extract_modifier_price(modifier_with_price) or 0.0
+            total = price * quantity
             logger.debug(
-                "recalc: skipping %s=%s (has modifier with price)",
-                attr_slug, attr_value
+                "recalc: %s=%s priced via modifier (price=$%.2f x qty=%d = $%.2f)",
+                attr_slug, attr_value, price, quantity, total
             )
-            # Mark as priced so it won't be double-counted in other sections
+            # Mark as priced so it won't be double-counted in _apply_modifier_prices
             priced_slugs.add(attr_value)
-            return 0.0, priced_slugs
+            return total, priced_slugs
 
         upcharge = self._pricing.lookup_attribute_option_upcharge(
             item_type, attr_slug, attr_value, included_categories

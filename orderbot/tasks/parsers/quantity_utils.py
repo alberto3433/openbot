@@ -20,7 +20,7 @@ import re
 # This is the single source of truth - import this instead of defining inline dicts
 WORD_TO_NUM: dict[str, int] = {
     # Single
-    "a": 1, "an": 1, "one": 1,
+    "a": 1, "an": 1, "one": 1, "single": 1,
     # Two
     "two": 2, "couple": 2, "a couple": 2, "a couple of": 2, "couple of": 2, "double": 2,
     # Three
@@ -40,7 +40,7 @@ WORD_TO_NUM: dict[str, int] = {
 
 # Subset for basic number words (useful for pattern matching in specific contexts)
 BASIC_WORD_TO_NUM: dict[str, int] = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "one": 1, "single": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
     "double": 2, "triple": 3, "quad": 4, "quadruple": 4,
 }
@@ -160,7 +160,7 @@ def extract_quantity_for_pattern(user_input: str, pattern: str) -> int:
     # Try word match: "two vanilla syrups", "double shot", "triple espresso", "extra bacon"
     # Note: "extra" is treated as quantity=2 for modifiers
     word_pattern = (
-        r'(one|two|three|four|five|six|seven|eight|nine|ten|'
+        r'(one|single|two|three|four|five|six|seven|eight|nine|ten|'
         r'double|triple|quad|quadruple|extra)\s+' + escaped_pattern + r's?'
     )
     word_match = re.search(word_pattern, user_input)

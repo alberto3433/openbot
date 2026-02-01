@@ -132,8 +132,13 @@ def _is_modifier_chain(text: str) -> bool:
 
     after_and = and_parts[1].strip()
 
-    # Check if after_and contains an item keyword (would indicate multi-item)
-    item_type, _ = _detect_item_type(after_and)
+    # Strip leading quantity (number or word) - it's likely a modifier phrase
+    # "2 sugars" -> "sugars", "two sugars" -> "sugars"
+    quantity_pattern = r'^(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+'
+    after_and_stripped = re.sub(quantity_pattern, '', after_and, flags=re.IGNORECASE)
+
+    # Check if the stripped text (without quantity) matches an item keyword
+    item_type, _ = _detect_item_type(after_and_stripped)
     if item_type:
         # Contains an item keyword - it's multi-item, not modifier chain
         return False
@@ -307,11 +312,35 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # 1a. Check for multi-item patterns that should be handled by _parse_multi_item_order
     # Pattern 1: "one X and one Y" or "2 X and 3 Y" - quantity on both sides of "and"
     # This prevents "one everything bagel and one plain bagel" from being treated as one item
+    # BUT: We must verify the qty word after "and" is followed by an item trigger, not a modifier
+    # e.g., "a latte with milk and 2 sugars" should NOT be multi-item (sugars is a modifier)
+    # e.g., "a latte and 2 coffees" SHOULD be multi-item (coffees is an item trigger)
     qty_words = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|an?)"
-    multi_item_pattern = rf"\b{qty_words}\b.+?\band\b.+?\b{qty_words}\b"
-    if re.search(multi_item_pattern, text_lower):
-        logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty on both sides), delegating to multi-item parser: '%s'", text[:50])
-        return None
+    if " and " in text_lower:
+        parts = text_lower.split(" and ", 1)
+        if len(parts) == 2:
+            before_and, after_and = parts[0], parts[1].strip()
+            # Check if before_and has a quantity pattern
+            left_has_qty = re.search(rf'\b{qty_words}\b', before_and)
+            # Check if after_and starts with qty + word
+            right_qty_match = re.match(rf'^({qty_words})\s+(\w+)', after_and)
+            if left_has_qty and right_qty_match:
+                following_word = right_qty_match.group(2).lower()
+                # Strip trailing 's' for singular form check
+                following_word_singular = following_word.rstrip('s') if following_word.endswith('s') else following_word
+                # Check if this word is an item type trigger
+                # get_item_type_triggers() returns dict[slug -> set[triggers]], flatten to set
+                all_triggers_dict = menu_cache.get_item_type_triggers()
+                all_triggers: set[str] = set()
+                for trigger_set in all_triggers_dict.values():
+                    all_triggers.update(t.lower() for t in trigger_set)
+                is_item_trigger = (
+                    following_word in all_triggers or
+                    following_word_singular in all_triggers
+                )
+                if is_item_trigger:
+                    logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty on both sides with item trigger '%s'), delegating to multi-item parser: '%s'", following_word, text[:50])
+                    return None
 
     # Pattern 2: Same item type trigger appears on BOTH sides of " and "
     # This catches "plain bagel and everything bagel" where no explicit quantities are used

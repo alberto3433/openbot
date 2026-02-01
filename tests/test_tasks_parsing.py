@@ -2195,6 +2195,35 @@ class TestParsedItemsMultiItem:
         assert sig_item is not None, "Expected a signature item (The Classic BEC)"
         assert has_coffee(result), "Expected a coffee item"
 
+    def test_latte_with_oat_milk_and_2_sugars_is_single_item(self):
+        """Test that 'large iced latte with oat milk and 2 sugars' is NOT parsed as multi-item.
+
+        Regression test: Previously, '2 sugars' triggered multi-item detection because
+        'sugar' is a trigger word for sweeteners, and the quantity prefix wasn't stripped
+        before checking for item types.
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        # This should NOT be parsed as multi-item - it's a single latte with modifiers
+        result = _parse_multi_item_order("large iced latte with oat milk and 2 sugars")
+
+        # _parse_multi_item_order returns None when it's NOT a multi-item order
+        # (i.e., when it's a single item with modifiers)
+        assert result is None, (
+            "Expected None (single item with modifiers), but got multi-item result. "
+            f"parsed_items: {[getattr(i, 'item_name', i) for i in result.parsed_items] if result else 'N/A'}"
+        )
+
+    def test_latte_with_oat_milk_and_two_sugars_is_single_item(self):
+        """Test that word-form quantities also don't trigger multi-item detection."""
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order("large iced latte with oat milk and two sugars")
+        assert result is None, (
+            "Expected None (single item), got multi-item. "
+            f"parsed_items: {[getattr(i, 'item_name', i) for i in result.parsed_items] if result else 'N/A'}"
+        )
+
 
 class TestDuplicatePatterns:
     """Tests for duplicate item patterns: 'another one', 'one more', 'another bagel', etc."""

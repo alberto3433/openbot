@@ -105,13 +105,14 @@ class TestMultiItemOrders:
 
     def test_signature_item_with_coffee(self):
         """
-        Test: User orders speed menu item with a coffee.
+        Test: User orders signature item with a coffee.
 
         Scenario:
         - User says: "the classic and a large latte"
-        - Expected: System adds The Classic and asks for latte clarification
-        - User clarifies: "regular latte"
-        - Expected: System adds the latte
+        - Expected: System adds the latte and asks for classic disambiguation
+          (The Classic BEC vs The Classic BEC Omelette)
+        - User clarifies: "the bec"
+        - Expected: System adds The Classic BEC
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -122,31 +123,31 @@ class TestMultiItemOrders:
         # Should have a response
         assert result.message is not None
 
-        # Should have added items
+        # Should have added the latte (it resolves unambiguously to Hot Latte)
         all_items = result.order.items.get_active_items()
+        assert len(all_items) >= 1, f"Should have added the latte. Message: {result.message}"
 
-        # Should have at least one item (The Classic)
-        assert len(all_items) >= 1, f"Should have added items. Message: {result.message}"
-
-        # Check for classic (as MenuItemTask or BagelItemTask)
-        has_classic = any(
-            (isinstance(i, MenuItemTask) and "classic" in (i.menu_item_name or "").lower()) or
-            (i.has_attribute('bread'))
+        # Check for latte in items
+        has_latte = any(
+            isinstance(i, MenuItemTask) and "latte" in (i.menu_item_name or "").lower()
             for i in all_items
         )
+        assert has_latte, f"Should have added Hot Latte. Items: {all_items}"
 
-        # Classic should be recognized
-        assert has_classic, f"Should recognize The Classic. Items: {all_items}"
+        # Should ask for disambiguation about "the classic" (BEC vs Omelette)
+        assert "classic" in result.message.lower(), \
+            f"Should ask about which classic. Message: {result.message}"
 
-        # Check if latte needs clarification (multiple latte types exist)
-        coffees = [i for i in all_items if i.has_attribute('size')]
-        if len(coffees) == 0 and ("latte" in result.message.lower() or "matcha" in result.message.lower()):
-            # System correctly asks for clarification between latte types
-            result = sm.process("regular latte", result.order)
-            coffees = [i for i in result.order.items.get_active_items() if i.has_attribute('size')]
+        # Respond to disambiguation
+        result = sm.process("the bec", result.order)
 
-        # Should have coffee after clarification
-        assert len(coffees) >= 1, f"Should have added a coffee. Message: {result.message}"
+        # Should now have both items
+        all_items = result.order.items.get_active_items()
+        has_classic = any(
+            isinstance(i, MenuItemTask) and "classic" in (i.menu_item_name or "").lower()
+            for i in all_items
+        )
+        assert has_classic, f"Should have added The Classic BEC. Items: {all_items}"
 
     def test_quantity_on_each_item(self):
         """

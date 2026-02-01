@@ -289,79 +289,32 @@ class ParsedItemProcessor:
         # Clear any previous error
         order.last_add_error = None
 
+        # Track disambiguation for items that need it - we'll handle it after
+        # adding all items that CAN be added without disambiguation
+        pending_disambiguation: StateMachineResult | None = None
+        disambiguation_item_name: str | None = None
+
         for idx, parsed_item in enumerate(parsed.parsed_items):
             items_before_count = len(order.items.items)
             order, summary, disambiguation_result = self.add_parsed_item(parsed_item, order)
 
-            # Check if disambiguation was triggered - return immediately
+            # Check if disambiguation was triggered
             if disambiguation_result:
-                logger.info("Disambiguation triggered for item, returning result")
-                # Before returning, queue any items already added that need configuration.
-                # This ensures they're not forgotten when disambiguation resolves.
-                # Example: "everything bagel and a latte" - bagel is added first,
-                # then latte triggers disambiguation. Without this, bagel config is skipped.
-                for item_id, display_name, item_type in added_items:
-                    item = order.items.get_item_by_id(item_id)
-                    if item and item.status == TaskStatus.IN_PROGRESS:
-                        order.queue_item_for_config(item_id, item_type, item_name=display_name)
-                        logger.info("Queued %s (%s) for config before disambiguation", display_name, item_id[:8])
-
-                # Store remaining parsed items that haven't been processed yet
-                # Example: "latte and bagel" - latte triggers disambiguation, bagel is stored
-                remaining_items = parsed.parsed_items[idx + 1:]
-                if remaining_items:
-                    order.pending_parsed_items = [
-                        item.model_dump() if hasattr(item, 'model_dump') else item.__dict__
-                        for item in remaining_items
-                    ]
-                    logger.info("Stored %d remaining parsed items for later: %s",
-                        len(remaining_items),
-                        [getattr(item, 'item_name', None) or getattr(item, 'item_type', 'unknown') for item in remaining_items]
-                    )
-
-                    # Modify message to acknowledge full order (user needs feedback that all items were heard)
-                    # Build simple summary of ALL parsed items (just item names, not full details)
-                    all_item_names = []
-                    for p in parsed.parsed_items:
-                        # Use item_name if available, otherwise item_type display name
-                        name = p.item_name or menu_cache.get_item_type_display_name(p.item_type) or p.item_type
-                        # Add quantity prefix if more than 1
-                        if p.quantity > 1:
-                            name = f"{p.quantity} {name}s" if not name.endswith('s') else f"{p.quantity} {name}"
-                        all_item_names.append(name)
-                    full_order_summary = format_english_list(all_item_names)
-
-                    # Replace "Got it, " prefix with full acknowledgment
-                    # Original: "Got it, for the Plain Bagel. Would you like it scooped?"
-                    # Target: "Got it, a bagel and a latte. For the Plain Bagel, would you like it scooped?"
-                    msg = disambiguation_result.message
-                    if msg.startswith("Got it, for the "):
-                        # Extract item reference and question
-                        rest = msg[16:]  # Remove "Got it, for the "
-                        # rest is now "Plain Bagel. Would you like it scooped?"
-                        # Replace the first ". " with ", " and lowercase the next character
-                        period_pos = rest.find(". ")
-                        if period_pos != -1:
-                            item_ref = rest[:period_pos]  # "Plain Bagel"
-                            question = rest[period_pos + 2:]  # "Would you like it scooped?"
-                            # Lowercase first char of question
-                            if question:
-                                question = question[0].lower() + question[1:]
-                            rest = f"{item_ref}, {question}"
-                        msg = f"Got it, {full_order_summary}. For the {rest}"
-                        disambiguation_result = StateMachineResult(
-                            message=msg,
-                            order=disambiguation_result.order,
-                        )
-                    elif msg.startswith("Got it, "):
-                        # Fallback for other "Got it, " formats
-                        msg = f"Got it, {full_order_summary}. " + msg[8:].capitalize()
-                        disambiguation_result = StateMachineResult(
-                            message=msg,
-                            order=disambiguation_result.order,
-                        )
-
-                return disambiguation_result
+                # Store the first disambiguation result - we'll return it after processing all items
+                if pending_disambiguation is None:
+                    pending_disambiguation = disambiguation_result
+                    disambiguation_item_name = parsed_item.item_name or parsed_item.item_type
+                    logger.info("Disambiguation needed for '%s', continuing to process other items",
+                               disambiguation_item_name)
+                else:
+                    # Multiple items need disambiguation - store this one for later
+                    remaining_item = parsed_item.model_dump() if hasattr(parsed_item, 'model_dump') else parsed_item.__dict__
+                    if not order.pending_parsed_items:
+                        order.pending_parsed_items = []
+                    order.pending_parsed_items.append(remaining_item)
+                    logger.info("Stored additional disambiguation item for later: %s",
+                               parsed_item.item_name or parsed_item.item_type)
+                continue  # Continue processing other items
 
             # Check if add failed (e.g., item not found on menu)
             if order.last_add_error is not None:
@@ -381,6 +334,53 @@ class ParsedItemProcessor:
                         "Added item via parsed_items: %s (%d tasks, first id=%s)",
                         summary, len(new_items), new_items[0].id[:8],
                     )
+
+        # If disambiguation is pending, handle it now after processing all other items
+        if pending_disambiguation:
+            # Queue any items that were added and need configuration
+            for item_id, display_name, item_type in added_items:
+                item = order.items.get_item_by_id(item_id)
+                if item and item.status == TaskStatus.IN_PROGRESS:
+                    order.queue_item_for_config(item_id, item_type, item_name=display_name)
+                    logger.info("Queued %s (%s) for config before disambiguation", display_name, item_id[:8])
+
+            # Build message that acknowledges all items (both added and needing disambiguation)
+            all_item_names = []
+            for p in parsed.parsed_items:
+                name = p.item_name or menu_cache.get_item_type_display_name(p.item_type) or p.item_type
+                if p.quantity > 1:
+                    name = f"{p.quantity} {name}s" if not name.endswith('s') else f"{p.quantity} {name}"
+                all_item_names.append(name)
+
+            # Modify the disambiguation message to acknowledge the full order
+            msg = pending_disambiguation.message
+            if len(parsed.parsed_items) > 1:
+                full_order_summary = format_english_list(all_item_names)
+                # Handle "We have a few options for X" format
+                if msg.startswith("We have a few options for "):
+                    # "We have a few options for the classic:\n1. ..."
+                    # -> "Got it, the classic and a latte. We have a few options for the classic:\n1. ..."
+                    msg = f"Got it, {full_order_summary}. {msg}"
+                elif msg.startswith("Got it, for the "):
+                    rest = msg[16:]
+                    period_pos = rest.find(". ")
+                    if period_pos != -1:
+                        item_ref = rest[:period_pos]
+                        question = rest[period_pos + 2:]
+                        if question:
+                            question = question[0].lower() + question[1:]
+                        rest = f"{item_ref}, {question}"
+                    msg = f"Got it, {full_order_summary}. For the {rest}"
+                elif msg.startswith("Got it, "):
+                    msg = f"Got it, {full_order_summary}. " + msg[8:].capitalize()
+
+                pending_disambiguation = StateMachineResult(
+                    message=msg,
+                    order=pending_disambiguation.order,
+                )
+
+            logger.info("Returning disambiguation result after adding %d other items", len(added_items))
+            return pending_disambiguation
 
         if not summaries:
             return None

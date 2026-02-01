@@ -212,10 +212,12 @@ def _parse_item_generic(
         if not item_name:
             item_name = detected_name
 
-    # If item_name is just the item_type trigger word (e.g., 'bagel'), try to resolve
-    # it to a proper menu item name (e.g., 'Bagel') using the same logic as
-    # _parse_configurable_item. This ensures consistent behavior for multi-item orders.
-    if item_name and item_type and item_name.lower() in (item_type.lower(), item_type.lower().replace("_", " ")):
+    # Try to resolve item_name to a specific menu item name within this item type.
+    # This handles cases where item_name is a trigger word (e.g., 'latte') that could
+    # resolve to a specific menu item (e.g., 'Hot Latte') based on context in the text.
+    # Always try resolution when we have an item_type, as the text may contain
+    # disambiguating context (like "hot" vs "iced") that _match_menu_item_name_for_type can use.
+    if item_type:
         resolved_name = _match_menu_item_name_for_type(text, item_type)
         if resolved_name:
             item_name = resolved_name

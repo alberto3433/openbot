@@ -451,11 +451,14 @@ class ConfiguringItemHandler:
 
         # For configurable items (sized_beverage, bagel, etc.), route through proper config flow
         if is_configurable and self.item_adder_handler:
+            # Check if selected item is a signature item (e.g., "The Classic BEC")
+            is_signature = menu_cache.is_signature_item(selected_name)
             menu_item = {
                 "name": selected_name,
                 "id": selected_id,
                 "base_price": selected_price,
                 "item_type": selected_item_type,
+                "is_signature": is_signature,
             }
             return self.item_adder_handler._create_configurable_item(
                 menu_item=menu_item,
@@ -806,7 +809,7 @@ class ConfiguringItemHandler:
             attr_slug = change_request.possible_attributes[0]
             if attr_slug != "unknown":
                 result = self.modifier_change_handler.apply_change(
-                    order, item.id, attr_slug, new_value
+                    order, item.id, attr_slug, new_value, target=change_request.target
                 )
                 if result.success:
                     logger.info("APPLY_MOD_DURING_CONFIG: Applied attribute change %s=%s", attr_slug, new_value)

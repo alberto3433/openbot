@@ -63,6 +63,17 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
         item_type, _ = _detect_item_type(text_lower)
         return True, item_type, resolved
 
+    # Second, check if text matches menu items by word boundary (for ambiguous cases)
+    # This handles "the classic" which matches multiple items (The Classic BEC, etc.)
+    # We return True to indicate it's an item indicator, even if disambiguation is needed later
+    word_matches = menu_cache.find_items_by_word_match(text_lower)
+    if word_matches:
+        # Multiple matches - pick the first one's item_type (disambiguation happens later)
+        first_match = word_matches[0]
+        item_type = first_match.get("item_type")
+        # Use the search term as resolved_name since we don't have a single match
+        return True, item_type, text_lower
+
     # Check for item type triggers - prioritize early matches
     all_triggers = menu_cache.get_item_type_triggers()
 

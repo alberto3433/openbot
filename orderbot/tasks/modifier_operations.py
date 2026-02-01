@@ -19,6 +19,7 @@ from .models import (
     ItemTask,
     MenuItemTask,
 )
+from .normalization import format_slug_for_display
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
@@ -295,10 +296,11 @@ def remove_modifier_from_item(
                         "Removed '%s' from attribute_values['%s'] for %s",
                         match.matched_value, match.attribute_key, type(item).__name__
                     )
+                    display_name = format_slug_for_display(match.matched_value)
                     return ModifierRemovalResult(
                         success=True,
                         removed_value=match.matched_value,
-                        message=f"OK, I've removed the {match.matched_value}."
+                        message=f"OK, I've removed the {display_name}."
                     )
                 else:
                     return ModifierRemovalResult(
@@ -327,10 +329,11 @@ def remove_modifier_from_item(
                 "Removed '%s' from attribute_values['%s'] for %s",
                 removed_value, match.attribute_key, type(item).__name__
             )
+            display_name = format_slug_for_display(removed_value)
             return ModifierRemovalResult(
                 success=True,
                 removed_value=removed_value,
-                message=f"OK, I've removed the {removed_value}."
+                message=f"OK, I've removed the {display_name}."
             )
 
     current_value = getattr(item, field.field_name, None)
@@ -368,10 +371,11 @@ def remove_modifier_from_item(
             if removed:
                 setattr(item, field.field_name, new_list)
                 logger.info("Removed %s '%s' from %s", field.display_name, removed, type(item).__name__)
+                display_name = format_slug_for_display(removed)
                 return ModifierRemovalResult(
                     success=True,
                     removed_value=removed,
-                    message=f"OK, I've removed the {removed}."
+                    message=f"OK, I've removed the {display_name}."
                 )
             else:
                 return ModifierRemovalResult(
@@ -393,10 +397,11 @@ def remove_modifier_from_item(
             logger.info("Removed all %s from %s: %s", field.display_name, type(item).__name__, removed_items)
 
             if len(removed_items) == 1:
+                display_name = format_slug_for_display(removed_items[0])
                 return ModifierRemovalResult(
                     success=True,
                     removed_value=removed_items[0],
-                    message=f"OK, I've removed the {removed_items[0]}."
+                    message=f"OK, I've removed the {display_name}."
                 )
             else:
                 return ModifierRemovalResult(
@@ -410,10 +415,11 @@ def remove_modifier_from_item(
         setattr(item, field.field_name, None)
 
         logger.info("Removed %s '%s' from %s", field.display_name, removed_value, type(item).__name__)
+        display_name = format_slug_for_display(removed_value)
         return ModifierRemovalResult(
             success=True,
             removed_value=removed_value,
-            message=f"OK, I've removed the {removed_value}."
+            message=f"OK, I've removed the {display_name}."
         )
 
 

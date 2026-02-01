@@ -376,15 +376,18 @@ class ModifierChangeHandler:
         quantity, stripped_value = self._extract_quantity_from_value(new_value_lower)
 
         # Use data-driven normalization based on database option aliases
-        item_type_slug = item.item_type if isinstance(item, MenuItemTask) else None
+        # Note: MenuItemTask.item_type is always "menu_item" (literal),
+        # the actual item type slug (e.g., "sized_beverage") is in menu_item_type
+        item_type_slug = item.menu_item_type if isinstance(item, MenuItemTask) else None
         normalized_value = self._normalize_attribute_value(
             attr_slug, stripped_value, item_type_slug
         )
 
-        # For multi-select attributes (like syrup), use add_selection with quantity
-        # Data-driven: get multi-select attribute slugs from database configuration
-        multi_select_slugs = menu_cache.get_multi_select_attribute_slugs(item_type_slug) if item_type_slug else set()
-        if isinstance(item, MenuItemTask) and attr_slug in multi_select_slugs:
+        # For multi-select attributes (like milk_sweetener_syrup), use add_selection with quantity
+        # Data-driven: check if the attribute is multi-select from global_attributes table
+        # Note: attr_slug is "milk_sweetener_syrup" (attribute slug), not "syrup" (category slug)
+        is_multi_select_attr = menu_cache.is_multi_select_attribute(attr_slug)
+        if isinstance(item, MenuItemTask) and is_multi_select_attr:
             # Normalize the slug: "vanilla syrups" -> "vanilla_syrup"
             modifier_slug = normalized_value.replace(" ", "_")
             if modifier_slug.endswith("s") and not modifier_slug.endswith("ss"):

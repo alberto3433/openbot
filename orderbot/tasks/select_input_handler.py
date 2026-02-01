@@ -329,23 +329,32 @@ class SelectInputHandler:
                     ack_text = f"{ack_text}. Sorry, we don't have {unmatched_text}"
                     return advance_callback(item, order, attr, ack_text)
 
+                # Store pagination state for "yes"/"more" handling
+                order.pending_unmatched_pagination = {
+                    "unmatched_text": unmatched_text,
+                    "attr_slug": attr_slug,
+                    "available_options": available,
+                    "page": 0,
+                    "item_id": item.id,
+                }
+
                 # Build options list with pagination
                 if len(available) <= DEFAULT_PAGINATION_SIZE:
                     names = [opt["display_name"] for opt in available]
                     options_str = format_english_list(names, conjunction="or")
                     message = (
-                        f"Got it, {ack_text}. Sorry, we don't have {unmatched_text}. "
-                        f"We have {options_str}. Anything else?"
+                        f"Got it, {ack_text}. We don't have {unmatched_text}. "
+                        f"We have {options_str}. Would you like any of these?"
                     )
                 else:
                     first_page = available[:DEFAULT_PAGINATION_SIZE]
                     names = [opt["display_name"] for opt in first_page]
                     options_str = format_english_list(names, conjunction="and")
                     message = (
-                        f"Got it, {ack_text}. Sorry, we don't have {unmatched_text}. "
-                        f"We have {options_str}, and more. Do you want one of these or do you want to hear more options?"
+                        f"Got it, {ack_text}. We don't have {unmatched_text}. "
+                        f"We have {options_str}... and more. Would you like to see more options?"
                     )
-                    order.config_options_page = 1
+                    order.pending_unmatched_pagination["page"] = 1
 
                 return StateMachineResult(message=message, order=order)
 

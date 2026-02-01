@@ -35,6 +35,7 @@ from .item_cancellation_handler import ItemCancellationHandler
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
 from .unrecognized_item_handler import UnrecognizedItemHandler
+from .modifier_change_handler import ModifierChangeHandler
 from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.quantity_utils import parse_make_it_n_quantity
 from .mixins import MenuDataMixin
@@ -151,6 +152,7 @@ class TakingItemsHandler(MenuDataMixin):
             pricing=config.pricing,
             checkout_handler=checkout_handler,
         )
+        self._modifier_change_handler = ModifierChangeHandler(config=config)
 
         # Context set per-request
         self._returning_customer: dict | None = None
@@ -264,10 +266,30 @@ class TakingItemsHandler(MenuDataMixin):
                                 order=order,
                             )
 
+        # Check for change request patterns like "make 2 vanilla syrups"
+        # This handles modifier quantity changes in the taking_items phase
+        active_items = order.items.get_active_items()
+        if active_items and self._modifier_change_handler:
+            change_request = self._modifier_change_handler.detect_change_request(user_input)
+            if change_request and change_request.possible_attributes and change_request.possible_attributes[0] != "unknown":
+                # Apply the change directly
+                result = self._modifier_change_handler.apply_change(
+                    order=order,
+                    item_id=None,  # Apply to last item
+                    attr_slug=change_request.possible_attributes[0],
+                    new_value=change_request.new_value,
+                )
+                if result.success:
+                    last_item = get_last_item(active_items)
+                    updated_summary = recalculate_and_summarize(last_item, self.pricing)
+                    return StateMachineResult(
+                        message=f"Sure, I've updated that to {updated_summary}. Anything else?",
+                        order=order,
+                    )
+
         # Check for "add [modifier]" patterns early (before LLM parsing)
         # This allows "add vanilla syrup" to be handled without LLM
         input_lower = user_input.lower().strip()
-        active_items = order.items.get_active_items()
 
         is_add_modifier_request = any(
             re.search(pattern, input_lower) for pattern in ADD_MODIFIER_PATTERNS

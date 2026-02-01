@@ -153,6 +153,10 @@ CHANGE_REQUEST_PATTERNS = [
     (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+the\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
     # "make it with X" / "can you make it with X instead"
     (re.compile(r"(?:can|could|would)\s+you\s+(?:make|have|do)\s+(?:it|that)\s+with\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "make it with X" (without "can you") - target is implicit (last item)
+    (re.compile(r"make\s+(?:it|that)\s+with\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "make [quantity] [modifier]" - e.g., "make 2 vanilla syrups"
+    (re.compile(r"make\s+(\d+\s+.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "actually X instead" / "actually make it X"
     # Negative lookahead excludes cancellation keywords so "actually cancel that" is NOT a change request
     (re.compile(r"actually\s+(?!cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)(?:make\s+it\s+)?(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),

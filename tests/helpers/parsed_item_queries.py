@@ -156,11 +156,12 @@ def has_coffee(result) -> bool:
 
     Replaces: result.new_coffee is True
 
-    Checks for "sized_beverage", "espresso", and "coffee" item types.
+    Checks for "sized_beverage", "espresso", "espresso_based", and "coffee" item types.
     """
     return (
         has_parsed_item(result, item_type="sized_beverage") or
         has_parsed_item(result, item_type="espresso") or
+        has_parsed_item(result, item_type="espresso_based") or
         has_parsed_item(result, item_type="coffee")
     )
 

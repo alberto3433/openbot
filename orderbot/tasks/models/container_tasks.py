@@ -228,6 +228,16 @@ class OrderTask(BaseTask):
     #   - item_id: str - the item being configured
     pending_attr_disambiguation: dict | None = None
 
+    # Unmatched token pagination state
+    # Used when user mentions a token that doesn't match any option (e.g., "honey" for coffee)
+    # Dict with:
+    #   - unmatched_text: str - the unmatched token(s) formatted for display
+    #   - attr_slug: str - the attribute with the unmatched token
+    #   - available_options: list[dict] - options to paginate through
+    #   - page: int - current page number (0-indexed)
+    #   - item_id: str - the item being configured
+    pending_unmatched_pagination: dict | None = None
+
     # Modifier disambiguation state (stores which item to add modifier to)
     # Used when "cream cheese" matches multiple options (Plain, Scallion, etc.)
     pending_modifier_target_item_index: int | None = None
@@ -283,6 +293,7 @@ class OrderTask(BaseTask):
         self.pending_switch_item = None
         self.pending_item_modifiers = {}
         self.pending_attr_disambiguation = None
+        self.pending_unmatched_pagination = None
 
     def set_phase(self, phase: "OrderPhase") -> None:
         """Set the order phase from an OrderPhase enum.

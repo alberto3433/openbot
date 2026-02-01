@@ -394,6 +394,11 @@ class MenuItemConfigHandler(BaseHandler):
         if unavail_result:
             return unavail_result
 
+        # Handle unmatched selection (tokens that don't match any option)
+        unmatched_result = self._question_builder.handle_unmatched_selection(item, order, attr)
+        if unmatched_result:
+            return unmatched_result
+
         # Calculate ordinal position and context for multi-item orders
         ordinal, item_num, has_duplicates = self._question_builder.calculate_item_ordinal(item, order)
         multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
@@ -660,6 +665,11 @@ class MenuItemConfigHandler(BaseHandler):
         self, user_input: str, item: MenuItemTask, order: OrderTask, attr_slug: str
     ) -> StateMachineResult:
         """Handle user input for a specific attribute question."""
+        # Check if we're in unmatched pagination flow
+        pagination_result = self._handle_unmatched_pagination(user_input, item, order)
+        if pagination_result:
+            return pagination_result
+
         # Check if we're resolving a disambiguation first
         disambiguation_result = self._disambiguation_handler.handle_disambiguation_response(user_input, order)
         if disambiguation_result:
@@ -803,6 +813,91 @@ class MenuItemConfigHandler(BaseHandler):
             extract_selections_callback=self._selection_extractor.extract_selections_from_input,
             extract_qualifier_callback=self._extract_qualifier_for_option,
         )
+
+    def _handle_unmatched_pagination(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle pagination responses for unmatched token messages.
+
+        When user says "yes" or "more" after seeing "We don't have X. We have A, B, C... and more",
+        this shows the next page of options.
+
+        When user says "no" or selects an option, this resolves the pagination.
+
+        Returns:
+            StateMachineResult if pagination was handled, None otherwise.
+        """
+        pagination = order.pending_unmatched_pagination
+        if not pagination:
+            return None
+
+        user_lower = user_input.lower().strip()
+
+        # Check for "yes" / "more" to show next page
+        if is_affirmative(user_input) or any(
+            phrase in user_lower for phrase in ["more", "see more", "show more", "next"]
+        ):
+            return self._question_builder.advance_unmatched_pagination(order)
+
+        # Check for "no" - decline options and advance to next question
+        if is_negative(user_input):
+            self._question_builder.clear_unmatched_pagination(order)
+            # Get the current attribute and advance
+            attr_slug = pagination.get("attr_slug")
+            item_type = item.menu_item_type
+            if item_type and attr_slug:
+                attrs = self._get_item_type_attributes(item_type)
+                attr = attrs.get(attr_slug)
+                if attr:
+                    return self._advance_to_next_question(item, order, attr)
+            # Fallback - just get next question
+            return self._get_next_question(order)
+
+        # Check if user selected one of the available options
+        available = pagination.get("available_options", [])
+        matched, _ = self._option_matcher.match_single(user_input, available)
+        if matched:
+            # User selected an option - apply it and advance
+            self._question_builder.clear_unmatched_pagination(order)
+            attr_slug = pagination.get("attr_slug")
+
+            opt_price = matched.get("price") or matched.get("price_modifier") or 0
+            if opt_price == 0 and self.pricing:
+                opt_price = self.pricing.lookup_generic_modifier_price(
+                    matched["slug"], item.menu_item_type
+                ) or 0.0
+
+            item.add_selection(
+                matched["slug"],
+                attr_slug,
+                quantity=1,
+                price=opt_price,
+                display_name=matched.get("display_name"),
+                ingredient_category=matched.get("ingredient_category"),
+            )
+            logger.info(
+                "UNMATCHED_PAGINATION: added selection '%s' for attr '%s'",
+                matched["slug"], attr_slug
+            )
+
+            # Get the attribute and advance
+            item_type = item.menu_item_type
+            if item_type and attr_slug:
+                attrs = self._get_item_type_attributes(item_type)
+                attr = attrs.get(attr_slug)
+                if attr:
+                    return self._advance_to_next_question(
+                        item, order, attr, matched.get("display_name")
+                    )
+            return self._get_next_question(order)
+
+        # Input didn't match pagination flow - clear and let normal handling proceed
+        # This handles cases where user ignores the pagination and orders something else
+        self._question_builder.clear_unmatched_pagination(order)
+        return None
 
     def _advance_to_next_question(
         self, item: MenuItemTask, order: OrderTask, current_attr: dict,

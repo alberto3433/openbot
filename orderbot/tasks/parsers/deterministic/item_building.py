@@ -51,6 +51,9 @@ def build_parsed_item(
     # Extract unavailable selections from attribute_values (keys like "_unavailable_size")
     # These are stored separately for helpful "We don't have X" messaging
     unavailable_selections: dict[str, dict] = {}
+    # Extract unmatched selections from attribute_values (keys like "_unmatched_sweetener")
+    # These are stored separately for "We don't have X. We have A, B, C..." messaging
+    unmatched_selections: dict[str, dict] = {}
     clean_attribute_values: dict = {}
     if attribute_values:
         for key, value in attribute_values.items():
@@ -58,6 +61,10 @@ def build_parsed_item(
                 # Extract attr_slug from key (e.g., "_unavailable_size" -> "size")
                 attr_slug = key[len("_unavailable_"):]
                 unavailable_selections[attr_slug] = value
+            elif key.startswith("_unmatched_"):
+                # Extract attr_slug from key (e.g., "_unmatched_sweetener" -> "sweetener")
+                attr_slug = key[len("_unmatched_"):]
+                unmatched_selections[attr_slug] = value
             else:
                 clean_attribute_values[key] = value
     else:
@@ -116,5 +123,6 @@ def build_parsed_item(
         is_signature=is_signature,
         weight_unit=weight_unit,
         unavailable_selections=unavailable_selections,
+        unmatched_selections=unmatched_selections,
         special_instructions=special_instructions or [],
     )

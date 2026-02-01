@@ -511,7 +511,7 @@ class OptionMatcher:
         - Normalized slug comparison
         - Normalized display_name comparison
         - Raw lowercase value comparison
-        - Substring matching for partial matches
+        - Prefix matching (value is a prefix of slug, e.g., "vanilla" matches "vanilla_syrup")
 
         Args:
             option: Option dict with "slug" and/or "display_name" keys
@@ -524,8 +524,17 @@ class OptionMatcher:
         opt_slug, opt_name = OptionMatcher.normalize_option(option)
         opt_display_lower = (option.get("display_name") or "").lower()
 
-        return (opt_slug == normalized_value or
+        # Exact matches (preferred)
+        if (opt_slug == normalized_value or
                 opt_name == normalized_value or
                 opt_slug == raw_value_lower or
-                opt_display_lower == raw_value_lower or
-                raw_value_lower in opt_slug)
+                opt_display_lower == raw_value_lower):
+            return True
+
+        # Prefix matching: value must be at the START of the slug
+        # This allows "vanilla" to match "vanilla_syrup" but prevents
+        # "plain_bagel" from matching "gf_plain_bagel"
+        if opt_slug.startswith(raw_value_lower + "_") or opt_slug.startswith(normalized_value + "_"):
+            return True
+
+        return False

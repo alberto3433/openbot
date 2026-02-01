@@ -130,6 +130,11 @@ class ParsedItemEntry(BaseModel):
     # Used to show helpful "We don't have X - we have Y or Z" messages
     unavailable_selections: dict[str, dict] = Field(default_factory=dict)
 
+    # Track unmatched tokens user mentioned that don't match any option
+    # Map of attr_slug -> {tokens: list[str]}
+    # Used to show "We don't have X. We have A, B, C..." with pagination
+    unmatched_selections: dict[str, dict] = Field(default_factory=dict)
+
     # Item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions: list[str] = Field(default_factory=list)
 

@@ -84,9 +84,9 @@ class TestCancellationRemoval:
         Test: User says "nevermind" or "actually no" for last item.
 
         Scenario:
-        - User has: bagel and coffee
-        - User says: "nevermind the coffee"
-        - Expected: Coffee is removed, bagel preserved
+        - User has: bagel and latte
+        - User says: "nevermind the latte"
+        - Expected: Latte is removed, bagel preserved
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -107,18 +107,18 @@ class TestCancellationRemoval:
         order.items.add_item(coffee)
 
         sm = OrderStateMachine()
-        result = sm.process("nevermind the coffee", order)
+        result = sm.process("nevermind the latte", order)
 
         # Should have a response
         assert result.message is not None
 
-        # Coffee should be cancelled (status = SKIPPED)
-        active_coffees = [
+        # Latte should be cancelled (status = SKIPPED)
+        active_lattes = [
             i for i in result.order.items.items
             if i.has_attribute('size') and i.status != TaskStatus.SKIPPED
         ]
-        assert len(active_coffees) == 0, \
-            f"Coffee should be cancelled. Active coffees: {len(active_coffees)}"
+        assert len(active_lattes) == 0, \
+            f"Latte should be cancelled. Active lattes: {len(active_lattes)}"
 
         # Bagel should still be active
         active_bagels = [

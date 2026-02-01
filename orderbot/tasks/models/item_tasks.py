@@ -81,6 +81,11 @@ class MenuItemTask(ItemTask):
     # Used to show helpful "We don't have X - we have Y or Z" messages
     unavailable_selections: dict[str, dict] = Field(default_factory=dict)
 
+    # Track unmatched tokens user mentioned that don't match any option
+    # Map of attr_slug -> {tokens: list[str]}
+    # Used to show "We don't have X. We have A, B, C..." with pagination
+    unmatched_selections: dict[str, dict] = Field(default_factory=dict)
+
     # Unified modifiers list - all customizations (attributes and modifiers)
     modifiers: list[dict] = Field(default_factory=list)  # Stored as dict for serialization
 

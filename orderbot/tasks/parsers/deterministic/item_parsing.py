@@ -392,8 +392,9 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     matches.append((item_type_slug, trigger, len(trigger), end_pos, is_at_end, slug_matches))
 
         if matches:
-            # Sort by: (1) is_at_end (True first), (2) slug_matches (True first), (3) length (longer first)
-            matches.sort(key=lambda x: (not x[4], not x[5], -x[2]))
+            # Sort by: (1) slug_matches (True first), (2) is_at_end (True first), (3) length (longer first)
+            # This ensures "bagel" wins over "egg" in "everything bagel with bacon and egg"
+            matches.sort(key=lambda x: (not x[5], not x[4], -x[2]))
             detected_item_type = matches[0][0]
 
     if not detected_item_type:

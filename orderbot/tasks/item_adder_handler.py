@@ -234,6 +234,9 @@ class ItemAdderHandler(MenuDataMixin):
         # Get unavailable_selections from kwargs (for "We don't have X" messaging)
         unavailable_selections = kwargs.get("unavailable_selections")
 
+        # Get unmatched_selections from kwargs (for unrecognized tokens messaging)
+        unmatched_selections = kwargs.get("unmatched_selections")
+
         # Get special_instructions from kwargs (e.g., "room for cream", "extra hot")
         special_instructions = kwargs.get("special_instructions")
 
@@ -252,6 +255,7 @@ class ItemAdderHandler(MenuDataMixin):
             pre_filled_attributes=pre_filled_attributes if pre_filled_attributes else None,
             extracted_selections=extracted_selections,
             unavailable_selections=unavailable_selections,
+            unmatched_selections=unmatched_selections,
             special_instructions=special_instructions,
             skip_first_question=skip_first_question,
         )
@@ -519,6 +523,7 @@ class ItemAdderHandler(MenuDataMixin):
         pre_filled_attributes: dict | None = None,
         extracted_selections: list[Selection] | None = None,
         unavailable_selections: dict | None = None,
+        unmatched_selections: dict | None = None,
         special_instructions: list[str] | None = None,
         skip_first_question: bool = False,
     ) -> StateMachineResult:
@@ -537,6 +542,8 @@ class ItemAdderHandler(MenuDataMixin):
             extracted_selections: List of Selection objects to apply (optional)
             unavailable_selections: Dict of attr_slug -> {attempted_slug, attempted_display}
                 for options user tried that aren't available (e.g., "medium" size)
+            unmatched_selections: Dict of attr_slug -> {tokens: list[str]}
+                for tokens user mentioned that don't match any option (e.g., "honey" for coffee)
             special_instructions: List of special instruction strings (e.g., "room for cream")
 
         Returns:
@@ -603,6 +610,11 @@ class ItemAdderHandler(MenuDataMixin):
             # Must be set BEFORE get_first_question() is called
             if unavailable_selections:
                 item.unavailable_selections = unavailable_selections.copy()
+
+            # Set unmatched_selections (for unrecognized tokens messaging)
+            # Must be set BEFORE get_first_question() is called
+            if unmatched_selections:
+                item.unmatched_selections = unmatched_selections.copy()
 
             # Set special_instructions (e.g., "room for cream", "extra hot")
             if special_instructions:

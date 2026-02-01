@@ -152,6 +152,13 @@ class QuestionBuilder:
                 return f"For the {item_ref}, would you like it {attr_name}?"
             else:
                 return f"Would you like it {attr_name}?"
+        elif input_type == "quantity":
+            if has_duplicates:
+                return f"For the {ordinal} {item_ref}, how many {attr_name} would you like?"
+            elif multi_count > 1:
+                return f"For the {item_ref}, how many {attr_name} would you like?"
+            else:
+                return f"How many {attr_name} would you like?"
         else:
             if has_duplicates:
                 return f"For the {ordinal} {item_ref}, what kind of {attr_name} would you like?"
@@ -218,6 +225,8 @@ class QuestionBuilder:
                     item_desc = f"the {item_display.lower()}"
                 if input_type == "boolean":
                     return f"For {item_desc}, would you like that {attr_name}?"
+                elif input_type == "quantity":
+                    return f"For {item_desc}, how many {attr_name} would you like?"
                 else:
                     return f"For {item_desc}, what kind of {attr_name} would you like?"
         else:
@@ -229,3 +238,132 @@ class QuestionBuilder:
             else:
                 item_desc = item_display
             return f"Got it, for the {item_desc}. "
+
+    def handle_unmatched_selection(
+        self, item: "MenuItemTask", order: "OrderTask", attr: dict
+    ) -> StateMachineResult | None:
+        """
+        Check if user mentioned tokens that don't match any option for this attribute.
+        If so, show a helpful message with available options (paginated if needed).
+
+        Returns StateMachineResult if unmatched selection was handled, None otherwise.
+        """
+        from .parsers.constants import DEFAULT_PAGINATION_SIZE
+
+        attr_slug = attr.get("slug", "")
+        unmatched = item.unmatched_selections.get(attr_slug)
+        if not unmatched:
+            return None
+
+        tokens = unmatched.get("tokens", [])
+        if not tokens:
+            return None
+
+        unmatched_text = format_english_list(tokens, conjunction="or")
+        options = attr.get("options", [])
+
+        # Get available options (filter out unavailable ones)
+        available = [
+            opt for opt in options
+            if opt.get("is_available", True)
+        ]
+
+        # Clear so we don't repeat this message
+        del item.unmatched_selections[attr_slug]
+
+        if not available:
+            # No options available - just inform and continue
+            return None
+
+        # Store pagination state
+        order.pending_unmatched_pagination = {
+            "unmatched_text": unmatched_text,
+            "attr_slug": attr_slug,
+            "available_options": available,
+            "page": 0,
+            "item_id": item.id,
+        }
+
+        # Build first page message
+        return self._build_unmatched_page_message(order, is_first=True)
+
+    def _build_unmatched_page_message(
+        self, order: "OrderTask", is_first: bool = True, ack_text: str | None = None
+    ) -> StateMachineResult:
+        """Build a paginated message showing available options for unmatched tokens.
+
+        Args:
+            order: The order containing pagination state
+            is_first: Whether this is the first page (includes "We don't have X" prefix)
+            ack_text: Optional acknowledgment text to prepend (e.g., "Got it, oat milk.")
+        """
+        from .parsers.constants import DEFAULT_PAGINATION_SIZE
+
+        pagination = order.pending_unmatched_pagination
+        if not pagination:
+            # Should not happen, but handle gracefully
+            order.clear_pending()
+            return StateMachineResult(
+                message="Let me know if you'd like anything else.",
+                order=order,
+            )
+
+        unmatched_text = pagination["unmatched_text"]
+        available = pagination["available_options"]
+        page = pagination["page"]
+
+        page_size = DEFAULT_PAGINATION_SIZE
+        start_idx = page * page_size
+        end_idx = start_idx + page_size
+        page_options = available[start_idx:end_idx]
+        has_more = end_idx < len(available)
+
+        names = [opt.get("display_name", opt.get("slug", "")) for opt in page_options]
+        options_str = format_english_list(names, conjunction="and" if has_more else "or")
+
+        # Build message based on page position
+        prefix = f"Got it, {ack_text}. " if ack_text else ""
+
+        if is_first:
+            # First page: "We don't have honey. We have sugar, raw sugar, Splenda..."
+            if has_more:
+                message = (
+                    f"{prefix}We don't have {unmatched_text}. "
+                    f"We have {options_str}... and more. Would you like to see more options?"
+                )
+            else:
+                message = (
+                    f"{prefix}We don't have {unmatched_text}. "
+                    f"We have {options_str}. Would you like any of these?"
+                )
+        else:
+            # Subsequent pages
+            if has_more:
+                message = f"We also have {options_str}... and more. Would you like to see more?"
+            else:
+                message = f"And finally, {options_str}. Would you like any of these?"
+
+        return StateMachineResult(message=message, order=order)
+
+    def advance_unmatched_pagination(self, order: "OrderTask") -> StateMachineResult:
+        """Advance to the next page of unmatched options.
+
+        Returns the message for the next page.
+        """
+        pagination = order.pending_unmatched_pagination
+        if not pagination:
+            order.clear_pending()
+            return StateMachineResult(
+                message="Let me know what you'd like.",
+                order=order,
+            )
+
+        # Increment page
+        pagination["page"] += 1
+        order.pending_unmatched_pagination = pagination
+
+        return self._build_unmatched_page_message(order, is_first=False)
+
+    def clear_unmatched_pagination(self, order: "OrderTask") -> None:
+        """Clear the unmatched pagination state."""
+        order.pending_unmatched_pagination = None

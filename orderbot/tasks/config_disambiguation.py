@@ -84,6 +84,19 @@ class ConfigDisambiguationHandler:
         Returns:
             Selected option dict if matched, None if no match found.
         """
+        import re
+
+        # Try raw exact match FIRST (before normalization)
+        # This handles cases like "Sugar in the Raw" where normalization would
+        # strip "the" and break the exact match
+        raw_lower = user_input.lower().strip()
+        for opt in options:
+            if opt.get("display_name", "").lower() == raw_lower:
+                return opt
+            slug_readable = opt.get("slug", "").replace("_", " ")
+            if slug_readable == raw_lower:
+                return opt
+
         input_lower = normalize_input(user_input)
 
         # Try ordinal matching first
@@ -91,7 +104,7 @@ class ConfigDisambiguationHandler:
         if match:
             return match
 
-        # Try exact name/slug matching
+        # Try exact name/slug matching (with normalized input)
         match = match_by_name_exact(input_lower, options, name_key="display_name", slug_key="slug")
         if match:
             return match
@@ -107,12 +120,16 @@ class ConfigDisambiguationHandler:
         if match:
             return match
 
-        # Try if FULL alias is in user input
+        # Try if FULL alias is in user input using word-boundary matching
+        # This prevents "sugar" from matching "sugar in raw" incorrectly
         for opt in options:
             for alias in get_aliases(opt):
                 alias_lower = alias.lower()
-                if len(alias_lower) >= 3 and alias_lower in input_lower:
-                    return opt
+                if len(alias_lower) >= 3:
+                    # Use word-boundary matching instead of substring
+                    pattern = r'\b' + re.escape(alias_lower) + r'\b'
+                    if re.search(pattern, input_lower):
+                        return opt
 
         # NO substring matching in the other direction!
         # We deliberately don't check if input_lower is in display_name

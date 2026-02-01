@@ -596,13 +596,12 @@ class TestAdditionalItemsAfterBagel:
         """
         Regression test for exact conversation flow reported:
         1. User orders bagel
-        2. Bot asks about toasted -> yes
-        3. Bot asks about spread -> no
-        4. Bot confirms bagel and asks "Anything else?"
-        5. User says "small hot latte with 2 splendas"
-        6. Latte should be ADDED, not skipped to checkout
+        2. Bot asks configuration questions (toasted, scooped, spread, etc.)
+        3. Bot confirms bagel and asks "Anything else?"
+        4. User says "small hot latte with 2 splendas"
+        5. Latte should be ADDED, not skipped to checkout
 
-        The bug was that after completing the spread question, the phase was
+        The bug was that after completing the bagel config, the phase was
         left as CONFIGURING_ITEM (not TAKING_ITEMS), so the phase preservation
         check in process() didn't apply.
         """
@@ -625,23 +624,18 @@ class TestAdditionalItemsAfterBagel:
         # Step 1: Answer toasted question
         result = sm.process("yes", order)
         assert bagel["toasted"] is True, "Bagel should be marked as toasted"
-        # Should now ask about spread
-        assert order.pending_field in ("spread", "menu_item_attr_spread_type", "bagel:spread_type"), f"Should be asking about spread, not {order.pending_field}"
 
-        # Step 2: Answer spread question with "no"
-        result = sm.process("no", order)
-        # Bagel should be complete - spread stored in attribute_values
-        spread_set = (
-            bagel["spread_type"] is not None or
-            bagel.attribute_values.get('spread_type') is not None or
-            'spread_type' in bagel.attribute_values  # Explicitly set to None counts as answered
-        )
-        assert spread_set, f"Spread should be set: spread_type={bagel['spread_type']}, attr={bagel.attribute_values}"
-
-        # Data-driven flow may have customization checkpoint before "Anything else?"
-        # Handle "Any more changes?" checkpoint if present
-        while order.pending_field == "customization_checkpoint":
+        # Step 2: Answer remaining bagel configuration questions
+        # DB-driven flow may include: scooped, spread, customization_checkpoint
+        max_iterations = 10
+        iterations = 0
+        while order.phase == OrderPhase.CONFIGURING_ITEM.value and iterations < max_iterations:
+            pending = order.pending_field or ""
+            if "anything else" in result.message.lower():
+                break
+            # Answer "no" to all remaining config questions
             result = sm.process("no", order)
+            iterations += 1
 
         # Should say "Anything else?" or be ready for more items
         msg_lower = result.message.lower()

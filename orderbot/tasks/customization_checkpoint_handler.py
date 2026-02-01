@@ -163,7 +163,9 @@ class CustomizationCheckpointHandler:
 
         # Try to match option values directly (e.g., "add a little mayo" -> mayo in condiments)
         # This allows users to specify options without naming the attribute
-        result = self._try_direct_option_match(user_input, unanswered, item, order)
+        # Use ALL optional attributes, not just unanswered - user may want to add to
+        # an attribute they previously declined (e.g., said "no" to shots, now says "extra shot")
+        result = self._try_direct_option_match(user_input, all_optional, item, order)
         if result:
             return result
 

@@ -192,6 +192,27 @@ class TestDeterministicParserHelpers:
             f"Should not have _unavailable_size for available option, got: {result}"
         )
 
+    def test_oat_milk_not_duplicated(self):
+        """Verify 'oat milk' doesn't create duplicate Oat Milk + Oat entries.
+
+        Bug regression test: The oat_milk ingredient has two aliases:
+        "oat milk" and "oat". Previously, extract_attribute_values matched
+        "oat milk" correctly, but _extract_modifiers_generic also matched
+        "oat" (the short alias) because it wasn't filtered out. This caused
+        duplicate modifiers in the cart display.
+
+        The fix adds option aliases to attr_option_slugs so they're properly
+        skipped by _extract_modifiers_generic.
+        """
+        result = extract_attribute_values("small coffee with oat milk", "sized_beverage")
+        milk_entries = result.get("milk_sweetener_syrup", [])
+        assert len(milk_entries) == 1, (
+            f"Expected 1 milk entry, got {len(milk_entries)}: {milk_entries}"
+        )
+        assert milk_entries[0]["slug"] == "oat_milk", (
+            f"Expected slug='oat_milk', got: {milk_entries[0]}"
+        )
+
 
 class TestDeterministicParserGreetings:
     """Tests for deterministic parsing of greetings."""

@@ -105,6 +105,9 @@ class OptionQueryMixin:
     def get_all_attribute_option_words(self) -> dict[str, str]:
         """Get all known attribute option words mapped to their attribute slug.
 
+        Includes both global attribute options and item-type-specific attribute
+        options (including boolean attribute display names like "iced", "toasted").
+
         Returns:
             Dict mapping option word -> attribute slug
 
@@ -114,6 +117,7 @@ class OptionQueryMixin:
         self._ensure_loaded()
         result: dict[str, str] = {}
 
+        # Global attribute options
         for attr_slug, options in self._global_attribute_options.items():
             for opt in options:
                 slug = opt.get("slug", "").lower()
@@ -122,6 +126,40 @@ class OptionQueryMixin:
                     result[slug] = attr_slug
                 if display and display != slug:
                     result[display] = attr_slug
+
+        # Item-type-specific attribute options (e.g., "iced", "decaf", "toasted")
+        for item_type_slug, attrs in self._item_type_attributes.items():
+            for attr_slug, attr_config in attrs.items():
+                input_type = attr_config.get("input_type")
+
+                # Boolean attributes: add display_name as keyword (e.g., "iced", "toasted")
+                if input_type == "boolean":
+                    display_name = attr_config.get("display_name", attr_slug).lower()
+                    if display_name and display_name not in result:
+                        result[display_name] = attr_slug
+
+                # Single/multi select: add option slugs and display names
+                for opt in attr_config.get("options", []):
+                    slug = opt.get("slug", "").lower()
+                    display = opt.get("display_name", "").lower()
+                    if slug and slug not in result:
+                        result[slug] = attr_slug
+                    if display and display != slug and display not in result:
+                        result[display] = attr_slug
+
+        # Menu item variant prefixes (e.g., "hot" from "Hot Coffee", "iced" from "Iced Coffee")
+        # These differentiate menu items of the same type and are used in split-quantity parsing.
+        # We only include temperature/style words that indicate variants, not generic words.
+        variant_keywords = {"hot", "iced", "cold", "frozen", "grilled", "toasted", "plain"}
+        items_by_type = self._menu_index.get("items_by_type", {})
+        for item_type_slug, items in items_by_type.items():
+            for item in items:
+                name = item.get("name", "")
+                first_word = name.lower().split()[0] if name else ""
+                # Only add if it's a known variant keyword and not already in result
+                if first_word in variant_keywords and first_word not in result:
+                    result[first_word] = f"_variant_{item_type_slug}"
+
         return result
 
     def get_all_config_answer_words(self) -> set[str]:

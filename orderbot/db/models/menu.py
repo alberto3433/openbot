@@ -184,6 +184,14 @@ class MenuItemIngredient(Base):
     menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="RESTRICT"), nullable=False)
     ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="RESTRICT"), nullable=False)
     quantity = Column(Integer, nullable=False, default=1)
+    # Optional preparation modifier (e.g., "fried" for eggs, "grilled" for chicken)
+    # References global_attribute_options for preparation styles
+    preparation_option_id = Column(
+        Integer,
+        ForeignKey("global_attribute_options.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -196,6 +204,7 @@ class MenuItemIngredient(Base):
     # Relationships
     menu_item = relationship("MenuItem", back_populates="ingredient_links")
     ingredient = relationship("Ingredient", back_populates="menu_item_links")
+    preparation_option = relationship("GlobalAttributeOption")
 
 
 class MenuItemStoreAvailability(Base):

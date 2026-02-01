@@ -351,6 +351,7 @@ class ModifierChangeHandler:
         item_id: str | None,
         attr_slug: str,
         new_value: str,
+        target: str | None = None,
     ) -> ChangeResult:
         """
         Apply a modifier change to an item.
@@ -414,6 +415,18 @@ class ModifierChangeHandler:
         # Note: attr_slug is "milk_sweetener_syrup" (attribute slug), not "syrup" (category slug)
         is_multi_select_attr = menu_cache.is_multi_select_attribute(attr_slug)
         if isinstance(item, MenuItemTask) and is_multi_select_attr:
+            # Remove the old modifier if target is specified (for "change X to Y" requests)
+            if target and item.modifiers:
+                target_slug = target.replace(" ", "_").lower()
+                original_count = len(item.modifiers)
+                item.modifiers = [
+                    m for m in item.modifiers
+                    if target_slug not in m.get("slug", "").replace("_", " ").lower()
+                    and target_slug not in m.get("display_name", "").lower()
+                ]
+                if len(item.modifiers) < original_count:
+                    logger.info("Removed modifier matching target: %s", target)
+
             # Normalize the slug: "vanilla syrups" -> "vanilla_syrup"
             modifier_slug = normalized_value.replace(" ", "_")
             if modifier_slug.endswith("s") and not modifier_slug.endswith("ss"):

@@ -262,7 +262,7 @@ class TestOrderTaskToDict:
             size="large",
             iced=True,
             milk="almond",
-            sweeteners=[{"slug": "honey", "quantity": 1}],
+            sweeteners=[{"slug": "splenda", "quantity": 1}],
             unit_price=5.50,
         )
         order.items.add_item(coffee)
@@ -271,21 +271,22 @@ class TestOrderTaskToDict:
 
         assert len(result["items"]) == 1
         item = result["items"][0]
-        # Lattes are espresso drinks
-        assert item["item_type"] == "espresso"
+        # Lattes are espresso-based drinks
+        assert item["item_type"] == "espresso_based"
         assert item["menu_item_name"] == "latte"
         # Check attribute_values for stored configuration
         # Note: "iced" property stores as "temperature" in attribute_values
         assert item["attribute_values"]["size"] == "large"
         assert item["attribute_values"]["temperature"] == "iced"  # iced=True stores as temperature="iced"
         # Check milk and sweetener in unified item_modifiers storage
+        # Note: test helper uses "milk_sweetener_syrup" as the category for all
         item_modifiers = item["item_config"].get("item_modifiers", [])
-        milk_entries = [e for e in item_modifiers if e.get("category") == "milk"]
+        milk_entries = [e for e in item_modifiers if e.get("slug") == "almond"]
         assert len(milk_entries) == 1
-        assert milk_entries[0]["slug"] == "almond"
-        sweetener_entries = [e for e in item_modifiers if e.get("category") == "sweetener"]
+        assert milk_entries[0]["category"] == "milk_sweetener_syrup"
+        sweetener_entries = [e for e in item_modifiers if e.get("slug") == "splenda"]
         assert len(sweetener_entries) == 1
-        assert sweetener_entries[0]["slug"] == "honey"
+        assert sweetener_entries[0]["category"] == "milk_sweetener_syrup"
         assert sweetener_entries[0]["quantity"] == 1
         # Check modifiers list includes almond milk (with price if upcharge)
         modifier_names = [m["name"].lower() for m in item["modifiers"]]

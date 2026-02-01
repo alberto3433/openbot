@@ -147,6 +147,9 @@ CHANGE_REQUEST_PATTERNS = [
     (re.compile(r"(?:change|make|switch)\s+(?:it|that)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "change the bagel to X" / "make the spread X"
     (re.compile(r"(?:change|make|switch)\s+the\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "change X to Y" without "the" - e.g., "change corned beef to pastrami"
+    # Note: This must come after "change it to X" pattern so "it" is matched as implicit target
+    (re.compile(r"(?:change|switch)\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
     # "can you change it to X" / "could you make it X"
     (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+(?:it|that)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "can you change the bagel to X"

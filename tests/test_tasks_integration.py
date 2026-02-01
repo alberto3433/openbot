@@ -1705,6 +1705,8 @@ class TestSpreadSandwichWithCoke:
             msg_lower = result.message.lower()
             if "toasted" in msg_lower:
                 result = sm.process("yes", order)
+            elif "scoop" in msg_lower:
+                result = sm.process("no", order)
             elif "spread" in msg_lower:
                 result = sm.process("no", order)
             elif order.pending_field == "customization_checkpoint":
@@ -1783,6 +1785,11 @@ class TestBagelWithCoffeeConfig:
 
         # Answer toasted
         result = sm.process("yes", order)
+
+        # Handle scooped question if present (DB-driven attribute between toasted and spread)
+        if "scoop" in result.message.lower():
+            result = sm.process("no", order)
+
         # Data-driven flow may ask "Any spread?" or list options like "cream cheese or butter?"
         msg_lower = result.message.lower()
         assert "spread" in msg_lower or "cream cheese" in msg_lower or "butter" in msg_lower, f"Expected spread question, got: {result.message}"
@@ -1802,7 +1809,7 @@ class TestBagelWithCoffeeConfig:
 
         # Now should ask coffee questions - size
         assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
-        assert order.pending_field in ("coffee_size", "menu_item_attr_size", "sized_beverage:size", "espresso:size")
+        assert order.pending_field in ("coffee_size", "menu_item_attr_size", "sized_beverage:size", "espresso:size", "espresso_based:size")
 
     def test_bagel_and_latte_complete_with_coffee_config(self):
         """Test that coffee configuration completes properly after bagel."""
@@ -1823,6 +1830,9 @@ class TestBagelWithCoffeeConfig:
         result = sm.process("plain bagel", order)
         # Toasted
         result = sm.process("yes toasted", order)
+        # Handle scooped question if present (DB-driven attribute between toasted and spread)
+        if "scoop" in result.message.lower():
+            result = sm.process("no", order)
         # Butter
         result = sm.process("butter", order)
 
@@ -1935,6 +1945,9 @@ class TestBagelWithCoffeeConfig:
             if "toasted" in msg_lower:
                 result = sm.process("yes", order)
                 continue
+            if "scoop" in msg_lower:
+                result = sm.process("no", order)
+                continue
             if "spread" in msg_lower or "cream cheese" in msg_lower or "butter" in msg_lower:
                 result = sm.process("butter", order)
                 continue
@@ -2026,6 +2039,9 @@ class TestBagelWithCoffeeConfig:
                 continue
             if "toasted" in msg_lower:
                 result = sm.process("yes", order)
+                continue
+            if "scoop" in msg_lower:
+                result = sm.process("no", order)
                 continue
             if "spread" in msg_lower or "cream cheese" in msg_lower or "butter" in msg_lower:
                 result = sm.process("butter", order)

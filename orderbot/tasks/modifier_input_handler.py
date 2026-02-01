@@ -102,7 +102,8 @@ def match_modifier(
 def get_all_modifier_patterns_for_item(item_type_slug: str | None) -> set[str]:
     """Get all modifier patterns for an item type (data-driven).
 
-    Returns combined patterns for all ingredient categories that the item type accepts.
+    Returns combined patterns for all ingredient categories that the item type accepts,
+    plus patterns from global attribute options (e.g., "shot" from espresso_shots).
     Used to detect if user input contains any modifier for this item type.
 
     Args:
@@ -123,6 +124,20 @@ def get_all_modifier_patterns_for_item(item_type_slug: str | None) -> set[str]:
         patterns.update(get_modifier_patterns(category))
         # Add the category name itself as a pattern
         patterns.add(category)
+
+    # Also include patterns from global attribute options
+    # This handles attributes like espresso_shots that have options (shot)
+    # which users may want to add after initial configuration
+    attrs = menu_cache.get_item_type_attributes(item_type_slug)
+    for attr in attrs.values():
+        options = attr.get("options", [])
+        for opt in options:
+            # Add both slug and display_name as patterns
+            if opt.get("slug"):
+                patterns.add(opt["slug"].lower().replace("_", " "))
+            if opt.get("display_name"):
+                patterns.add(opt["display_name"].lower())
+
     return patterns
 
 
@@ -200,10 +215,12 @@ def add_modifiers_from_input(
     """Add all matching modifiers from user input to an item (data-driven).
 
     Scans input for modifiers based on the item type's accepted modifier categories
-    (queried from database) and adds them using the unified storage model.
+    (queried from database) and global attribute options, adding them using the
+    unified storage model.
 
     Works for any item type - beverages get milk/syrup/sweetener scanned,
     other item types get their configured modifier categories scanned.
+    Also handles global attribute options like espresso_shots.
 
     Args:
         item: The MenuItemTask to modify
@@ -238,6 +255,40 @@ def add_modifiers_from_input(
             ):
                 made_change = True
 
+    # Also check global attribute options (e.g., "shot" from espresso_shots)
+    # This handles attributes that aren't ingredient categories
+    attrs = menu_cache.get_item_type_attributes(item_type)
+    for attr_slug, attr in attrs.items():
+        options = attr.get("options", [])
+        for opt in options:
+            opt_slug = opt.get("slug", "")
+            opt_display = opt.get("display_name", "")
+            opt_slug_pattern = opt_slug.lower().replace("_", " ")
+            opt_display_pattern = opt_display.lower()
+
+            # Check if option matches input
+            if opt_slug_pattern in input_lower or opt_display_pattern in input_lower:
+                # Extract quantity from input
+                pattern = opt_slug_pattern if opt_slug_pattern in input_lower else opt_display_pattern
+                quantity = _extract_quantity_from_input(input_lower, pattern)
+
+                # Get price for this option
+                opt_price = opt.get("price") or opt.get("price_modifier") or 0
+
+                # Add to item using add_selection (handles attribute options)
+                item.add_selection(
+                    slug=opt_slug,
+                    category=attr_slug,
+                    quantity=quantity,
+                    price=opt_price,
+                    display_name=opt_display,
+                )
+                logger.info(
+                    "Added attribute option from input: %s=%s (qty=%d, price=$%.2f)",
+                    attr_slug, opt_slug, quantity, opt_price
+                )
+                made_change = True
+
     return made_change
 
 
@@ -260,7 +311,7 @@ def match_category_removal_pattern(input_lower: str, item_type_slug: str) -> str
     """Check if input matches a removal pattern for any modifier category.
 
     Uses templatized patterns ("no {}", "without {}", etc.) with category names
-    from the database. No hardcoded category names.
+    AND ingredient names from the database. No hardcoded patterns.
 
     Args:
         input_lower: Lowercase user input to check
@@ -288,6 +339,12 @@ def match_category_removal_pattern(input_lower: str, item_type_slug: str) -> str
         # Also check singular forms if display name is plural
         if display_name.endswith("s") and len(display_name) > 2:
             names_to_check.add(display_name[:-1].lower())
+
+        # Also add ingredient names in this category (e.g., "sugar" for sweetener)
+        # This allows "without sugar" to match the sweetener category
+        ingredients = menu_cache.get_ingredients(category)
+        for ingredient in ingredients:
+            names_to_check.add(ingredient.lower())
 
         # Check each removal template with each name variant
         for template in REMOVAL_TEMPLATES:
@@ -318,8 +375,36 @@ def remove_modifiers_by_category(
     if not current_selections:
         return False
 
+    def belongs_to_category(modifier: dict, target_category: str) -> bool:
+        """Check if modifier belongs to target category.
+
+        Checks both the stored category field AND looks up the ingredient category
+        from the modifier's slug. This handles cases where modifiers are stored
+        with attribute slugs (e.g., "milk_sweetener_syrup") but we want to remove
+        by ingredient category (e.g., "milk").
+        """
+        # Direct category match
+        if modifier.get("category") == target_category:
+            return True
+
+        # Look up ingredient category from slug
+        slug = modifier.get("slug", "")
+        if slug:
+            # Try full slug first, then with common suffixes
+            ingredient_cat = menu_cache.get_ingredient_category(slug)
+            if ingredient_cat == target_category:
+                return True
+
+            # Try adding common suffixes (e.g., "whole" -> "whole milk")
+            for suffix in [" milk", " syrup"]:
+                ingredient_cat = menu_cache.get_ingredient_category(slug + suffix)
+                if ingredient_cat == target_category:
+                    return True
+
+        return False
+
     # Filter out selections of the specified category
-    new_selections = [m for m in current_selections if m.get("category") != category]
+    new_selections = [m for m in current_selections if not belongs_to_category(m, category)]
 
     if len(new_selections) < len(current_selections):
         item.modifiers = new_selections

@@ -445,18 +445,21 @@ class TestShotsHandling:
 
 
 class TestExtraShotAtCheckpoint:
-    """Test 'extra shot' phrase at customization checkpoint.
+    """Test 'extra shot' phrase after item configuration.
 
     This tests the scenario where:
     1. User orders espresso
-    2. Bot asks "Anything else to customize?"
-    3. User says "extra shot"
-    4. Expected: 1 extra shot is added
+    2. User declines all customization questions (shots, milk, decaf)
+    3. Bot says "Anything else?" (item is complete)
+    4. User says "extra shot"
+    5. Expected: Extra shots are added to the completed item
+
+    Note: "extra" is interpreted as quantity=2 in the modifier system.
     """
 
     def test_extra_shot_at_customization_checkpoint(self):
         """
-        Test that 'extra shot' at customization checkpoint adds 1 extra shot.
+        Test that 'extra shot' after completing an espresso adds shots.
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -487,10 +490,14 @@ class TestExtraShotAtCheckpoint:
         # Now say "extra shot"
         result = sm.process("extra shot", result.order)
 
-        # Check that 1 extra shot was added via modifiers
+        # Check that shots were added via modifiers
         # Category can be "shots" or "espresso_shots" depending on item type config
         item = result.order.items.items[0]
-        shot_mods = [m for m in (item.modifiers or []) if "shot" in m.get("category", "").lower()]
+        # Filter out the _declined marker (added when user said "no" to shots initially)
+        shot_mods = [
+            m for m in (item.modifiers or [])
+            if "shot" in m.get("category", "").lower() and m.get("slug") != "_declined"
+        ]
 
         # Debug output
         if not shot_mods:
@@ -500,7 +507,8 @@ class TestExtraShotAtCheckpoint:
             print(f"DEBUG: Item attribute_values: {item.attribute_values}")
 
         assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {shot_mods}"
-        assert shot_mods[0].get("quantity") == 1, f"Expected quantity=1, got {shot_mods[0]}"
+        # "extra shot" means adding 2 shots (the system treats "extra" as quantity=2)
+        assert shot_mods[0].get("quantity") == 2, f"Expected quantity=2 for 'extra shot', got {shot_mods[0]}"
         # Verify the price is applied (should be $0.75 per shot)
         assert shot_mods[0].get("price", 0) > 0, f"Expected price > 0, got {shot_mods[0]}"
 

@@ -55,6 +55,8 @@ from .modifier_input_handler import (
     ModifierInputHandler,
     get_all_modifier_patterns_for_item,
     add_modifiers_from_input,
+    match_category_removal_pattern,
+    remove_modifiers_by_category,
 )
 from .parsed_item_processor import ParsedItemProcessor
 from .inquiry_router import InquiryRouter
@@ -278,6 +280,7 @@ class TakingItemsHandler(MenuDataMixin):
                     item_id=None,  # Apply to last item
                     attr_slug=change_request.possible_attributes[0],
                     new_value=change_request.new_value,
+                    target=change_request.target,
                 )
                 if result.success:
                     last_item = get_last_item(active_items)
@@ -327,7 +330,11 @@ class TakingItemsHandler(MenuDataMixin):
                 item_keywords = menu_cache.get_item_keywords()
                 # Filter out words that are also modifiers for this item type
                 non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
-                has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
+                # Use word boundary matching to avoid false positives like "hot" in "shot"
+                has_other_item = any(
+                    re.search(rf'\b{re.escape(kw)}\b', input_lower)
+                    for kw in non_modifier_keywords
+                )
                 logger.info("EARLY_MOD_DETECT: has_other_item=%s", has_other_item)
                 if not has_other_item:
                     is_pure_modifier_input = True
@@ -342,6 +349,19 @@ class TakingItemsHandler(MenuDataMixin):
                 menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
             )
             if accepts_modifiers:
+                # Check for category-level modifier removal first
+                # e.g., "no milk", "without syrup", "remove the sweetener"
+                removed_category = match_category_removal_pattern(input_lower, last_item.menu_item_type)
+                if removed_category:
+                    if remove_modifiers_by_category(last_item, removed_category):
+                        updated_summary = recalculate_and_summarize(last_item, self.pricing)
+                        category_display = menu_cache.get_ingredient_category_display_name(removed_category)
+                        return StateMachineResult(
+                            message=f"Sure, I've removed the {category_display.lower()}. Your order is now {updated_summary}. Anything else?",
+                            order=order,
+                        )
+
+                # Try adding modifiers
                 made_change = add_modifiers_from_input(last_item, input_lower)
 
                 if made_change:

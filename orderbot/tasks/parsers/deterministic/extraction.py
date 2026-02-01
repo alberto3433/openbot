@@ -461,8 +461,9 @@ def _extract_modifiers_generic(
     if not modifier_type:
         return found_modifiers
 
-    # Build set of all attribute option slugs for this item type (normalized to match ingredients)
-    # This lets us detect when an ingredient category overlaps with attribute options
+    # Build set of all attribute option slugs AND aliases for this item type
+    # This lets us detect when an ingredient (or its alias) overlaps with attribute options
+    # Example: oat_milk option has aliases ["oat milk", "oat"], so we add all of them
     attr_option_slugs: set[str] = set()
     item_type_attrs = menu_cache.get_item_type_attributes(item_type)
     for attr_config in item_type_attrs.values():
@@ -470,6 +471,9 @@ def _extract_modifiers_generic(
             slug = opt.get("slug", "")
             # Normalize: "oat_milk" -> "oat milk"
             attr_option_slugs.add(slug.replace("_", " ").lower())
+            # Also add all aliases (e.g., "oat" for oat_milk)
+            for alias in (opt.get("aliases") or []):
+                attr_option_slugs.add(alias.lower())
 
     # Build set of attribute slugs for this item type
     # Categories that match attribute slugs should be skipped entirely

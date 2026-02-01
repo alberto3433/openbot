@@ -549,7 +549,8 @@ class PricingEngine(MenuDataMixin):
                 continue
 
             slug, quantity = extract_modifier_slug_and_quantity(modifier)
-            if not slug or slug in priced_slugs:
+            # Skip boolean answer markers - these aren't actual modifiers to price
+            if not slug or slug in priced_slugs or slug in ("yes", "no", "_declined"):
                 continue
 
             # Use stored price if available; only look up from DB if missing

@@ -159,6 +159,32 @@ class ModifierChangeHandler:
 
         return None
 
+    def _clean_modifier_value(self, value: str) -> str:
+        """Strip articles and filler words from modifier value.
+
+        Examples:
+            "a small one" → "small"
+            "the everything bagel" → "everything bagel"
+            "decaf please" → "decaf"
+            "an iced one" → "iced"
+        """
+        value = value.lower().strip()
+
+        # Strip leading articles
+        for article in ("a ", "an ", "the "):
+            if value.startswith(article):
+                value = value[len(article):]
+                break
+
+        # Strip trailing fillers
+        trailing_fillers = [" one", " thing", " please", " instead"]
+        for filler in trailing_fillers:
+            if value.endswith(filler):
+                value = value[:-len(filler)]
+                break
+
+        return value.strip()
+
     def _analyze_modifier(
         self, new_value: str, target: str | None
     ) -> tuple[bool, list[str]]:
@@ -177,7 +203,7 @@ class ModifierChangeHandler:
         Returns:
             Tuple of (is_ambiguous, list of possible attribute slugs)
         """
-        new_value_lower = new_value.lower().strip()
+        new_value_lower = self._clean_modifier_value(new_value)
         target_attr_map = self._get_target_attr_map()
 
         # If target is explicitly specified, use that attribute

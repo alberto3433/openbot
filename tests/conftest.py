@@ -197,7 +197,13 @@ def menu_cache_loaded(tmp_path_factory):
 
     Uses file locking to coordinate cache loading across pytest-xdist workers,
     preventing race conditions during parallel test execution.
+
+    Includes retry logic for Neon PostgreSQL serverless connections which may
+    close unexpectedly during long test runs.
     """
+    import time
+    from sqlalchemy.exc import OperationalError
+
     if not TEST_DATABASE_URL:
         pytest.skip("DATABASE_URL environment variable required - spread/bagel types are loaded from database")
 
@@ -205,23 +211,38 @@ def menu_cache_loaded(tmp_path_factory):
     from orderbot.menu_index import build_menu_index
     from orderbot.tasks.state_machine import set_global_menu_data
 
-    engine = create_test_engine(TEST_DATABASE_URL)
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
     # Use file lock to coordinate menu cache loading across xdist workers
     # Each worker still loads into its own process memory, but this prevents
     # database connection pool exhaustion during parallel initialization
     cache_lock = get_session_lock(tmp_path_factory, "menu_cache")
-    with cache_lock:
-        db = TestingSessionLocal()
-        try:
-            # Load menu cache (spread types, bagel types, etc.)
-            menu_cache.load_from_db(db, fail_on_error=True)
 
-            # Build menu index dict and set as global for OrderStateMachine
-            menu_data = build_menu_index(db)
-            set_global_menu_data(menu_data)
-        finally:
-            db.close()
+    max_retries = 3
+    for attempt in range(max_retries):
+        # Create fresh engine on each attempt (handles stale connections)
+        engine = create_test_engine(TEST_DATABASE_URL)
+        TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+        with cache_lock:
+            db = TestingSessionLocal()
+            try:
+                # Load menu cache (spread types, bagel types, etc.)
+                menu_cache.load_from_db(db, fail_on_error=True)
+
+                # Build menu index dict and set as global for OrderStateMachine
+                menu_data = build_menu_index(db)
+                set_global_menu_data(menu_data)
+                return menu_cache
+            except OperationalError as e:
+                db.close()
+                engine.dispose()
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    print(f"DB connection failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
+                    time.sleep(wait_time)
+                else:
+                    raise
+            finally:
+                if 'db' in dir():
+                    db.close()
 
     return menu_cache

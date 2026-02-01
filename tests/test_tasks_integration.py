@@ -2800,7 +2800,8 @@ class TestCoffeeSize:
         """Test selecting small size.
 
         Temperature (hot/iced) is now part of the menu item name (e.g. 'Hot Latte'),
-        not a separate attribute. After size, the next question is milk/sweetener/syrup.
+        not a separate attribute. After size, the next question is espresso_shots
+        (per mock data display_order: size=1, espresso_shots=2, milk_sweetener_syrup=3).
         Size is NOT pre-set — the item starts without a size so the handler sets it.
         """
         from orderbot.tasks.state_machine import OrderStateMachine
@@ -2823,14 +2824,16 @@ class TestCoffeeSize:
         result = sm.configuring_item_handler.handle_configuring_item("small please", order)
 
         assert coffee["size"] == "small"
-        assert order.pending_field == "sized_beverage:milk_sweetener_syrup"
-        assert "milk" in result.message.lower() or "sweetener" in result.message.lower() or "syrup" in result.message.lower()
+        # Mock data: espresso_shots has display_order=2, milk_sweetener_syrup=3
+        assert order.pending_field == "sized_beverage:espresso_shots"
+        assert "shot" in result.message.lower() or "extra" in result.message.lower()
 
     def test_large_size_selected(self):
         """Test selecting large size.
 
         Temperature (hot/iced) is now part of the menu item name (e.g. 'Hot Coffee'),
-        not a separate attribute. After size, the next question is milk/sweetener/syrup.
+        not a separate attribute. After size, the next question is espresso_shots
+        (per mock data display_order: size=1, espresso_shots=2, milk_sweetener_syrup=3).
         Size is NOT pre-set — the item starts without a size so the handler sets it.
         """
         from orderbot.tasks.state_machine import OrderStateMachine
@@ -2853,7 +2856,8 @@ class TestCoffeeSize:
         result = sm.configuring_item_handler.handle_configuring_item("I'll take a large", order)
 
         assert coffee["size"] == "large"
-        assert "milk" in result.message.lower() or "sweetener" in result.message.lower() or "syrup" in result.message.lower()
+        # Mock data: espresso_shots has display_order=2, milk_sweetener_syrup=3
+        assert "shot" in result.message.lower() or "extra" in result.message.lower()
 
     def test_invalid_size_reprompts(self, menu_cache_loaded):
         """Test that invalid size re-prompts user.
@@ -5183,7 +5187,6 @@ class TestTakingItemsHandler:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, OpenInputResponse
         from orderbot.tasks.models import OrderTask, MenuItemTask
-        from tests.helpers import CoffeeItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -5206,9 +5209,10 @@ class TestTakingItemsHandler:
 
             result = sm._handle_taking_items("another espresso", order)
 
-            # Should have espressos as MenuItemTask, not CoffeeItemTask
+            # Should have espressos as MenuItemTask with menu_item_type='espresso'
+            # NOT sized_beverage or espresso_based (those are coffee/latte types)
             espressos = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type == "espresso"]
-            coffees = [i for i in order.items.items if i.has_attribute('size')]
+            wrong_type_items = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type in ("sized_beverage", "espresso_based")]
 
             # Accept either: 2 espressos added, OR disambiguation triggered (options provided)
             # Both are valid data-driven behaviors depending on menu configuration
@@ -5222,8 +5226,8 @@ class TestTakingItemsHandler:
                 # At minimum, the first espresso should still be there
                 assert len(espressos) >= 1, f"Expected at least 1 espresso, got {len(espressos)}"
 
-            # Verify espresso didn't create CoffeeItemTask
-            assert len(coffees) == 0, f"Espresso should not create CoffeeItemTask, got {len(coffees)}"
+            # Verify espresso didn't get wrong item type (sized_beverage is for regular coffee)
+            assert len(wrong_type_items) == 0, f"Espresso should not create sized_beverage/espresso_based, got {[i.menu_item_type for i in wrong_type_items]}"
 
 
 class TestEspressoItemTypeConsistency:

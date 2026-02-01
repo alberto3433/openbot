@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from .parsers.constants import ADD_MODIFIER_PATTERNS
-from .parsers.quantity_utils import extract_quantity_for_pattern
+from .parsers.quantity_utils import extract_quantity_for_pattern, extract_additive_quantity
 from .handler_utils import (
     is_configurable_menu_item,
     get_last_item,
@@ -242,18 +242,35 @@ def add_modifiers_from_input(
     for category in categories:
         match = match_modifier(input_lower, category)
         if match:
-            # Extract quantity from input
-            quantity = _extract_quantity_from_input(input_lower, match["pattern"])
+            # Extract quantity and check if additive ("another vanilla", "one more syrup")
+            quantity, is_additive = extract_additive_quantity(input_lower, match["pattern"])
 
-            # Add to item using unified storage
-            if add_modifier_to_item(
-                item,
-                slug=match["slug"],
-                display_name=match["name"],
-                quantity=quantity,
-                category=category,
-            ):
+            # Check if modifier already exists
+            existing = None
+            for mod in (item.modifiers or []):
+                if mod.get("slug") == match["slug"]:
+                    existing = mod
+                    break
+
+            if existing and is_additive:
+                # Increment existing quantity
+                old_qty = existing.get("quantity", 1)
+                existing["quantity"] = old_qty + quantity
+                logger.info(
+                    "Incremented %s modifier: %s (qty=%d -> %d)",
+                    category, match["slug"], old_qty, old_qty + quantity
+                )
                 made_change = True
+            elif not existing:
+                # Add new modifier
+                if add_modifier_to_item(
+                    item,
+                    slug=match["slug"],
+                    display_name=match["name"],
+                    quantity=quantity,
+                    category=category,
+                ):
+                    made_change = True
 
     # Also check global attribute options (e.g., "shot" from espresso_shots)
     # This handles attributes that aren't ingredient categories
@@ -268,26 +285,43 @@ def add_modifiers_from_input(
 
             # Check if option matches input
             if opt_slug_pattern in input_lower or opt_display_pattern in input_lower:
-                # Extract quantity from input
+                # Extract quantity and check if additive ("another shot", "one more shot")
                 pattern = opt_slug_pattern if opt_slug_pattern in input_lower else opt_display_pattern
-                quantity = _extract_quantity_from_input(input_lower, pattern)
+                quantity, is_additive = extract_additive_quantity(input_lower, pattern)
 
                 # Get price for this option
                 opt_price = opt.get("price") or opt.get("price_modifier") or 0
 
-                # Add to item using add_selection (handles attribute options)
-                item.add_selection(
-                    slug=opt_slug,
-                    category=attr_slug,
-                    quantity=quantity,
-                    price=opt_price,
-                    display_name=opt_display,
-                )
-                logger.info(
-                    "Added attribute option from input: %s=%s (qty=%d, price=$%.2f)",
-                    attr_slug, opt_slug, quantity, opt_price
-                )
-                made_change = True
+                # Check if modifier already exists
+                existing = item.get_selection(attr_slug)
+                if existing and existing.get("slug") == opt_slug:
+                    if is_additive:
+                        # Increment existing quantity
+                        new_qty = existing.get("quantity", 1) + quantity
+                        existing["quantity"] = new_qty
+                        # Update unit_price for the additional quantity
+                        if opt_price > 0:
+                            item.unit_price = (item.unit_price or 0.0) + (opt_price * quantity)
+                        logger.info(
+                            "Incremented attribute option: %s=%s (qty=%d -> %d, price=$%.2f)",
+                            attr_slug, opt_slug, new_qty - quantity, new_qty, opt_price
+                        )
+                        made_change = True
+                    # else: already exists and not additive, skip
+                else:
+                    # Add new selection
+                    item.add_selection(
+                        slug=opt_slug,
+                        category=attr_slug,
+                        quantity=quantity,
+                        price=opt_price,
+                        display_name=opt_display,
+                    )
+                    logger.info(
+                        "Added attribute option from input: %s=%s (qty=%d, price=$%.2f)",
+                        attr_slug, opt_slug, quantity, opt_price
+                    )
+                    made_change = True
 
     return made_change
 

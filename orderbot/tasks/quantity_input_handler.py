@@ -117,8 +117,9 @@ class QuantityInputHandler:
                         break
 
         if is_neg:
-            # Mark attribute as declined so _get_unanswered_mandatory knows it's answered
-            item[attr_slug] = None
+            # For quantity attributes, "none" means 0 (not None/declined)
+            # This distinguishes "no extra shots" (0) from unanswered
+            item[attr_slug] = 0
             return self._advance_to_next_question(item, order, attr, None)
 
         # Check for affirmative responses (quantity=1)

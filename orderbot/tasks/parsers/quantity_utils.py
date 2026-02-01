@@ -173,6 +173,66 @@ def extract_quantity_for_pattern(user_input: str, pattern: str) -> int:
     return 1
 
 
+def extract_additive_quantity(user_input: str, pattern: str) -> tuple[int, bool]:
+    """Extract quantity and detect if it's an additive request.
+
+    Additive patterns indicate adding to existing quantity:
+    - "another shot" = +1 (additive)
+    - "one more shot" = +1 (additive)
+    - "2 more shots" = +2 (additive)
+
+    Non-additive patterns set absolute quantity:
+    - "double shot" = 2 (absolute)
+    - "two shots" = 2 (absolute)
+
+    Args:
+        user_input: The user's input string (will be lowercased)
+        pattern: The pattern to look for (e.g., "shot")
+
+    Returns:
+        Tuple of (quantity, is_additive).
+
+    Examples:
+        >>> extract_additive_quantity("another shot", "shot")
+        (1, True)
+        >>> extract_additive_quantity("one more shot", "shot")
+        (1, True)
+        >>> extract_additive_quantity("2 more shots", "shot")
+        (2, True)
+        >>> extract_additive_quantity("double shot", "shot")
+        (2, False)
+    """
+    user_lower = user_input.lower()
+    escaped_pattern = re.escape(pattern)
+
+    # Check for "another X" pattern
+    another_match = re.search(rf'another\s+{escaped_pattern}s?', user_lower)
+    if another_match:
+        return 1, True
+
+    # Check for "N more X" or "more X" patterns
+    # "one more shot", "2 more shots", "a few more shots"
+    more_match = re.search(
+        rf'(one|two|three|four|five|\d+|a few|a couple(?: of)?|another)?\s*more\s+{escaped_pattern}s?',
+        user_lower
+    )
+    if more_match:
+        qty_word = more_match.group(1)
+        if qty_word:
+            qty_word = qty_word.lower().strip()
+            if qty_word.isdigit():
+                return int(qty_word), True
+            elif qty_word == "another":
+                return 1, True
+            else:
+                return WORD_TO_NUM.get(qty_word, 1), True
+        return 1, True  # Just "more shot" = 1 more
+
+    # Not an additive pattern - use regular extraction
+    qty = extract_quantity_for_pattern(user_input, pattern)
+    return qty, False
+
+
 def parse_make_it_n_quantity(num_str: str) -> int | None:
     """Parse quantity from 'make it N' style expressions.
 

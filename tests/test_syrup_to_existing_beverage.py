@@ -341,8 +341,7 @@ class TestShotsHandling:
 
     def test_double_shot_espresso_config(self):
         """
-        Test that 'double shot' during espresso config sets extra_shots=1.
-        (double = 2 total shots, minus 1 base shot = 1 extra)
+        Test that 'double shot' during espresso config sets quantity=2.
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -362,15 +361,16 @@ class TestShotsHandling:
         # Answer with "double shot"
         result = sm.process("double shot", result.order)
 
-        # Check that shots attribute is set to 1 (1 extra shot)
+        # Check that espresso_shots has quantity=2 (double = 2)
+        # Note: quantity attributes store the unit slug (e.g., "shot") with quantity in modifiers
         item = result.order.items.items[0]
-        shots_value = item.attribute_values.get("shots")
-        assert shots_value == 1, f"Expected shots=1 (1 extra for double), got {shots_value}"
+        shot_mods = [m for m in item.modifiers if m.get("category") == "espresso_shots"]
+        assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {len(shot_mods)}"
+        assert shot_mods[0].get("quantity") == 2, f"Expected quantity=2 (double), got {shot_mods[0].get('quantity')}"
 
     def test_triple_shot_espresso_config(self):
         """
-        Test that 'triple shot' during espresso config sets extra_shots=2.
-        (triple = 3 total shots, minus 1 base shot = 2 extra)
+        Test that 'triple shot' during espresso config sets quantity=3.
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -388,10 +388,12 @@ class TestShotsHandling:
         # Answer with "triple shot"
         result = sm.process("triple shot", result.order)
 
-        # Check that shots attribute is set to 2 (2 extra shots)
+        # Check that espresso_shots has quantity=3 (triple = 3)
+        # Note: quantity attributes store the unit slug (e.g., "shot") with quantity in modifiers
         item = result.order.items.items[0]
-        shots_value = item.attribute_values.get("shots")
-        assert shots_value == 2, f"Expected shots=2 (2 extra for triple), got {shots_value}"
+        shot_mods = [m for m in item.modifiers if m.get("category") == "espresso_shots"]
+        assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {len(shot_mods)}"
+        assert shot_mods[0].get("quantity") == 3, f"Expected quantity=3 (triple), got {shot_mods[0].get('quantity')}"
 
     def test_numeric_extra_shots(self):
         """
@@ -413,10 +415,12 @@ class TestShotsHandling:
         # Answer with "2" (meaning 2 extra shots)
         result = sm.process("2", result.order)
 
-        # Check that shots attribute is set to 2
+        # Check that espresso_shots has quantity=2
+        # Note: quantity attributes store the unit slug (e.g., "shot") with quantity in modifiers
         item = result.order.items.items[0]
-        shots_value = item.attribute_values.get("shots")
-        assert shots_value == 2, f"Expected shots=2, got {shots_value}"
+        shot_mods = [m for m in item.modifiers if m.get("category") == "espresso_shots"]
+        assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {len(shot_mods)}"
+        assert shot_mods[0].get("quantity") == 2, f"Expected quantity=2, got {shot_mods[0].get('quantity')}"
 
     def test_no_extra_shots(self):
         """
@@ -438,10 +442,10 @@ class TestShotsHandling:
         # Answer with "none"
         result = sm.process("none", result.order)
 
-        # Check that shots attribute is set to 0
+        # Check that shots attribute is set to 0 (stored as string "0")
         item = result.order.items.items[0]
-        shots_value = item.attribute_values.get("shots")
-        assert shots_value == 0, f"Expected shots=0, got {shots_value}"
+        shots_value = item.attribute_values.get("espresso_shots")
+        assert shots_value == "0", f"Expected espresso_shots='0', got {shots_value}"
 
 
 class TestExtraShotAtCheckpoint:

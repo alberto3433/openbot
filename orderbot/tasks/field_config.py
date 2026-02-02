@@ -159,10 +159,10 @@ def _load_fields_from_db(item_type: str) -> dict[str, FieldConfig]:
 
         result[field_name] = FieldConfig(
             name=field_name,
-            required=config.get("required", False),
+            required=config.get("is_required", False),
             default=config.get("default"),
-            ask_if_empty=config.get("ask_if_empty", True),
-            question=config.get("question"),
+            ask_if_empty=config.get("ask_in_conversation", True),
+            question=config.get("question_text"),
         )
 
     return result

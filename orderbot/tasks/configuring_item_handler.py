@@ -238,6 +238,14 @@ class ConfiguringItemHandler:
         # Parse the pending_field and route to the appropriate handler
         item_type_slug, attr_slug = parse_pending_field(order.pending_field)
         if item_type_slug and attr_slug and isinstance(item, MenuItemTask) and self.menu_item_handler:
+            # Special case: side_choice attribute should use component slot handler
+            # which has the full list of options (bagel + fruit salad)
+            if attr_slug == "side_choice" and menu_cache.item_type_has_component_slots(item_type_slug):
+                logger.debug(
+                    "Routing side_choice attr to component slot handler for %s",
+                    item_type_slug
+                )
+                return self.config_helper_handler.handle_side_choice(user_input, item, order)
             logger.debug(
                 "Routing '%s' through unified handler for %s attr=%s",
                 order.pending_field, item_type_slug, attr_slug
@@ -469,9 +477,9 @@ class ConfiguringItemHandler:
             )
 
         # For non-configurable items, use direct creation
-        # Check if item type requires side choice (data-driven from database)
-        requires_side_choice = (
-            menu_cache.item_type_has_side_choice(selected_item_type)
+        # Check if item type has component slots (e.g., omelette includes a side)
+        has_component_slots = (
+            menu_cache.item_type_has_component_slots(selected_item_type)
             if selected_item_type else False
         )
 
@@ -487,19 +495,19 @@ class ConfiguringItemHandler:
             # Infer attributes from item name (data-driven)
             if self.item_adder_handler:
                 self.item_adder_handler._infer_attributes_from_item_name(item)
-            if requires_side_choice:
-                item.mark_in_progress()  # Items with side choice need configuration
+            if has_component_slots:
+                item.mark_in_progress()  # Items with component slots need configuration
             else:
                 item.mark_complete()  # Simple items don't need configuration
             order.items.add_item(item)
             if first_item is None:
                 first_item = item
 
-        if requires_side_choice:
-            # Get the side choice attribute question from database
-            side_choice_attr = menu_cache.get_side_choice_attribute(selected_item_type)
+        if has_component_slots:
+            # Get the component slot question from database (e.g., "side" slot)
+            side_slot = menu_cache.get_component_slot(selected_item_type, "side")
             question = (
-                side_choice_attr.get("question_text") if side_choice_attr
+                side_slot.get("prompt_text") if side_slot
                 else f"Would you like a bagel or fruit salad with your {selected_name}?"
             )
             # Set state to wait for side choice

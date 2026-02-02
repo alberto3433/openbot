@@ -132,6 +132,110 @@ class ItemTypeCoreQueryMixin:
         config = self._item_type_side_choice.get(item_type_slug, {})
         return config.get("side_choice_attribute")
 
+    # -------------------------------------------------------------------------
+    # Component Slots (Bundled Items)
+    # -------------------------------------------------------------------------
+
+    def item_type_has_component_slots(self, item_type_slug: str) -> bool:
+        """Check if an item type has component slots (includes configurable sub-items).
+
+        Args:
+            item_type_slug: The item type slug (e.g., "omelette")
+
+        Returns:
+            True if this item type has component slots, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return item_type_slug in self._component_slots and len(self._component_slots[item_type_slug]) > 0
+
+    def get_component_slots(self, item_type_slug: str) -> dict[str, dict]:
+        """Get all component slots for an item type.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "omelette")
+
+        Returns:
+            Dict mapping slot_name -> slot_config. Empty dict if no slots.
+            Each slot_config contains:
+            - display_name: Human-readable name for the slot
+            - prompt_text: Question to ask user
+            - is_required: Whether the slot must be filled
+            - min_quantity, max_quantity: How many items can fill this slot
+            - options: List of option dicts with:
+              - allowed_item_type: Item type slug if this option is an item type
+              - allowed_menu_item_id: Menu item ID if this option is a specific item
+              - price_rule: "included", "full_price", "fixed", etc.
+              - fixed_price: For fixed/discount pricing rules
+              - display_name: Display name for this option
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._component_slots.get(item_type_slug, {}).copy()
+
+    def get_component_slot(self, item_type_slug: str, slot_name: str) -> dict | None:
+        """Get a specific component slot configuration.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "omelette")
+            slot_name: The slot name (e.g., "side")
+
+        Returns:
+            Slot config dict or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        slots = self._component_slots.get(item_type_slug, {})
+        return slots.get(slot_name)
+
+    def get_component_slot_options(self, item_type_slug: str, slot_name: str) -> list[dict]:
+        """Get the available options for a component slot.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "omelette")
+            slot_name: The slot name (e.g., "side")
+
+        Returns:
+            List of option dicts with allowed_item_type, price_rule, etc.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        slot = self.get_component_slot(item_type_slug, slot_name)
+        if not slot:
+            return []
+        return slot.get("options", [])
+
+    def get_unfilled_component_slots(self, item_type_slug: str, filled_slots: set[str]) -> list[dict]:
+        """Get component slots that haven't been filled yet.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "omelette")
+            filled_slots: Set of slot names that have been filled
+
+        Returns:
+            List of slot config dicts for unfilled required slots.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        slots = self._component_slots.get(item_type_slug, {})
+        unfilled = []
+        for slot_name, slot_config in slots.items():
+            if slot_name not in filled_slots:
+                unfilled.append({
+                    "slot_name": slot_name,
+                    **slot_config
+                })
+        return unfilled
+
     def resolve_item_type_slug(self, name_or_alias: str) -> str:
         """Resolve an item type name or alias to its canonical database slug.
 

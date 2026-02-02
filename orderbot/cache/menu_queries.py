@@ -666,3 +666,34 @@ class MenuQueryMixin:
         """
         self._ensure_loaded()
         return self._menu_item_default_ingredients.get(menu_item_id, [])
+
+    def get_menu_item_by_id(self, menu_item_id: int) -> dict | None:
+        """Get menu item information by database ID.
+
+        Args:
+            menu_item_id: The database ID of the menu item
+
+        Returns:
+            Dict with menu item info: {
+                "id": int,
+                "name": str,
+                "item_type_slug": str | None,
+                "base_price": float
+            }
+            or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+
+        # Search through _menu_items (keyed by name) to find by ID
+        for item_data in self._menu_items.values():
+            if item_data.get("id") == menu_item_id:
+                return {
+                    "id": item_data["id"],
+                    "name": item_data.get("name", ""),
+                    "item_type_slug": item_data.get("item_type"),
+                    "base_price": item_data.get("base_price", 0.0),
+                }
+        return None

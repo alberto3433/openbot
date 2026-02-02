@@ -231,6 +231,45 @@ class ItemCancellationHandler:
                 )
                 return None  # Skip modifier removal, let item removal handle it
 
+        # Check if cancel term matches a modifier CATEGORY (like "cream cheese" → spreads)
+        # This handles "remove cream cheese" when the stored value is "blueberry" (the flavor)
+        cancel_term_lower = parsed.cancel_item.lower().strip()
+        # Normalize multiple spaces to single space (common voice transcription artifact)
+        cancel_term_lower = ' '.join(cancel_term_lower.split())
+        # Strip leading "the " if present
+        if cancel_term_lower.startswith("the "):
+            cancel_term_lower = cancel_term_lower[4:]
+
+        modifier_category_slug = menu_cache.get_modifier_category_by_alias(cancel_term_lower)
+        if modifier_category_slug:
+            # Map modifier_category slug to attribute category
+            # "spreads" → "spread" (remove trailing 's')
+            attr_category = modifier_category_slug.rstrip('s') if modifier_category_slug.endswith('s') else modifier_category_slug
+
+            for item in active_items:
+                if isinstance(item, MenuItemTask) and item.get(attr_category):
+                    removed_value = item.get(attr_category)
+                    item.remove_selection(attr_category)
+                    try:
+                        self.pricing.recalculate_item_price(item)
+                    except ValueError:
+                        pass  # Price lookup failed - item may not have pricing data
+
+                    # Format display name from slug
+                    from .normalization import format_slug_for_display
+                    display_name = format_slug_for_display(str(removed_value), check_cache=False)
+                    updated_summary = item.get_summary()
+                    logger.info(
+                        "Cancellation: removed %s category '%s' (value: '%s') via alias '%s'",
+                        attr_category, modifier_category_slug, removed_value, cancel_term_lower
+                    )
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {display_name}. Your order is now {updated_summary}. Anything else?",
+                        order=order,
+                    )
+            # No items had that category
+            logger.debug("Cancellation: category '%s' matched but no items have that category", attr_category)
+
         modifier_match = find_modifier_on_any_item(active_items, parsed.cancel_item)
         if modifier_match:
             result = remove_modifier_from_item(modifier_match.item, modifier_match)

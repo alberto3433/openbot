@@ -415,7 +415,15 @@ class ModifierChangeHandler:
         # Note: attr_slug is "milk_sweetener_syrup" (attribute slug), not "syrup" (category slug)
         is_multi_select_attr = menu_cache.is_multi_select_attribute(attr_slug)
         if isinstance(item, MenuItemTask) and is_multi_select_attr:
-            # Remove the old modifier if target is specified (for "change X to Y" requests)
+            # For change requests, ALWAYS remove existing selections for this attribute first
+            # This ensures we REPLACE rather than ADD (e.g., "make it veggie cream cheese"
+            # should replace existing cream cheese, not add veggie alongside it)
+            if item.remove_selection(attr_slug):
+                logger.info("Removed existing selections for category: %s", attr_slug)
+
+            # If a specific target was mentioned, also try to remove by slug match
+            # (This handles cases like "change the vanilla syrup to caramel" where
+            # the target might have a different category than attr_slug)
             if target and item.modifiers:
                 target_slug = target.replace(" ", "_").lower()
                 original_count = len(item.modifiers)

@@ -575,6 +575,135 @@
       grid-template-columns: 1fr;
     }
 
+    /* Component Slots tab styles */
+    .slots-section {
+      margin-bottom: 16px;
+    }
+    .slots-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .slots-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+    }
+    .slot-card {
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      background: #fff;
+    }
+    .slot-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      cursor: pointer;
+      background: #fafafa;
+      border-radius: 6px 6px 0 0;
+    }
+    .slot-card.collapsed .slot-card-header {
+      border-radius: 6px;
+    }
+    .slot-card-header:hover {
+      background: #f0f0f0;
+    }
+    .slot-card-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .slot-toggle {
+      font-size: 12px;
+      color: #666;
+      transition: transform 0.2s;
+    }
+    .slot-card.collapsed .slot-toggle {
+      transform: rotate(-90deg);
+    }
+    .slot-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .slot-badges {
+      display: flex;
+      gap: 6px;
+    }
+    .slot-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    .slot-badge.required {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .slot-badge.optional {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .slot-badge.options {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .slot-card-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .slot-card-body {
+      padding: 14px;
+      border-top: 1px solid #e0e0e0;
+    }
+    .slot-card.collapsed .slot-card-body {
+      display: none;
+    }
+    .slot-options-list {
+      margin-top: 8px;
+    }
+    .slot-option-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px;
+      background: #f9f9f9;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    .slot-option-row:hover {
+      background: #f0f0f0;
+    }
+    .slot-option-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .slot-option-type {
+      font-size: 10px;
+      color: #666;
+      background: #e0e0e0;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .slot-option-price {
+      font-size: 11px;
+      color: #2e7d32;
+    }
+    .empty-slots {
+      padding: 30px;
+      text-align: center;
+      color: #888;
+      font-size: 13px;
+      background: #fafafa;
+      border-radius: 6px;
+      border: 1px dashed #ddd;
+    }
+
     /* Toast notification styles */
     .toast-container {
       position: fixed;
@@ -721,6 +850,7 @@
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="basic">Basic Info</button>
         <button class="detail-tab" data-tab="attributes">Attributes</button>
+        <button class="detail-tab" data-tab="slots">Component Slots</button>
       </div>
 
       <div id="detailBody" style="flex: 1; overflow-y: auto;">
@@ -807,6 +937,24 @@
             </div>
             <div id="attributesList">
               <div class="empty-attrs">No attributes linked yet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Component Slots Tab -->
+        <div class="tab-panel" id="tabComponentSlots">
+          <p style="font-size: 13px; color: #666; margin-top: 0; margin-bottom: 16px;">
+            Component slots allow items of this type to include configurable sub-items.
+            For example, an omelette can include a "side" slot that accepts bagels or fruit salad.
+          </p>
+
+          <div class="slots-section">
+            <div class="slots-header">
+              <h3>Component Slots</h3>
+              <button class="btn" id="addSlotBtn" style="padding: 6px 12px; font-size: 12px;">+ Add Slot</button>
+            </div>
+            <div id="componentSlotsList">
+              <div class="empty-slots">No component slots configured. Click "+ Add Slot" to create one.</div>
             </div>
           </div>
         </div>
@@ -919,12 +1067,158 @@
     </div>
   </div>
 
+  <!-- Component Slot Modal -->
+  <div class="modal-overlay" id="slotModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="slotModalTitle">New Component Slot</h2>
+        <button class="modal-close" id="slotModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="slotForm">
+          <input type="hidden" id="editSlotId" />
+
+          <div class="attr-form-row">
+            <div class="form-group">
+              <label for="slotName">Slot Name *</label>
+              <input type="text" id="slotName" placeholder="e.g., side" pattern="[a-z0-9_]+" />
+              <div class="hint">Internal identifier (lowercase, underscores)</div>
+            </div>
+            <div class="form-group">
+              <label for="slotDisplayName">Display Name</label>
+              <input type="text" id="slotDisplayName" placeholder="e.g., Side Item" />
+              <div class="hint">Human-readable name (auto-generated if blank)</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="slotPromptText">Prompt Text</label>
+            <input type="text" id="slotPromptText" placeholder="e.g., What would you like for your side?" />
+            <div class="hint">Question text shown when asking customer to choose</div>
+          </div>
+
+          <div class="attr-form-row">
+            <div class="form-group">
+              <label for="slotMinQty">Min Quantity</label>
+              <input type="number" id="slotMinQty" min="0" value="1" />
+              <div class="hint">Minimum selections required</div>
+            </div>
+            <div class="form-group">
+              <label for="slotMaxQty">Max Quantity</label>
+              <input type="number" id="slotMaxQty" min="1" value="1" />
+              <div class="hint">Maximum selections allowed</div>
+            </div>
+          </div>
+
+          <div class="attr-form-row">
+            <div class="form-group">
+              <label for="slotDisplayOrder">Display Order</label>
+              <input type="number" id="slotDisplayOrder" min="0" value="0" />
+            </div>
+            <div class="form-group">
+              <div class="checkbox-row" style="margin-top: 24px;">
+                <input type="checkbox" id="slotIsRequired" checked />
+                <label for="slotIsRequired">Required</label>
+              </div>
+              <div class="hint">Customer must make a selection</div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="slotCancelBtn">Cancel</button>
+        <button type="button" class="btn primary" id="slotSaveBtn">Save Slot</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slot Option Modal -->
+  <div class="modal-overlay" id="slotOptionModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Add Slot Option</h2>
+        <button class="modal-close" id="slotOptionModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="slotOptionForm">
+          <input type="hidden" id="optionSlotId" />
+
+          <div class="form-group">
+            <label for="optionType">Option Type *</label>
+            <select id="optionType">
+              <option value="">-- Select type --</option>
+              <option value="item_type">Item Type (any item of this type)</option>
+              <option value="menu_item">Specific Menu Item</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="itemTypeSelectGroup" style="display: none;">
+            <label for="optionItemType">Item Type *</label>
+            <select id="optionItemType">
+              <option value="">-- Select item type --</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="menuItemSelectGroup" style="display: none;">
+            <label for="optionMenuItemSearch">Search Menu Item *</label>
+            <input type="text" id="optionMenuItemSearch" placeholder="Type to search..." />
+            <select id="optionMenuItem" size="5" style="margin-top: 8px; width: 100%;">
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="optionPriceRule">Price Rule *</label>
+            <select id="optionPriceRule">
+              <option value="included">Included (base price = $0, upcharges apply)</option>
+              <option value="full_price">Full Price (use item's regular price)</option>
+              <option value="fixed">Fixed Price</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="fixedPriceGroup" style="display: none;">
+            <label for="optionFixedPrice">Fixed Price (cents)</label>
+            <input type="number" id="optionFixedPrice" min="0" placeholder="e.g., 500 for $5.00" />
+            <div class="hint">Price in cents (e.g., 500 = $5.00)</div>
+          </div>
+
+          <div class="form-group">
+            <label for="optionDisplayOrder">Display Order</label>
+            <input type="number" id="optionDisplayOrder" min="0" value="0" />
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="slotOptionCancelBtn">Cancel</button>
+        <button type="button" class="btn primary" id="slotOptionSaveBtn">Add Option</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Slot Modal -->
+  <div class="modal-overlay" id="deleteSlotModal">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Delete Component Slot</h2>
+        <button class="modal-close" id="deleteSlotModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteSlotName"></strong>?</p>
+        <p style="color: #c62828; font-size: 13px;">This will also delete all options for this slot. This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="deleteSlotCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteSlotConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // API base URLs
     const API_BASE = "/api/v1/admin/modifiers/item-types";
     const GLOBAL_ATTRS_API = "/api/v1/admin/global-attributes";
     const ITEM_TYPE_GLOBAL_ATTRS_API = "/api/v1/admin/item-types";
     const CATEGORIES_API = "/api/v1/admin/modifiers/overall-categories";
+    const COMPONENT_SLOTS_API = "/api/v1/admin/component-slots";
 
     // Auth credentials storage
     let authCredentials = null;
@@ -938,6 +1232,14 @@
     let allGlobalAttributes = [];
     let editingLinkId = null;
     let allCategories = [];
+
+    // Component slots state
+    let componentSlots = [];
+    let expandedSlots = new Set();
+    let editingSlotId = null;
+    let deletingSlotId = null;
+    let availableItemTypesForSlots = [];
+    let availableMenuItems = [];
 
     // DOM elements
     const toastContainer = document.getElementById("toastContainer");

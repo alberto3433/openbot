@@ -9,8 +9,10 @@ from .base import Base
 
 # Config models
 from .config import (
+    ComponentSlotOption,
     ItemType,
     ItemTypeAlias,
+    ItemTypeComponentSlot,
     ModifierCategory,
     ModifierCategoryAlias,
     ModifierQualifier,
@@ -71,6 +73,8 @@ __all__ = [
     # Base
     "Base",
     # Config
+    "ComponentSlotOption",
+    "ItemTypeComponentSlot",
     "OverallCategory",
     "ItemType",
     "ItemTypeAlias",

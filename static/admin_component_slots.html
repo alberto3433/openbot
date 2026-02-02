@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Component Slots Management</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/admin_common.css">
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+    }
+    .app-header {
+      background: #1976d2;
+      color: #fff;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .app-header a {
+      color: #bbdefb;
+      text-decoration: none;
+      font-size: 14px;
+      margin-left: 16px;
+    }
+    .app-header a:hover {
+      color: #fff;
+    }
+
+    /* Three-panel layout */
+    .layout {
+      display: flex;
+      height: calc(100vh - 52px);
+    }
+    .sidebar {
+      width: 280px;
+      border-right: 1px solid #ddd;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+    .sidebar-header input[type="text"] {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    .list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .item-row {
+      padding: 10px 12px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+    .item-row:hover {
+      background: #e3f2fd;
+    }
+    .item-row.active {
+      background: #bbdefb;
+    }
+    .item-main {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .item-name {
+      font-weight: 600;
+    }
+    .item-slug {
+      font-size: 12px;
+      color: #666;
+      font-family: monospace;
+    }
+    .slot-count {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .slot-count.zero {
+      background: #f5f5f5;
+      color: #999;
+    }
+
+    /* Middle panel - slots list */
+    .slots-panel {
+      width: 320px;
+      border-right: 1px solid #ddd;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+    }
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+    }
+    .panel-header button {
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: none;
+      background: #1976d2;
+      color: #fff;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .panel-header button:hover {
+      background: #115293;
+    }
+    .slot-row {
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+    }
+    .slot-row:hover {
+      background: #f5f5f5;
+    }
+    .slot-row.active {
+      background: #e3f2fd;
+    }
+    .slot-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .slot-meta {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+      display: flex;
+      gap: 8px;
+    }
+    .slot-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    .slot-badge.required {
+      background: #ffebee;
+      color: #c62828;
+    }
+    .slot-badge.optional {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+    .slot-badge.options {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .empty-state {
+      padding: 20px;
+      text-align: center;
+      color: #777;
+      font-size: 14px;
+    }
+
+    /* Detail panel */
+    .detail {
+      flex: 1;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .detail-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    /* Tabs */
+    .detail-tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 16px;
+    }
+    .detail-tab {
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: #666;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .detail-tab:hover {
+      color: #333;
+      background: #f5f5f5;
+    }
+    .detail-tab.active {
+      color: #1976d2;
+      border-bottom-color: #1976d2;
+    }
+    .tab-panel {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .tab-panel.active {
+      display: block;
+    }
+
+    /* Form fields */
+    .field {
+      margin-bottom: 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .field input[type="text"],
+    .field input[type="number"],
+    .field select,
+    .field textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    }
+    .field .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .checkbox-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .checkbox-field input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+    }
+    .checkbox-field label {
+      font-size: 14px;
+      margin-bottom: 0;
+    }
+
+    /* Options list */
+    .options-list {
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-top: 8px;
+    }
+    .options-list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #e0e0e0;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .option-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .option-row:last-child {
+      border-bottom: none;
+    }
+    .option-row:hover {
+      background: #fafafa;
+    }
+    .option-info {
+      flex: 1;
+    }
+    .option-name {
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .option-type {
+      font-size: 11px;
+      color: #666;
+    }
+    .option-price {
+      font-size: 12px;
+      color: #2e7d32;
+      margin-top: 2px;
+    }
+    .option-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .option-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 3px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    .option-btn:hover {
+      background: #f5f5f5;
+    }
+    .option-btn.danger {
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .option-btn.danger:hover {
+      background: #ffebee;
+    }
+
+    /* Footer */
+    .detail-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px solid #ddd;
+      margin-top: auto;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+    .btn:hover {
+      background: #f5f5f5;
+    }
+    .btn.primary {
+      background: #1976d2;
+      color: #fff;
+      border-color: #1976d2;
+    }
+    .btn.primary:hover {
+      background: #1565c0;
+    }
+    .btn.danger {
+      background: #fff;
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .btn.danger:hover {
+      background: #ffebee;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      margin: 20px;
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px;
+    }
+    .modal-footer {
+      padding: 16px 20px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    /* Toast notification styles */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      animation: slideIn 0.3s ease;
+      max-width: 400px;
+    }
+    .toast.success { background: #10b981; color: white; }
+    .toast.error { background: #ef4444; color: white; }
+    .toast.info { background: #3b82f6; color: white; }
+    .toast-icon { font-size: 18px; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+
+    /* Button states */
+    .btn.saving {
+      position: relative;
+      pointer-events: none;
+      opacity: 0.8;
+    }
+    .btn.saving::after {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 8px;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .btn.saved {
+      background: #10b981 !important;
+      border-color: #10b981 !important;
+      color: #fff !important;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Toast notification container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="app-header">
+    <div>Component Slots Management</div>
+    <div>
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <span class="nav-group">
+        <span class="nav-group-label">Item Types &#9662;</span>
+        <div class="nav-dropdown">
+          <a href="/static/admin_item_types.html">Basic Info</a>
+          <a href="/static/admin_modifiers.html">Modifiers</a>
+          <a href="/static/admin_component_slots.html"><strong>Component Slots</strong></a>
+        </div>
+      </span>
+      <span class="nav-group">
+        <span class="nav-group-label">Config &#9662;</span>
+        <div class="nav-dropdown">
+          <a href="/static/admin_global_attributes.html">Global Attributes</a>
+          <a href="/static/admin_size_categories.html">Size Categories</a>
+          <a href="/static/admin_modifier_categories.html">Modifier Categories</a>
+          <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
+          <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
+          <a href="/static/admin_overall_categories.html">Overall Categories</a>
+          <a href="/static/admin_response_patterns.html">Response Patterns</a>
+          <a href="/static/admin_unrecognized_suggestions.html">Unrecognized Suggestions</a>
+          <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
+        </div>
+      </span>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Item Types Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <input id="searchInput" type="text" placeholder="Search item types..." />
+      </div>
+      <div id="itemTypeList" class="list">
+        <div class="empty-state">Loading item types...</div>
+      </div>
+    </div>
+
+    <!-- Slots Panel -->
+    <div class="slots-panel">
+      <div class="panel-header">
+        <span class="panel-title" id="slotsPanelTitle">Select an item type</span>
+        <button id="addSlotBtn" style="display: none;">+ Add Slot</button>
+      </div>
+      <div id="slotsList" class="list">
+        <div class="empty-state">Select an item type to view its component slots</div>
+      </div>
+    </div>
+
+    <!-- Detail Panel -->
+    <div class="detail">
+      <div class="detail-header">
+        <div class="detail-title" id="detailTitle">No slot selected</div>
+      </div>
+
+      <div class="detail-tabs" id="detailTabs">
+        <button class="detail-tab active" data-tab="settings">Slot Settings</button>
+        <button class="detail-tab" data-tab="options">Allowed Options</button>
+      </div>
+
+      <div id="detailBody" style="flex: 1; overflow-y: auto;">
+        <!-- Settings Tab -->
+        <div class="tab-panel active" id="tabSettings">
+          <input type="hidden" id="slotId" />
+
+          <div class="field">
+            <label for="slotName">Slot Name *</label>
+            <input type="text" id="slotName" placeholder="e.g., side, drink, topping" />
+            <div class="hint">Internal identifier (lowercase, underscores). Used in code.</div>
+          </div>
+
+          <div class="field">
+            <label for="slotDisplayName">Display Name *</label>
+            <input type="text" id="slotDisplayName" placeholder="e.g., Side Item, Included Drink" />
+            <div class="hint">Human-readable name shown to customers</div>
+          </div>
+
+          <div class="field">
+            <label for="slotPromptText">Prompt Text</label>
+            <textarea id="slotPromptText" rows="2" placeholder="e.g., What would you like for your side?"></textarea>
+            <div class="hint">Question text shown when asking customer to choose</div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="slotMinQty">Min Quantity</label>
+              <input type="number" id="slotMinQty" min="0" value="1" />
+              <div class="hint">Minimum selections required</div>
+            </div>
+            <div class="field">
+              <label for="slotMaxQty">Max Quantity</label>
+              <input type="number" id="slotMaxQty" min="1" value="1" />
+              <div class="hint">Maximum selections allowed</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="slotDisplayOrder">Display Order</label>
+            <input type="number" id="slotDisplayOrder" min="0" value="0" />
+            <div class="hint">Order in which slots are presented</div>
+          </div>
+
+          <div class="checkbox-field">
+            <input type="checkbox" id="slotIsRequired" checked />
+            <label for="slotIsRequired">Required - Customer must make a selection</label>
+          </div>
+        </div>
+
+        <!-- Options Tab -->
+        <div class="tab-panel" id="tabOptions">
+          <p style="font-size: 13px; color: #666; margin-top: 0; margin-bottom: 16px;">
+            Configure which item types or menu items can be selected for this slot.
+          </p>
+
+          <div class="options-list">
+            <div class="options-list-header">
+              <span>Allowed Options</span>
+              <button id="addOptionBtn" class="btn" style="padding: 4px 12px; font-size: 12px;">+ Add Option</button>
+            </div>
+            <div id="optionsList">
+              <div class="empty-state">No options configured yet</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-footer" id="slotFooter" style="display: none;">
+        <button class="btn danger" id="deleteSlotBtn">Delete Slot</button>
+        <button class="btn primary" id="saveSlotBtn">Save Slot</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Slot Modal -->
+  <div class="modal-overlay" id="slotModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="slotModalTitle">New Component Slot</h2>
+        <button class="modal-close" id="slotModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="newSlotName">Slot Name *</label>
+          <input type="text" id="newSlotName" placeholder="e.g., side" />
+          <div class="hint">Internal identifier (lowercase, underscores)</div>
+        </div>
+        <div class="form-group">
+          <label for="newSlotDisplayName">Display Name</label>
+          <input type="text" id="newSlotDisplayName" placeholder="e.g., Side Item" />
+          <div class="hint">Leave blank to auto-generate from slot name</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="slotModalCancel">Cancel</button>
+        <button type="button" class="btn primary" id="slotModalSave">Create Slot</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Option Modal -->
+  <div class="modal-overlay" id="optionModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Add Slot Option</h2>
+        <button class="modal-close" id="optionModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="optionType">Option Type *</label>
+          <select id="optionType">
+            <option value="">-- Select type --</option>
+            <option value="item_type">Item Type (any item of this type)</option>
+            <option value="menu_item">Specific Menu Item</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="itemTypeSelectGroup" style="display: none;">
+          <label for="optionItemType">Item Type *</label>
+          <select id="optionItemType">
+            <option value="">-- Select item type --</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="menuItemSelectGroup" style="display: none;">
+          <label for="optionMenuItemSearch">Search Menu Item *</label>
+          <input type="text" id="optionMenuItemSearch" placeholder="Type to search..." />
+          <select id="optionMenuItem" size="5" style="margin-top: 8px;">
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="optionPriceRule">Price Rule *</label>
+          <select id="optionPriceRule">
+            <option value="included">Included (base price = $0, upcharges apply)</option>
+            <option value="full_price">Full Price (use item's regular price)</option>
+            <option value="fixed">Fixed Price</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="fixedPriceGroup" style="display: none;">
+          <label for="optionFixedPrice">Fixed Price (cents)</label>
+          <input type="number" id="optionFixedPrice" min="0" placeholder="e.g., 500 for $5.00" />
+          <div class="hint">Price in cents (e.g., 500 = $5.00)</div>
+        </div>
+
+        <div class="form-group">
+          <label for="optionDisplayOrder">Display Order</label>
+          <input type="number" id="optionDisplayOrder" min="0" value="0" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="optionModalCancel">Cancel</button>
+        <button type="button" class="btn primary" id="optionModalSave">Add Option</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Delete Component Slot</h2>
+        <button class="modal-close" id="deleteModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteSlotName"></strong>?</p>
+        <p style="color: #c62828; font-size: 13px;">This will also delete all options for this slot. This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
+        <button type="button" class="btn danger" id="deleteConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // API base
+    const API_BASE = "/api/v1/admin/component-slots";
+
+    // Auth credentials storage
+    let authCredentials = null;
+
+    // State
+    let allItemTypes = [];
+    let filteredItemTypes = [];
+    let selectedItemTypeId = null;
+    let slots = [];
+    let selectedSlotId = null;
+    let slotOptions = [];
+    let availableItemTypes = [];
+    let availableMenuItems = [];
+
+    // DOM elements
+    const toastContainer = document.getElementById("toastContainer");
+    const searchInput = document.getElementById("searchInput");
+    const itemTypeList = document.getElementById("itemTypeList");
+    const slotsList = document.getElementById("slotsList");
+    const slotModal = document.getElementById("slotModal");
+    const optionModal = document.getElementById("optionModal");
+    const deleteModal = document.getElementById("deleteModal");
+
+    // Authenticated fetch helper
+    async function authFetch(url, options = {}) {
+      let response = await fetch(url, { ...options, credentials: 'include' });
+
+      if (response.status === 401 && authCredentials) {
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+      }
+
+      if (response.status === 401) {
+        const username = prompt('Admin username:');
+        if (!username) throw new Error('Authentication cancelled');
+        const password = prompt('Admin password:');
+        if (!password) throw new Error('Authentication cancelled');
+
+        authCredentials = btoa(username + ':' + password);
+
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': 'Basic ' + authCredentials
+          }
+        });
+
+        if (response.status === 401) {
+          authCredentials = null;
+          throw new Error('Invalid credentials');
+        }
+      }
+
+      return response;
+    }
+
+    // Toast notification
+    function showToast(message, type = "info", duration = 3000) {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
+      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${escapeHtml(message)}</span>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.animation = "slideOut 0.3s ease forwards";
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
+
+    // Escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text || "";
+      return div.innerHTML;
+    }
+
+    // Load item types with slot counts
+    async function loadItemTypes() {
+      try {
+        const response = await authFetch(`${API_BASE}/item-types`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        allItemTypes = await response.json();
+        applyFilter();
+      } catch (error) {
+        console.error("Failed to load item types:", error);
+        showToast("Failed to load item types", "error");
+        itemTypeList.innerHTML = '<div class="empty-state">Failed to load</div>';
+      }
+    }
+
+    // Load available item types for option modal
+    async function loadAvailableItemTypes() {
+      try {
+        const response = await authFetch(`${API_BASE}/available-item-types`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        availableItemTypes = await response.json();
+        populateItemTypeDropdown();
+      } catch (error) {
+        console.error("Failed to load available item types:", error);
+        availableItemTypes = [];
+      }
+    }
+
+    // Populate item type dropdown in option modal
+    function populateItemTypeDropdown() {
+      const select = document.getElementById("optionItemType");
+      select.innerHTML = '<option value="">-- Select item type --</option>' +
+        availableItemTypes.map(it => `<option value="${it.id}">${escapeHtml(it.display_name)}</option>`).join("");
+    }
+
+    // Search menu items for option modal
+    async function searchMenuItems(query) {
+      try {
+        const response = await authFetch(`${API_BASE}/available-menu-items?search=${encodeURIComponent(query)}&limit=20`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        availableMenuItems = await response.json();
+        populateMenuItemDropdown();
+      } catch (error) {
+        console.error("Failed to search menu items:", error);
+        availableMenuItems = [];
+      }
+    }
+
+    function populateMenuItemDropdown() {
+      const select = document.getElementById("optionMenuItem");
+      select.innerHTML = availableMenuItems.map(mi =>
+        `<option value="${mi.id}">${escapeHtml(mi.name)}</option>`
+      ).join("");
+    }
+
+    // Apply search filter
+    function applyFilter() {
+      const query = searchInput.value.toLowerCase().trim();
+      if (!query) {
+        filteredItemTypes = [...allItemTypes];
+      } else {
+        filteredItemTypes = allItemTypes.filter(it =>
+          it.display_name.toLowerCase().includes(query) ||
+          it.slug.toLowerCase().includes(query)
+        );
+      }
+      renderItemTypeList();
+    }
+
+    // Render item types sidebar
+    function renderItemTypeList() {
+      if (filteredItemTypes.length === 0) {
+        itemTypeList.innerHTML = '<div class="empty-state">No item types found</div>';
+        return;
+      }
+
+      itemTypeList.innerHTML = filteredItemTypes.map(it => `
+        <div class="item-row${it.id === selectedItemTypeId ? ' active' : ''}" data-id="${it.id}">
+          <div class="item-main">
+            <span class="item-name">${escapeHtml(it.display_name)}</span>
+            <span class="item-slug">${escapeHtml(it.slug)}</span>
+          </div>
+          <span class="slot-count${it.slot_count === 0 ? ' zero' : ''}">${it.slot_count} slots</span>
+        </div>
+      `).join("");
+
+      document.querySelectorAll("#itemTypeList .item-row").forEach(row => {
+        row.addEventListener("click", () => selectItemType(parseInt(row.dataset.id)));
+      });
+    }
+
+    // Select item type
+    async function selectItemType(itemTypeId) {
+      selectedItemTypeId = itemTypeId;
+      selectedSlotId = null;
+      renderItemTypeList();
+
+      const itemType = allItemTypes.find(it => it.id === itemTypeId);
+      document.getElementById("slotsPanelTitle").textContent = itemType ? itemType.display_name : "Slots";
+      document.getElementById("addSlotBtn").style.display = "inline-block";
+
+      await loadSlots(itemTypeId);
+      clearSlotDetail();
+    }
+
+    // Load slots for item type
+    async function loadSlots(itemTypeId) {
+      try {
+        const response = await authFetch(`${API_BASE}/item-types/${itemTypeId}/slots`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        slots = data.slots || [];
+        renderSlotsList();
+      } catch (error) {
+        console.error("Failed to load slots:", error);
+        showToast("Failed to load slots", "error");
+        slots = [];
+        slotsList.innerHTML = '<div class="empty-state">Failed to load slots</div>';
+      }
+    }
+
+    // Render slots list
+    function renderSlotsList() {
+      if (slots.length === 0) {
+        slotsList.innerHTML = '<div class="empty-state">No component slots configured. Click "+ Add Slot" to create one.</div>';
+        return;
+      }
+
+      slotsList.innerHTML = slots.map(slot => `
+        <div class="slot-row${slot.id === selectedSlotId ? ' active' : ''}" data-id="${slot.id}">
+          <div class="slot-name">${escapeHtml(slot.display_name || slot.slot_name)}</div>
+          <div class="slot-meta">
+            <span class="slot-badge ${slot.is_required ? 'required' : 'optional'}">${slot.is_required ? 'Required' : 'Optional'}</span>
+            <span class="slot-badge options">${slot.option_count} options</span>
+          </div>
+        </div>
+      `).join("");
+
+      document.querySelectorAll("#slotsList .slot-row").forEach(row => {
+        row.addEventListener("click", () => selectSlot(parseInt(row.dataset.id)));
+      });
+    }
+
+    // Select slot
+    async function selectSlot(slotId) {
+      selectedSlotId = slotId;
+      renderSlotsList();
+
+      const slot = slots.find(s => s.id === slotId);
+      if (!slot) return;
+
+      document.getElementById("detailTitle").textContent = slot.display_name || slot.slot_name;
+      document.getElementById("slotId").value = slot.id;
+      document.getElementById("slotName").value = slot.slot_name;
+      document.getElementById("slotDisplayName").value = slot.display_name || "";
+      document.getElementById("slotPromptText").value = slot.prompt_text || "";
+      document.getElementById("slotMinQty").value = slot.min_quantity || 1;
+      document.getElementById("slotMaxQty").value = slot.max_quantity || 1;
+      document.getElementById("slotDisplayOrder").value = slot.display_order || 0;
+      document.getElementById("slotIsRequired").checked = slot.is_required !== false;
+      document.getElementById("slotFooter").style.display = "flex";
+
+      await loadSlotOptions(slotId);
+      switchTab("settings");
+    }
+
+    // Load slot options
+    async function loadSlotOptions(slotId) {
+      try {
+        const response = await authFetch(`${API_BASE}/slots/${slotId}/options`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        slotOptions = data.options || [];
+        renderOptions();
+      } catch (error) {
+        console.error("Failed to load slot options:", error);
+        slotOptions = [];
+        renderOptions();
+      }
+    }
+
+    // Render options list
+    function renderOptions() {
+      const container = document.getElementById("optionsList");
+      if (slotOptions.length === 0) {
+        container.innerHTML = '<div class="empty-state">No options configured yet</div>';
+        return;
+      }
+
+      container.innerHTML = slotOptions.map(opt => {
+        const typeName = opt.allowed_item_type_name || opt.allowed_menu_item_name || "Unknown";
+        const typeLabel = opt.allowed_item_type_id ? "Item Type" : "Menu Item";
+        let priceText = "";
+        if (opt.price_rule === "included") priceText = "Included";
+        else if (opt.price_rule === "full_price") priceText = "Full Price";
+        else if (opt.price_rule === "fixed" && opt.fixed_price) priceText = `$${(opt.fixed_price / 100).toFixed(2)}`;
+
+        return `
+          <div class="option-row" data-id="${opt.id}">
+            <div class="option-info">
+              <div class="option-name">${escapeHtml(opt.display_name || typeName)}</div>
+              <div class="option-type">${typeLabel}: ${escapeHtml(typeName)}</div>
+              <div class="option-price">${priceText}</div>
+            </div>
+            <div class="option-actions">
+              <button class="option-btn danger delete-option-btn" data-id="${opt.id}">Delete</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      document.querySelectorAll(".delete-option-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteOption(parseInt(btn.dataset.id));
+        });
+      });
+    }
+
+    // Clear slot detail
+    function clearSlotDetail() {
+      document.getElementById("detailTitle").textContent = "No slot selected";
+      document.getElementById("slotId").value = "";
+      document.getElementById("slotName").value = "";
+      document.getElementById("slotDisplayName").value = "";
+      document.getElementById("slotPromptText").value = "";
+      document.getElementById("slotMinQty").value = "1";
+      document.getElementById("slotMaxQty").value = "1";
+      document.getElementById("slotDisplayOrder").value = "0";
+      document.getElementById("slotIsRequired").checked = true;
+      document.getElementById("slotFooter").style.display = "none";
+      slotOptions = [];
+      renderOptions();
+    }
+
+    // Switch tabs
+    function switchTab(tabName) {
+      document.querySelectorAll(".detail-tab").forEach(tab => {
+        tab.classList.toggle("active", tab.dataset.tab === tabName);
+      });
+      document.getElementById("tabSettings").classList.toggle("active", tabName === "settings");
+      document.getElementById("tabOptions").classList.toggle("active", tabName === "options");
+    }
+
+    // Save slot
+    async function saveSlot() {
+      const saveBtn = document.getElementById("saveSlotBtn");
+      const slotId = document.getElementById("slotId").value;
+      const slotName = document.getElementById("slotName").value.trim();
+      const displayName = document.getElementById("slotDisplayName").value.trim();
+      const promptText = document.getElementById("slotPromptText").value.trim();
+      const minQty = parseInt(document.getElementById("slotMinQty").value) || 1;
+      const maxQty = parseInt(document.getElementById("slotMaxQty").value) || 1;
+      const displayOrder = parseInt(document.getElementById("slotDisplayOrder").value) || 0;
+      const isRequired = document.getElementById("slotIsRequired").checked;
+
+      if (!slotName) {
+        showToast("Slot name is required", "error");
+        return;
+      }
+
+      const payload = {
+        slot_name: slotName,
+        display_name: displayName || null,
+        prompt_text: promptText || null,
+        min_quantity: minQty,
+        max_quantity: maxQty,
+        display_order: displayOrder,
+        is_required: isRequired
+      };
+
+      saveBtn.classList.add("saving");
+      try {
+        const response = await authFetch(`${API_BASE}/slots/${slotId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        saveBtn.classList.remove("saving");
+        saveBtn.classList.add("saved");
+        setTimeout(() => saveBtn.classList.remove("saved"), 2000);
+        showToast("Slot saved successfully", "success");
+
+        await loadSlots(selectedItemTypeId);
+        await loadItemTypes();
+      } catch (error) {
+        console.error("Failed to save slot:", error);
+        saveBtn.classList.remove("saving");
+        showToast(`Failed to save: ${error.message}`, "error");
+      }
+    }
+
+    // Delete slot
+    async function deleteSlot() {
+      if (!selectedSlotId) return;
+
+      const slot = slots.find(s => s.id === selectedSlotId);
+      document.getElementById("deleteSlotName").textContent = slot?.display_name || slot?.slot_name || "this slot";
+      deleteModal.classList.add("active");
+    }
+
+    async function confirmDeleteSlot() {
+      try {
+        const response = await authFetch(`${API_BASE}/slots/${selectedSlotId}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        deleteModal.classList.remove("active");
+        showToast("Slot deleted", "success");
+        selectedSlotId = null;
+        clearSlotDetail();
+        await loadSlots(selectedItemTypeId);
+        await loadItemTypes();
+      } catch (error) {
+        console.error("Failed to delete slot:", error);
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // Open add slot modal
+    function openAddSlotModal() {
+      document.getElementById("slotModalTitle").textContent = "New Component Slot";
+      document.getElementById("newSlotName").value = "";
+      document.getElementById("newSlotDisplayName").value = "";
+      slotModal.classList.add("active");
+    }
+
+    // Create slot
+    async function createSlot() {
+      const slotName = document.getElementById("newSlotName").value.trim().toLowerCase().replace(/\s+/g, "_");
+      const displayName = document.getElementById("newSlotDisplayName").value.trim();
+
+      if (!slotName) {
+        showToast("Slot name is required", "error");
+        return;
+      }
+
+      if (!selectedItemTypeId) {
+        showToast("Please select an item type first", "error");
+        return;
+      }
+
+      try {
+        const response = await authFetch(`${API_BASE}/item-types/${selectedItemTypeId}/slots?slot_name=${encodeURIComponent(slotName)}&display_name=${encodeURIComponent(displayName || "")}`, {
+          method: "POST"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        const newSlot = await response.json();
+        slotModal.classList.remove("active");
+        showToast("Slot created successfully", "success");
+
+        await loadSlots(selectedItemTypeId);
+        await loadItemTypes();
+        selectSlot(newSlot.id);
+      } catch (error) {
+        console.error("Failed to create slot:", error);
+        showToast(`Failed to create: ${error.message}`, "error");
+      }
+    }
+
+    // Open add option modal
+    async function openAddOptionModal() {
+      await loadAvailableItemTypes();
+      document.getElementById("optionType").value = "";
+      document.getElementById("itemTypeSelectGroup").style.display = "none";
+      document.getElementById("menuItemSelectGroup").style.display = "none";
+      document.getElementById("optionPriceRule").value = "included";
+      document.getElementById("fixedPriceGroup").style.display = "none";
+      document.getElementById("optionFixedPrice").value = "";
+      document.getElementById("optionDisplayOrder").value = slotOptions.length;
+      optionModal.classList.add("active");
+    }
+
+    // Add option
+    async function addOption() {
+      const optionType = document.getElementById("optionType").value;
+      const priceRule = document.getElementById("optionPriceRule").value;
+      const fixedPrice = parseInt(document.getElementById("optionFixedPrice").value) || null;
+      const displayOrder = parseInt(document.getElementById("optionDisplayOrder").value) || 0;
+
+      let itemTypeId = null;
+      let menuItemId = null;
+
+      if (optionType === "item_type") {
+        itemTypeId = parseInt(document.getElementById("optionItemType").value);
+        if (!itemTypeId) {
+          showToast("Please select an item type", "error");
+          return;
+        }
+      } else if (optionType === "menu_item") {
+        menuItemId = parseInt(document.getElementById("optionMenuItem").value);
+        if (!menuItemId) {
+          showToast("Please select a menu item", "error");
+          return;
+        }
+      } else {
+        showToast("Please select an option type", "error");
+        return;
+      }
+
+      let url = `${API_BASE}/slots/${selectedSlotId}/options?price_rule=${priceRule}&display_order=${displayOrder}`;
+      if (itemTypeId) url += `&allowed_item_type_id=${itemTypeId}`;
+      if (menuItemId) url += `&allowed_menu_item_id=${menuItemId}`;
+      if (priceRule === "fixed" && fixedPrice) url += `&fixed_price=${fixedPrice}`;
+
+      try {
+        const response = await authFetch(url, { method: "POST" });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        optionModal.classList.remove("active");
+        showToast("Option added successfully", "success");
+        await loadSlotOptions(selectedSlotId);
+      } catch (error) {
+        console.error("Failed to add option:", error);
+        showToast(`Failed to add: ${error.message}`, "error");
+      }
+    }
+
+    // Delete option
+    async function deleteOption(optionId) {
+      if (!confirm("Are you sure you want to delete this option?")) return;
+
+      try {
+        const response = await authFetch(`${API_BASE}/options/${optionId}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Option deleted", "success");
+        await loadSlotOptions(selectedSlotId);
+      } catch (error) {
+        console.error("Failed to delete option:", error);
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // Event listeners
+    searchInput.addEventListener("input", applyFilter);
+
+    document.getElementById("addSlotBtn").addEventListener("click", openAddSlotModal);
+    document.getElementById("saveSlotBtn").addEventListener("click", saveSlot);
+    document.getElementById("deleteSlotBtn").addEventListener("click", deleteSlot);
+
+    // Tab switching
+    document.querySelectorAll(".detail-tab").forEach(tab => {
+      tab.addEventListener("click", () => switchTab(tab.dataset.tab));
+    });
+
+    // Slot modal
+    document.getElementById("slotModalClose").addEventListener("click", () => slotModal.classList.remove("active"));
+    document.getElementById("slotModalCancel").addEventListener("click", () => slotModal.classList.remove("active"));
+    document.getElementById("slotModalSave").addEventListener("click", createSlot);
+
+    // Option modal
+    document.getElementById("addOptionBtn").addEventListener("click", openAddOptionModal);
+    document.getElementById("optionModalClose").addEventListener("click", () => optionModal.classList.remove("active"));
+    document.getElementById("optionModalCancel").addEventListener("click", () => optionModal.classList.remove("active"));
+    document.getElementById("optionModalSave").addEventListener("click", addOption);
+
+    document.getElementById("optionType").addEventListener("change", (e) => {
+      document.getElementById("itemTypeSelectGroup").style.display = e.target.value === "item_type" ? "block" : "none";
+      document.getElementById("menuItemSelectGroup").style.display = e.target.value === "menu_item" ? "block" : "none";
+    });
+
+    document.getElementById("optionPriceRule").addEventListener("change", (e) => {
+      document.getElementById("fixedPriceGroup").style.display = e.target.value === "fixed" ? "block" : "none";
+    });
+
+    let searchTimeout;
+    document.getElementById("optionMenuItemSearch").addEventListener("input", (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => searchMenuItems(e.target.value), 300);
+    });
+
+    // Delete modal
+    document.getElementById("deleteModalClose").addEventListener("click", () => deleteModal.classList.remove("active"));
+    document.getElementById("deleteCancelBtn").addEventListener("click", () => deleteModal.classList.remove("active"));
+    document.getElementById("deleteConfirmBtn").addEventListener("click", confirmDeleteSlot);
+
+    // Close modals on overlay click
+    slotModal.addEventListener("click", (e) => { if (e.target === slotModal) slotModal.classList.remove("active"); });
+    optionModal.addEventListener("click", (e) => { if (e.target === optionModal) optionModal.classList.remove("active"); });
+    deleteModal.addEventListener("click", (e) => { if (e.target === deleteModal) deleteModal.classList.remove("active"); });
+
+    // Close modals on Escape
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        slotModal.classList.remove("active");
+        optionModal.classList.remove("active");
+        deleteModal.classList.remove("active");
+      }
+    });
+
+    // Initial load
+    loadItemTypes();
+  </script>
+  <script src="/static/admin_common.js"></script>
+</body>
+</html>

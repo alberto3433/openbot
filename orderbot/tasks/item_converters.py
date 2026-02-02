@@ -122,6 +122,9 @@ class UnifiedItemConverter:
             "display_name", "item_modifiers",  # item_modifiers handled separately
             "is_signature",  # Metadata, not a configurable attribute
             "special_instructions",  # Handled separately, not an attribute
+            # Bundle fields - stored separately, not attributes
+            "bundle_id", "bundle_parent_item_id", "bundle_slot",
+            "bundle_price_rule", "bundle_included_price", "side_of_item_id",
         }
         for source in (item_dict, item_config):
             for key, value in source.items():
@@ -230,6 +233,12 @@ class UnifiedItemConverter:
             customization_offered=item_dict.get("customization_offered", False),
             is_signature=item_config.get("is_signature", item_dict.get("is_signature", False)),
             special_instructions=item_dict.get("special_instructions") or [],
+            # Bundle fields - restore from item_config first, fallback to item_dict
+            bundle_id=item_config.get("bundle_id") or item_dict.get("bundle_id"),
+            bundle_parent_item_id=item_config.get("bundle_parent_item_id") or item_dict.get("bundle_parent_item_id"),
+            bundle_slot=item_config.get("bundle_slot") or item_dict.get("bundle_slot"),
+            bundle_price_rule=item_config.get("bundle_price_rule") or item_dict.get("bundle_price_rule"),
+            bundle_included_price=item_config.get("bundle_included_price") or item_dict.get("bundle_included_price"),
         )
         self._restore_common_fields(menu_item, item_dict)
         return menu_item
@@ -283,9 +292,10 @@ class UnifiedItemConverter:
 
         for mod in item_modifiers:
             # Skip name-forming categories (e.g., bread) - already in display name
-            # Exception: signature items keep their name, so show bread as a sub-line
+            # Exception: items with default ingredients keep their fixed name,
+            # so show bread as a sub-line (e.g., "The Classic BEC" shows "Bialy" as sub-line)
             mod_category = mod.get("category", "")
-            if menu_cache.is_name_forming_category(mod_category) and not item.is_signature:
+            if menu_cache.is_name_forming_category(mod_category) and not item.has_default_ingredients():
                 continue
 
             # Skip attribute selections that modify ingredients (shown via the updated modifier)
@@ -333,27 +343,43 @@ class UnifiedItemConverter:
 
         customization_offered = getattr(item, 'customization_offered', False)
 
+        # Check for bundle-included items: full inclusion means $0 base price
+        bundle_price_rule = getattr(item, 'bundle_price_rule', None)
+        bundle_included_price = getattr(item, 'bundle_included_price', None)
+        is_fully_included = bundle_price_rule == 'included' and bundle_included_price is None
+
         # Get base_price from pricing engine if available, or from item
         # Data-driven: lookup by menu_item_name and variant attribute (if present)
-        base_price = getattr(item, 'base_price', None)
-        if base_price is None and pricing and hasattr(pricing, 'lookup_base_price') and menu_item_name:
-            try:
-                # Derive variant attribute from menu_item's size_category_slug
-                menu_item = pricing._lookup_menu_item(menu_item_name)
-                variant_attr = menu_item.get("size_category_slug") if menu_item and menu_item.get("size_prices") else None
-                variant_value = attribute_values.get(variant_attr) if variant_attr else None
-                base_price = pricing.lookup_base_price(menu_item_name, variant_value)
-            except (ValueError, KeyError):
-                # Item not in menu data, will fall back to unit_price
-                pass
-        if base_price is None:
-            base_price = item.unit_price or 0.0
+        if is_fully_included:
+            # Bundle-included items have $0 base price
+            base_price = 0.0
+        else:
+            base_price = getattr(item, 'base_price', None)
+            if base_price is None and pricing and hasattr(pricing, 'lookup_base_price') and menu_item_name:
+                try:
+                    # Derive variant attribute from menu_item's size_category_slug
+                    menu_item = pricing._lookup_menu_item(menu_item_name)
+                    variant_attr = menu_item.get("size_category_slug") if menu_item and menu_item.get("size_prices") else None
+                    variant_value = attribute_values.get(variant_attr) if variant_attr else None
+                    base_price = pricing.lookup_base_price(menu_item_name, variant_value)
+                except (ValueError, KeyError):
+                    # Item not in menu data, will fall back to unit_price
+                    pass
+            if base_price is None:
+                base_price = item.unit_price or 0.0
 
         result = self._build_common_dict_fields(item)
 
         # Use the actual menu_item_type for backwards compatibility
         if menu_item_type:
             result["item_type"] = menu_item_type
+
+        # Get bundle fields
+        bundle_id = getattr(item, 'bundle_id', None)
+        bundle_parent_item_id = getattr(item, 'bundle_parent_item_id', None)
+        bundle_slot = getattr(item, 'bundle_slot', None)
+        bundle_price_rule = getattr(item, 'bundle_price_rule', None)
+        bundle_included_price = getattr(item, 'bundle_included_price', None)
 
         result.update({
             "menu_item_name": menu_item_name,
@@ -368,6 +394,12 @@ class UnifiedItemConverter:
             "attribute_values": attribute_values,
             "customization_offered": customization_offered,
             "special_instructions": getattr(item, 'special_instructions', []) or [],
+            # Bundle fields
+            "bundle_id": bundle_id,
+            "bundle_parent_item_id": bundle_parent_item_id,
+            "bundle_slot": bundle_slot,
+            "bundle_price_rule": bundle_price_rule,
+            "bundle_included_price": bundle_included_price,
         })
 
         # Data-driven: output DB-defined attributes at top level
@@ -391,6 +423,12 @@ class UnifiedItemConverter:
             "attribute_values": attribute_values,
             "base_price": base_price,
             "is_signature": getattr(item, 'is_signature', False),
+            # Bundle fields for persistence
+            "bundle_id": bundle_id,
+            "bundle_parent_item_id": bundle_parent_item_id,
+            "bundle_slot": bundle_slot,
+            "bundle_price_rule": bundle_price_rule,
+            "bundle_included_price": bundle_included_price,
             **{k: v for k, v in attribute_values.items() if v is not None},
         }
         result["item_config"] = item_config

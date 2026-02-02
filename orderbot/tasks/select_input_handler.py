@@ -433,13 +433,25 @@ class SelectInputHandler:
                 item.menu_item_name, matched["slug"]
             )
             if variant_price is not None:
-                # Variant pricing found - set unit_price to the looked-up price
-                item.unit_price = variant_price
-                variant_price_applied = True
-                logger.info(
-                    "Set unit_price for %s from variant pricing: %s=%s, price=%.2f",
-                    item.id, attr_slug, matched["slug"], variant_price
-                )
+                # Check if this is a bundle-included item (price should stay $0)
+                bundle_price_rule = getattr(item, 'bundle_price_rule', None)
+                bundle_included_price = getattr(item, 'bundle_included_price', None)
+                if bundle_price_rule == 'included' and bundle_included_price is None:
+                    # Full inclusion: keep price at $0, don't apply variant pricing
+                    item.unit_price = 0.0
+                    variant_price_applied = False
+                    logger.info(
+                        "Bundle-included item %s: skipping variant pricing, keeping price=$0.00",
+                        item.id
+                    )
+                else:
+                    # Variant pricing found - set unit_price to the looked-up price
+                    item.unit_price = variant_price
+                    variant_price_applied = True
+                    logger.info(
+                        "Set unit_price for %s from variant pricing: %s=%s, price=%.2f",
+                        item.id, attr_slug, matched["slug"], variant_price
+                    )
             else:
                 # No variant pricing - use upcharge lookup
                 option_price = self.pricing.lookup_attribute_option_upcharge_for_item(
@@ -452,11 +464,15 @@ class SelectInputHandler:
 
         # Add selection using unified API
         if variant_price_applied:
+            # Calculate upcharge from the smallest/base size for display
+            size_upcharge = self.pricing.lookup_size_upcharge(
+                item.menu_item_name, matched["slug"]
+            )
             item.add_selection(
                 matched["slug"],
                 attr_slug,
                 quantity=quantity,
-                price=0,  # Price handled via variant pricing
+                price=size_upcharge,  # Show upcharge from base size
                 display_name=matched["display_name"],
             )
         else:

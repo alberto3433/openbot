@@ -318,6 +318,12 @@ class BaseCacheMixin:
         # Maps item_type_slug -> {"has_side_choice": bool, "side_choice_attribute_id": int|None}
         self._item_type_side_choice: dict[str, dict] = {}
 
+        # Component slots - for item types that include configurable sub-items (e.g., omelette + bagel)
+        # Maps parent_item_type_slug -> {slot_name -> slot_config}
+        # Each slot_config has: display_name, prompt_text, is_required, min_quantity, max_quantity, options
+        # Each option has: allowed_item_type, allowed_menu_item_id, price_rule, fixed_price, display_name
+        self._component_slots: dict[str, dict[str, dict]] = {}
+
         # Keyword indices for partial matching
         self._menu_item_keyword_index: dict[str, list[str]] = {}
 
@@ -390,6 +396,10 @@ class BaseCacheMixin:
         # Modifier categories for menu inquiries (toppings, proteins, milks, etc.)
         # Maps slug -> {display_name, loads_from_ingredients, ingredient_category, description}
         self._modifier_categories: dict[str, dict] = {}
+
+        # Reverse lookup: modifier category alias -> category slug
+        # e.g., "cream cheese" -> "spreads"
+        self._modifier_category_alias_to_slug: dict[str, str] = {}
 
         # Price inquiry support (data-driven)
         # Pre-computed resolved prices for items with attribute-based pricing

@@ -99,6 +99,19 @@ class MenuItemTask(ItemTask):
     # Item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions: list[str] = Field(default_factory=list)
 
+    # Bundle fields - for items that include configurable sub-items (e.g., omelette + bagel)
+    # bundle_id groups related items (parent + children share same bundle_id)
+    bundle_id: str | None = None
+    # bundle_parent_item_id points to the parent item's id (None for parent items)
+    bundle_parent_item_id: str | None = None
+    # bundle_slot identifies which slot this fills (e.g., "side")
+    bundle_slot: str | None = None
+    # bundle_price_rule determines pricing: "included" (base=0), "full_price", "fixed", etc.
+    bundle_price_rule: str | None = None
+    # bundle_included_price: dollar amount included in parent's price (for differential pricing)
+    # None = entire base is free (e.g., bagel side), value = amount included (e.g., small fruit salad)
+    bundle_included_price: float | None = None
+
     # -------------------------------------------------------------------------
     # Side item helpers
     # -------------------------------------------------------------------------
@@ -117,6 +130,31 @@ class MenuItemTask(ItemTask):
         if mark_complete:
             new_item.mark_complete()
         return new_item
+
+    # -------------------------------------------------------------------------
+    # Bundle helpers
+    # -------------------------------------------------------------------------
+
+    def is_bundle_parent(self) -> bool:
+        """Check if this item is a bundle parent (has bundle_id but no parent_item_id)."""
+        return self.bundle_id is not None and self.bundle_parent_item_id is None
+
+    def is_bundle_child(self) -> bool:
+        """Check if this item is a bundle child (has both bundle_id and parent_item_id)."""
+        return self.bundle_id is not None and self.bundle_parent_item_id is not None
+
+    def is_included_in_bundle(self) -> bool:
+        """Check if this item's base price is included in a parent's price."""
+        return self.bundle_price_rule == "included"
+
+    def start_bundle(self) -> str:
+        """Initialize this item as a bundle parent.
+
+        Returns:
+            The generated bundle_id
+        """
+        self.bundle_id = str(uuid.uuid4())
+        return self.bundle_id
 
     # -------------------------------------------------------------------------
     # Selection access methods
@@ -436,19 +474,33 @@ class MenuItemTask(ItemTask):
     # Display helpers
     # -------------------------------------------------------------------------
 
+    def has_default_ingredients(self) -> bool:
+        """Check if this item has default ingredients loaded.
+
+        Returns True if any modifier has is_default=True, indicating this is
+        a pre-configured item (like signature sandwiches or omelettes) whose
+        name should remain fixed and ingredients shown as sub-lines.
+
+        This is more data-driven than checking is_signature flag - it's based
+        on whether the item actually has menu_item_ingredients defined.
+        """
+        return any(mod.get("is_default", False) for mod in self.modifiers)
+
     def get_display_name(self) -> str:
         """Get display name for this menu item.
 
-        For signature items, always returns the menu item name (e.g.,
-        "The Classic BEC") - bread appears as a modifier sub-line instead.
+        For items with default ingredients (signature items, omelettes, etc.),
+        always returns the menu item name (e.g., "The Classic BEC") -
+        bread/ingredients appear as modifier sub-lines instead.
 
-        For non-signature items with name-forming modifiers (like bread type),
-        uses the ingredient's display name instead of the generic menu item name.
+        For configurable items without defaults (like generic "Bagel"),
+        uses the name-forming modifier's display name instead.
 
         Example: A "Bagel" with bread="garlic_bagel" returns "Garlic Bagel"
         """
-        # Signature items always keep their name
-        if self.is_signature:
+        # Items with default ingredients keep their fixed name
+        # (e.g., "The Classic BEC", "The Leo Omelette")
+        if self.has_default_ingredients():
             return self.menu_item_name
 
         # Check for name-forming category modifiers (e.g., bread type)

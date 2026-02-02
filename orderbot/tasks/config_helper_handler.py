@@ -377,12 +377,12 @@ class ConfigHelperHandler:
         if not field:
             return None
 
-        # Handle side_choice - query database for the question text
+        # Handle side_choice - query component slots for the question text
         if field == PendingField.SIDE_CHOICE:
             if is_configurable_menu_item(item):
-                side_attr = menu_cache.get_side_choice_attribute(item.menu_item_type)
-                if side_attr and side_attr.get("question_text"):
-                    return side_attr["question_text"]
+                side_slot = menu_cache.get_component_slot(item.menu_item_type, "side")
+                if side_slot and side_slot.get("prompt_text"):
+                    return side_slot["prompt_text"]
             # Fallback to generic question if DB lookup fails
             return "Would you like a side with it?"
 
@@ -577,46 +577,76 @@ class ConfigHelperHandler:
         item: MenuItemTask,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle side choice - creates child MenuItemTask for the chosen side.
+        """Handle component slot choice - creates bundled child MenuItemTask.
 
-        This is a data-driven handler that works with any side choice options
-        from the database. The chosen side becomes a separate MenuItemTask that
-        is configured using standard item configuration handlers.
+        This is a data-driven handler that works with component slots from the
+        database. The chosen option becomes a separate MenuItemTask linked to
+        the parent via bundle fields.
 
         Flow:
-        1. Parse user's choice using generic parser with DB options
-        2. Create child MenuItemTask for the chosen side
-        3. Mark parent item complete
-        4. Let slot orchestrator pick up the new incomplete child item
+        1. Load component slot options from database
+        2. Parse user's choice using generic parser
+        3. Create bundled child MenuItemTask with proper price_rule
+        4. Let slot orchestrator pick up the new incomplete child item (if configurable)
         """
         # Import here to avoid circular dependency
         from .state_machine import _check_redirect_to_pending_item
 
-        # Load side choice options from database (data-driven)
         parent_item_type = item.menu_item_type
-        side_attr = menu_cache.get_side_choice_attribute(parent_item_type) if parent_item_type else None
         question_text = f"Would you like a side with your {item.menu_item_name}?"
 
-        # Build valid_answers and options list from database
+        # Load component slot from database (data-driven)
+        slot_config = menu_cache.get_component_slot(parent_item_type, "side") if parent_item_type else None
+
+        # Build valid_answers and options list from component slot options
         valid_answers: set[str] = set()
         valid_options: list[dict] = []
-        if side_attr:
-            attr_slug = side_attr.get("slug")
-            question_text = side_attr.get("question_text") or question_text
-            # Load options for the side_choice attribute
-            try:
-                options = menu_cache.get_global_attribute_options(attr_slug)
-                valid_options = options  # Pass to parser
-                for opt in options:
-                    # Add option slug and display_name as valid answers
-                    valid_answers.add(opt.get("slug", "").lower())
-                    valid_answers.add(opt.get("display_name", "").lower())
-                    # Add any aliases
-                    for alias in opt.get("aliases", []):
-                        valid_answers.add(alias.lower())
-            except MenuDataNotLoadedError:
-                # If cache not loaded, fall back to empty set (won't filter anything)
-                logger.debug("Menu cache not loaded when getting side choice options for %s", attr_slug)
+        slot_options_by_slug: dict[str, dict] = {}
+
+        if slot_config:
+            question_text = slot_config.get("prompt_text") or question_text
+            slot_options = slot_config.get("options", [])
+
+            for opt in slot_options:
+                # Option can reference an item_type or a specific menu_item
+                opt_type = opt.get("allowed_item_type")
+                opt_menu_item_id = opt.get("allowed_menu_item_id")
+                display_name = opt.get("display_name", "")
+                price_rule = opt.get("price_rule", "included")
+
+                if opt_type:
+                    # Item type option (e.g., "bagel")
+                    slug = opt_type
+                    if not display_name:
+                        display_name = menu_cache.get_item_type_display_name(opt_type)
+                elif opt_menu_item_id:
+                    # Specific menu item option (e.g., fruit salad)
+                    slug = f"menu_item_{opt_menu_item_id}"
+                    # Look up display name from menu item if not provided
+                    if not display_name:
+                        menu_item_info = menu_cache.get_menu_item_by_id(opt_menu_item_id)
+                        if menu_item_info:
+                            display_name = menu_item_info.get("name", f"Item {opt_menu_item_id}")
+                else:
+                    continue  # Skip invalid options
+
+                # Store for lookup after parsing
+                slot_options_by_slug[slug.lower()] = {
+                    **opt,
+                    "slug": slug,
+                    "display_name": display_name,
+                }
+
+                # Build parser options
+                valid_answers.add(slug.lower())
+                valid_answers.add(display_name.lower())
+                # Use set to avoid duplicate aliases (e.g. when slug="bagel" and display_name="Bagel")
+                aliases = list({slug.lower(), display_name.lower()})
+                valid_options.append({
+                    "slug": slug,
+                    "display_name": display_name,
+                    "aliases": aliases,
+                })
 
         redirect = _check_redirect_to_pending_item(
             user_input, item, order, question_text,
@@ -643,39 +673,98 @@ class ConfigHelperHandler:
                 order=order,
             )
 
-        if parsed.choice == "unclear":
+        if parsed.unclear or not parsed.value:
             return StateMachineResult(
                 message=f"{question_text.replace(' with it?', '')} with your {item.menu_item_name}?",
                 order=order,
             )
 
-        # Record the side choice on parent for reference
-        item["side_choice"] = parsed.choice
+        # Look up the matched option
+        chosen_slug = str(parsed.value).lower()
+        chosen_option = slot_options_by_slug.get(chosen_slug)
 
-        # Create a child MenuItemTask for the chosen side
-        # The side item type slug is the parsed choice (e.g., "bagel", "fruit_salad")
-        side_item_type = parsed.choice
-        side_display_name = menu_cache.get_item_type_display_name(side_item_type)
+        if not chosen_option:
+            # Try matching by display name
+            for opt_slug, opt_data in slot_options_by_slug.items():
+                if opt_data.get("display_name", "").lower() == chosen_slug:
+                    chosen_option = opt_data
+                    break
 
-        # Create the child task with side_of_item_id linking to parent
-        child_item = MenuItemTask(
-            menu_item_name=side_display_name,
-            menu_item_type=side_item_type,
-            unit_price=0.0,  # Side items are free (base price = 0)
-            side_of_item_id=item.id,  # Link to parent item
-        )
+        if not chosen_option:
+            # Fallback - couldn't match option
+            return StateMachineResult(
+                message=f"I didn't quite catch that. {question_text}",
+                order=order,
+            )
 
-        # Check if the side requires configuration (has required attributes)
-        side_attrs = menu_cache.get_item_type_attributes(side_item_type) if side_item_type else {}
-        has_required_attrs = any(
-            attr_config.get("is_required", False) and attr_config.get("ask_in_conversation", False)
-            for attr_config in side_attrs.values()
-        )
+        # Initialize bundle on parent if not already done
+        bundle_id = item.bundle_id
+        if not bundle_id:
+            bundle_id = item.start_bundle()
 
-        if has_required_attrs:
-            child_item.mark_in_progress()  # Needs configuration
+        # Create child MenuItemTask based on option type
+        price_rule = chosen_option.get("price_rule", "included")
+        opt_item_type = chosen_option.get("allowed_item_type")
+        opt_menu_item_id = chosen_option.get("allowed_menu_item_id")
+
+        # Convert included_price_cents to dollars (None means entire base is free)
+        included_price_cents = chosen_option.get("included_price_cents")
+        bundle_included_price = included_price_cents / 100.0 if included_price_cents else None
+
+        if opt_item_type:
+            # Configurable item type (e.g., bagel - needs bread choice)
+            child_display_name = menu_cache.get_item_type_display_name(opt_item_type)
+            child_item = MenuItemTask(
+                menu_item_name=child_display_name,
+                menu_item_type=opt_item_type,
+                unit_price=0.0 if price_rule == "included" else None,  # Base is free for included
+                bundle_id=bundle_id,
+                bundle_parent_item_id=item.id,
+                bundle_slot="side",
+                bundle_price_rule=price_rule,
+                bundle_included_price=bundle_included_price,
+            )
+
+            # Check if the item type requires configuration
+            # Look for attributes that are required and need to be asked
+            side_attrs = menu_cache.get_item_type_attributes(opt_item_type)
+            has_required_attrs = any(
+                attr_config.get("is_required", False) and attr_config.get("ask_in_conversation", False)
+                for attr_config in side_attrs.values()
+            )
+
+            # Fallback: if no explicit is_required, check if there are any single_select
+            # attributes that ask_in_conversation - these typically need user input
+            if not has_required_attrs:
+                has_required_attrs = any(
+                    attr_config.get("ask_in_conversation", False)
+                    and attr_config.get("input_type") == "single_select"
+                    for attr_config in side_attrs.values()
+                )
+
+            if has_required_attrs:
+                child_item.mark_in_progress()  # Needs configuration
+            else:
+                child_item.mark_complete()  # No configuration needed
+
         else:
-            child_item.mark_complete()  # No configuration needed (e.g., fruit_salad)
+            # Specific menu item (e.g., fruit salad - no configuration needed)
+            menu_item_info = menu_cache.get_menu_item_by_id(opt_menu_item_id)
+            child_display_name = menu_item_info.get("name", "Side") if menu_item_info else "Side"
+            child_item_type = menu_item_info.get("item_type_slug") if menu_item_info else None
+
+            child_item = MenuItemTask(
+                menu_item_name=child_display_name,
+                menu_item_id=opt_menu_item_id,
+                menu_item_type=child_item_type,
+                unit_price=0.0 if price_rule == "included" else (menu_item_info.get("base_price", 0) if menu_item_info else 0),
+                bundle_id=bundle_id,
+                bundle_parent_item_id=item.id,
+                bundle_slot="side",
+                bundle_price_rule=price_rule,
+                bundle_included_price=bundle_included_price,
+            )
+            child_item.mark_complete()  # Specific menu items don't need configuration
 
         # Add the child item to the order
         order.items.add_item(child_item)

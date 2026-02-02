@@ -55,21 +55,15 @@ MOCK_COFFEE_ATTRIBUTES = {
         "question_text": "What size?",
         "display_order": 1,
     },
-    "temperature": {
-        "slug": "temperature",
-        "display_name": "Hot or Iced",
-        "is_required": True,
-        "ask_in_conversation": True,
-        "question_text": "Hot or iced?",
-        "display_order": 2,
-    },
+    # Note: temperature is no longer an attribute - Hot Coffee and Iced Coffee
+    # are separate menu items
     "milk_sweetener_syrup": {
         "slug": "milk_sweetener_syrup",
         "display_name": "Milk, Sweetener, or Syrup",
         "is_required": False,
         "ask_in_conversation": True,
         "question_text": "Any milk, sweetener, or syrup?",
-        "display_order": 3,
+        "display_order": 2,
         "allow_none": True,
         "is_global_attribute": True,
         "input_type": "multi_select",
@@ -110,6 +104,8 @@ def mock_get_item_type_attributes(item_type):
         return MOCK_COFFEE_ATTRIBUTES
     elif item_type == "espresso":
         return MOCK_COFFEE_ATTRIBUTES  # Espresso drinks use same attributes as sized_beverage
+    elif item_type == "espresso_based":
+        return MOCK_COFFEE_ATTRIBUTES  # Espresso-based drinks (latte, cappuccino) use same attributes
     elif item_type == "omelette":
         return MOCK_OMELETTE_ATTRIBUTES
     return {}
@@ -427,26 +423,14 @@ class TestItemSlotOrchestrator:
         assert slot is not None
         assert slot.field_name == "size"
 
-    def test_coffee_needs_iced_after_size(self, mock_menu_cache):
-        coffee = create_coffee_task(drink_type="latte", size="medium")
-        orch = ItemSlotOrchestrator(coffee)
-        slot = orch.get_next_slot()
-
-        assert slot is not None
-        # Note: Temperature is now part of the menu item name (e.g., "Iced Latte"),
-        # not a separate attribute, so there's no temperature slot anymore.
-        # Skip this assertion.
-
-    def test_coffee_complete_with_size(self, mock_menu_cache):
-        """Coffee is complete when size is specified (temperature is in name)."""
-        # Note: Temperature (iced/hot) is now part of the menu item name itself
-        # (e.g., "Iced Latte" vs "Hot Latte"), but the mock still requires it as an attribute.
-        coffee = create_coffee_task(drink_type="Iced Latte", size="medium", iced=True)
-        # Mark milk_sweetener_syrup as answered (even with no selection) using selections API
-        coffee.add_selection("none", "milk_sweetener_syrup")
+    def test_coffee_complete_after_size(self, mock_menu_cache):
+        """Coffee is complete once size is set (milk/sweetener is optional)."""
+        coffee = create_coffee_task(drink_type="Iced Latte", size="medium")
         orch = ItemSlotOrchestrator(coffee)
 
+        # Size is the only required attribute, so coffee is complete
         assert orch.is_complete()
+        assert orch.get_next_slot() is None
 
     def test_menu_item_needs_side_choice_when_required(self, mock_menu_cache):
         item = MenuItemTask(
@@ -609,7 +593,8 @@ class TestMultipleItems:
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
-        coffee = create_coffee_task(drink_type="latte", size="medium", iced=None)
+        # Coffee without size is incomplete (size is required)
+        coffee = create_coffee_task(drink_type="latte")
         coffee.status = TaskStatus.IN_PROGRESS
         order.items.add_item(coffee)
 
@@ -627,7 +612,8 @@ class TestMultipleItems:
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
 
-        coffee = create_coffee_task(drink_type="latte", size="medium", iced=True)
+        # Coffee with size is complete (size is the only required attribute)
+        coffee = create_coffee_task(drink_type="latte", size="medium")
         coffee.status = TaskStatus.COMPLETE
         order.items.add_item(coffee)
 

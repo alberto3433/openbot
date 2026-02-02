@@ -489,3 +489,59 @@ class ItemTypeLoaderMixin:
             "Loaded %d global attribute aliases (from bulk)",
             len(global_attribute_aliases),
         )
+
+    def _load_component_slots_from_bulk(self, bulk_data: dict) -> None:
+        """Load component slots from bulk data.
+
+        Component slots define how item types can include configurable sub-items.
+        For example, omelettes have a "side" slot that accepts bagels or fruit salad.
+        """
+        slots = bulk_data.get("component_slots", [])
+
+        component_slots: dict[str, dict[str, dict]] = {}
+
+        for slot in slots:
+            parent_type_slug = slot.parent_item_type.slug
+
+            if parent_type_slug not in component_slots:
+                component_slots[parent_type_slug] = {}
+
+            # Build options list
+            options = []
+            for opt in slot.slot_options:
+                option_dict = {
+                    "price_rule": opt.price_rule,
+                    "fixed_price": opt.fixed_price,
+                    "included_price_cents": opt.included_price_cents,
+                    "display_name": opt.display_name,
+                    "display_order": opt.display_order,
+                }
+
+                if opt.allowed_item_type:
+                    option_dict["allowed_item_type"] = opt.allowed_item_type.slug
+                if opt.allowed_menu_item:
+                    option_dict["allowed_menu_item_id"] = opt.allowed_menu_item.id
+                    option_dict["allowed_menu_item_name"] = opt.allowed_menu_item.name
+
+                options.append(option_dict)
+
+            # Sort options by display_order
+            options.sort(key=lambda x: x.get("display_order", 0))
+
+            component_slots[parent_type_slug][slot.slot_name] = {
+                "display_name": slot.display_name,
+                "prompt_text": slot.prompt_text,
+                "is_required": slot.is_required,
+                "min_quantity": slot.min_quantity,
+                "max_quantity": slot.max_quantity,
+                "display_order": slot.display_order,
+                "options": options,
+            }
+
+        self._component_slots = component_slots
+
+        logger.debug(
+            "Loaded component slots for %d item types: %s",
+            len(component_slots),
+            list(component_slots.keys()),
+        )

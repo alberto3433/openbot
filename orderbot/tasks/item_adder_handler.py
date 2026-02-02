@@ -156,11 +156,24 @@ class ItemAdderHandler(MenuDataMixin):
         # Skip word-match disambiguation for configurable item types requested generically
         # e.g., "plain bagel" has item_type="bagel" and item_name="bagel" (or item_name=None)
         # User wants a configurable bagel, not disambiguation among "6 Bagel Package", "Pizza Bagel", etc.
+        # EXCEPTION: If the item type has NO generic item (only signature items like omelettes),
+        # we should show disambiguation to let user pick which specific item they want.
         configurable_types = menu_cache.get_configurable_item_types()
         is_configurable_generic_request = (
             item_type in configurable_types and
             (item_name_lower == item_type.lower() or is_empty_name)
         )
+
+        # Override: If item type has component slots (like omelette with side choice),
+        # it's a signature-item-only type that requires user to pick a specific item.
+        # Trigger disambiguation instead of treating as a generic configurable request.
+        if is_configurable_generic_request and item_type:
+            has_component_slots = menu_cache.item_type_has_component_slots(item_type)
+            if has_component_slots:
+                items_of_type = menu_cache.get_items_by_item_type(item_type)
+                if len(items_of_type) > 1:
+                    # Item type with component slots (e.g., omelette) - need disambiguation
+                    is_configurable_generic_request = False
 
         # Check for multiple word-boundary matches (e.g., "tea" matches Hot Tea, Iced Tea, etc.)
         # This triggers disambiguation even when the term isn't a registered category reference
@@ -379,24 +392,24 @@ class ItemAdderHandler(MenuDataMixin):
         category = menu_item.get("item_type", "")  # item_type slug like "spread_sandwich"
         is_signature = menu_item.get("is_signature", False)  # Signature item like "The Classic BEC"
 
-        # Check if item type requires side choice (data-driven, e.g., omelette)
-        has_side_choice = menu_cache.item_type_has_side_choice(category) if category else False
+        # Check if item type has component slots (data-driven, e.g., omelette includes a side)
+        has_component_slots = menu_cache.item_type_has_component_slots(category) if category else False
 
         # Check if it uses DB-driven configuration (item types with configurable attributes)
-        # Note: has_side_choice items are handled separately and return early
+        # Note: has_component_slots items are handled separately and return early
         uses_db_config = category and category in menu_cache.get_configurable_item_types()
 
         logger.info(
-            "Menu item check: canonical_name='%s', category='%s', has_side_choice=%s, uses_db_config=%s, quantity=%d",
+            "Menu item check: canonical_name='%s', category='%s', has_component_slots=%s, uses_db_config=%s, quantity=%d",
             canonical_name,
             category,
-            has_side_choice,
+            has_component_slots,
             uses_db_config,
             quantity,
         )
 
         # Determine the menu item type for tracking
-        if has_side_choice:
+        if has_component_slots:
             item_type = category  # Use the actual category slug (e.g., "omelette")
         elif uses_db_config:
             item_type = category  # "deli_sandwich", "egg_sandwich", "fish_sandwich", or "spread_sandwich"
@@ -414,10 +427,11 @@ class ItemAdderHandler(MenuDataMixin):
                 modifications=modifications or [],  # User modifications like "with mayo and mustard"
                 is_signature=is_signature,  # Signature item flag from menu data
             )
-            # Populate default ingredients for signature items FIRST
+            # Populate default ingredients for items that have them defined
             # This must happen before applying user selections so user selections
             # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
-            if is_signature and menu_item_id:
+            # Check if item has default ingredients (more reliable than is_signature flag)
+            if menu_item_id:
                 self._populate_signature_defaults(item)
             # Apply pre-filled attributes
             if attributes:
@@ -433,17 +447,17 @@ class ItemAdderHandler(MenuDataMixin):
 
         logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, attrs=%s, mods=%s)", quantity, canonical_name, price, menu_item_id, attributes, modifications)
 
-        if has_side_choice:
-            # Set state to wait for side choice (applies to first item, others will be configured after)
+        if has_component_slots:
+            # Set state to wait for component slot selection (applies to first item, others will be configured after)
             order.phase = OrderPhase.CONFIGURING_ITEM
             order.pending_item_id = first_item.id
-            # Get side choice attribute configuration from DB
-            side_attr = menu_cache.get_side_choice_attribute(category)
-            order.pending_field = side_attr.get("slug", PendingField.SIDE_CHOICE) if side_attr else PendingField.SIDE_CHOICE
-            # Use question text from DB or fallback
+            # Get component slot configuration from DB (e.g., "side" slot)
+            side_slot = menu_cache.get_component_slot(category, "side")
+            order.pending_field = PendingField.SIDE_CHOICE
+            # Use prompt text from DB or fallback
             question = (
-                side_attr.get("question_text")
-                if side_attr
+                side_slot.get("prompt_text")
+                if side_slot
                 else f"What side would you like with your {canonical_name}?"
             )
             return StateMachineResult(
@@ -658,10 +672,11 @@ class ItemAdderHandler(MenuDataMixin):
                 quantity=item_quantity,
             )
 
-            # Populate default ingredients for signature items FIRST
+            # Populate default ingredients for items that have them defined
             # This must happen before applying user selections so user selections
             # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
-            if is_signature and menu_item_id:
+            # Check if item has default ingredients (more reliable than is_signature flag)
+            if menu_item_id:
                 self._populate_signature_defaults(item)
 
             # Apply pre-filled attributes

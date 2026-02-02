@@ -100,6 +100,9 @@ class LoaderMixin(
                 # Load menu item default ingredients (for signature items)
                 self._load_menu_item_default_ingredients_from_bulk(bulk_data)
 
+                # Load component slots (for items that include configurable sub-items)
+                self._load_component_slots_from_bulk(bulk_data)
+
                 # Price inquiry support (pre-compute resolved prices)
                 self._load_priced_attributes_from_bulk(bulk_data)
                 self._load_resolved_item_prices_from_bulk(bulk_data)
@@ -149,7 +152,7 @@ class LoaderMixin(
             ItemType, ItemTypeGlobalAttribute, MenuItem, ItemTypeIngredient,
             Category, MenuItemCategory, ResponsePattern, ModifierQualifier,
             ModifierCategory, IngredientCategory, GlobalAttributeAlias,
-            MenuItemIngredient,
+            MenuItemIngredient, ItemTypeComponentSlot, ComponentSlotOption,
         )
 
         start_time = time.time()
@@ -246,8 +249,12 @@ class LoaderMixin(
         except Exception:
             modifier_qualifiers = []
 
-        # 11. Load modifier categories
-        modifier_categories_list = db.query(ModifierCategory).all()
+        # 11. Load modifier categories (with aliases eagerly loaded)
+        modifier_categories_list = (
+            db.query(ModifierCategory)
+            .options(selectinload(ModifierCategory.alias_records))
+            .all()
+        )
 
         # 12. Load ingredient categories
         ingredient_categories = db.query(IngredientCategory).all()
@@ -265,6 +272,19 @@ class LoaderMixin(
             .options(
                 joinedload(MenuItemIngredient.menu_item),
                 joinedload(MenuItemIngredient.ingredient),
+            )
+            .all()
+        )
+
+        # 15. Load component slots (for items that include configurable sub-items)
+        component_slots = (
+            db.query(ItemTypeComponentSlot)
+            .options(
+                joinedload(ItemTypeComponentSlot.parent_item_type),
+                selectinload(ItemTypeComponentSlot.slot_options)
+                    .joinedload(ComponentSlotOption.allowed_item_type),
+                selectinload(ItemTypeComponentSlot.slot_options)
+                    .joinedload(ComponentSlotOption.allowed_menu_item),
             )
             .all()
         )
@@ -297,6 +317,7 @@ class LoaderMixin(
             "ingredient_categories": ingredient_categories,
             "global_attr_aliases": global_attr_aliases,
             "menu_item_ingredients": menu_item_ingredients,
+            "component_slots": component_slots,
         }
 
     def _load_menu_index(self, db: Session) -> None:

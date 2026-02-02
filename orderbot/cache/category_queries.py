@@ -61,6 +61,24 @@ class CategoryQueryMixin:
 
         return set()
 
+    def get_modifier_category_by_alias(self, alias: str) -> str | None:
+        """Look up modifier category slug by alias.
+
+        Uses the modifier_category_aliases table to map user terms like
+        "cream cheese" to category slugs like "spreads".
+
+        Args:
+            alias: User input to look up (e.g., "cream cheese", "spread")
+
+        Returns:
+            Category slug if found (e.g., "spreads"), None otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._modifier_category_alias_to_slug.get(alias.lower().strip())
+
     def get_category_keyword_mapping(self, keyword: str) -> dict | None:
         """Look up category info for a user keyword.
 

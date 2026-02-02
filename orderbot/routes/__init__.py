@@ -83,6 +83,7 @@ from .admin_categories import admin_categories_router
 from .admin_global_attributes import admin_global_attributes_router, admin_item_type_global_attrs_router
 from .admin_menu_item_sizes import admin_size_categories_router, admin_sizes_router
 from .admin_unrecognized_suggestions import admin_unrecognized_suggestions_router, admin_unrecognized_logs_router
+from .admin_component_slots import admin_component_slots_router
 from .public import public_stores_router, public_company_router
 from .tts import tts_router
 
@@ -107,6 +108,7 @@ __all__ = [
     "admin_sizes_router",
     "admin_unrecognized_suggestions_router",
     "admin_unrecognized_logs_router",
+    "admin_component_slots_router",
     "public_stores_router",
     "public_company_router",
     "tts_router",

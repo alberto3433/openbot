@@ -185,4 +185,5 @@ ADMIN_PAGES = {
     "response_patterns": "admin_response_patterns.html",
     "overall_categories": "admin_overall_categories.html",
     "unrecognized_suggestions": "admin_unrecognized_suggestions.html",
+    "component_slots": "admin_component_slots.html",
 }

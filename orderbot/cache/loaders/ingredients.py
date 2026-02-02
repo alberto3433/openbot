@@ -253,19 +253,30 @@ class IngredientLoaderMixin:
         categories = bulk_data.get("modifier_categories", [])
 
         modifier_categories: dict[str, dict] = {}
+        modifier_category_alias_to_slug: dict[str, str] = {}
 
         for cat in categories:
+            # Get aliases from the eagerly loaded relationship
+            aliases = cat.aliases if hasattr(cat, 'aliases') else []
+
             modifier_categories[cat.slug] = {
                 "display_name": cat.display_name,
                 "loads_from_ingredients": cat.loads_from_ingredients,
                 "ingredient_category": cat.ingredient_category,
                 "description": cat.description,
                 "prompt_suffix": cat.prompt_suffix,
+                "aliases": aliases,
             }
 
+            # Build reverse lookup: alias -> category slug
+            for alias in aliases:
+                modifier_category_alias_to_slug[alias.lower()] = cat.slug
+
         self._modifier_categories = modifier_categories
+        self._modifier_category_alias_to_slug = modifier_category_alias_to_slug
 
         logger.debug(
-            "Loaded modifier categories (from bulk): %d categories",
+            "Loaded modifier categories (from bulk): %d categories, %d aliases",
             len(modifier_categories),
+            len(modifier_category_alias_to_slug),
         )

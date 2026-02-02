@@ -342,6 +342,17 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty on both sides with item trigger '%s'), delegating to multi-item parser: '%s'", following_word, text[:50])
                     return None
 
+                # Also check if after_and (minus the quantity) is a menu item or signature item
+                # This handles "one bagel and one classic BEC" where "classic BEC" is a signature item
+                # Strip the leading quantity from after_and to get the item part
+                after_and_item_part = re.sub(rf'^{qty_words}\s+', '', after_and, count=1)
+                # Late import to avoid circular dependency
+                from .tokenization import _has_item_indicator
+                has_item, _, _ = _has_item_indicator(after_and_item_part)
+                if has_item:
+                    logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty on both sides, right side '%s' is item indicator), delegating to multi-item parser: '%s'", after_and_item_part, text[:50])
+                    return None
+
     # Pattern 2: Same item type trigger appears on BOTH sides of " and "
     # This catches "plain bagel and everything bagel" where no explicit quantities are used
     # but the same item type keyword appears twice (once on each side)

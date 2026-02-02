@@ -177,6 +177,46 @@ class PricingEngine(MenuDataMixin):
         # No size specified and multiple sizes - return None to trigger disambiguation
         return None, None
 
+    def lookup_size_upcharge(
+        self,
+        menu_item_name: str,
+        size_name: str,
+    ) -> float:
+        """Calculate the upcharge for a size relative to the smallest/base size.
+
+        For sized items (coffee, deli), the smallest size (by display_order) is
+        considered the base. This returns the difference between the selected
+        size and the base size.
+
+        Args:
+            menu_item_name: Name of the menu item
+            size_name: The selected size name (e.g., "large")
+
+        Returns:
+            Upcharge amount (0.0 if this is the base size or not a sized item)
+        """
+        menu_item = self._lookup_menu_item(menu_item_name)
+        if not menu_item:
+            menu_item = self._lookup_menu_item(menu_item_name.title())
+        if not menu_item:
+            return 0.0
+
+        size_prices = menu_item.get("size_prices")
+        if not size_prices or len(size_prices) <= 1:
+            return 0.0
+
+        # Sort by display_order to find the base (smallest) size
+        sorted_sizes = sorted(size_prices, key=lambda sp: sp.get("display_order", 999))
+        base_price = sorted_sizes[0]["price"]
+
+        # Find the selected size price
+        size_lower = size_name.lower().strip()
+        for sp in size_prices:
+            if sp["size_name"] and sp["size_name"].lower() == size_lower:
+                return sp["price"] - base_price
+
+        return 0.0
+
     def lookup_base_price(self, menu_item_name: str, size_name: str | None = None) -> float:
         """Look up base price for any menu item by name.
 
@@ -484,7 +524,7 @@ class PricingEngine(MenuDataMixin):
     def _calculate_base_price(
         self, item, menu_item: dict | None
     ) -> tuple[float, bool, str | None, set[str]]:
-        """Calculate base price for an item, handling variant pricing and side items.
+        """Calculate base price for an item, handling variant pricing and bundle pricing.
 
         Args:
             item: The menu item task
@@ -506,7 +546,17 @@ class PricingEngine(MenuDataMixin):
                 menu_item.get("included_ingredient_categories", [])
             )
 
-        # Side items have base_price = 0
+        # Check bundle pricing rules (replaces legacy side_of_item_id check)
+        bundle_price_rule = getattr(item, 'bundle_price_rule', None)
+        bundle_included_price = getattr(item, 'bundle_included_price', None)
+
+        if bundle_price_rule == 'included':
+            if bundle_included_price is None:
+                # Full inclusion: base price is $0, upcharges still apply
+                return 0.0, False, None, included_categories
+            # Differential pricing: calculate actual base price first, then subtract included amount
+
+        # Legacy support: side items have base_price = 0
         is_side_item = getattr(item, 'side_of_item_id', None) is not None
         if is_side_item:
             return 0.0, False, None, included_categories
@@ -520,10 +570,18 @@ class PricingEngine(MenuDataMixin):
             size_price, _ = self.lookup_size_price(item.menu_item_name, variant_value)
 
             if size_price is not None:
+                # Apply differential pricing if applicable
+                if bundle_price_rule == 'included' and bundle_included_price is not None:
+                    return max(0.0, size_price - bundle_included_price), True, variant_attr, included_categories
                 return size_price, True, variant_attr, included_categories
 
         # Traditional pricing: base_price from menu item
         base_price = self.lookup_base_price(item.menu_item_name)
+
+        # Apply differential pricing if applicable
+        if bundle_price_rule == 'included' and bundle_included_price is not None:
+            return max(0.0, base_price - bundle_included_price), False, None, included_categories
+
         return base_price, False, None, included_categories
 
     def _apply_modifier_prices(
@@ -590,6 +648,10 @@ class PricingEngine(MenuDataMixin):
                 f"Cannot recalculate price for '{getattr(item, 'menu_item_name', 'unknown')}': "
                 "menu_item_type is required but not set on item."
             )
+
+        # Note: Bundle-included items have base_price=$0 but can still have upcharges
+        # (e.g., cream cheese on a bundled bagel). The base_price=$0 is handled in
+        # _calculate_base_price(); upcharges are still calculated below.
 
         # Get attribute values and modifiers from the item
         attr_values = item.attribute_values or {}

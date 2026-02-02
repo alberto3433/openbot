@@ -154,14 +154,14 @@ class TestAmbiguousItemOrders:
                 "what type", "which bagel", "what kind"
             ]), f"Should ask about bagel type. Message: {result.message}"
 
-    def test_the_classic_matches_signature_item(self):
+    def test_the_classic_matches_exact_item(self):
         """
-        Test: User says "the classic" which should show disambiguation.
+        Test: User says "the classic" which should match "The Classic" menu item.
 
         Scenario:
         - User says: "the classic"
-        - Expected: Should show disambiguation between "The Classic BEC"
-                    and "The Classic BEC Omelette"
+        - Expected: Should match "The Classic" (exact match) and start configuration
+        - Note: "The Classic" is a distinct menu item from "The Classic BEC"
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -172,17 +172,15 @@ class TestAmbiguousItemOrders:
         # Should have a response
         assert result.message is not None
 
-        message_lower = result.message.lower()
-
-        # Should show disambiguation with numbered options
-        assert "1." in result.message and "2." in result.message, \
-            f"Should show numbered disambiguation options. Message: {result.message}"
-
-        # Should mention both Classic options
-        assert "the classic bec" in message_lower, \
-            f"Should mention 'The Classic BEC'. Message: {result.message}"
-
-        # No items should be added yet - waiting for user selection
+        # Should have added "The Classic" item
         items = result.order.items.get_active_items()
-        assert len(items) == 0, \
-            f"No items should be added during disambiguation. Got: {items}"
+        assert len(items) == 1, \
+            f"Should have added one item. Got: {len(items)}"
+
+        item = items[0]
+        assert item.menu_item_name == "The Classic", \
+            f"Should have added 'The Classic'. Got: {item.menu_item_name}"
+
+        # Should be asking a configuration question (e.g., bread type)
+        assert result.order.phase == OrderPhase.CONFIGURING_ITEM.value, \
+            f"Should be in CONFIGURING_ITEM phase. Got: {result.order.phase}"

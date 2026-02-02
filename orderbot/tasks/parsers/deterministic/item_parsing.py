@@ -382,7 +382,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                         return None
 
     # 1b. Check for signature items FIRST - they take precedence over trigger-based detection
-    # This prevents "The Classic BEC on a wheat bagel" from matching "omelette" due to "bagel"
+    # This prevents "The Classic BEC on a wheat bagel" from matching "bagel" item type
+    # due to the "bagel" trigger word. Signature items should be detected by their aliases.
     signature_item_name: str | None = None
     signature_item_type: str | None = None
     signature_aliases = get_signature_item_aliases()

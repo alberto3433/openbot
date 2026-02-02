@@ -127,16 +127,22 @@ class CustomizationCheckpointHandler:
 
         unanswered = self._get_unanswered_optional(item, item_type)
 
-        # Check for options inquiry about ANY attribute (not just unanswered)
-        # e.g., "what condiments do you have?" even after adding salt
+        # Get all optional attributes for direct option matching
         all_optional = self._get_optional_attributes(item_type)
+
+        # Check for options inquiry about ANY attribute (mandatory or optional)
+        # e.g., "what spreads do you have?" even if user already answered "no" to spreads
+        all_attrs = menu_cache.get_item_type_attributes(item_type)
+        all_attrs_list = list(all_attrs.values())
         inquiry_attr = self._options_inquiry_handler.detect_options_inquiry_for_attribute(
-            user_input, all_optional
+            user_input, all_attrs_list
         )
         if inquiry_attr:
             options = inquiry_attr.get("options", [])
             if options:
-                order.pending_field = f"{item_type}:{inquiry_attr['slug']}"
+                # Keep pending_field at checkpoint so user can choose from options
+                # or continue with other customizations
+                order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
                 return self._options_inquiry_handler.handle_options_inquiry(
                     item, order, inquiry_attr, options, is_show_more=False
                 )

@@ -39,8 +39,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..db.models import ItemType, ItemTypeAlias, MenuItem, ItemTypeGlobalAttribute, OverallCategory, GlobalAttribute
-from ..services.helpers import validate_aliases
+from ..db.models import ItemType, MenuItem, ItemTypeGlobalAttribute, OverallCategory, GlobalAttribute
+from ..services.helpers import sync_entity_aliases
 from ..schemas.modifiers import (
     GlobalAttributeRef,
     ItemTypeListOut,
@@ -109,38 +109,6 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
     )
 
 
-def _set_item_type_aliases(db: Session, item_type: ItemType, aliases_str: str | None) -> None:
-    """
-    Set item type aliases from a comma-separated string.
-    Clears existing aliases and creates new ones from the input string.
-    Validates global uniqueness of aliases before adding.
-
-    Raises:
-        HTTPException: If any alias conflicts with an existing alias
-    """
-    # Clear existing aliases
-    for alias in list(item_type.alias_records):
-        db.delete(alias)
-
-    # Flush deletes before inserting new records to avoid unique constraint violations
-    db.flush()
-
-    # Validate and add new aliases if provided
-    if aliases_str:
-        try:
-            # Exclude current item_type's own ID so re-saving same aliases works
-            validated_aliases = validate_aliases(
-                db,
-                aliases_str,
-                exclude_item_type_id=item_type.id,
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        for alias in validated_aliases:
-            db.add(ItemTypeAlias(item_type=item_type, alias=alias))
-
-
 def _build_create_kwargs(payload: ItemTypeCreate, db: Session) -> dict[str, Any]:
     """Build model kwargs from create payload."""
     # Validate category ID if provided
@@ -168,7 +136,7 @@ def _handle_create_pre_commit(
 ) -> None:
     """Add aliases after item has ID but before commit."""
     if payload.aliases is not None:
-        _set_item_type_aliases(db, item, payload.aliases)
+        sync_entity_aliases(db, item, payload.aliases, "item_type")
 
 
 def _handle_before_update(
@@ -193,7 +161,7 @@ def _handle_before_update(
             )
         item.overall_category_id = payload.overall_category_id
     if payload.aliases is not None:
-        _set_item_type_aliases(db, item, payload.aliases)
+        sync_entity_aliases(db, item, payload.aliases, "item_type")
 
 
 def _handle_before_delete(item: ItemType, db: Session) -> None:

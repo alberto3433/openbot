@@ -373,10 +373,15 @@ REMOVAL_TEMPLATES = [
 
 
 def match_category_removal_pattern(input_lower: str, item_type_slug: str) -> str | None:
-    """Check if input matches a removal pattern for any modifier category.
+    """Check if input matches a removal pattern for a modifier CATEGORY.
 
-    Uses templatized patterns ("no {}", "without {}", etc.) with category names
-    AND ingredient names from the database. No hardcoded patterns.
+    Uses templatized patterns ("no {}", "without {}", etc.) with category names.
+    Also maps ingredient names to their category for patterns WITHOUT "the"
+    (e.g., "without sugar" → sweetener category).
+
+    Patterns WITH "the" (like "remove the bacon") only match category names,
+    not ingredients. This prevents "remove the bacon" from removing all proteins.
+    Specific ingredient removal is handled by ItemCancellationHandler._try_modifier_removal.
 
     Args:
         input_lower: Lowercase user input to check
@@ -388,34 +393,48 @@ def match_category_removal_pattern(input_lower: str, item_type_slug: str) -> str
     Examples:
         >>> match_category_removal_pattern("no milk", "sized_beverage")
         "milk"
-        >>> match_category_removal_pattern("without syrup", "sized_beverage")
-        "syrup"
-        >>> match_category_removal_pattern("remove the sugar", "sized_beverage")
-        "sweetener"
+        >>> match_category_removal_pattern("without sugar", "sized_beverage")
+        "sweetener"  # sugar maps to sweetener category
+        >>> match_category_removal_pattern("no protein", "bagel")
+        "protein"
+        >>> match_category_removal_pattern("remove the bacon", "bagel")
+        None  # "the" means specific ingredient - handled elsewhere
     """
+    # Templates that use "the" should only match category names, not ingredients
+    # "remove the bacon" should not remove all proteins
+    TEMPLATES_WITHOUT_THE = ["no {}", "without {}", "remove {}"]
+    TEMPLATES_WITH_THE = ["remove the {}", "hold the {}"]
+
     # Get scannable modifier categories for this item type (data-driven)
     categories = menu_cache.get_scannable_modifier_categories(item_type_slug)
 
     for category in categories:
         # Get category display name and slug
         display_name = menu_cache.get_ingredient_category_display_name(category)
-        names_to_check = {category.lower(), display_name.lower()}
+        category_names = {category.lower(), display_name.lower()}
 
         # Also check singular forms if display name is plural
         if display_name.endswith("s") and len(display_name) > 2:
-            names_to_check.add(display_name[:-1].lower())
+            category_names.add(display_name[:-1].lower())
 
-        # Also add ingredient names in this category (e.g., "sugar" for sweetener)
-        # This allows "without sugar" to match the sweetener category
+        # Get ingredient names for this category (for templates without "the")
+        ingredient_names = set()
         ingredients = menu_cache.get_ingredients(category)
         for ingredient in ingredients:
-            names_to_check.add(ingredient.lower())
+            ingredient_names.add(ingredient.lower())
 
-        # Check each removal template with each name variant
-        for template in REMOVAL_TEMPLATES:
-            for name in names_to_check:
+        # Check templates WITH "the" - only match category names
+        for template in TEMPLATES_WITH_THE:
+            for name in category_names:
                 pattern = template.format(name)
-                # Use word-boundary matching for the full removal phrase
+                if re.search(rf'\b{re.escape(pattern)}\b', input_lower):
+                    return category
+
+        # Check templates WITHOUT "the" - match category names AND ingredient names
+        all_names = category_names | ingredient_names
+        for template in TEMPLATES_WITHOUT_THE:
+            for name in all_names:
+                pattern = template.format(name)
                 if re.search(rf'\b{re.escape(pattern)}\b', input_lower):
                     return category
 

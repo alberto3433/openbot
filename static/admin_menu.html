@@ -669,6 +669,7 @@
     let allItems = [];
     let filteredItems = [];
     let currentIndex = -1;
+    let currentTab = "details";  // Track selected tab across row changes
     let itemTypes = []; // Store item types for dropdown
     let allCategories = []; // Store categories for multi-select
     let sizeCategories = []; // Store size categories with their sizes
@@ -889,6 +890,7 @@
     // Tab switching (with lazy loading of ingredients)
     let ingredientsLoaded = false;
     async function switchTab(tabName) {
+      currentTab = tabName;  // Persist tab selection
       document.querySelectorAll('.detail-tab').forEach(t =>
         t.classList.toggle('active', t.dataset.tab === tabName)
       );
@@ -1292,7 +1294,7 @@
       // Reset ingredients
       itemIngredients = [];
       renderIngredientList();
-      switchTab('details'); // Reset to details tab
+      switchTab(currentTab);  // Preserve tab selection when clearing form
     }
 
     async function selectItemByIndex(idx, newItem = false) {
@@ -1350,7 +1352,7 @@
         quantity: i.quantity,
       }));
       renderIngredientList();
-      switchTab('details'); // Reset to details tab
+      switchTab(currentTab);  // Preserve tab selection when switching items
     }
 
     // Collect size prices from the form

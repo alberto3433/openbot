@@ -5,8 +5,9 @@ def test_admin_menu_returns_items(client, admin_auth):
     data = resp.json()
     assert isinstance(data, list)
     names = {item["name"] for item in data}
-    assert "Turkey Club" in names
-    assert "Chips" in names  # Side item from fixture
+    # These items are created by the test fixture with TEST_ prefix
+    assert "TEST_Turkey Club" in names
+    assert "TEST_Chips" in names
 
 
 def test_admin_menu_requires_auth(client):

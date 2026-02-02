@@ -15,18 +15,34 @@ from orderbot.services.session import (
     _cleanup_expired_sessions,
 )
 
+# Distinctive prefix for test session IDs - easy to identify and clean up
+TEST_SESSION_PREFIX = "TEST_sess_persist_"
 
-def unique_session_id(prefix: str = "test") -> str:
-    """Generate a unique session ID for testing."""
-    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+def unique_session_id(suffix: str = "") -> str:
+    """Generate a unique session ID for testing with identifiable prefix."""
+    return f"{TEST_SESSION_PREFIX}{suffix}_{uuid.uuid4().hex[:8]}"
+
 
 # Use TEST_DATABASE_URL or derive from DATABASE_URL
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 
+def _cleanup_test_sessions(session):
+    """Clean up ChatSession records created by these tests."""
+    try:
+        session.query(ChatSession).filter(
+            ChatSession.session_id.like(f"{TEST_SESSION_PREFIX}%")
+        ).delete(synchronize_session=False)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Failed to clean up test sessions: {e}")
+
+
 @pytest.fixture
 def db_session():
-    """Create a PostgreSQL database session for testing."""
+    """Create a PostgreSQL database session for testing with cleanup."""
     # Clear cache before test
     SESSION_CACHE.clear()
 
@@ -38,11 +54,13 @@ def db_session():
     Base.metadata.create_all(bind=engine)
 
     session = SessionLocal()
-    yield session
-    session.close()
-
-    # Clear the cache after each test
-    SESSION_CACHE.clear()
+    try:
+        yield session
+    finally:
+        _cleanup_test_sessions(session)
+        session.close()
+        # Clear the cache after each test
+        SESSION_CACHE.clear()
 
 
 class TestSessionPersistence:
@@ -50,7 +68,7 @@ class TestSessionPersistence:
 
     def test_save_session_creates_new_record(self, db_session):
         """Test that save_session creates a new ChatSession record."""
-        session_id = unique_session_id("save-new")
+        session_id = unique_session_id("save_new")
         session_data = {
             "history": [{"role": "assistant", "content": "Hello!"}],
             "order": {"status": "pending", "items": []},
@@ -67,7 +85,7 @@ class TestSessionPersistence:
 
     def test_save_session_updates_existing_record(self, db_session):
         """Test that save_session updates an existing ChatSession record."""
-        session_id = unique_session_id("save-update")
+        session_id = unique_session_id("save_update")
 
         # Create initial session
         initial_data = {
@@ -99,7 +117,7 @@ class TestSessionPersistence:
 
     def test_get_or_create_session_loads_from_database(self, db_session):
         """Test that get_or_create_session loads session from database."""
-        session_id = unique_session_id("db-load")
+        session_id = unique_session_id("db_load")
         session_data = {
             "history": [{"role": "assistant", "content": "Welcome!"}],
             "order": {"status": "pending", "items": [], "total_price": 0.0},
@@ -152,6 +170,14 @@ class TestSessionPersistence:
         assert result["order"] == session_data["order"]
 
 
+@pytest.fixture
+def integration_session_ids():
+    """Track session IDs created during integration tests for cleanup."""
+    created_ids = []
+    yield created_ids
+    # Cleanup happens in the test itself since we need db access
+
+
 class TestSessionPersistenceIntegration:
     """Integration tests for session persistence with API endpoints."""
 
@@ -167,12 +193,18 @@ class TestSessionPersistenceIntegration:
         # Check database has the session
         TestingSessionLocal = db_mod.SessionLocal
         db_sess = TestingSessionLocal()
-        db_record = db_sess.query(ChatSession).filter_by(session_id=session_id).first()
-        db_sess.close()
+        try:
+            db_record = db_sess.query(ChatSession).filter_by(session_id=session_id).first()
 
-        assert db_record is not None
-        assert len(db_record.history) == 1  # Initial greeting
-        assert db_record.order_state["status"] == "pending"
+            assert db_record is not None
+            assert len(db_record.history) == 1  # Initial greeting
+            assert db_record.order_state["status"] == "pending"
+
+            # Clean up the session we created
+            db_sess.delete(db_record)
+            db_sess.commit()
+        finally:
+            db_sess.close()
 
 
 class TestSessionCacheTTL:
@@ -181,6 +213,7 @@ class TestSessionCacheTTL:
     def test_session_cache_stores_last_access_time(self, client):
         """Test that cache entries include last_access timestamp."""
         import time
+        import orderbot.db as db_mod
 
         # Start a session via API (this goes through the proper DB)
         before = time.time()
@@ -195,6 +228,15 @@ class TestSessionCacheTTL:
         assert "last_access" in entry
         assert "data" in entry
         assert before <= entry["last_access"] <= after
+
+        # Clean up the session we created
+        TestingSessionLocal = db_mod.SessionLocal
+        db_sess = TestingSessionLocal()
+        try:
+            db_sess.query(ChatSession).filter_by(session_id=session_id).delete()
+            db_sess.commit()
+        finally:
+            db_sess.close()
 
     def test_expired_sessions_are_cleaned_up(self, client, monkeypatch):
         """Test that expired sessions are removed from cache."""
@@ -221,6 +263,12 @@ class TestSessionCacheTTL:
         # Session should still be in database
         TestingSessionLocal = db_mod.SessionLocal
         db_sess = TestingSessionLocal()
-        db_record = db_sess.query(ChatSession).filter_by(session_id=session_id).first()
-        db_sess.close()
-        assert db_record is not None
+        try:
+            db_record = db_sess.query(ChatSession).filter_by(session_id=session_id).first()
+            assert db_record is not None
+
+            # Clean up the session we created
+            db_sess.delete(db_record)
+            db_sess.commit()
+        finally:
+            db_sess.close()

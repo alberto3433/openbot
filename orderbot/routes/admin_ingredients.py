@@ -62,17 +62,17 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import (
     GlobalAttributeOption,
     Ingredient,
-    IngredientAlias,
     IngredientMustMatch,
     IngredientStoreAvailability,
     IngredientUnit,
+    ItemType,
     ItemTypeIngredient,
     MenuItem,
     MenuItemIngredient,
@@ -88,7 +88,7 @@ from ..schemas.ingredients import (
     MenuItemStoreAvailabilityOut,
     MenuItemAvailabilityUpdate,
 )
-from ..services.helpers import validate_aliases
+from ..services.helpers import batch_load_store_availability, sync_entity_aliases
 
 
 logger = logging.getLogger(__name__)
@@ -98,38 +98,6 @@ admin_ingredients_router = APIRouter(
     prefix="/admin/ingredients",
     tags=["Admin - Ingredients"]
 )
-
-
-def _set_ingredient_aliases(db: Session, ingredient: Ingredient, aliases_str: Optional[str]) -> None:
-    """
-    Set ingredient aliases from a comma-separated string.
-    Clears existing aliases and creates new ones from the input string.
-    Validates global uniqueness of aliases before adding.
-
-    Raises:
-        HTTPException: If any alias conflicts with an existing alias
-    """
-    # Clear existing aliases
-    for alias in list(ingredient.alias_records):
-        db.delete(alias)
-
-    # Flush deletes before inserting new records to avoid unique constraint violations
-    db.flush()
-
-    # Validate and add new aliases if provided
-    if aliases_str:
-        try:
-            # Exclude current ingredient's own ID so re-saving same aliases works
-            validated_aliases = validate_aliases(
-                db,
-                aliases_str,
-                exclude_ingredient_id=ingredient.id,
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        for alias in validated_aliases:
-            db.add(IngredientAlias(ingredient=ingredient, alias=alias))
 
 
 def _set_ingredient_must_match(db: Session, ingredient: Ingredient, must_match_str: Optional[str]) -> None:
@@ -207,18 +175,10 @@ def list_ingredients_minimal(
 ) -> List[IngredientListOut]:
     """Lightweight list for sidebar - minimal fields for fast loading."""
     ingredients = db.query(Ingredient).order_by(Ingredient.category, Ingredient.name).all()
-
-    # Batch-load store availability in ONE query instead of N+1 queries
-    store_avail_map: dict[int, bool] = {}
-    if store_id:
-        store_avails = db.query(IngredientStoreAvailability).filter(
-            IngredientStoreAvailability.store_id == store_id
-        ).all()
-        store_avail_map = {sa.ingredient_id: sa.is_available for sa in store_avails}
+    store_avail_map = batch_load_store_availability(db, store_id, "ingredient")
 
     result = []
     for ing in ingredients:
-        # O(1) dict lookup instead of database query
         is_available = store_avail_map.get(ing.id, ing.is_available) if store_id else ing.is_available
 
         result.append(IngredientListOut(
@@ -242,18 +202,10 @@ def list_ingredients(
     if category:
         query = query.filter(Ingredient.category == category.lower())
     ingredients = query.order_by(Ingredient.category, Ingredient.name).all()
-
-    # Batch-load store availability in ONE query instead of N+1 queries
-    store_avail_map: dict[int, bool] = {}
-    if store_id:
-        store_avails = db.query(IngredientStoreAvailability).filter(
-            IngredientStoreAvailability.store_id == store_id
-        ).all()
-        store_avail_map = {sa.ingredient_id: sa.is_available for sa in store_avails}
+    store_avail_map = batch_load_store_availability(db, store_id, "ingredient")
 
     result = []
     for ing in ingredients:
-        # O(1) dict lookup instead of database query
         is_available = store_avail_map.get(ing.id, ing.is_available) if store_id else ing.is_available
 
         result.append(IngredientStoreAvailabilityOut(
@@ -299,7 +251,7 @@ def create_ingredient(
     db.flush()  # Get the ingredient ID before adding child records
 
     # Add aliases and must_match through child tables
-    _set_ingredient_aliases(db, ingredient, payload.aliases)
+    sync_entity_aliases(db, ingredient, payload.aliases, "ingredient")
     _set_ingredient_must_match(db, ingredient, payload.must_match)
 
     # Auto-link to any matching GlobalAttributeOptions
@@ -352,20 +304,11 @@ def list_menu_items_availability(
     store_id: Optional[str] = Query(None, description="Store ID"),
 ) -> List[MenuItemStoreAvailabilityOut]:
     """List all menu items with store-specific availability."""
-    from sqlalchemy.orm import joinedload
     items = db.query(MenuItem).options(joinedload(MenuItem.item_type)).order_by(MenuItem.name).all()
-
-    # Batch-load store availability in ONE query instead of N+1 queries
-    store_avail_map: dict[int, bool] = {}
-    if store_id:
-        store_avails = db.query(MenuItemStoreAvailability).filter(
-            MenuItemStoreAvailability.store_id == store_id
-        ).all()
-        store_avail_map = {sa.menu_item_id: sa.is_available for sa in store_avails}
+    store_avail_map = batch_load_store_availability(db, store_id, "menu_item")
 
     result = []
     for item in items:
-        # O(1) dict lookup instead of database query (default to True if no override)
         is_available = store_avail_map.get(item.id, True) if store_id else True
 
         # Derive category from item_type
@@ -387,7 +330,6 @@ def list_unavailable_menu_items(
     store_id: Optional[str] = Query(None, description="Store ID"),
 ) -> List[MenuItemStoreAvailabilityOut]:
     """List all 86'd menu items for a store."""
-    from sqlalchemy.orm import joinedload
     if store_id:
         store_unavail = db.query(MenuItemStoreAvailability).filter(
             MenuItemStoreAvailability.store_id == store_id,
@@ -464,13 +406,77 @@ def get_ingredient(
     _admin: str = Depends(verify_admin_credentials),
 ) -> IngredientOut:
     """Get a specific ingredient by ID."""
-    from sqlalchemy.orm import joinedload
     ingredient = db.query(Ingredient).options(
         joinedload(Ingredient.unit_rel)
     ).filter(Ingredient.id == ingredient_id).first()
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
     return IngredientOut.model_validate(ingredient)
+
+
+@admin_ingredients_router.get("/{ingredient_id}/references")
+def get_ingredient_references(
+    ingredient_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> dict:
+    """Get all references to this ingredient for the References tab."""
+
+    # Verify ingredient exists
+    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+
+    # Query MenuItemIngredient - menu items with this ingredient as a default
+    menu_item_refs = db.query(MenuItemIngredient).options(
+        joinedload(MenuItemIngredient.menu_item)
+    ).filter(MenuItemIngredient.ingredient_id == ingredient_id).all()
+
+    menu_items = [
+        {
+            "id": ref.menu_item.id,
+            "name": ref.menu_item.name,
+            "quantity": ref.quantity,
+        }
+        for ref in menu_item_refs
+    ]
+
+    # Query ItemTypeIngredient - item types that can use this ingredient as a modifier
+    item_type_refs = db.query(ItemTypeIngredient).options(
+        joinedload(ItemTypeIngredient.item_type)
+    ).filter(ItemTypeIngredient.ingredient_id == ingredient_id).all()
+
+    item_types = [
+        {
+            "id": ref.item_type.id,
+            "display_name": ref.item_type.display_name,
+            "slug": ref.item_type.slug,
+            "ingredient_group": ref.ingredient_group,
+        }
+        for ref in item_type_refs
+    ]
+
+    # Query GlobalAttributeOption - options linked to this ingredient
+    attr_options = db.query(GlobalAttributeOption).options(
+        joinedload(GlobalAttributeOption.attribute)
+    ).filter(GlobalAttributeOption.ingredient_id == ingredient_id).all()
+
+    attribute_options = [
+        {
+            "id": opt.id,
+            "attribute_slug": opt.attribute.slug,
+            "attribute_display_name": opt.attribute.display_name,
+            "display_name": opt.display_name or ingredient.name,
+            "price_modifier": float(opt.price_modifier) if opt.price_modifier else 0.0,
+        }
+        for opt in attr_options
+    ]
+
+    return {
+        "menu_items": menu_items,
+        "item_types": item_types,
+        "attribute_options": attribute_options,
+    }
 
 
 @admin_ingredients_router.put("/{ingredient_id}", response_model=IngredientOut)
@@ -499,7 +505,7 @@ def update_ingredient(
     if payload.is_available is not None:
         ingredient.is_available = payload.is_available
     if payload.aliases is not None:
-        _set_ingredient_aliases(db, ingredient, payload.aliases)
+        sync_entity_aliases(db, ingredient, payload.aliases, "ingredient")
     if payload.must_match is not None:
         _set_ingredient_must_match(db, ingredient, payload.must_match)
         # Auto-link to any matching GlobalAttributeOptions when must_match is set

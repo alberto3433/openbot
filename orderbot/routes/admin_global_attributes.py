@@ -42,13 +42,12 @@ from ..db import get_db
 from ..db.models import (
     GlobalAttribute,
     GlobalAttributeOption,
-    GlobalAttributeOptionAlias,
     Ingredient,
     ItemType,
     ItemTypeGlobalAttribute,
     ModifierCategory,
 )
-from ..services.helpers import validate_aliases
+from ..services.helpers import sync_entity_aliases
 from ..schemas.global_attributes import (
     GlobalAttributeOut,
     GlobalAttributeListOut,
@@ -84,14 +83,38 @@ admin_item_type_global_attrs_router = APIRouter(
 # Helper Functions
 # =============================================================================
 
-def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
-    """Convert GlobalAttributeOption model to response schema."""
+def _serialize_option(opt: GlobalAttributeOption, db: Optional[Session] = None) -> GlobalAttributeOptionOut:
+    """Convert GlobalAttributeOption model to response schema.
+
+    Args:
+        opt: The GlobalAttributeOption to serialize
+        db: Optional database session for fallback ingredient lookup
+    """
     # Get aliases from the option's alias_records
     aliases_str = ", ".join(opt.aliases) if opt.aliases else None
 
     # Derive slug/display_name from ingredient when linked (normalized)
-    slug = opt.ingredient.slug if opt.ingredient else opt.slug
-    display_name = opt.ingredient.name if opt.ingredient else opt.display_name
+    # Handle case where ingredient relationship isn't loaded but ingredient_id exists
+    ingredient = opt.ingredient
+    ingredient_name = None
+
+    if ingredient:
+        slug = ingredient.slug
+        display_name = ingredient.name
+        ingredient_name = ingredient.name
+    elif opt.ingredient_id and db:
+        # Fallback: load ingredient if relationship wasn't eager loaded
+        ingredient = db.query(Ingredient).filter(Ingredient.id == opt.ingredient_id).first()
+        if ingredient:
+            slug = ingredient.slug
+            display_name = ingredient.name
+            ingredient_name = ingredient.name
+        else:
+            slug = opt.slug or f"option_{opt.id}"
+            display_name = opt.display_name or f"Option {opt.id}"
+    else:
+        slug = opt.slug or f"option_{opt.id}"
+        display_name = opt.display_name or f"Option {opt.id}"
 
     return GlobalAttributeOptionOut(
         id=opt.id,
@@ -102,7 +125,7 @@ def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
         is_available=opt.is_available,
         display_order=opt.display_order,
         ingredient_id=opt.ingredient_id,
-        ingredient_name=opt.ingredient.name if opt.ingredient else None,
+        ingredient_name=ingredient_name,
         modifier_category_id=opt.modifier_category_id,
         modifier_category_name=opt.modifier_category.display_name if opt.modifier_category else None,
         aliases=aliases_str,
@@ -111,44 +134,13 @@ def _serialize_option(opt: GlobalAttributeOption) -> GlobalAttributeOptionOut:
     )
 
 
-def _sync_option_aliases(
-    db: Session,
-    option: GlobalAttributeOption,
-    aliases_str: Optional[str],
-) -> None:
-    """
-    Sync option aliases from comma-separated string to GlobalAttributeOptionAlias records.
-
-    Validates global uniqueness of each alias and replaces existing aliases.
-    """
-    # Parse and validate aliases
-    validated_aliases = validate_aliases(
-        db,
-        aliases_str,
-        exclude_global_attr_option_id=option.id,
-    )
-
-    # Delete existing aliases
-    db.query(GlobalAttributeOptionAlias).filter(
-        GlobalAttributeOptionAlias.global_attribute_option_id == option.id
-    ).delete()
-
-    # Create new aliases
-    for alias in validated_aliases:
-        alias_record = GlobalAttributeOptionAlias(
-            global_attribute_option_id=option.id,
-            alias=alias,
-        )
-        db.add(alias_record)
-
-
 def _serialize_attribute(attr: GlobalAttribute, db: Session) -> GlobalAttributeOut:
     """Convert GlobalAttribute model to response schema with options.
 
     Note: Requires attr.options and attr.item_type_links (with item_type)
     to be eager-loaded to avoid N+1 queries.
     """
-    options_out = [_serialize_option(opt) for opt in attr.options]
+    options_out = [_serialize_option(opt, db) for opt in attr.options]
 
     # Use eager-loaded relationship instead of separate queries
     linked_item_types = []
@@ -200,7 +192,7 @@ def _serialize_item_type_link(
 ) -> ItemTypeGlobalAttributeOut:
     """Convert ItemTypeGlobalAttribute link to response schema."""
     global_attr = link.global_attribute
-    options_out = [_serialize_option(opt) for opt in global_attr.options]
+    options_out = [_serialize_option(opt, db) for opt in global_attr.options]
 
     return ItemTypeGlobalAttributeOut(
         id=link.id,
@@ -479,7 +471,7 @@ def list_global_attribute_options(
     if not attr:
         raise HTTPException(status_code=404, detail="Global attribute not found")
 
-    return [_serialize_option(opt) for opt in attr.options]
+    return [_serialize_option(opt, db) for opt in attr.options]
 
 
 @admin_global_attributes_router.post(
@@ -591,7 +583,7 @@ def create_global_attribute_option(
     # Handle aliases if provided
     if payload.aliases is not None:
         try:
-            _sync_option_aliases(db, option, payload.aliases)
+            sync_entity_aliases(db, option, payload.aliases, "global_attribute_option")
         except ValueError as e:
             db.rollback()
             raise HTTPException(status_code=400, detail=str(e))
@@ -606,7 +598,7 @@ def create_global_attribute_option(
         option.id,
         option.ingredient_id,
     )
-    return _serialize_option(option)
+    return _serialize_option(option, db)
 
 
 @admin_global_attributes_router.put(
@@ -715,7 +707,7 @@ def update_global_attribute_option(
     # Handle aliases - check model_fields_set to distinguish None from not provided
     if "aliases" in payload.model_fields_set:
         try:
-            _sync_option_aliases(db, option, payload.aliases)
+            sync_entity_aliases(db, option, payload.aliases, "global_attribute_option")
         except ValueError as e:
             db.rollback()
             raise HTTPException(status_code=400, detail=str(e))
@@ -730,7 +722,7 @@ def update_global_attribute_option(
         option.ingredient_id,
         option.modifier_category_id,
     )
-    return _serialize_option(option)
+    return _serialize_option(option, db)
 
 
 @admin_global_attributes_router.delete(
@@ -920,7 +912,7 @@ def create_option_from_ingredient(
         attr.slug,
         option.id,
     )
-    return _serialize_option(option)
+    return _serialize_option(option, db)
 
 
 @admin_global_attributes_router.get(

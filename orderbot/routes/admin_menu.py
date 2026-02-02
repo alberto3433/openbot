@@ -70,7 +70,7 @@ from ..schemas.menu import (
     SizePriceOut,
     MenuItemIngredientOut,
 )
-from ..services.helpers import validate_aliases
+from ..services.helpers import sync_entity_aliases
 from ..cache import menu_cache
 
 
@@ -83,38 +83,6 @@ admin_menu_router = APIRouter(prefix="/admin/menu", tags=["Admin - Menu"])
 # =============================================================================
 # Helper Functions
 # =============================================================================
-
-def _set_menu_item_aliases(db: Session, item: MenuItem, aliases_str: Optional[str]) -> None:
-    """
-    Set menu item aliases from a comma-separated string.
-    Clears existing aliases and creates new ones from the input string.
-    Validates global uniqueness of aliases before adding.
-
-    Raises:
-        HTTPException: If any alias conflicts with an existing alias
-    """
-    # Clear existing aliases
-    for alias in list(item.alias_records):
-        db.delete(alias)
-
-    # Flush deletes before inserting new records to avoid unique constraint violations
-    db.flush()
-
-    # Validate and add new aliases if provided
-    if aliases_str:
-        try:
-            # Exclude current menu item's own ID so re-saving same aliases works
-            validated_aliases = validate_aliases(
-                db,
-                aliases_str,
-                exclude_menu_item_id=item.id,
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        for alias in validated_aliases:
-            db.add(MenuItemAlias(menu_item=item, alias=alias))
-
 
 def _set_menu_item_categories(db: Session, item: MenuItem, category_ids: Optional[List[int]]) -> None:
     """
@@ -364,7 +332,7 @@ def create_menu_item(
     db.flush()  # Get the item ID before adding child records
 
     # Add aliases through child table
-    _set_menu_item_aliases(db, item, payload.aliases)
+    sync_entity_aliases(db, item, payload.aliases, "menu_item")
 
     # Add category assignments
     _set_menu_item_categories(db, item, payload.category_ids)
@@ -446,7 +414,7 @@ def update_menu_item(
     if payload.item_type_id is not None:
         item.item_type_id = payload.item_type_id
     if payload.aliases is not None:
-        _set_menu_item_aliases(db, item, payload.aliases)
+        sync_entity_aliases(db, item, payload.aliases, "menu_item")
     if payload.abbreviation is not None:
         item.abbreviation = payload.abbreviation
     if payload.required_match_phrases is not None:

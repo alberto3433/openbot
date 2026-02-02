@@ -1228,6 +1228,7 @@
     let filteredItemTypes = [];
     let currentIndex = -1;
     let editingItemTypeId = null;
+    let currentTab = "basic";  // Track selected tab across row changes
     let linkedAttributes = [];
     let allGlobalAttributes = [];
     let editingLinkId = null;
@@ -1528,6 +1529,7 @@
 
     // Switch tabs
     function switchTab(tabName) {
+      currentTab = tabName;  // Persist tab selection
       detailTabs.querySelectorAll(".detail-tab").forEach(tab => {
         tab.classList.toggle("active", tab.dataset.tab === tabName);
       });
@@ -1558,7 +1560,7 @@
       componentSlots = [];
       expandedSlots.clear();
       renderComponentSlots();
-      switchTab("basic");
+      switchTab(currentTab);  // Preserve tab selection when clearing form
     }
 
     // Select item type by index
@@ -1607,7 +1609,7 @@
       await loadAllGlobalAttributes();
       await loadAttributes(itemType.id);
 
-      switchTab("basic");
+      switchTab(currentTab);  // Preserve tab selection when switching items
     }
 
     // Show item stats in the detail panel

@@ -55,6 +55,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
@@ -62,15 +63,31 @@ from ..db.models import (
     Company,
     GlobalAttributeOptionAlias,
     IngredientAlias,
+    IngredientStoreAvailability,
     ItemType,
     ItemTypeAlias,
     MenuItem,
     MenuItemAlias,
+    MenuItemStoreAvailability,
     ModifierCategoryAlias,
     Order,
     Store,
 )
 from .item_type_helpers import has_linked_attributes
+
+
+# =============================================================================
+# Entity Type Configuration for Alias Syncing
+# =============================================================================
+
+# Maps entity type to (AliasModel, FK column name, validate_aliases exclude param name)
+_ALIAS_CONFIG = {
+    "ingredient": (IngredientAlias, "ingredient_id", "exclude_ingredient_id"),
+    "menu_item": (MenuItemAlias, "menu_item_id", "exclude_menu_item_id"),
+    "modifier_category": (ModifierCategoryAlias, "modifier_category_id", "exclude_modifier_category_id"),
+    "item_type": (ItemTypeAlias, "item_type_id", "exclude_item_type_id"),
+    "global_attribute_option": (GlobalAttributeOptionAlias, "global_attribute_option_id", "exclude_global_attr_option_id"),
+}
 
 
 logger = logging.getLogger(__name__)
@@ -522,3 +539,104 @@ def validate_aliases(
         raise ValueError("; ".join(errors))
 
     return aliases
+
+
+def sync_entity_aliases(
+    db: Session,
+    entity: Any,
+    aliases_str: Optional[str],
+    entity_type: str,
+) -> None:
+    """
+    Sync aliases for any entity type from a comma-separated string.
+
+    This is a generic helper that consolidates the duplicate alias-handling
+    logic across multiple admin routes. It:
+    1. Clears existing aliases via the entity's `alias_records` relationship
+    2. Flushes to avoid unique constraint violations
+    3. Validates new aliases are globally unique
+    4. Creates new alias records
+
+    Args:
+        db: Database session
+        entity: The parent entity (Ingredient, MenuItem, ItemType, etc.)
+        aliases_str: Comma-separated aliases string (or None to clear all)
+        entity_type: One of "ingredient", "menu_item", "modifier_category",
+                     "item_type", or "global_attribute_option"
+
+    Raises:
+        HTTPException: If any alias conflicts with an existing alias
+        ValueError: If entity_type is not recognized
+
+    Example:
+        >>> sync_entity_aliases(db, ingredient, "swiss, swiss cheese", "ingredient")
+    """
+    if entity_type not in _ALIAS_CONFIG:
+        raise ValueError(f"Unknown entity_type: {entity_type}. Must be one of {list(_ALIAS_CONFIG.keys())}")
+
+    alias_model, fk_column, exclude_param = _ALIAS_CONFIG[entity_type]
+
+    # Clear existing aliases via the entity's alias_records relationship
+    for alias_record in list(entity.alias_records):
+        db.delete(alias_record)
+
+    # Flush deletes before inserting new records to avoid unique constraint violations
+    db.flush()
+
+    # Validate and add new aliases if provided
+    if aliases_str:
+        try:
+            # Pass the entity's ID as the exclude parameter so re-saving same aliases works
+            validated_aliases = validate_aliases(
+                db,
+                aliases_str,
+                **{exclude_param: entity.id},
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        for alias in validated_aliases:
+            # Create alias record using the FK column name
+            alias_record = alias_model(**{fk_column: entity.id, "alias": alias})
+            db.add(alias_record)
+
+
+def batch_load_store_availability(
+    db: Session,
+    store_id: Optional[str],
+    entity_type: str,
+) -> Dict[int, bool]:
+    """
+    Batch-load store availability for a list of entities in a single query.
+
+    This eliminates N+1 queries when loading store-specific availability
+    for multiple entities at once.
+
+    Args:
+        db: Database session
+        store_id: Store ID to check availability for (or None for global)
+        entity_type: One of "ingredient" or "menu_item"
+
+    Returns:
+        Dict mapping entity ID to availability status.
+        If store_id is None, returns empty dict (caller should use default).
+
+    Example:
+        >>> avail_map = batch_load_store_availability(db, "store_123", "ingredient")
+        >>> is_available = avail_map.get(ing.id, ing.is_available)
+    """
+    if not store_id:
+        return {}
+
+    if entity_type == "ingredient":
+        store_avails = db.query(IngredientStoreAvailability).filter(
+            IngredientStoreAvailability.store_id == store_id
+        ).all()
+        return {sa.ingredient_id: sa.is_available for sa in store_avails}
+    elif entity_type == "menu_item":
+        store_avails = db.query(MenuItemStoreAvailability).filter(
+            MenuItemStoreAvailability.store_id == store_id
+        ).all()
+        return {sa.menu_item_id: sa.is_available for sa in store_avails}
+    else:
+        raise ValueError(f"Unknown entity_type: {entity_type}. Must be 'ingredient' or 'menu_item'")

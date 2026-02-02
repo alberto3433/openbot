@@ -494,6 +494,99 @@
     .summary-bar .count {
       font-weight: 600;
     }
+
+    /* Tabs */
+    .detail-tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 16px;
+    }
+    .detail-tab {
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: #666;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .detail-tab:hover {
+      color: #333;
+      background: #f5f5f5;
+    }
+    .detail-tab.active {
+      color: #1976d2;
+      border-bottom-color: #1976d2;
+    }
+    .tab-panel {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .tab-panel.active {
+      display: block;
+    }
+
+    /* References tab styles */
+    .ref-section {
+      margin-bottom: 20px;
+    }
+    .ref-section-header {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ref-section-header .count {
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+    .ref-item {
+      padding: 8px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+    .ref-item:hover {
+      background: #f5f5f5;
+    }
+    .ref-item-name {
+      color: #1976d2;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .ref-item-name:hover {
+      text-decoration: underline;
+    }
+    .ref-item-detail {
+      color: #666;
+      font-size: 12px;
+    }
+    .ref-empty {
+      color: #888;
+      font-style: italic;
+      padding: 12px;
+      text-align: center;
+      background: #f9f9f9;
+      border-radius: 4px;
+    }
+    .ref-loading {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+    }
   </style>
 </head>
 <body>
@@ -569,7 +662,14 @@
         </div>
       </div>
 
+      <div class="detail-tabs" id="detailTabs">
+        <button class="detail-tab active" data-tab="details">Details</button>
+        <button class="detail-tab" data-tab="references">References</button>
+      </div>
+
       <div class="detail-body" id="detailBody">
+        <!-- Details Tab -->
+        <div class="tab-panel active" id="tabDetails">
         <input type="hidden" id="ingredientId" />
 
         <div class="field-row">
@@ -629,6 +729,14 @@
             <!-- Populated when ingredient is loaded -->
           </div>
         </div>
+        </div>
+
+        <!-- References Tab -->
+        <div class="tab-panel" id="tabReferences">
+          <div id="referencesContent">
+            <div class="ref-loading">Select an ingredient to view references</div>
+          </div>
+        </div>
       </div>
 
       <div class="detail-footer">
@@ -657,6 +765,8 @@
     let currentIndex = -1;
     let editingIngredientId = null;
     let STORE_NAMES = {};
+    let currentTab = "details";
+    let referencesLoaded = false;
 
     // DOM elements
     const toastContainer = document.getElementById("toastContainer");
@@ -670,6 +780,10 @@
     const aliasInput = document.getElementById("aliasInput");
     const mustMatchContainer = document.getElementById("mustMatchContainer");
     const mustMatchInput = document.getElementById("mustMatchInput");
+    const detailTabs = document.getElementById("detailTabs");
+    const tabDetails = document.getElementById("tabDetails");
+    const tabReferences = document.getElementById("tabReferences");
+    const referencesContent = document.getElementById("referencesContent");
 
     // Initialize tag inputs
     setupTagInput(aliasInput, aliasesContainer);
@@ -791,6 +905,102 @@
 
     function getCurrentStoreName() {
       return STORE_NAMES[getCurrentStoreId()] || getCurrentStoreId();
+    }
+
+    // Switch tabs
+    function switchTab(tabName) {
+      currentTab = tabName;
+      detailTabs.querySelectorAll(".detail-tab").forEach(tab => {
+        tab.classList.toggle("active", tab.dataset.tab === tabName);
+      });
+      tabDetails.classList.toggle("active", tabName === "details");
+      tabReferences.classList.toggle("active", tabName === "references");
+
+      // Lazy load references when switching to that tab
+      if (tabName === "references" && editingIngredientId && !referencesLoaded) {
+        loadReferences();
+      }
+    }
+
+    // Load references for current ingredient
+    async function loadReferences() {
+      if (!editingIngredientId) {
+        referencesContent.innerHTML = '<div class="ref-loading">Select an ingredient to view references</div>';
+        return;
+      }
+
+      referencesContent.innerHTML = '<div class="ref-loading">Loading references...</div>';
+
+      try {
+        const response = await authFetch(`${API_BASE}/${editingIngredientId}/references`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        referencesLoaded = true;
+        renderReferences(data);
+      } catch (error) {
+        console.error("Failed to load references:", error);
+        referencesContent.innerHTML = '<div class="ref-empty">Failed to load references</div>';
+      }
+    }
+
+    // Render references data
+    function renderReferences(data) {
+      let html = '';
+
+      // Menu Items section
+      html += '<div class="ref-section">';
+      html += `<div class="ref-section-header">Menu Items <span class="count">${data.menu_items.length}</span></div>`;
+      if (data.menu_items.length === 0) {
+        html += '<div class="ref-empty">No menu items use this ingredient as a default</div>';
+      } else {
+        data.menu_items.forEach(item => {
+          const qtyText = item.quantity > 1 ? ` (qty: ${item.quantity})` : '';
+          html += `
+            <div class="ref-item">
+              <a class="ref-item-name" href="/static/admin_menu.html#item-${item.id}" target="_blank">${escapeHtml(item.name)}</a>
+              <span class="ref-item-detail">${qtyText}</span>
+            </div>
+          `;
+        });
+      }
+      html += '</div>';
+
+      // Item Types section
+      html += '<div class="ref-section">';
+      html += `<div class="ref-section-header">Item Types <span class="count">${data.item_types.length}</span></div>`;
+      if (data.item_types.length === 0) {
+        html += '<div class="ref-empty">No item types use this ingredient as a modifier</div>';
+      } else {
+        data.item_types.forEach(itemType => {
+          html += `
+            <div class="ref-item">
+              <a class="ref-item-name" href="/static/admin_modifiers.html#type-${itemType.id}" target="_blank">${escapeHtml(itemType.display_name)}</a>
+              <span class="ref-item-detail">group: ${escapeHtml(itemType.ingredient_group)}</span>
+            </div>
+          `;
+        });
+      }
+      html += '</div>';
+
+      // Attribute Options section
+      html += '<div class="ref-section">';
+      html += `<div class="ref-section-header">Attribute Options <span class="count">${data.attribute_options.length}</span></div>`;
+      if (data.attribute_options.length === 0) {
+        html += '<div class="ref-empty">No attribute options are linked to this ingredient</div>';
+      } else {
+        data.attribute_options.forEach(opt => {
+          const priceText = opt.price_modifier ? `+$${opt.price_modifier.toFixed(2)}` : '';
+          html += `
+            <div class="ref-item">
+              <a class="ref-item-name" href="/static/admin_global_attributes.html#option-${opt.id}" target="_blank">${escapeHtml(opt.attribute_slug)}.${escapeHtml(opt.display_name)}</a>
+              <span class="ref-item-detail">${priceText}</span>
+            </div>
+          `;
+        });
+      }
+      html += '</div>';
+
+      referencesContent.innerHTML = html;
     }
 
     // Load stores
@@ -982,6 +1192,10 @@
       clearTags(mustMatchContainer, mustMatchInput);
       updateAvailabilityButton(true);
       document.getElementById("statsSection").style.display = "none";
+      // Reset references state but preserve tab
+      referencesLoaded = false;
+      referencesContent.innerHTML = '<div class="ref-loading">Select an ingredient to view references</div>';
+      switchTab(currentTab);
     }
 
     // Select ingredient by index
@@ -1002,6 +1216,9 @@
       const ingredient = filteredIngredients[idx];
       editingIngredientId = ingredient.id;
 
+      // Reset references state - will lazy load if tab is active
+      referencesLoaded = false;
+
       // Fetch full details
       try {
         const response = await authFetch(`${API_BASE}/${ingredient.id}`);
@@ -1014,6 +1231,9 @@
         // Use minimal data from list
         populateDetailForm(ingredient);
       }
+
+      // Preserve tab and load references if on that tab
+      switchTab(currentTab);
     }
 
     // Populate detail form with ingredient data
@@ -1253,6 +1473,11 @@
     document.getElementById("deleteBtn").addEventListener("click", deleteIngredient);
     document.getElementById("cancelBtn").addEventListener("click", cancelEditing);
     document.getElementById("availabilityToggle").addEventListener("click", toggleAvailability);
+
+    // Tab click handlers
+    detailTabs.querySelectorAll(".detail-tab").forEach(tab => {
+      tab.addEventListener("click", () => switchTab(tab.dataset.tab));
+    });
 
     searchInput.addEventListener("input", applyFilter);
     categoryFilter.addEventListener("change", applyFilter);

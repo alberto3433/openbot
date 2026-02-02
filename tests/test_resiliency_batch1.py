@@ -286,6 +286,7 @@ class TestReplacementModificationScenarios:
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]
+
         # Bacon should be removed from meat attribute
         meat = updated_bagel.get("meat") or []
         has_bacon = any("bacon" in str(m).lower() for m in (meat if isinstance(meat, list) else [meat]))

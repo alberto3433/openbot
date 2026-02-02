@@ -207,10 +207,13 @@ class OptionsInquiryHandler:
                     attr_slug = attr.get("slug", "")
                     attr_name = attr.get("display_name", "").lower()
                     attr_slug_normalized = attr_slug.rstrip("s")
+                    # Handle _type suffix: "spread" should match "spread_type"
+                    attr_slug_base = attr_slug.replace("_type", "")
 
-                    # Match against slug or display name
+                    # Match against slug, normalized slug, base (without _type), or display name
                     if (topic == attr_slug or
                         topic == attr_slug_normalized or
+                        topic == attr_slug_base or
                         topic in attr_name or
                         attr_name.startswith(topic)):
                         return attr

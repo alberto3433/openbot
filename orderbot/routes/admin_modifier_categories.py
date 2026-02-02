@@ -36,34 +36,15 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-from fastapi import HTTPException
-
-from ..db.models import ModifierCategory, ModifierCategoryAlias
+from ..db.models import ModifierCategory
 from ..schemas.modifiers import (
     ModifierCategoryOut,
     ModifierCategoryCreate,
     ModifierCategoryUpdate,
 )
-from ..services.helpers import validate_aliases
+from ..services.helpers import sync_entity_aliases
 from .crud_factory import CRUDRouterFactory
 from .crud_helpers import apply_payload_updates
-
-
-def _set_modifier_category_aliases(db, category, aliases_str):
-    """Set modifier category aliases from a comma-separated string."""
-    # Clear existing aliases
-    for alias in list(category.alias_records):
-        db.delete(alias)
-    db.flush()
-
-    # Validate and add new aliases if provided
-    if aliases_str:
-        try:
-            validated_aliases = validate_aliases(db, aliases_str, exclude_modifier_category_id=category.id)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        for alias in validated_aliases:
-            db.add(ModifierCategoryAlias(modifier_category=category, alias=alias))
 
 
 def _build_create_kwargs(payload, db):
@@ -73,14 +54,14 @@ def _build_create_kwargs(payload, db):
 
 def _handle_create_pre_commit(item, payload, db):
     """Add aliases after item has ID but before commit."""
-    _set_modifier_category_aliases(db, item, payload.aliases)
+    sync_entity_aliases(db, item, payload.aliases, "modifier_category")
 
 
 def _handle_before_update(item, payload, db):
     """Apply update payload to item with custom alias handling."""
     # Handle aliases separately since they need special processing
     if payload.aliases is not None:
-        _set_modifier_category_aliases(db, item, payload.aliases)
+        sync_entity_aliases(db, item, payload.aliases, "modifier_category")
     # Apply remaining fields
     apply_payload_updates(item, payload, db, skip_fields={"aliases"})
 

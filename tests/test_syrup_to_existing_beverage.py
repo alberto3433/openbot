@@ -674,6 +674,80 @@ class TestOptionsInquiryAtCheckpoint:
             f"Item summary incorrectly contains 'Declined': {summary}"
         )
 
+    def test_what_spreads_after_declining_spread(self):
+        """
+        Test that 'what spreads do you have?' works after declining spread.
+
+        Scenario:
+        - User orders: plain bagel
+        - Bot asks: Would you like it toasted?
+        - User says: yes
+        - Bot asks: Would you like it scooped?
+        - User says: no
+        - Bot asks: Any spread on that?
+        - User says: no
+        - Bot asks: Any more changes? You can add Egg or Condiments.
+        - User asks: what spreads do you have
+
+        Expected: Bot lists spread options (cream cheese, butter, etc.)
+        Actual (before fix): "Sorry, we don't have what spreads do you have"
+
+        The fix ensures mandatory attributes (like spread_type) are included
+        when detecting "what X do you have?" inquiries, not just optional ones.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order a plain bagel
+        result = sm.process("plain bagel", order)
+        assert len(result.order.items.items) == 1
+        item = result.order.items.items[0]
+        assert item.menu_item_type == "bagel"
+
+        # Navigate through configuration, declining spread
+        max_iterations = 15
+        for _ in range(max_iterations):
+            pending = result.order.pending_field
+            if pending == "customization_checkpoint":
+                break
+            # Answer questions based on pending field
+            if pending and pending.endswith(":bread"):
+                result = sm.process("plain", result.order)
+            elif pending and pending.endswith(":toasted"):
+                result = sm.process("yes", result.order)
+            elif pending and pending.endswith(":scooped"):
+                result = sm.process("no", result.order)
+            elif pending and pending.endswith(":spread_type"):
+                result = sm.process("no", result.order)
+            elif result.message and "any more changes" in result.message.lower():
+                break
+            else:
+                result = sm.process("no", result.order)
+
+        # At customization checkpoint - now ask about spreads
+        result = sm.process("what spreads do you have", result.order)
+
+        # Should NOT contain the error message
+        assert "sorry" not in result.message.lower(), (
+            f"Bot incorrectly rejected options inquiry: {result.message}"
+        )
+        assert "we don't have what spreads" not in result.message.lower(), (
+            f"Bot incorrectly rejected options inquiry: {result.message}"
+        )
+
+        # Should list spread options - check for at least one spread
+        # Common spreads: Cream Cheese, Butter, etc.
+        message_lower = result.message.lower()
+        has_spread_option = any(
+            spread in message_lower
+            for spread in ["cream cheese", "butter", "scallion", "spread"]
+        )
+        assert has_spread_option, (
+            f"Bot did not list spread options: {result.message}"
+        )
+
 
 class TestChangeRequestWithQuantity:
     """Test change requests with quantity prefixes like 'can you make it with 2 vanilla syrups'."""

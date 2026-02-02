@@ -96,43 +96,49 @@ def _app_client_session(tmp_path_factory):
         # Seed minimal menu (using get-or-create to avoid duplicates)
         session = TestingSessionLocal()
 
+        # Use distinctive names so we can identify and clean up test data
         test_menu_items = [
             {
-                "name": "Turkey Club",
+                "name": "TEST_Turkey Club",
                 "is_signature": True,
                 "available_qty": 5,
             },
             {
-                "name": "Veggie Delight",
+                "name": "TEST_Veggie Delight",
                 "is_signature": True,
                 "available_qty": 10,
             },
             {
-                "name": "Italian Stallion",
+                "name": "TEST_Italian Stallion",
                 "is_signature": True,
                 "available_qty": 10,
             },
             {
-                "name": "Custom Sandwich",
+                "name": "TEST_Custom Sandwich",
                 "is_signature": False,
                 "available_qty": 100,
             },
             {
-                "name": "soda",
+                "name": "TEST_soda",
                 "is_signature": False,
                 "available_qty": 10,
             },
             {
-                "name": "Chips",
+                "name": "TEST_Chips",
                 "is_signature": False,
                 "available_qty": 40,
             },
         ]
 
+        # Track IDs of items we create for cleanup
+        created_item_ids = []
         for item_data in test_menu_items:
             existing = session.query(MenuItem).filter(MenuItem.name == item_data["name"]).first()
             if not existing:
-                session.add(MenuItem(**item_data))
+                item = MenuItem(**item_data)
+                session.add(item)
+                session.flush()  # Get the ID
+                created_item_ids.append(item.id)
 
         session.commit()
         session.close()
@@ -154,6 +160,21 @@ def _app_client_session(tmp_path_factory):
 
     # Cleanup after all tests complete
     app.dependency_overrides.clear()
+
+    # Clean up test menu items we created
+    with db_lock:
+        cleanup_session = TestingSessionLocal()
+        try:
+            # Delete any menu items with TEST_ prefix (our test data)
+            cleanup_session.query(MenuItem).filter(
+                MenuItem.name.like("TEST_%")
+            ).delete(synchronize_session=False)
+            cleanup_session.commit()
+        except Exception as e:
+            cleanup_session.rollback()
+            print(f"Warning: Failed to clean up test menu items: {e}")
+        finally:
+            cleanup_session.close()
 
     # Restore original credentials
     config_mod.ADMIN_USERNAME = original_config_username

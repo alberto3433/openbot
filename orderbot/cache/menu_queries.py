@@ -573,7 +573,6 @@ class MenuQueryMixin:
 
     def get_status(self) -> dict[str, Any]:
         """Get cache status information."""
-        from datetime import datetime
         return {
             "is_loaded": self._is_loaded,
             "last_refresh": self._last_refresh.isoformat() if self._last_refresh else None,

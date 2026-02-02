@@ -5,7 +5,6 @@ Contains methods for extracting relevant keywords from attributes for matching.
 """
 
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 

@@ -72,7 +72,6 @@ from ..db.models import (
     IngredientMustMatch,
     IngredientStoreAvailability,
     IngredientUnit,
-    ItemType,
     ItemTypeIngredient,
     MenuItem,
     MenuItemIngredient,

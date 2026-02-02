@@ -12,11 +12,11 @@ import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache.base import pluralize
-from .schemas import StateMachineResult, OrderPhase
-from .utils.text import format_english_list, number_to_word
+from ..schemas import StateMachineResult, OrderPhase
+from ..utils.text import format_english_list, number_to_word
 
 if TYPE_CHECKING:
-    from .models import OrderTask, MenuItemTask
+    from ..models import OrderTask, MenuItemTask
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +94,8 @@ class QuestionBuilder:
             - item_number: 1-based position
             - has_duplicates: True if item name appears multiple times
         """
-        from .message_builder import MessageBuilder
-        from .models import MenuItemTask
+        from ..message_builder import MessageBuilder
+        from ..models import MenuItemTask
 
         config_names = order.multi_item_config_names or []
         multi_count = len(config_names) if config_names else 1
@@ -248,8 +248,6 @@ class QuestionBuilder:
 
         Returns StateMachineResult if unmatched selection was handled, None otherwise.
         """
-        from .parsers.constants import DEFAULT_PAGINATION_SIZE
-
         attr_slug = attr.get("slug", "")
         unmatched = item.unmatched_selections.get(attr_slug)
         if not unmatched:
@@ -297,7 +295,7 @@ class QuestionBuilder:
             is_first: Whether this is the first page (includes "We don't have X" prefix)
             ack_text: Optional acknowledgment text to prepend (e.g., "Got it, oat milk.")
         """
-        from .parsers.constants import DEFAULT_PAGINATION_SIZE
+        from ..parsers.constants import DEFAULT_PAGINATION_SIZE
 
         pagination = order.pending_unmatched_pagination
         if not pagination:

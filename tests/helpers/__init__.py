@@ -31,6 +31,9 @@ from .menu_data_factories import (
     create_full_menu_data,
 )
 
+# Generic menu data builder
+from .menu_data_builder import MenuDataBuilder
+
 # Parsed item query helpers
 from .parsed_item_queries import (
     get_parsed_items,
@@ -68,6 +71,8 @@ __all__ = [
     "create_beverage_menu_data",
     "create_test_menu_data",
     "create_full_menu_data",
+    # Generic menu data builder
+    "MenuDataBuilder",
     # Parsed item queries
     "get_parsed_items",
     "get_parsed_item",

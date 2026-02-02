@@ -42,7 +42,6 @@ from ..intent_patterns import (
 from .extraction import (
     # Main extraction functions
     extract_attribute_values,
-    extract_special_instructions_from_input,
     extract_modifiers_with_qualifiers,
     # Internal helpers (used by tests)
     _extract_quantity,
@@ -50,6 +49,7 @@ from .extraction import (
     _extract_modifiers_generic,
     _extract_boolean_global_attribute,
 )
+from .instructions_extraction import extract_special_instructions_from_input
 
 # =============================================================================
 # Item Parsing Module Exports
@@ -67,7 +67,7 @@ from .item_parsing import (
     # Internal helpers
     _match_menu_item_name_for_type,
 )
-from .simple_item_parsing import _parse_simple_item_deterministic, _parse_soda_deterministic
+from .simple_item_parsing import _parse_soda_deterministic
 from .by_pound_parsing import (
     _parse_by_pound_order,
     _find_by_weight_item,

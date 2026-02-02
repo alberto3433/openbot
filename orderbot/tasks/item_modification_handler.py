@@ -19,7 +19,7 @@ from .schemas import StateMachineResult, OpenInputResponse
 from .pending_fields import PendingField
 from .parsers.quantity_utils import extract_quantity_for_pattern, extract_leading_quantity
 from .checkout_messages import sure_updated_anything_else, item_not_found_would_you_like_to_add
-from .handler_utils import get_last_item, is_configurable_menu_item, recalculate_and_summarize
+from .handler_utils import get_last_item, recalculate_and_summarize
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine

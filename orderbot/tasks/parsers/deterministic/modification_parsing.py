@@ -9,6 +9,7 @@ import re
 import logging
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import singularize
 
 from ...schemas import (
     OpenInputResponse,
@@ -403,6 +404,23 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
                 logger.debug("ADD MODIFIER: '%s' matches menu item '%s', skipping", modifier_text, menu_item)
                 return None
 
+    # Check if modifier_text contains an item type trigger (e.g., "a latte with milk")
+    # If so, this is a new item order, not a modifier-add request.
+    # BUT: only skip if the trigger word is NOT also a known modifier (e.g., "bacon"
+    # is both an omelette trigger and a valid modifier to add to items).
+    # Import here to avoid circular imports
+    from .item_parsing import _detect_item_type
+    detected_item_type, detected_trigger = _detect_item_type(modifier_text)
+    if detected_item_type and detected_trigger:
+        # Only treat as new item if the trigger word is NOT a known modifier
+        trigger_lower = detected_trigger.lower()
+        if trigger_lower not in all_modifiers:
+            logger.debug(
+                "ADD MODIFIER: '%s' contains item type '%s' (trigger='%s'), treating as new item order",
+                modifier_text, detected_item_type, detected_trigger
+            )
+            return None
+
     # === Parse modifier_text to extract individual modifiers with qualifiers ===
     # Handle "extra bacon and cheese on the side", "bacon, cheese, and tomato", etc.
 
@@ -474,6 +492,8 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
             quantity = int(qty_str)
         else:
             quantity = WORD_TO_NUM.get(qty_str, 1)
+        # Singularize after extracting quantity: "two cookies" -> "cookie"
+        text_lower = singularize(text_lower)
 
     for item in sorted(get_known_menu_items(), key=len, reverse=True):
         # Use word boundary check to prevent partial matches (e.g., "ham" matching "hamburger")
@@ -541,11 +561,11 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
 
     # Import here to avoid circular imports
     from .item_parsing import (
-        _parse_soda_deterministic,
         _parse_configurable_item,
         _detect_configurable_item_type,
         build_parsed_item,
     )
+    from .simple_item_parsing import _parse_soda_deterministic
 
     # Try to parse the item text as a specific item type
     # Soda/bottled drinks first (more specific names like "Snapple Iced Tea")

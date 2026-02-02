@@ -32,8 +32,6 @@ from .instructions_extraction import extract_special_instructions_from_input
 
 # Import from specialized modules
 from .item_building import build_parsed_item
-from .simple_item_parsing import _parse_simple_item_deterministic as _parse_soda_deterministic
-from .by_pound_parsing import _parse_by_pound_order, BY_POUND_PATTERN
 from .split_quantity_parsing import _parse_split_quantity_items as _parse_split_quantity_items_impl
 
 logger = logging.getLogger(__name__)
@@ -80,10 +78,12 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
             if keyword.lower() in skip_trigger_words:
                 continue
             keyword_lower = keyword.lower()
-            # Find all occurrences
-            idx = text_lower.find(keyword_lower)
-            while idx != -1:
-                end_pos = idx + len(keyword_lower)
+            # Find all occurrences using word boundary matching to prevent
+            # partial matches (e.g., "hot" matching inside "shot")
+            pattern = rf'\b{re.escape(keyword_lower)}\b'
+            for match in re.finditer(pattern, text_lower):
+                idx = match.start()
+                end_pos = match.end()
                 # Check if this match is in the "end region" (last 20% of text or last 15 chars)
                 text_len = len(text_lower)
                 end_region_start = max(text_len - 15, int(text_len * 0.8))
@@ -91,7 +91,6 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
                 # Prefer item types where the slug matches the trigger
                 slug_matches = keyword_lower == item_type_slug or keyword_lower.rstrip("s") == item_type_slug
                 matches.append((item_type_slug, keyword, len(keyword_lower), end_pos, is_at_end, slug_matches))
-                idx = text_lower.find(keyword_lower, idx + 1)
 
     if not matches:
         return None, None
@@ -511,6 +510,45 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         modifier_selections.append(Selection(
             slug=mod, category=category, quantity=1
         ))
+
+    # 5d. Filter out special instructions that are already captured as selections
+    # e.g., if "shot" is in attr_values, don't keep "extra shot" as an instruction
+    # Build set of all selection slugs from attribute_values and modifiers
+    captured_slugs: set[str] = set()
+    for attr_key, attr_val in attr_values.items():
+        if isinstance(attr_val, list):
+            # Multi-select: extract slugs from list items
+            for item in attr_val:
+                if isinstance(item, dict) and item.get("slug"):
+                    captured_slugs.add(item["slug"].lower())
+        elif isinstance(attr_val, str):
+            captured_slugs.add(attr_val.lower())
+    for sel in modifier_selections:
+        captured_slugs.add(sel.slug.lower())
+
+    # Filter instructions: remove if the item word matches a captured slug
+    # "extra shot" -> check if "shot" is captured
+    # "light cream cheese" -> check if "cream cheese" is captured
+    filtered_instructions = []
+    for instr in special_instructions:
+        # Extract the item part from instruction (e.g., "extra shot" -> "shot")
+        instr_lower = instr.lower()
+        item_word = instr_lower
+        for prefix in ["extra ", "light ", "no ", "heavy "]:
+            if instr_lower.startswith(prefix):
+                item_word = instr_lower[len(prefix):].strip()
+                break
+        # Check if suffix like " on the side" and remove
+        for suffix in [" on the side"]:
+            if item_word.endswith(suffix):
+                item_word = item_word[:-len(suffix)].strip()
+
+        # If item_word is already captured as a selection, skip this instruction
+        if item_word in captured_slugs:
+            logger.debug("Filtering duplicate instruction '%s' - already captured as selection", instr)
+            continue
+        filtered_instructions.append(instr)
+    special_instructions = filtered_instructions
 
     logger.info(
         "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s",

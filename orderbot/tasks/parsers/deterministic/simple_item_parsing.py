@@ -12,6 +12,7 @@ import re
 import logging
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import singularize
 
 from ...schemas import OpenInputResponse
 from ..constants import WORD_TO_NUM
@@ -39,6 +40,20 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
         '', text_lower
     )
     text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
+
+    # Extract quantity EARLY - before matching
+    # This ensures "two cookies" -> qty=2, text_lower="cookie" (singularized)
+    quantity = 1
+    qty_match = re.match(r'^(\d+|two|three|four|five)\s+', text_lower)
+    if qty_match:
+        qty_str = qty_match.group(1)
+        text_lower = text_lower[qty_match.end():]  # Strip quantity from text
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+        # Singularize after extracting quantity: "two cookies" -> "cookie"
+        text_lower = singularize(text_lower)
 
     # Get all simple (non-configurable) item types from database
     simple_item_types = menu_cache.get_simple_item_types()
@@ -101,21 +116,9 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
             canonical_name = matched_item
 
     logger.debug(
-        "Deterministic parse: simple item '%s' -> canonical '%s' (type=%s)",
-        matched_item, canonical_name, matched_item_type
+        "Deterministic parse: simple item '%s' -> canonical '%s' (type=%s, qty=%d)",
+        matched_item, canonical_name, matched_item_type, quantity
     )
-
-    # Extract quantity
-    quantity = 1
-    qty_match = re.search(r'(\d+|two|three|four|five)\s+', text_lower)
-    if qty_match:
-        qty_str = qty_match.group(1)
-        if qty_str.isdigit():
-            quantity = int(qty_str)
-        else:
-            quantity = WORD_TO_NUM.get(qty_str, 1)
-
-    logger.debug("Deterministic parse: simple item order - name=%s, qty=%d", canonical_name, quantity)
 
     # Build parsed_items
     parsed_items = [

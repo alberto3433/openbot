@@ -9,6 +9,7 @@ import re
 import logging
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import singularize
 
 from ...schemas import OpenInputResponse
 from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity
@@ -56,8 +57,17 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     """
     text_lower = text.lower().strip()
 
+    # Also prepare singularized version for matching plurals like "coffees" -> "coffee"
+    # Singularize each word to handle "three coffees" -> "three coffee"
+    words = text_lower.split()
+    singularized_words = [singularize(w) for w in words]
+    text_singularized = " ".join(singularized_words)
+
     # First, check if entire text matches a menu item (including aliases)
+    # Try both original and singularized forms
     resolved = menu_cache.resolve_menu_item_alias(text_lower)
+    if not resolved and text_singularized != text_lower:
+        resolved = menu_cache.resolve_menu_item_alias(text_singularized)
     if resolved:
         # Get the item type for this menu item
         item_type, _ = _detect_item_type(text_lower)
@@ -86,15 +96,26 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     # Find all matches and their positions
     matches: list[tuple[int, int, str, str]] = []  # (position, length, item_type, trigger)
 
+    # Try matching triggers against both original and singularized text
+    texts_to_try = [text_lower]
+    if text_singularized != text_lower:
+        texts_to_try.append(text_singularized)
+
     for item_type_slug, triggers in all_triggers.items():
         for keyword in triggers:
             # Skip common words that appear as triggers from menu item names
             if keyword.lower() in skip_trigger_words:
                 continue
             keyword_lower = keyword.lower()
-            pos = text_lower.find(keyword_lower)
-            if pos >= 0:
-                matches.append((pos, len(keyword_lower), item_type_slug, keyword))
+            # Use word boundary matching to prevent partial matches
+            # (e.g., "hot" matching inside "shot")
+            pattern = rf'\b{re.escape(keyword_lower)}\b'
+            for try_text in texts_to_try:
+                match = re.search(pattern, try_text)
+                if match:
+                    pos = match.start()
+                    matches.append((pos, len(keyword_lower), item_type_slug, keyword))
+                    break  # Found in one form, no need to try singularized
 
     # Add implicit triggers for item type names themselves
     # This handles cases where "bagel" type doesn't have "bagel" as explicit trigger
@@ -107,12 +128,17 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
             item_type_slug.lower().replace("_", " "),
         ]
         for variant in type_variants:
-            if variant in text_lower:
-                pos = text_lower.find(variant)
-                # Only add if not already matched at this position
-                existing = [(m[0], m[2]) for m in matches]
-                if (pos, item_type_slug) not in existing:
-                    matches.append((pos, len(variant), item_type_slug, variant))
+            # Use word boundary matching to prevent partial matches
+            pattern = rf'\b{re.escape(variant)}\b'
+            for try_text in texts_to_try:
+                match = re.search(pattern, try_text)
+                if match:
+                    pos = match.start()
+                    # Only add if not already matched at this position
+                    existing = [(m[0], m[2]) for m in matches]
+                    if (pos, item_type_slug) not in existing:
+                        matches.append((pos, len(variant), item_type_slug, variant))
+                    break  # Found in one form, no need to try singularized
 
     if not matches:
         return False, None, None

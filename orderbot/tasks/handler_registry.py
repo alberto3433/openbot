@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from .item_adder_handler import ItemAdderHandler
     from .modifier_change_handler import ModifierChangeHandler
     from .config_helper_handler import ConfigHelperHandler
-    from .menu_item_config_handler import MenuItemConfigHandler
+    from .config import MenuItemConfigHandler
     from .configuring_item_handler import ConfiguringItemHandler
     from .taking_items_handler import TakingItemsHandler
     from .slot_orchestration_handler import SlotOrchestrationHandler
@@ -74,7 +74,7 @@ class HandlerRegistry:
         from .item_adder_handler import ItemAdderHandler
         from .modifier_change_handler import ModifierChangeHandler
         from .config_helper_handler import ConfigHelperHandler
-        from .menu_item_config_handler import MenuItemConfigHandler
+        from .config import MenuItemConfigHandler
         from .configuring_item_handler import ConfiguringItemHandler
         from .taking_items_handler import TakingItemsHandler
         from .slot_orchestration_handler import SlotOrchestrationHandler

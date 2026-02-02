@@ -12,26 +12,25 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 """
 
 import logging
-import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 
-from .models import OrderTask, MenuItemTask
-from .selection_utils import (
+from ..models import OrderTask, MenuItemTask
+from ..selection_utils import (
     extract_meaningful_words,
     find_partial_matches,
     find_numeric_options,
 )
-from .schemas import StateMachineResult, OrderPhase
-from .parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
-from .parsers.quantity_utils import parse_numeric_input
-from .utils.text import format_english_list
-from .response_utils import is_affirmative
+from ..schemas import StateMachineResult, OrderPhase
+from ..parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
+from ..parsers.quantity_utils import parse_numeric_input
+from ..utils.text import format_english_list
+from ..response_utils import is_affirmative
 
 if TYPE_CHECKING:
-    from .pricing import PricingEngine
-    from .utils import OptionMatcher, InputNormalizer
+    from ..pricing import PricingEngine
+    from ..utils import OptionMatcher, InputNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -464,15 +463,13 @@ class SelectInputHandler:
 
         # Add selection using unified API
         if variant_price_applied:
-            # Calculate upcharge from the smallest/base size for display
-            size_upcharge = self.pricing.lookup_size_upcharge(
-                item.menu_item_name, matched["slug"]
-            )
+            # Variant pricing already set unit_price to the full variant price.
+            # Store selection with price=0 to avoid duplicate display in cart.
             item.add_selection(
                 matched["slug"],
                 attr_slug,
                 quantity=quantity,
-                price=size_upcharge,  # Show upcharge from base size
+                price=0,  # No price since variant pricing handles it
                 display_name=matched["display_name"],
             )
         else:

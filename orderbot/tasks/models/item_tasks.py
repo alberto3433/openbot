@@ -177,13 +177,19 @@ class MenuItemTask(ItemTask):
     def get_selections(self, category: str) -> list[dict]:
         """Get all selections for a category (for multi-select).
 
+        Excludes declined markers (_declined) which are only used for tracking
+        that an attribute was explicitly answered.
+
         Args:
             category: The category to filter by
 
         Returns:
             List of Selection dicts matching the category
         """
-        return [sel for sel in self.modifiers if sel.get("category") == category]
+        return [
+            sel for sel in self.modifiers
+            if sel.get("category") == category and sel.get("slug") != "_declined"
+        ]
 
     def get_selection_value(self, category: str) -> str | None:
         """Get the slug of the first selection for a category.
@@ -215,8 +221,6 @@ class MenuItemTask(ItemTask):
 
         Override for MenuItemTask: checks selections instead of direct attributes.
         """
-        from orderbot.tasks.models.base import FieldConfig
-
         missing = []
         for field_name, config in field_configs.items():
             if not config.required:

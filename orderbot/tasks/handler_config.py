@@ -8,11 +8,12 @@ across all handler classes, reducing boilerplate in handler initialization.
 from dataclasses import dataclass
 from typing import Callable, TYPE_CHECKING
 
-from .mixins import MenuDataMixin
+from .mixins import MenuDataMixin, ContextMixin, CallbackMixin
 
 if TYPE_CHECKING:
     from .models import OrderTask, ItemTask
     from .schemas import StateMachineResult
+    from .context import OrderContext
 
 @dataclass
 class HandlerConfig:
@@ -108,3 +109,73 @@ class BaseHandler(MenuDataMixin):
     def store_info(self, value: dict | None) -> None:
         """Set store info dictionary."""
         self._store_info = value
+
+
+class BaseStateHandler(BaseHandler, ContextMixin, CallbackMixin):
+    """
+    Extended base class for state machine handlers with context and callbacks.
+
+    Combines BaseHandler with ContextMixin and CallbackMixin to provide:
+    - All BaseHandler functionality (model, pricing, menu_lookup, etc.)
+    - Per-request context management (returning_customer, is_repeat_order, etc.)
+    - Transition and configuration callbacks
+
+    Use this when a handler needs context propagation and/or transition callbacks.
+    For simpler handlers that only need base dependencies, use BaseHandler directly.
+
+    Attributes inherited from BaseHandler:
+        model: LLM model name
+        pricing: PricingEngine instance
+        menu_lookup: MenuLookup instance
+        menu_data: Raw menu data dictionary
+        store_info: Store information dictionary
+        message_builder: MessageBuilder instance
+
+    Attributes from ContextMixin:
+        _returning_customer: Returning customer data
+        _is_repeat_order: Whether this is a repeat order
+        _last_order_type: Last order type (pickup/delivery)
+
+    Attributes from CallbackMixin:
+        _transition_to_next_slot: Callback to transition order state
+        _configure_next_incomplete_item: Callback to get next config question
+    """
+
+    def __init__(
+        self,
+        config: "HandlerConfig",
+        transition_callback: Callable[["OrderTask"], None] | None = None,
+        configure_callback: Callable[["OrderTask"], "StateMachineResult"] | None = None,
+    ):
+        """
+        Initialize state handler with config and callbacks.
+
+        Args:
+            config: HandlerConfig with shared dependencies.
+            transition_callback: Callback to transition order to next slot.
+            configure_callback: Callback to get config question for incomplete items.
+        """
+        super().__init__(config)
+
+        # Initialize ContextMixin attributes
+        self._returning_customer: dict | None = None
+        self._is_repeat_order: bool = False
+        self._last_order_type: str | None = None
+
+        # Initialize CallbackMixin attributes
+        self._transition_to_next_slot = transition_callback
+        self._configure_next_incomplete_item = configure_callback
+
+    def set_context(self, ctx: "OrderContext") -> None:
+        """Set per-request context from unified OrderContext.
+
+        Extends ContextMixin.set_context to also update menu_data from context.
+
+        Args:
+            ctx: OrderContext with store info, returning customer data, etc.
+        """
+        # Call parent to set common context attributes
+        super().set_context(ctx)
+        # Also update menu_data from context if provided
+        if ctx.menu_data:
+            self._menu_data = ctx.menu_data

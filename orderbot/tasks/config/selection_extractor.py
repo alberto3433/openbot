@@ -11,14 +11,14 @@ import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
-from .schemas import Selection
-from .parsers import extract_attribute_values
-from .normalization import format_slug_for_display
-from .utils.text import format_english_list
+from ..schemas import Selection
+from ..parsers import extract_attribute_values
+from ..normalization import format_slug_for_display
+from ..utils.text import format_english_list
 
 if TYPE_CHECKING:
-    from .models import MenuItemTask
-    from .pricing import PricingEngine
+    from ..models import MenuItemTask
+    from ..pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 

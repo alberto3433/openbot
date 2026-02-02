@@ -5,7 +5,6 @@ Contains methods for querying and resolving attribute options.
 """
 
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 

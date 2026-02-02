@@ -13,27 +13,27 @@ Designed to be generic and work with any item type that has DB-defined attribute
 
 import logging
 import re
-from typing import Callable, TYPE_CHECKING
+from typing import Callable
 
 from orderbot.cache import menu_cache
-from .models import OrderTask, MenuItemTask
-from .pending_fields import PendingField
-from .normalization import strip_ordering_prefix
-from .schemas import StateMachineResult, OrderPhase
-from .parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
-from .handler_config import BaseHandler
-from .checkout_messages import got_it_anything_else
-from .utils import OptionMatcher, InputNormalizer
-from .utils.text import format_english_list, format_display_list
-from .select_input_handler import SelectInputHandler
-from .config_options_inquiry import OptionsInquiryHandler
-from .config_disambiguation import ConfigDisambiguationHandler
-from .config_question_builder import QuestionBuilder
-from .config_selection_extractor import SelectionExtractor
+from ..models import OrderTask, MenuItemTask
+from ..pending_fields import PendingField
+from ..normalization import strip_ordering_prefix
+from ..schemas import StateMachineResult, OrderPhase
+from ..parsers.constants import DEFAULT_PAGINATION_SIZE
+from ..handler_config import BaseHandler
+from ..checkout_messages import got_it_anything_else
+from ..utils import OptionMatcher, InputNormalizer
+from ..utils.text import format_display_list
+from .select_input import SelectInputHandler
+from .options_inquiry import OptionsInquiryHandler
+from .disambiguation import ConfigDisambiguationHandler
+from .question_builder import QuestionBuilder
+from .selection_extractor import SelectionExtractor
 from .direct_option_matcher import DirectOptionMatcher
-from .response_utils import is_negative, is_affirmative
-from .quantity_input_handler import QuantityInputHandler
-from .customization_checkpoint_handler import CustomizationCheckpointHandler
+from ..response_utils import is_negative, is_affirmative
+from .quantity_input import QuantityInputHandler
+from .customization_checkpoint import CustomizationCheckpointHandler
 
 logger = logging.getLogger(__name__)
 
@@ -482,7 +482,7 @@ class MenuItemConfigHandler(BaseHandler):
         options_list = self._format_display_list(unanswered_optional)
 
         return StateMachineResult(
-            message=f"Any more changes to that? You can add {options_list}.",
+            message=f"Any more changes? You can add {options_list}.",
             order=order,
         )
 
@@ -535,8 +535,8 @@ class MenuItemConfigHandler(BaseHandler):
         Returns:
             StateMachineResult with next question or completion message
         """
-        from .models import TaskStatus
-        from .message_builder import MessageBuilder
+        from ..models import TaskStatus
+        from ..message_builder import MessageBuilder
 
         # Determine which item types to process
         # Get configurable item types from database (item types with linked attributes)
@@ -988,7 +988,7 @@ class MenuItemConfigHandler(BaseHandler):
         order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
 
         return StateMachineResult(
-            message=f"{ack_prefix}Any more changes to that? You can add {options_list}.",
+            message=f"{ack_prefix}Any more changes? You can add {options_list}.",
             order=order,
         )
 

@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from .context import OrderContext
 
 from .checkout_messages import CheckoutMessages
-from .pending_fields import PendingField
 from .models import (
     OrderTask,
     MenuItemTask,
@@ -42,7 +41,7 @@ from .parsers.llm_parsers import (
     parse_phone,
     parse_email,
 )
-from .handler_config import BaseHandler
+from .handler_config import BaseStateHandler
 from .handler_utils import get_last_item
 from .normalization import format_slug_for_display
 from .utils.text import number_to_word
@@ -54,7 +53,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class CheckoutHandler(BaseHandler):
+class CheckoutHandler(BaseStateHandler):
     """
     Handles the entire checkout flow for orders.
 
@@ -81,32 +80,20 @@ class CheckoutHandler(BaseHandler):
             transition_callback: Callback function to transition order to next slot.
             handle_taking_items_with_parsed: Callback to handle parsed items during confirmation.
         """
-        super().__init__(config)
+        super().__init__(config, transition_callback=transition_callback)
 
         # Handler-specific dependencies and callbacks
         self.order_utils_handler = order_utils_handler
-        self._transition_to_next_slot = transition_callback
         self._handle_taking_items_with_parsed = handle_taking_items_with_parsed
 
         # Sub-handlers
         self._delivery_handler = DeliveryHandler(config)
 
-        # Context set per-request
-        self._returning_customer: dict | None = None
-        self._is_repeat_order: bool = False
-        self._last_order_type: str | None = None
-
     # Note: _modifier_category_keywords and _modifier_item_keywords are
     # inherited from MenuDataMixin via BaseHandler
 
-    def set_context(self, ctx: "OrderContext") -> None:
-        """Set per-request context for checkout handling."""
-        self._store_info = ctx.store_info
-        self._returning_customer = ctx.returning_customer
-        self._is_repeat_order = ctx.is_repeat_order
-        self._last_order_type = ctx.last_order_type
-        self._menu_data = ctx.menu_data
-        # Pass context to sub-handlers
+    def _propagate_context(self, ctx: "OrderContext") -> None:
+        """Propagate context to sub-handlers."""
         self._delivery_handler.set_context(ctx)
         self._delivery_handler.set_message_builder(self.message_builder)
 

@@ -66,7 +66,6 @@ from ..db.models import (
     IngredientStoreAvailability,
     ItemType,
     ItemTypeAlias,
-    MenuItem,
     MenuItemAlias,
     MenuItemStoreAvailability,
     ModifierCategoryAlias,

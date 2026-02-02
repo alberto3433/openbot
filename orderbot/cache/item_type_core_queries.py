@@ -5,7 +5,6 @@ Contains methods for querying item types, configurable types, and type metadata.
 """
 
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 

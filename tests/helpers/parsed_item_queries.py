@@ -142,8 +142,8 @@ def get_coffee_item(result):
 
     Replaces: result.new_coffee is True / result.new_coffee_type
 
-    Checks for "sized_beverage", "espresso", and "coffee" item types since parsers may
-    use any of these depending on context.
+    Checks for "sized_beverage", "espresso", "espresso_based", and "coffee" item types
+    since parsers may use any of these depending on context.
     """
     # Try sized_beverage first (new convention)
     item = get_parsed_item(result, item_type="sized_beverage")
@@ -151,6 +151,10 @@ def get_coffee_item(result):
         return item
     # Try espresso
     item = get_parsed_item(result, item_type="espresso")
+    if item is not None:
+        return item
+    # Try espresso_based (lattes, cappuccinos, etc.)
+    item = get_parsed_item(result, item_type="espresso_based")
     if item is not None:
         return item
     # Fall back to "coffee" item_type

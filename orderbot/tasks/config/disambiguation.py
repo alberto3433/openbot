@@ -11,9 +11,9 @@ import logging
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
-from .schemas import StateMachineResult
-from .parsers.constants import extract_quantity_for_pattern
-from .utils.disambiguation_utils import (
+from ..schemas import StateMachineResult
+from ..parsers.constants import extract_quantity_for_pattern
+from ..utils.disambiguation_utils import (
     normalize_input,
     match_by_ordinal,
     match_by_name_exact,
@@ -23,7 +23,7 @@ from .utils.disambiguation_utils import (
 )
 
 if TYPE_CHECKING:
-    from .models import OrderTask, MenuItemTask
+    from ..models import OrderTask, MenuItemTask
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ class ConfigDisambiguationHandler:
         Returns:
             StateMachineResult if disambiguation was handled, None if no disambiguation pending
         """
-        from .models import MenuItemTask
+        from ..models import MenuItemTask
 
         disambiguation = order.pending_attr_disambiguation
         if not disambiguation:

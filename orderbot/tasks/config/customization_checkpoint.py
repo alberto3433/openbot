@@ -9,7 +9,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 
 import logging
 import re
-from typing import Callable, TYPE_CHECKING, Any
+from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 

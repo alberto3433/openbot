@@ -39,7 +39,7 @@ def _get_parsed_item_type(item) -> str:
     item_type = getattr(item, 'item_type', None)
     if item_type:
         # Map item_type to legacy type names for test compatibility
-        if item_type == "sized_beverage":
+        if item_type in ("sized_beverage", "espresso_based"):
             return "coffee"
         return item_type
     return 'unknown'
@@ -48,7 +48,7 @@ def _get_parsed_item_type(item) -> str:
 def _is_coffee_item(item) -> bool:
     """Check if a ParsedItem is a coffee/beverage."""
     item_type = getattr(item, 'item_type', None)
-    return item_type == "sized_beverage"
+    return item_type in ("sized_beverage", "espresso_based")
 
 
 def _is_bagel_item(item) -> bool:
@@ -965,11 +965,11 @@ class TestFindNthItemOfType:
             BagelItemTask(bread="everything"),
         ]
 
-        # "2nd item" should return the coffee (index 1)
+        # "2nd item" should return the latte (index 1)
         result = find_nth_item_of_type(items, "item", 2)
         assert result is not None
         item, idx = result
-        assert "size" in item  # Created as sized_beverage via CoffeeItemTask helper
+        assert "size" in item  # Created as espresso_based via CoffeeItemTask helper
         assert idx == 1
 
     def test_find_nth_item_out_of_range(self):
@@ -2612,6 +2612,34 @@ class TestAddModifierToItem:
             modifiers_lower = [m.lower() for m in result.modify_add_modifiers]
             assert "american cheese" not in modifiers_lower, \
                 f"American Cheese should not match 'cc' (cream cheese): {result.modify_add_modifiers}"
+
+    def test_add_latte_with_modifiers_is_new_item(self):
+        """Test 'add a latte with milk and one extra shot' is a NEW item, not modify-existing.
+
+        Regression test: Previously, 'add a latte with milk and one extra shot' was
+        incorrectly treated as 'add modifiers (milk, shot) to existing item' and created
+        two separate lattes. It should be parsed as a single new latte with modifiers.
+        """
+        result = parse_open_input_deterministic("add a latte with milk and one extra shot")
+        assert result is not None
+
+        # Should NOT be a modify-existing-item request
+        assert result.modify_existing_item is False, (
+            f"'add a latte with modifiers' should be a new item order, "
+            f"not modify_existing_item. Got modifiers: {result.modify_add_modifiers}"
+        )
+
+        # Should be parsed as a single new item
+        assert len(result.parsed_items) == 1, (
+            f"Expected 1 latte item, got {len(result.parsed_items)}: "
+            f"{[getattr(i, 'item_name', i.item_type) for i in result.parsed_items]}"
+        )
+
+        # The item should be a latte/espresso type
+        item = result.parsed_items[0]
+        assert item.item_type in ("espresso_based", "sized_beverage", "latte"), (
+            f"Expected espresso/beverage type, got: {item.item_type}"
+        )
 
 
 class TestExtractQuantityForPattern:

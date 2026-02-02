@@ -308,6 +308,12 @@ def add_modifiers_from_input(
             slug_match = re.search(rf'\b{re.escape(opt_slug_pattern)}\b', input_lower)
             display_match = re.search(rf'\b{re.escape(opt_display_pattern)}\b', input_lower)
             if slug_match or display_match:
+                # Skip if this slug was already added by the category loop above
+                # This prevents double-adding when categories and attribute options overlap
+                # (e.g., "syrup" category vs "milk_sweetener_syrup" attribute)
+                if opt_slug in {m.get("slug") for m in (item.modifiers or [])}:
+                    continue
+
                 # Extract quantity and check if additive ("another shot", "one more shot")
                 pattern = opt_slug_pattern if slug_match else opt_display_pattern
                 quantity, is_additive = extract_additive_quantity(input_lower, pattern)

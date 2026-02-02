@@ -58,7 +58,7 @@ looks up previous orders to personalize the experience:
 import json
 import logging
 import uuid
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse

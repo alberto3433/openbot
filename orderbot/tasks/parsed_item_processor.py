@@ -24,7 +24,7 @@ from .utils.text import format_english_list
 from .utils.constants import is_price_metadata_key
 
 if TYPE_CHECKING:
-    from .models import OrderTask, MenuItemTask
+    from .models import OrderTask
     from .pricing import PricingEngine
     from .item_adder_handler import ItemAdderHandler
     from .schemas import OpenInputResponse
@@ -345,12 +345,24 @@ class ParsedItemProcessor:
                     logger.info("Queued %s (%s) for config before disambiguation", display_name, item_id[:8])
 
             # Build message that acknowledges all items (both added and needing disambiguation)
-            all_item_names = []
+            # Consolidate identical items: ["cookie", "cookie"] -> ["two cookies"]
+            from collections import Counter
+            item_counts: Counter[str] = Counter()
             for p in parsed.parsed_items:
                 name = p.item_name or menu_cache.get_item_type_display_name(p.item_type) or p.item_type
-                if p.quantity > 1:
-                    name = f"{p.quantity} {name}s" if not name.endswith('s') else f"{p.quantity} {name}"
-                all_item_names.append(name)
+                item_counts[name] += p.quantity if p.quantity > 1 else 1
+
+            all_item_names = []
+            for name, count in item_counts.items():
+                if count > 1:
+                    # Pluralize: "cookie" -> "two cookies"
+                    from orderbot.cache.base import pluralize
+                    plural_name = pluralize(name) if not name.endswith('s') else name
+                    from orderbot.tasks.parsers.quantity_utils import NUM_TO_WORD
+                    count_word = NUM_TO_WORD.get(count, str(count))
+                    all_item_names.append(f"{count_word} {plural_name}")
+                else:
+                    all_item_names.append(name)
 
             # Modify the disambiguation message to acknowledge the full order
             msg = pending_disambiguation.message

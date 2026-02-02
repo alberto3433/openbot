@@ -19,12 +19,7 @@ from orderbot.cache import menu_cache
 from ..quantity_utils import WORD_TO_NUM, BASIC_WORD_TO_NUM, extract_quantity_word
 
 # Re-export from sub-modules for backward compatibility
-from .qualifier_extraction import (
-    extract_modifiers_with_qualifiers,
-    _compile_word_pattern,
-    _find_pattern_matches,
-)
-from .instructions_extraction import extract_special_instructions_from_input
+from .qualifier_extraction import extract_modifiers_with_qualifiers
 
 logger = logging.getLogger(__name__)
 

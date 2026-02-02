@@ -22,7 +22,6 @@ from ..services.tax_utils import calculate_taxes, round_money
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
-    from ..services.message_builder import MessageBuilder
     from .context import OrderContext
 
 logger = logging.getLogger(__name__)

@@ -11,10 +11,8 @@ This module is order-state aware, adjusting responses based on cart contents.
 """
 
 import logging
-from typing import Optional
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import singularize
 
 from .menu_lookup import MenuLookup
 from .utils.text import format_english_list

@@ -418,7 +418,7 @@ class TestShotsHandling:
 
     def test_no_extra_shots(self):
         """
-        Test that 'none' for shots sets extra_shots=0.
+        Test that 'none' for shots declines the option (nothing added to cart).
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -436,10 +436,10 @@ class TestShotsHandling:
         # Answer with "none"
         result = sm.process("none", result.order)
 
-        # Check that shots attribute is set to 0 (stored as string "0")
+        # Check that shots attribute is declined (None = nothing in cart)
         item = result.order.items.items[0]
         shots_value = item.attribute_values.get("espresso_shots")
-        assert shots_value == "0", f"Expected espresso_shots='0', got {shots_value}"
+        assert shots_value is None, f"Expected espresso_shots=None (declined), got {shots_value}"
 
 
 class TestExtraShotAtCheckpoint:

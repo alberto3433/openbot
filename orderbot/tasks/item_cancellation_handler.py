@@ -41,12 +41,15 @@ def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:
     Examples:
         "second bagel" -> (2, "bagel")
         "3rd coffee" -> (3, "coffee")
+        "bagel 2" -> (2, "bagel")
+        "coffee #3" -> (3, "coffee")
         "the bagel" -> (None, "bagel")
 
     Returns:
         Tuple of (ordinal_index, item_type_keyword).
         ordinal_index is 1-based (1st, 2nd, etc.) or None if no ordinal found.
     """
+    import re
     from .parsers.selection_patterns import ORDINAL_WORDS
 
     desc_lower = cancel_desc.lower().strip()
@@ -63,12 +66,20 @@ def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:
             break
 
         # Check numeric ordinals (1st, 2nd, 3rd, etc.)
-        import re
         ordinal_match = re.match(r"(\d+)(?:st|nd|rd|th)", word)
         if ordinal_match:
             ordinal_index = int(ordinal_match.group(1))
             item_keyword = " ".join(words[i + 1:]) if i + 1 < len(words) else ""
             break
+
+    # Check for trailing number patterns: "bagel 2" or "coffee #3"
+    if ordinal_index is None and len(words) >= 2:
+        last_word = words[-1]
+        # Match plain number or #number at end
+        trailing_match = re.match(r"#?(\d+)$", last_word)
+        if trailing_match:
+            ordinal_index = int(trailing_match.group(1))
+            item_keyword = " ".join(words[:-1])
 
     return ordinal_index, item_keyword.strip()
 

@@ -13,15 +13,15 @@ from typing import Callable, TYPE_CHECKING, Any
 
 from orderbot.cache import menu_cache
 
-from .schemas import StateMachineResult, OrderPhase
-from .pending_fields import PendingField
-from .checkout_messages import got_it_anything_else
-from .parsers.constants import extract_quantity_for_pattern
+from ..schemas import StateMachineResult, OrderPhase
+from ..pending_fields import PendingField
+from ..checkout_messages import got_it_anything_else
+from ..parsers.constants import extract_quantity_for_pattern
 
 if TYPE_CHECKING:
-    from .models import OrderTask, MenuItemTask
-    from .options_inquiry_handler import OptionsInquiryHandler
-    from .option_matcher import OptionMatcher
+    from ..models import OrderTask, MenuItemTask
+    from .options_inquiry import OptionsInquiryHandler
+    from ..utils import OptionMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +140,8 @@ class CustomizationCheckpointHandler:
         if inquiry_attr:
             options = inquiry_attr.get("options", [])
             if options:
-                # Keep pending_field at checkpoint so user can choose from options
-                # or continue with other customizations
-                order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
+                # Set pending_field to the attribute so pagination ("show more") works
+                order.pending_field = f"{item_type}:{inquiry_attr['slug']}"
                 return self._options_inquiry_handler.handle_options_inquiry(
                     item, order, inquiry_attr, options, is_show_more=False
                 )

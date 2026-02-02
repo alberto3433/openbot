@@ -10,12 +10,12 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 import re
 from typing import Callable, TYPE_CHECKING
 
-from .schemas import StateMachineResult
-from .parsers.constants import DEFAULT_PAGINATION_SIZE
-from .utils.text import format_english_list
+from ..schemas import StateMachineResult
+from ..parsers.constants import DEFAULT_PAGINATION_SIZE
+from ..utils.text import format_english_list
 
 if TYPE_CHECKING:
-    from .models import OrderTask, MenuItemTask
+    from ..models import OrderTask, MenuItemTask
 
 __all__ = ["OptionsInquiryHandler"]
 

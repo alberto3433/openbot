@@ -382,6 +382,17 @@ class IngredientQueryMixin:
 
         return result
 
+    def _passes_must_match_filter(self, term: str, must_match: list[str] | None) -> bool:
+        """Check if term passes must_match requirement.
+
+        If must_match is empty or None, returns True (no restriction).
+        Otherwise, at least one must_match phrase must be in the term.
+        """
+        if not must_match:
+            return True
+        term_lower = term.lower()
+        return any(phrase.lower() in term_lower for phrase in must_match)
+
     def find_matching_ingredients(self, term: str) -> list[dict]:
         """Find all ingredients whose name or aliases contain the search term.
 
@@ -409,6 +420,11 @@ class IngredientQueryMixin:
             for detail in details_list:
                 slug = detail.get("slug", "")
                 if slug in seen_slugs:
+                    continue
+
+                # Skip if must_match phrases are defined but not present in search term
+                must_match = detail.get("must_match", [])
+                if not self._passes_must_match_filter(term, must_match):
                     continue
 
                 name = detail.get("name", "").lower()

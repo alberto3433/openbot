@@ -117,8 +117,11 @@ class SelectInputHandler:
 
         # Check if user input matches an unavailable option FIRST
         # e.g., "medium" when only small/large are available
+        # Use exact_only=True to avoid partial matches (e.g., "large" matching "Extra Large")
         if unavailable_options:
-            unavail_match, _ = self._option_matcher.match_single(user_input, unavailable_options)
+            unavail_match, _ = self._option_matcher.match_single(
+                user_input, unavailable_options, exact_only=True
+            )
             if unavail_match:
                 # User asked for something we don't have
                 unavail_name = unavail_match.get("display_name", user_input)

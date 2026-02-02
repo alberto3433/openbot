@@ -166,6 +166,7 @@ class IngredientLoaderMixin:
                 "slug": ing.slug,
                 "name": ing.name,
                 "patterns": patterns,
+                "must_match": ing.must_match,
             })
 
         self._ingredients_by_category = ingredients_by_category

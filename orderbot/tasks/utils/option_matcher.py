@@ -53,10 +53,17 @@ class OptionMatcher:
         self.normalizer = normalizer or InputNormalizer()
 
     def match_single(
-        self, user_input: str, options: list[dict]
+        self, user_input: str, options: list[dict], *, exact_only: bool = False
     ) -> tuple[dict | None, list[dict]]:
         """
         Find first matching option with smart partial matching.
+
+        Args:
+            user_input: The user's input text
+            options: List of option dicts to match against
+            exact_only: If True, skip partial matching phases (2 and 3).
+                Use this when you only want exact matches, e.g., for checking
+                if user asked for an unavailable option by name.
 
         Returns:
             (matched_option, partial_matches) tuple:
@@ -66,8 +73,8 @@ class OptionMatcher:
 
         Matching priority:
         1. Exact match on display_name, slug, or alias
-        2. Partial match: user input is contained in option name
-        3. Partial match: option name is contained in user input
+        2. Partial match: user input is contained in option name (skipped if exact_only)
+        3. Partial match: option name is contained in user input (skipped if exact_only)
         """
         user_lower = self.normalizer.normalize_for_matching(user_input)
         user_raw_lower = user_input.lower().strip()
@@ -81,6 +88,10 @@ class OptionMatcher:
         match = self._phase_normalized_exact_match(user_lower, options, user_input)
         if match:
             return (match, [])
+
+        # Skip partial matching if exact_only is True
+        if exact_only:
+            return (None, [])
 
         # Phase 2: Partial match - user input in option name
         partial_matches = self._phase_partial_input_in_option(

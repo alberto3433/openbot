@@ -6677,3 +6677,67 @@ class TestMenuInquiryWordBoundarySearch:
 
         # Should add to cart
         assert len(order.items.items) == 1, "Should add item to cart for order intent"
+
+
+class TestIngredientMustMatchFiltering:
+    """Tests for must_match filtering in find_matching_ingredients().
+
+    The must_match feature prevents partial matches when an ingredient has
+    required phrases. For example, "cheddar" should NOT match "Jalapeno Cheddar Bagel"
+    because that item requires "Jalapeno Cheddar" or "Jalapeño Cheddar" in the search.
+    """
+
+    def test_cheddar_does_not_match_jalapeno_cheddar_bagel(self):
+        """'cheddar' should NOT match 'Jalapeno Cheddar Bagel' due to must_match filter."""
+        from orderbot.cache import menu_cache
+
+        results = menu_cache.find_matching_ingredients("cheddar")
+
+        # Should find Cheddar Cheese but NOT Jalapeno Cheddar Bagel
+        result_slugs = [r["slug"] for r in results]
+
+        assert "cheddar_cheese" in result_slugs, \
+            "Should find Cheddar Cheese for 'cheddar'"
+        assert "jalapeno_cheddar_bagel" not in result_slugs, \
+            "Should NOT find Jalapeno Cheddar Bagel for 'cheddar' - must_match filter should exclude it"
+
+    def test_jalapeno_cheddar_matches_jalapeno_cheddar_bagel(self):
+        """'jalapeno cheddar' SHOULD match 'Jalapeno Cheddar Bagel'."""
+        from orderbot.cache import menu_cache
+
+        results = menu_cache.find_matching_ingredients("jalapeno cheddar")
+
+        result_slugs = [r["slug"] for r in results]
+
+        assert "jalapeno_cheddar_bagel" in result_slugs, \
+            "Should find Jalapeno Cheddar Bagel when search contains the must_match phrase"
+
+    def test_ingredient_without_must_match_still_matches(self):
+        """Ingredients without must_match requirements should match normally."""
+        from orderbot.cache import menu_cache
+
+        # Search for bacon - should match since it has no must_match restrictions
+        results = menu_cache.find_matching_ingredients("bacon")
+
+        assert len(results) > 0, "Should find bacon (no must_match restriction)"
+        result_slugs = [r["slug"] for r in results]
+        assert "bacon" in result_slugs, "Should find bacon ingredient"
+
+    def test_must_match_is_case_insensitive(self):
+        """must_match filtering should be case-insensitive."""
+        from orderbot.cache import menu_cache
+
+        # Search with different cases
+        results_lower = menu_cache.find_matching_ingredients("jalapeno cheddar")
+        results_upper = menu_cache.find_matching_ingredients("JALAPENO CHEDDAR")
+        results_mixed = menu_cache.find_matching_ingredients("Jalapeno Cheddar")
+
+        # All should find the same item
+        for results, case_name in [
+            (results_lower, "lowercase"),
+            (results_upper, "uppercase"),
+            (results_mixed, "mixed case"),
+        ]:
+            slugs = [r["slug"] for r in results]
+            assert "jalapeno_cheddar_bagel" in slugs, \
+                f"Should find Jalapeno Cheddar Bagel with {case_name} search"

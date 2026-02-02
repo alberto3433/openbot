@@ -513,3 +513,104 @@ class TestReplacementModificationScenarios:
 
         assert not deferred_response, \
             f"Should NOT defer the change. Got: {result2.message}"
+
+    def test_add_modifiers_during_configuration(self):
+        """
+        Test: User adds modifiers DURING item configuration with "add X" pattern.
+
+        Scenario:
+        - User orders: "plain bagel"
+        - Bot asks: "Would you like it toasted?"
+        - User says: "add bacon and cheese"
+        - Expected: bacon and cheese are added, bot continues asking about toasting
+
+        This tests the mid-config "add X" behavior where modifiers are applied
+        immediately rather than being blocked with "let's finish first".
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Step 1: User orders plain bagel
+        result1 = sm.process("plain bagel", order)
+
+        # Should be asking about toasted
+        bagels = [i for i in result1.order.items.items if i.has_attribute('bread')]
+        assert len(bagels) == 1, "Should have 1 bagel"
+
+        # The bagel should be in CONFIGURING_ITEM phase
+        assert result1.order.phase == OrderPhase.CONFIGURING_ITEM.value, \
+            f"Expected CONFIGURING_ITEM phase, got: {result1.order.phase}"
+
+        # Step 2: User says "add bacon and cheese" during configuration
+        result2 = sm.process("add bacon and cheese", result1.order)
+
+        # The modifiers should be applied AND we should continue with configuration
+        bagels_after = [i for i in result2.order.items.items if i.has_attribute('bread')]
+        assert len(bagels_after) == 1, "Should still have 1 bagel"
+        bagel_after = bagels_after[0]
+
+        # Check that modifiers were added (bacon and/or cheese)
+        modifier_slugs = {m.get("slug", "").lower() for m in bagel_after.modifiers}
+        has_bacon = any("bacon" in slug for slug in modifier_slugs)
+        has_cheese = any("cheese" in slug for slug in modifier_slugs)
+
+        # Should NOT say "let's finish first"
+        msg_lower = result2.message.lower()
+        deferred_response = "finish" in msg_lower and "first" in msg_lower
+        assert not deferred_response, \
+            f"Should NOT defer the add command. Got: {result2.message}"
+
+        # Should have added at least one modifier (bacon or cheese)
+        assert has_bacon or has_cheese, \
+            f"Should have added bacon or cheese. Modifiers: {bagel_after.modifiers}"
+
+    def test_add_single_modifier_during_configuration(self):
+        """
+        Test: User adds a single modifier DURING item configuration with "add X" pattern.
+
+        Scenario:
+        - User orders: "plain bagel"
+        - Bot asks: "Would you like it toasted?"
+        - User says: "add bacon"
+        - Expected: bacon is added, bot continues asking about toasting
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Step 1: User orders plain bagel
+        result1 = sm.process("plain bagel", order)
+
+        # Should be asking about toasted
+        assert result1.order.phase == OrderPhase.CONFIGURING_ITEM.value, \
+            f"Expected CONFIGURING_ITEM phase, got: {result1.order.phase}"
+
+        # Step 2: User says "add bacon" during configuration
+        result2 = sm.process("add bacon", result1.order)
+
+        # The modifiers should be applied
+        bagels_after = [i for i in result2.order.items.items if i.has_attribute('bread')]
+        assert len(bagels_after) == 1, "Should still have 1 bagel"
+        bagel_after = bagels_after[0]
+
+        # Check that bacon was added
+        modifier_slugs = {m.get("slug", "").lower() for m in bagel_after.modifiers}
+        has_bacon = any("bacon" in slug for slug in modifier_slugs)
+
+        # Should NOT say "let's finish first"
+        msg_lower = result2.message.lower()
+        deferred_response = "finish" in msg_lower and "first" in msg_lower
+        assert not deferred_response, \
+            f"Should NOT defer the add command. Got: {result2.message}"
+
+        # Should have added bacon
+        assert has_bacon, \
+            f"Should have added bacon. Modifiers: {bagel_after.modifiers}"
+
+        # Should acknowledge the addition
+        added_acknowledged = "added" in msg_lower or "bacon" in msg_lower
+        assert added_acknowledged, \
+            f"Should acknowledge adding bacon. Got: {result2.message}"

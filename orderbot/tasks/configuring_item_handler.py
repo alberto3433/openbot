@@ -321,6 +321,13 @@ class ConfiguringItemHandler:
             if can_you_make_it_result:
                 return can_you_make_it_result
 
+        # Check for "add X" patterns during configuration (e.g., "add bacon and cheese")
+        # Parse and apply the modifiers to the current item, then continue with config
+        if not is_valid_answer and isinstance(item, MenuItemTask):
+            add_result = self._handle_add_modifiers_during_config(user_input, item, order)
+            if add_result:
+                return add_result
+
         # Check for off-topic requests during configuration (e.g., "what syrups do you have?", "add vanilla syrup")
         # If detected, politely redirect back to the current configuration question
         # Note: Questions relevant to the current config (e.g., "what cream cheese do you have?" when asked about spread) are allowed
@@ -849,6 +856,124 @@ class ConfiguringItemHandler:
         # Couldn't apply - fall through to normal processing
         logger.debug("APPLY_MOD_DURING_CONFIG: Could not apply change for '%s'", new_value)
         return None
+
+    def _handle_add_modifiers_during_config(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle 'add X' patterns during item configuration.
+
+        When a user says "add bacon and cheese" while being asked about toasted,
+        we should add the modifiers to the current item and continue with the
+        pending configuration question.
+
+        Args:
+            user_input: The user's input (e.g., "add bacon and cheese")
+            item: The item being configured
+            order: The current order state
+
+        Returns:
+            StateMachineResult if modifiers were added, None if not an add pattern
+        """
+        import re
+        user_lower = user_input.lower().strip()
+
+        logger.info("ADD_DURING_CONFIG: Checking input '%s'", user_input[:50])
+
+        # Quick check: only handle inputs starting with "add "
+        if not user_lower.startswith("add "):
+            logger.debug("ADD_DURING_CONFIG: Input doesn't start with 'add ', skipping")
+            return None
+
+        # Extract the modifier text after "add "
+        modifier_text = user_lower[4:].strip()
+        # Remove trailing "please", "thanks"
+        modifier_text = re.sub(r"\s*(please|thanks|thank you)$", "", modifier_text).strip()
+
+        if not modifier_text:
+            return None
+
+        # Split by "and" and commas to get individual modifier terms
+        modifier_terms = re.split(r"\s*(?:,\s*|\s+and\s+)\s*", modifier_text)
+        modifier_terms = [t.strip() for t in modifier_terms if t.strip()]
+
+        if not modifier_terms:
+            return None
+
+        logger.info(
+            "ADD_DURING_CONFIG: Detected add pattern '%s' with terms: %s",
+            user_input, modifier_terms
+        )
+
+        # Apply each modifier to the current item
+        added_names = []
+        for term in modifier_terms:
+            # Find matching ingredients in database
+            matches = menu_cache.find_matching_ingredients(term)
+            logger.info(
+                "ADD_DURING_CONFIG: Looking up term '%s', found %d matches: %s",
+                term, len(matches), [m.get("name") for m in matches[:5]] if matches else []
+            )
+
+            if len(matches) == 1:
+                match = matches[0]
+                item.add_selection(
+                    slug=match["slug"],
+                    category=match["category"],
+                    display_name=match["name"],
+                    quantity=1,
+                    price=match.get("base_price", 0.0),
+                )
+                added_names.append(match["name"])
+                logger.info(
+                    "ADD_DURING_CONFIG: Added '%s' (category=%s) to item",
+                    match["name"], match["category"]
+                )
+            elif len(matches) > 1:
+                # Multiple matches - start disambiguation for this modifier
+                logger.info(
+                    "ADD_DURING_CONFIG: Multiple matches for '%s', starting disambiguation",
+                    term
+                )
+                return self._start_modifier_disambiguation(term, matches, item, order)
+            else:
+                # No match found - try category lookup
+                modifier_to_category = menu_cache.get_modifier_to_category_map()
+                category = modifier_to_category.get(term)
+                if category:
+                    modifier_slug = term.replace(" ", "_")
+                    item.add_selection(
+                        slug=modifier_slug,
+                        category=category,
+                        display_name=term.title(),
+                        quantity=1,
+                    )
+                    added_names.append(term.title())
+                    logger.info(
+                        "ADD_DURING_CONFIG: Added '%s' (category=%s) via category lookup",
+                        term, category
+                    )
+                else:
+                    logger.warning(
+                        "ADD_DURING_CONFIG: Could not find modifier '%s' in database",
+                        term
+                    )
+
+        if not added_names:
+            return None
+
+        # Recalculate price
+        if self.modifier_change_handler and self.modifier_change_handler.pricing:
+            self.modifier_change_handler.pricing.recalculate_item_price(item)
+
+        # Build acknowledgment message
+        from .utils.text import format_english_list
+        added_text = format_english_list(added_names)
+        message = f"Sure, I've added {added_text}."
+
+        return self._continue_config_with_message(message, item, order)
 
     def _replace_or_add_modifier(self, item: MenuItemTask, match: dict) -> None:
         """Replace existing modifier of same category, or add if none exists.

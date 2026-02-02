@@ -86,7 +86,14 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
             return OpenInputResponse(needs_category_clarification=category_slug)
 
         # Try word-boundary matching for partial matches
+        # Also try singularized form for plurals like "cookies" -> "cookie"
         word_matches = menu_cache.find_items_by_word_match(text_lower)
+        if not word_matches:
+            singularized = singularize(text_lower)
+            if singularized != text_lower:
+                word_matches = menu_cache.find_items_by_word_match(singularized)
+                if word_matches:
+                    text_lower = singularized  # Use singularized form going forward
         if word_matches:
             logger.debug(
                 "Deterministic parse: '%s' word-matches %d items, using for disambiguation",

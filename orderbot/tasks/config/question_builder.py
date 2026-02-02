@@ -141,10 +141,16 @@ class QuestionBuilder:
         attr_name = attr["display_name"].lower()
         db_question = attr.get("question_text")
 
-        # Use DB's question_text if available for single-item orders
-        if db_question and multi_count <= 1:
-            return db_question
+        # Use DB's question_text if available, with appropriate prefix for multi-item orders
+        if db_question:
+            if multi_count <= 1:
+                return db_question
+            elif has_duplicates:
+                return f"For the {ordinal} {item_ref}, {db_question[0].lower()}{db_question[1:]}"
+            else:
+                return f"For the {item_ref}, {db_question[0].lower()}{db_question[1:]}"
 
+        # Fallback to generic templates if no DB question
         if input_type == "boolean":
             if has_duplicates:
                 return f"For the {ordinal} {item_ref}, would you like it {attr_name}?"

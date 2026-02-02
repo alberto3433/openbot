@@ -430,11 +430,20 @@ class MenuItemConfigHandler(BaseHandler):
         return StateMachineResult(message=question, order=order)
 
     def _ask_customization_checkpoint(
-        self, item: MenuItemTask, order: OrderTask
+        self, item: MenuItemTask, order: OrderTask, acknowledgment: str | None = None
     ) -> StateMachineResult:
-        """Ask if user wants to customize with optional attributes."""
+        """Ask if user wants to customize with optional attributes.
+
+        Args:
+            item: The menu item being configured
+            order: The current order
+            acknowledgment: Optional acknowledgment message to prepend (e.g., "Butter added")
+        """
         item_type = item.menu_item_type
         unanswered_optional = self._get_unanswered_optional(item, item_type)
+
+        # Build acknowledgment prefix if provided
+        ack_prefix = f"Got it, {acknowledgment}. " if acknowledgment else ""
 
         if not unanswered_optional:
             # No optional attributes available, recalculate price and complete
@@ -467,7 +476,7 @@ class MenuItemConfigHandler(BaseHandler):
 
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
-                message=got_it_anything_else(item.get_summary()),
+                message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?" if ack_prefix else got_it_anything_else(item.get_summary()),
                 order=order,
             )
 
@@ -482,7 +491,7 @@ class MenuItemConfigHandler(BaseHandler):
         options_list = self._format_display_list(unanswered_optional)
 
         return StateMachineResult(
-            message=f"Any more changes? You can add {options_list}.",
+            message=f"{ack_prefix}Any more changes? You can add {options_list}.",
             order=order,
         )
 

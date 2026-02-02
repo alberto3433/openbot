@@ -101,6 +101,11 @@ class SelectInputHandler:
         # Clear pending quantity after extracting it
         order.pending_modifier_quantity = None
 
+        # Filter to only available options for matching
+        # Keep unavailable options separate for "we don't have X" messaging
+        available_options = [opt for opt in options if opt.get("is_available", True)]
+        unavailable_options = [opt for opt in options if not opt.get("is_available", True)]
+
         # Check for "none" / "no" / "skip"
         # Accept negative responses for non-required attributes or when allow_none=True
         can_skip = not attr.get("is_required", True) or attr.get("allow_none", False)
@@ -110,17 +115,38 @@ class SelectInputHandler:
                 item[attr_slug] = None
                 return advance_callback(item, order, attr)
 
+        # Check if user input matches an unavailable option FIRST
+        # e.g., "medium" when only small/large are available
+        if unavailable_options:
+            unavail_match, _ = self._option_matcher.match_single(user_input, unavailable_options)
+            if unavail_match:
+                # User asked for something we don't have
+                unavail_name = unavail_match.get("display_name", user_input)
+                if available_options:
+                    names = [opt["display_name"] for opt in available_options]
+                    from ..utils.text import format_english_list
+                    options_str = format_english_list(names, conjunction="or")
+                    return StateMachineResult(
+                        message=f"Sorry, we don't have {unavail_name}. We have {options_str}.",
+                        order=order,
+                    )
+                else:
+                    return StateMachineResult(
+                        message=f"Sorry, we don't have {unavail_name}.",
+                        order=order,
+                    )
+
         # For multi_select, try to match ALL options in the input
         if input_type == "multi_select":
             return self._handle_multi_select(
-                user_input, user_lower, item, order, attr, attr_slug, options,
+                user_input, user_lower, item, order, attr, attr_slug, available_options,
                 quantity, advance_callback, format_display_list_callback,
                 extract_qualifier_callback,
             )
 
         # For single_select (or if multi_select found nothing), use single-match logic
         return self._handle_single_select(
-            user_input, user_lower, item, order, attr, attr_slug, options,
+            user_input, user_lower, item, order, attr, attr_slug, available_options,
             quantity, input_type, advance_callback, format_display_list_callback,
             extract_selections_callback, extract_qualifier_callback,
         )

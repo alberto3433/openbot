@@ -6,7 +6,7 @@ where the user wants to change something about an item already in their order.
 """
 
 from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
-from orderbot.tasks.models import OrderTask, TaskStatus
+from orderbot.tasks.models import OrderTask, TaskStatus, MenuItemTask
 from tests.helpers import BagelItemTask, CoffeeItemTask
 
 
@@ -265,12 +265,17 @@ class TestReplacementModificationScenarios:
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        bagel = BagelItemTask(
-            bagel_type="everything",
-            toasted=True,
-            extra_protein="bacon",
+        # Create bagel using MenuItemTask with correct DB attribute names:
+        # - meat: multi_select for proteins like bacon
+        # - egg: single_select for egg
+        bagel = MenuItemTask(
+            menu_item_name="Bagel",
+            menu_item_type="bagel",
         )
-        bagel["toppings"] = ["egg"]
+        bagel.add_selection("everything", "bread")
+        bagel.add_selection("yes", "toasted")
+        bagel.add_selection("bacon", "meat")  # bacon goes in 'meat' attribute
+        bagel.add_selection("egg", "egg")  # egg is its own attribute
         bagel.mark_complete()
         order.items.add_item(bagel)
 
@@ -281,21 +286,15 @@ class TestReplacementModificationScenarios:
         assert len(bagels) == 1, "Should still have 1 bagel"
 
         updated_bagel = bagels[0]
-        # Bacon should be removed from extra_protein or toppings
-        extra_protein = updated_bagel["extra_protein"]
-        toppings = updated_bagel["toppings"] or []
-        has_bacon = (
-            (extra_protein and "bacon" in extra_protein.lower()) or
-            any("bacon" in e.lower() for e in toppings)
-        )
-        assert not has_bacon, f"Bacon should be removed. protein={extra_protein}, toppings={toppings}"
+        # Bacon should be removed from meat attribute
+        meat = updated_bagel.get("meat") or []
+        has_bacon = any("bacon" in str(m).lower() for m in (meat if isinstance(meat, list) else [meat]))
+        assert not has_bacon, f"Bacon should be removed. meat={meat}"
 
-        # Egg should still be there
-        has_egg = (
-            (extra_protein and "egg" in extra_protein.lower()) or
-            any("egg" in e.lower() for e in toppings)
-        )
-        assert has_egg, f"Egg should be preserved. protein={extra_protein}, toppings={toppings}"
+        # Egg should still be there (in 'egg' attribute)
+        egg_value = updated_bagel.get("egg")
+        has_egg = egg_value is not None and egg_value != ""
+        assert has_egg, f"Egg should be preserved. egg={egg_value}"
 
     def test_bagel_toasted_should_ask_about_scooped(self):
         """

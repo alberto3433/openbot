@@ -6315,9 +6315,9 @@ class TestModifierRemovalDuringConfig:
         assert remaining_bagel.menu_item_type == "bagel", "Item should be a bagel"
         assert remaining_bagel["extra_protein"] is None, "Bacon should be removed"
 
-        # Verify egg is still there
-        toppings = remaining_bagel["toppings"] or []
-        assert toppings == ["Egg"], "Egg should still be in toppings"
+        # Verify egg is still there (single topping returns as string, not list)
+        toppings = remaining_bagel["toppings"]
+        assert toppings == "Egg", "Egg should still be in toppings"
 
         # Verify we continue with the config question
         assert "removed" in result.message.lower() and "bacon" in result.message.lower()

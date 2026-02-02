@@ -9,9 +9,9 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Callable, TYPE_CHECKING
 
-from .models import OrderTask, MenuItemTask, ItemTask
+from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus
 from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN
@@ -76,6 +76,7 @@ class ConfigHelperHandler:
         self,
         config: HandlerConfig,
         modifier_change_handler: "ModifierChangeHandler | None" = None,
+        configure_next_incomplete_item: Callable[[OrderTask], StateMachineResult] | None = None,
     ):
         """
         Initialize the config helper handler.
@@ -83,6 +84,7 @@ class ConfigHelperHandler:
         Args:
             config: HandlerConfig with shared dependencies.
             modifier_change_handler: Handler for modifier changes.
+            configure_next_incomplete_item: Callback to get config question for incomplete items.
         """
         self.model = config.model
         self._get_next_question = config.get_next_question
@@ -90,6 +92,7 @@ class ConfigHelperHandler:
 
         # Handler-specific dependency
         self.modifier_change_handler = modifier_change_handler
+        self._configure_next_incomplete_item = configure_next_incomplete_item
 
     def check_cancellation_during_config(
         self,
@@ -128,6 +131,18 @@ class ConfigHelperHandler:
             order.clear_pending()
             order.set_phase(OrderPhase.TAKING_ITEMS)
             remaining = order.items.get_active_items()
+
+            # Check for remaining incomplete items that need configuration
+            if remaining and self._configure_next_incomplete_item:
+                for item in remaining:
+                    if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                        # Get the next config question and prepend removal confirmation
+                        config_result = self._configure_next_incomplete_item(order)
+                        return StateMachineResult(
+                            message=f"OK, I've removed the {item_name}. {config_result.message}",
+                            order=order,
+                        )
+
             if remaining:
                 return StateMachineResult(
                     message=ok_removed_anything_else(item_name),
@@ -253,6 +268,17 @@ class ConfigHelperHandler:
                 )
 
                 remaining = order.items.get_active_items()
+
+                # Check for remaining incomplete items that need configuration
+                if remaining and self._configure_next_incomplete_item:
+                    for item in remaining:
+                        if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                            config_result = self._configure_next_incomplete_item(order)
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_name}. {config_result.message}",
+                                order=order,
+                            )
+
                 if remaining:
                     return StateMachineResult(
                         message=ok_removed_anything_else(removed_name),

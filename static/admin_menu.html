@@ -981,8 +981,7 @@
         const existingIds = new Set(itemIngredients.map(i => i.ingredient_id));
         const matches = allIngredients
           .filter(i => !existingIds.has(i.id) &&
-            (i.name.toLowerCase().includes(query) || i.category.toLowerCase().includes(query)))
-          .slice(0, 10);
+            (i.name.toLowerCase().includes(query) || i.category.toLowerCase().includes(query)));
 
         if (!matches.length) {
           dropdown.style.display = 'none';

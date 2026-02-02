@@ -210,6 +210,55 @@ class MenuItemTask(ItemTask):
         """
         return any(sel.get("category") == category for sel in self.modifiers)
 
+    def get_missing_required_fields(self, field_configs: dict) -> list:
+        """Get list of required fields that are missing values.
+
+        Override for MenuItemTask: checks selections instead of direct attributes.
+        """
+        from orderbot.tasks.models.base import FieldConfig
+
+        missing = []
+        for field_name, config in field_configs.items():
+            if not config.required:
+                continue
+            # Check selections for this field (e.g., "bread", "toasted")
+            if not self.has_selection(field_name) and config.default is None:
+                missing.append(config)
+        return missing
+
+    def get_fields_to_ask(self, field_configs: dict) -> list:
+        """Get list of fields that need to be asked about.
+
+        Override for MenuItemTask: checks selections instead of direct attributes.
+        """
+        to_ask = []
+        for field_name, config in field_configs.items():
+            # Get current value from selections
+            current_value = self.get_selection_value(field_name)
+            if config.needs_asking(current_value):
+                to_ask.append(config)
+        return to_ask
+
+    def get_progress(self, field_configs: dict) -> float:
+        """Get completion progress as a percentage (0.0 to 1.0).
+
+        Override for MenuItemTask: checks selections instead of direct attributes.
+        """
+        if not field_configs:
+            return 1.0 if self.is_complete() else 0.0
+
+        required_fields = [f for f in field_configs.values() if f.required]
+        if not required_fields:
+            return 1.0 if self.is_complete() else 0.0
+
+        filled = 0
+        for config in required_fields:
+            # Check selections for this field
+            if self.has_selection(config.name) or config.default is not None:
+                filled += 1
+
+        return filled / len(required_fields)
+
     def add_selection(
         self,
         slug: str,
@@ -408,7 +457,9 @@ class MenuItemTask(ItemTask):
         # Remove existing selection for this category
         self.remove_selection(key)
 
-        if value is None:
+        # Treat None and integer 0 as "declined" (answered but no selection)
+        # This handles quantity attributes where user says "no" (e.g., "no extra shots" = 0)
+        if value is None or value == 0:
             # Mark as explicitly declined (so it's considered "answered")
             self.modifiers.append({
                 "slug": "_declined",

@@ -65,7 +65,7 @@ class LoaderMixin(
 
                 # All loaders now use bulk_data to avoid duplicate queries
                 self._load_known_menu_items_from_bulk(bulk_data)
-                self._load_signature_item_aliases_from_bulk(bulk_data)
+                self._load_items_with_defaults_aliases_from_bulk(bulk_data)
                 self._load_modifier_aliases_from_bulk(bulk_data)
                 self._load_side_items_from_bulk(bulk_data)
                 self._load_category_keywords_from_bulk(bulk_data)

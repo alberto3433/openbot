@@ -104,6 +104,7 @@ class TakingItemsHandler(MenuDataMixin):
         store_info_handler: "StoreInfoHandler | None" = None,
         checkout_utils_handler: "CheckoutUtilsHandler | None" = None,
         checkout_handler: "CheckoutHandler | None" = None,
+        configure_next_incomplete_item: Callable[["OrderTask"], "StateMachineResult"] | None = None,
     ) -> None:
         """
         Initialize the taking items handler.
@@ -115,6 +116,7 @@ class TakingItemsHandler(MenuDataMixin):
             store_info_handler: Handler for store info inquiries.
             checkout_utils_handler: Handler for checkout utilities.
             checkout_handler: Handler for checkout flow including confirmation/repeat orders.
+            configure_next_incomplete_item: Callback to get config question for incomplete items.
         """
         self.model = config.model
         self.pricing = config.pricing
@@ -128,7 +130,10 @@ class TakingItemsHandler(MenuDataMixin):
         self.checkout_handler = checkout_handler
 
         # Extracted sub-handlers (existing)
-        self.item_cancellation_handler = ItemCancellationHandler(pricing=config.pricing)
+        self.item_cancellation_handler = ItemCancellationHandler(
+            pricing=config.pricing,
+            configure_next_incomplete_item=configure_next_incomplete_item,
+        )
         self.item_replacement_handler = ItemReplacementHandler(pricing=config.pricing)
         self.item_modification_handler = ItemModificationHandler(
             pricing=config.pricing,

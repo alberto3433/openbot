@@ -375,7 +375,7 @@ def parse_open_input_deterministic(
             attr_values = extract_attribute_values(text, item_type_for_mods)
         modifications = _extract_menu_item_modifications(text, item_type_for_mods)
         # Look up is_signature from database (data-driven, no special handling)
-        is_sig = menu_cache.is_signature_item(menu_item)
+        is_sig = menu_cache.item_has_default_ingredients(menu_item)
         logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s, is_signature=%s)", text[:50], menu_item, qty, list(attr_values.keys()), modifications, is_sig)
         # Convert structured modifications to Selection objects
         mod_list = []

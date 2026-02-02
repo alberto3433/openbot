@@ -13,12 +13,12 @@ Extracted from taking_items_handler.py for better separation of concerns.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize, get_singular_plural_variants
 
-from .models import OrderTask, MenuItemTask
+from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OpenInputResponse
 from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
 from .handler_utils import get_last_item
@@ -136,14 +136,55 @@ class ItemCancellationHandler:
     various user patterns like "cancel that", "remove the bacon", etc.
     """
 
-    def __init__(self, pricing: "PricingEngine"):
+    def __init__(
+        self,
+        pricing: "PricingEngine",
+        configure_next_incomplete_item: Callable[[OrderTask], StateMachineResult] | None = None,
+    ):
         """
         Initialize the item cancellation handler.
 
         Args:
             pricing: PricingEngine for recalculating prices after modifications.
+            configure_next_incomplete_item: Callback to get config question for incomplete items.
         """
         self.pricing = pricing
+        self._configure_next_incomplete_item = configure_next_incomplete_item
+
+    def _build_removal_response(
+        self,
+        order: OrderTask,
+        removed_name: str,
+        has_remaining_items: bool,
+    ) -> StateMachineResult:
+        """Build response after item removal, continuing config if needed.
+
+        If there are remaining incomplete items (status=IN_PROGRESS), returns
+        the next configuration question for that item. Otherwise returns
+        "Anything else?" or "What would you like to order?".
+        """
+        # Check for incomplete items that need configuration
+        if has_remaining_items and self._configure_next_incomplete_item:
+            for item in order.items.get_active_items():
+                if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                    # Get the next config question and prepend removal confirmation
+                    config_result = self._configure_next_incomplete_item(order)
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {removed_name}. {config_result.message}",
+                        order=order,
+                    )
+
+        # No incomplete items - ask "Anything else?" or "What would you like?"
+        if has_remaining_items:
+            return StateMachineResult(
+                message=ok_removed_anything_else(removed_name),
+                order=order,
+            )
+        else:
+            return StateMachineResult(
+                message=f"OK, I've removed the {removed_name}. What would you like to order?",
+                order=order,
+            )
 
     def handle_item_cancellation(
         self,
@@ -315,16 +356,7 @@ class ItemCancellationHandler:
         logger.info("Cancellation: removed last item from cart: %s", removed_name)
 
         remaining_items = order.items.get_active_items()
-        if remaining_items:
-            return StateMachineResult(
-                message=ok_removed_anything_else(removed_name),
-                order=order,
-            )
-        else:
-            return StateMachineResult(
-                message=f"OK, I've removed the {removed_name}. What would you like to order?",
-                order=order,
-            )
+        return self._build_removal_response(order, removed_name, bool(remaining_items))
 
     def _try_all_items_removal(
         self,
@@ -454,16 +486,7 @@ class ItemCancellationHandler:
             )
 
             remaining_items = order.items.get_active_items()
-            if remaining_items:
-                return StateMachineResult(
-                    message=ok_removed_anything_else(removed_name),
-                    order=order,
-                )
-            else:
-                return StateMachineResult(
-                    message=f"OK, I've removed the {removed_name}. What would you like to order?",
-                    order=order,
-                )
+            return self._build_removal_response(order, removed_name, bool(remaining_items))
         else:
             logger.info(
                 "Cancellation: couldn't find %s #%d in cart",
@@ -546,14 +569,25 @@ class ItemCancellationHandler:
                 idx = order.items.items.index(item)
                 order.items.remove_item(idx)
 
-            if len(removed_names) == 1:
-                removed_str = f"the {removed_names[0]}"
-            else:
-                removed_str = f"the {len(removed_names)} {singular_desc}s"
-
             logger.info("Cancellation: removed %d item(s) from cart: %s", len(removed_names), removed_names)
 
             remaining_items = order.items.get_active_items()
+
+            # For single item removal, use helper to potentially continue configuration
+            if len(removed_names) == 1:
+                return self._build_removal_response(order, removed_names[0], bool(remaining_items))
+
+            # For multiple items, build message manually but still check for incomplete items
+            removed_str = f"the {len(removed_names)} {singular_desc}s"
+            if remaining_items and self._configure_next_incomplete_item:
+                for item in remaining_items:
+                    if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                        config_result = self._configure_next_incomplete_item(order)
+                        return StateMachineResult(
+                            message=f"OK, I've removed {removed_str}. {config_result.message}",
+                            order=order,
+                        )
+
             if remaining_items:
                 return StateMachineResult(
                     message=f"OK, I've removed {removed_str}. Anything else?",

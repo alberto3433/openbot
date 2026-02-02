@@ -335,13 +335,13 @@ def get_known_menu_items() -> set[str]:
     return set()
 
 
-def get_signature_item_aliases() -> dict[str, str]:
+def get_items_with_defaults_aliases() -> dict[str, str]:
     """
-    Get signature item alias mapping from database.
+    Get alias mapping for items that have default ingredients.
 
     Returns a dict mapping user input variations (aliases) to the actual
-    menu item names in the database. This is used for recognizing orders
-    like "bec", "bacon egg and cheese", "the classic", "the leo", etc.
+    menu item names in the database. Items with default ingredients need
+    special recognition to prevent trigger-based detection from overriding them.
 
     Returns:
         Dict mapping lowercase alias -> menu item name (with original casing).
@@ -352,11 +352,11 @@ def get_signature_item_aliases() -> dict[str, str]:
     """
     cache = _get_menu_cache()
     if cache:
-        cached = cache.get_signature_item_aliases()
+        cached = cache.get_items_with_defaults_aliases()
         if cached is not None:
             return cached
     raise RuntimeError(
-        "Signature item aliases not available. Ensure menu_data_cache is loaded from the database."
+        "Items with defaults aliases not available. Ensure menu_data_cache is loaded from the database."
     )
 
 

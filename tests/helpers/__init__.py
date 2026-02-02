@@ -37,8 +37,10 @@ from .parsed_item_queries import (
     get_parsed_item,
     has_parsed_item,
     count_parsed_items,
-    get_signature_item,
-    has_signature_item,
+    get_item_with_defaults,
+    has_item_with_defaults,
+    get_signature_item,  # Backward compatibility alias
+    has_signature_item,  # Backward compatibility alias
     get_bagel_item,
     has_bagel,
     get_coffee_item,
@@ -71,8 +73,10 @@ __all__ = [
     "get_parsed_item",
     "has_parsed_item",
     "count_parsed_items",
-    "get_signature_item",
-    "has_signature_item",
+    "get_item_with_defaults",
+    "has_item_with_defaults",
+    "get_signature_item",  # Backward compatibility alias
+    "has_signature_item",  # Backward compatibility alias
     "get_bagel_item",
     "has_bagel",
     "get_coffee_item",

@@ -575,7 +575,7 @@
       grid-template-columns: 1fr;
     }
 
-    /* Component Slots tab styles */
+    /* Included Choices tab styles */
     .slots-section {
       margin-bottom: 16px;
     }
@@ -850,7 +850,7 @@
       <div class="detail-tabs" id="detailTabs">
         <button class="detail-tab active" data-tab="basic">Basic Info</button>
         <button class="detail-tab" data-tab="attributes">Attributes</button>
-        <button class="detail-tab" data-tab="slots">Component Slots</button>
+        <button class="detail-tab" data-tab="slots">Included Choices</button>
       </div>
 
       <div id="detailBody" style="flex: 1; overflow-y: auto;">
@@ -941,20 +941,20 @@
           </div>
         </div>
 
-        <!-- Component Slots Tab -->
+        <!-- Included Choices Tab -->
         <div class="tab-panel" id="tabComponentSlots">
           <p style="font-size: 13px; color: #666; margin-top: 0; margin-bottom: 16px;">
-            Component slots allow items of this type to include configurable sub-items.
-            For example, an omelette can include a "side" slot that accepts bagels or fruit salad.
+            Included choices allow items of this type to include configurable sub-items.
+            For example, an omelette can include a "side" choice that accepts bagels or fruit salad.
           </p>
 
           <div class="slots-section">
             <div class="slots-header">
-              <h3>Component Slots</h3>
-              <button class="btn" id="addSlotBtn" style="padding: 6px 12px; font-size: 12px;">+ Add Slot</button>
+              <h3>Included Choices</h3>
+              <button class="btn" id="addSlotBtn" style="padding: 6px 12px; font-size: 12px;">+ Add Choice</button>
             </div>
             <div id="componentSlotsList">
-              <div class="empty-slots">No component slots configured. Click "+ Add Slot" to create one.</div>
+              <div class="empty-slots">No included choices configured. Click "+ Add Choice" to create one.</div>
             </div>
           </div>
         </div>
@@ -1067,11 +1067,11 @@
     </div>
   </div>
 
-  <!-- Component Slot Modal -->
+  <!-- Included Choice Modal -->
   <div class="modal-overlay" id="slotModal">
     <div class="modal">
       <div class="modal-header">
-        <h2 id="slotModalTitle">New Component Slot</h2>
+        <h2 id="slotModalTitle">New Included Choice</h2>
         <button class="modal-close" id="slotModalClose">&times;</button>
       </div>
       <div class="modal-body">
@@ -1080,7 +1080,7 @@
 
           <div class="attr-form-row">
             <div class="form-group">
-              <label for="slotName">Slot Name *</label>
+              <label for="slotName">Choice Name *</label>
               <input type="text" id="slotName" placeholder="e.g., side" pattern="[a-z0-9_]+" />
               <div class="hint">Internal identifier (lowercase, underscores)</div>
             </div>
@@ -1127,16 +1127,16 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" id="slotCancelBtn">Cancel</button>
-        <button type="button" class="btn primary" id="slotSaveBtn">Save Slot</button>
+        <button type="button" class="btn primary" id="slotSaveBtn">Save Choice</button>
       </div>
     </div>
   </div>
 
-  <!-- Slot Option Modal -->
+  <!-- Choice Option Modal -->
   <div class="modal-overlay" id="slotOptionModal">
     <div class="modal">
       <div class="modal-header">
-        <h2>Add Slot Option</h2>
+        <h2>Add Choice Option</h2>
         <button class="modal-close" id="slotOptionModalClose">&times;</button>
       </div>
       <div class="modal-body">
@@ -1194,16 +1194,16 @@
     </div>
   </div>
 
-  <!-- Delete Slot Modal -->
+  <!-- Delete Choice Modal -->
   <div class="modal-overlay" id="deleteSlotModal">
     <div class="modal" style="max-width: 400px;">
       <div class="modal-header">
-        <h2>Delete Component Slot</h2>
+        <h2>Delete Included Choice</h2>
         <button class="modal-close" id="deleteSlotModalClose">&times;</button>
       </div>
       <div class="modal-body">
         <p>Are you sure you want to delete <strong id="deleteSlotName"></strong>?</p>
-        <p style="color: #c62828; font-size: 13px;">This will also delete all options for this slot. This action cannot be undone.</p>
+        <p style="color: #c62828; font-size: 13px;">This will also delete all options for this choice. This action cannot be undone.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" id="deleteSlotCancelBtn">Cancel</button>
@@ -1233,7 +1233,7 @@
     let editingLinkId = null;
     let allCategories = [];
 
-    // Component slots state
+    // Included choices state
     let componentSlots = [];
     let expandedSlots = new Set();
     let editingSlotId = null;
@@ -1249,9 +1249,13 @@
     const detailTabs = document.getElementById("detailTabs");
     const tabBasicInfo = document.getElementById("tabBasicInfo");
     const tabAttributes = document.getElementById("tabAttributes");
+    const tabComponentSlots = document.getElementById("tabComponentSlots");
     const attributesList = document.getElementById("attributesList");
     const attributeModal = document.getElementById("attributeModal");
     const deleteModal = document.getElementById("deleteModal");
+    const slotModal = document.getElementById("slotModal");
+    const slotOptionModal = document.getElementById("slotOptionModal");
+    const deleteSlotModal = document.getElementById("deleteSlotModal");
 
     // Authenticated fetch helper
     async function authFetch(url, options = {}) {
@@ -1529,6 +1533,12 @@
       });
       tabBasicInfo.classList.toggle("active", tabName === "basic");
       tabAttributes.classList.toggle("active", tabName === "attributes");
+      tabComponentSlots.classList.toggle("active", tabName === "slots");
+
+      // Load included choices when switching to that tab
+      if (tabName === "slots" && editingItemTypeId) {
+        loadComponentSlots(editingItemTypeId);
+      }
     }
 
     // Clear detail form
@@ -1544,6 +1554,10 @@
       linkedAttributes = [];
       renderAttributes();
       populateGlobalAttrDropdown();
+      // Clear included choices
+      componentSlots = [];
+      expandedSlots.clear();
+      renderComponentSlots();
       switchTab("basic");
     }
 
@@ -1885,6 +1899,443 @@
       }
     }
 
+    // =============================================================================
+    // Included Choices Functions
+    // =============================================================================
+
+    // Load included choices for item type
+    async function loadComponentSlots(itemTypeId) {
+      if (!itemTypeId) {
+        componentSlots = [];
+        renderComponentSlots();
+        return;
+      }
+
+      try {
+        const response = await authFetch(`${COMPONENT_SLOTS_API}/item-types/${itemTypeId}/slots`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        componentSlots = data.slots || [];
+
+        // Load options for each choice
+        for (const slot of componentSlots) {
+          slot.options = await loadSlotOptions(slot.id);
+        }
+
+        renderComponentSlots();
+      } catch (error) {
+        console.error("Failed to load included choices:", error);
+        componentSlots = [];
+        renderComponentSlots();
+      }
+    }
+
+    // Load options for a choice
+    async function loadSlotOptions(slotId) {
+      try {
+        const response = await authFetch(`${COMPONENT_SLOTS_API}/slots/${slotId}/options`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        return data.options || [];
+      } catch (error) {
+        console.error("Failed to load choice options:", error);
+        return [];
+      }
+    }
+
+    // Render included choices
+    function renderComponentSlots() {
+      const container = document.getElementById("componentSlotsList");
+
+      if (componentSlots.length === 0) {
+        container.innerHTML = '<div class="empty-slots">No included choices configured. Click "+ Add Choice" to create one.</div>';
+        return;
+      }
+
+      const sorted = [...componentSlots].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+      container.innerHTML = sorted.map(slot => {
+        const isExpanded = expandedSlots.has(slot.id);
+        const optionCount = (slot.options || []).length;
+
+        return `
+          <div class="slot-card${isExpanded ? '' : ' collapsed'}" data-slot-id="${slot.id}">
+            <div class="slot-card-header" onclick="toggleSlot(${slot.id})">
+              <div class="slot-card-title">
+                <span class="slot-toggle">\u25BC</span>
+                <span class="slot-name">${escapeHtml(slot.display_name || slot.slot_name)}</span>
+                <div class="slot-badges">
+                  <span class="slot-badge ${slot.is_required ? 'required' : 'optional'}">${slot.is_required ? 'Required' : 'Optional'}</span>
+                  <span class="slot-badge options">${optionCount} options</span>
+                </div>
+              </div>
+              <div class="slot-card-actions" onclick="event.stopPropagation()">
+                <button class="attr-btn" onclick="openEditSlotModal(${slot.id})">Edit</button>
+                <button class="attr-btn danger" onclick="openDeleteSlotModal(${slot.id})">Delete</button>
+              </div>
+            </div>
+            <div class="slot-card-body">
+              <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+                ${slot.prompt_text ? `<em>"${escapeHtml(slot.prompt_text)}"</em>` : 'No prompt text set'}
+                <br>Min: ${slot.min_quantity || 1}, Max: ${slot.max_quantity || 1}
+              </div>
+              <div class="slot-options-list">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <strong style="font-size: 12px;">Allowed Options:</strong>
+                  <button class="attr-btn" onclick="openAddOptionModal(${slot.id})" style="padding: 2px 8px; font-size: 10px;">+ Add</button>
+                </div>
+                ${renderSlotOptions(slot.options || [])}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Render choice options
+    function renderSlotOptions(options) {
+      if (options.length === 0) {
+        return '<div style="font-size: 12px; color: #888; padding: 8px; text-align: center;">No options configured</div>';
+      }
+
+      return options.map(opt => {
+        const typeName = opt.allowed_item_type_name || opt.allowed_menu_item_name || "Unknown";
+        const typeLabel = opt.allowed_item_type_id ? "Type" : "Item";
+        let priceText = "";
+        if (opt.price_rule === "included") priceText = "Included";
+        else if (opt.price_rule === "full_price") priceText = "Full Price";
+        else if (opt.price_rule === "fixed" && opt.fixed_price) priceText = `$${(opt.fixed_price / 100).toFixed(2)}`;
+
+        return `
+          <div class="slot-option-row">
+            <div class="slot-option-info">
+              <span>${escapeHtml(opt.display_name || typeName)}</span>
+              <span class="slot-option-type">${typeLabel}</span>
+              <span class="slot-option-price">${priceText}</span>
+            </div>
+            <button class="attr-btn danger" onclick="deleteSlotOption(${opt.id})" style="padding: 2px 6px; font-size: 10px;">X</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Toggle choice expand/collapse
+    function toggleSlot(slotId) {
+      if (expandedSlots.has(slotId)) {
+        expandedSlots.delete(slotId);
+      } else {
+        expandedSlots.add(slotId);
+      }
+      renderComponentSlots();
+    }
+
+    // Open add choice modal
+    function openAddSlotModal() {
+      if (!editingItemTypeId) {
+        showToast("Please save the item type first", "error");
+        return;
+      }
+
+      editingSlotId = null;
+      document.getElementById("slotModalTitle").textContent = "New Included Choice";
+      document.getElementById("editSlotId").value = "";
+      document.getElementById("slotName").value = "";
+      document.getElementById("slotDisplayName").value = "";
+      document.getElementById("slotPromptText").value = "";
+      document.getElementById("slotMinQty").value = "1";
+      document.getElementById("slotMaxQty").value = "1";
+      document.getElementById("slotDisplayOrder").value = componentSlots.length.toString();
+      document.getElementById("slotIsRequired").checked = true;
+      document.getElementById("slotSaveBtn").textContent = "Create Choice";
+      slotModal.classList.add("active");
+    }
+
+    // Open edit choice modal
+    function openEditSlotModal(slotId) {
+      const slot = componentSlots.find(s => s.id === slotId);
+      if (!slot) return;
+
+      editingSlotId = slotId;
+      document.getElementById("slotModalTitle").textContent = "Edit Included Choice";
+      document.getElementById("editSlotId").value = slotId;
+      document.getElementById("slotName").value = slot.slot_name || "";
+      document.getElementById("slotDisplayName").value = slot.display_name || "";
+      document.getElementById("slotPromptText").value = slot.prompt_text || "";
+      document.getElementById("slotMinQty").value = slot.min_quantity || "1";
+      document.getElementById("slotMaxQty").value = slot.max_quantity || "1";
+      document.getElementById("slotDisplayOrder").value = slot.display_order || "0";
+      document.getElementById("slotIsRequired").checked = slot.is_required !== false;
+      document.getElementById("slotSaveBtn").textContent = "Save Choice";
+      slotModal.classList.add("active");
+    }
+
+    function closeSlotModal() {
+      slotModal.classList.remove("active");
+      editingSlotId = null;
+    }
+
+    // Save choice (create or update)
+    async function saveSlot() {
+      const slotName = document.getElementById("slotName").value.trim().toLowerCase().replace(/\s+/g, "_");
+      const displayName = document.getElementById("slotDisplayName").value.trim();
+      const promptText = document.getElementById("slotPromptText").value.trim();
+      const minQty = parseInt(document.getElementById("slotMinQty").value) || 1;
+      const maxQty = parseInt(document.getElementById("slotMaxQty").value) || 1;
+      const displayOrder = parseInt(document.getElementById("slotDisplayOrder").value) || 0;
+      const isRequired = document.getElementById("slotIsRequired").checked;
+
+      if (!slotName) {
+        showToast("Choice name is required", "error");
+        return;
+      }
+
+      if (!/^[a-z0-9_]+$/.test(slotName)) {
+        showToast("Choice name must contain only lowercase letters, numbers, and underscores", "error");
+        return;
+      }
+
+      const saveBtn = document.getElementById("slotSaveBtn");
+      setSaveButtonState(saveBtn, "saving");
+
+      try {
+        let response;
+        if (editingSlotId) {
+          // Update existing choice
+          response = await authFetch(`${COMPONENT_SLOTS_API}/slots/${editingSlotId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              slot_name: slotName,
+              display_name: displayName || null,
+              prompt_text: promptText || null,
+              min_quantity: minQty,
+              max_quantity: maxQty,
+              display_order: displayOrder,
+              is_required: isRequired
+            })
+          });
+        } else {
+          // Create new choice
+          const params = new URLSearchParams({
+            slot_name: slotName,
+            display_name: displayName || "",
+            prompt_text: promptText || "",
+            is_required: isRequired,
+            min_quantity: minQty,
+            max_quantity: maxQty,
+            display_order: displayOrder
+          });
+          response = await authFetch(`${COMPONENT_SLOTS_API}/item-types/${editingItemTypeId}/slots?${params}`, {
+            method: "POST"
+          });
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        setSaveButtonState(saveBtn, "saved", editingSlotId ? "Save Choice" : "Create Choice");
+        showToast(editingSlotId ? "Choice updated" : "Choice created", "success");
+        closeSlotModal();
+        await loadComponentSlots(editingItemTypeId);
+
+        // Expand the new/updated choice
+        const newSlot = await response.json();
+        if (newSlot.id) {
+          expandedSlots.add(newSlot.id);
+          renderComponentSlots();
+        }
+      } catch (error) {
+        console.error("Failed to save choice:", error);
+        setSaveButtonState(saveBtn, "error", editingSlotId ? "Save Choice" : "Create Choice");
+        showToast(`Failed to save: ${error.message}`, "error");
+      }
+    }
+
+    // Open delete choice modal
+    function openDeleteSlotModal(slotId) {
+      const slot = componentSlots.find(s => s.id === slotId);
+      if (!slot) return;
+
+      deletingSlotId = slotId;
+      document.getElementById("deleteSlotName").textContent = slot.display_name || slot.slot_name;
+      deleteSlotModal.classList.add("active");
+    }
+
+    function closeDeleteSlotModal() {
+      deleteSlotModal.classList.remove("active");
+      deletingSlotId = null;
+    }
+
+    // Delete choice
+    async function deleteSlot() {
+      if (!deletingSlotId) return;
+
+      try {
+        const response = await authFetch(`${COMPONENT_SLOTS_API}/slots/${deletingSlotId}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        closeDeleteSlotModal();
+        showToast("Choice deleted", "success");
+        expandedSlots.delete(deletingSlotId);
+        await loadComponentSlots(editingItemTypeId);
+      } catch (error) {
+        console.error("Failed to delete choice:", error);
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // Load available item types for option modal
+    async function loadAvailableItemTypesForSlots() {
+      try {
+        const response = await authFetch(`${COMPONENT_SLOTS_API}/available-item-types`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        availableItemTypesForSlots = await response.json();
+        populateOptionItemTypeDropdown();
+      } catch (error) {
+        console.error("Failed to load available item types:", error);
+        availableItemTypesForSlots = [];
+      }
+    }
+
+    function populateOptionItemTypeDropdown() {
+      const select = document.getElementById("optionItemType");
+      select.innerHTML = '<option value="">-- Select item type --</option>' +
+        availableItemTypesForSlots.map(it => `<option value="${it.id}">${escapeHtml(it.display_name)}</option>`).join("");
+    }
+
+    // Search menu items for option modal
+    async function searchMenuItemsForOption(query) {
+      try {
+        const response = await authFetch(`${COMPONENT_SLOTS_API}/available-menu-items?search=${encodeURIComponent(query)}&limit=20`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        availableMenuItems = await response.json();
+        populateOptionMenuItemDropdown();
+      } catch (error) {
+        console.error("Failed to search menu items:", error);
+        availableMenuItems = [];
+      }
+    }
+
+    function populateOptionMenuItemDropdown() {
+      const select = document.getElementById("optionMenuItem");
+      select.innerHTML = availableMenuItems.map(mi =>
+        `<option value="${mi.id}">${escapeHtml(mi.name)}</option>`
+      ).join("");
+    }
+
+    // Open add option modal
+    async function openAddOptionModal(slotId) {
+      document.getElementById("optionSlotId").value = slotId;
+      document.getElementById("optionType").value = "";
+      document.getElementById("itemTypeSelectGroup").style.display = "none";
+      document.getElementById("menuItemSelectGroup").style.display = "none";
+      document.getElementById("optionPriceRule").value = "included";
+      document.getElementById("fixedPriceGroup").style.display = "none";
+      document.getElementById("optionFixedPrice").value = "";
+
+      const slot = componentSlots.find(s => s.id === slotId);
+      document.getElementById("optionDisplayOrder").value = (slot?.options?.length || 0).toString();
+
+      await loadAvailableItemTypesForSlots();
+      slotOptionModal.classList.add("active");
+    }
+
+    function closeSlotOptionModal() {
+      slotOptionModal.classList.remove("active");
+    }
+
+    // Add choice option
+    async function addSlotOption() {
+      const slotId = parseInt(document.getElementById("optionSlotId").value);
+      const optionType = document.getElementById("optionType").value;
+      const priceRule = document.getElementById("optionPriceRule").value;
+      const fixedPrice = parseInt(document.getElementById("optionFixedPrice").value) || null;
+      const displayOrder = parseInt(document.getElementById("optionDisplayOrder").value) || 0;
+
+      let itemTypeId = null;
+      let menuItemId = null;
+
+      if (optionType === "item_type") {
+        itemTypeId = parseInt(document.getElementById("optionItemType").value);
+        if (!itemTypeId) {
+          showToast("Please select an item type", "error");
+          return;
+        }
+      } else if (optionType === "menu_item") {
+        menuItemId = parseInt(document.getElementById("optionMenuItem").value);
+        if (!menuItemId) {
+          showToast("Please select a menu item", "error");
+          return;
+        }
+      } else {
+        showToast("Please select an option type", "error");
+        return;
+      }
+
+      let url = `${COMPONENT_SLOTS_API}/slots/${slotId}/options?price_rule=${priceRule}&display_order=${displayOrder}`;
+      if (itemTypeId) url += `&allowed_item_type_id=${itemTypeId}`;
+      if (menuItemId) url += `&allowed_menu_item_id=${menuItemId}`;
+      if (priceRule === "fixed" && fixedPrice) url += `&fixed_price=${fixedPrice}`;
+
+      const saveBtn = document.getElementById("slotOptionSaveBtn");
+      setSaveButtonState(saveBtn, "saving");
+
+      try {
+        const response = await authFetch(url, { method: "POST" });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        setSaveButtonState(saveBtn, "saved", "Add Option");
+        showToast("Option added", "success");
+        closeSlotOptionModal();
+
+        // Reload options for this slot
+        const slot = componentSlots.find(s => s.id === slotId);
+        if (slot) {
+          slot.options = await loadSlotOptions(slotId);
+          expandedSlots.add(slotId);
+          renderComponentSlots();
+        }
+      } catch (error) {
+        console.error("Failed to add option:", error);
+        setSaveButtonState(saveBtn, "error", "Add Option");
+        showToast(`Failed to add: ${error.message}`, "error");
+      }
+    }
+
+    // Delete slot option
+    async function deleteSlotOption(optionId) {
+      if (!confirm("Delete this option?")) return;
+
+      try {
+        const response = await authFetch(`${COMPONENT_SLOTS_API}/options/${optionId}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Option deleted", "success");
+        await loadComponentSlots(editingItemTypeId);
+      } catch (error) {
+        console.error("Failed to delete option:", error);
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
     // Event listeners
     document.getElementById("newItemTypeBtn").addEventListener("click", () => {
       currentIndex = -1;
@@ -1921,12 +2372,52 @@
     document.getElementById("deleteCancelBtn").addEventListener("click", closeDeleteModal);
     document.getElementById("deleteConfirmBtn").addEventListener("click", deleteItemType);
 
+    // Component slots event listeners
+    document.getElementById("addSlotBtn").addEventListener("click", openAddSlotModal);
+    document.getElementById("slotModalClose").addEventListener("click", closeSlotModal);
+    document.getElementById("slotCancelBtn").addEventListener("click", closeSlotModal);
+    document.getElementById("slotSaveBtn").addEventListener("click", saveSlot);
+
+    // Slot option modal
+    document.getElementById("slotOptionModalClose").addEventListener("click", closeSlotOptionModal);
+    document.getElementById("slotOptionCancelBtn").addEventListener("click", closeSlotOptionModal);
+    document.getElementById("slotOptionSaveBtn").addEventListener("click", addSlotOption);
+
+    document.getElementById("optionType").addEventListener("change", (e) => {
+      document.getElementById("itemTypeSelectGroup").style.display = e.target.value === "item_type" ? "block" : "none";
+      document.getElementById("menuItemSelectGroup").style.display = e.target.value === "menu_item" ? "block" : "none";
+    });
+
+    document.getElementById("optionPriceRule").addEventListener("change", (e) => {
+      document.getElementById("fixedPriceGroup").style.display = e.target.value === "fixed" ? "block" : "none";
+    });
+
+    let menuSearchTimeout;
+    document.getElementById("optionMenuItemSearch").addEventListener("input", (e) => {
+      clearTimeout(menuSearchTimeout);
+      menuSearchTimeout = setTimeout(() => searchMenuItemsForOption(e.target.value), 300);
+    });
+
+    // Delete slot modal
+    document.getElementById("deleteSlotModalClose").addEventListener("click", closeDeleteSlotModal);
+    document.getElementById("deleteSlotCancelBtn").addEventListener("click", closeDeleteSlotModal);
+    document.getElementById("deleteSlotConfirmBtn").addEventListener("click", deleteSlot);
+
     // Close modals on overlay click
     attributeModal.addEventListener("click", (e) => {
       if (e.target === attributeModal) closeAttributeModal();
     });
     deleteModal.addEventListener("click", (e) => {
       if (e.target === deleteModal) closeDeleteModal();
+    });
+    slotModal.addEventListener("click", (e) => {
+      if (e.target === slotModal) closeSlotModal();
+    });
+    slotOptionModal.addEventListener("click", (e) => {
+      if (e.target === slotOptionModal) closeSlotOptionModal();
+    });
+    deleteSlotModal.addEventListener("click", (e) => {
+      if (e.target === deleteSlotModal) closeDeleteSlotModal();
     });
 
     // Close modals on Escape key
@@ -1937,6 +2428,15 @@
         }
         if (deleteModal.classList.contains("active")) {
           closeDeleteModal();
+        }
+        if (slotModal.classList.contains("active")) {
+          closeSlotModal();
+        }
+        if (slotOptionModal.classList.contains("active")) {
+          closeSlotOptionModal();
+        }
+        if (deleteSlotModal.classList.contains("active")) {
+          closeDeleteSlotModal();
         }
       }
     });

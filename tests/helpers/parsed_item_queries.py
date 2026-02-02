@@ -95,20 +95,26 @@ def count_parsed_items(result, item_type: str = None, is_signature: bool = None,
     return len(get_parsed_items(result, item_type, is_signature, item_name))
 
 
-def get_signature_item(result):
-    """Shorthand to get the first signature item from parsed_items.
+def get_item_with_defaults(result):
+    """Shorthand to get the first item with default ingredients from parsed_items.
 
-    Replaces: result.new_signature_item_name
+    Items with default ingredients have is_signature=True in their parsed representation.
+    This includes items like "The Classic BEC" that have predefined ingredient configurations.
     """
     return get_parsed_item(result, is_signature=True)
 
 
-def has_signature_item(result) -> bool:
-    """Shorthand to check if any signature item exists.
+def has_item_with_defaults(result) -> bool:
+    """Shorthand to check if any item with default ingredients exists.
 
-    Replaces: result.new_signature_item is True
+    Items with default ingredients have is_signature=True in their parsed representation.
     """
     return has_parsed_item(result, is_signature=True)
+
+
+# Backward compatibility aliases
+get_signature_item = get_item_with_defaults
+has_signature_item = has_item_with_defaults
 
 
 def get_bagel_item(result):

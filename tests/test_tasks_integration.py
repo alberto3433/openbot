@@ -370,10 +370,13 @@ def mock_menu_cache_attributes(monkeypatch):
     monkeypatch.setattr(menu_cache, "get_configurable_item_type_slugs", mock_get_configurable_item_type_slugs)
     monkeypatch.setattr(menu_cache, "get_configurable_item_types", mock_get_configurable_item_types)
     monkeypatch.setattr(menu_cache, "get_item_type_triggers", mock_get_item_type_triggers)
+    monkeypatch.setattr(menu_cache, "get_items_with_defaults_aliases", mock_get_signature_item_aliases)
+    # Mock item_has_default_ingredients based on signature items
+    signature_items = set(mock_get_signature_item_aliases().values())
+    monkeypatch.setattr(menu_cache, "item_has_default_ingredients", lambda name: name in signature_items)
     # Mock the functions in parsers.constants module
     import orderbot.tasks.parsers.constants as parser_constants
-    # Mock signature items and known menu items - required for multi-item parsing
-    monkeypatch.setattr(parser_constants, "get_signature_item_aliases", mock_get_signature_item_aliases)
+    # Mock known menu items - required for multi-item parsing
     monkeypatch.setattr(parser_constants, "get_known_menu_items", mock_get_known_menu_items)
 
 
@@ -1327,29 +1330,25 @@ class TestUnknownItemHandling:
         assert len(order.items.items) == 0
 
     def test_valid_side_item_added_successfully(self):
-        """Test that a valid side item is added successfully."""
+        """Test that a valid side item is added successfully.
+
+        Uses "Latkes" which is an actual menu item in the database.
+        """
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
-        menu_data = {
-            "sides": [
-                {"id": 1, "name": "Home Fries", "base_price": 3.99},
-            ],
-            "items_by_type": {},
-        }
-
         order = OrderTask()
-        sm = OrderStateMachine(menu_data=menu_data)
+        sm = OrderStateMachine()
 
-        # Add a valid side
-        canonical_name, error_message = sm.item_adder_handler.add_side_item("home fries", 1, order)
+        # Add a valid side that exists in the real menu
+        canonical_name, error_message = sm.item_adder_handler.add_side_item("latkes", 1, order)
 
         # Should succeed
-        assert canonical_name == "Home Fries"
-        assert error_message is None
+        assert canonical_name == "Latkes", f"Expected 'Latkes', got: {canonical_name}"
+        assert error_message is None, f"Expected no error, got: {error_message}"
         assert len(order.items.items) == 1
-        assert order.items.items[0].menu_item_name == "Home Fries"
-        assert order.items.items[0].unit_price == 3.99
+        assert order.items.items[0].menu_item_name == "Latkes"
+        assert order.items.items[0].unit_price > 0, "Price should be set from database"
 
     def test_infer_item_type_drinks(self):
         """Test item type inference for drink items."""
@@ -3587,10 +3586,12 @@ class TestBagelModifierRemoval:
         active_items = result.order.items.get_active_items()
         assert len(active_items) == 1
 
-        # Spread should be updated (slug format like "veggie_cc")
+        # Spread should be updated (slug format like "vegetable_cream_cheese")
         result_bagel = active_items[0]
-        spread_type = result_bagel["spread_type"]
-        assert "veggie" in spread_type.lower() or "cc" in spread_type.lower()
+        spread = result_bagel["spread"]
+        assert spread is not None, "Spread should be set"
+        assert "veggie" in spread.lower() or "vegetable" in spread.lower(), \
+            f"Spread should be veggie cream cheese, got: {spread}"
 
     def test_plain_cream_cheese_sets_spread_not_none(self):
         """Test that 'plain cream cheese' sets cream cheese spread, not 'none'.

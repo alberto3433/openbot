@@ -90,7 +90,9 @@ def match_modifier(
     details = menu_cache.get_ingredient_details(category)
     for detail in details:
         for pattern in detail["patterns"]:
-            if pattern in input_lower:
+            # Use word-boundary matching to avoid false positives
+            # e.g., "egg" should not match "veggie" (v-egg-ie)
+            if re.search(rf'\b{re.escape(pattern)}\b', input_lower):
                 return {
                     "slug": detail["slug"],
                     "name": detail["name"],
@@ -238,6 +240,10 @@ def add_modifiers_from_input(
 
     categories = menu_cache.get_scannable_modifier_categories(item_type)
 
+    # Single-select modifier categories (only one selection allowed at a time)
+    # When adding a new modifier in these categories, replace any existing one
+    single_select_categories = {"spread", "spread_type"}
+
     # Check each modifier category for this item type
     for category in categories:
         match = match_modifier(input_lower, category)
@@ -245,7 +251,7 @@ def add_modifiers_from_input(
             # Extract quantity and check if additive ("another vanilla", "one more syrup")
             quantity, is_additive = extract_additive_quantity(input_lower, match["pattern"])
 
-            # Check if modifier already exists
+            # Check if modifier already exists (exact slug match)
             existing = None
             for mod in (item.modifiers or []):
                 if mod.get("slug") == match["slug"]:
@@ -262,6 +268,20 @@ def add_modifiers_from_input(
                 )
                 made_change = True
             elif not existing:
+                # For single-select categories, remove any existing selection first
+                if category in single_select_categories:
+                    existing_in_category = [
+                        mod for mod in (item.modifiers or [])
+                        if mod.get("category") in single_select_categories
+                    ]
+                    if existing_in_category:
+                        old_mod = existing_in_category[0]
+                        item.modifiers.remove(old_mod)
+                        logger.info(
+                            "Replaced %s: %s -> %s",
+                            category, old_mod.get("slug"), match["slug"]
+                        )
+
                 # Add new modifier
                 if add_modifier_to_item(
                     item,
@@ -283,10 +303,13 @@ def add_modifiers_from_input(
             opt_slug_pattern = opt_slug.lower().replace("_", " ")
             opt_display_pattern = opt_display.lower()
 
-            # Check if option matches input
-            if opt_slug_pattern in input_lower or opt_display_pattern in input_lower:
+            # Check if option matches input (use word-boundary to avoid false positives)
+            # e.g., "add" in "add veggie cream cheese" should NOT match an "add" option slug
+            slug_match = re.search(rf'\b{re.escape(opt_slug_pattern)}\b', input_lower)
+            display_match = re.search(rf'\b{re.escape(opt_display_pattern)}\b', input_lower)
+            if slug_match or display_match:
                 # Extract quantity and check if additive ("another shot", "one more shot")
-                pattern = opt_slug_pattern if opt_slug_pattern in input_lower else opt_display_pattern
+                pattern = opt_slug_pattern if slug_match else opt_display_pattern
                 quantity, is_additive = extract_additive_quantity(input_lower, pattern)
 
                 # Get price for this option
@@ -309,6 +332,14 @@ def add_modifiers_from_input(
                         made_change = True
                     # else: already exists and not additive, skip
                 else:
+                    # For single-select attributes, remove existing selection first
+                    input_type = attr.get("input_type", "single_select")
+                    if input_type != "multi_select" and existing:
+                        item.remove_selection(attr_slug)
+                        logger.info(
+                            "Replaced single-select attribute: %s=%s -> %s",
+                            attr_slug, existing.get("slug"), opt_slug
+                        )
                     # Add new selection
                     item.add_selection(
                         slug=opt_slug,
@@ -384,7 +415,8 @@ def match_category_removal_pattern(input_lower: str, item_type_slug: str) -> str
         for template in REMOVAL_TEMPLATES:
             for name in names_to_check:
                 pattern = template.format(name)
-                if pattern in input_lower:
+                # Use word-boundary matching for the full removal phrase
+                if re.search(rf'\b{re.escape(pattern)}\b', input_lower):
                     return category
 
     return None
@@ -519,7 +551,11 @@ class ModifierInputHandler:
             if is_configurable_menu_item(last_item_check):
                 # Get modifier patterns for this specific item type (data-driven)
                 item_modifier_patterns = get_all_modifier_patterns_for_item(last_item_check.menu_item_type)
-                has_item_modifier = any(mod in input_lower for mod in item_modifier_patterns)
+                # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
+                has_item_modifier = any(
+                    re.search(rf'\b{re.escape(mod)}\b', input_lower)
+                    for mod in item_modifier_patterns
+                )
 
         if has_item_modifier and active_items:
             last_item_check = get_last_item(active_items)
@@ -581,7 +617,8 @@ class ModifierInputHandler:
             for category in menu_cache.get_all_ingredient_categories():
                 detected_modifier = None
                 for modifier in sorted(menu_cache.get_ingredients(category), key=len, reverse=True):
-                    if modifier in input_lower:
+                    # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
+                    if re.search(rf'\b{re.escape(modifier)}\b', input_lower):
                         detected_modifier = modifier
                         break
 
@@ -657,7 +694,11 @@ class ModifierInputHandler:
             last_item = get_last_item(active_items)
             if is_configurable_menu_item(last_item):
                 item_modifier_patterns = get_all_modifier_patterns_for_item(last_item.menu_item_type)
-                has_item_modifier = any(mod in input_lower for mod in item_modifier_patterns)
+                # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
+                has_item_modifier = any(
+                    re.search(rf'\b{re.escape(mod)}\b', input_lower)
+                    for mod in item_modifier_patterns
+                )
 
         if has_item_modifier and active_items:
             last_item = get_last_item(active_items)

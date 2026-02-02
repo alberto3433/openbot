@@ -432,7 +432,7 @@ class ItemAdderHandler(MenuDataMixin):
             # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
             # Check if item has default ingredients (more reliable than is_signature flag)
             if menu_item_id:
-                self._populate_signature_defaults(item)
+                self._populate_default_ingredients(item)
             # Apply pre-filled attributes
             if attributes:
                 for attr_name, attr_value in attributes.items():
@@ -529,8 +529,8 @@ class ItemAdderHandler(MenuDataMixin):
         logger.info("Added %d side item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
         return (canonical_name, None)
 
-    def _populate_signature_defaults(self, item: MenuItemTask) -> None:
-        """Load default ingredients for a signature item and populate as selections.
+    def _populate_default_ingredients(self, item: MenuItemTask) -> None:
+        """Load default ingredients for a menu item and populate as selections.
 
         Loads from menu_item_ingredients junction table and adds each ingredient
         as a selection with is_default=True. Default ingredients are included in
@@ -545,13 +545,13 @@ class ItemAdderHandler(MenuDataMixin):
         defaults = menu_cache.get_menu_item_default_ingredients(item.menu_item_id)
         if not defaults:
             logger.debug(
-                "No default ingredients found for signature item: %s (id=%s)",
+                "No default ingredients found for menu item: %s (id=%s)",
                 item.menu_item_name, item.menu_item_id
             )
             return
 
         logger.info(
-            "Populating %d default ingredients for signature item: %s",
+            "Populating %d default ingredients for menu item: %s",
             len(defaults), item.menu_item_name
         )
 
@@ -677,7 +677,7 @@ class ItemAdderHandler(MenuDataMixin):
             # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
             # Check if item has default ingredients (more reliable than is_signature flag)
             if menu_item_id:
-                self._populate_signature_defaults(item)
+                self._populate_default_ingredients(item)
 
             # Apply pre-filled attributes
             if pre_filled_attributes:

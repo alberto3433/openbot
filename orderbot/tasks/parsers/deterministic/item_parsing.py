@@ -20,7 +20,7 @@ from ...schemas import (
 )
 from ..constants import (
     WORD_TO_NUM,
-    get_signature_item_aliases,
+    get_items_with_defaults_aliases,
 )
 from .extraction import (
     extract_attribute_values,
@@ -245,14 +245,14 @@ def _parse_item_generic(
     # Beverage modifiers (sweeteners, syrups, milk) are handled via attribute_values
     food_modifiers = _extract_modifiers_generic(text_lower, item_type)
 
-    # Check if this is a signature/speed menu item
-    is_signature = False
+    # Check if this item has default ingredients (used for populating defaults)
+    has_defaults = False
     if item_name:
-        signature_items = get_signature_item_aliases()
-        # Check if the menu item name matches any signature item
+        items_with_defaults = get_items_with_defaults_aliases()
+        # Check if the menu item name matches any item with default ingredients
         name_lower = item_name.lower()
-        if name_lower in signature_items or item_name in signature_items.values():
-            is_signature = True
+        if name_lower in items_with_defaults or item_name in items_with_defaults.values():
+            has_defaults = True
 
     # Build food modifiers list with category from database
     modifier_selections: list[Selection] = []
@@ -271,7 +271,7 @@ def _parse_item_generic(
         quantity=quantity,
         attribute_values=attribute_values,
         modifiers=modifier_selections,
-        is_signature=is_signature,
+        is_signature=has_defaults,  # Items with defaults need default ingredient population
         original_text=text,
         special_instructions=special_instructions,
     )
@@ -342,8 +342,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty on both sides with item trigger '%s'), delegating to multi-item parser: '%s'", following_word, text[:50])
                     return None
 
-                # Also check if after_and (minus the quantity) is a menu item or signature item
-                # This handles "one bagel and one classic BEC" where "classic BEC" is a signature item
+                # Also check if after_and (minus the quantity) is a menu item or item with defaults
+                # This handles "one bagel and one classic BEC" where "classic BEC" has default ingredients
                 # Strip the leading quantity from after_and to get the item part
                 after_and_item_part = re.sub(rf'^{qty_words}\s+', '', after_and, count=1)
                 # Late import to avoid circular dependency
@@ -381,29 +381,29 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                         )
                         return None
 
-    # 1b. Check for signature items FIRST - they take precedence over trigger-based detection
+    # 1b. Check for items with default ingredients FIRST - they take precedence over trigger-based detection
     # This prevents "The Classic BEC on a wheat bagel" from matching "bagel" item type
-    # due to the "bagel" trigger word. Signature items should be detected by their aliases.
-    signature_item_name: str | None = None
-    signature_item_type: str | None = None
-    signature_aliases = get_signature_item_aliases()
+    # due to the "bagel" trigger word. Items with defaults should be detected by their aliases.
+    matched_item_name: str | None = None
+    matched_item_type: str | None = None
+    items_with_defaults_aliases = get_items_with_defaults_aliases()
     # Sort aliases by length (longest first) for most specific match
-    sorted_aliases = sorted(signature_aliases.keys(), key=len, reverse=True)
+    sorted_aliases = sorted(items_with_defaults_aliases.keys(), key=len, reverse=True)
     for alias in sorted_aliases:
         # Allow optional plural suffix (s, es) to match "classic becs" with alias "classic bec"
         if re.search(rf'\b{re.escape(alias)}(?:e?s)?\b', text_lower):
-            signature_item_name = signature_aliases[alias]
-            # Look up the item type for this signature item
-            signature_item_type = menu_cache.get_item_type_for_menu_item(signature_item_name)
-            if signature_item_type:
-                logger.info("CONFIGURABLE_ITEM: signature item '%s' detected -> type '%s'", signature_item_name, signature_item_type)
+            matched_item_name = items_with_defaults_aliases[alias]
+            # Look up the item type for this item
+            matched_item_type = menu_cache.get_item_type_for_menu_item(matched_item_name)
+            if matched_item_type:
+                logger.info("CONFIGURABLE_ITEM: item with defaults '%s' detected -> type '%s'", matched_item_name, matched_item_type)
                 break
 
     # 2. Detect which configurable item type this text matches
     configurable_slugs = menu_cache.get_configurable_item_type_slugs()
-    detected_item_type: str | None = signature_item_type  # Use signature item type if found
+    detected_item_type: str | None = matched_item_type  # Use matched item type if found
 
-    # Only do trigger-based detection if no signature item was found
+    # Only do trigger-based detection if no item with defaults was found
     if not detected_item_type:
         # Common words that should not be treated as item triggers
         skip_trigger_words = {
@@ -487,16 +487,16 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     attr_values = extract_attribute_values(text, detected_item_type)
 
     # 5. Try to match a specific menu item name within this type
-    # If we already found a signature item, use that name; otherwise try to match
-    item_name = signature_item_name or _match_menu_item_name_for_type(text, detected_item_type)
+    # If we already found an item with defaults, use that name; otherwise try to match
+    item_name = matched_item_name or _match_menu_item_name_for_type(text, detected_item_type)
 
-    # Check if this is a signature/speed menu item
-    is_signature = False
+    # Check if this item has default ingredients (used for populating defaults)
+    has_defaults = False
     if item_name:
-        signature_items = get_signature_item_aliases()
+        items_with_defaults = get_items_with_defaults_aliases()
         name_lower = item_name.lower()
-        if name_lower in signature_items or item_name in signature_items.values():
-            is_signature = True
+        if name_lower in items_with_defaults or item_name in items_with_defaults.values():
+            has_defaults = True
 
     # 5b. Extract item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions = extract_special_instructions_from_input(text)
@@ -513,8 +513,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         ))
 
     logger.info(
-        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, is_signature=%s, instructions=%s",
-        detected_item_type, quantity, item_name, list(attr_values.keys()), [s.slug for s in modifier_selections], is_signature, special_instructions
+        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s",
+        detected_item_type, quantity, item_name, list(attr_values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions
     )
 
     # 6. Build ParsedItemEntry using build_parsed_item (converts attr_values to selections)
@@ -526,7 +526,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         attribute_values=attr_values.copy(),
         modifiers=modifier_selections,
         original_text=text,
-        is_signature=is_signature,
+        is_signature=has_defaults,  # Items with defaults need default ingredient population
         special_instructions=special_instructions,
     )
 

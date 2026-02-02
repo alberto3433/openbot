@@ -150,7 +150,7 @@ class UnifiedItemConverter:
         # Restore modifiers from item_config (source of truth for quantity/price)
         stored_modifiers = item_config.get("item_modifiers") or []
 
-        # Start with stored_modifiers as the base (they have correct quantity/price)
+        # Start with stored_modifiers as the base (they have correct quantity/price/is_default)
         selections = []
         stored_keys = set()
         for mod in stored_modifiers:
@@ -158,13 +158,17 @@ class UnifiedItemConverter:
                 slug = mod.get("slug", "")
                 category = mod.get("category", "")
                 stored_keys.add((slug, category))
-                selections.append({
+                selection = {
                     "slug": slug,
                     "category": category,
                     "quantity": mod.get("quantity", 1),
                     "price": mod.get("price", 0),
                     "display_name": mod.get("display_name") or format_slug_for_display(slug, category),
-                })
+                }
+                # Preserve is_default flag for signature items' default ingredients
+                if mod.get("is_default"):
+                    selection["is_default"] = True
+                selections.append(selection)
 
         # Add from attribute_values only if NOT already in stored_modifiers
         for category, value in attribute_values.items():

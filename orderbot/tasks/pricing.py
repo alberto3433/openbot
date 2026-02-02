@@ -40,6 +40,13 @@ def _lookup_option_price_in_attributes(
     This is the unified option price lookup used by all pricing methods. It searches
     through attribute options for a match by slug or display_name.
 
+    Uses two-pass matching:
+    1. First pass: Look for exact matches only (e.g., "egg" matches option slug "egg")
+    2. Second pass: Look for prefix matches (e.g., "vanilla" matches "vanilla_syrup")
+
+    This ensures that an exact match like "egg" -> "egg" option is preferred over
+    a prefix match like "egg" -> "egg_bagel" option.
+
     Args:
         attributes: List of attribute dicts, each with "slug" and "options" keys
         normalized_value: Value normalized via normalize_to_slug() for slug matching
@@ -56,33 +63,35 @@ def _lookup_option_price_in_attributes(
         >>> _lookup_option_price_in_attributes(attrs, "large", "large")
         (0.90, "size")
     """
-    for attr in attributes:
-        if not isinstance(attr, dict):
-            continue
-
-        attr_slug = attr.get("slug", "")
-
-        # Filter by target attribute if specified
-        if target_attr_slug and attr_slug != target_attr_slug:
-            continue
-
-        # Filter by modifier type hint if specified
-        if modifier_type_hint:
-            if modifier_type_hint not in attr_slug and attr_slug != modifier_type_hint:
-                # Also check if attribute contains options with this modifier category
-                if not menu_cache.attribute_contains_modifier_category(attr_slug, modifier_type_hint):
-                    continue
-
-        options = attr.get("options", [])
-        for opt in options:
-            if not isinstance(opt, dict):
+    # Two-pass matching: exact matches first, then prefix matches
+    for exact_only in (True, False):
+        for attr in attributes:
+            if not isinstance(attr, dict):
                 continue
 
-            if OptionMatcher.matches_value(opt, normalized_value, raw_value_lower):
-                # Check both keys: "price_modifier" for attribute options,
-                # "price" for ingredient-based options
-                price = opt.get("price_modifier") or opt.get("price") or 0.0
-                return price, attr_slug
+            attr_slug = attr.get("slug", "")
+
+            # Filter by target attribute if specified
+            if target_attr_slug and attr_slug != target_attr_slug:
+                continue
+
+            # Filter by modifier type hint if specified
+            if modifier_type_hint:
+                if modifier_type_hint not in attr_slug and attr_slug != modifier_type_hint:
+                    # Also check if attribute contains options with this modifier category
+                    if not menu_cache.attribute_contains_modifier_category(attr_slug, modifier_type_hint):
+                        continue
+
+            options = attr.get("options", [])
+            for opt in options:
+                if not isinstance(opt, dict):
+                    continue
+
+                if OptionMatcher.matches_value(opt, normalized_value, raw_value_lower, exact_only=exact_only):
+                    # Check both keys: "price_modifier" for attribute options,
+                    # "price" for ingredient-based options
+                    price = opt.get("price_modifier") or opt.get("price") or 0.0
+                    return price, attr_slug
 
     return None, None
 

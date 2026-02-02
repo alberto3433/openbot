@@ -236,6 +236,12 @@ CAN_YOU_MAKE_IT_PATTERN = re.compile(
     r"(?:is|are)\s+(?:it|that|this|they)\s+available\s+(.+?)"
     r"|"
     r"(?:do|does)\s+(?:it|that|this)\s+come\s+(?:in\s+)?(.+?)"
+    r"|"
+    # Direct "make it X" without "can you" prefix
+    r"(?:make|change|switch)\s+(?:it|that|this)\s+(?:to\s+)?(?:a\s+)?(.+?)"
+    r"|"
+    # "actually make it X" variation
+    r"actually\s+(?:make|change)\s+(?:it|that|this)\s+(?:to\s+)?(?:a\s+)?(.+?)"
     r")"
     r"[\s?!.,]*$",
     re.IGNORECASE

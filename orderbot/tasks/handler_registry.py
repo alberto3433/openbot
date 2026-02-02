@@ -107,6 +107,7 @@ class HandlerRegistry:
         self._handlers["config_helper"] = ConfigHelperHandler(
             config=self._config,
             modifier_change_handler=self._handlers["modifier_change"],
+            configure_next_incomplete_item=self._configure_next_incomplete_item,
         )
 
         # Phase 4: Wire cross-handler callbacks
@@ -132,6 +133,7 @@ class HandlerRegistry:
             store_info_handler=self._handlers["store_info"],
             checkout_utils_handler=self._handlers["checkout_utils"],
             checkout_handler=self._handlers["checkout"],
+            configure_next_incomplete_item=self._configure_next_incomplete_item,
         )
 
         # Phase 6: Final cross-handler wiring

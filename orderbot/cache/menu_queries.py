@@ -138,8 +138,11 @@ class MenuQueryMixin:
                     return type_aliases[alias_lower]
             return None
 
-    def get_signature_item_aliases(self) -> dict[str, str]:
-        """Get signature item alias mapping.
+    def get_items_with_defaults_aliases(self) -> dict[str, str]:
+        """Get alias mapping for items that have default ingredients.
+
+        Items with default ingredients need special recognition in parsing to prevent
+        trigger-based detection from overriding them.
 
         Returns:
             Dict mapping lowercase alias -> menu item name (with original casing).
@@ -148,24 +151,24 @@ class MenuQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        return self._signature_item_aliases.copy()
+        return self._items_with_defaults_aliases.copy()
 
-    def is_signature_item(self, menu_item_name: str) -> bool:
-        """Check if a menu item is a signature item.
+    def item_has_default_ingredients(self, menu_item_name: str) -> bool:
+        """Check if a menu item has default ingredients defined.
 
         Args:
             menu_item_name: The menu item name to check (case-insensitive)
 
         Returns:
-            True if the item is a signature item, False otherwise.
+            True if the item has default ingredients, False otherwise.
 
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
         return (
-            menu_item_name in self._signature_item_types
-            or menu_item_name in self._signature_item_aliases.values()
+            menu_item_name in self._items_with_defaults_types
+            or menu_item_name in self._items_with_defaults_aliases.values()
         )
 
     def get_item_type_for_menu_item(self, menu_item_name: str) -> str | None:
@@ -182,7 +185,7 @@ class MenuQueryMixin:
         """
         self._ensure_loaded()
 
-        result = self._signature_item_types.get(menu_item_name)
+        result = self._items_with_defaults_types.get(menu_item_name)
         if result:
             return result
 

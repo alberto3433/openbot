@@ -191,10 +191,10 @@ class TestBagelItemTask:
         missing = bagel.get_missing_required_fields(bagel_fields)
 
         missing_names = [f.name for f in missing]
-        # Database config: all bagel fields are optional (required=False)
-        # So no required fields should be missing
-        # quantity is not in the database config so not checked
-        assert len(missing) == 0
+        # Database config: bread is required=True for bagels
+        # So bread should be the only missing required field
+        assert len(missing) == 1
+        assert "bread" in missing_names
 
     def test_get_missing_required_fields_when_filled(self):
         """Test no missing fields when all required are filled."""
@@ -229,14 +229,14 @@ class TestBagelItemTask:
         bagel = create_bagel_task()
         bagel_fields = MenuFieldConfig().get_fields_for_item_type("bagel")
         progress = bagel.get_progress(bagel_fields)
-        # Database config: all fields are optional (required=False)
-        # When no required fields, progress depends on is_complete() status
-        # A PENDING task returns 0.0, a COMPLETE task returns 1.0
-        assert progress == pytest.approx(0.0)  # Task is PENDING
+        # Database config: bread is required=True
+        # Progress is based on filled required fields, not task status
+        # No bread set → 0/1 required fields = 0.0
+        assert progress == pytest.approx(0.0)
 
-        # Mark task complete - now progress should be 100%
-        bagel.mark_complete()
-        progress = bagel.get_progress(bagel_fields)
+        # Set bread → 1/1 required fields = 1.0
+        bagel_with_bread = create_bagel_task(bagel_type="plain")
+        progress = bagel_with_bread.get_progress(bagel_fields)
         assert progress == pytest.approx(1.0)
 
 

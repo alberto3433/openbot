@@ -337,9 +337,10 @@ class ItemReplacementHandler:
                 continue
 
             # Check if input contains a modifier from this category
+            # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
             new_value = None
             for modifier in sorted(menu_cache.get_ingredients(category), key=len, reverse=True):
-                if modifier in input_lower:
+                if re.search(rf'\b{re.escape(modifier)}\b', input_lower):
                     new_value = menu_cache.normalize_modifier(modifier)
                     break
 

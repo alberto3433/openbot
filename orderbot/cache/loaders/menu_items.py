@@ -1,8 +1,8 @@
 """
 Menu Item Loaders for MenuDataCache.
 
-Contains loader methods for menu items, signature items, side items,
-and related data structures.
+Contains loader methods for menu items, items with default ingredients,
+side items, and related data structures.
 """
 
 import logging
@@ -21,6 +21,7 @@ class MenuItemLoaderMixin:
         """Load all menu item names and aliases for recognition (from bulk data)."""
         menu_items_list = bulk_data["menu_items"]
         item_types = bulk_data["item_types"]
+        menu_item_ingredients = bulk_data.get("menu_item_ingredients", [])
 
         menu_items = set()
         alias_to_canonical: dict[str, str] = {}
@@ -34,6 +35,9 @@ class MenuItemLoaderMixin:
                     exclude_type_ids.add(item_type.id)
                     break
 
+        # Build set of menu_item_ids that have default ingredients
+        items_with_defaults = {link.menu_item_id for link in menu_item_ingredients}
+
         for item in menu_items_list:
             # Build menu items cache for get_items_by_item_type
             item_type_slug = item.item_type.slug if item.item_type else None
@@ -45,8 +49,8 @@ class MenuItemLoaderMixin:
             }
 
             # Skip items that have their own configuration flows
-            # BUT always include signature items
-            if item.item_type_id in exclude_type_ids and not item.is_signature:
+            # BUT always include items with default ingredients (they need direct recognition)
+            if item.item_type_id in exclude_type_ids and item.id not in items_with_defaults:
                 continue
 
             canonical_name = item.name
@@ -76,39 +80,48 @@ class MenuItemLoaderMixin:
             len(alias_to_canonical),
         )
 
-    def _load_signature_item_aliases_from_bulk(self, bulk_data: dict) -> None:
-        """Load signature item aliases from bulk data."""
-        menu_items = bulk_data["menu_items"]
+    def _load_items_with_defaults_aliases_from_bulk(self, bulk_data: dict) -> None:
+        """Load aliases for items that have default ingredients (from bulk data).
 
-        signature_item_aliases: dict[str, str] = {}
-        signature_item_types: dict[str, str] = {}
+        Items with default ingredients need special recognition in parsing to prevent
+        trigger-based detection from overriding them. For example, "The Classic BEC
+        on a wheat bagel" should match The Classic BEC, not the "bagel" item type.
+        """
+        menu_items = bulk_data["menu_items"]
+        menu_item_ingredients = bulk_data.get("menu_item_ingredients", [])
+
+        # Build set of menu_item_ids that have default ingredients
+        items_with_defaults = {link.menu_item_id for link in menu_item_ingredients}
+
+        items_with_defaults_aliases: dict[str, str] = {}
+        items_with_defaults_types: dict[str, str] = {}
 
         for item in menu_items:
-            if not item.is_signature:
+            if item.id not in items_with_defaults:
                 continue
 
             canonical_name = item.name
 
             if item.item_type:
-                signature_item_types[canonical_name] = item.item_type.slug
+                items_with_defaults_types[canonical_name] = item.item_type.slug
 
             for alias in item.aliases:
                 alias = alias.strip().lower()
                 if alias:
-                    signature_item_aliases[alias] = canonical_name
+                    items_with_defaults_aliases[alias] = canonical_name
 
             name_lower = item.name.lower()
-            signature_item_aliases[name_lower] = canonical_name
+            items_with_defaults_aliases[name_lower] = canonical_name
 
             if name_lower.startswith("the "):
-                signature_item_aliases[name_lower[4:]] = canonical_name
+                items_with_defaults_aliases[name_lower[4:]] = canonical_name
 
-        self._signature_item_aliases = signature_item_aliases
-        self._signature_item_types = signature_item_types
+        self._items_with_defaults_aliases = items_with_defaults_aliases
+        self._items_with_defaults_types = items_with_defaults_types
 
         logger.debug(
-            "Loaded %d signature item aliases (from bulk)",
-            len(signature_item_aliases),
+            "Loaded %d aliases for items with default ingredients (from bulk)",
+            len(items_with_defaults_aliases),
         )
 
     def _load_side_items_from_bulk(self, bulk_data: dict) -> None:
@@ -326,7 +339,7 @@ class MenuItemLoaderMixin:
         )
 
     def _load_menu_item_default_ingredients_from_bulk(self, bulk_data: dict) -> None:
-        """Load default ingredients for signature menu items (from bulk).
+        """Load default ingredients for menu items (from bulk).
 
         Populates _menu_item_default_ingredients: menu_item_id -> list of ingredient dicts
         Each dict contains: ingredient_id, ingredient_slug, ingredient_name, ingredient_category, quantity

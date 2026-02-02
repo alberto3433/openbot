@@ -460,7 +460,7 @@ class ConfiguringItemHandler:
         # For configurable items (sized_beverage, bagel, etc.), route through proper config flow
         if is_configurable and self.item_adder_handler:
             # Check if selected item is a signature item (e.g., "The Classic BEC")
-            is_signature = menu_cache.is_signature_item(selected_name)
+            is_signature = menu_cache.item_has_default_ingredients(selected_name)
             menu_item = {
                 "name": selected_name,
                 "id": selected_id,
@@ -653,13 +653,17 @@ class ConfiguringItemHandler:
             try:
                 attrs = menu_cache.get_item_type_attributes(item_type)
                 for attr_slug, attr_config in attrs.items():
-                    for opt in attr_config.get("options", []):
+                    options = attr_config.get("options", [])
+                    for opt in options:
                         opt_slug = opt.get("slug", "").lower()
                         opt_display = opt.get("display_name", "").lower()
                         if modifier_lower == opt_slug or modifier_lower == opt_display:
                             # Found matching attribute option - apply it
                             logger.info("CAN_YOU_MAKE_IT: Found matching attr %s=%s", attr_slug, opt_slug)
-                            item.set_attribute(attr_slug, opt.get("slug"))
+                            item[attr_slug] = opt.get("slug")
+                            # Recalculate price after attribute change
+                            if self.taking_items_handler and self.taking_items_handler.pricing:
+                                self.taking_items_handler.pricing.recalculate_item_price(item)
                             # Re-ask current question (the one we were on)
                             current_question = self.config_helper_handler.get_current_config_question(order, item)
                             if current_question:

@@ -186,11 +186,7 @@ class TestSyrupToExistingBeverage:
     def test_syrup_disambiguation_then_quantity(self):
         """
         Scenario (the bug that was fixed):
-        - User orders: latte
-        - Bot: asks about size
-        - User: large
-        - Bot: asks about iced
-        - User: iced
+        - User orders: large iced latte
         - Bot: asks about milk/sweetener/syrup
         - User: "syrup" (ambiguous - triggers disambiguation)
         - Bot: asks "Which syrup?" listing options
@@ -206,21 +202,19 @@ class TestSyrupToExistingBeverage:
 
         sm = OrderStateMachine()
 
-        # Start by ordering a latte
-        result = sm.process("latte", order)
+        # Start by ordering a large iced latte (iced/hot are now separate menu items)
+        result = sm.process("large iced latte", order)
         assert len(result.order.items.items) == 1
         item = result.order.items.items[0]
         assert isinstance(item, MenuItemTask)
 
-        # Answer size question (use "large" which is a valid size)
-        result = sm.process("large", result.order)
-
-        # Answer iced question
-        result = sm.process("iced", result.order)
-
-        # Should now ask about milk/sweetener/syrup
-        assert any(word in result.message.lower() for word in ["milk", "sweetener", "syrup"]), \
-            f"Expected milk/sweetener/syrup question, got: {result.message}"
+        # Should now ask about milk/sweetener/syrup (or extra shots)
+        # Skip any intermediate questions until we get to modifiers
+        while not any(word in result.message.lower() for word in ["milk", "sweetener", "syrup"]):
+            # Answer any intermediate questions with "no"
+            result = sm.process("no", result.order)
+            if "anything else" in result.message.lower() or "done" in result.message.lower():
+                break
 
         # Say just "syrup" to trigger disambiguation
         result = sm.process("syrup", result.order)

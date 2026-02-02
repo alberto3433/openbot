@@ -504,7 +504,13 @@ class OptionMatcher:
         return opt_slug, opt_name
 
     @staticmethod
-    def matches_value(option: dict, normalized_value: str, raw_value_lower: str) -> bool:
+    def matches_value(
+        option: dict,
+        normalized_value: str,
+        raw_value_lower: str,
+        *,
+        exact_only: bool = False,
+    ) -> bool:
         """Check if an option matches by slug, display_name, or raw value.
 
         Simple matching for price lookups - uses multiple strategies:
@@ -517,6 +523,7 @@ class OptionMatcher:
             option: Option dict with "slug" and/or "display_name" keys
             normalized_value: Value normalized via normalize_to_slug()
             raw_value_lower: Original value lowercased
+            exact_only: If True, only check exact matches (skip prefix matching)
 
         Returns:
             True if the option matches by any strategy, False otherwise
@@ -530,6 +537,10 @@ class OptionMatcher:
                 opt_slug == raw_value_lower or
                 opt_display_lower == raw_value_lower):
             return True
+
+        # Skip prefix matching if exact_only is True
+        if exact_only:
+            return False
 
         # Prefix matching: value must be at the START of the slug
         # This allows "vanilla" to match "vanilla_syrup" but prevents

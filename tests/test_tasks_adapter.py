@@ -116,7 +116,12 @@ class TestDictToOrderTask:
         assert item.unit_price == 5.99
 
     def test_coffee_item(self):
-        """Test converting a coffee item (lattes use MenuItemTask with espresso type)."""
+        """Test converting a coffee item (lattes use MenuItemTask with espresso type).
+
+        Note: Temperature (hot/iced) is now part of the menu item name (e.g., "Iced Latte"
+        vs "Hot Latte"), not a configurable attribute. Size and temperature are stored
+        as modifiers when converting from dict format.
+        """
         order_dict = {
             "items": [{
                 "item_type": "espresso",
@@ -137,12 +142,12 @@ class TestDictToOrderTask:
 
         assert order.items.get_item_count() == 1
         item = order.items.items[0]
-        # Coffee items are now MenuItemTask with has_attribute('size')=True
         assert isinstance(item, MenuItemTask)
-        assert item.has_attribute("size") is True
-        assert item.menu_item_name == "iced latte"  # drink_type stored as menu_item_name
-        assert item["size"] == "large"
-        assert item["temperature"] == "iced"
+        assert item.menu_item_name == "iced latte"
+        # Size and temperature are converted to modifiers (not attributes)
+        size_mods = item.get_selections("size")
+        assert len(size_mods) == 1
+        assert size_mods[0]["slug"] == "large"
         # Milk and sweeteners stored as selections
         milk_mods = item.get_selections("milk")
         assert len(milk_mods) == 1

@@ -969,7 +969,7 @@ class TestFindNthItemOfType:
         result = find_nth_item_of_type(items, "item", 2)
         assert result is not None
         item, idx = result
-        assert "size" in item  # Created as espresso_based via CoffeeItemTask helper
+        assert item.menu_item_type == "espresso_based"  # The coffee item
         assert idx == 1
 
     def test_find_nth_item_out_of_range(self):

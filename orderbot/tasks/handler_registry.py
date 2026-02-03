@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .checkout_utils_handler import CheckoutUtilsHandler
     from .store_info_handler import StoreInfoHandler
     from .menu_inquiry_handler import MenuInquiryHandler
+    from .menu_pagination_handler import MenuPaginationHandler
     from .order_utils_handler import OrderUtilsHandler
     from .item_adder_handler import ItemAdderHandler
     from .item_lookup_handler import ItemLookupHandler
@@ -74,6 +75,7 @@ class HandlerRegistry:
         from .checkout_utils_handler import CheckoutUtilsHandler
         from .store_info_handler import StoreInfoHandler
         from .menu_inquiry_handler import MenuInquiryHandler
+        from .menu_pagination_handler import MenuPaginationHandler
         from .order_utils_handler import OrderUtilsHandler
         from .item_adder_handler import ItemAdderHandler
         from .item_lookup_handler import ItemLookupHandler
@@ -106,7 +108,15 @@ class HandlerRegistry:
 
         # Phase 3: Independent handlers
         self._handlers["store_info"] = StoreInfoHandler(menu_data=self._config.menu_data)
-        self._handlers["menu_inquiry"] = MenuInquiryHandler(config=self._config)
+        self._handlers["menu_pagination"] = MenuPaginationHandler(
+            menu_data=self._config.menu_data,
+        )
+        self._handlers["menu_inquiry"] = MenuInquiryHandler(
+            config=self._config,
+            pagination_handler=self._handlers["menu_pagination"],
+        )
+        # Wire back menu_inquiry_handler reference to pagination handler
+        self._handlers["menu_pagination"].menu_inquiry_handler = self._handlers["menu_inquiry"]
         self._handlers["order_utils"] = OrderUtilsHandler(
             config=self._config,
             build_order_summary=self._handlers["checkout_utils"].build_order_summary,
@@ -219,6 +229,7 @@ class HandlerRegistry:
         menu_data_handlers = [
             "store_info",
             "menu_inquiry",
+            "menu_pagination",
             "item_lookup",
             "item_adder",
             "taking_items",

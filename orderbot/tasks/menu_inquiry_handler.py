@@ -8,14 +8,15 @@ This module handles menu-related inquiries including:
 - Signature/speed menu inquiries
 - Soda clarification
 
+Pagination ("show more" requests) is delegated to MenuPaginationHandler.
+
 Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import singularize
 
 from .models import OrderTask
 from .pending_fields import PendingField
@@ -30,6 +31,7 @@ from .price_inquiry_handler import PriceInquiryHandler
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
+    from .menu_pagination_handler import MenuPaginationHandler
 
 logger = logging.getLogger(__name__)
 
@@ -49,16 +51,19 @@ class MenuInquiryHandler(MenuDataMixin):
     def __init__(
         self,
         config: "HandlerConfig",
+        pagination_handler: "MenuPaginationHandler | None" = None,
     ):
         """
         Initialize the menu inquiry handler.
 
         Args:
             config: HandlerConfig with shared dependencies.
+            pagination_handler: Handler for pagination ("show more") requests.
         """
         self._menu_data = config.menu_data or {}
         self.pricing = config.pricing
         self._price_inquiry_handler = PriceInquiryHandler()
+        self.pagination_handler = pagination_handler
 
     def _get_available_menu_categories_message(self) -> str:
         """Build a message listing a few available menu categories from database.
@@ -177,375 +182,21 @@ class MenuInquiryHandler(MenuDataMixin):
     def handle_more_menu_items(self, order: OrderTask, category: str | None = None) -> StateMachineResult:
         """Handle 'show more' menu requests.
 
-        Continues listing items from where the previous menu query left off.
-        Supports both menu item categories, modifier categories (toppings, proteins, etc.),
-        and ingredient search results.
+        Delegates to pagination_handler for actual pagination logic.
+        This method is kept for backward compatibility.
 
         Args:
             order: The current order state
-            category: Optional category extracted from "what other X" queries. If provided
-                and there's no existing pagination, this triggers a fresh query for that category.
+            category: Optional category extracted from "what other X" queries.
         """
-        # Check for ingredient search pagination first
-        ingredient_search = order.pending_ingredient_search
-        if ingredient_search:
-            return self._handle_more_ingredient_search_items(order, ingredient_search)
+        if self.pagination_handler:
+            return self.pagination_handler.handle_more_menu_items(order, category)
 
-        pagination = order.get_menu_pagination()
-
-        if not pagination:
-            # No previous menu query - check if we have a category from "what other X"
-            if category:
-                # Treat as a fresh menu query for this category
-                logger.info("MORE MENU ITEMS: No pagination, treating '%s' as fresh query", category)
-                return self._handle_category_as_menu_query(category, order)
-
-            # No category either - ask what they want to see more of
-            return StateMachineResult(
-                message="More of what? What would you like me to list?",
-                order=order,
-            )
-
-        # Handle item_types pagination (from "what do you recommend?" response)
-        if pagination.get("type") == "item_types":
-            return self._handle_more_item_types(order, pagination)
-
-        # Handle attribute_options pagination (from "what bagel types?" response)
-        if pagination.get("type") == "attribute_options":
-            return self._handle_more_attribute_options(order, pagination)
-
-        category = pagination.get("category")
-        offset = pagination.get("offset", 0)
-        total_items = pagination.get("total_items", 0)
-
-        # Check if this is a modifier category (toppings, proteins, cheeses, spreads, milks, etc.)
-        # Use data-driven lookup from modifier_categories table
-        modifier_categories = menu_cache.get_modifier_categories_for_inquiry()
-
-        if category in modifier_categories:
-            # Use generic data-driven getter for modifier items
-            get_items = lambda: menu_cache.get_modifier_category_items(category)
-            return self._handle_more_modifier_items(category, get_items, offset, order)
-
-        # Get items for this category (menu items)
-        items, lookup_type = self._get_items_for_category(category)
-
-        if not items or offset >= len(items):
-            # No more items to show
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's all we have. Would you like to order anything?",
-                order=order,
-            )
-
-        # Format the next batch
-        items_str, has_more = self._format_items_list(items, offset, False, lookup_type)
-
-        # Update pagination state
-        new_offset = offset + DEFAULT_PAGINATION_SIZE
-        if has_more:
-            order.set_menu_pagination(category, new_offset, len(items))
-        else:
-            order.clear_menu_pagination()
-
-        # Build response message
-        if has_more:
-            message = f"We also have: {items_str}. Would you like any of these?"
-        else:
-            message = f"We also have: {items_str}. That's all we have. Would you like any of these?"
-
+        # Fallback if no pagination handler
         return StateMachineResult(
-            message=message,
+            message="More of what? What would you like me to list?",
             order=order,
         )
-
-    def _handle_more_ingredient_search_items(
-        self,
-        order: OrderTask,
-        ingredient_search: dict,
-    ) -> StateMachineResult:
-        """Handle 'show more' for ingredient search results.
-
-        Shows the next batch of items that contain the searched ingredient.
-        """
-        ingredient = ingredient_search.get("ingredient", "that ingredient")
-        matches = ingredient_search.get("matches", [])
-        offset = ingredient_search.get("offset", 0)
-
-        if offset >= len(matches):
-            # No more items to show
-            order.pending_ingredient_search = None
-            return StateMachineResult(
-                message=f"That's all the items we have with {ingredient}. Which would you like?",
-                order=order,
-            )
-
-        # Get next batch of items (show 6 at a time)
-        batch_size = 6
-        next_items = matches[offset:offset + batch_size]
-        item_names = [m.get("name", "item") for m in next_items]
-        remaining = len(matches) - (offset + len(next_items))
-
-        # Format the list
-        items_list = format_english_list(item_names)
-
-        # Update or clear pagination state
-        if remaining > 0:
-            order.pending_ingredient_search = {
-                "ingredient": ingredient,
-                "matches": matches,
-                "offset": offset + batch_size,
-            }
-            message = f"We also have: {items_list}, and {remaining} more. Which would you like?"
-        else:
-            order.pending_ingredient_search = None
-            message = f"We also have: {items_list}. That's all the items with {ingredient}. Which would you like?"
-
-        return StateMachineResult(
-            message=message,
-            order=order,
-        )
-
-    def _handle_category_as_menu_query(
-        self,
-        category: str,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Handle a category from 'what other X' as a fresh menu query.
-
-        Uses data-driven ItemType aliases from the database to map category phrases
-        to the appropriate menu type and handler.
-        """
-        category_lower = category.lower().strip()
-
-        # Use data-driven lookup from ItemType aliases
-        category_info = menu_cache.get_category_keyword_mapping(category_lower)
-
-        if category_info:
-            menu_type = category_info.get("slug")
-            logger.info("Category '%s' mapped to menu type '%s' via database", category, menu_type)
-            # Use signature menu handler for signature items
-            if menu_type == "signature_items":
-                return self.handle_signature_menu_inquiry(menu_type, order)
-            # Use regular menu query handler for other types
-            return self.handle_menu_query(menu_type, order)
-
-        # Couldn't map to a known category - try a generic lookup
-        logger.info("Category '%s' not in database aliases, trying generic lookup", category)
-        return self.handle_menu_query(category_lower, order)
-
-    def _handle_more_modifier_items(
-        self,
-        category: str,
-        getter_fn: Callable,
-        offset: int,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Handle 'show more' for modifier categories (toppings, proteins, etc.)."""
-        try:
-            items_set = getter_fn()
-        except RuntimeError:
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's all we have. Would you like anything?",
-                order=order,
-            )
-
-        if not items_set:
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's all we have. Would you like anything?",
-                order=order,
-            )
-
-        # Normalize items (same logic as store_info_handler)
-        items_list = self._normalize_modifier_items(items_set, category)
-
-        if not items_list or offset >= len(items_list):
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's all we have. Would you like anything?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items_list[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items_list) - (offset + len(batch))
-        has_more = remaining > 0
-
-        # Format the list
-        if has_more:
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]}, {batch[1]}"
-            else:
-                items_str = ", ".join(batch)
-            items_str += f", and {remaining} more"
-
-            # Update pagination for next "what else"
-            new_offset = offset + DEFAULT_PAGINATION_SIZE
-            order.set_menu_pagination(category, new_offset, len(items_list))
-        else:
-            # Last batch
-            items_str = format_english_list(batch)
-            order.clear_menu_pagination()
-
-        # Build response
-        if has_more:
-            message = f"We also have {items_str}. Would you like any of these?"
-        else:
-            message = f"We also have {items_str}. That's all we have. Would you like any?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _handle_more_item_types(
-        self,
-        order: OrderTask,
-        pagination: dict,
-    ) -> StateMachineResult:
-        """Handle 'show more' for item type suggestions (from 'what do you recommend?').
-
-        Args:
-            order: Current order state
-            pagination: Pagination dict with "items" list and "offset"
-        """
-        items = pagination.get("items", [])
-        offset = pagination.get("offset", 0)
-
-        if not items or offset >= len(items):
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's everything we have. What would you like to order?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items) - (offset + len(batch))
-        has_more = remaining > 0
-
-        # Format the list
-        if has_more:
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]}, {batch[1]}"
-            else:
-                items_str = ", ".join(batch)
-            items_str += f", and {remaining} more"
-
-            # Update pagination for next "what else"
-            new_offset = offset + DEFAULT_PAGINATION_SIZE
-            order.menu_query_pagination = {
-                "type": "item_types",
-                "items": items,
-                "offset": new_offset,
-            }
-        else:
-            # Last batch
-            items_str = format_english_list(batch)
-            order.clear_menu_pagination()
-
-        # Build response
-        if has_more:
-            message = f"We also have {items_str}. Would you like any of these?"
-        else:
-            message = f"We also have {items_str}. That's everything! What would you like?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _handle_more_attribute_options(
-        self,
-        order: OrderTask,
-        pagination: dict,
-    ) -> StateMachineResult:
-        """Handle 'show more' for attribute options (from 'what bagel types?' response).
-
-        Args:
-            order: Current order state
-            pagination: Pagination dict with "items" list, "offset", and attribute context
-        """
-        items = pagination.get("items", [])
-        offset = pagination.get("offset", 0)
-        attr_display = pagination.get("attribute_display", "options")
-        item_type = pagination.get("item_type")
-
-        if not items or offset >= len(items):
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message=f"That's all the {attr_display} we have. Would you like to order something?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items) - (offset + len(batch))
-        has_more = remaining > 0
-
-        # Format the list
-        if has_more:
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]}, {batch[1]}"
-            else:
-                items_str = ", ".join(batch)
-            items_str += f", and {remaining} more"
-
-            # Update pagination for next "what else"
-            new_offset = offset + DEFAULT_PAGINATION_SIZE
-            order.menu_query_pagination = {
-                "type": "attribute_options",
-                "attribute_slug": pagination.get("attribute_slug"),
-                "attribute_display": attr_display,
-                "item_type": item_type,
-                "items": items,
-                "offset": new_offset,
-            }
-        else:
-            # Last batch
-            items_str = format_english_list(batch)
-            order.clear_menu_pagination()
-
-        # Build response
-        if has_more:
-            message = f"We also have {items_str}. Would you like any of these?"
-        else:
-            message = f"We also have {items_str}. That's all the {attr_display} we have. Would you like any?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _normalize_modifier_items(self, items_set: set, category: str) -> list[str]:
-        """Normalize and deduplicate modifier items for display.
-
-        Removes plural variants, filters out very similar items,
-        and returns a clean sorted list for user display.
-
-        Uses centralized singularize function from cache/base.py for proper
-        handling of irregular plurals.
-        """
-        seen_base = set()
-        normalized = []
-
-        for item in sorted(items_set):
-            item_lower = item.lower()
-
-            # Get the singular form using the centralized function
-            singular = singularize(item_lower)
-
-            # Skip if we've seen this base form
-            if singular in seen_base:
-                continue
-
-            # Track both forms
-            seen_base.add(singular)
-            seen_base.add(item_lower)
-
-            # Capitalize for display
-            normalized.append(item.title() if item.islower() else item)
-
-        return normalized
 
     def handle_menu_query(
         self,

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from .item_lookup_handler import ItemLookupHandler
     from .modifier_change_handler import ModifierChangeHandler
     from .config_helper_handler import ConfigHelperHandler
+    from .config_cancellation_handler import ConfigCancellationHandler
     from .config import MenuItemConfigHandler
     from .configuring_item_handler import ConfiguringItemHandler
     from .config_selection_handler import ConfigSelectionHandler
@@ -79,6 +80,7 @@ class HandlerRegistry:
         from .disambiguation_handler import DisambiguationHandler
         from .modifier_change_handler import ModifierChangeHandler
         from .config_helper_handler import ConfigHelperHandler
+        from .config_cancellation_handler import ConfigCancellationHandler
         from .config import MenuItemConfigHandler
         from .configuring_item_handler import ConfiguringItemHandler
         from .config_selection_handler import ConfigSelectionHandler
@@ -128,11 +130,17 @@ class HandlerRegistry:
         self._handlers["item_adder"].disambiguation_handler = disambiguation_handler
 
         self._handlers["modifier_change"] = ModifierChangeHandler(config=self._config)
+        self._handlers["config_cancellation"] = ConfigCancellationHandler(
+            configure_next_incomplete_item=self._configure_next_incomplete_item,
+        )
         self._handlers["config_helper"] = ConfigHelperHandler(
             config=self._config,
             modifier_change_handler=self._handlers["modifier_change"],
             configure_next_incomplete_item=self._configure_next_incomplete_item,
+            cancellation_handler=self._handlers["config_cancellation"],
         )
+        # Wire back config_helper reference to cancellation handler
+        self._handlers["config_cancellation"].config_helper_handler = self._handlers["config_helper"]
 
         # Phase 4: Wire cross-handler callbacks
         self._handlers["checkout"].order_utils_handler = self._handlers["order_utils"]

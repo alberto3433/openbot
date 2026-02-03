@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
     from .config import MenuItemConfigHandler
     from .configuring_item_handler import ConfiguringItemHandler
+    from .config_selection_handler import ConfigSelectionHandler
+    from .config_modification_handler import ConfigModificationHandler
     from .taking_items_handler import TakingItemsHandler
     from .slot_orchestration_handler import SlotOrchestrationHandler
 
@@ -76,6 +78,8 @@ class HandlerRegistry:
         from .config_helper_handler import ConfigHelperHandler
         from .config import MenuItemConfigHandler
         from .configuring_item_handler import ConfiguringItemHandler
+        from .config_selection_handler import ConfigSelectionHandler
+        from .config_modification_handler import ConfigModificationHandler
         from .taking_items_handler import TakingItemsHandler
         from .slot_orchestration_handler import SlotOrchestrationHandler
 
@@ -119,12 +123,26 @@ class HandlerRegistry:
         self._handlers["item_adder"].menu_item_handler = self._handlers["menu_item"]
         self._handlers["checkout_utils"]._configure_next_incomplete_item = self._configure_next_incomplete_item
 
+        # Phase 5.1: New specialized config handlers (before ConfiguringItemHandler)
+        self._handlers["config_selection"] = ConfigSelectionHandler(
+            item_adder_handler=self._handlers["item_adder"],
+            menu_item_handler=self._handlers["menu_item"],
+        )
+        self._handlers["config_modification"] = ConfigModificationHandler(
+            config_helper_handler=self._handlers["config_helper"],
+            checkout_utils_handler=self._handlers["checkout_utils"],
+            modifier_change_handler=self._handlers["modifier_change"],
+            item_adder_handler=self._handlers["item_adder"],
+        )
+
         self._handlers["configuring_item"] = ConfiguringItemHandler(
             config_helper_handler=self._handlers["config_helper"],
             checkout_utils_handler=self._handlers["checkout_utils"],
             modifier_change_handler=self._handlers["modifier_change"],
             item_adder_handler=self._handlers["item_adder"],
             menu_item_handler=self._handlers["menu_item"],
+            config_selection_handler=self._handlers["config_selection"],
+            config_modification_handler=self._handlers["config_modification"],
         )
         self._handlers["taking_items"] = TakingItemsHandler(
             config=self._config,
@@ -138,6 +156,8 @@ class HandlerRegistry:
 
         # Phase 6: Final cross-handler wiring
         self._handlers["configuring_item"].taking_items_handler = self._handlers["taking_items"]
+        self._handlers["config_selection"].taking_items_handler = self._handlers["taking_items"]
+        self._handlers["config_modification"].taking_items_handler = self._handlers["taking_items"]
         self._handlers["menu_item"].process_pending_parsed_items = (
             self._handlers["configuring_item"]._process_pending_parsed_items
         )
@@ -220,6 +240,14 @@ class HandlerRegistry:
     @property
     def configuring_item(self) -> "ConfiguringItemHandler":
         return self._handlers["configuring_item"]
+
+    @property
+    def config_selection(self) -> "ConfigSelectionHandler":
+        return self._handlers["config_selection"]
+
+    @property
+    def config_modification(self) -> "ConfigModificationHandler":
+        return self._handlers["config_modification"]
 
     @property
     def taking_items(self) -> "TakingItemsHandler":

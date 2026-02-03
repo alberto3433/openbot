@@ -888,10 +888,26 @@ class ItemAdderHandler(MenuDataMixin):
         # If no matches found but we have an item_type_filter, get all items of that type
         # This handles generic requests where user wants something of a specific type
         if not matching_items and item_type_filter:
-            matching_items = menu_cache.get_items_by_item_type(item_type_filter)
-            if matching_items:
-                logger.info("No text matches for '%s', using all %d items of type '%s'",
-                           item_name, len(matching_items), item_type_filter)
+            all_type_items = menu_cache.get_items_by_item_type(item_type_filter)
+            if all_type_items:
+                # Apply required_match_phrases filtering to these items
+                # Items with restrictive match phrases should only match specific inputs
+                filtered_items = []
+                for item in all_type_items:
+                    item_name_lower = item.get("name", "").lower()
+                    # Look up required_match_phrases from cache
+                    required_phrases = menu_cache._items_with_required_phrases.get(item_name_lower)
+                    if required_phrases:
+                        # Item has restrictive match phrases - check if user input qualifies
+                        item_with_phrases = {**item, "required_match_phrases": required_phrases}
+                        if self.menu_lookup._passes_match_filter(item_with_phrases, item_name):
+                            filtered_items.append(item)
+                    else:
+                        # No filter - item passes (generic items like "Omelette")
+                        filtered_items.append(item)
+                matching_items = filtered_items
+                logger.info("No text matches for '%s', using %d of %d items of type '%s' (after required_match_phrases filter)",
+                           item_name, len(matching_items), len(all_type_items), item_type_filter)
 
         # Step 2: Handle results
         if len(matching_items) == 1:

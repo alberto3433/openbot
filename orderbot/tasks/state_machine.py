@@ -487,11 +487,22 @@ class OrderStateMachine:
         from .models import MenuItemTask
 
         # Find the target item if not provided
+        # PRIORITY: Configure child items (bundle children) before their parents.
+        # This ensures side choices (e.g., bagel with omelette) are fully configured
+        # before returning to the parent's remaining questions.
         if item is None:
+            # First pass: find child items (items with bundle_parent_item_id)
             for i in order.items.items:
                 if isinstance(i, MenuItemTask) and i.status == TaskStatus.IN_PROGRESS:
-                    item = i
-                    break
+                    if i.bundle_parent_item_id is not None:
+                        item = i
+                        break
+            # Second pass: if no child found, find any incomplete item
+            if item is None:
+                for i in order.items.items:
+                    if isinstance(i, MenuItemTask) and i.status == TaskStatus.IN_PROGRESS:
+                        item = i
+                        break
 
         if item is None or not isinstance(item, MenuItemTask):
             # No incomplete item found - return to checkout flow

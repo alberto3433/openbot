@@ -14,7 +14,7 @@ from typing import Optional, Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus
 from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
-from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN
+from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN, extract_attribute_values
 from .handler_config import HandlerConfig
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
 from .modifier_operations import (
@@ -844,6 +844,15 @@ class ConfigHelperHandler:
         if opt_item_type:
             # Configurable item type (e.g., bagel - needs bread choice)
             child_display_name = menu_cache.get_item_type_display_name(opt_item_type)
+
+            # Extract attributes from the side choice input (e.g., "plain bagel" -> bread=plain)
+            # This prevents re-asking about attributes the user already specified
+            pre_filled_attrs = extract_attribute_values(user_input, opt_item_type)
+            logger.info(
+                "SIDE_CHOICE: Extracted attributes from '%s' for type '%s': %s",
+                user_input, opt_item_type, pre_filled_attrs
+            )
+
             child_item = MenuItemTask(
                 menu_item_name=child_display_name,
                 menu_item_type=opt_item_type,
@@ -854,6 +863,11 @@ class ConfigHelperHandler:
                 bundle_price_rule=price_rule,
                 bundle_included_price=bundle_included_price,
             )
+
+            # Apply pre-filled attributes to the child item
+            for attr_name, attr_value in pre_filled_attrs.items():
+                if attr_value is not None:
+                    child_item[attr_name] = attr_value
 
             # Check if the item type requires configuration
             # Look for attributes that are required and need to be asked
@@ -899,13 +913,58 @@ class ConfigHelperHandler:
         # Add the child item to the order
         order.items.add_item(child_item)
 
-        # Mark parent item complete - its configuration is done
-        item.mark_complete()
+        # Check if parent item has remaining mandatory attributes to ask
+        # (e.g., omelette still needs cheese, toppings after side_choice is done)
+        parent_item_type = item.menu_item_type
+        if parent_item_type:
+            parent_attrs = menu_cache.get_item_type_attributes(parent_item_type)
+            # Find attributes that are ask_in_conversation and not yet answered
+            # Exclude side_choice since we just answered it
+            unanswered_parent_attrs = []
+            for attr_slug, attr_config in parent_attrs.items():
+                if attr_slug == "side_choice":
+                    continue  # Just answered
+                if not attr_config.get("ask_in_conversation", False):
+                    continue  # Not asked in conversation
+                # Check if this attribute has been answered
+                if attr_slug not in item.attribute_values:
+                    unanswered_parent_attrs.append(attr_slug)
+
+            # Mark side_choice as answered on the parent
+            side_choice_value = chosen_option.get("slug") or chosen_option.get("display_name")
+            item["side_choice"] = side_choice_value
+
+            # If side choice is a configurable item type (e.g., bagel), and parent has an
+            # attribute with the same name, mark it as declined. The child item handles its
+            # own configuration, so we don't want to ask the same question on the parent.
+            # E.g., omelette has both side_choice=bagel AND a "bagel" attribute - redundant.
+            if opt_item_type and opt_item_type in unanswered_parent_attrs:
+                item[opt_item_type] = None  # Mark as declined/not applicable
+                unanswered_parent_attrs.remove(opt_item_type)
+                logger.info(
+                    "SIDE_CHOICE: Marked parent's '%s' attribute as declined (child handles it)",
+                    opt_item_type
+                )
+
+            if unanswered_parent_attrs:
+                # Parent still has questions - keep it in progress
+                logger.info(
+                    "SIDE_CHOICE: Parent %s has %d unanswered attributes: %s - keeping IN_PROGRESS",
+                    item.menu_item_name, len(unanswered_parent_attrs), unanswered_parent_attrs
+                )
+                item.mark_in_progress()  # Keep parent in progress
+            else:
+                # No more questions for parent - mark complete
+                item.mark_complete()
+        else:
+            # No item type - mark complete (shouldn't happen but fallback)
+            item.mark_complete()
 
         # Clear pending state
         order.clear_pending()
 
-        # Let slot orchestrator pick up the next incomplete item (the child if it needs config)
+        # Let slot orchestrator pick up the next incomplete item
+        # Priority: child item if it needs config, then parent if it needs more questions
         if self._get_next_question:
             return self._get_next_question(order)
 

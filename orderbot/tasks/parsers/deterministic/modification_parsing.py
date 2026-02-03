@@ -334,9 +334,10 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     """
     text_lower = text.lower().strip()
 
-    # Get known modifiers from all food categories (database-driven)
+    # Get known modifiers from all ingredient categories (database-driven)
+    # Include both food and beverage modifiers (milk, sugar, syrup, etc.)
     all_modifiers: set[str] = set()
-    for category in menu_cache.get_ordered_ingredient_categories("food"):
+    for category in menu_cache.get_all_ingredient_categories():
         ingredients = menu_cache.get_ingredients(category)
         all_modifiers.update(ingredients)
 
@@ -345,8 +346,10 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     target_patterns = [
         # "add bacon to the bagel" / "add bacon to the plain bagel"
         r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the|my)\s+(.+?)$",
-        # "add bacon to the omelette" / "add bacon to my omelette"
-        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the|my)\s+(.+?)$",
+        # "add milk to tea" - single-word target, no article required
+        # Using (\w+)$ to capture only single-word targets, avoiding false positives
+        # like "add milk to my order". Excludes "it" which is handled by implicit patterns.
+        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?!it\b)(\w+)$",
     ]
 
     modifier_text = None
@@ -432,11 +435,12 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
 
     # Also check for category names (e.g., "cheese" in "add bacon and cheese")
     # This handles cases where "cheese" is a category name, not a specific ingredient
-    all_food_categories = menu_cache.get_ordered_ingredient_categories("food")
+    # Include all categories (food + beverage) since "milk" is a beverage category
+    all_categories = menu_cache.get_all_ingredient_categories()
     modifier_words = modifier_text.lower().split()
     for word in modifier_words:
         word_clean = word.strip(",;").strip()
-        if word_clean in all_food_categories:
+        if word_clean in all_categories:
             # Found a category name - add it to modifiers if not already there
             category_title = word_clean.title()
             if category_title not in modifiers_found:

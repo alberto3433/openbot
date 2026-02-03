@@ -2237,7 +2237,7 @@ class TestDuplicatePatterns:
         # Note: The old hardcoded mapping returned "coffee" but the database uses "sized_beverage"
         ("another coffee", "sized_beverage"),
         ("one more coffee", "sized_beverage"),
-        ("another tea", "sized_beverage"),
+        ("another tea", "tea"),
         # Espresso-based drinks use "espresso_based" item type (have size, unlike plain espresso)
         ("another latte", "espresso_based"),
         ("one more latte", "espresso_based"),
@@ -2554,6 +2554,21 @@ class TestAddModifierToItem:
         # Parser returns canonical ingredient name "Bacon" from database
         assert any("bacon" in m.lower() for m in result.modify_add_modifiers)
         assert result.modify_target_description is None  # "it" = implicit target
+
+    def test_add_milk_to_tea(self):
+        """Test 'add milk to tea' adds milk to existing tea item.
+
+        Regression test: Without the article "the", this pattern was failing to
+        match and instead creating a new "Hot Tea" item. The fix adds a pattern
+        that handles single-word targets without requiring an article.
+        """
+        result = parse_open_input_deterministic("add milk to tea")
+        assert result is not None
+        assert result.modify_existing_item is True
+        # Check that milk was recognized as a modifier
+        assert any("milk" in m.lower() for m in result.modify_add_modifiers)
+        # Target should be "tea" (single word, no article)
+        assert result.modify_target_description == "tea"
 
     def test_add_egg(self):
         """Test 'add egg' adds egg modifier."""

@@ -126,3 +126,38 @@ def format_numbered_list(
         else:
             lines.append(f"{i}. {name}")
     return "\n".join(lines)
+
+
+def find_first_word_boundary_match(
+    text: str,
+    candidates: list[str] | set[str],
+    normalize_func=None,
+) -> str | None:
+    """Find the first matching candidate using word-boundary matching.
+
+    Candidates are sorted by length (longest first) to prevent partial matches
+    from taking precedence (e.g., "egg" matching before "egg whites").
+
+    Args:
+        text: The text to search in (should be lowercase).
+        candidates: List/set of candidate strings to match against.
+        normalize_func: Optional function to normalize the matched value.
+                       If provided, returns normalize_func(match) instead of match.
+
+    Returns:
+        The first matching candidate (optionally normalized), or None if no match.
+
+    Examples:
+        >>> find_first_word_boundary_match("add vanilla syrup", ["vanilla", "chocolate"])
+        'vanilla'
+        >>> find_first_word_boundary_match("veggie omelette", ["egg", "veggie"])
+        'veggie'  # Not 'egg' because word boundary prevents matching 'egg' in 'veggie'
+    """
+    import re
+
+    for candidate in sorted(candidates, key=len, reverse=True):
+        if re.search(rf'\b{re.escape(candidate)}\b', text):
+            if normalize_func:
+                return normalize_func(candidate)
+            return candidate
+    return None

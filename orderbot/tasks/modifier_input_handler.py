@@ -20,6 +20,7 @@ from .handler_utils import (
     recalculate_and_summarize,
 )
 from .schemas import StateMachineResult
+from .utils.text import find_first_word_boundary_match
 
 if TYPE_CHECKING:
     from .models import MenuItemTask
@@ -640,12 +641,11 @@ class ModifierInputHandler:
             from .models import MenuItemTask
 
             for category in menu_cache.get_all_ingredient_categories():
-                detected_modifier = None
-                for modifier in sorted(menu_cache.get_ingredients(category), key=len, reverse=True):
-                    # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
-                    if re.search(rf'\b{re.escape(modifier)}\b', input_lower):
-                        detected_modifier = modifier
-                        break
+                # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
+                detected_modifier = find_first_word_boundary_match(
+                    input_lower,
+                    menu_cache.get_ingredients(category),
+                )
 
                 if detected_modifier:
                     # Find items that have a single_select attribute for this category

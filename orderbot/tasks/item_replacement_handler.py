@@ -23,6 +23,7 @@ from .parsers.intent_patterns import REPLACE_ITEM_PATTERN
 from .normalization import format_slug_for_display
 from .checkout_messages import changed_to_anything_else
 from .handler_utils import get_last_item, recalculate_and_summarize
+from .utils.text import find_first_word_boundary_match
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -338,11 +339,11 @@ class ItemReplacementHandler:
 
             # Check if input contains a modifier from this category
             # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
-            new_value = None
-            for modifier in sorted(menu_cache.get_ingredients(category), key=len, reverse=True):
-                if re.search(rf'\b{re.escape(modifier)}\b', input_lower):
-                    new_value = menu_cache.normalize_modifier(modifier)
-                    break
+            new_value = find_first_word_boundary_match(
+                input_lower,
+                menu_cache.get_ingredients(category),
+                normalize_func=menu_cache.normalize_modifier,
+            )
 
             if new_value:
                 old_value = last_item.get(attr_slug)

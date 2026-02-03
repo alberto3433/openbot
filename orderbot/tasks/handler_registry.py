@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from .checkout_handler import CheckoutHandler
     from .checkout_utils_handler import CheckoutUtilsHandler
     from .store_info_handler import StoreInfoHandler
+    from .recommendation_handler import RecommendationHandler
+    from .menu_options_inquiry_handler import MenuOptionsInquiryHandler
     from .menu_inquiry_handler import MenuInquiryHandler
     from .menu_pagination_handler import MenuPaginationHandler
     from .order_utils_handler import OrderUtilsHandler
@@ -74,6 +76,8 @@ class HandlerRegistry:
         from .checkout_handler import CheckoutHandler
         from .checkout_utils_handler import CheckoutUtilsHandler
         from .store_info_handler import StoreInfoHandler
+        from .recommendation_handler import RecommendationHandler
+        from .menu_options_inquiry_handler import MenuOptionsInquiryHandler
         from .menu_inquiry_handler import MenuInquiryHandler
         from .menu_pagination_handler import MenuPaginationHandler
         from .order_utils_handler import OrderUtilsHandler
@@ -107,7 +111,17 @@ class HandlerRegistry:
         self._config.get_next_question = self._handlers["checkout_utils"].get_next_question
 
         # Phase 3: Independent handlers
-        self._handlers["store_info"] = StoreInfoHandler(menu_data=self._config.menu_data)
+        self._handlers["recommendation"] = RecommendationHandler(
+            menu_data=self._config.menu_data,
+        )
+        self._handlers["menu_options_inquiry"] = MenuOptionsInquiryHandler(
+            menu_data=self._config.menu_data,
+        )
+        self._handlers["store_info"] = StoreInfoHandler(
+            menu_data=self._config.menu_data,
+            recommendation_handler=self._handlers["recommendation"],
+            menu_options_handler=self._handlers["menu_options_inquiry"],
+        )
         self._handlers["menu_pagination"] = MenuPaginationHandler(
             menu_data=self._config.menu_data,
         )
@@ -228,6 +242,8 @@ class HandlerRegistry:
         """
         menu_data_handlers = [
             "store_info",
+            "recommendation",
+            "menu_options_inquiry",
             "menu_inquiry",
             "menu_pagination",
             "item_lookup",

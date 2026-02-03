@@ -1,8 +1,14 @@
 """
 Store Info Handler for Order State Machine.
 
-This module handles store information inquiries (hours, location, delivery zones)
-and recommendation requests.
+This module handles store information inquiries including:
+- Store hours and location
+- Customer service escalation
+- Delivery zone checking
+
+Recommendation and menu options inquiries are delegated to:
+- RecommendationHandler
+- MenuOptionsInquiryHandler
 
 Extracted from state_machine.py for better separation of concerns.
 """
@@ -13,41 +19,43 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .context import OrderContext
+    from .recommendation_handler import RecommendationHandler
+    from .menu_options_inquiry_handler import MenuOptionsInquiryHandler
 
 from .models import OrderTask
 from .schemas import StateMachineResult
-from .parsers.constants import DEFAULT_PAGINATION_SIZE, get_item_type_display_name
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list
-from orderbot.cache import menu_cache
-
-# Note: NYC_NEIGHBORHOOD_ZIPS was moved to the database (neighborhood_zip_codes table)
-# Neighborhood data is now loaded via menu_data["neighborhood_zip_codes"]
-
-# NOTE: Pagination uses DEFAULT_PAGINATION_SIZE from parsers.constants (uniform at 5)
 
 logger = logging.getLogger(__name__)
 
 
 class StoreInfoHandler(MenuDataMixin):
     """
-    Handles store information inquiries and recommendations.
+    Handles store information inquiries.
 
-    Manages store hours, location, delivery zone checks, and menu recommendations.
+    Manages store hours, location, customer service, and delivery zone checks.
+    Delegates recommendations and menu options inquiries to specialized handlers.
     """
 
     def __init__(
         self,
         menu_data: dict | None = None,
+        recommendation_handler: "RecommendationHandler | None" = None,
+        menu_options_handler: "MenuOptionsInquiryHandler | None" = None,
     ):
         """
         Initialize the store info handler.
 
         Args:
-            menu_data: Menu data dictionary for recommendations.
+            menu_data: Menu data dictionary.
+            recommendation_handler: Handler for recommendation inquiries.
+            menu_options_handler: Handler for modifier/attribute inquiries.
         """
         self._menu_data = menu_data or {}
         self._store_info: dict | None = None
+        self.recommendation_handler = recommendation_handler
+        self.menu_options_handler = menu_options_handler
 
     def set_context(self, ctx: "OrderContext") -> None:
         """Set context from unified OrderContext."""
@@ -298,7 +306,7 @@ class StoreInfoHandler(MenuDataMixin):
         return self._format_delivery_response(delivering_stores, neighborhood, order)
 
     # =========================================================================
-    # Recommendation Handlers
+    # Delegation Methods (for backward compatibility)
     # =========================================================================
 
     def handle_recommendation_inquiry(
@@ -309,194 +317,16 @@ class StoreInfoHandler(MenuDataMixin):
         menu_item_ids: list[int] | None = None,
         search_term: str | None = None,
     ) -> StateMachineResult:
-        """Handle recommendation questions with data-driven responses.
-
-        IMPORTANT: This should NOT add anything to the cart. It's just answering a question.
-        The user needs to explicitly order something after getting the recommendation.
-
-        Args:
-            match_type: Type of match ("general", "item_type", or "menu_items")
-            order: Current order state (unchanged)
-            item_type_slug: Item type slug when match_type is "item_type"
-            menu_item_ids: Menu item IDs when match_type is "menu_items"
-            search_term: Original search term (e.g., "bagel", "coffee")
-        """
-        max_items = 5
-
-        # Determine effective search term
-        effective_term = search_term or item_type_slug
-
-        # ALWAYS search ingredients first if we have a search term
-        # This handles "what bagels do you recommend" -> finds bagel types in bread category
-        if effective_term:
-            ingredient_items = self._search_ingredients_by_term(effective_term, max_items)
-            if ingredient_items:
-                return self._format_recommendation_response(ingredient_items, effective_term, order)
-
-        # Handle specific menu item matches (by ID) - only if no ingredients found
-        if match_type == "menu_items" and menu_item_ids:
-            items = self._get_menu_item_names_by_ids(menu_item_ids[:max_items])
-            if items:
-                return self._format_recommendation_response(items, effective_term, order)
-
-        # Handle item type matches - fall back to menu items by item type
-        if match_type == "item_type" and item_type_slug:
-            menu_items = menu_cache.get_items_by_item_type(item_type_slug)
-            if menu_items:
-                item_names = [item.get("name") for item in menu_items[:max_items] if item.get("name")]
-                if item_names:
-                    display_name = menu_cache.get_item_type_display_name(item_type_slug)
-                    return self._format_recommendation_response(item_names, display_name, order)
-
-        # Generic fallback - show item types to help user decide
-        return self._format_item_type_suggestions(order)
-
-    def _search_ingredients_by_term(self, search_term: str, max_items: int) -> list[str]:
-        """Search all ingredient categories for items containing the search term.
-
-        Args:
-            search_term: Term to search for (e.g., "bagel")
-            max_items: Maximum number of items to return
-
-        Returns:
-            List of ingredient names that contain the search term.
-        """
-        search_lower = search_term.lower()
-        matching_items = []
-
-        # Get all ingredient categories
-        categories = menu_cache.get_all_ingredient_categories()
-
-        for category in categories:
-            details = menu_cache.get_ingredient_details(category)
-            for ingredient in details:
-                name = ingredient.get("name", "")
-                if search_lower in name.lower():
-                    matching_items.append(name)
-                    if len(matching_items) >= max_items:
-                        return matching_items
-
-        return matching_items
-
-    def _get_menu_item_names_by_ids(self, item_ids: list[int]) -> list[str]:
-        """Get menu item names by their IDs.
-
-        Args:
-            item_ids: List of menu item IDs to look up
-
-        Returns:
-            List of item names (in order of IDs provided, skipping not found).
-        """
-        # Build a lookup from ID to name by iterating through all items
-        id_to_name: dict[int, str] = {}
-        for item_data in menu_cache._all_menu_items_by_name.values():
-            item_id = item_data.get("id")
-            if item_id in item_ids:
-                id_to_name[item_id] = item_data.get("name", f"Item {item_id}")
-
-        # Return names in the order of requested IDs
-        return [id_to_name[item_id] for item_id in item_ids if item_id in id_to_name]
-
-    def _format_recommendation_response(
-        self,
-        items: list[str],
-        category_name: str | None,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Format a recommendation response with item names.
-
-        Args:
-            items: List of item names to recommend
-            category_name: Optional category name for context
-            order: Current order state (unchanged)
-        """
-        if not items:
-            return self._format_item_type_suggestions(order)
-
-        # Format item list naturally
-        if len(items) == 1:
-            item_list = items[0]
-        elif len(items) == 2:
-            item_list = f"{items[0]} and {items[1]}"
-        else:
-            item_list = ", ".join(items[:-1]) + f", and {items[-1]}"
-
-        if category_name:
-            message = f"Popular {category_name.lower()} options include {item_list}. Would you like one of these?"
-        else:
-            message = f"Popular options include {item_list}. Would you like one of these?"
-
-        return StateMachineResult(
-            message=message,
-            order=order,
-        )
-
-    def _format_item_type_suggestions(self, order: OrderTask) -> StateMachineResult:
-        """Format a response with item type suggestions for generic recommendation requests.
-
-        Shows up to 5 item types (plural display names), with pagination support
-        for the rest via "what else" follow-ups.
-
-        Args:
-            order: Current order state
-        """
-        # Get all item types and their display names
-        # Filter to only customer-facing item types (not ingredient categories)
-        all_slugs = sorted(menu_cache.get_all_item_type_slugs())
-        item_types_with_names = []
-
-        for slug in all_slugs:
-            display_name = menu_cache.get_item_type_display_name(slug, plural=True)
-            # Skip if:
-            # 1. No display name
-            # 2. Display name is just the slug
-            # 3. Display name starts with lowercase (internal/ingredient category)
-            if not display_name or display_name == slug:
-                continue
-            if display_name[0].islower():
-                continue
-            item_types_with_names.append((slug, display_name))
-
-        if not item_types_with_names:
-            return StateMachineResult(
-                message="We have a great selection! What are you in the mood for?",
-                order=order,
+        """Handle recommendation questions. Delegates to RecommendationHandler."""
+        if self.recommendation_handler:
+            return self.recommendation_handler.handle_recommendation_inquiry(
+                match_type, order, item_type_slug, menu_item_ids, search_term
             )
-
-        # Show first 5 item types
-        page_size = DEFAULT_PAGINATION_SIZE
-        first_page = item_types_with_names[:page_size]
-        has_more = len(item_types_with_names) > page_size
-
-        # Format the list
-        type_names = [name for _, name in first_page]
-        if len(type_names) == 1:
-            type_list = type_names[0]
-        elif len(type_names) == 2:
-            type_list = f"{type_names[0]} and {type_names[1]}"
-        else:
-            type_list = ", ".join(type_names[:-1]) + f", and {type_names[-1]}"
-
-        # Build message
-        message = f"We have a great selection! What are you in the mood for? We have {type_list}"
-        if has_more:
-            message += ", and more"
-            # Store pagination state for "what else" follow-ups
-            order.menu_query_pagination = {
-                "type": "item_types",
-                "items": [name for _, name in item_types_with_names],
-                "offset": page_size,
-            }
-        message += "."
-
+        # Fallback
         return StateMachineResult(
-            message=message,
+            message="We have a great selection! What are you in the mood for?",
             order=order,
         )
-
-    # =========================================================================
-    # Modifier Inquiry Handlers
-    # =========================================================================
 
     def handle_modifier_inquiry(
         self,
@@ -504,168 +334,14 @@ class StoreInfoHandler(MenuDataMixin):
         category: str | None,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle modifier/add-on questions like 'what can I add to coffee?' or 'what sweeteners do you have?'
-
-        IMPORTANT: This should NOT add anything to the cart. It's just answering a question.
-
-        Args:
-            item_type: Type of item asked about
-            category: Specific category asked about
-            order: Current order state (unchanged)
-        """
-        # If specific category asked about, return just that category
-        if category:
-            return self._describe_modifier_category(category, item_type, order)
-
-        # If specific item asked about, describe all modifiers for that item
-        if item_type:
-            return self._describe_item_modifiers(item_type, order)
-
-        # Generic question - describe most common options
-        return self._describe_general_modifiers(order)
-
-    def _describe_modifier_category(
-        self,
-        category: str,
-        item_type: str | None,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Describe available options for a specific modifier category.
-
-        For categories with database-backed items
-        this method loads items dynamically and sets pagination state for "what else" follow-ups.
-
-        Category data is loaded from menu_data["modifier_categories"] which comes from the
-        modifier_categories database table. Falls back to hardcoded values if not found.
-        """
-        # Try to get category info from menu_data (database-backed)
-        modifier_categories = self._menu_data.get("modifier_categories", {})
-        categories_data = modifier_categories.get("categories", {})
-        cat_info = categories_data.get(category)
-
-        if cat_info:
-            # Check if this category loads from ingredients (needs pagination)
-            if cat_info.get("options"):
-                # Database-backed category with dynamic options
-                return self._describe_db_modifier_category_from_menu(
-                    category, cat_info, order
-                )
-            elif cat_info.get("description"):
-                # Static category with fixed description
-                description = cat_info.get("description", "")
-                prompt_suffix = cat_info.get("prompt_suffix", "What would you like?")
-                message = f"{description} {prompt_suffix}"
-                order.clear_menu_pagination()
-                return StateMachineResult(message=message, order=order)
-
-        # Category not found in database - log warning and return generic response
-        logger.warning("Modifier category '%s' not found in database", category)
-        order.clear_menu_pagination()
+        """Handle modifier inquiries. Delegates to MenuOptionsInquiryHandler."""
+        if self.menu_options_handler:
+            return self.menu_options_handler.handle_modifier_inquiry(item_type, category, order)
+        # Fallback
         return StateMachineResult(
-            message="We have various options available. What would you like?",
-            order=order
+            message="We have lots of ways to customize your order! What item are you curious about?",
+            order=order,
         )
-
-    def _describe_db_modifier_category_from_menu(
-        self,
-        category: str,
-        cat_info: dict,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Describe a modifier category using pre-loaded options from menu_data.
-
-        Args:
-            category: Category key for pagination (e.g., 'toppings', 'proteins')
-            cat_info: Category info dict from menu_data with 'options', 'description', etc.
-            order: Current order state
-        """
-        options = cat_info.get("options", [])
-        display_name = cat_info.get("display_name", category.title())
-        prompt_suffix = cat_info.get("prompt_suffix", "What would you like?")
-
-        if not options:
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message=f"We have various {display_name.lower()} available. {prompt_suffix}",
-                order=order,
-            )
-
-        # Format options for display
-        items_list = sorted(options)
-
-        if len(items_list) <= DEFAULT_PAGINATION_SIZE:
-            # Show all items, no pagination needed
-            items_str = format_english_list(items_list)
-
-            order.clear_menu_pagination()
-            message = f"For {display_name.lower()}, we have {items_str}. {prompt_suffix}"
-        else:
-            # Show first batch with pagination
-            first_batch = items_list[:DEFAULT_PAGINATION_SIZE]
-            items_str = format_english_list(first_batch)
-
-            # Set pagination state for "what else" follow-ups
-            order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(items_list))
-            message = f"For {display_name.lower()}, we have {items_str}, and more. Would you like one of these, or want to hear more?"
-
-        return StateMachineResult(message=message, order=order)
-
-    def _describe_item_modifiers(
-        self,
-        item_type: str,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Describe all available modifiers for a specific item type.
-
-        Fully data-driven: queries the database for which ingredient categories
-        are valid for this item type and builds the message dynamically.
-        """
-        from ..cache import menu_cache
-
-        item_type_display = get_item_type_display_name(item_type)
-
-        # Get ingredients grouped by category for this specific item type
-        ingredients_by_category = menu_cache.get_ingredients_by_category_for_item_type(item_type)
-
-        if not ingredients_by_category:
-            # No modifiers defined for this item type
-            return StateMachineResult(
-                message=f"For {item_type_display}, we don't have additional add-ons. What else can I help you with?",
-                order=order,
-            )
-
-        # Build message dynamically from database
-        parts = [f"For {item_type_display}, you can add:"]
-
-        for category_slug, ingredients in ingredients_by_category.items():
-            if not ingredients:
-                continue
-
-            # Get display name from database
-            display_name = menu_cache.get_ingredient_category_display_name(category_slug)
-
-            # Format a sample of ingredients (limit to 4 for readability)
-            ingredient_list = sorted(ingredients)[:4]
-            ingredients_str = format_english_list(ingredient_list, conjunction="or")
-
-            parts.append(f"• {display_name}: {ingredients_str}")
-
-        parts.append("What would you like?")
-        message = "\n".join(parts)
-
-        return StateMachineResult(message=message, order=order)
-
-    def _describe_general_modifiers(self, order: OrderTask) -> StateMachineResult:
-        """Describe general modifier options when no specific item/category is asked."""
-        message = (
-            "We have lots of ways to customize your order! "
-            "What item are you curious about?"
-        )
-        return StateMachineResult(message=message, order=order)
-
-    # =========================================================================
-    # Attribute Inquiry Handlers
-    # =========================================================================
 
     def handle_attribute_inquiry(
         self,
@@ -673,184 +349,11 @@ class StoreInfoHandler(MenuDataMixin):
         signal: str | None,
         order: OrderTask,
     ) -> StateMachineResult:
-        """Handle attribute option questions like 'what bagel types do you have?'
-
-        This is for questions about attribute VALUES (bread types, sizes), not menu items.
-
-        Args:
-            item_type: Item type slug being asked about (e.g., 'bagel', 'sized_beverage')
-            signal: The linguistic signal word (e.g., 'types', 'flavors', 'sizes')
-            order: Current order state (unchanged)
-
-        Returns:
-            StateMachineResult with attribute options, or fallback if can't resolve.
-        """
-        # Resolve attribute from the signal word and item type
-        attr_slug = self._resolve_attribute_from_inquiry(item_type, signal)
-
-        # Fallback: if we have item_type but no attr_slug, use primary attribute
-        if not attr_slug and item_type:
-            attr_slug = self._get_primary_attribute(item_type)
-
-        if not attr_slug:
-            # Can't determine attribute - fall through with generic message
-            if item_type:
-                display_name = menu_cache.get_item_type_display_name(item_type)
-                return StateMachineResult(
-                    message=f"We have various {display_name.lower()} options available. What would you like?",
-                    order=order,
-                )
-            return StateMachineResult(
-                message="We have lots of options! What item are you curious about?",
-                order=order,
-            )
-
-        # Get options for this attribute
-        return self._format_attribute_options_response(attr_slug, item_type, order)
-
-    def _resolve_attribute_from_inquiry(
-        self,
-        item_type: str | None,
-        signal: str | None,
-    ) -> str | None:
-        """Resolve signal word and item type to an attribute slug.
-
-        Uses the attribute_inquiry_keywords table (data-driven) to map:
-        - "types" + "bagel" -> "bread"
-        - "sizes" + None -> "size"
-        - "flavors" + "bagel" -> "bread"
-
-        Args:
-            item_type: Item type slug (optional)
-            signal: Signal word from query (e.g., 'types', 'sizes', 'flavors')
-
-        Returns:
-            Attribute slug or None if not resolvable.
-        """
-        if not signal:
-            return None
-
-        # Normalize signal to lowercase
-        signal_lower = signal.lower()
-
-        # Try to look up in cache (data-driven mapping) if method exists
-        if hasattr(menu_cache, 'get_attribute_for_inquiry_keyword'):
-            attr_slug = menu_cache.get_attribute_for_inquiry_keyword(signal_lower, item_type)
-            if attr_slug:
-                return attr_slug
-
-        # Fallback: signal word matches attribute slug directly (e.g., "size" -> "size")
-        if item_type:
-            attrs = menu_cache.get_item_type_attributes(item_type)
-            if signal_lower in attrs:
-                return signal_lower
-
-        # Common signal word to attribute mappings (fallback if not in DB)
-        common_mappings = {
-            "type": "bread",
-            "types": "bread",
-            "flavor": "bread",
-            "flavors": "bread",
-            "kind": "bread",
-            "kinds": "bread",
-            "variety": "bread",
-            "varieties": "bread",
-            "choice": "bread",
-            "choices": "bread",
-            "size": "size",
-            "sizes": "size",
-            "temperature": "temperature",
-            "temperatures": "temperature",
-        }
-        return common_mappings.get(signal_lower)
-
-    def _get_primary_attribute(self, item_type: str) -> str | None:
-        """Get the primary (first ask_in_conversation) attribute for an item type.
-
-        Args:
-            item_type: Item type slug
-
-        Returns:
-            Attribute slug or None if not found.
-        """
-        attrs = menu_cache.get_item_type_attributes(item_type)
-        # Find first attribute with ask_in_conversation=True
-        for attr_slug, attr_config in attrs.items():
-            if attr_config.get("ask_in_conversation"):
-                return attr_slug
-        return None
-
-    def _format_attribute_options_response(
-        self,
-        attr_slug: str,
-        item_type: str | None,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Format response showing available options for an attribute.
-
-        Uses item-type-specific options when item_type is provided,
-        falling back to global attribute options if not.
-
-        Args:
-            attr_slug: Attribute slug (e.g., 'bread', 'size')
-            item_type: Item type for context (optional)
-            order: Current order state
-
-        Returns:
-            StateMachineResult with formatted options list.
-        """
-        options = []
-        attr_display = attr_slug
-
-        # Try item-type-specific options first
-        if item_type:
-            attrs = menu_cache.get_item_type_attributes(item_type)
-            attr_config = attrs.get(attr_slug, {})
-            options = attr_config.get("options", [])
-            attr_display = attr_config.get("display_name", attr_slug)
-
-        # Fall back to global attribute options
-        if not options:
-            options = menu_cache.get_global_attribute_options(attr_slug)
-            attr_display = menu_cache.get_attribute_display_name(attr_slug)
-
-        if not options:
-            return StateMachineResult(
-                message=f"We have various {attr_display.lower()} available. What would you like?",
-                order=order,
-            )
-
-        # Get display names for available options only
-        option_names = sorted([
-            opt.get("display_name", opt.get("slug", ""))
-            for opt in options
-            if opt.get("is_available", True)
-        ])
-
-        if not option_names:
-            return StateMachineResult(
-                message=f"We have various {attr_display.lower()} available. What would you like?",
-                order=order,
-            )
-
-        # Format options list with pagination if needed
-        if len(option_names) <= DEFAULT_PAGINATION_SIZE:
-            options_str = format_english_list(option_names)
-            order.clear_menu_pagination()
-            message = f"For {attr_display.lower()}, we have {options_str}. What would you like?"
-        else:
-            first_batch = option_names[:DEFAULT_PAGINATION_SIZE]
-            options_str = format_english_list(first_batch)
-
-            # Store pagination state with "attribute_options" type so handle_more knows what to do
-            order.menu_query_pagination = {
-                "type": "attribute_options",
-                "attribute_slug": attr_slug,
-                "attribute_display": attr_display,
-                "item_type": item_type,
-                "items": option_names,  # Store all option names for pagination
-                "offset": DEFAULT_PAGINATION_SIZE,
-            }
-            message = f"For {attr_display.lower()}, we have {options_str}, and more. Would you like one of these, or want to hear more?"
-
-        return StateMachineResult(message=message, order=order)
+        """Handle attribute inquiries. Delegates to MenuOptionsInquiryHandler."""
+        if self.menu_options_handler:
+            return self.menu_options_handler.handle_attribute_inquiry(item_type, signal, order)
+        # Fallback
+        return StateMachineResult(
+            message="We have lots of options! What item are you curious about?",
+            order=order,
+        )

@@ -461,6 +461,15 @@ class PricingEngine(MenuDataMixin):
             )
             return price
 
+        # Fallback: Check ingredient price contexts (for ingredients not in attribute options)
+        ing_price = menu_cache.get_ingredient_price_for_item_type(modifier_name, item_type)
+        if ing_price is not None and ing_price > 0:
+            logger.debug(
+                "Found ingredient price: %s = $%.2f (from ingredient contexts for %s)",
+                modifier_name, ing_price, item_type
+            )
+            return ing_price
+
         # Not found in this item type - return 0.0 (modifier is free or unconfigured)
         # This is not an error - some modifiers may not have prices
         logger.debug(
@@ -518,6 +527,15 @@ class PricingEngine(MenuDataMixin):
                 modifier_name, price, item_type, attr_slug
             )
             return price
+
+        # Fallback: Check ingredient price contexts (for ingredients not in attribute options)
+        ing_price = menu_cache.get_ingredient_price_for_item_type(modifier_name, item_type)
+        if ing_price is not None and ing_price > 0:
+            logger.debug(
+                "Found ingredient price: %s = $%.2f (from ingredient contexts for %s)",
+                modifier_name, ing_price, item_type
+            )
+            return ing_price
 
         # Not found in this item type - return 0.0 (modifier is free or unconfigured)
         logger.debug(
@@ -617,8 +635,16 @@ class PricingEngine(MenuDataMixin):
 
             slug, quantity = extract_modifier_slug_and_quantity(modifier)
             # Skip boolean answer markers - these aren't actual modifiers to price
-            if not slug or slug in priced_slugs or slug in ("yes", "no", "_declined"):
+            if not slug or slug in ("yes", "no", "_declined"):
                 continue
+
+            # Check if this is a default ingredient (included in base price)
+            is_default = modifier.get("is_default", False)
+            if slug in priced_slugs and is_default:
+                # Default ingredients are already accounted for in base price
+                continue
+            # Non-default modifiers should be priced even if slug is in priced_slugs
+            # (e.g., user added "extra bacon" to a sandwich that already has bacon)
 
             # Use stored price if available; only look up from DB if missing
             stored_price = extract_modifier_price(modifier)

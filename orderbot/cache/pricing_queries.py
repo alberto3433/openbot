@@ -58,6 +58,48 @@ class PricingQueryMixin:
         self._ensure_loaded()
         return self._resolved_item_prices.get(item_name.lower())
 
+    def get_ingredient_price_for_item_type(
+        self, ingredient_name: str, item_type: str
+    ) -> float | None:
+        """Get the price for an ingredient when added to a specific item type.
+
+        Looks up the ingredient's price in the _ingredient_price_contexts cache,
+        which is built from GlobalAttributeOption where ingredients are linked.
+
+        Args:
+            ingredient_name: The ingredient name or alias (e.g., "bacon", "lox")
+            item_type: The item type slug (e.g., "signature_sandwich", "bagel")
+
+        Returns:
+            The price modifier for this ingredient on this item type, or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        ing_lower = ingredient_name.lower().strip()
+
+        contexts = self._ingredient_price_contexts.get(ing_lower)
+        if not contexts:
+            return None
+
+        # Look for a context matching this item type
+        for ctx in contexts:
+            if ctx.get("context_type") == "modifier":
+                ctx_item_type = ctx.get("item_type_slug")
+                if ctx_item_type == item_type:
+                    return ctx.get("price")
+
+        # If no specific item type match, return the first modifier price found
+        # (ingredients often have the same price across item types)
+        for ctx in contexts:
+            if ctx.get("context_type") == "modifier":
+                price = ctx.get("price")
+                if price is not None and price > 0:
+                    return price
+
+        return None
+
     def resolve_price_inquiry(
         self, query: str, context: dict | None = None
     ) -> dict[str, Any]:

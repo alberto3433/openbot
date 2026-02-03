@@ -29,6 +29,7 @@ from .extraction import (
     _extract_by_pound_info,
 )
 from .instructions_extraction import extract_special_instructions_from_input
+from ..quantity_utils import extract_quantity_for_pattern
 
 # Import from specialized modules
 from .item_building import build_parsed_item
@@ -254,11 +255,13 @@ def _parse_item_generic(
             has_defaults = True
 
     # Build food modifiers list with category from database
+    # Extract quantity for each modifier (e.g., "extra bacon" -> quantity=2)
     modifier_selections: list[Selection] = []
     for mod in food_modifiers:
         category = menu_cache.get_ingredient_category(mod)
+        quantity = extract_quantity_for_pattern(text_lower, mod)
         modifier_selections.append(Selection(
-            slug=mod, category=category, quantity=1
+            slug=mod, category=category, quantity=quantity
         ))
 
     # Extract item-level special instructions (e.g., "room for cream", "extra hot")
@@ -507,8 +510,9 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     modifier_selections: list[Selection] = []
     for mod in food_modifiers:
         category = menu_cache.get_ingredient_category(mod)
+        quantity = extract_quantity_for_pattern(text_lower, mod)
         modifier_selections.append(Selection(
-            slug=mod, category=category, quantity=1
+            slug=mod, category=category, quantity=quantity
         ))
 
     # 5d. Filter out special instructions that are already captured as selections

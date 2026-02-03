@@ -17,7 +17,12 @@ from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice, CANCEL_ITEM_PATTERN
 from .handler_config import HandlerConfig
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
-from .modifier_operations import find_modifier_match, remove_modifier_from_item
+from .modifier_operations import (
+    find_modifier_match,
+    remove_modifier_from_item,
+    find_default_ingredient_match,
+    remove_default_ingredient_from_item,
+)
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants
@@ -28,6 +33,31 @@ if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_modifier_and_item_reference(cancel_desc: str) -> tuple[str, str] | None:
+    """Extract modifier and item reference from phrases like 'onions on the leo'.
+
+    Patterns handled:
+    - "X on the Y" / "X on Y"
+    - "X from the Y" / "X from Y"
+    - "X off the Y" / "X off Y"
+    - "X off of the Y" / "X off of Y"
+
+    Returns:
+        Tuple of (modifier, item_reference) if pattern matches, None otherwise
+    """
+    import re
+    # Pattern: modifier + separator + optional "the"/"my" + item reference
+    pattern = r'^(.+?)\s+(?:on|from|off(?:\s+of)?)\s+(?:the\s+|my\s+)?(.+)$'
+    match = re.match(pattern, cancel_desc, re.IGNORECASE)
+    if match:
+        modifier = match.group(1).strip()
+        item_ref = match.group(2).strip()
+        # Ensure both parts are non-empty
+        if modifier and item_ref:
+            return (modifier, item_ref)
+    return None
 
 
 def _get_removable_modifiers() -> set[str]:
@@ -167,6 +197,80 @@ class ConfigHelperHandler:
                     cancel_desc, category_mapping.get("slug")
                 )
                 break
+
+        # First, try to parse "modifier on/from item" pattern (e.g., "onions on the leo")
+        modifier_item_parsed = _extract_modifier_and_item_reference(cancel_desc)
+        if modifier_item_parsed:
+            modifier_part, item_ref = modifier_item_parsed
+            logger.info(
+                "Parsed modifier removal: modifier='%s', item_ref='%s'",
+                modifier_part, item_ref
+            )
+
+            # Find the referenced item in the order
+            target_item = None
+            active_items = order.items.get_active_items()
+            item_ref_lower = item_ref.lower()
+
+            for item in active_items:
+                if not isinstance(item, MenuItemTask):
+                    continue
+                item_name = (item.menu_item_name or "").lower()
+                item_summary = item.get_summary().lower()
+                # Match if item_ref appears in item name or summary
+                if item_ref_lower in item_name or item_ref_lower in item_summary:
+                    target_item = item
+                    break
+
+            if target_item:
+                # Try modifier removal on the target item
+                try:
+                    modifier_match = find_modifier_match(target_item, modifier_part)
+                    if modifier_match:
+                        removal_result = remove_modifier_from_item(target_item, modifier_match)
+                        if removal_result.success:
+                            removed_name = removal_result.removed_value or modifier_part
+                            logger.info(
+                                "Removed '%s' from '%s' via 'X on Y' pattern",
+                                removed_name, target_item.menu_item_name
+                            )
+                            # Return to config question or acknowledge
+                            question = self.get_current_config_question(order, current_item)
+                            if question:
+                                return StateMachineResult(
+                                    message=f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. {question}",
+                                    order=order,
+                                )
+                            else:
+                                return StateMachineResult(
+                                    message=f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. Anything else?",
+                                    order=order,
+                                )
+                except MenuDataNotLoadedError:
+                    pass  # Fall through to try default ingredient removal
+
+                # Also try default ingredient removal for the modifier part
+                default_match = find_default_ingredient_match(target_item, modifier_part)
+                if default_match:
+                    removal_result = remove_default_ingredient_from_item(target_item, default_match)
+                    if removal_result.success:
+                        removed_name = removal_result.removed_value or modifier_part
+                        logger.info(
+                            "Removed default ingredient '%s' from '%s' via 'X on Y' pattern",
+                            removed_name, target_item.menu_item_name
+                        )
+                        question = self.get_current_config_question(order, current_item)
+                        if question:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. {question}",
+                                order=order,
+                            )
+                        else:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. Anything else?",
+                                order=order,
+                            )
+            # If pattern matched but no item found or no modifier found, fall through to existing logic
 
         # Check if this is a modifier removal on the current item being configured
         # Use unified modifier_operations for consistent handling

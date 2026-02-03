@@ -132,7 +132,7 @@ class TestLLMCategoryInference(TestUnrecognizedItemHandler):
                 )
 
                 # Should fall through to generic
-                assert "couldn't find" in message.lower()
+                assert "we don't have" in message.lower()
 
 
 class TestGenericFallback(TestUnrecognizedItemHandler):
@@ -158,7 +158,7 @@ class TestGenericFallback(TestUnrecognizedItemHandler):
                     "xyzabc123", order=empty_order
                 )
 
-                assert "couldn't find" in message.lower()
+                assert "we don't have" in message.lower()
                 assert "Drinks" in message or "Food" in message or "Pastries" in message
                 assert category is None
 
@@ -178,8 +178,8 @@ class TestGenericFallback(TestUnrecognizedItemHandler):
                     "unknown item", order=empty_order
                 )
 
-                assert "couldn't find" in message.lower()
-                assert "try again" in message.lower() or "available" in message.lower()
+                assert "we don't have" in message.lower()
+                assert "something else" in message.lower()
 
 
 class TestOrderStateAwareness(TestUnrecognizedItemHandler):

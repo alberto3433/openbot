@@ -581,6 +581,23 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         detected_item_type, quantity, item_name, list(attr_values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions
     )
 
+    # 5e. Guard against creating generic items from partial trigger matches
+    # If we detected an item type but:
+    # - No specific menu item matched (item_name=None)
+    # - There's unrecognized text beyond ordering verbs/triggers
+    # Then return None to let the unrecognized item handler provide better suggestions.
+    # E.g., "iced mocha" - "iced" triggers espresso_based but "mocha" is unrecognized.
+    # E.g., "large iced mocha" - "large" extracts size, "iced" triggers, but "mocha" is unrecognized.
+    # Having size/temperature attributes extracted doesn't mean we understand WHAT they want.
+    if item_name is None:
+        # Check if there's unrecognized text that could be a missing menu item
+        if _has_unrecognized_item_text(text, detected_item_type):
+            logger.info(
+                "CONFIGURABLE_ITEM: rejecting generic parse - unrecognized text in '%s' for type '%s'",
+                text[:50], detected_item_type
+            )
+            return None
+
     # 6. Build ParsedItemEntry using build_parsed_item (converts attr_values to selections)
     # Create single entry with full quantity - ItemAdderHandler handles threshold logic
     parsed_item = build_parsed_item(
@@ -595,6 +612,73 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     )
 
     return OpenInputResponse(parsed_items=[parsed_item])
+
+
+def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
+    """Check if text contains words that look like an unrecognized menu item.
+
+    Used to detect cases like "iced mocha" where "iced" triggers espresso_based
+    but "mocha" is not a recognized item. In such cases, we should reject the
+    generic parse and let the unrecognized item handler provide better suggestions.
+
+    Args:
+        text: User input text
+        item_type_slug: The detected item type
+
+    Returns:
+        True if there are unrecognized words that could be a missing menu item
+    """
+    text_lower = text.lower()
+
+    # Words that are common ordering phrases (not potential item names)
+    common_ordering_words = {
+        # Articles/prepositions
+        "a", "an", "the", "some", "with", "and", "or", "on", "in", "of", "to", "for",
+        # Ordering verbs/phrases
+        "i", "want", "would", "like", "need", "get", "have", "take", "give", "me",
+        "can", "could", "may", "please", "order", "add", "make", "it", "that",
+        # Numbers
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        # Modifiers that apply to any drink
+        "hot", "iced", "cold", "large", "medium", "small", "regular", "extra",
+        "decaf", "half", "double", "triple",
+        # Cooking/preparation terms (common for eggs, meat, etc.)
+        "scrambled", "fried", "poached", "boiled", "over", "easy", "hard", "soft",
+        "well", "done", "rare", "medium", "runny", "dry", "wet", "crispy", "light",
+        "no", "without", "hold",
+    }
+
+    # Get recognized vocabulary for this item type
+    triggers = menu_cache.get_item_type_triggers(item_type_slug)
+    triggers_lower = {t.lower() for t in triggers}
+
+    # Also get known modifiers and attribute options (data-driven)
+    all_modifiers = menu_cache.get_all_modifier_words()
+    all_attr_options = menu_cache.get_all_attribute_option_words()
+
+    # Extract words from text
+    words = re.findall(r'\b[a-z]+\b', text_lower)
+
+    # Check if any words are unrecognized (not common words, not triggers, not modifiers)
+    for word in words:
+        if word in common_ordering_words:
+            continue
+        if word in triggers_lower:
+            continue
+        # Check if word is part of a multi-word trigger (e.g., "cream" in "cream cheese")
+        if any(word in trigger for trigger in triggers_lower):
+            continue
+        # Check if word is a known modifier or attribute option
+        if word in all_modifiers or word in all_attr_options:
+            continue
+        # This word is unrecognized - could be a missing menu item like "mocha"
+        logger.debug(
+            "Unrecognized word '%s' in text '%s' for type '%s'",
+            word, text[:50], item_type_slug
+        )
+        return True
+
+    return False
 
 
 def _match_menu_item_name_for_type(text: str, item_type_slug: str) -> str | None:

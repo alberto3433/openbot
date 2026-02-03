@@ -244,18 +244,26 @@ class TestComplexCoffeeOrders:
         assert len(items) >= 1, "Should have at least 1 item"
 
     def test_mocha_with_extra_chocolate(self):
-        """Mocha with extra chocolate."""
+        """Mocha is not on the menu - should suggest alternatives."""
+        from orderbot.db import SessionLocal
+
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
         sm = OrderStateMachine()
 
-        result = sm.process(
-            "Large iced mocha with extra chocolate",
-            order
-        )
+        with SessionLocal() as db:
+            result = sm.process(
+                "Large iced mocha with extra chocolate",
+                order,
+                db_session=db,
+            )
 
+        # Mocha is not on the menu, so no item should be added
         items = result.order.items.get_active_items()
-        assert len(items) >= 1, "Should have at least 1 item"
+        assert len(items) == 0, "Mocha not on menu - should suggest alternatives, not add item"
+        # Should suggest espresso-based alternatives
+        assert "don't have" in result.message.lower() or "we have" in result.message.lower(), \
+            f"Expected suggestion message, got: {result.message}"
 
     def test_coffee_specific_temperature(self):
         """Coffee at specific temperature."""

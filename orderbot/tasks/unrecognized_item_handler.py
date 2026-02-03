@@ -398,15 +398,15 @@ class UnrecognizedItemHandler:
         if categories:
             # Show top 3-4 categories
             category_names = list(categories.values())[:4]
-            category_list = format_english_list(category_names, conjunction="or")
+            category_list = format_english_list(category_names, conjunction="and")
             return (
-                f"I couldn't find '{clean_name}' on our menu. "
-                f"We have {category_list}. What would you like?"
+                f"I'm sorry, we don't have {clean_name}. "
+                f"We do have {category_list} though - would any of those interest you?"
             )
         else:
             return (
-                f"I'm sorry, I couldn't find '{clean_name}' on our menu. "
-                f"Could you try again or ask what we have available?"
+                f"I'm sorry, we don't have {clean_name}. "
+                f"Is there something else I can help you with?"
             )
 
     def _get_order_aware_followup(self, order_item_count: int, num_alternatives: int = 2) -> str:

@@ -24,6 +24,7 @@ from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 from .utils.constants import is_price_metadata_key
+from .utils.text import strip_leading_article
 
 logger = logging.getLogger(__name__)
 
@@ -119,10 +120,8 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
         ModifierMatch if found, None otherwise
     """
     normalized_input = _normalize_modifier_name(user_input)
-
     # Remove leading "the " if present
-    if normalized_input.startswith("the "):
-        normalized_input = normalized_input[4:]
+    normalized_input = strip_leading_article(normalized_input)
 
     fields = get_modifier_fields(item)
 
@@ -490,8 +489,7 @@ def find_default_ingredient_match(
     # Check if already in removed_ingredients (can't remove twice)
     removed_ingredients = getattr(item, 'removed_ingredients', [])
     normalized_input = _normalize_modifier_name(user_input)
-    if normalized_input.startswith("the "):
-        normalized_input = normalized_input[4:]
+    normalized_input = strip_leading_article(normalized_input)
 
     for removed in removed_ingredients:
         if normalized_input in removed.lower() or removed.lower() in normalized_input:

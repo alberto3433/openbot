@@ -22,6 +22,7 @@ from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OpenInputResponse
 from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
 from .handler_utils import get_last_item, remove_item_from_order
+from .utils.text import strip_leading_article
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -289,8 +290,7 @@ class ItemCancellationHandler:
         # Normalize multiple spaces to single space (common voice transcription artifact)
         cancel_term_lower = ' '.join(cancel_term_lower.split())
         # Strip leading "the " if present
-        if cancel_term_lower.startswith("the "):
-            cancel_term_lower = cancel_term_lower[4:]
+        cancel_term_lower = strip_leading_article(cancel_term_lower)
 
         modifier_category_slug = menu_cache.get_modifier_category_by_alias(cancel_term_lower)
         if modifier_category_slug:

@@ -128,6 +128,31 @@ def format_numbered_list(
     return "\n".join(lines)
 
 
+def strip_leading_article(text: str) -> str:
+    """Remove leading 'the ' from text if present.
+
+    Common pattern used when normalizing user input for modifier/item matching.
+    The article 'the' is often used by customers but not part of item names.
+
+    Args:
+        text: The text to process (should already be lowercase/stripped).
+
+    Returns:
+        Text with leading 'the ' removed, or original text if not present.
+
+    Examples:
+        >>> strip_leading_article("the bacon")
+        'bacon'
+        >>> strip_leading_article("bacon")
+        'bacon'
+        >>> strip_leading_article("theater")  # Not stripped - 'the' is part of word
+        'theater'
+    """
+    if text.startswith("the "):
+        return text[4:]
+    return text
+
+
 def find_first_word_boundary_match(
     text: str,
     candidates: list[str] | set[str],

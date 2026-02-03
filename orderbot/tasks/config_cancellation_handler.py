@@ -13,6 +13,7 @@ from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import CANCEL_ITEM_PATTERN
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
+from .handler_utils import remove_item_from_order
 from .modifier_operations import (
     find_modifier_match,
     remove_modifier_from_item,
@@ -348,8 +349,7 @@ class ConfigCancellationHandler:
             if result:
                 item_to_remove, _ = result
                 removed_name = item_to_remove.get_summary()
-                idx = order.items.items.index(item_to_remove)
-                order.items.remove_item(idx)
+                remove_item_from_order(order, item_to_remove)
 
                 # Clear pending state since we're leaving config phase
                 order.clear_pending()
@@ -448,8 +448,7 @@ class ConfigCancellationHandler:
             removed_names = []
             for item in items_to_remove:
                 removed_names.append(item.get_summary())
-                idx = order.items.items.index(item)
-                order.items.remove_item(idx)
+                remove_item_from_order(order, item)
 
             # Clear pending state since we're leaving config phase
             order.clear_pending()

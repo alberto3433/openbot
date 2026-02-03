@@ -324,3 +324,24 @@ def get_newly_added_items(
         List of newly added items
     """
     return order.items.items[items_before_count:]
+
+
+def remove_item_from_order(order: "OrderTask", item: "MenuItemTask") -> bool:
+    """Remove an item from the order by reference.
+
+    Finds the item's index and removes it. This is a common pattern
+    used throughout cancellation handlers.
+
+    Args:
+        order: The order containing the item
+        item: The item to remove
+
+    Returns:
+        True if item was found and removed, False otherwise
+    """
+    try:
+        idx = order.items.items.index(item)
+        order.items.remove_item(idx)
+        return True
+    except ValueError:
+        return False

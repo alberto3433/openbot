@@ -21,7 +21,7 @@ from orderbot.cache.base import singularize, get_singular_plural_variants
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OpenInputResponse
 from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
-from .handler_utils import get_last_item
+from .handler_utils import get_last_item, remove_item_from_order
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -362,8 +362,7 @@ class ItemCancellationHandler:
 
         last_item = get_last_item(active_items)
         removed_name = last_item.get_summary()
-        idx = order.items.items.index(last_item)
-        order.items.remove_item(idx)
+        remove_item_from_order(order, last_item)
         logger.info("Cancellation: removed last item from cart: %s", removed_name)
 
         remaining_items = order.items.get_active_items()
@@ -382,8 +381,7 @@ class ItemCancellationHandler:
         if active_items:
             num_items = len(active_items)
             for item in active_items:
-                idx = order.items.items.index(item)
-                order.items.remove_item(idx)
+                remove_item_from_order(order, item)
             logger.info("Cancellation: removed ALL %d items from cart", num_items)
             return StateMachineResult(
                 message="OK, I've cleared your order. What would you like to order?",
@@ -438,8 +436,7 @@ class ItemCancellationHandler:
             removed_names = []
             for item in items_to_remove:
                 removed_name = item.get_summary()
-                idx = order.items.items.index(item)
-                order.items.remove_item(idx)
+                remove_item_from_order(order, item)
                 removed_count += 1
                 removed_names.append(removed_name)
 
@@ -488,8 +485,7 @@ class ItemCancellationHandler:
         if result:
             item_to_remove, _ = result
             removed_name = item_to_remove.get_summary()
-            idx = order.items.items.index(item_to_remove)
-            order.items.remove_item(idx)
+            remove_item_from_order(order, item_to_remove)
 
             logger.info(
                 "Cancellation: removed %s #%d from cart: %s",
@@ -577,8 +573,7 @@ class ItemCancellationHandler:
             removed_names = []
             for item in items_to_remove:
                 removed_names.append(item.get_summary())
-                idx = order.items.items.index(item)
-                order.items.remove_item(idx)
+                remove_item_from_order(order, item)
 
             logger.info("Cancellation: removed %d item(s) from cart: %s", len(removed_names), removed_names)
 

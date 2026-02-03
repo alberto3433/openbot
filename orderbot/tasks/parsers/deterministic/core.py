@@ -391,7 +391,7 @@ def parse_open_input_deterministic(
             mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
         menu_item_parsed_items = [
             build_parsed_item(
-                item_type="menu_item",
+                item_type=item_type_for_mods or "menu_item",
                 item_name=menu_item,
                 quantity=1,
                 attribute_values=attr_values,

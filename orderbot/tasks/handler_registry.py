@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .menu_inquiry_handler import MenuInquiryHandler
     from .order_utils_handler import OrderUtilsHandler
     from .item_adder_handler import ItemAdderHandler
+    from .item_lookup_handler import ItemLookupHandler
     from .modifier_change_handler import ModifierChangeHandler
     from .config_helper_handler import ConfigHelperHandler
     from .config import MenuItemConfigHandler
@@ -74,6 +75,8 @@ class HandlerRegistry:
         from .menu_inquiry_handler import MenuInquiryHandler
         from .order_utils_handler import OrderUtilsHandler
         from .item_adder_handler import ItemAdderHandler
+        from .item_lookup_handler import ItemLookupHandler
+        from .disambiguation_handler import DisambiguationHandler
         from .modifier_change_handler import ModifierChangeHandler
         from .config_helper_handler import ConfigHelperHandler
         from .config import MenuItemConfigHandler
@@ -106,7 +109,24 @@ class HandlerRegistry:
             config=self._config,
             build_order_summary=self._handlers["checkout_utils"].build_order_summary,
         )
-        self._handlers["item_adder"] = ItemAdderHandler(config=self._config)
+
+        # Create disambiguation handler (shared between item_lookup and item_adder)
+        disambiguation_handler = DisambiguationHandler()
+
+        # Create item lookup handler (for menu lookup with disambiguation)
+        self._handlers["item_lookup"] = ItemLookupHandler(
+            menu_lookup=self._config.menu_lookup,
+            disambiguation_handler=disambiguation_handler,
+        )
+
+        # Create item adder handler with item lookup handler
+        self._handlers["item_adder"] = ItemAdderHandler(
+            config=self._config,
+            item_lookup_handler=self._handlers["item_lookup"],
+        )
+        # Share the disambiguation handler
+        self._handlers["item_adder"].disambiguation_handler = disambiguation_handler
+
         self._handlers["modifier_change"] = ModifierChangeHandler(config=self._config)
         self._handlers["config_helper"] = ConfigHelperHandler(
             config=self._config,
@@ -191,6 +211,7 @@ class HandlerRegistry:
         menu_data_handlers = [
             "store_info",
             "menu_inquiry",
+            "item_lookup",
             "item_adder",
             "taking_items",
         ]
@@ -220,6 +241,10 @@ class HandlerRegistry:
     @property
     def order_utils(self) -> "OrderUtilsHandler":
         return self._handlers["order_utils"]
+
+    @property
+    def item_lookup(self) -> "ItemLookupHandler":
+        return self._handlers["item_lookup"]
 
     @property
     def item_adder(self) -> "ItemAdderHandler":

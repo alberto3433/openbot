@@ -19,6 +19,7 @@ from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult, Selection
 from .handler_config import HandlerConfig
 from .disambiguation_handler import DisambiguationHandler
+from .item_lookup_handler import ItemLookupHandler
 from .mixins import MenuDataMixin
 from .checkout_messages import got_it_anything_else
 from .attribute_inference import (
@@ -29,7 +30,7 @@ from .attribute_inference import (
 from .unrecognized_item_handler import UnrecognizedItemHandler
 from .order_item_builder import OrderItemBuilder
 from orderbot.cache import menu_cache
-from orderbot.cache.base import get_singular_plural_variants
+from orderbot.cache.base import singularize
 
 if TYPE_CHECKING:
     from .context import OrderContext
@@ -49,6 +50,7 @@ class ItemAdderHandler(MenuDataMixin):
         self,
         config: HandlerConfig,
         menu_item_handler: "MenuItemConfigHandler | None" = None,
+        item_lookup_handler: ItemLookupHandler | None = None,
         db_session=None,
     ):
         """
@@ -57,6 +59,7 @@ class ItemAdderHandler(MenuDataMixin):
         Args:
             config: HandlerConfig with shared dependencies.
             menu_item_handler: Unified handler for all item configuration.
+            item_lookup_handler: Handler for menu item lookup with disambiguation.
             db_session: Optional SQLAlchemy session for database operations.
         """
         self.menu_lookup = config.menu_lookup
@@ -70,6 +73,12 @@ class ItemAdderHandler(MenuDataMixin):
 
         # Generic disambiguation handler
         self.disambiguation_handler = DisambiguationHandler()
+
+        # Item lookup handler (with disambiguation)
+        self.item_lookup_handler = item_lookup_handler or ItemLookupHandler(
+            menu_lookup=self.menu_lookup,
+            disambiguation_handler=self.disambiguation_handler,
+        )
 
         # Order item builder for creating menu item dicts
         self._item_builder = OrderItemBuilder(
@@ -211,7 +220,7 @@ class ItemAdderHandler(MenuDataMixin):
             else:
                 filter_type = item_type
 
-            menu_item, disambiguation_result = self._lookup_menu_item_with_disambiguation(
+            menu_item, disambiguation_result = self.item_lookup_handler.lookup_menu_item_with_disambiguation(
                 item_name=item_name_lower or "item",
                 quantity=quantity,
                 order=order,
@@ -332,7 +341,7 @@ class ItemAdderHandler(MenuDataMixin):
         quantity = max(1, quantity)
 
         # Step 1: Look up menu item with disambiguation handling
-        menu_item, disambiguation_result = self._lookup_menu_item_with_disambiguation(
+        menu_item, disambiguation_result = self.item_lookup_handler.lookup_menu_item_with_disambiguation(
             item_name, quantity, order
         )
 
@@ -585,6 +594,62 @@ class ItemAdderHandler(MenuDataMixin):
                 default["ingredient_name"], default["ingredient_slug"], attr_slug
             )
 
+    def _filter_redundant_default_selections(
+        self,
+        item: MenuItemTask,
+        selections: list[Selection],
+    ) -> list[Selection]:
+        """Filter out selections that are redundant with default ingredients.
+
+        When parsing "egg sandwich with eggs over easy", the parser extracts both
+        "egg" and "eggs" as protein modifiers. But The Classic already has eggs
+        as a default ingredient, so these are redundant.
+
+        This filters out selections where:
+        - The slug (or its singular form) matches a default ingredient slug
+        - AND quantity == 1 (explicit "extra eggs" or "2 eggs" should still add)
+
+        Args:
+            item: The MenuItemTask with default ingredients already populated
+            selections: List of extracted selections to filter
+
+        Returns:
+            Filtered list of selections with redundant defaults removed
+        """
+        if not selections:
+            return selections
+
+        # Get default ingredient slugs from item's modifiers
+        default_slugs = set()
+        for mod in item.modifiers:
+            if mod.get("is_default"):
+                default_slugs.add(mod.get("slug", "").lower())
+
+        if not default_slugs:
+            return selections
+
+        filtered = []
+        for sel in selections:
+            slug_lower = sel.slug.lower()
+            singular_slug = singularize(slug_lower)
+
+            # Check if this selection matches a default (exact or singular form)
+            matches_default = (
+                slug_lower in default_slugs or
+                singular_slug in default_slugs
+            )
+
+            # Keep selection if it doesn't match defaults OR has explicit quantity > 1
+            if not matches_default or sel.quantity > 1:
+                filtered.append(sel)
+            else:
+                logger.debug(
+                    "Filtered redundant selection '%s' - matches default ingredient",
+                    sel.slug
+                )
+
+        return filtered
+
     # =========================================================================
     # Generic Item Creation (Data-Driven)
     # =========================================================================
@@ -686,7 +751,13 @@ class ItemAdderHandler(MenuDataMixin):
 
             # Apply extracted selections if provided (these replace/add to defaults)
             if extracted_selections and self.menu_item_handler:
-                self.menu_item_handler._apply_selections(item, extracted_selections)
+                # Filter out selections that are redundant with default ingredients
+                # e.g., "egg sandwich with eggs over easy" shouldn't add extra eggs
+                # because The Classic already has eggs as a default
+                filtered_selections = self._filter_redundant_default_selections(
+                    item, extracted_selections
+                )
+                self.menu_item_handler._apply_selections(item, filtered_selections)
 
             # Set unavailable_selections (for "We don't have X" messaging)
             # Must be set BEFORE get_first_question() is called
@@ -820,181 +891,15 @@ class ItemAdderHandler(MenuDataMixin):
         pending_field: str = PendingField.ITEM_SELECTION,
         item_type_filter: str | None = None,
     ) -> tuple[dict | None, StateMachineResult | None]:
+        """Delegate to item_lookup_handler for menu item lookup with disambiguation.
+
+        This method is kept for backward compatibility.
         """
-        Look up a menu item, handling disambiguation if multiple matches.
-
-        Uses DisambiguationHandler for unified disambiguation logic.
-
-        Args:
-            item_name: Name of item to look up
-            quantity: Number of items (stored during disambiguation)
-            order: Current order task
-            modifiers: Optional dict of modifiers to store during disambiguation (for beverages)
-            pending_field: The pending_field value to use (default: PendingField.ITEM_SELECTION)
-            item_type_filter: Optional item type to filter matches (e.g., "sized_beverage")
-
-        Returns:
-            Tuple of (menu_item, result):
-            - (menu_item, None): Single match found
-            - (None, result): Disambiguation needed, result contains the question
-            - (None, None): Item not found
-        """
-        item_lower = item_name.lower().strip()
-
-        # Check for category reference (e.g., "drink", "beverage", "side", etc.)
-        category_slug = menu_cache.is_category_reference(item_lower)
-        if category_slug:
-            # Generic category request - show items from that category
-            category_items = menu_cache.get_items_by_category(category_slug)
-            # Filter by item_type if specified
-            if item_type_filter and category_items:
-                category_items = [
-                    d for d in category_items
-                    if d.get("item_type_slug") == item_type_filter or d.get("item_type") == item_type_filter
-                ]
-            if category_items:
-                logger.info("Generic category request '%s' (category=%s), showing %d items (filter: %s)",
-                           item_name, category_slug, len(category_items), item_type_filter)
-                result = self.disambiguation_handler.start_disambiguation(
-                    item_name=category_slug,
-                    matching_items=category_items,
-                    order=order,
-                    quantity=quantity,
-                    pending_field=PendingField.ITEM_SELECTION,
-                    modifiers=modifiers,
-                    show_prices=False,
-                )
-                return (None, result)
-
-        # Check for generic terms that match multiple items (data-driven)
-        generic_term = self._extract_generic_term(item_name)
-        # Input is "exact generic" if it directly matches multiple items (e.g., "chips")
-        is_exact_generic = generic_term == item_lower
-
-        # Step 1: Try to find matches
-        matching_items = []
-        search_term = generic_term if is_exact_generic else item_name
-
-        if search_term:
-            matching_items = self.menu_lookup.lookup_menu_items(search_term)
-
-        # Filter by item_type if specified
-        if item_type_filter and matching_items:
-            matching_items = [
-                item for item in matching_items
-                if item.get("item_type") == item_type_filter
-            ]
-
-        # If no matches found but we have an item_type_filter, get all items of that type
-        # This handles generic requests where user wants something of a specific type
-        if not matching_items and item_type_filter:
-            all_type_items = menu_cache.get_items_by_item_type(item_type_filter)
-            if all_type_items:
-                # Apply required_match_phrases filtering to these items
-                # Items with restrictive match phrases should only match specific inputs
-                filtered_items = []
-                for item in all_type_items:
-                    item_name_lower = item.get("name", "").lower()
-                    # Look up required_match_phrases from cache
-                    required_phrases = menu_cache._items_with_required_phrases.get(item_name_lower)
-                    if required_phrases:
-                        # Item has restrictive match phrases - check if user input qualifies
-                        item_with_phrases = {**item, "required_match_phrases": required_phrases}
-                        if self.menu_lookup._passes_match_filter(item_with_phrases, item_name):
-                            filtered_items.append(item)
-                    else:
-                        # No filter - item passes (generic items like "Omelette")
-                        filtered_items.append(item)
-                matching_items = filtered_items
-                logger.info("No text matches for '%s', using %d of %d items of type '%s' (after required_match_phrases filter)",
-                           item_name, len(matching_items), len(all_type_items), item_type_filter)
-
-        # Step 2: Handle results
-        if len(matching_items) == 1:
-            # Single match - return it directly
-            menu_item = matching_items[0]
-            logger.info("Single match for '%s': %s", item_name, menu_item.get("name"))
-            return (menu_item, None)
-
-        elif len(matching_items) > 1:
-            # Multiple matches - check for exact match first
-            exact_match = self.disambiguation_handler.check_exact_match(item_name, matching_items)
-            if exact_match:
-                return (exact_match, None)
-
-            # Check if user already has one in cart
-            cart_match = self.disambiguation_handler.check_cart_match(matching_items, order)
-            if cart_match:
-                return (cart_match, None)
-
-            # Need disambiguation
-            logger.info("Multiple matches for '%s' (%d items), starting disambiguation",
-                       item_name, len(matching_items))
-            result = self.disambiguation_handler.start_disambiguation(
-                item_name=item_name,
-                matching_items=matching_items,
-                order=order,
-                quantity=quantity,
-                pending_field=pending_field,
-                modifiers=modifiers,
-                show_prices=False,
-            )
-            return (None, result)
-
-        # Step 3: No matches - try partial search with singular/plural variants
-        search_terms = get_singular_plural_variants(item_lower)
-
-        for term in search_terms:
-            matching_items = self.menu_lookup.lookup_menu_items(term)
-            if matching_items:
-                break
-
-        # Step 4: Try direct items_by_type search as fallback
-        if not matching_items and self._menu_data:
-            items_by_type = self._menu_data.get("items_by_type", {})
-            for type_slug, type_items in items_by_type.items():
-                for item in type_items:
-                    item_name_db = item.get("name", "").lower()
-                    for term in search_terms:
-                        if term in item_name_db:
-                            # Apply required_match_phrases filter
-                            if self.menu_lookup._passes_match_filter(item, item_name):
-                                matching_items.append(item)
-                            break
-            if matching_items:
-                logger.info("Direct items_by_type search for %s: found %d items",
-                           search_terms, len(matching_items))
-
-        # Step 5: Handle partial match results
-        if len(matching_items) == 1:
-            menu_item = matching_items[0]
-            logger.info("Single partial match for '%s': %s", item_name, menu_item.get("name"))
-            return (menu_item, None)
-        elif len(matching_items) > 1:
-            # Check for exact match among partials
-            exact_match = self.disambiguation_handler.check_exact_match(item_name, matching_items)
-            if exact_match:
-                return (exact_match, None)
-
-            # Need disambiguation
-            logger.info("Multiple partial matches for '%s' (%d items), starting disambiguation",
-                       item_name, len(matching_items))
-            result = self.disambiguation_handler.start_disambiguation(
-                item_name=item_name,
-                matching_items=matching_items,
-                order=order,
-                quantity=quantity,
-                pending_field=pending_field,
-                modifiers=modifiers,
-                show_prices=False,
-            )
-            return (None, result)
-
-        # Step 6: Still no match - try single item lookup as last resort
-        menu_item = self.menu_lookup.lookup_menu_item(item_name)
-        if menu_item:
-            return (menu_item, None)
-
-        # Not found
-        logger.warning("Menu item not found: '%s'", item_name)
-        return (None, None)
+        return self.item_lookup_handler.lookup_menu_item_with_disambiguation(
+            item_name=item_name,
+            quantity=quantity,
+            order=order,
+            modifiers=modifiers,
+            pending_field=pending_field,
+            item_type_filter=item_type_filter,
+        )

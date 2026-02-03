@@ -285,6 +285,11 @@ class BaseCacheMixin:
         # Maps modifier_category slug -> set of attribute slugs that contain options with that category
         self._modifier_category_to_attrs: dict[str, set[str]] = {}
 
+        # Attribute inquiry keywords (data-driven lookup)
+        # Maps (keyword, item_type_slug) -> attribute_slug
+        # e.g., ("types", "bagel") -> "bread", ("sizes", None) -> "size"
+        self._attribute_inquiry_keywords: dict[tuple[str, str | None], str] = {}
+
         # Global attribute aliases (e.g., "cream cheese" -> "spread")
         self._global_attribute_aliases: dict[str, str] = {}  # alias -> attr_slug
 
@@ -342,6 +347,11 @@ class BaseCacheMixin:
         # Configurable item type slugs - item types that have ask_in_conversation=True attributes
         # These require inline parsing with attribute extraction (e.g., "bagel", "sized_beverage")
         self._configurable_item_type_slugs: set[str] = set()
+
+        # Option alias to item type mapping - for inferring item type from attribute option aliases
+        # e.g., "earl grey" -> ("tea", "tea_flavor", "earl_gray")
+        # Maps alias_lowercase -> (item_type_slug, attribute_slug, option_slug)
+        self._option_alias_to_item_type: dict[str, tuple[str, str, str]] = {}
 
         # Items with required match phrases - for exclusion logic during parsing
         # Maps item_name (lowercase) -> required_match_phrases string

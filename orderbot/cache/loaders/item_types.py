@@ -303,6 +303,48 @@ class ItemTypeLoaderMixin:
             len(self._item_type_attributes),
         )
 
+        # Build option alias -> (item_type, attr_slug, option_slug) mapping
+        # This enables inferring item type from attribute option aliases
+        # e.g., "earl grey" -> ("tea", "tea_flavor", "earl_gray")
+        option_alias_to_item_type: dict[str, tuple[str, str, str]] = {}
+
+        for item_type_slug, attrs in self._item_type_attributes.items():
+            # Only map options for configurable item types
+            if item_type_slug not in self._configurable_item_type_slugs:
+                continue
+
+            for attr_slug, attr_config in attrs.items():
+                for opt in attr_config.get("options", []):
+                    opt_slug = opt.get("slug")
+                    if not opt_slug:
+                        continue
+
+                    # Add option slug itself as a key (with underscores replaced by spaces)
+                    # e.g., "earl_gray" -> "earl gray"
+                    key = opt_slug.lower().replace("_", " ")
+                    if key not in option_alias_to_item_type:
+                        option_alias_to_item_type[key] = (item_type_slug, attr_slug, opt_slug)
+
+                    # Add display name if different from slug
+                    display_name = opt.get("display_name")
+                    if display_name:
+                        display_key = display_name.lower().strip()
+                        if display_key and display_key not in option_alias_to_item_type:
+                            option_alias_to_item_type[display_key] = (item_type_slug, attr_slug, opt_slug)
+
+                    # Add aliases if present
+                    aliases = opt.get("aliases") or []
+                    for alias in aliases:
+                        alias_lower = alias.lower().strip()
+                        if alias_lower and alias_lower not in option_alias_to_item_type:
+                            option_alias_to_item_type[alias_lower] = (item_type_slug, attr_slug, opt_slug)
+
+        self._option_alias_to_item_type = option_alias_to_item_type
+        logger.debug(
+            "Built option alias -> item type mapping with %d entries",
+            len(option_alias_to_item_type),
+        )
+
     def _load_category_keywords_from_bulk(self, bulk_data: dict) -> None:
         """Load category keyword mappings from bulk data."""
         item_types = bulk_data["item_types"]

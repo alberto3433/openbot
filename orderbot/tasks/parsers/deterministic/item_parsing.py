@@ -443,7 +443,23 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             detected_item_type = matches[0][0]
 
     if not detected_item_type:
-        return None
+        # Fallback: check if input matches an attribute option alias
+        # This handles "earl grey" -> tea with tea_flavor=earl_gray
+        cleaned_input = text_lower.strip()
+        option_match = menu_cache.get_item_type_from_option_alias(cleaned_input)
+        if option_match:
+            detected_item_type, inferred_attr_slug, inferred_option_slug = option_match
+            logger.info(
+                "CONFIGURABLE_ITEM: inferred type '%s' from option alias '%s' (%s=%s)",
+                detected_item_type, cleaned_input, inferred_attr_slug, inferred_option_slug
+            )
+            # Pre-fill the attribute value - will be merged with extracted values later
+            # Store in a variable to merge after attr_values is populated
+            inferred_attr_values = {inferred_attr_slug: inferred_option_slug}
+        else:
+            return None
+    else:
+        inferred_attr_values = {}
 
     # 2b. Check if the user's text matches more specific menu items
     # e.g., "bagel chips" should NOT trigger configurable bagel flow if there are
@@ -487,6 +503,12 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # - list[{slug, quantity, ...}] for multi_select
     # - bool for boolean
     attr_values = extract_attribute_values(text, detected_item_type)
+
+    # Merge inferred attribute values from option alias fallback
+    # Only add inferred values if not already extracted from text
+    for k, v in inferred_attr_values.items():
+        if k not in attr_values:
+            attr_values[k] = v
 
     # 5. Try to match a specific menu item name within this type
     # If we already found an item with defaults, use that name; otherwise try to match

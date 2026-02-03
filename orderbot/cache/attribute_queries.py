@@ -307,3 +307,21 @@ class AttributeQueryMixin:
                     return candidate
 
         return None
+
+    def get_item_type_from_option_alias(self, alias: str) -> tuple[str, str, str] | None:
+        """Look up item type from an attribute option alias.
+
+        This enables inferring item type when a user orders by option name alone,
+        e.g., "earl grey" -> infer item_type="tea" with tea_flavor=earl_gray.
+
+        Args:
+            alias: Option name or alias (e.g., "earl grey", "oat milk")
+
+        Returns:
+            Tuple of (item_type_slug, attribute_slug, option_slug) or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._option_alias_to_item_type.get(alias.lower().strip())

@@ -33,7 +33,7 @@ from .item_parsing import (
     _parse_configurable_item,
     _parse_split_quantity_items,
 )
-from .simple_item_parsing import _parse_soda_deterministic
+from .simple_item_parsing import _parse_simple_item_deterministic
 from .by_pound_parsing import _parse_by_pound_order
 from .inquiry import (
     parse_price_inquiry,
@@ -355,9 +355,15 @@ def parse_open_input_deterministic(
     if split_qty_result:
         return split_qty_result
 
-    # Check for configurable items using data-driven patterns FIRST
+    # Check for multi-item orders (e.g., "the leo and avocado toast")
+    # Must run BEFORE single-item parsers to handle "X and Y" patterns
+    # Has built-in logic to avoid splitting modifier chains like "bagel with butter and cream cheese"
+    multi_item_result = _parse_multi_item_order(text)
+    if multi_item_result:
+        return multi_item_result
+
+    # Check for configurable items using data-driven patterns
     # This ensures "bagel with cream cheese" goes to bagel parser, not cream cheese menu item
-    # Also prevents "with bacon and egg" from being interpreted as multiple items
     configurable_item_result = _parse_configurable_item(text)
     if configurable_item_result:
         return configurable_item_result
@@ -396,14 +402,8 @@ def parse_open_input_deterministic(
         ]
         return OpenInputResponse(parsed_items=menu_item_parsed_items)
 
-    # Check for multi-item orders
-    # Must be checked before single-item parsers to handle "X and Y" patterns
-    multi_item_result = _parse_multi_item_order(text)
-    if multi_item_result:
-        return multi_item_result
-
     # Check for simple items (beverages, pastries, sides, etc. - no config needed)
-    simple_result = _parse_soda_deterministic(text)  # TODO: rename variable after transition
+    simple_result = _parse_simple_item_deterministic(text)
     if simple_result:
         logger.info("DETERMINISTIC SIMPLE ITEM: matched '%s'", text[:50])
         return simple_result

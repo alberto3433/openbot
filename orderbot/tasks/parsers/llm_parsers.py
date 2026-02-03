@@ -217,23 +217,16 @@ def parse_open_input(
         cleaned = cleaned.replace(phrase, "")
 
     # If "and" or comma still appears, it might be multi-item OR a single item with modifiers
-    # Pattern: "bagel with X, Y, and Z" is a single item with modifiers, NOT multi-item
+    # Try multi-item parsing first - the multi-item parser has built-in logic to detect
+    # modifier chains ("bagel with butter and cream cheese") and will return None for those.
     if " and " in cleaned or ", " in cleaned:
-        # Check for explicit multi-item separators that indicate separate items
-        # Pattern: " and a ", " and an ", ", a ", ", an " usually indicate a new item
-        # e.g., "latte and a bagel", "coffee, a bagel, and an omelette"
-        multi_item_separators = [" and a ", " and an ", " plus a ", " plus an ", ", a ", ", an "]
-        has_multi_item_separator = any(sep in input_lower for sep in multi_item_separators)
-
-        if has_multi_item_separator:
-            # Multi-item order detected - try multi-item parsing first
-            logger.info("Multi-item separator detected, trying multi-item parse: %s", user_input[:50])
-            result = _parse_multi_item_order(user_input)
-            if result is not None:
-                logger.info("Parsed multi-item order deterministically: %s", user_input[:50])
-                return result
-            # Fall through to configurable item if multi-item parse fails
-            logger.info("Multi-item parse failed, trying configurable item: %s", user_input[:50])
+        logger.info("Potential multi-item detected, trying multi-item parse: %s", user_input[:50])
+        result = _parse_multi_item_order(user_input)
+        if result is not None:
+            logger.info("Parsed multi-item order deterministically: %s", user_input[:50])
+            return result
+        # Fall through to configurable item if multi-item parse fails
+        logger.info("Multi-item parse failed, trying configurable item: %s", user_input[:50])
 
         # Try configurable item patterns (bagels, coffees, etc.)
         # e.g., "plain bagel with Egg Whites, Swiss, and Spinach", "large iced latte"
@@ -242,14 +235,6 @@ def parse_open_input(
         if result is not None:
             logger.info("Parsed configurable item: %s", user_input[:50])
             return result
-
-        # Try multi-item parsing if we haven't already
-        if not has_multi_item_separator:
-            logger.info("Configurable item failed, trying multi-item parse: %s", user_input[:50])
-            result = _parse_multi_item_order(user_input)
-            if result is not None:
-                logger.info("Parsed multi-item order deterministically: %s", user_input[:50])
-                return result
 
     # Try deterministic parsing for single-item orders
     result = parse_open_input_deterministic(

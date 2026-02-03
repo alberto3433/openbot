@@ -45,6 +45,7 @@ from .deterministic import (
     extract_attribute_values,
     extract_special_instructions_from_input,
     _parse_configurable_item,
+    _parse_simple_item_deterministic,
     _parse_soda_deterministic,
     parse_price_inquiry,
     parse_recommendation_inquiry,
@@ -94,7 +95,8 @@ __all__ = [
 
     # === Internal Parsers (exported for testing) ===
     "_parse_configurable_item",
-    "_parse_soda_deterministic",
+    "_parse_simple_item_deterministic",
+    "_parse_soda_deterministic",  # Deprecated alias
     "parse_price_inquiry",
     "parse_recommendation_inquiry",
     "parse_store_info_inquiry",

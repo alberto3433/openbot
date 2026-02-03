@@ -565,20 +565,18 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         _detect_configurable_item_type,
         build_parsed_item,
     )
-    from .simple_item_parsing import _parse_soda_deterministic
+    from .simple_item_parsing import _parse_simple_item_deterministic
 
-    # Try to parse the item text as a specific item type
-    # Soda/bottled drinks first (more specific names like "Snapple Iced Tea")
-    # then coffee/sized beverages (more generic names like "iced tea")
-    # Phase 4: Use parsed_items instead of deprecated fields
-    soda_result = _parse_soda_deterministic(item_text)
-    if soda_result and soda_result.parsed_items:
+    # Try simple (non-configurable) items first - they have more specific names
+    # and don't require additional configuration questions
+    simple_result = _parse_simple_item_deterministic(item_text)
+    if simple_result and simple_result.parsed_items:
         # Set quantity to 1 for "add another"
-        for item in soda_result.parsed_items:
+        for item in simple_result.parsed_items:
             item.quantity = 1
-        item_name = soda_result.parsed_items[0].item_name if hasattr(soda_result.parsed_items[0], 'item_name') else "soda"
-        logger.info("ADD MORE: parsed as soda '%s' (qty=1)", item_name)
-        return soda_result
+        item_name = simple_result.parsed_items[0].item_name if hasattr(simple_result.parsed_items[0], 'item_name') else "item"
+        logger.info("ADD MORE: parsed as simple item '%s' (qty=1)", item_name)
+        return simple_result
 
     # Try configurable item types using data-driven parser
     configurable_result = _parse_configurable_item(item_text)

@@ -556,6 +556,46 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         logger.debug("Multi-item: skipping split - detected modifier chain: '%s'", text[:60])
         return None
 
+    # --- Step 1b: Check for "item with modifier and modifier" pattern ---
+    # e.g., "bagel with butter and cream cheese" - the "and" is AFTER "with", suggesting a modifier chain
+    # But NOT "latte with vanilla and a bagel" - after "and" there's an article + item (two items)
+    if " with " in text_lower and " and " in text_lower:
+        with_idx = text_lower.find(" with ")
+        and_idx = text_lower.find(" and ")
+
+        # Only apply this check if "and" comes AFTER "with" (potential modifier chain)
+        if and_idx > with_idx:
+            # Check what comes after "and" - if it's an article followed by an item, it's multi-item
+            after_and = text_lower[and_idx + 5:].strip()  # " and " is 5 chars
+            starts_with_article = any(after_and.startswith(art) for art in ("a ", "an ", "the "))
+
+            if starts_with_article:
+                # Strip article and check for item indicator
+                for art in ("a ", "an ", "the "):
+                    if after_and.startswith(art):
+                        after_and = after_and[len(art):]
+                        break
+                # Check if this contains an item type trigger
+                has_item, _, _ = _has_item_indicator(after_and)
+                if has_item:
+                    # It's "with X and a [item]" - this is multi-item, not modifier chain
+                    logger.debug("Multi-item: proceeding - 'and a [item]' pattern detected: '%s'", text[:60])
+                    # Don't return None, let it proceed to multi-item parsing
+                else:
+                    # After article there's no item - might still be modifier chain
+                    pass
+            else:
+                # No article after "and" - check if it's a modifier chain
+                with_parts = text_lower.split(" with ", 1)
+                if len(with_parts) == 2:
+                    after_with = with_parts[1]
+                    all_modifiers = menu_cache.get_all_modifier_words()
+                    first_after_with = after_with.split()[0] if after_with.split() else ""
+
+                    if first_after_with in all_modifiers:
+                        logger.debug("Multi-item: skipping split - 'with modifier and X' pattern: '%s'", text[:60])
+                        return None
+
     # --- Step 2: Use smart tokenization to split and classify ---
     tokens = _smart_split_and_tokenize(text_lower)
     if len(tokens) < 2:
@@ -628,15 +668,12 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
             return True
 
         other_tokens = [t for t in tokens[1:] if t.token_type != "separator"]
-        # Only skip if ALL other tokens are classified as "modifier" or "attribute" type
-        # If any token is classified as "item" type, it's a real multi-item order
+        # Only skip if ALL other tokens could be modifiers (even if also classified as items)
+        # e.g., "butter" is both a menu item AND a spread - in "bagel, butter" context, it's a modifier
         if other_tokens:
-            # Check if any token is already classified as "item" - if so, it's multi-item
-            any_item_tokens = any(t.token_type == "item" for t in other_tokens)
-            if any_item_tokens:
-                # At least one other token is an item - proceed with multi-item parsing
-                pass
-            elif all(_is_potential_modifier(t.original) for t in other_tokens):
+            # Check if all other tokens are potential modifiers
+            # (This includes items that double as modifiers, like "butter")
+            if all(_is_potential_modifier(t.original) for t in other_tokens):
                 logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
                 return None
 

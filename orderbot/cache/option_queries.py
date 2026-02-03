@@ -147,17 +147,27 @@ class OptionQueryMixin:
                         result[display] = attr_slug
 
         # Menu item variant prefixes (e.g., "hot" from "Hot Coffee", "iced" from "Iced Coffee")
-        # These differentiate menu items of the same type and are used in split-quantity parsing.
-        # We only include temperature/style words that indicate variants, not generic words.
-        variant_keywords = {"hot", "iced", "cold", "frozen", "grilled", "toasted", "plain"}
+        # Derived from data: if multiple items share a suffix but differ in first word, those are variants
         items_by_type = self._menu_index.get("items_by_type", {})
         for item_type_slug, items in items_by_type.items():
+            # Group items by their suffix (all words except the first)
+            suffix_to_prefixes: dict[str, set[str]] = {}
             for item in items:
                 name = item.get("name", "")
-                first_word = name.lower().split()[0] if name else ""
-                # Only add if it's a known variant keyword and not already in result
-                if first_word in variant_keywords and first_word not in result:
-                    result[first_word] = f"_variant_{item_type_slug}"
+                words = name.lower().split()
+                if len(words) >= 2:
+                    prefix = words[0]
+                    suffix = " ".join(words[1:])
+                    if suffix not in suffix_to_prefixes:
+                        suffix_to_prefixes[suffix] = set()
+                    suffix_to_prefixes[suffix].add(prefix)
+
+            # If a suffix has multiple prefixes, those prefixes are variants
+            for suffix, prefixes in suffix_to_prefixes.items():
+                if len(prefixes) > 1:
+                    for prefix in prefixes:
+                        if prefix not in result:
+                            result[prefix] = f"_variant_{item_type_slug}"
 
         return result
 

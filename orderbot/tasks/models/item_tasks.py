@@ -294,10 +294,10 @@ class MenuItemTask(ItemTask):
                 # extracted_selections tries to add with the actual qty
                 if quantity > 1 and existing.get("quantity", 1) == 1:
                     existing["quantity"] = quantity
-                # Update price if new price is greater (0.0 means "unknown", positive means "known")
-                # This handles the case where pre_filled adds with price=0, then
-                # extracted_selections tries to add with the actual price
-                if price > 0 and existing.get("price", 0) == 0:
+                # Update price ONLY if existing is not a default ingredient.
+                # Default ingredients have price=0 because they're included in base price,
+                # not because the price is "unknown".
+                if price > 0 and existing.get("price", 0) == 0 and not existing.get("is_default"):
                     existing["price"] = price
                     # Also update unit_price since we now have the real price
                     self.unit_price = (self.unit_price or 0.0) + (price * existing.get("quantity", 1))
@@ -458,8 +458,31 @@ class MenuItemTask(ItemTask):
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Set selection by category: item["size"] = "large"."""
-        # Remove existing selection for this category
-        self.remove_selection(key)
+        # Check if we're setting a value that already exists as a default ingredient
+        # If so, skip - the default is already there with the correct pricing (included in base)
+        if value and not isinstance(value, bool):
+            slugs_to_set = [str(value)] if not isinstance(value, list) else [str(v) for v in value if isinstance(v, str)]
+            existing_defaults = [
+                m for m in self.modifiers
+                if m.get("category") == key and m.get("is_default") and m.get("slug") in slugs_to_set
+            ]
+            if existing_defaults:
+                # All values we're trying to set are already defaults - nothing to do
+                if len(existing_defaults) == len(slugs_to_set):
+                    return
+                # Some values are defaults, some aren't - only add the non-defaults
+                default_slugs = {m.get("slug") for m in existing_defaults}
+                slugs_to_set = [s for s in slugs_to_set if s not in default_slugs]
+                if not slugs_to_set:
+                    return
+                # Update value to only include non-defaults
+                value = slugs_to_set if isinstance(value, list) else slugs_to_set[0]
+
+        # Remove existing non-default selections for this category
+        self.modifiers = [
+            m for m in self.modifiers
+            if not (m.get("category") == key and not m.get("is_default"))
+        ]
 
         # Treat None and integer 0 as "declined" (answered but no selection)
         # This handles quantity attributes where user says "no" (e.g., "no extra shots" = 0)

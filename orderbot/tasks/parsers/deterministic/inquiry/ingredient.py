@@ -13,6 +13,52 @@ logger = logging.getLogger(__name__)
 # Module-level cache for order signals
 _ORDER_SIGNALS_CACHE: list[str] | None = None
 
+# Module-level cache for the "with pattern" regex
+_WITH_PATTERN_CACHE: re.Pattern | None = None
+
+
+def _get_with_pattern() -> re.Pattern:
+    """Build regex pattern for 'something/anything/[item type] with [ingredient]' queries.
+
+    Dynamically includes item type names from database (e.g., "a sandwich", "sandwiches",
+    "an omelette", "omelettes") alongside generic terms.
+
+    Returns:
+        Compiled regex pattern for matching ingredient search queries.
+    """
+    global _WITH_PATTERN_CACHE
+    if _WITH_PATTERN_CACHE is not None:
+        return _WITH_PATTERN_CACHE
+
+    # Base generic terms
+    generic_terms = ["something", "anything", "an item", "items"]
+
+    # Add item type terms from database
+    slugs = menu_cache.get_all_item_type_slugs()
+    for slug in slugs:
+        # Convert slug to display form (e.g., "egg_sandwich" -> "egg sandwich")
+        display_form = slug.replace("_", " ")
+        # Add singular with article (a/an)
+        if display_form[0] in "aeiou":
+            generic_terms.append(f"an {display_form}")
+        else:
+            generic_terms.append(f"a {display_form}")
+        # Add plural form (simple -s suffix)
+        generic_terms.append(f"{display_form}s")
+
+    # Sort by length (longest first) for proper matching
+    sorted_terms = sorted(generic_terms, key=len, reverse=True)
+    terms_pattern = "|".join(re.escape(term) for term in sorted_terms)
+
+    pattern_str = (
+        r'^(?:(?:i(?:\'?d| would)? like |(?:can i )?(?:get|have) )?'
+        rf'(?:{terms_pattern}) '
+        r'(?:with|that (?:has|have|contain|contains)) '
+        r'(\w+))\s*[?.]?$'
+    )
+    _WITH_PATTERN_CACHE = re.compile(pattern_str, re.IGNORECASE)
+    return _WITH_PATTERN_CACHE
+
 
 def _passes_required_match_filter(item: dict, user_input: str) -> bool:
     """Check if item passes required_match_phrases filter.
@@ -147,15 +193,10 @@ def parse_ingredient_search(
     # - "do you have anything with chicken"
 
     # Pattern 1: "something/anything/items with [ingredient]"
-    with_pattern = re.match(
-        r'^(?:(?:i(?:\'?d| would)? like |(?:can i )?(?:get|have) )?'
-        r'(?:something|anything|an item|items|a sandwich|sandwiches) '
-        r'(?:with|that (?:has|have|contain|contains)) '
-        r'(\w+))\s*[?.]?$',
-        text_lower
-    )
-    if with_pattern:
-        ingredient = with_pattern.group(1)
+    with_pattern = _get_with_pattern()
+    with_match = with_pattern.match(text_lower)
+    if with_match:
+        ingredient = with_match.group(1)
         if ingredient in ingredient_to_items:
             result = _build_ingredient_search_response(
                 ingredient, ingredient_to_items[ingredient], text_lower, "with_pattern"

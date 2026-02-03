@@ -272,6 +272,19 @@ def extract_attribute_values(
         if spans_overlap(cand.start, cand.end):
             continue
 
+        # Skip if preceded by negation word ("no", "without", "skip")
+        # This prevents "capers" from matching as an addition when user said "no capers"
+        # The modification parser handles "no X" separately as a removal
+        # Mark the span as matched to prevent Phase 5 from re-matching the negated word
+        before_text = input_lower[:cand.start].rstrip()
+        if before_text.endswith(('no', 'without', 'skip')):
+            matched_spans.append((cand.start, cand.end))
+            logger.debug(
+                "Skipping negated option: '%s' preceded by negation word",
+                cand.pattern
+            )
+            continue
+
         # Check if option is unavailable (e.g., "medium" size doesn't exist)
         # Track the unavailable attempt for helpful user feedback
         opt_is_available = cand.option.get("is_available", True)

@@ -36,6 +36,7 @@ from .item_parsing import (
 from .simple_item_parsing import _parse_simple_item_deterministic
 from .by_pound_parsing import _parse_by_pound_order
 from .inquiry import (
+    parse_attribute_inquiry,
     parse_price_inquiry,
     parse_menu_query,
     parse_recommendation_inquiry,
@@ -135,6 +136,12 @@ def parse_open_input_deterministic(
     more_items_result = parse_more_menu_items(text)
     if more_items_result:
         return more_items_result
+
+    # Check for attribute option inquiries ("what bagel types do you have?")
+    # Must run BEFORE parse_menu_query to prevent "bagel types" being treated as menu category
+    attribute_inquiry_result = parse_attribute_inquiry(text)
+    if attribute_inquiry_result:
+        return attribute_inquiry_result
 
     # Check for menu category queries ("what sweets do you have?", "what desserts do you have?")
     menu_query_result = parse_menu_query(text)

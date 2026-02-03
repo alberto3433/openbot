@@ -8,8 +8,10 @@ This package contains parsers for non-order queries including:
 - Item description inquiries
 - Modifier/add-on inquiries
 - Ingredient-based menu search
+- Attribute option inquiries
 """
 
+from .attribute import parse_attribute_inquiry
 from .description import parse_item_description_inquiry
 from .ingredient import (
     get_order_signals,
@@ -38,4 +40,6 @@ __all__ = [
     # Ingredient
     "parse_ingredient_search",
     "get_order_signals",
+    # Attribute
+    "parse_attribute_inquiry",
 ]

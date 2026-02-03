@@ -211,3 +211,23 @@ MORE_MENU_ITEMS_PATTERNS = [
     # "and?" / "and what else?"
     re.compile(r"^and\s*\??\s*$", re.IGNORECASE),
 ]
+
+# =============================================================================
+# Attribute Inquiry Patterns
+# =============================================================================
+
+# Patterns for attribute option inquiries - asking about item type attributes
+# Format: (pattern, item_group_index, signal_group_index)
+# Group indices are 1-based, or 0 if not captured (standalone signal word)
+ATTRIBUTE_INQUIRY_PATTERNS = [
+    # "what bagel types do you have?" - item=bagel, signal=types
+    (re.compile(r"what\s+(\w+)\s+(type|types|flavor|flavors|kind|kinds|option|options|variety|varieties|choice|choices)\s+do\s+you\s+have", re.IGNORECASE), 1, 2),
+    # "what types of bagels do you have?" - item=bagels, signal=types
+    (re.compile(r"what\s+(type|types|flavor|flavors|kind|kinds|option|options|variety|varieties|choice|choices)\s+of\s+(\w+)\s+do\s+you\s+have", re.IGNORECASE), 2, 1),
+    # "what kinds of coffee?" - item=coffee, signal=kinds
+    (re.compile(r"what\s+(type|types|flavor|flavors|kind|kinds|option|options|variety|varieties|choice|choices)\s+of\s+(\w+)\s*\??$", re.IGNORECASE), 2, 1),
+    # "bagel types?" / "coffee sizes?" - item=bagel/coffee, signal=types/sizes
+    (re.compile(r"^(\w+)\s+(type|types|flavor|flavors|size|sizes|kind|kinds|option|options|choice|choices)\s*\??$", re.IGNORECASE), 1, 2),
+    # "what sizes do you have?" - item=None, signal=sizes (standalone)
+    (re.compile(r"what\s+(size|sizes|temperature|temperatures)\s+do\s+you\s+have", re.IGNORECASE), 0, 1),
+]

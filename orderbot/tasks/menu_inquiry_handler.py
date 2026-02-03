@@ -210,6 +210,10 @@ class MenuInquiryHandler(MenuDataMixin):
         if pagination.get("type") == "item_types":
             return self._handle_more_item_types(order, pagination)
 
+        # Handle attribute_options pagination (from "what bagel types?" response)
+        if pagination.get("type") == "attribute_options":
+            return self._handle_more_attribute_options(order, pagination)
+
         category = pagination.get("category")
         offset = pagination.get("offset", 0)
         total_items = pagination.get("total_items", 0)
@@ -448,6 +452,67 @@ class MenuInquiryHandler(MenuDataMixin):
             message = f"We also have {items_str}. Would you like any of these?"
         else:
             message = f"We also have {items_str}. That's everything! What would you like?"
+
+        return StateMachineResult(message=message, order=order)
+
+    def _handle_more_attribute_options(
+        self,
+        order: OrderTask,
+        pagination: dict,
+    ) -> StateMachineResult:
+        """Handle 'show more' for attribute options (from 'what bagel types?' response).
+
+        Args:
+            order: Current order state
+            pagination: Pagination dict with "items" list, "offset", and attribute context
+        """
+        items = pagination.get("items", [])
+        offset = pagination.get("offset", 0)
+        attr_display = pagination.get("attribute_display", "options")
+        item_type = pagination.get("item_type")
+
+        if not items or offset >= len(items):
+            order.clear_menu_pagination()
+            return StateMachineResult(
+                message=f"That's all the {attr_display} we have. Would you like to order something?",
+                order=order,
+            )
+
+        # Get next batch
+        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
+        remaining = len(items) - (offset + len(batch))
+        has_more = remaining > 0
+
+        # Format the list
+        if has_more:
+            if len(batch) == 1:
+                items_str = batch[0]
+            elif len(batch) == 2:
+                items_str = f"{batch[0]}, {batch[1]}"
+            else:
+                items_str = ", ".join(batch)
+            items_str += f", and {remaining} more"
+
+            # Update pagination for next "what else"
+            new_offset = offset + DEFAULT_PAGINATION_SIZE
+            order.menu_query_pagination = {
+                "type": "attribute_options",
+                "attribute_slug": pagination.get("attribute_slug"),
+                "attribute_display": attr_display,
+                "item_type": item_type,
+                "items": items,
+                "offset": new_offset,
+            }
+        else:
+            # Last batch
+            items_str = format_english_list(batch)
+            order.clear_menu_pagination()
+
+        # Build response
+        if has_more:
+            message = f"We also have {items_str}. Would you like any of these?"
+        else:
+            message = f"We also have {items_str}. That's all the {attr_display} we have. Would you like any?"
 
         return StateMachineResult(message=message, order=order)
 

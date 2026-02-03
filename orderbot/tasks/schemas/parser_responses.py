@@ -273,6 +273,20 @@ class OpenInputResponse(BaseModel):
         default=None,
         description="The specific type of signature items being asked about: 'signature_items' or None for all signature items"
     )
+    # Attribute inquiries (e.g., "what bagel types do you have?")
+    asks_attribute_options: bool = Field(
+        default=False,
+        description="User is asking about attribute options (e.g., 'what bagel types?', 'what sizes?')"
+    )
+    attribute_query_item_type: str | None = Field(
+        default=None,
+        description="Item type slug for attribute query (e.g., 'bagel' from 'what bagel types?')"
+    )
+    attribute_query_signal: str | None = Field(
+        default=None,
+        description="Signal word for attribute query (e.g., 'type', 'size', 'flavor')"
+    )
+
     # Price inquiries
     asks_about_price: bool = Field(
         default=False,

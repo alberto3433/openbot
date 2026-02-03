@@ -99,6 +99,11 @@ class InquiryRouter:
                 parsed.modifier_query_item, parsed.modifier_query_category, order
             )
 
+        if parsed.asks_attribute_options:
+            return self.store_info_handler.handle_attribute_inquiry(
+                parsed.attribute_query_item_type, parsed.attribute_query_signal, order
+            )
+
         if parsed.menu_query:
             return self.menu_inquiry_handler.handle_menu_query(parsed.menu_query_type, order, show_prices=parsed.asks_about_price)
 

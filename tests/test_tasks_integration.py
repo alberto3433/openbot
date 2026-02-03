@@ -5099,7 +5099,8 @@ class TestGreetingHandler:
             coffees = [i for i in order.items.items if i.has_attribute('size')]
             # If coffee config is in progress, the coffee should still be added
             # "drink_type" is also valid if disambiguation is needed between Coffee/Iced Coffee
-            assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers", "sized_beverage:size", "sized_beverage:temperature", "sized_beverage:iced", "sized_beverage:milk_sweetener_syrup", "drink_type")
+            # "item_selection" is valid when multiple menu items match (e.g., Coffee vs Iced Coffee)
+            assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers", "sized_beverage:size", "sized_beverage:temperature", "sized_beverage:iced", "sized_beverage:milk_sweetener_syrup", "drink_type", "item_selection")
 
 
 # =============================================================================
@@ -5176,7 +5177,8 @@ class TestTakingItemsHandler:
             coffees = [i for i in order.items.items if i.has_attribute('size')]
             # Coffee should be added (or be configuring it, or asking for clarification)
             # "drink_type" is also valid if disambiguation is needed between Coffee/Iced Coffee
-            assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers", "sized_beverage:size", "sized_beverage:temperature", "sized_beverage:iced", "sized_beverage:milk_sweetener_syrup", "drink_type")
+            # "item_selection" is valid when multiple menu items match (e.g., Coffee vs Iced Coffee)
+            assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers", "sized_beverage:size", "sized_beverage:temperature", "sized_beverage:iced", "sized_beverage:milk_sweetener_syrup", "drink_type", "item_selection")
 
     def test_done_ordering_transitions_to_checkout(self):
         """Test that 'done ordering' transitions to checkout."""

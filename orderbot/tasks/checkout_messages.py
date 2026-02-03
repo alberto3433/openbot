@@ -97,20 +97,6 @@ def item_added_anything_else(count: int, item_name: str) -> str:
     return f"I've added {count} more {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
-def modifier_added_anything_else(item_summary: str) -> str:
-    """Generate 'Sure, I've added that to your X. Anything else?' response.
-
-    Used when adding a modifier to an existing item.
-
-    Args:
-        item_summary: Summary of the modified item
-
-    Returns:
-        Formatted response string
-    """
-    return f"Sure, I've added that to your {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
-
-
 # =============================================================================
 # Error Recovery Messages
 # =============================================================================
@@ -141,22 +127,6 @@ def item_not_found_in_order(item_desc: str) -> str:
         Formatted message with recovery prompt
     """
     return f"I couldn't find {item_desc} in your order. What would you like to do?"
-
-
-def item_not_found_on_menu(item_name: str, suggestion: str | None = None) -> str:
-    """Generate "I couldn't find X on our menu" message.
-
-    Args:
-        item_name: Name of the item that wasn't found
-        suggestion: Optional suggestion text to append
-
-    Returns:
-        Formatted message, optionally with suggestion
-    """
-    base = f"I couldn't find '{item_name}' on our menu."
-    if suggestion:
-        return f"{base} {suggestion}"
-    return f"{base} What would you like to order?"
 
 
 def item_not_found_would_you_like_to_add(item_desc: str) -> str:

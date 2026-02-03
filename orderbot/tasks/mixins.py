@@ -5,13 +5,10 @@ These mixins provide common functionality across multiple handlers,
 reducing boilerplate code.
 """
 
-from typing import TYPE_CHECKING, Callable
+from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models import OrderTask
-    from .schemas import StateMachineResult
     from .context import OrderContext
-    from .pricing import PricingEngine
 
 
 class ContextMixin:
@@ -59,73 +56,20 @@ class ContextMixin:
 
 
 class CallbackMixin:
-    """Mixin providing transition and configuration callbacks.
+    """Mixin providing callback attributes for state transitions.
 
-    Handlers using this mixin can invoke callbacks to transition order
-    state or trigger configuration of incomplete items.
+    Handlers using this mixin can receive callbacks for transitioning to next
+    slots and configuring incomplete items.
 
     Usage:
         class MyHandler(CallbackMixin):
-            def __init__(self, transition_callback=None, configure_callback=None):
-                self._transition_to_next_slot = transition_callback
-                self._configure_next_incomplete_item = configure_callback
+            def __init__(self):
+                self._transition_to_next_slot: Callable | None = None
+                self._configure_next_incomplete_item: Callable | None = None
     """
 
-    _transition_to_next_slot: Callable[["OrderTask"], None] | None
-    _configure_next_incomplete_item: Callable[["OrderTask"], "StateMachineResult"] | None
-
-    def transition_if_available(self, order: "OrderTask") -> None:
-        """Invoke transition callback if available.
-
-        Args:
-            order: The order to transition.
-        """
-        if self._transition_to_next_slot:
-            self._transition_to_next_slot(order)
-
-    def configure_next_if_available(
-        self, order: "OrderTask"
-    ) -> "StateMachineResult | None":
-        """Invoke configure callback if available.
-
-        Args:
-            order: The order to get next configuration question for.
-
-        Returns:
-            StateMachineResult with next config question, or None if no callback.
-        """
-        if self._configure_next_incomplete_item:
-            return self._configure_next_incomplete_item(order)
-        return None
-
-
-class PricingMixin:
-    """Mixin providing price recalculation helpers.
-
-    Handlers using this mixin can safely recalculate item prices
-    after modifications.
-
-    Usage:
-        class MyHandler(PricingMixin):
-            def __init__(self, pricing=None):
-                self.pricing = pricing
-    """
-
-    pricing: "PricingEngine | None"
-
-    def recalculate_price_safe(self, item) -> None:
-        """Recalculate item price if pricing engine is available.
-
-        Safely handles missing pricing engine or price lookup failures.
-
-        Args:
-            item: The item to recalculate price for.
-        """
-        if self.pricing:
-            try:
-                self.pricing.recalculate_item_price(item)
-            except ValueError:
-                pass  # Price lookup failed - item may not have pricing data
+    _transition_to_next_slot: "Callable | None"
+    _configure_next_incomplete_item: "Callable | None"
 
 
 class MenuDataMixin:

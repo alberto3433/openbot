@@ -37,6 +37,16 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["DuplicateHandler"]
 
+# Scoring constants for item matching
+# Higher scores = better matches
+_SCORE_EXACT_MATCH = 100
+_SCORE_NORMALIZED_EXACT = 90
+_SCORE_FULL_NAME_MATCH = 85
+_SCORE_PREFIX_MATCH = 70
+_SCORE_SUBSTRING_MATCH = 30
+_SCORE_WORD_MATCH_BASE = 20
+_SCORE_WORD_MATCH_BONUS = 5  # Per matching word
+
 
 class DuplicateHandler:
     """
@@ -135,27 +145,27 @@ class DuplicateHandler:
 
             # Exact match (highest priority)
             if normalized_text == summary_lower:
-                score = 100
+                score = _SCORE_EXACT_MATCH
             # Normalized text matches item exactly
             elif normalized_text in summary_lower and len(normalized_text) == len(summary_lower):
-                score = 90
+                score = _SCORE_NORMALIZED_EXACT
             # User text is the full item name
             elif text == summary_lower:
-                score = 85
+                score = _SCORE_FULL_NAME_MATCH
             # Normalized text starts with item or item starts with normalized text
             elif summary_lower.startswith(normalized_text) or normalized_text.startswith(summary_lower):
-                score = 70
+                score = _SCORE_PREFIX_MATCH
             # Original text is substring of item name (but check it's not a partial match like "coke" in "diet coke")
             elif text in summary_lower:
                 # Penalize if there's a more specific match possible
                 # "coke" in "diet coke" should score lower than "coke" matching "coca-cola" via alias
-                score = 30
+                score = _SCORE_SUBSTRING_MATCH
             # Check for partial word matches (e.g., "bagel" matches "plain bagel toasted")
             else:
                 words = text.split()
                 matching_words = sum(1 for word in words if len(word) > 2 and word in summary_lower)
                 if matching_words > 0:
-                    score = 20 + matching_words * 5
+                    score = _SCORE_WORD_MATCH_BASE + matching_words * _SCORE_WORD_MATCH_BONUS
 
             if score > best_match_score:
                 best_match_score = score

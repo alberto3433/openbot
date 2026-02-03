@@ -133,70 +133,6 @@ def get_last_item(items: list) -> any:
     return items[-1] if items else None
 
 
-def find_items_by_keyword(
-    items: list,
-    keyword: str,
-    variants: list[str] | None = None,
-) -> list:
-    """Find items matching a keyword by name or summary.
-
-    Searches both item summary and menu_item_name for matches.
-    Handles singular/plural variants automatically.
-
-    Args:
-        items: List of items to search
-        keyword: The keyword to search for
-        variants: Optional list of variants to check (e.g., singular/plural forms).
-                  If not provided, generates variants from keyword.
-
-    Returns:
-        List of matching items
-    """
-    from orderbot.cache.base import get_singular_plural_variants
-
-    if not items or not keyword:
-        return []
-
-    if variants is None:
-        variants = list(get_singular_plural_variants(keyword.lower()))
-    else:
-        variants = [v.lower() for v in variants]
-
-    matches = []
-    for item in items:
-        item_summary = item.get_summary().lower()
-        item_name = getattr(item, 'menu_item_name', '') or ''
-        item_name_lower = item_name.lower()
-
-        if any(v in item_summary or v in item_name_lower for v in variants):
-            matches.append(item)
-
-    return matches
-
-
-def resolve_and_normalize(text: str) -> str:
-    """Resolve alias and return normalized (lowercase) name.
-
-    Combines alias resolution with text normalization. If the text
-    is a known alias, returns the resolved name; otherwise returns
-    the original text, always lowercase.
-
-    Args:
-        text: The text to resolve and normalize
-
-    Returns:
-        Normalized name (lowercase), resolved if it was an alias
-    """
-    from orderbot.cache import menu_cache
-
-    text_lower = (text or "").lower().strip()
-    if not text_lower:
-        return ""
-
-    resolved, _ = menu_cache.resolve_alias(text_lower)
-    return (resolved or text_lower).lower()
-
-
 def match_item_from_options(
     user_input: str,
     item_options: list[dict],
@@ -306,24 +242,6 @@ def recalculate_and_summarize(
     if pricing:
         pricing.recalculate_item_price(item)
     return item.get_summary()
-
-
-def get_newly_added_items(
-    order: "OrderTask",
-    items_before_count: int,
-) -> list:
-    """Get items added to order since a given count.
-
-    Used to track items added during a multi-step operation.
-
-    Args:
-        order: The order to check
-        items_before_count: Number of items before the operation
-
-    Returns:
-        List of newly added items
-    """
-    return order.items.items[items_before_count:]
 
 
 def remove_item_from_order(order: "OrderTask", item: "MenuItemTask") -> bool:

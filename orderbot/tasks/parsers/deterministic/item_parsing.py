@@ -229,7 +229,7 @@ def _parse_item_generic(
 
     # Extract quantity from text
     quantity = 1
-    qty_match = re.match(r'^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+dozen|half\s+a\s+dozen|a\s+couple(?:\s+of)?)\s+', text_lower)
+    qty_match = re.match(r'^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+dozen|half\s+a\s+dozen|a\s+couple(?:\s+of)?|a\s+few|few)\s+', text_lower)
     if qty_match:
         qty_str = qty_match.group(1).strip()
         extracted_qty = _extract_quantity(qty_str)
@@ -487,7 +487,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         r"give\s+me|"
         r"let\s*(?:me|'s)\s*(?:get|have)|"
         r")?\s*"
-        r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+couple|half\s+(?:a\s+)?dozen|a?\s*dozen)\s+",
+        r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+couple|a\s+few|few|half\s+(?:a\s+)?dozen|a?\s*dozen)\s+",
         text_lower
     )
     if qty_match:

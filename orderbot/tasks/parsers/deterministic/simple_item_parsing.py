@@ -15,7 +15,7 @@ from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 
 from ...schemas import OpenInputResponse
-from ..constants import WORD_TO_NUM
+from ..quantity_utils import extract_leading_quantity
 from .item_building import build_parsed_item
 
 logger = logging.getLogger(__name__)
@@ -43,17 +43,15 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
 
     # Extract quantity EARLY - before matching
     # This ensures "two cookies" -> qty=2, text_lower="cookie" (singularized)
-    quantity = 1
-    qty_match = re.match(r'^(\d+|two|three|four|five)\s+', text_lower)
-    if qty_match:
-        qty_str = qty_match.group(1)
-        text_lower = text_lower[qty_match.end():]  # Strip quantity from text
-        if qty_str.isdigit():
-            quantity = int(qty_str)
-        else:
-            quantity = WORD_TO_NUM.get(qty_str, 1)
+    # Uses extract_leading_quantity to handle all quantity phrases (a few, couple, dozen, etc.)
+    extracted_qty, remaining = extract_leading_quantity(text_lower)
+    if extracted_qty is not None:
+        quantity = extracted_qty
+        text_lower = remaining
         # Singularize after extracting quantity: "two cookies" -> "cookie"
         text_lower = singularize(text_lower)
+    else:
+        quantity = 1
 
     # Get all simple (non-configurable) item types from database
     simple_item_types = menu_cache.get_simple_item_types()

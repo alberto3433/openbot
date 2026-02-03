@@ -17,7 +17,6 @@ from ...schemas import (
 )
 
 from ..constants import (
-    WORD_TO_NUM,
     get_known_menu_items,
     clean_extracted_text,
     SKIP_WORDS,
@@ -25,6 +24,7 @@ from ..constants import (
     SKIP_WORDS_PREPOSITIONS,
 )
 from ..intent_patterns import ADD_MORE_PATTERN
+from ..quantity_utils import extract_leading_quantity
 
 from .extraction import extract_modifiers_with_qualifiers, extract_attribute_values
 
@@ -487,17 +487,16 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
     text_lower = re.sub(r'^(i\s+want\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)', '', text_lower)
     text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
 
-    quantity = 1
-    qty_match = re.match(r'^(\d+|one|two|three|four|five)\s+', text_lower)
-    if qty_match:
-        qty_str = qty_match.group(1)
-        text_lower = text_lower[qty_match.end():]
-        if qty_str.isdigit():
-            quantity = int(qty_str)
-        else:
-            quantity = WORD_TO_NUM.get(qty_str, 1)
+    # Extract quantity using extract_leading_quantity which handles all quantity phrases
+    # (a few, couple, dozen, etc.)
+    extracted_qty, remaining = extract_leading_quantity(text_lower)
+    if extracted_qty is not None:
+        quantity = extracted_qty
+        text_lower = remaining
         # Singularize after extracting quantity: "two cookies" -> "cookie"
         text_lower = singularize(text_lower)
+    else:
+        quantity = 1
 
     for item in sorted(get_known_menu_items(), key=len, reverse=True):
         # Use word boundary check to prevent partial matches (e.g., "ham" matching "hamburger")

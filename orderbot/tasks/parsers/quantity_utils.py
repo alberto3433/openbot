@@ -23,8 +23,9 @@ WORD_TO_NUM: dict[str, int] = {
     "a": 1, "an": 1, "one": 1, "single": 1,
     # Two
     "two": 2, "couple": 2, "a couple": 2, "a couple of": 2, "couple of": 2, "double": 2,
+    "a few": 2, "few": 2,
     # Three
-    "three": 3, "a few": 3, "few": 3, "triple": 3,
+    "three": 3, "triple": 3,
     # Four
     "four": 4, "quad": 4, "quadruple": 4,
     # Five through twelve

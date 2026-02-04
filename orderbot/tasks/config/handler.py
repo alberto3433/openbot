@@ -258,8 +258,8 @@ class MenuItemConfigHandler(BaseHandler):
                 attr_skips = menu_cache.get_skipped_attributes_for_option(value)
                 skipped.update(attr_skips)
             elif isinstance(value, bool):
-                # Boolean - check if "yes" or "no" triggers skip rules
-                bool_slug = "yes" if value else "no"
+                # Boolean - option slugs are "true"/"false" to match DB storage
+                bool_slug = "true" if value else "false"
                 attr_skips = menu_cache.get_skipped_attributes_for_option(bool_slug)
                 skipped.update(attr_skips)
 

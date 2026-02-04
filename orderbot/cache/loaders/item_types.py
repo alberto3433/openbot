@@ -576,6 +576,45 @@ class ItemTypeLoaderMixin:
             len(global_attribute_aliases),
         )
 
+    def _load_option_skip_rules_from_bulk(self, bulk_data: dict) -> None:
+        """Load attribute option skip rules from bulk data.
+
+        Skip rules define which attributes to skip when certain options are selected.
+        For example, selecting "black" for coffee skips asking about milk/sweetener/syrup.
+        """
+        skip_rules = bulk_data.get("option_skip_rules", [])
+
+        option_skip_rules: dict[str, set[str]] = {}
+
+        for rule in skip_rules:
+            # Get the triggering option's slug
+            opt = rule.triggering_option
+            if not opt:
+                continue
+            # Derive slug from linked ingredient if present, otherwise use option slug
+            opt_slug = opt.ingredient.slug if opt.ingredient else opt.slug
+            if not opt_slug:
+                continue
+
+            # Get the skipped attribute's slug
+            attr = rule.skipped_attribute
+            if not attr:
+                continue
+            attr_slug = attr.slug
+
+            # Build the mapping
+            if opt_slug not in option_skip_rules:
+                option_skip_rules[opt_slug] = set()
+            option_skip_rules[opt_slug].add(attr_slug)
+
+        self._option_skip_rules = option_skip_rules
+
+        logger.debug(
+            "Loaded %d option skip rules from bulk: %s",
+            sum(len(v) for v in option_skip_rules.values()),
+            {k: list(v) for k, v in option_skip_rules.items()},
+        )
+
     def _load_component_slots_from_bulk(self, bulk_data: dict) -> None:
         """Load component slots from bulk data.
 

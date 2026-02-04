@@ -42,6 +42,7 @@ from ..db import get_db
 from ..db.models import (
     GlobalAttribute,
     GlobalAttributeOption,
+    GlobalAttributeOptionSkip,
     Ingredient,
     ItemType,
     ItemTypeGlobalAttribute,
@@ -62,6 +63,9 @@ from ..schemas.global_attributes import (
     ItemTypeGlobalAttributeLinkUpdate,
     GlobalAttributeWithOptionsCreate,
     LinkedItemTypeInfo,
+    SkipRuleOut,
+    SkipRuleCreate,
+    SkipRuleOutBasic,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,6 +120,17 @@ def _serialize_option(opt: GlobalAttributeOption, db: Optional[Session] = None) 
         slug = opt.slug or f"option_{opt.id}"
         display_name = opt.display_name or f"Option {opt.id}"
 
+    # Serialize skip rules
+    skip_rules_out = []
+    if hasattr(opt, 'skip_rules') and opt.skip_rules:
+        for rule in opt.skip_rules:
+            skip_rules_out.append(SkipRuleOutBasic(
+                id=rule.id,
+                skipped_attribute_id=rule.skipped_attribute_id,
+                skipped_attribute_slug=rule.skipped_attribute.slug if rule.skipped_attribute else "",
+                skipped_attribute_name=rule.skipped_attribute.display_name if rule.skipped_attribute else "",
+            ))
+
     return GlobalAttributeOptionOut(
         id=opt.id,
         slug=slug,
@@ -129,6 +144,7 @@ def _serialize_option(opt: GlobalAttributeOption, db: Optional[Session] = None) 
         modifier_category_id=opt.modifier_category_id,
         modifier_category_name=opt.modifier_category.display_name if opt.modifier_category else None,
         aliases=aliases_str,
+        skip_rules=skip_rules_out,
         created_at=opt.created_at,
         updated_at=opt.updated_at,
     )
@@ -254,6 +270,9 @@ def get_global_attribute(
             .joinedload(GlobalAttributeOption.ingredient),
             selectinload(GlobalAttribute.options)
             .joinedload(GlobalAttributeOption.modifier_category),
+            selectinload(GlobalAttribute.options)
+            .selectinload(GlobalAttributeOption.skip_rules)
+            .joinedload(GlobalAttributeOptionSkip.skipped_attribute),
             selectinload(GlobalAttribute.item_type_links)
             .joinedload(ItemTypeGlobalAttribute.item_type),
         )
@@ -956,6 +975,168 @@ def list_unlinked_ingredients(
         }
         for ing in ingredients
     ]
+
+
+# =============================================================================
+# Skip Rule Endpoints
+# =============================================================================
+
+@admin_global_attributes_router.get(
+    "/{attr_id}/options/{option_id}/skip-rules",
+    response_model=List[SkipRuleOut],
+    summary="List skip rules for an option"
+)
+def list_option_skip_rules(
+    attr_id: int,
+    option_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[SkipRuleOut]:
+    """List all skip rules for a global attribute option."""
+    # Verify attribute exists
+    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Global attribute not found")
+
+    # Verify option exists and belongs to attribute
+    option = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.id == option_id,
+        GlobalAttributeOption.global_attribute_id == attr_id
+    ).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Option not found")
+
+    # Get skip rules with skipped_attribute relationship
+    rules = (
+        db.query(GlobalAttributeOptionSkip)
+        .options(joinedload(GlobalAttributeOptionSkip.skipped_attribute))
+        .filter(GlobalAttributeOptionSkip.triggering_option_id == option_id)
+        .all()
+    )
+
+    return [
+        SkipRuleOut(
+            id=rule.id,
+            skipped_attribute_id=rule.skipped_attribute_id,
+            skipped_attribute_slug=rule.skipped_attribute.slug,
+            skipped_attribute_name=rule.skipped_attribute.display_name,
+        )
+        for rule in rules
+    ]
+
+
+@admin_global_attributes_router.post(
+    "/{attr_id}/options/{option_id}/skip-rules",
+    response_model=SkipRuleOut,
+    status_code=201,
+    summary="Add a skip rule to an option"
+)
+def create_option_skip_rule(
+    attr_id: int,
+    option_id: int,
+    payload: SkipRuleCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> SkipRuleOut:
+    """Add a skip rule to a global attribute option."""
+    # Verify attribute exists
+    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Global attribute not found")
+
+    # Verify option exists and belongs to attribute
+    option = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.id == option_id,
+        GlobalAttributeOption.global_attribute_id == attr_id
+    ).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Option not found")
+
+    # Verify skipped attribute exists
+    skipped_attr = db.query(GlobalAttribute).filter(
+        GlobalAttribute.id == payload.skipped_attribute_id
+    ).first()
+    if not skipped_attr:
+        raise HTTPException(status_code=404, detail="Skipped attribute not found")
+
+    # Check if skip rule already exists
+    existing = db.query(GlobalAttributeOptionSkip).filter(
+        GlobalAttributeOptionSkip.triggering_option_id == option_id,
+        GlobalAttributeOptionSkip.skipped_attribute_id == payload.skipped_attribute_id
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Skip rule for attribute '{skipped_attr.display_name}' already exists"
+        )
+
+    # Create the skip rule
+    rule = GlobalAttributeOptionSkip(
+        triggering_option_id=option_id,
+        skipped_attribute_id=payload.skipped_attribute_id,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+
+    logger.info(
+        "Created skip rule: option %d (%s) skips attribute %d (%s)",
+        option_id,
+        option.slug or f"option_{option.id}",
+        skipped_attr.id,
+        skipped_attr.slug,
+    )
+
+    return SkipRuleOut(
+        id=rule.id,
+        skipped_attribute_id=rule.skipped_attribute_id,
+        skipped_attribute_slug=skipped_attr.slug,
+        skipped_attribute_name=skipped_attr.display_name,
+    )
+
+
+@admin_global_attributes_router.delete(
+    "/{attr_id}/options/{option_id}/skip-rules/{rule_id}",
+    status_code=204,
+    summary="Delete a skip rule"
+)
+def delete_option_skip_rule(
+    attr_id: int,
+    option_id: int,
+    rule_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> None:
+    """Delete a skip rule from a global attribute option."""
+    # Verify attribute exists
+    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
+    if not attr:
+        raise HTTPException(status_code=404, detail="Global attribute not found")
+
+    # Verify option exists and belongs to attribute
+    option = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.id == option_id,
+        GlobalAttributeOption.global_attribute_id == attr_id
+    ).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Option not found")
+
+    # Find and delete the skip rule
+    rule = db.query(GlobalAttributeOptionSkip).filter(
+        GlobalAttributeOptionSkip.id == rule_id,
+        GlobalAttributeOptionSkip.triggering_option_id == option_id
+    ).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Skip rule not found")
+
+    logger.info(
+        "Deleting skip rule %d from option %d",
+        rule_id,
+        option_id,
+    )
+    db.delete(rule)
+    db.commit()
+    return None
 
 
 # =============================================================================

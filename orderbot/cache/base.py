@@ -439,6 +439,11 @@ class BaseCacheMixin:
         # Each dict: {ingredient_id, ingredient_slug, ingredient_name, ingredient_category, quantity}
         self._menu_item_default_ingredients: dict[int, list[dict]] = {}
 
+        # Attribute option skip rules (data-driven question skipping)
+        # Maps option_slug -> set of attribute_slugs to skip
+        # e.g., "black" -> {"milk_sweetener_syrup"} means if "black" is selected, skip that attribute
+        self._option_skip_rules: dict[str, set[str]] = {}
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False

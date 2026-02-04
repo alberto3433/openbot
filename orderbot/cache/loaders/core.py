@@ -111,6 +111,9 @@ class LoaderMixin(
                 # Pre-load ALL item type attributes at startup (eliminates runtime lazy loading)
                 self._preload_all_item_type_attributes(bulk_data)
 
+                # Load attribute option skip rules (for question skipping logic)
+                self._load_option_skip_rules_from_bulk(bulk_data)
+
                 # Load attribute inquiry keywords (data-driven mapping for "what types?" queries)
                 self._load_attribute_inquiry_keywords(db)
 
@@ -151,7 +154,7 @@ class LoaderMixin(
             Dict with pre-loaded data for use by other loader methods.
         """
         from ...db.models import (
-            GlobalAttribute, GlobalAttributeOption, Ingredient,
+            GlobalAttribute, GlobalAttributeOption, GlobalAttributeOptionSkip, Ingredient,
             ItemType, ItemTypeGlobalAttribute, MenuItem, ItemTypeIngredient,
             Category, MenuItemCategory, ResponsePattern, ModifierQualifier,
             ModifierCategory, IngredientCategory, GlobalAttributeAlias,
@@ -292,6 +295,20 @@ class LoaderMixin(
             .all()
         )
 
+        # 16. Load attribute option skip rules
+        try:
+            option_skip_rules = (
+                db.query(GlobalAttributeOptionSkip)
+                .options(
+                    joinedload(GlobalAttributeOptionSkip.triggering_option),
+                    joinedload(GlobalAttributeOptionSkip.skipped_attribute),
+                )
+                .all()
+            )
+        except Exception:
+            # Table may not exist yet if migrations haven't run
+            option_skip_rules = []
+
         elapsed = time.time() - start_time
         logger.info(
             "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
@@ -321,6 +338,7 @@ class LoaderMixin(
             "global_attr_aliases": global_attr_aliases,
             "menu_item_ingredients": menu_item_ingredients,
             "component_slots": component_slots,
+            "option_skip_rules": option_skip_rules,
         }
 
     def _load_menu_index(self, db: Session) -> None:

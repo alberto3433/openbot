@@ -178,6 +178,53 @@ class GlobalAttributeOptionAlias(Base):
     option = relationship("GlobalAttributeOption", back_populates="alias_records")
 
 
+class GlobalAttributeOptionSkip(Base):
+    """
+    Defines skip rules for attribute options.
+
+    When a specific option is selected (e.g., "black" for coffee),
+    related attributes (e.g., milk, sweetener, syrup) should be automatically
+    skipped during configuration.
+
+    This enables data-driven logic like:
+    - User says "black coffee" -> milk, sweetener, syrup questions skipped
+    - User says "plain bagel" -> skip asking about spread (if configured)
+    """
+    __tablename__ = "global_attribute_option_skips"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # The option that triggers the skip (e.g., "black" option)
+    triggering_option_id = Column(
+        Integer,
+        ForeignKey("global_attribute_options.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # The attribute to skip (e.g., "milk" attribute)
+    skipped_attribute_id = Column(
+        Integer,
+        ForeignKey("global_attributes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    # Unique constraint: one skip rule per option-attribute pair
+    __table_args__ = (
+        UniqueConstraint(
+            "triggering_option_id", "skipped_attribute_id",
+            name="uq_option_skip_rule"
+        ),
+    )
+
+    # Relationships
+    triggering_option = relationship("GlobalAttributeOption", backref="skip_rules")
+    skipped_attribute = relationship("GlobalAttribute", backref="skipped_by_options")
+
+
 class ItemTypeGlobalAttribute(Base):
     """
     Links an item type to a global attribute.

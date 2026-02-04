@@ -340,3 +340,68 @@ class AttributeQueryMixin:
         """
         self._ensure_loaded()
         return set(self._option_alias_to_item_type.keys())
+
+    def get_skipped_attributes_for_option(self, option_slug: str) -> set[str]:
+        """Get attributes that should be skipped when an option is selected.
+
+        Used for data-driven question skipping. For example, selecting "black"
+        for coffee means we should skip asking about milk/sweetener/syrup.
+
+        Args:
+            option_slug: The selected option's slug (e.g., "black")
+
+        Returns:
+            Set of attribute slugs to skip (e.g., {"milk_sweetener_syrup"})
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._option_skip_rules.get(option_slug, set()).copy()
+
+    def check_skip_conflict(self, option_slug: str, modifier_category: str) -> bool:
+        """Check if selecting an option conflicts with a modifier category.
+
+        Used to detect conflicts like "black coffee with cream" - black skips
+        milk-related modifiers but user also requested cream.
+
+        Args:
+            option_slug: The triggering option slug (e.g., "black")
+            modifier_category: The modifier category slug (e.g., "milk")
+
+        Returns:
+            True if there's a conflict (option skips the modifier's attribute)
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        skipped_attrs = self._option_skip_rules.get(option_slug, set())
+
+        # Check if any skipped attribute contains options with this modifier category
+        for attr_slug in skipped_attrs:
+            if self.attribute_contains_modifier_category(attr_slug, modifier_category):
+                return True
+        return False
+
+    def get_skipped_attributes_for_selections(self, selections: list[dict]) -> set[str]:
+        """Get all attributes to skip based on current selections.
+
+        Aggregates skip rules from all selected options.
+
+        Args:
+            selections: List of selection dicts with "slug" keys
+
+        Returns:
+            Set of all attribute slugs to skip
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        skipped: set[str] = set()
+        for sel in selections:
+            slug = sel.get("slug") if isinstance(sel, dict) else getattr(sel, "slug", None)
+            if slug:
+                skipped.update(self._option_skip_rules.get(slug, set()))
+        return skipped

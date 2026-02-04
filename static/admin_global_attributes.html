@@ -533,6 +533,67 @@
       border-radius: 4px;
       cursor: help;
     }
+    /* Skip rules section */
+    .skip-rules-section {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #e0e0e0;
+    }
+    .skip-rules-section .section-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .skip-rules-section .hint {
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 12px;
+    }
+    .skip-rules-table {
+      width: 100%;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    .skip-rules-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 13px;
+    }
+    .skip-rules-table tr:last-child td {
+      border-bottom: none;
+    }
+    .skip-rules-table .attr-name {
+      flex: 1;
+    }
+    .skip-rules-table .empty-row td {
+      color: #888;
+      font-style: italic;
+      text-align: center;
+    }
+    .skip-rule-delete-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      background: none;
+      border: 1px solid #ef9a9a;
+      color: #c62828;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .skip-rule-delete-btn:hover {
+      background: #ffebee;
+    }
+    /* Skip badge in options list */
+    .option-skip-badge {
+      font-size: 10px;
+      background: #fce4ec;
+      color: #c2185b;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: help;
+    }
   </style>
 </head>
 <body>
@@ -761,6 +822,17 @@
             <input type="text" id="optionAliases" placeholder="e.g., 2 shots, two shots, double" />
             <div class="hint">Comma-separated alternative names for matching user input</div>
           </div>
+          <!-- Skip Rules Section (only shown when editing existing option) -->
+          <div class="skip-rules-section" id="skipRulesSection" style="display: none;">
+            <span class="section-label">Skip Rules</span>
+            <div class="hint">When this option is selected, skip asking about these attributes:</div>
+            <table class="skip-rules-table">
+              <tbody id="skipRulesBody">
+                <tr class="empty-row"><td>No skip rules defined</td></tr>
+              </tbody>
+            </table>
+            <button type="button" class="btn-sm" id="addSkipRuleBtn">+ Add Skip Rule</button>
+          </div>
         </form>
       </div>
       <div class="modal-footer">
@@ -866,6 +938,29 @@
     </div>
   </div>
 
+  <!-- Add Skip Rule Modal -->
+  <div class="modal-overlay" id="addSkipRuleModal">
+    <div class="modal" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Add Skip Rule</h2>
+        <button class="modal-close" id="addSkipRuleModalClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="skipAttributeSelect">Attribute to Skip</label>
+          <select id="skipAttributeSelect">
+            <option value="">Select an attribute...</option>
+          </select>
+          <div class="hint">When this option is selected, the selected attribute will be skipped during configuration.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="skipRuleCancelBtn">Cancel</button>
+        <button type="button" class="btn primary" id="skipRuleAddBtn">Add</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const API_BASE = "/api/v1/admin/global-attributes";
     const MODIFIER_CATEGORIES_API = "/api/v1/admin/modifier-categories";
@@ -878,6 +973,7 @@
     let modifierCategories = [];
     let unlinkedIngredients = [];
     let ingredientsCache = [];  // All ingredients for option edit dropdown
+    let currentOptionSkipRules = [];  // Skip rules for currently editing option
 
     // Auth fetch helper
     async function authFetch(url, options = {}) {
@@ -1015,7 +1111,12 @@
       if (!attr.options || attr.options.length === 0) {
         optionsList.innerHTML = '<div class="empty-options">No options defined. Click "+ Add Option" to create one.</div>';
       } else {
-        optionsList.innerHTML = attr.options.map(opt => `
+        optionsList.innerHTML = attr.options.map(opt => {
+          const skipRulesCount = opt.skip_rules ? opt.skip_rules.length : 0;
+          const skipBadge = skipRulesCount > 0
+            ? `<span class="option-skip-badge" title="Skips ${skipRulesCount} attribute(s) when selected">skips ${skipRulesCount}</span>`
+            : '';
+          return `
           <div class="option-row" data-id="${opt.id}">
             <div class="option-info">
               <span class="option-name">${escapeHtml(opt.display_name)}</span>
@@ -1024,6 +1125,7 @@
               ${opt.is_default ? '<span class="option-default">default</span>' : ''}
               ${opt.modifier_category_name ? `<span class="option-category" title="Modifier Category">${escapeHtml(opt.modifier_category_name)}</span>` : ''}
               ${opt.ingredient_id ? `<span class="option-ingredient" title="Linked to ingredient - slug/name derived">🔗</span>` : ''}
+              ${skipBadge}
               ${opt.aliases ? `<span class="option-slug" title="Aliases" style="margin-left: 8px;">aliases: ${escapeHtml(opt.aliases)}</span>` : ''}
             </div>
             <div class="option-actions">
@@ -1031,7 +1133,7 @@
               <button class="btn-sm danger delete-option-btn" data-id="${opt.id}">Delete</button>
             </div>
           </div>
-        `).join("");
+        `}).join("");
 
         // Option button handlers
         document.querySelectorAll(".edit-option-btn").forEach(btn => {
@@ -1310,6 +1412,9 @@
         // Set ingredient dropdown and apply enable/disable state
         document.getElementById("optionIngredient").value = opt.ingredient_id || "";
         onIngredientSelectionChange();
+        // Show skip rules section and load skip rules
+        document.getElementById("skipRulesSection").style.display = "block";
+        loadOptionSkipRules(selectedAttrId, opt.id);
       } else {
         document.getElementById("optionModalTitle").textContent = "Add Option";
         document.getElementById("optionId").value = "";
@@ -1320,6 +1425,9 @@
         // Reset ingredient dropdown and enable fields
         document.getElementById("optionIngredient").value = "";
         onIngredientSelectionChange();
+        // Hide skip rules section for new options (must save first)
+        document.getElementById("skipRulesSection").style.display = "none";
+        currentOptionSkipRules = [];
       }
 
       modal.classList.add("active");
@@ -1328,6 +1436,7 @@
     function closeOptionModal() {
       document.getElementById("optionModal").classList.remove("active");
       editingOptionId = null;
+      currentOptionSkipRules = [];
     }
 
     async function saveOption() {
@@ -1615,6 +1724,134 @@
     }
 
     // ==================
+    // Skip Rules Functions
+    // ==================
+
+    // Load skip rules for an option
+    async function loadOptionSkipRules(attrId, optionId) {
+      try {
+        const response = await authFetch(`${API_BASE}/${attrId}/options/${optionId}/skip-rules`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        currentOptionSkipRules = await response.json();
+        renderSkipRules();
+      } catch (error) {
+        console.error("Failed to load skip rules:", error);
+        currentOptionSkipRules = [];
+        renderSkipRules();
+      }
+    }
+
+    // Render the skip rules table
+    function renderSkipRules() {
+      const tbody = document.getElementById("skipRulesBody");
+      if (currentOptionSkipRules.length === 0) {
+        tbody.innerHTML = '<tr class="empty-row"><td>No skip rules defined</td></tr>';
+        return;
+      }
+      tbody.innerHTML = currentOptionSkipRules.map(rule => `
+        <tr>
+          <td class="attr-name">${escapeHtml(rule.skipped_attribute_name)}</td>
+          <td style="text-align: right;">
+            <button class="skip-rule-delete-btn" onclick="deleteSkipRule(${rule.id})">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    // Add a skip rule
+    async function addSkipRule() {
+      if (!selectedAttrId || !editingOptionId) return;
+
+      const skippedAttrId = document.getElementById("skipAttributeSelect").value;
+      if (!skippedAttrId) {
+        showToast("Please select an attribute to skip", "error");
+        return;
+      }
+
+      const addBtn = document.getElementById("skipRuleAddBtn");
+      addBtn.classList.add("saving");
+      addBtn.disabled = true;
+
+      try {
+        const response = await authFetch(
+          `${API_BASE}/${selectedAttrId}/options/${editingOptionId}/skip-rules`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ skipped_attribute_id: parseInt(skippedAttrId) })
+          }
+        );
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Skip rule added", "success");
+        closeAddSkipRuleModal();
+        await loadOptionSkipRules(selectedAttrId, editingOptionId);
+      } catch (error) {
+        showToast(`Failed to add skip rule: ${error.message}`, "error");
+      } finally {
+        addBtn.classList.remove("saving");
+        addBtn.disabled = false;
+      }
+    }
+
+    // Delete a skip rule
+    async function deleteSkipRule(ruleId) {
+      if (!selectedAttrId || !editingOptionId) return;
+      if (!confirm("Delete this skip rule?")) return;
+
+      try {
+        const response = await authFetch(
+          `${API_BASE}/${selectedAttrId}/options/${editingOptionId}/skip-rules/${ruleId}`,
+          { method: "DELETE" }
+        );
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Skip rule deleted", "success");
+        await loadOptionSkipRules(selectedAttrId, editingOptionId);
+      } catch (error) {
+        showToast(`Failed to delete: ${error.message}`, "error");
+      }
+    }
+
+    // Load available attributes for skip rule dropdown (excluding already skipped ones)
+    function loadAvailableAttributesForSkipRule() {
+      const existingIds = new Set(currentOptionSkipRules.map(r => r.skipped_attribute_id));
+      const select = document.getElementById("skipAttributeSelect");
+      select.innerHTML = '<option value="">Select an attribute...</option>';
+
+      // Filter out attributes already in skip rules
+      attributes.filter(a => !existingIds.has(a.id)).forEach(attr => {
+        const opt = document.createElement("option");
+        opt.value = attr.id;
+        opt.textContent = attr.display_name;
+        select.appendChild(opt);
+      });
+    }
+
+    // Open the Add Skip Rule modal
+    function openAddSkipRuleModal() {
+      if (!editingOptionId) {
+        showToast("Save the option first before adding skip rules", "info");
+        return;
+      }
+      loadAvailableAttributesForSkipRule();
+      document.getElementById("addSkipRuleModal").classList.add("active");
+    }
+
+    // Close the Add Skip Rule modal
+    function closeAddSkipRuleModal() {
+      document.getElementById("addSkipRuleModal").classList.remove("active");
+    }
+
+    // ==================
     // Event Listeners
     // ==================
 
@@ -1649,6 +1886,12 @@
     document.getElementById("ingredientCategoryFilter").addEventListener("change", filterAndPopulateIngredients);
     document.getElementById("ingredientSearch").addEventListener("input", filterAndPopulateIngredients);
 
+    // Skip Rule modal event listeners
+    document.getElementById("addSkipRuleBtn").addEventListener("click", openAddSkipRuleModal);
+    document.getElementById("addSkipRuleModalClose").addEventListener("click", closeAddSkipRuleModal);
+    document.getElementById("skipRuleCancelBtn").addEventListener("click", closeAddSkipRuleModal);
+    document.getElementById("skipRuleAddBtn").addEventListener("click", addSkipRule);
+
     // Close modals on overlay click
     document.getElementById("attrModal").addEventListener("click", (e) => {
       if (e.target.id === "attrModal") closeAttrModal();
@@ -1662,6 +1905,9 @@
     document.getElementById("fromIngredientModal").addEventListener("click", (e) => {
       if (e.target.id === "fromIngredientModal") closeFromIngredientModal();
     });
+    document.getElementById("addSkipRuleModal").addEventListener("click", (e) => {
+      if (e.target.id === "addSkipRuleModal") closeAddSkipRuleModal();
+    });
 
     // Escape key closes modals
     document.addEventListener("keydown", (e) => {
@@ -1670,6 +1916,7 @@
         closeOptionModal();
         closeDeleteModal();
         closeFromIngredientModal();
+        closeAddSkipRuleModal();
       }
     });
 

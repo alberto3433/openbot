@@ -27,6 +27,7 @@ from .attributes import (
     GlobalAttributeAlias,
     GlobalAttributeOption,
     GlobalAttributeOptionAlias,
+    GlobalAttributeOptionSkip,
     ItemTypeGlobalAttribute,
 )
 
@@ -89,6 +90,7 @@ __all__ = [
     "GlobalAttributeAlias",
     "GlobalAttributeOption",
     "GlobalAttributeOptionAlias",
+    "GlobalAttributeOptionSkip",
     "ItemTypeGlobalAttribute",
     # Menu
     "MenuItem",

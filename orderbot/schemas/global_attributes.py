@@ -28,6 +28,16 @@ from pydantic import BaseModel, ConfigDict
 # Global Attribute Option Schemas
 # =============================================================================
 
+class SkipRuleOutBasic(BaseModel):
+    """Basic response model for skip rules (used within GlobalAttributeOptionOut)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    skipped_attribute_id: int
+    skipped_attribute_slug: str
+    skipped_attribute_name: str
+
+
 class GlobalAttributeOptionOut(BaseModel):
     """Response model for global attribute options."""
     model_config = ConfigDict(from_attributes=True)
@@ -47,6 +57,8 @@ class GlobalAttributeOptionOut(BaseModel):
     modifier_category_name: Optional[str] = None  # Display name from linked category
     # Option aliases (comma-separated for display, stored in global_attribute_option_aliases table)
     aliases: Optional[str] = None
+    # Skip rules - attributes to skip when this option is selected
+    skip_rules: List[SkipRuleOutBasic] = []
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -250,3 +262,22 @@ class GlobalAttributeOptionFromIngredientCreate(BaseModel):
     is_default: bool = False
     is_available: bool = True
     modifier_category_id: Optional[int] = None
+
+
+# =============================================================================
+# Skip Rule Schemas
+# =============================================================================
+
+class SkipRuleOut(BaseModel):
+    """Response model for skip rules attached to an option."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    skipped_attribute_id: int
+    skipped_attribute_slug: str
+    skipped_attribute_name: str
+
+
+class SkipRuleCreate(BaseModel):
+    """Request model for creating a skip rule."""
+    skipped_attribute_id: int

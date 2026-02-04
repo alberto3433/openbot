@@ -204,15 +204,26 @@ class MenuItemConfigHandler(BaseHandler):
         Checks both canonical attribute slugs and legacy aliases to handle
         backward compatibility with items created by legacy handlers.
         Also checks direct model fields for certain attributes.
+
+        Filters out attributes that should be skipped based on already-selected
+        options (e.g., "black" coffee skips milk/sweetener/syrup questions).
         """
         mandatory = self._get_mandatory_attributes(item_type_slug)
+
+        # Get attributes to skip based on current selections
+        skipped_attrs = self._get_skipped_attributes(item)
+
         unanswered = []
         logger.info(
-            "GET_UNANSWERED_MANDATORY: item_type=%s, attribute_values=%s",
-            item_type_slug, item.attribute_values
+            "GET_UNANSWERED_MANDATORY: item_type=%s, attribute_values=%s, skipped=%s",
+            item_type_slug, item.attribute_values, skipped_attrs
         )
         for attr in mandatory:
             slug = attr["slug"]
+            # Check if this attribute should be skipped based on skip rules
+            if slug in skipped_attrs:
+                logger.debug("  %s: SKIPPED by option skip rule", slug)
+                continue
             # Check canonical slug in attribute_values
             # All properties (bread, toasted, etc.) now use attribute_values as backing store
             if slug in item:
@@ -226,6 +237,41 @@ class MenuItemConfigHandler(BaseHandler):
         )
         return unanswered
 
+    def _get_skipped_attributes(self, item: MenuItemTask) -> set[str]:
+        """Get attributes that should be skipped based on item's current selections.
+
+        Iterates through the item's attribute_values and selections to find
+        any options that trigger skip rules (e.g., "black" skips milk-related attrs).
+
+        Args:
+            item: The menu item being configured
+
+        Returns:
+            Set of attribute slugs to skip
+        """
+        skipped: set[str] = set()
+
+        # Check attribute_values (single-select values)
+        for attr_slug, value in item.attribute_values.items():
+            if isinstance(value, str):
+                # Single-select value - check if it triggers skip rules
+                attr_skips = menu_cache.get_skipped_attributes_for_option(value)
+                skipped.update(attr_skips)
+            elif isinstance(value, bool):
+                # Boolean - check if "yes" or "no" triggers skip rules
+                bool_slug = "yes" if value else "no"
+                attr_skips = menu_cache.get_skipped_attributes_for_option(bool_slug)
+                skipped.update(attr_skips)
+
+        # Check selections list (multi-select values)
+        for selection in item.selections:
+            slug = selection.get("slug") if isinstance(selection, dict) else getattr(selection, "slug", None)
+            if slug:
+                attr_skips = menu_cache.get_skipped_attributes_for_option(slug)
+                skipped.update(attr_skips)
+
+        return skipped
+
     def _get_unanswered_optional(
         self, item: MenuItemTask, item_type_slug: str
     ) -> list[dict]:
@@ -233,11 +279,21 @@ class MenuItemConfigHandler(BaseHandler):
 
         Checks canonical attribute slugs in attribute_values.
         All properties (bread, toasted, etc.) now use attribute_values as backing store.
+
+        Filters out attributes that should be skipped based on already-selected
+        options (e.g., "black" coffee skips milk/sweetener/syrup options).
         """
         optional = self._get_optional_attributes(item_type_slug)
+
+        # Get attributes to skip based on current selections
+        skipped_attrs = self._get_skipped_attributes(item)
+
         unanswered = []
         for attr in optional:
             slug = attr["slug"]
+            # Check if this attribute should be skipped based on skip rules
+            if slug in skipped_attrs:
+                continue
             # Check canonical slug in attribute_values
             if slug in item:
                 continue
@@ -1126,14 +1182,50 @@ class MenuItemConfigHandler(BaseHandler):
             input_type = attr.get("input_type", "single_select")
 
             if input_type == "boolean":
-                # Check for explicit mentions
-                attr_name = attr["display_name"].lower()
-                if f"not {attr_name}" in user_lower:
-                    item[attr_slug] = False
-                    logger.info("Captured %s=False from input", attr_slug)
-                elif attr_name in user_lower:
-                    item[attr_slug] = True
-                    logger.info("Captured %s=True from input", attr_slug)
+                # Check option aliases first (e.g., "scoop it" -> true for scooped)
+                true_aliases = []
+                false_aliases = []
+                for opt in options:
+                    opt_aliases = opt.get("aliases") or []
+                    if isinstance(opt_aliases, str):
+                        opt_aliases = [a.strip().lower() for a in opt_aliases.split(",")]
+                    else:
+                        opt_aliases = [a.lower() for a in opt_aliases]
+
+                    # Check for true/false slug - may be "true"/"false" or ingredient slug
+                    # like "scooped_option_true"/"scooped_option_false"
+                    opt_slug = opt.get("slug", "")
+                    if opt_slug == "true" or opt_slug.endswith("_option_true"):
+                        true_aliases = opt_aliases
+                    elif opt_slug == "false" or opt_slug.endswith("_option_false"):
+                        false_aliases = opt_aliases
+
+                # Check for alias matches (check false first since "not scooped" contains "scooped")
+                matched = False
+                for alias in false_aliases:
+                    if alias in user_lower:
+                        item[attr_slug] = False
+                        logger.info("Captured %s=False from alias '%s'", attr_slug, alias)
+                        matched = True
+                        break
+
+                if not matched:
+                    for alias in true_aliases:
+                        if alias in user_lower:
+                            item[attr_slug] = True
+                            logger.info("Captured %s=True from alias '%s'", attr_slug, alias)
+                            matched = True
+                            break
+
+                # Fall back to display_name check
+                if not matched:
+                    attr_name = attr["display_name"].lower()
+                    if f"not {attr_name}" in user_lower:
+                        item[attr_slug] = False
+                        logger.info("Captured %s=False from display name", attr_slug)
+                    elif attr_name in user_lower:
+                        item[attr_slug] = True
+                        logger.info("Captured %s=True from display name", attr_slug)
 
             elif input_type in ("single_select", "multi_select") and options:
                 # Try exact match first (phases 0-1)

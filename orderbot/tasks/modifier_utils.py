@@ -25,7 +25,7 @@ class ModifierEntry:
     """Type-safe wrapper for modifier dictionary entries.
 
     This dataclass provides structured access to modifier data that's stored
-    as dictionaries in MenuItemTask.modifiers. Use from_dict() to create
+    as dictionaries in MenuItemTask.selections. Use from_dict() to create
     instances from raw dictionaries.
 
     Examples:

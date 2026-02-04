@@ -61,7 +61,7 @@ class SelectionExtractor:
             List of Selection objects, empty if no selections found
         """
         # Use generic data-driven extraction
-        attr_values = extract_attribute_values(user_input, item_type)
+        attr_values, _ = extract_attribute_values(user_input, item_type)
 
         if not attr_values:
             return []
@@ -113,8 +113,9 @@ class SelectionExtractor:
         Apply selections to a menu item in a data-driven way.
 
         Iterates through all selections and applies them generically using the
-        item's add_modifier() method. Prices are looked up from the pricing engine
-        if not already set in the selection.
+        item's add_selection() method. Note: Prices are NOT looked up here -
+        they are calculated centrally in PricingEngine.recalculate_item_price()
+        using GlobalAttributeOption.price_modifier as the single source of truth.
 
         Args:
             item: The menu item to apply selections to
@@ -124,18 +125,11 @@ class SelectionExtractor:
             Acknowledgment string if selections were applied, None otherwise
         """
         added_items = []
-        item_type = item.menu_item_type
 
         for sel in selections:
-            # Look up price from pricing engine if not already set
-            price = sel.price
-            if price == 0.0 and self.pricing and item_type:
-                price = self.pricing.lookup_generic_modifier_price(
-                    sel.slug, item_type, sel.category
-                ) or 0.0
-
             # Use add_selection for unified storage
-            item.add_selection(sel.slug, sel.category, sel.quantity, price)
+            # Note: price is NOT passed - calculated in recalculate_item_price()
+            item.add_selection(sel.slug, sel.category, sel.quantity)
 
             # Build display name for acknowledgment using database lookup
             display_name = sel.display_name or menu_cache.get_ingredient_display_name(sel.slug)

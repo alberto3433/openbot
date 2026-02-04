@@ -14,6 +14,7 @@ class PendingField:
     DUPLICATE_SELECTION = "duplicate_selection"
     SAME_THING_CLARIFICATION = "same_thing_clarification"
     CONFIRM_SUGGESTED_ITEM = "confirm_suggested_item"
+    CONFIRM_INGREDIENT_SUGGESTION = "confirm_ingredient_suggestion"
     CONFIRM_ITEM_SWITCH = "confirm_item_switch"
     SIDE_CHOICE = "side_choice"
     CUSTOMIZATION_CHECKPOINT = "customization_checkpoint"

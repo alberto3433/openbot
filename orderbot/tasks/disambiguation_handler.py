@@ -20,16 +20,13 @@ from typing import Any
 from .models import OrderTask
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
-from .utils.disambiguation_utils import (
-    normalize_input,
-    match_by_ordinal,
-    match_by_name_exact,
-    match_by_name_in_input,
-    match_by_word,
-    format_options_list,
-)
+from .utils import OptionMatcher
+from .utils.disambiguation_utils import format_options_list
 
 logger = logging.getLogger(__name__)
+
+# Shared OptionMatcher instance for disambiguation
+_option_matcher = OptionMatcher()
 
 
 def _get_item_display_name(item) -> str | None:
@@ -177,7 +174,8 @@ class DisambiguationHandler:
     ) -> dict | None:
         """Resolve user's disambiguation selection.
 
-        Uses shared matching utilities for ordinal and name matching.
+        Uses OptionMatcher.match_from_numbered_list() for unified matching
+        with ordinal support.
 
         Args:
             user_input: User's response to disambiguation question
@@ -189,31 +187,15 @@ class DisambiguationHandler:
         if not order.pending_item_options:
             return None
 
-        user_lower = normalize_input(user_input)
         options = order.pending_item_options
 
-        # Try ordinal matching first ("1", "first", etc.)
-        match = match_by_ordinal(user_lower, options, name_key="name")
-        if match:
-            logger.info("DISAMBIGUATION: Selected '%s' by ordinal", match.get("name"))
-            return match
+        # Use unified matcher with ordinal support
+        match = _option_matcher.match_from_numbered_list(
+            user_input, options, name_key="name", slug_key="slug"
+        )
 
-        # Try exact name match
-        match = match_by_name_exact(user_lower, options, name_key="name")
         if match:
-            logger.info("DISAMBIGUATION: Selected '%s' by exact name", match.get("name"))
-            return match
-
-        # Try name-in-input match (e.g., "I'll take the classic bec" -> "The Classic BEC")
-        match = match_by_name_in_input(user_lower, options, name_key="name")
-        if match:
-            logger.info("DISAMBIGUATION: Selected '%s' by name in input", match.get("name"))
-            return match
-
-        # Try word matching
-        match = match_by_word(user_lower, options, name_key="name")
-        if match:
-            logger.info("DISAMBIGUATION: Selected '%s' by word match", match.get("name"))
+            logger.info("DISAMBIGUATION: Selected '%s'", match.get("name"))
             return match
 
         logger.info("DISAMBIGUATION: Could not match '%s' to any option", user_input[:50])

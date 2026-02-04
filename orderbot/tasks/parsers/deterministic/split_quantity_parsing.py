@@ -189,7 +189,7 @@ def _parse_split_quantity_items(
             total_quantity = WORD_TO_NUM.get(qty_str, 2)
 
     # Extract base attributes using data-driven extractor
-    base_attrs = extract_attribute_values(initial_part, item_type)
+    base_attrs, _ = extract_attribute_values(initial_part, item_type)
 
     # Try to match a specific menu item name within the type
     base_item_name = match_menu_item_name_for_type_func(initial_part, item_type)
@@ -222,7 +222,7 @@ def _parse_split_quantity_items(
             break
 
         # Extract part-specific attributes (item-type-specific)
-        part_attrs = extract_attribute_values(part_text, item_type)
+        part_attrs, _ = extract_attribute_values(part_text, item_type)
 
         # Merge: part overrides base (None means "explicitly declined" and should override)
         merged_attrs = {**base_attrs}

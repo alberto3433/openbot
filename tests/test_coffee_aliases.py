@@ -124,13 +124,13 @@ class TestConfigurableItemPattern:
 class TestParseConfigurableItem:
     """Tests for _parse_configurable_item() function for beverages."""
 
-    def test_parse_coffee_with_alias(self):
-        """_parse_configurable_item should recognize coffee aliases."""
+    def test_parse_chai_recognized(self):
+        """_parse_configurable_item should recognize chai as chai_drink."""
         from orderbot.tasks.parsers.deterministic import _parse_configurable_item
-        from tests.helpers import has_coffee, has_menu_item
+        from tests.helpers import has_parsed_item
         result = _parse_configurable_item("I want a chai")
         assert result is not None
-        assert has_menu_item(result) or has_coffee(result)
+        assert has_parsed_item(result, item_type="chai_drink")
 
     def test_parse_coffee_with_matcha_alias(self):
         """_parse_configurable_item should recognize 'matcha' alias."""

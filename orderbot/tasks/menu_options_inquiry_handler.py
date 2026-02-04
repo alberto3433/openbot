@@ -104,6 +104,13 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
                 order.clear_menu_pagination()
                 return StateMachineResult(message=message, order=order)
 
+        # Category not found in modifier_categories - try ingredient category lookup
+        # This handles queries like "what sweeteners do you have?" where "sweetener"
+        # is an ingredient category, not a modifier category
+        ingredient_details = menu_cache.get_ingredient_details(category)
+        if ingredient_details:
+            return self._describe_ingredient_category(category, ingredient_details, order)
+
         # Category not found in database - log warning and return generic response
         logger.warning("Modifier category '%s' not found in database", category)
         order.clear_menu_pagination()
@@ -152,6 +159,56 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
 
             # Set pagination state for "what else" follow-ups
             order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(items_list))
+            message = f"For {display_name.lower()}, we have {items_str}, and more. Would you like one of these, or want to hear more?"
+
+        return StateMachineResult(message=message, order=order)
+
+    def _describe_ingredient_category(
+        self,
+        category: str,
+        ingredient_details: list[dict],
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Describe available options for an ingredient category.
+
+        Handles queries like "what sweeteners do you have?" where the category
+        is an ingredient category (sweetener, syrup, milk, etc.) rather than
+        a modifier_categories entry.
+
+        Args:
+            category: Ingredient category slug (e.g., 'sweetener', 'syrup')
+            ingredient_details: List of ingredient detail dicts from cache
+            order: Current order state
+        """
+        # Get display name for the category
+        display_name = menu_cache.get_ingredient_category_display_name(category)
+
+        # Extract ingredient names from details
+        ingredient_names = sorted([
+            detail.get("name", detail.get("slug", ""))
+            for detail in ingredient_details
+            if detail.get("name") or detail.get("slug")
+        ])
+
+        if not ingredient_names:
+            order.clear_menu_pagination()
+            return StateMachineResult(
+                message=f"We have various {display_name.lower()} available. What would you like?",
+                order=order,
+            )
+
+        if len(ingredient_names) <= DEFAULT_PAGINATION_SIZE:
+            # Show all items, no pagination needed
+            items_str = format_english_list(ingredient_names)
+            order.clear_menu_pagination()
+            message = f"For {display_name.lower()}, we have {items_str}. What would you like?"
+        else:
+            # Show first batch with pagination
+            first_batch = ingredient_names[:DEFAULT_PAGINATION_SIZE]
+            items_str = format_english_list(first_batch)
+
+            # Set pagination state for "what else" follow-ups
+            order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(ingredient_names))
             message = f"For {display_name.lower()}, we have {items_str}, and more. Would you like one of these, or want to hear more?"
 
         return StateMachineResult(message=message, order=order)
@@ -277,11 +334,16 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
         # Normalize signal to lowercase
         signal_lower = signal.lower()
 
-        # Try to look up in cache (data-driven mapping) if method exists
-        if hasattr(menu_cache, 'get_attribute_for_inquiry_keyword'):
-            attr_slug = menu_cache.get_attribute_for_inquiry_keyword(signal_lower, item_type)
-            if attr_slug:
-                return attr_slug
+        # If signal is itself a valid global attribute slug, return it directly
+        # This handles direct attribute queries like "bread", "size", "temperature"
+        if menu_cache.get_global_attribute_options(signal_lower):
+            return signal_lower
+
+        # Data-driven lookup from attribute_inquiry_keywords table
+        # This replaces the old hardcoded common_mappings dict
+        attr_slug = menu_cache.get_attribute_for_inquiry_keyword(signal_lower, item_type)
+        if attr_slug:
+            return attr_slug
 
         # Fallback: signal word matches attribute slug directly (e.g., "size" -> "size")
         if item_type:
@@ -289,24 +351,10 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
             if signal_lower in attrs:
                 return signal_lower
 
-        # Common signal word to attribute mappings (fallback if not in DB)
-        common_mappings = {
-            "type": "bread",
-            "types": "bread",
-            "flavor": "bread",
-            "flavors": "bread",
-            "kind": "bread",
-            "kinds": "bread",
-            "variety": "bread",
-            "varieties": "bread",
-            "choice": "bread",
-            "choices": "bread",
-            "size": "size",
-            "sizes": "size",
-            "temperature": "temperature",
-            "temperatures": "temperature",
-        }
-        return common_mappings.get(signal_lower)
+        # If we have an item_type but couldn't resolve the signal to a specific
+        # attribute, return None so caller can fall back to primary attribute.
+        # If no item_type, also return None - let the caller decide.
+        return None
 
     def _get_primary_attribute(self, item_type: str) -> str | None:
         """Get the primary (first ask_in_conversation) attribute for an item type.

@@ -306,7 +306,13 @@ class ItemTypeLoaderMixin:
         # Build option alias -> (item_type, attr_slug, option_slug) mapping
         # This enables inferring item type from attribute option aliases
         # e.g., "earl grey" -> ("tea", "tea_flavor", "earl_gray")
-        option_alias_to_item_type: dict[str, tuple[str, str, str]] = {}
+        #
+        # IMPORTANT: Options that are shared across multiple item types (like "large", "small")
+        # are excluded because they are ambiguous - saying "large" doesn't tell us if the user
+        # wants a large coffee, latte, or fruit salad.
+
+        # First pass: collect all options and the item types that have them
+        option_to_item_types: dict[str, set[str]] = {}
 
         for item_type_slug, attrs in self._item_type_attributes.items():
             # Only map options for configurable item types
@@ -319,25 +325,63 @@ class ItemTypeLoaderMixin:
                     if not opt_slug:
                         continue
 
-                    # Add option slug itself as a key (with underscores replaced by spaces)
-                    # e.g., "earl_gray" -> "earl gray"
-                    key = opt_slug.lower().replace("_", " ")
-                    if key not in option_alias_to_item_type:
-                        option_alias_to_item_type[key] = (item_type_slug, attr_slug, opt_slug)
+                    # Track all keys for this option
+                    keys = []
 
-                    # Add display name if different from slug
+                    # Option slug itself (with underscores replaced by spaces)
+                    key = opt_slug.lower().replace("_", " ")
+                    keys.append(key)
+
+                    # Display name
+                    display_name = opt.get("display_name")
+                    if display_name:
+                        keys.append(display_name.lower().strip())
+
+                    # Aliases
+                    for alias in (opt.get("aliases") or []):
+                        alias_lower = alias.lower().strip()
+                        if alias_lower:
+                            keys.append(alias_lower)
+
+                    # Add this item type to each key's set
+                    for k in keys:
+                        if k not in option_to_item_types:
+                            option_to_item_types[k] = set()
+                        option_to_item_types[k].add(item_type_slug)
+
+        # Second pass: build the mapping, excluding ambiguous options
+        option_alias_to_item_type: dict[str, tuple[str, str, str]] = {}
+
+        for item_type_slug, attrs in self._item_type_attributes.items():
+            if item_type_slug not in self._configurable_item_type_slugs:
+                continue
+
+            for attr_slug, attr_config in attrs.items():
+                for opt in attr_config.get("options", []):
+                    opt_slug = opt.get("slug")
+                    if not opt_slug:
+                        continue
+
+                    # Option slug itself
+                    key = opt_slug.lower().replace("_", " ")
+                    if len(option_to_item_types.get(key, set())) == 1:
+                        if key not in option_alias_to_item_type:
+                            option_alias_to_item_type[key] = (item_type_slug, attr_slug, opt_slug)
+
+                    # Display name
                     display_name = opt.get("display_name")
                     if display_name:
                         display_key = display_name.lower().strip()
-                        if display_key and display_key not in option_alias_to_item_type:
-                            option_alias_to_item_type[display_key] = (item_type_slug, attr_slug, opt_slug)
+                        if display_key and len(option_to_item_types.get(display_key, set())) == 1:
+                            if display_key not in option_alias_to_item_type:
+                                option_alias_to_item_type[display_key] = (item_type_slug, attr_slug, opt_slug)
 
-                    # Add aliases if present
-                    aliases = opt.get("aliases") or []
-                    for alias in aliases:
+                    # Aliases
+                    for alias in (opt.get("aliases") or []):
                         alias_lower = alias.lower().strip()
-                        if alias_lower and alias_lower not in option_alias_to_item_type:
-                            option_alias_to_item_type[alias_lower] = (item_type_slug, attr_slug, opt_slug)
+                        if alias_lower and len(option_to_item_types.get(alias_lower, set())) == 1:
+                            if alias_lower not in option_alias_to_item_type:
+                                option_alias_to_item_type[alias_lower] = (item_type_slug, attr_slug, opt_slug)
 
         self._option_alias_to_item_type = option_alias_to_item_type
         logger.debug(

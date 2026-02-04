@@ -378,6 +378,17 @@ class OpenInputResponse(BaseModel):
         description="Menu items that contain the searched ingredient by default"
     )
 
+    # Ingredient without item - user ordered a modifier but no item to put it on
+    # e.g., "I want caramel syrup" - we should suggest items that can have this modifier
+    found_ingredient_without_item: bool = Field(
+        default=False,
+        description="User ordered an ingredient/modifier without specifying an item (e.g., 'I want caramel syrup')"
+    )
+    found_ingredient_name: str | None = Field(
+        default=None,
+        description="The ingredient name that was found (e.g., 'caramel syrup', 'bacon')"
+    )
+
     # Flow control
     done_ordering: bool = Field(
         default=False,

@@ -9,6 +9,7 @@ from .base import Base
 
 # Config models
 from .config import (
+    AttributeInquiryKeyword,
     ComponentSlotOption,
     ItemType,
     ItemTypeAlias,
@@ -73,6 +74,7 @@ __all__ = [
     # Base
     "Base",
     # Config
+    "AttributeInquiryKeyword",
     "ComponentSlotOption",
     "ItemTypeComponentSlot",
     "OverallCategory",

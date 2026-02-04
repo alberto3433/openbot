@@ -1,8 +1,45 @@
 """
-Unified attribute value normalization for order handling.
+Unified text normalization for order handling.
 
-This module consolidates normalization logic previously duplicated across handlers.
-All handlers should use these functions for consistent value resolution.
+This module is the SINGLE SOURCE OF TRUTH for all text normalization in the orderbot.
+All handlers, parsers, and matchers should use these functions for consistent behavior.
+
+## Public API
+
+### Text Cleaning
+- `strip_ordering_prefix(text)` - Remove "I want", "can I get", etc.
+- `strip_filler_words(text)` - Remove "the", "please", "just", etc.
+
+### For Option Matching
+- `normalize_for_option_match(text)` - Strip quantities, singularize plurals
+- `normalize_for_match(text)` - Remove spaces/& for fuzzy matching
+
+### Slug Conversion
+- `normalize_to_slug(text)` - Convert to slug format (e.g., "Vanilla Syrup" -> "vanilla_syrup")
+- `format_slug_for_display(slug)` - Convert slug to display (e.g., "vanilla_syrup" -> "Vanilla Syrup")
+
+### Value Resolution
+- `resolve_to_canonical(attr_slug, value)` - Resolve to DB canonical form
+- `singularize(word)` - Convert plural to singular (re-exported from cache.base)
+
+## Usage Examples
+
+```python
+from orderbot.tasks.normalization import (
+    strip_filler_words,
+    normalize_for_option_match,
+    normalize_to_slug,
+)
+
+# Clean user input
+clean = strip_filler_words("the bacon please")  # -> "bacon"
+
+# Prepare for matching
+normalized = normalize_for_option_match("2 scrambled eggs")  # -> "scrambled egg"
+
+# Convert to slug
+slug = normalize_to_slug("Vanilla Syrup")  # -> "vanilla_syrup"
+```
 """
 from __future__ import annotations
 
@@ -10,10 +47,28 @@ import logging
 import re
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import singularize
+from orderbot.cache.base import singularize  # Re-export for convenience
 from orderbot.exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)
+
+# Re-export singularize so callers can import from this module
+__all__ = [
+    # Text cleaning
+    "strip_ordering_prefix",
+    "strip_filler_words",
+    # Option matching
+    "normalize_for_option_match",
+    "normalize_for_match",
+    # Slug conversion
+    "normalize_to_slug",
+    "format_slug_for_display",
+    # Value resolution
+    "resolve_to_canonical",
+    "get_attribute_display_name",
+    # Re-exported
+    "singularize",
+]
 
 
 # Pattern to strip common ordering prefixes from attribute answers
@@ -52,6 +107,43 @@ def strip_ordering_prefix(user_input: str) -> str:
     # Also strip trailing "please"
     stripped = re.sub(r"\s+please\s*$", "", stripped, flags=re.IGNORECASE)
     return stripped.strip()
+
+
+# Common filler words to remove for matching
+# These are words that don't affect the meaning for option matching
+_FILLER_WORDS = frozenset(["the", "please", "i want", "i'll take", "just", "a", "an"])
+
+
+def strip_filler_words(user_input: str) -> str:
+    """Strip common filler words from user input for matching.
+
+    Removes articles, politeness words, and ordering phrases that don't
+    affect the core meaning. Simpler than strip_ordering_prefix() - use
+    this for disambiguation matching where you just need clean tokens.
+
+    Handles patterns like:
+    - "the bacon" -> "bacon"
+    - "please" -> ""
+    - "just coffee" -> "coffee"
+    - "the first one please" -> "first one"
+
+    Args:
+        user_input: The user's raw input
+
+    Returns:
+        Cleaned, lowercased input with filler words removed
+
+    Examples:
+        >>> strip_filler_words("the bacon please")
+        "bacon"
+        >>> strip_filler_words("I want the first one")
+        "first one"
+    """
+    input_lower = user_input.lower().strip()
+    # Remove filler phrases (order matters - longer phrases first)
+    for filler in ["i want ", "i'll take ", "just ", "the ", "please", "a ", "an "]:
+        input_lower = input_lower.replace(filler, "").strip()
+    return input_lower
 
 
 def _get_negation_patterns() -> frozenset[str]:

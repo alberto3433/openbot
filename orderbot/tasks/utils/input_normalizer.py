@@ -1,20 +1,23 @@
 """
-Unified input normalization utilities for option matching.
+Input normalization class for option matching.
 
-Consolidates duplicate implementations from:
-- menu_item_config_handler._extract_quantity_from_input()
-- taking_items_handler._extract_quantity_from_input()
+This module provides the InputNormalizer class, a convenient wrapper around
+the core normalization functions in orderbot.tasks.normalization.
 
-Note: normalize_for_option_match() is imported from normalization.py
-to avoid duplication.
+All actual normalization logic lives in normalization.py - this class
+provides an object-oriented interface for use in OptionMatcher and handlers.
+
+See orderbot.tasks.normalization for the full API documentation.
 """
 
 from __future__ import annotations
 
 import re
 
-from orderbot.cache.base import singularize
-from orderbot.tasks.normalization import normalize_for_option_match as _normalize_for_option_match
+from orderbot.tasks.normalization import (
+    normalize_for_option_match as _normalize_for_option_match,
+    singularize,
+)
 from orderbot.tasks.parsers.quantity_utils import extract_leading_quantity
 
 

@@ -54,7 +54,7 @@ def get_selections_from_parsed_item(item: ParsedItemEntry) -> list[Selection]:
     Returns:
         List of Selection objects from the item
     """
-    return list(item.modifiers)
+    return list(item.selections)
 
 
 def build_item_summary(item: ParsedItemEntry) -> str:
@@ -104,8 +104,8 @@ def build_item_summary(item: ParsedItemEntry) -> str:
             attr_displays.append(str(value))
 
     # Add modifiers if present (selections converted to display names)
-    if item.modifiers:
-        for sel in item.modifiers:
+    if item.selections:
+        for sel in item.selections:
             display = sel.display_name or sel.slug
             if sel.quantity > 1:
                 display = f"{sel.quantity}x {display}"

@@ -71,6 +71,7 @@ ADD_MODIFIER_PATTERNS = [
     r"^put\s+",  # "put vanilla in it"
     r"^can\s+you\s+put\s+",  # "can you put milk in that"
     r"put\s+.+?\s+in\s+(?:it|that|the|my)",  # "put milk in that"
+    r"^make\s+it\s+",  # "make it 3 eggs"
 ]
 
 # =============================================================================

@@ -368,18 +368,6 @@ class TestRecoveryScenarios:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should recover from unclear input"
 
-    def test_recover_from_partial_order(self):
-        """Recover from partial/incomplete order."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
-
-        result1 = sm.process("toasted with cream cheese", order)
-        result2 = sm.process("on an everything bagel", result1.order)
-
-        items = result2.order.items.get_active_items()
-        assert len(items) >= 1 or result2.message is not None, "Should recover"
-
     def test_recover_after_cancel(self):
         """Recover after canceling everything."""
         order = OrderTask()

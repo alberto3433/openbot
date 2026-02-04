@@ -431,7 +431,7 @@ class ConfigHelperHandler:
 
             # Extract attributes from the side choice input (e.g., "plain bagel" -> bread=plain)
             # This prevents re-asking about attributes the user already specified
-            pre_filled_attrs = extract_attribute_values(user_input, opt_item_type)
+            pre_filled_attrs, _ = extract_attribute_values(user_input, opt_item_type)
             logger.info(
                 "SIDE_CHOICE: Extracted attributes from '%s' for type '%s': %s",
                 user_input, opt_item_type, pre_filled_attrs

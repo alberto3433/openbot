@@ -385,7 +385,7 @@ def parse_open_input_deterministic(
         # Extract attributes using the item's actual item_type (fully data-driven)
         attr_values = {}
         if item_type_for_mods:
-            attr_values = extract_attribute_values(text, item_type_for_mods)
+            attr_values, _ = extract_attribute_values(text, item_type_for_mods)
         modifications = _extract_menu_item_modifications(text, item_type_for_mods)
         # Look up is_signature from database (data-driven, no special handling)
         is_sig = menu_cache.item_has_default_ingredients(menu_item)
@@ -415,6 +415,56 @@ def parse_open_input_deterministic(
         logger.info("DETERMINISTIC SIMPLE ITEM: matched '%s'", text[:50])
         return simple_result
 
+    # Check if user ordered just an ingredient/modifier without specifying an item
+    # e.g., "I want caramel syrup" - we should suggest items that can have this modifier
+    ingredient_result = _check_standalone_ingredient(text)
+    if ingredient_result:
+        return ingredient_result
+
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])
+    return None
+
+
+def _check_standalone_ingredient(text: str) -> OpenInputResponse | None:
+    """Check if user input is just an ingredient that could be a modifier.
+
+    Handles cases like "I want caramel syrup" where the user orders a modifier
+    without specifying an item. We should suggest items that can have this modifier.
+
+    Args:
+        text: User input text
+
+    Returns:
+        OpenInputResponse with found_ingredient_without_item=True if matched,
+        None otherwise.
+    """
+    # Strip common ordering phrases
+    text_lower = text.lower().strip()
+    for prefix in ["i want ", "i'd like ", "i would like ", "give me ", "can i get ", "can i have "]:
+        if text_lower.startswith(prefix):
+            text_lower = text_lower[len(prefix):].strip()
+            break
+
+    # Strip articles
+    for article in ["a ", "an ", "some ", "the "]:
+        if text_lower.startswith(article):
+            text_lower = text_lower[len(article):].strip()
+            break
+
+    # Check if it's a known ingredient that can be a modifier
+    normalized = menu_cache.normalize_modifier(text_lower)
+    if normalized:
+        # Check if this ingredient can be added to any item types
+        item_types = menu_cache.get_item_types_for_ingredient(text_lower)
+        if item_types:
+            logger.info(
+                "STANDALONE INGREDIENT: '%s' -> ingredient='%s', can be added to %d item types",
+                text[:50], normalized, len(item_types)
+            )
+            return OpenInputResponse(
+                found_ingredient_without_item=True,
+                found_ingredient_name=normalized,
+            )
+
     return None

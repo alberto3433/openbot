@@ -226,7 +226,10 @@ class DirectOptionMatcher:
                     else:
                         total_upcharge = 0.0
 
-                    existing_mod["quantity"] = new_quantity
+                    # Store actual quantity for pricing but use 1 for display
+                    # (display_name will include the quantity, e.g., "3 Eggs")
+                    existing_mod["_actual_quantity"] = new_quantity
+                    existing_mod["quantity"] = 1  # Prevents "3x 3 Eggs" in summary
                     # Set price on modifier for display purposes (total upcharge, not per-unit)
                     existing_mod["price"] = total_upcharge
 
@@ -252,16 +255,8 @@ class DirectOptionMatcher:
                         display = base_display
                     existing_mod["display_name"] = display
 
-                    # Track in attribute_values via a modifier entry for this attr_slug
-                    # We add a tracking entry WITHOUT price (to avoid double-counting)
-                    # The price is already on the existing modifier
-                    item.add_selection(
-                        matched_opt["slug"],
-                        attr_slug,
-                        quantity=1,
-                        price=0,  # Don't double-count price
-                        display_name=display,
-                    )
+                    # No separate tracking selection needed - the modified ingredient
+                    # itself reflects the change (display_name, quantity, price)
 
                     logger.info(
                         "Updated modifier %s quantity: %d -> %d (base=%d, via %s=%s, upcharge=$%.2f)",

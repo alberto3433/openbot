@@ -139,7 +139,7 @@ class OrderUtilsHandler:
             # Create a copy of the item using selections API
             if isinstance(template_item, MenuItemTask):
                 # Deep copy selections list
-                copied_modifiers = [dict(sel) for sel in template_item.modifiers]
+                copied_selections = [dict(sel) for sel in template_item.selections]
 
                 new_item = MenuItemTask(
                     menu_item_name=template_item.menu_item_name,
@@ -148,7 +148,7 @@ class OrderUtilsHandler:
                     unit_price=template_item.unit_price,
                     modifications=list(template_item.modifications) if template_item.modifications else [],
                     removed_ingredients=list(template_item.removed_ingredients) if template_item.removed_ingredients else [],
-                    modifiers=copied_modifiers,
+                    selections=copied_selections,
                     customization_offered=template_item.customization_offered,
                 )
                 new_item.mark_complete()

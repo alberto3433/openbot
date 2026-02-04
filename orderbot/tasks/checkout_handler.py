@@ -434,7 +434,7 @@ class CheckoutHandler(BaseStateHandler):
             logger.info("CONFIRMATION: Detected new item! Processing via _handle_taking_items_with_parsed")
             # Get selections directly from the parsed item
             first_item = item_parsed.parsed_items[0]
-            extracted_selections = list(first_item.modifiers) if first_item.modifiers else None
+            extracted_selections = list(first_item.selections) if first_item.selections else None
 
             # Use orchestrator to determine phase before processing
             if self._transition_to_next_slot:

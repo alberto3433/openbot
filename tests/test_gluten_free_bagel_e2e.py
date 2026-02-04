@@ -9,6 +9,7 @@ import pytest
 from orderbot.tasks.state_machine import OrderStateMachine
 from orderbot.tasks.models import OrderTask, MenuItemTask
 from tests.helpers import BagelItemTask, create_bagel_menu_data
+from tests.helpers.item_factories import _set_modifier_price
 from orderbot.tasks.adapter import order_task_to_dict
 from orderbot.tasks.pricing import PricingEngine
 
@@ -299,7 +300,8 @@ class TestGlutenFreeSpeedMenuE2E:
         )
         # Set attributes via selections API (Pydantic doesn't call property setters during __init__)
         item.add_selection("yes", "toasted")
-        item.add_selection("gluten free", "bagel_choice", price=0.80)
+        item.add_selection("gluten free", "bagel_choice")
+        _set_modifier_price(item, "bagel_choice", "gluten free", 0.80)  # Test helper for setting price
         item.add_selection("american", "cheese")
         item.mark_complete()
         order.items.add_item(item)

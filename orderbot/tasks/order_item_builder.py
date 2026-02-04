@@ -70,11 +70,24 @@ class OrderItemBuilder:
             }
 
         # Step 2: Check if this is a configurable item type (has conversation attributes)
-        # These use the item type display name and pricing engine instead of menu lookup
+        # For configurable types where menu lookup failed, keep the user's item name
+        # (e.g., "latte") and try to price it. Don't substitute the item type display name
+        # (e.g., "Sized Beverage") since that's not a valid menu item for pricing.
         is_configurable_type = item_type and menu_cache.has_conversation_attributes(item_type)
         if is_configurable_type:
-            canonical_name = menu_cache.get_item_type_display_name(item_type) or lookup_name
-            base_price = self._pricing.lookup_base_price(canonical_name) if self._pricing else 0.0
+            # Keep lookup_name (user's input like "latte"), not item type display name
+            canonical_name = lookup_name
+            # Try to look up price for the user's item name; default to 0.0 if not found
+            base_price = 0.0
+            if self._pricing:
+                try:
+                    base_price = self._pricing.lookup_base_price(canonical_name)
+                except ValueError:
+                    # Price lookup failed - item will be priced during configuration
+                    logger.debug(
+                        "No base price found for '%s' (item_type=%s), will price during config",
+                        canonical_name, item_type
+                    )
             return {
                 "name": canonical_name,
                 "item_type": item_type,

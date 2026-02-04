@@ -493,7 +493,7 @@ class TestContextSwitches:
         sm = OrderStateMachine()
 
         result1 = sm.process("What bagels do you have?", order)
-        result2 = sm.process("I'll have an everything toasted with cream cheese", result1.order)
+        result2 = sm.process("I'll have an everything bagel toasted with cream cheese", result1.order)
 
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"

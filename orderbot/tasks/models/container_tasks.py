@@ -281,6 +281,16 @@ class OrderTask(BaseTask):
     # Stores the menu item name (e.g., "The Lexington") for confirmation
     pending_suggested_item: str | None = None
 
+    # Pending ingredient suggestion when user orders just a modifier (e.g., "I want caramel syrup")
+    # Dict with: ingredient (str), suggested_items (list of item names)
+    # Used to suggest items that can have this modifier
+    pending_ingredient_suggestion: dict | None = None
+
+    # Pending ingredient to apply to the next item added
+    # Set when user confirms ingredient suggestion (e.g., "I want caramel syrup" -> "yes" -> "iced coffee")
+    # The ingredient name will be applied as a modifier when the next item is added
+    pending_ingredient_to_apply: str | None = None
+
     # Pending item switch when user asks "can you make it X?" and we find a similar item
     # Dict with menu item info: {id, name, base_price, item_type}
     # Used to offer switching from current item to a similar one with requested modifier
@@ -369,6 +379,9 @@ class OrderTask(BaseTask):
             return True
         # Handle item switch confirmation ("can you make it X?" -> similar item found)
         if self.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
+            return True
+        # Handle ingredient suggestion confirmation ("I want caramel syrup" -> "yes")
+        if self.pending_field == PendingField.CONFIRM_INGREDIENT_SUGGESTION:
             return True
         # Handle attribute disambiguation (e.g., "walnut" -> "honey walnut" or "maple raisin walnut")
         if self.pending_attr_disambiguation is not None:

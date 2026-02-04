@@ -14,6 +14,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
@@ -135,6 +136,38 @@ class MenuInquiryHandler(MenuDataMixin):
                 menu_query_type, len(filtered)
             )
             return filtered, menu_query_type
+
+        # FALLBACK 2: Handle "adjective + category" patterns like "iced drinks"
+        # Try splitting into prefix word(s) + base category, then filter by prefix
+        words = menu_query_type.split()
+        if len(words) >= 2:
+            # Try the last word as category (e.g., "drinks" from "iced drinks")
+            base_category = words[-1]
+            prefix_filter = " ".join(words[:-1])  # e.g., "iced"
+
+            category_info = menu_cache.get_category_keyword_mapping(base_category)
+            if category_info:
+                slug = category_info["slug"]
+                lookup_type = category_info.get("lookup_type", "item_type")
+
+                if lookup_type == "category":
+                    all_items = menu_cache.get_items_by_category(slug)
+                else:
+                    all_items = items_by_type.get(slug, [])
+
+                # Filter items by prefix (e.g., items containing "iced")
+                if all_items and prefix_filter:
+                    filter_pattern = re.compile(rf'\b{re.escape(prefix_filter)}\b', re.IGNORECASE)
+                    filtered = [
+                        item for item in all_items
+                        if filter_pattern.search(item.get("name", ""))
+                    ]
+                    if filtered:
+                        logger.info(
+                            "Menu query fallback: '%s' -> base='%s' + filter='%s' matched %d items",
+                            menu_query_type, base_category, prefix_filter, len(filtered)
+                        )
+                        return filtered, menu_query_type
 
         # No matches found
         return [], menu_query_type

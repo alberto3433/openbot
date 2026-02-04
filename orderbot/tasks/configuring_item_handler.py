@@ -151,6 +151,10 @@ class ConfiguringItemHandler:
         if order.pending_field == PendingField.CONFIRM_SUGGESTED_ITEM:
             return self._taking_items_handler.handle_confirm_suggested_item(user_input, order)
 
+        # Handle ingredient suggestion confirmation ("Would you like one of those?" -> "yes")
+        if order.pending_field == PendingField.CONFIRM_INGREDIENT_SUGGESTION:
+            return self._taking_items_handler.handle_confirm_ingredient_suggestion(user_input, order)
+
         # Handle item switch confirmation ("can you make it X?" -> similar item found)
         if order.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
             return self.config_modification_handler.handle_confirm_item_switch(user_input, order)
@@ -261,7 +265,11 @@ class ConfiguringItemHandler:
 
         # Check for "can you make it X?" style requests (e.g., "can you make it iced?")
         # This handles users asking to modify an aspect of the item being configured
-        if not is_valid_answer and isinstance(item, MenuItemTask):
+        # Skip at customization_checkpoint - let the checkpoint handler use direct_option_matcher
+        # which properly handles pricing/upcharges (e.g., "make it 3 eggs" -> upcharge for extra egg)
+        if (not is_valid_answer
+            and isinstance(item, MenuItemTask)
+            and order.pending_field != PendingField.CUSTOMIZATION_CHECKPOINT):
             can_you_make_it_result = self.config_modification_handler.handle_can_you_make_it(user_input, item, order)
             if can_you_make_it_result:
                 return can_you_make_it_result

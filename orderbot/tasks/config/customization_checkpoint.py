@@ -113,7 +113,11 @@ class CustomizationCheckpointHandler:
         Returns:
             StateMachineResult with next question or completion message
         """
+        # Strip "make it" prefix - users often say "make it 3 eggs" to customize
         user_lower = user_input.lower().strip()
+        if user_lower.startswith("make it "):
+            user_input = user_input[8:]  # len("make it ") == 8
+            user_lower = user_lower[8:]
         item_type = item.menu_item_type
 
         # Check for "no" or "done" - user doesn't want to customize further

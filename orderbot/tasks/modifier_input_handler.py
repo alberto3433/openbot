@@ -181,7 +181,7 @@ def add_modifier_to_item(
         True if modifier was added, False if already present
     """
     # Get current selections (unified storage)
-    current_selections = item.modifiers or []
+    current_selections = item.selections or []
 
     # Check if already present (by slug)
     existing_slugs = [m.get("slug") for m in current_selections]
@@ -199,7 +199,7 @@ def add_modifier_to_item(
 
     # Add to unified selections list
     current_selections.append(selection_entry)
-    item.modifiers = current_selections
+    item.selections = current_selections
 
     logger.info(
         "Added %s modifier: %s (qty=%d) to %s",
@@ -254,7 +254,7 @@ def add_modifiers_from_input(
 
             # Check if modifier already exists (exact slug match)
             existing = None
-            for mod in (item.modifiers or []):
+            for mod in (item.selections or []):
                 if mod.get("slug") == match["slug"]:
                     existing = mod
                     break
@@ -272,12 +272,12 @@ def add_modifiers_from_input(
                 # For single-select categories, remove any existing selection first
                 if category in single_select_categories:
                     existing_in_category = [
-                        mod for mod in (item.modifiers or [])
+                        mod for mod in (item.selections or [])
                         if mod.get("category") in single_select_categories
                     ]
                     if existing_in_category:
                         old_mod = existing_in_category[0]
-                        item.modifiers.remove(old_mod)
+                        item.selections.remove(old_mod)
                         logger.info(
                             "Replaced %s: %s -> %s",
                             category, old_mod.get("slug"), match["slug"]
@@ -312,7 +312,7 @@ def add_modifiers_from_input(
                 # Skip if this slug was already added by the category loop above
                 # This prevents double-adding when categories and attribute options overlap
                 # (e.g., "syrup" category vs "milk_sweetener_syrup" attribute)
-                if opt_slug in {m.get("slug") for m in (item.modifiers or [])}:
+                if opt_slug in {m.get("slug") for m in (item.selections or [])}:
                     continue
 
                 # Extract quantity and check if additive ("another shot", "one more shot")
@@ -463,7 +463,7 @@ def remove_modifiers_by_category(
     Returns:
         True if any modifiers were removed, False otherwise.
     """
-    current_selections = item.modifiers or []
+    current_selections = item.selections or []
     if not current_selections:
         return False
 
@@ -499,7 +499,7 @@ def remove_modifiers_by_category(
     new_selections = [m for m in current_selections if not belongs_to_category(m, category)]
 
     if len(new_selections) < len(current_selections):
-        item.modifiers = new_selections
+        item.selections = new_selections
         logger.info(
             "Removed %d %s modifier(s) from %s",
             len(current_selections) - len(new_selections),

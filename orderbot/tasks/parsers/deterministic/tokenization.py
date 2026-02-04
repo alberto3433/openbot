@@ -402,7 +402,11 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
 
     # First, try to match entire input as a single item
     has_item, item_type, resolved_name = _has_item_indicator(text_lower)
-    if has_item and " and " not in text_lower and ", " not in text_lower:
+
+    # Check if this is a compound phrase that shouldn't be split (e.g., "bacon egg and cheese")
+    is_compound = menu_cache.is_compound_phrase(text_lower)
+
+    if has_item and (is_compound or (" and " not in text_lower and ", " not in text_lower)):
         qty, _ = _extract_leading_quantity(text_lower)
         return [Token(
             original=text,

@@ -233,7 +233,7 @@ class UnifiedItemConverter:
             modifications=item_dict.get("modifications") or [],
             removed_ingredients=item_config.get("removed_ingredients") or item_dict.get("removed_ingredients") or [],
             quantity=item_dict.get("quantity", 1),
-            modifiers=selections,
+            selections=selections,  # Use actual field name, not deprecated property alias
             customization_offered=item_dict.get("customization_offered", False),
             is_signature=item_config.get("is_signature", item_dict.get("is_signature", False)),
             special_instructions=item_dict.get("special_instructions") or [],
@@ -253,6 +253,10 @@ class UnifiedItemConverter:
         pricing: "PricingEngine | None" = None,
     ) -> Dict[str, Any]:
         """Convert ItemTask to dict using data-driven attribute handling.
+
+        Note: This method does NOT call recalculate_item_price(). Prices should be
+        recalculated at appropriate points during order flow (after selections change).
+        The pricing engine parameter is used for base_price lookups only.
 
         This method is fully data-driven with no hardcoded attribute names,
         menu item names, or domain-specific logic.
@@ -288,8 +292,8 @@ class UnifiedItemConverter:
             display_instruction = instruction.title() if instruction else instruction
             modifiers.append({"name": display_instruction, "price": 0})
 
-        # Process modifiers from the unified modifiers field
-        item_modifiers = item.modifiers or []
+        # Process selections from the unified selections field
+        item_modifiers = item.selections or []
 
         # Get item type attributes to check for modifies_ingredient_slug
         item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}

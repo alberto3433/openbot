@@ -124,7 +124,11 @@ class ConfigModificationHandler:
                                     message=f"Sure! {current_question}",
                                     order=order,
                                 )
-                            return None  # Continue with normal flow
+                            # At customization_checkpoint - return success and continue
+                            opt_name = opt.get("display_name") or opt.get("slug", "").replace("_", " ").title()
+                            return self._continue_config_with_message(
+                                f"Okay, {opt_name}.", item, order
+                            )
             except Exception as e:
                 logger.debug("Error checking attributes for 'can you make it': %s", e)
 
@@ -436,7 +440,7 @@ class ConfigModificationHandler:
         category = match["category"]
 
         # Remove existing modifier of same category (if any)
-        item.modifiers = [m for m in item.modifiers if m.get("category") != category]
+        item.selections = [m for m in item.selections if m.get("category") != category]
 
         # Add new one
         item.add_selection(

@@ -119,3 +119,32 @@ class PatternLoaderMixin:
 
         self._compound_phrases = compound_phrases
         logger.debug("Loaded %d compound phrases (from bulk)", len(compound_phrases))
+
+    def _load_attribute_inquiry_keywords(self, db) -> None:
+        """Load attribute inquiry keywords from the database.
+
+        This data-driven mapping replaces hardcoded common_mappings in
+        menu_options_inquiry_handler.py for queries like "what types of X do you have?".
+
+        Maps (keyword, item_type_slug) -> attribute_slug
+        e.g., ("types", "bagel") -> "bread"
+        """
+        from sqlalchemy import text
+
+        # Query all keywords from the database
+        result = db.execute(text(
+            "SELECT keyword, item_type_slug, attribute_slug FROM attribute_inquiry_keywords"
+        ))
+
+        keywords: dict[tuple[str, str | None], str] = {}
+        for row in result:
+            keyword = row[0].lower()
+            item_type = row[1]  # Can be None
+            attr_slug = row[2]
+            keywords[(keyword, item_type)] = attr_slug
+
+        self._attribute_inquiry_keywords = keywords
+        logger.debug(
+            "Loaded %d attribute inquiry keywords",
+            len(keywords),
+        )

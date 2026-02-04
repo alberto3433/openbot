@@ -13,19 +13,15 @@ from typing import Callable, TYPE_CHECKING
 from orderbot.cache import menu_cache
 from ..schemas import StateMachineResult
 from ..parsers.constants import extract_quantity_for_pattern
-from ..utils.disambiguation_utils import (
-    normalize_input,
-    match_by_ordinal,
-    match_by_name_exact,
-    match_by_alias_exact,
-    match_by_name_in_input,
-    get_aliases,
-)
+from ..utils import OptionMatcher
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
 
 logger = logging.getLogger(__name__)
+
+# Shared OptionMatcher instance for config disambiguation
+_option_matcher = OptionMatcher()
 
 __all__ = ["ConfigDisambiguationHandler"]
 
@@ -71,7 +67,7 @@ class ConfigDisambiguationHandler:
         """
         Resolve user's selection from disambiguation options using STRICT matching.
 
-        Uses shared matching utilities but with strict rules:
+        Uses OptionMatcher.match_from_numbered_list() with strict rules:
         - Matches ordinals ("1", "first")
         - Matches exact name/slug/alias
         - Matches if full option name is in input ("black forest ham please" -> "Black Forest Ham")
@@ -84,58 +80,9 @@ class ConfigDisambiguationHandler:
         Returns:
             Selected option dict if matched, None if no match found.
         """
-        import re
-
-        # Try raw exact match FIRST (before normalization)
-        # This handles cases like "Sugar in the Raw" where normalization would
-        # strip "the" and break the exact match
-        raw_lower = user_input.lower().strip()
-        for opt in options:
-            if opt.get("display_name", "").lower() == raw_lower:
-                return opt
-            slug_readable = opt.get("slug", "").replace("_", " ")
-            if slug_readable == raw_lower:
-                return opt
-
-        input_lower = normalize_input(user_input)
-
-        # Try ordinal matching first
-        match = match_by_ordinal(input_lower, options, name_key="display_name")
-        if match:
-            return match
-
-        # Try exact name/slug matching (with normalized input)
-        match = match_by_name_exact(input_lower, options, name_key="display_name", slug_key="slug")
-        if match:
-            return match
-
-        # Try exact alias matching
-        match = match_by_alias_exact(input_lower, options)
-        if match:
-            return match
-
-        # Try if FULL option name is in user input
-        # ("black forest ham please" -> "Black Forest Ham")
-        match = match_by_name_in_input(input_lower, options, name_key="display_name")
-        if match:
-            return match
-
-        # Try if FULL alias is in user input using word-boundary matching
-        # This prevents "sugar" from matching "sugar in raw" incorrectly
-        for opt in options:
-            for alias in get_aliases(opt):
-                alias_lower = alias.lower()
-                if len(alias_lower) >= 3:
-                    # Use word-boundary matching instead of substring
-                    pattern = r'\b' + re.escape(alias_lower) + r'\b'
-                    if re.search(pattern, input_lower):
-                        return opt
-
-        # NO substring matching in the other direction!
-        # We deliberately don't check if input_lower is in display_name
-        # because that would make "ham" match "Black Forest Ham"
-
-        return None
+        return _option_matcher.match_from_numbered_list(
+            user_input, options, name_key="display_name", slug_key="slug"
+        )
 
     def handle_disambiguation_response(
         self, user_input: str, order: "OrderTask"

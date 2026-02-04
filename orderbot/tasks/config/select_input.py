@@ -324,7 +324,7 @@ class SelectInputHandler:
             all_slugs = [sel.get("slug") for sel in all_selections]
             logger.info(
                 "STORED multi_select: %s = %s, selections count: %d",
-                attr_slug, all_slugs, len(item.modifiers)
+                attr_slug, all_slugs, len(item.selections)
             )
 
             # Build acknowledgment text with quantity and qualifier

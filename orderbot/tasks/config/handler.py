@@ -784,6 +784,10 @@ class MenuItemConfigHandler(BaseHandler):
         # (e.g., "yes with bacon" -> captures the boolean AND the bacon selection)
         self._selection_extractor.extract_and_apply_selections(user_input, item)
 
+        # Capture any additional attributes mentioned in the input
+        # e.g., "yes toasted scooped with cream cheese" captures toasted, scooped, and spread
+        self.capture_attributes_from_input(user_input, item)
+
         return self._advance_to_next_question(item, order, attr)
 
     def _handle_quantity_input(
@@ -811,13 +815,19 @@ class MenuItemConfigHandler(BaseHandler):
         options: list[dict],
     ) -> StateMachineResult:
         """Handle single/multi select input - delegates to SelectInputHandler."""
+        # Wrapper to capture additional attributes from user input before advancing
+        # e.g., "plain bagel toasted scooped with cream cheese" when answering bread
+        def advance_with_capture(item, order, attr, ack_text=None):
+            self.capture_attributes_from_input(user_input, item)
+            return self._advance_to_next_question(item, order, attr, ack_text)
+
         return self._select_input_handler.handle_select_input(
             user_input=user_input,
             item=item,
             order=order,
             attr=attr,
             options=options,
-            advance_callback=self._advance_to_next_question,
+            advance_callback=advance_with_capture,
             format_display_list_callback=self._format_display_list,
             extract_selections_callback=self._selection_extractor.extract_selections_from_input,
             extract_qualifier_callback=self._extract_qualifier_for_option,
@@ -1120,8 +1130,19 @@ class MenuItemConfigHandler(BaseHandler):
                     logger.info("Captured %s=True from input", attr_slug)
 
             elif input_type in ("single_select", "multi_select") and options:
-                # Only capture if we get a unique match (ignore disambiguation cases)
-                matched, _ = self._option_matcher.match_single(user_input, options)
+                # Try exact match first (phases 0-1)
+                # exact_only=True prevents user input from matching option slugs
+                # e.g., "omelette" matching "omelette_gf_everything_bagel"
+                matched, _ = self._option_matcher.match_single(user_input, options, exact_only=True)
+
+                # If no exact match, try Phase 3: check if any option name appears in user input
+                # This is safe because we're looking for known option names, not arbitrary text
+                # e.g., "cream cheese" appearing in "plain bagel toasted scooped with cream cheese"
+                if not matched:
+                    matched = self._option_matcher._phase_partial_option_in_input(
+                        user_lower, options, user_input
+                    )
+
                 if matched:
                     # Check if the matched option is available
                     if not matched.get("is_available", True):

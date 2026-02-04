@@ -447,6 +447,60 @@ class ItemAdderHandler(MenuDataMixin):
                 for attr_name, attr_value in attributes.items():
                     if attr_value is not None:
                         item[attr_name] = attr_value
+
+            # Apply pending ingredient from ingredient suggestion flow
+            # (e.g., "I want caramel syrup" -> "yes" -> "iced coffee" -> apply caramel)
+            # Only apply to the first item (first_item is None means this is the first)
+            if order.pending_ingredient_to_apply and self.menu_item_handler and first_item is None:
+                pending_ingredient = order.pending_ingredient_to_apply
+                # Clear it now so it's not applied to subsequent items in the loop
+                order.pending_ingredient_to_apply = None
+                # Find the attribute and option that match this ingredient
+                # Search through item type's attributes for an option matching the ingredient
+                attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
+                pending_lower = pending_ingredient.lower().strip()
+                pending_slug = pending_lower.replace(' ', '_')
+                found_attr_slug = None
+                found_option = None
+                for attr_slug_iter, attr_config in attrs.items():
+                    options = attr_config.get('options', [])
+                    for opt in options:
+                        opt_slug = opt.get('slug', '').lower()
+                        opt_display = opt.get('display_name', '').lower()
+                        opt_aliases = [a.lower() for a in (opt.get('aliases') or [])]
+                        # Match by slug, display name, or alias
+                        if (opt_slug == pending_slug or
+                            opt_display == pending_lower or
+                            pending_lower in opt_aliases):
+                            found_attr_slug = attr_slug_iter
+                            found_option = opt
+                            break
+                    if found_option:
+                        break
+
+                if found_attr_slug and found_option:
+                    # Get the correct slug and price from the matched option
+                    option_slug = found_option.get('slug', pending_ingredient)
+                    option_price = found_option.get('price_modifier', 0.0)
+                    # Create and apply the selection
+                    pending_selection = Selection(
+                        slug=option_slug,
+                        category=found_attr_slug,
+                        quantity=1,
+                        price=option_price,
+                        display_name=found_option.get('display_name'),
+                    )
+                    self.menu_item_handler._apply_selections(item, [pending_selection])
+                    logger.info(
+                        "Applied pending ingredient '%s' to %s (attr=%s, price=$%.2f)",
+                        pending_ingredient, canonical_name, found_attr_slug, option_price
+                    )
+                else:
+                    logger.warning(
+                        "Could not find attribute for pending ingredient '%s' on item type '%s'",
+                        pending_ingredient, item_type
+                    )
+
             # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
             self._infer_attributes_from_item_name(item)
             item.mark_in_progress()
@@ -621,7 +675,7 @@ class ItemAdderHandler(MenuDataMixin):
 
         # Get default ingredient slugs from item's modifiers
         default_slugs = set()
-        for mod in item.modifiers:
+        for mod in item.selections:
             if mod.get("is_default"):
                 default_slugs.add(mod.get("slug", "").lower())
 
@@ -759,6 +813,59 @@ class ItemAdderHandler(MenuDataMixin):
                 )
                 self.menu_item_handler._apply_selections(item, filtered_selections)
 
+            # Apply pending ingredient from ingredient suggestion flow
+            # (e.g., "I want caramel syrup" -> "yes" -> "iced coffee" -> apply caramel)
+            # Only apply to the first item (first_item is None means this is the first)
+            if order.pending_ingredient_to_apply and self.menu_item_handler and first_item is None:
+                pending_ingredient = order.pending_ingredient_to_apply
+                # Clear it now so it's not applied to subsequent items in the loop
+                order.pending_ingredient_to_apply = None
+                # Find the attribute and option that match this ingredient
+                # Search through item type's attributes for an option matching the ingredient
+                attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
+                pending_lower = pending_ingredient.lower().strip()
+                pending_slug = pending_lower.replace(' ', '_')
+                found_attr_slug = None
+                found_option = None
+                for attr_slug_iter, attr_config in attrs.items():
+                    options = attr_config.get('options', [])
+                    for opt in options:
+                        opt_slug = opt.get('slug', '').lower()
+                        opt_display = opt.get('display_name', '').lower()
+                        opt_aliases = [a.lower() for a in (opt.get('aliases') or [])]
+                        # Match by slug, display name, or alias
+                        if (opt_slug == pending_slug or
+                            opt_display == pending_lower or
+                            pending_lower in opt_aliases):
+                            found_attr_slug = attr_slug_iter
+                            found_option = opt
+                            break
+                    if found_option:
+                        break
+
+                if found_attr_slug and found_option:
+                    # Get the correct slug and price from the matched option
+                    option_slug = found_option.get('slug', pending_ingredient)
+                    option_price = found_option.get('price_modifier', 0.0)
+                    # Create and apply the selection
+                    pending_selection = Selection(
+                        slug=option_slug,
+                        category=found_attr_slug,
+                        quantity=1,
+                        price=option_price,
+                        display_name=found_option.get('display_name'),
+                    )
+                    self.menu_item_handler._apply_selections(item, [pending_selection])
+                    logger.info(
+                        "Applied pending ingredient '%s' to %s (attr=%s, price=$%.2f)",
+                        pending_ingredient, canonical_name, found_attr_slug, option_price
+                    )
+                else:
+                    logger.warning(
+                        "Could not find attribute for pending ingredient '%s' on item type '%s'",
+                        pending_ingredient, item_type
+                    )
+
             # Set unavailable_selections (for "We don't have X" messaging)
             # Must be set BEFORE get_first_question() is called
             if unavailable_selections:
@@ -779,7 +886,14 @@ class ItemAdderHandler(MenuDataMixin):
 
             # Recalculate price with modifiers
             if self.pricing:
-                self.pricing.recalculate_item_price(item)
+                try:
+                    self.pricing.recalculate_item_price(item)
+                except ValueError as e:
+                    logger.warning("Price lookup failed for '%s': %s", item.menu_item_name, str(e))
+                    return StateMachineResult(
+                        message="What can I get for you?",
+                        order=order
+                    )
 
             # Mark status based on whether item needs configuration
             if needs_configuration:

@@ -136,7 +136,3 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
     ]
 
     return OpenInputResponse(parsed_items=parsed_items)
-
-
-# Deprecated alias - use _parse_simple_item_deterministic instead
-_parse_soda_deterministic = _parse_simple_item_deterministic

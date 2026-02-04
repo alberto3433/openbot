@@ -301,7 +301,7 @@ class ConfigCancellationHandler:
                     selections_to_remove = []
                     removed_modifier_name = cancel_desc
 
-                    for sel in current_item.modifiers:
+                    for sel in current_item.selections:
                         sel_display = sel.get("display_name", "").lower()
                         sel_slug = sel.get("slug", "").lower()
                         sel_category = sel.get("category", "")

@@ -325,3 +325,18 @@ class AttributeQueryMixin:
         """
         self._ensure_loaded()
         return self._option_alias_to_item_type.get(alias.lower().strip())
+
+    def get_all_option_aliases(self) -> set[str]:
+        """Get all attribute option aliases.
+
+        Returns set of all aliases (lowercase), including multi-word aliases
+        like "earl grey", "oat milk", etc.
+
+        Returns:
+            Set of lowercase alias strings
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return set(self._option_alias_to_item_type.keys())

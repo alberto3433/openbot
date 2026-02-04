@@ -123,6 +123,35 @@ class ResponsePattern(Base):
     )
 
 
+class AttributeInquiryKeyword(Base):
+    """
+    Maps inquiry keywords to attribute slugs for data-driven attribute inquiry parsing.
+
+    When user asks "what bagel types do you have?", the word "types" (keyword)
+    combined with the item type "bagel" is matched against this table to determine
+    which attribute's options to show (e.g., "bread" attribute).
+
+    Examples:
+    - ("types", "bagel") -> "bread"
+    - ("sizes", None) -> "size" (None means any/no item type)
+    - ("flavors", "bagel") -> "bread"
+
+    This replaces the hardcoded common_mappings dict in menu_options_inquiry_handler.py.
+    """
+    __tablename__ = "attribute_inquiry_keywords"
+
+    id = Column(Integer, primary_key=True, index=True)
+    keyword = Column(String(50), nullable=False, index=True)  # e.g., "types", "sizes", "flavors"
+    item_type_slug = Column(String(50), nullable=True)  # e.g., "bagel", or NULL for any
+    attribute_slug = Column(String(50), nullable=False)  # e.g., "bread", "size"
+    created_at = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('keyword', 'item_type_slug', name='uq_attr_inquiry_keyword_item_type'),
+        Index('idx_attr_inquiry_keyword_lookup', 'keyword', 'item_type_slug'),
+    )
+
+
 class ModifierCategory(Base):
     """
     Defines a modifier/add-on category for menu item customization.

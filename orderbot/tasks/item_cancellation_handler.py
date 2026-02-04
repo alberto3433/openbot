@@ -274,10 +274,12 @@ class ItemCancellationHandler:
 
         # Check if cancel term matches an item type - if so, skip modifier removal
         # User wants to remove an item, not a modifier
+        # Only skip if lookup_type is "item_type" (e.g., "bagel", "coffee")
+        # Don't skip for lookup_type="category" (e.g., "cheese") - those should attempt modifier removal
         cancel_variants = get_singular_plural_variants(parsed.cancel_item)
         for variant in cancel_variants:
             category_mapping = menu_cache.get_category_keyword_mapping(variant)
-            if category_mapping:
+            if category_mapping and category_mapping.get("lookup_type") == "item_type":
                 logger.info(
                     "Cancellation: '%s' matches item type '%s' - skipping modifier removal",
                     parsed.cancel_item, category_mapping.get("slug")

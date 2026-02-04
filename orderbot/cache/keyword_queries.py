@@ -88,3 +88,39 @@ class KeywordQueryMixin:
         category = opt.get("category", "")
         if category:
             keywords.add(category.lower())
+
+    def get_attribute_for_inquiry_keyword(
+        self, keyword: str, item_type_slug: str | None = None
+    ) -> str | None:
+        """Look up an attribute slug for an inquiry keyword.
+
+        This is a data-driven replacement for the hardcoded common_mappings.
+        Handles queries like "what types of X do you have?" by mapping
+        the keyword (e.g., "types") and optional item type (e.g., "bagel")
+        to an attribute slug (e.g., "bread").
+
+        Lookup order:
+        1. Exact match: (keyword, item_type_slug)
+        2. Wildcard match: (keyword, None)
+
+        Args:
+            keyword: The signal word from user input (e.g., "types", "sizes")
+            item_type_slug: Optional item type for context (e.g., "bagel")
+
+        Returns:
+            Attribute slug (e.g., "bread") or None if not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+        """
+        self._ensure_loaded()
+        keyword_lower = keyword.lower()
+
+        # 1. Try exact match with item type
+        if item_type_slug:
+            result = self._attribute_inquiry_keywords.get((keyword_lower, item_type_slug))
+            if result:
+                return result
+
+        # 2. Try wildcard match (keyword, None)
+        return self._attribute_inquiry_keywords.get((keyword_lower, None))

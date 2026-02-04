@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 def extract_attribute_values(
     user_input: str,
     item_type: str,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[tuple[int, int]]]:
     """
     Extract attribute values from user input for a specific item type.
 
@@ -51,10 +51,14 @@ def extract_attribute_values(
         item_type: The item type slug
 
     Returns:
-        Dict mapping attribute slugs to extracted values:
-        - For single_select: {attr_slug: option_slug}
-        - For multi_select: {attr_slug: [{slug, quantity, display_name}, ...]}
-        - For boolean: {attr_slug: True/False}
+        Tuple of (attribute_values, matched_spans):
+        - attribute_values: Dict mapping attribute slugs to extracted values:
+          - For single_select: {attr_slug: option_slug}
+          - For multi_select: {attr_slug: [{slug, quantity, display_name}, ...]}
+          - For boolean: {attr_slug: True/False}
+        - matched_spans: List of (start, end) tuples indicating text spans consumed
+          by attribute matching. Pass to _extract_modifiers_generic() to avoid
+          double-extraction.
 
     """
     result: dict[str, any] = {}
@@ -64,7 +68,7 @@ def extract_attribute_values(
     attributes = menu_cache.get_item_type_attributes(item_type)
     if not attributes:
         logger.debug("No attributes found for item type '%s'", item_type)
-        return result
+        return result, []
 
     # ==========================================================================
     # Pre-Phase: Detect "no {attribute}" negation patterns for ALL attributes
@@ -434,7 +438,7 @@ def extract_attribute_values(
         "Extracted attribute values for %s: %s",
         item_type, result
     )
-    return result
+    return result, matched_spans
 
 
 # =============================================================================
@@ -443,7 +447,8 @@ def extract_attribute_values(
 
 def _extract_modifiers_generic(
     text: str,
-    item_type: str
+    item_type: str,
+    exclude_spans: list[tuple[int, int]] | None = None
 ) -> list[str]:
     """Extract modifiers for an item type from text.
 
@@ -456,12 +461,26 @@ def _extract_modifiers_generic(
     Args:
         text: User input text (lowercase)
         item_type: Item type slug
+        exclude_spans: List of (start, end) tuples to exclude from matching.
+            These are typically spans already consumed by extract_attribute_values()
+            to prevent double-extraction (e.g., "scrambled eggs" matched as egg_style
+            should not also match "eggs" as a protein modifier).
 
     Returns:
         List of matched modifier names (normalized/canonical)
     """
     text_lower = text.lower()
     found_modifiers = []
+
+    def overlaps_excluded(start: int, end: int) -> bool:
+        """Check if a span overlaps with any excluded span."""
+        if not exclude_spans:
+            return False
+        for ex_start, ex_end in exclude_spans:
+            # Overlap exists if NOT (end <= ex_start OR start >= ex_end)
+            if not (end <= ex_start or start >= ex_end):
+                return True
+        return False
 
     # Get modifier category for this item type (data-driven from database)
     modifier_type = menu_cache.get_modifier_category(item_type)
@@ -511,8 +530,12 @@ def _extract_modifiers_generic(
             if ing_lower in attr_option_slugs or ing_lower.replace(" ", "_") in attr_option_slugs:
                 continue
 
-            if ing_lower in text_lower:
-                found_modifiers.append(ing_lower)
+            # Find position of ingredient in text and check for span overlap
+            pos = text_lower.find(ing_lower)
+            if pos != -1:
+                end_pos = pos + len(ing_lower)
+                if not overlaps_excluded(pos, end_pos):
+                    found_modifiers.append(ing_lower)
 
     return found_modifiers
 

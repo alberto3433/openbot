@@ -153,8 +153,8 @@ class ItemReplacementHandler:
                     )
 
                     # Remove existing selections for this attribute
-                    last_item.modifiers = [
-                        m for m in last_item.modifiers
+                    last_item.selections = [
+                        m for m in last_item.selections
                         if m.get("category") != attr_slug
                     ]
 
@@ -262,7 +262,7 @@ class ItemReplacementHandler:
     ) -> StateMachineResult | None:
         """Apply selections extracted from user input to the last item."""
         # Extract attribute values and convert to selections
-        attr_values = extract_attribute_values(raw_user_input, item_type)
+        attr_values, _ = extract_attribute_values(raw_user_input, item_type)
         selections: list[Selection] = []
         if attr_values:
             for attr_slug, value in attr_values.items():

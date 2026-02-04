@@ -37,6 +37,31 @@ def _convert_attrs_to_selections(attribute_values: dict) -> list[dict]:
     return selections
 
 
+def _set_modifier_price(item: "MenuItemTask", category: str, slug: str, price: float) -> None:
+    """Set the price on a modifier that was already added.
+
+    This is a test-only helper to set prices on modifiers. In production,
+    prices are calculated by PricingEngine.recalculate_item_price() using
+    GlobalAttributeOption.price_modifier as the single source of truth.
+
+    Args:
+        item: The menu item task
+        category: The modifier's category
+        slug: The modifier's slug
+        price: The price to set
+    """
+    for mod in item.modifiers:
+        if mod.get("category") == category and mod.get("slug") == slug:
+            mod["price"] = price
+            return
+    # If not found by exact slug match, try matching by category only (for spread, etc.)
+    if slug:
+        for mod in item.modifiers:
+            if mod.get("category") == category:
+                mod["price"] = price
+                return
+
+
 def BagelItemTask(
     bread: str = _UNSET,
     bagel_type: str = _UNSET,  # Alias for bread (backward compat)
@@ -104,11 +129,14 @@ def BagelItemTask(
         base_price=effective_base,
     )
 
-    # Set properties via selections API (each add_selection with price adds to unit_price)
+    # Set properties via selections API
+    # Note: add_selection no longer accepts price - prices are set separately for tests
     if toasted is not None:
         bagel.add_selection("yes" if toasted else "no", "toasted")
     if spread_value:
-        bagel.add_selection(spread_value, "spread", price=spread_price)
+        bagel.add_selection(spread_value, "spread")
+        if spread_price > 0:
+            _set_modifier_price(bagel, "spread", spread_value, spread_price)
     if bread_value:
         # Include display_name for bread - the "Bagel" suffix is added by get_display_name()
         # when looking up from menu_cache. For tests without menu_cache, display_name
@@ -116,16 +144,20 @@ def BagelItemTask(
         bagel.add_selection(
             bread_value,
             "bread",
-            price=bagel_type_upcharge,
             display_name=f"{bread_value.title()} Bagel"  # Full name for test contexts
         )
+        if bagel_type_upcharge > 0:
+            _set_modifier_price(bagel, "bread", bread_value, bagel_type_upcharge)
     if extras:
         for extra in extras:
             bagel.add_selection(extra, "toppings")
     if proteins:
         for protein in proteins:
             if isinstance(protein, tuple):
-                bagel.add_selection(protein[0], "protein", price=protein[1])
+                protein_name, protein_price = protein
+                bagel.add_selection(protein_name, "protein")
+                if protein_price > 0:
+                    _set_modifier_price(bagel, "protein", protein_name, protein_price)
             else:
                 bagel.add_selection(protein, "protein")
 
@@ -203,7 +235,9 @@ def CoffeeItemTask(
     # This matches the database schema where espresso items have a single multi-select
     # attribute called milk_sweetener_syrup that holds all three types
     if milk:
-        item.add_selection(slug=milk, category="milk_sweetener_syrup", price=milk_upcharge)
+        item.add_selection(slug=milk, category="milk_sweetener_syrup")
+        if milk_upcharge > 0:
+            _set_modifier_price(item, "milk_sweetener_syrup", milk, milk_upcharge)
     if sweeteners:
         for s in sweeteners:
             if isinstance(s, dict):

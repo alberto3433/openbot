@@ -619,10 +619,14 @@ class PricingEngine(MenuDataMixin):
     ) -> float:
         """Apply prices for modifiers not already priced via attributes.
 
+        Always looks up prices from GlobalAttributeOption.price_modifier - this is
+        the single source of truth for all pricing. Stored prices on modifiers are
+        for display purposes only and are updated by this method.
+
         Args:
             item_modifiers: List of modifier dicts on the item
             item_type: The item type slug
-            priced_slugs: Set of slugs already priced (to avoid double-counting)
+            priced_slugs: Set of NORMALIZED slugs already priced (to avoid double-counting)
 
         Returns:
             Total price from modifiers
@@ -638,22 +642,18 @@ class PricingEngine(MenuDataMixin):
             if not slug or slug in ("yes", "no", "_declined"):
                 continue
 
-            # Check if this is a default ingredient (included in base price)
-            is_default = modifier.get("is_default", False)
-            if slug in priced_slugs and is_default:
-                # Default ingredients are already accounted for in base price
-                continue
-            # Non-default modifiers should be priced even if slug is in priced_slugs
-            # (e.g., user added "extra bacon" to a sandwich that already has bacon)
+            # Normalize slug for consistent comparison with priced_slugs
+            # (priced_slugs contains normalized slugs from apply_upcharges)
+            slug_normalized = normalize_to_slug(slug)
 
-            # Use stored price if available; only look up from DB if missing
-            stored_price = extract_modifier_price(modifier)
-            if stored_price is not None:
-                price = stored_price
-            else:
-                price = self.lookup_modifier_price(slug, item_type)
-                if price > 0:
-                    modifier["price"] = price
+            # Skip if already priced via attribute upcharges
+            if slug_normalized in priced_slugs:
+                continue
+
+            # Always look up price from DB - this is the single source of truth
+            # The stored price on the modifier is for display only and gets updated here
+            price = self.lookup_modifier_price(slug, item_type)
+            modifier["price"] = price  # Update for display purposes
 
             total += price * quantity
 
@@ -688,17 +688,12 @@ class PricingEngine(MenuDataMixin):
         # (e.g., cream cheese on a bundled bagel). The base_price=$0 is handled in
         # _calculate_base_price(); upcharges are still calculated below.
 
-        # Get attribute values and modifiers from the item
+        # Get attribute values and selections from the item
         attr_values = item.attribute_values or {}
-        item_modifiers = item.modifiers or []
+        item_modifiers = item.selections or []
 
         # Look up menu item for pricing data
         menu_item = self._lookup_menu_item(item.menu_item_name)
-
-        logger.debug(
-            "recalculate_item_price: item=%s, menu_item_found=%s",
-            item.menu_item_name, menu_item is not None
-        )
 
         # 1. Calculate base price
         base_price, uses_variant_pricing, variant_attr, included_categories = \

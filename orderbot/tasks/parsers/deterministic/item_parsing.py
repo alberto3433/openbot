@@ -39,6 +39,52 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Partial Quantity Split Detection
+# =============================================================================
+
+def _detect_partial_modifier_split(text_after_item: str, total_qty: int) -> tuple[int, str] | None:
+    """
+    Detect patterns like "2 with milk and sugar" after item name.
+
+    This handles cases where a subset of items should have modifiers applied,
+    e.g., "4 coffees 2 with milk" -> 2 with milk, 2 plain.
+
+    This is MVP functionality that handles only SIMPLE splits:
+    - "4 coffees 2 with milk" -> split detected
+    - "4 coffees, 2 with milk" -> split detected (comma is fine)
+    - "10 coffees - 5 with milk, 3 black, 2 with cream" -> NOT handled (multiple splits)
+
+    Args:
+        text_after_item: The text appearing after the item name
+        total_qty: Total quantity of items ordered
+
+    Returns:
+        (split_qty, modifier_text) if pattern found and split_qty < total_qty
+        None otherwise
+    """
+    # Normalize: strip leading punctuation/whitespace for cleaner matching
+    text_clean = text_after_item.lstrip(' ,-')
+
+    # Check for multiple split specs (e.g., "2 with milk, 1 black" or "2 with milk 1 with sugar")
+    # Pattern matches "N with" or "N [word]" where N is a quantity
+    qty_pattern = r'\b(\d+|one|two|three|four|five)\s+(?:with\b|\w+)'
+    qty_matches = list(re.finditer(qty_pattern, text_clean, re.IGNORECASE))
+    if len(qty_matches) > 1:
+        return None
+
+    # Simple pattern: "N with modifiers"
+    pattern = r'\b(\d+|one|two|three|four|five)\s+with\s+(.+)'
+    match = re.search(pattern, text_clean, re.IGNORECASE)
+    if match:
+        qty_str = match.group(1).lower()
+        modifier_text = match.group(2).strip()
+        split_qty = int(qty_str) if qty_str.isdigit() else WORD_TO_NUM.get(qty_str, 0)
+        if 0 < split_qty < total_qty:
+            return (split_qty, modifier_text)
+    return None
+
+
+# =============================================================================
 # Item Type Detection
 # =============================================================================
 
@@ -239,11 +285,12 @@ def _parse_item_generic(
     # Extract all attributes for this item type using database config
     # This handles all attribute types (single_select, multi_select, boolean)
     # including combined attributes like milk_sweetener_syrup
-    attribute_values = extract_attribute_values(text, item_type)
+    attribute_values, attr_matched_spans = extract_attribute_values(text, item_type)
 
     # Extract food modifiers (proteins, spreads, toppings, etc.)
     # Beverage modifiers (sweeteners, syrups, milk) are handled via attribute_values
-    food_modifiers = _extract_modifiers_generic(text_lower, item_type)
+    # Pass exclude_spans to avoid double-extraction of text already matched as attributes
+    food_modifiers = _extract_modifiers_generic(text_lower, item_type, exclude_spans=attr_matched_spans)
 
     # Check if this item has default ingredients (used for populating defaults)
     has_defaults = False
@@ -502,7 +549,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # - string for single_select
     # - list[{slug, quantity, ...}] for multi_select
     # - bool for boolean
-    attr_values = extract_attribute_values(text, detected_item_type)
+    # Also returns matched_spans to pass to modifier extraction to avoid double-extraction
+    attr_values, attr_matched_spans = extract_attribute_values(text, detected_item_type)
 
     # Merge inferred attribute values from option alias fallback
     # Only add inferred values if not already extracted from text
@@ -525,10 +573,87 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # 5b. Extract item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions = extract_special_instructions_from_input(text)
 
+    # 5b-split. Check for partial-modifier split (e.g., "4 coffees 2 with milk")
+    # This handles cases like "4 large hot coffees 2 with milk and sugar" -> 2 with modifiers, 2 plain
+    if quantity > 1 and item_name:
+        # Try to find the item name in text. Item name like "Hot Coffee" may appear as "coffees".
+        # First try full name match, then try individual words.
+        item_name_lower = item_name.lower()
+        item_name_match = re.search(rf'\b{re.escape(item_name_lower)}s?\b', text_lower)
+        if not item_name_match:
+            # Try matching individual words (e.g., "coffee" from "Hot Coffee")
+            for word in item_name_lower.split():
+                if len(word) >= 3:  # Skip short words like "a", "an", "the"
+                    item_name_match = re.search(rf'\b{re.escape(word)}s?\b', text_lower)
+                    if item_name_match:
+                        break
+        if item_name_match:
+            text_after_item = text_lower[item_name_match.end():]
+            split_result = _detect_partial_modifier_split(text_after_item, quantity)
+
+            if split_result:
+                split_qty, modifier_text = split_result
+                remaining_qty = quantity - split_qty
+
+                logger.info(
+                    "PARTIAL_SPLIT: detected %d with '%s', %d plain",
+                    split_qty, modifier_text, remaining_qty
+                )
+
+                # Extract BASE attributes from text BEFORE the split point
+                # e.g., "4 large hot coffees 2 with milk" -> base text is "4 large hot coffees"
+                text_before_split = text_lower[:item_name_match.end()]
+                base_attr_values, _ = extract_attribute_values(text_before_split, detected_item_type)
+
+                # Also extract any attribute values from modifier text
+                split_attr_values, split_matched_spans = extract_attribute_values(modifier_text, detected_item_type)
+
+                # Extract modifiers from "with X" portion only
+                # Pass exclude_spans to avoid double-extraction of attributes
+                split_modifiers = _extract_modifiers_generic(modifier_text, detected_item_type, exclude_spans=split_matched_spans)
+                modifier_selections_split: list[Selection] = []
+                for mod in split_modifiers:
+                    category = menu_cache.get_ingredient_category(mod)
+                    mod_qty = extract_quantity_for_pattern(modifier_text, mod)
+                    modifier_selections_split.append(Selection(
+                        slug=mod, category=category, quantity=mod_qty
+                    ))
+                modified_attrs = {**base_attr_values}  # Start with base (size, etc.)
+                for k, v in split_attr_values.items():
+                    if v:
+                        modified_attrs[k] = v
+
+                # Build items WITH modifiers
+                items_with_mods = build_parsed_item(
+                    item_type=detected_item_type,
+                    item_name=item_name,
+                    quantity=split_qty,
+                    attribute_values=modified_attrs.copy(),
+                    modifiers=modifier_selections_split,
+                    original_text=text,
+                    is_signature=has_defaults,
+                    special_instructions=special_instructions,
+                )
+
+                # Build items WITHOUT modifiers (plain)
+                items_plain = build_parsed_item(
+                    item_type=detected_item_type,
+                    item_name=item_name,
+                    quantity=remaining_qty,
+                    attribute_values=base_attr_values.copy(),
+                    modifiers=[],
+                    original_text=text,
+                    is_signature=has_defaults,
+                    special_instructions=[],
+                )
+
+                return OpenInputResponse(parsed_items=[items_with_mods, items_plain])
+
     # 5c. Extract food modifiers (proteins, spreads, toppings, etc.)
     # These are ingredients not handled via attribute_values (which handles items that
     # overlap with attribute options like bread types, egg styles, etc.)
-    food_modifiers = _extract_modifiers_generic(text_lower, detected_item_type)
+    # Pass exclude_spans to avoid double-extraction of text already matched as attributes
+    food_modifiers = _extract_modifiers_generic(text_lower, detected_item_type, exclude_spans=attr_matched_spans)
     modifier_selections: list[Selection] = []
     for mod in food_modifiers:
         category = menu_cache.get_ingredient_category(mod)
@@ -630,6 +755,23 @@ def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
     """
     text_lower = text.lower()
 
+    # Check for multi-word option aliases (e.g., "earl grey", "oat milk")
+    # If the text contains such an alias, extract the words covered by it
+    option_aliases = menu_cache.get_all_option_aliases()
+    words_in_option_aliases: set[str] = set()
+    text_stripped = text_lower.strip()
+
+    # If the entire text matches an option alias, it's fully recognized
+    if text_stripped in option_aliases:
+        return False
+
+    # Check for multi-word aliases contained within the text
+    for alias in option_aliases:
+        if " " in alias and alias in text_stripped:
+            # This multi-word alias is found in the text
+            # Mark all its words as recognized
+            words_in_option_aliases.update(alias.split())
+
     # Words that are common ordering phrases (not potential item names)
     common_ordering_words = {
         # Articles/prepositions
@@ -670,6 +812,9 @@ def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
             continue
         # Check if word is a known modifier or attribute option
         if word in all_modifiers or word in all_attr_options:
+            continue
+        # Check if word is part of a multi-word option alias found in the text
+        if word in words_in_option_aliases:
             continue
         # This word is unrecognized - could be a missing menu item like "mocha"
         logger.debug(

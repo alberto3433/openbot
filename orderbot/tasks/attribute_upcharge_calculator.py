@@ -8,6 +8,7 @@ Extracted from pricing.py for better separation of concerns.
 import logging
 
 from .modifier_utils import extract_modifier_slug_and_quantity, extract_modifier_price
+from .normalization import normalize_to_slug
 from .utils.constants import ATTR_METADATA_SUFFIXES, ATTR_PENDING_PREFIX
 
 logger = logging.getLogger(__name__)
@@ -132,42 +133,50 @@ class AttributeUpchargeCalculator:
         values: list,
         included_categories: set[str],
     ) -> tuple[float, set[str]]:
-        """Process a multi-select attribute value list."""
+        """Process a multi-select attribute value list.
+
+        Always looks up prices from GlobalAttributeOption.price_modifier - this is
+        the single source of truth for all pricing.
+        """
         total = 0.0
         priced_slugs: set[str] = set()
 
         for item_val in values:
             if isinstance(item_val, str) and item_val.lower() != "none":
+                # Normalize for consistent tracking
+                item_val_normalized = normalize_to_slug(item_val)
+                # Always look up from DB - single source of truth
                 upcharge = self._pricing.lookup_attribute_option_upcharge(
                     item_type, attr_slug, item_val, included_categories
                 )
                 if upcharge > 0:
                     total += upcharge
-                    priced_slugs.add(item_val)
+                    priced_slugs.add(item_val_normalized)
                 else:
                     # Check if category is included
                     option_category = self._pricing._get_option_ingredient_category(
                         item_type, attr_slug, item_val
                     )
                     if option_category and option_category in included_categories:
-                        priced_slugs.add(item_val)
+                        # Mark as priced even at $0 to prevent double-counting
+                        priced_slugs.add(item_val_normalized)
                     else:
                         price = self._pricing.lookup_modifier_price(item_val, item_type)
                         total += price
-                        priced_slugs.add(item_val)
+                        # Always mark as priced to prevent double-counting
+                        priced_slugs.add(item_val_normalized)
 
             elif isinstance(item_val, dict):
                 slug, qty = extract_modifier_slug_and_quantity(item_val)
                 if slug:
-                    stored_price = extract_modifier_price(item_val)
-                    if stored_price is not None:
-                        price = stored_price
-                    else:
-                        price = self._pricing.lookup_modifier_price(slug, item_type)
-                        if price > 0:
-                            item_val["price"] = price
+                    # Normalize for consistent tracking
+                    slug_normalized = normalize_to_slug(slug)
+                    # Always look up from DB - single source of truth
+                    # (stored prices are for display only, updated below)
+                    price = self._pricing.lookup_modifier_price(slug, item_type)
+                    item_val["price"] = price  # Update for display purposes
                     total += price * qty
-                    priced_slugs.add(slug)
+                    priced_slugs.add(slug_normalized)
 
         return total, priced_slugs
 
@@ -179,28 +188,27 @@ class AttributeUpchargeCalculator:
         item_modifiers: list,
         included_categories: set[str],
     ) -> tuple[float, set[str]]:
-        """Process a single string attribute value."""
+        """Process a single string attribute value.
+
+        Always looks up prices from GlobalAttributeOption.price_modifier - this is
+        the single source of truth for all pricing. Stored prices on modifiers are
+        for display purposes only and are updated by this method.
+        """
         priced_slugs: set[str] = set()
 
-        # Check if this slug exists in item_modifiers with a stored price
-        # If so, use the stored price x quantity and mark as priced
-        modifier_with_price = next(
+        # Normalize attr_value for consistent comparison
+        attr_value_normalized = normalize_to_slug(attr_value)
+
+        # Find the modifier entry for this attribute value (if any) for quantity lookup
+        # Note: We no longer use stored prices - always look up from DB
+        matching_modifier = next(
             (m for m in item_modifiers
-             if m.get("slug") == attr_value and m.get("price", 0) > 0),
+             if normalize_to_slug(m.get("slug") or "") == attr_value_normalized),
             None
         )
-        if modifier_with_price:
-            slug, quantity = extract_modifier_slug_and_quantity(modifier_with_price)
-            price = extract_modifier_price(modifier_with_price) or 0.0
-            total = price * quantity
-            logger.debug(
-                "recalc: %s=%s priced via modifier (price=$%.2f x qty=%d = $%.2f)",
-                attr_slug, attr_value, price, quantity, total
-            )
-            # Mark as priced so it won't be double-counted in _apply_modifier_prices
-            priced_slugs.add(attr_value)
-            return total, priced_slugs
+        quantity = matching_modifier.get("quantity", 1) if matching_modifier else 1
 
+        # Always look up price from DB - this is the single source of truth
         upcharge = self._pricing.lookup_attribute_option_upcharge(
             item_type, attr_slug, attr_value, included_categories
         )
@@ -210,28 +218,29 @@ class AttributeUpchargeCalculator:
         )
 
         if upcharge > 0:
-            priced_slugs.add(attr_value)
-            # Update the modifier's price so it displays in UI
-            for mod in item_modifiers:
-                if mod.get("slug") == attr_value and not mod.get("price"):
-                    mod["price"] = upcharge
-                    break
-            return upcharge, priced_slugs
+            # Mark as priced using normalized slug
+            priced_slugs.add(attr_value_normalized)
+            # Update the modifier's price for display purposes
+            if matching_modifier:
+                matching_modifier["price"] = upcharge
+            return upcharge * quantity, priced_slugs
 
-        # Check if category is included
+        # Check if category is included (no charge)
         option_category = self._pricing._get_option_ingredient_category(
             item_type, attr_slug, attr_value
         )
         if option_category and option_category in included_categories:
-            priced_slugs.add(attr_value)
+            # Mark as priced even at $0 to prevent double-counting
+            priced_slugs.add(attr_value_normalized)
+            if matching_modifier:
+                matching_modifier["price"] = 0.0
             return 0.0, priced_slugs
 
-        # Not an included category - try modifier price lookup
+        # Not an included category - try modifier price lookup from DB
         price = self._pricing.lookup_modifier_price(attr_value, item_type)
-        priced_slugs.add(attr_value)
-        if price > 0:
-            for mod in item_modifiers:
-                if mod.get("slug") == attr_value and not mod.get("price"):
-                    mod["price"] = price
-                    break
-        return price, priced_slugs
+        # Always mark as priced (even if price is 0) to prevent double-counting
+        priced_slugs.add(attr_value_normalized)
+        # Update the modifier's price for display purposes
+        if matching_modifier:
+            matching_modifier["price"] = price
+        return price * quantity, priced_slugs

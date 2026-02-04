@@ -330,6 +330,40 @@ class IngredientQueryMixin:
         self._ensure_loaded()
         return set(self._modifier_aliases.keys())
 
+    def get_item_types_for_ingredient(self, ingredient_name: str) -> list[dict]:
+        """Get item types that can have this ingredient as a modifier.
+
+        This is useful when a user orders just an ingredient (like "caramel syrup")
+        without specifying an item - we can suggest items that accept this modifier.
+
+        Args:
+            ingredient_name: The ingredient name or alias to look up
+
+        Returns:
+            List of dicts with item_type_slug and display info, e.g.:
+            [{"slug": "espresso_based", "label": "Espresso Based topping"}, ...]
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+
+        contexts = self._ingredient_price_contexts.get(ingredient_name.lower().strip(), [])
+        item_types = []
+        seen = set()
+
+        for ctx in contexts:
+            if ctx.get("context_type") == "modifier":
+                slug = ctx.get("item_type_slug")
+                if slug and slug not in seen:
+                    seen.add(slug)
+                    item_types.append({
+                        "slug": slug,
+                        "label": ctx.get("label", slug),
+                    })
+
+        return item_types
+
     def get_qualifier_patterns(self) -> list[str]:
         """Get all qualifier patterns sorted by length (longest first).
 

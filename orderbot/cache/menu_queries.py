@@ -571,6 +571,24 @@ class MenuQueryMixin:
         unit_aliases = self._unit_type_aliases.get(unit_type, {})
         return unit_aliases.get(name_lower)
 
+    def is_compound_phrase(self, text: str) -> bool:
+        """Check if text is a known compound phrase that shouldn't be split on 'and'.
+
+        Compound phrases like "bacon egg and cheese" are stored as menu item aliases
+        and should be treated as single items rather than split into parts.
+
+        Args:
+            text: Text to check (case-insensitive)
+
+        Returns:
+            True if the text is a known compound phrase, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return text.lower().strip() in self._compound_phrases
+
     def get_status(self) -> dict[str, Any]:
         """Get cache status information."""
         return {

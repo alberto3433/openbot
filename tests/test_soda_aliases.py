@@ -103,40 +103,40 @@ class TestIsSodaDrink:
         assert test_is_soda_drink("espresso") is False
 
 
-class TestParseSodaDeterministic:
-    """Tests for _parse_soda_deterministic() function."""
+class TestParseSimpleItemDeterministic:
+    """Tests for _parse_simple_item_deterministic() function."""
 
-    def test_parse_soda_with_alias(self):
-        """_parse_soda_deterministic should recognize soda aliases."""
-        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
+    def test_parse_simple_item_with_alias(self):
+        """_parse_simple_item_deterministic should recognize soda aliases."""
+        from orderbot.tasks.parsers.deterministic import _parse_simple_item_deterministic
         from tests.helpers import get_menu_item
-        result = _parse_soda_deterministic("I want a coke")
+        result = _parse_simple_item_deterministic("I want a coke")
         assert result is not None
         menu_item = get_menu_item(result)
         assert menu_item is not None
         # "coke" alias should map to the canonical name "Coca-Cola"
         assert "coca" in menu_item.item_name.lower()
 
-    def test_parse_soda_with_seltzer_alias(self):
-        """_parse_soda_deterministic should recognize 'seltzer' alias."""
-        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
+    def test_parse_simple_item_with_seltzer_alias(self):
+        """_parse_simple_item_deterministic should recognize 'seltzer' alias."""
+        from orderbot.tasks.parsers.deterministic import _parse_simple_item_deterministic
         from tests.helpers import get_menu_item
-        result = _parse_soda_deterministic("I'll have a seltzer")
+        result = _parse_simple_item_deterministic("I'll have a seltzer")
         assert result is not None
         menu_item = get_menu_item(result)
         assert menu_item is not None
 
-    def test_parse_soda_with_nonexistent_item(self):
-        """_parse_soda_deterministic should return None for non-existent sodas."""
-        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
-        result = _parse_soda_deterministic("I want a pepsi")
+    def test_parse_simple_item_with_nonexistent_item(self):
+        """_parse_simple_item_deterministic should return None for non-existent sodas."""
+        from orderbot.tasks.parsers.deterministic import _parse_simple_item_deterministic
+        result = _parse_simple_item_deterministic("I want a pepsi")
         # Pepsi is not in the database, so it shouldn't match
         assert result is None
 
-    def test_parse_soda_with_generic_term(self):
-        """_parse_soda_deterministic should request clarification for generic terms."""
-        from orderbot.tasks.parsers.deterministic import _parse_soda_deterministic
-        result = _parse_soda_deterministic("can I get a soda")
+    def test_parse_simple_item_with_generic_term(self):
+        """_parse_simple_item_deterministic should request clarification for generic terms."""
+        from orderbot.tasks.parsers.deterministic import _parse_simple_item_deterministic
+        result = _parse_simple_item_deterministic("can I get a soda")
         assert result is not None
         assert result.needs_category_clarification is not None
 

@@ -213,8 +213,8 @@ class TakingItemsHandler(MenuDataMixin):
         # User might have ordered something directly - pass the already parsed result
         # Selections are already extracted in the parsed items during parsing
         extracted_selections: list[Selection] | None = None
-        if parsed.parsed_items and parsed.parsed_items[0].modifiers:
-            extracted_selections = list(parsed.parsed_items[0].modifiers)
+        if parsed.parsed_items and parsed.parsed_items[0].selections:
+            extracted_selections = list(parsed.parsed_items[0].selections)
             if extracted_selections:
                 logger.info("Selections from greeting input: %s", extracted_selections)
 
@@ -242,8 +242,8 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Selections are already extracted in the parsed items during parsing
         extracted_selections: list[Selection] | None = None
-        if parsed.parsed_items and parsed.parsed_items[0].modifiers:
-            extracted_selections = list(parsed.parsed_items[0].modifiers)
+        if parsed.parsed_items and parsed.parsed_items[0].selections:
+            extracted_selections = list(parsed.parsed_items[0].selections)
             if extracted_selections:
                 logger.info("Selections from input: %s", extracted_selections)
 
@@ -372,6 +372,11 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Route all inquiry types through InquiryRouter
         result = self._inquiry_router.route_inquiry(parsed, order, raw_user_input)
+        if result:
+            return result
+
+        # Handle standalone ingredient (e.g., "I want caramel syrup") - suggest items
+        result = self._handle_standalone_ingredient(parsed, order)
         if result:
             return result
 
@@ -534,6 +539,71 @@ class TakingItemsHandler(MenuDataMixin):
             order=order,
         )
 
+    def _handle_standalone_ingredient(
+        self,
+        parsed: "OpenInputResponse",
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle standalone ingredient order (e.g., "I want caramel syrup").
+
+        When user orders just an ingredient/modifier without specifying an item,
+        suggest items that can have this modifier.
+
+        Returns:
+            StateMachineResult if handled, None otherwise.
+        """
+        if not parsed.found_ingredient_without_item or not parsed.found_ingredient_name:
+            return None
+
+        ingredient = parsed.found_ingredient_name
+        logger.info(
+            "STANDALONE INGREDIENT: suggesting items for '%s'",
+            ingredient
+        )
+
+        # Get item types that can have this ingredient as a modifier
+        item_types = menu_cache.get_item_types_for_ingredient(ingredient)
+        if not item_types:
+            return None
+
+        # Get sample menu items for those item types
+        sample_items = []
+        seen_names = set()
+        for item_type_info in item_types[:3]:  # Limit to 3 item types
+            item_type_slug = item_type_info.get("slug")
+            if not item_type_slug:
+                continue
+
+            items = menu_cache.get_items_by_item_type(item_type_slug)
+            for item in items[:2]:  # Get up to 2 items per type
+                item_name = item.get("name")
+                if item_name and item_name not in seen_names:
+                    seen_names.add(item_name)
+                    sample_items.append(item_name)
+                    if len(sample_items) >= 4:  # Cap at 4 total items
+                        break
+            if len(sample_items) >= 4:
+                break
+
+        if not sample_items:
+            return None
+
+        # Format the suggestion message
+        items_list = format_english_list(sample_items, conjunction="or")
+        msg = f"We could make you a {items_list} with {ingredient}. Would you like one of those?"
+
+        # Store context for follow-up confirmation
+        order.pending_ingredient_suggestion = {
+            "ingredient": ingredient,
+            "suggested_items": sample_items,
+        }
+        order.pending_field = PendingField.CONFIRM_INGREDIENT_SUGGESTION
+
+        return StateMachineResult(
+            message=msg,
+            order=order,
+        )
+
     # =========================================================================
     # ParsedItem Processing (delegates to ParsedItemProcessor)
     # =========================================================================
@@ -625,4 +695,61 @@ class TakingItemsHandler(MenuDataMixin):
             "User did not confirm suggested item '%s', processing as normal input: '%s'",
             suggested_item, user_input
         )
+        return self.handle_taking_items(user_input, order)
+
+    def handle_confirm_ingredient_suggestion(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user's response to ingredient suggestion.
+
+        Called when user ordered just a modifier (e.g., 'I want caramel syrup'),
+        bot suggested items that can have it, and now user responds.
+
+        Handles three cases:
+        1. User says "yes" → ask which item they want
+        2. User directly picks an item (e.g., "iced latte") → add item with ingredient
+        3. User says "no" or something unrelated → process without ingredient
+        """
+        suggestion = order.pending_ingredient_suggestion
+        ingredient = suggestion.get("ingredient", "") if suggestion else ""
+        suggested_items = suggestion.get("suggested_items", []) if suggestion else []
+
+        # Clear suggestion context
+        order.pending_ingredient_suggestion = None
+        order.pending_field = None
+
+        # Check if user explicitly declined
+        user_lower = user_input.lower().strip()
+        is_negative = user_lower in ("no", "nope", "nah", "no thanks", "never mind", "nevermind")
+
+        if is_negative:
+            logger.info(
+                "User declined ingredient suggestion for '%s', processing without ingredient: '%s'",
+                ingredient, user_input
+            )
+            return self.handle_taking_items(user_input, order)
+
+        if is_affirmative(user_input) and suggested_items:
+            logger.info(
+                "User confirmed ingredient suggestion for '%s', asking which item",
+                ingredient
+            )
+            # Store the ingredient to apply when user picks an item
+            order.pending_ingredient_to_apply = ingredient
+            # Ask which item they'd like
+            items_list = format_english_list(suggested_items, conjunction="or")
+            return StateMachineResult(
+                message=f"Great! Which would you like - {items_list}?",
+                order=order,
+            )
+
+        # User might be directly picking an item (e.g., "iced latte" instead of "yes")
+        # Set the ingredient to apply and process the input as a normal order
+        logger.info(
+            "User responded to ingredient suggestion for '%s' with '%s', applying ingredient to next item",
+            ingredient, user_input
+        )
+        order.pending_ingredient_to_apply = ingredient
         return self.handle_taking_items(user_input, order)

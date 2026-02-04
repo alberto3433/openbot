@@ -67,7 +67,7 @@ from .item_parsing import (
     # Internal helpers
     _match_menu_item_name_for_type,
 )
-from .simple_item_parsing import _parse_simple_item_deterministic, _parse_soda_deterministic
+from .simple_item_parsing import _parse_simple_item_deterministic
 from .by_pound_parsing import (
     _parse_by_pound_order,
     _find_by_weight_item,
@@ -162,7 +162,6 @@ __all__ = [
     "_parse_item_generic",
     "_parse_configurable_item",
     "_parse_simple_item_deterministic",
-    "_parse_soda_deterministic",  # Deprecated alias for backward compatibility
     "_parse_split_quantity_items",
     "_parse_by_pound_order",
     "_match_menu_item_name_for_type",

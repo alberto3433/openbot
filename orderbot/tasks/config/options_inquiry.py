@@ -114,6 +114,20 @@ class OptionsInquiryHandler:
                 if re.search(pattern, input_lower):
                     return True
 
+            # Also check for partial topic matches for compound topics like "Tea Flavor"
+            # "what flavors do you have?" should match when topic is "Tea Flavor"
+            topic_words = topic_lower.replace("_", " ").split()
+            for word in topic_words:
+                if len(word) >= 4:  # Skip short words like "of", "the"
+                    word_patterns = [
+                        rf"what\s+{re.escape(word)}s?\s+do\s+you\s+have",
+                        rf"what\s+{re.escape(word)}s?\s+(?:are\s+there|have\s+you\s+got)",
+                        rf"which\s+{re.escape(word)}s?",
+                    ]
+                    for pattern in word_patterns:
+                        if re.search(pattern, input_lower):
+                            return True
+
         return False
 
     def detect_different_attribute_inquiry(

@@ -41,22 +41,22 @@ class ItemTask(BaseTask):
 class MenuItemTask(ItemTask):
     """Task for a menu item ordered by name (e.g., 'The Chipotle Egg Omelette').
 
-    All customizations (attribute choices and modifier add-ons) are stored in
-    a unified `modifiers` list using the standard modifier format.
+    All customizations (attribute choices and add-ons) are stored in a unified
+    `selections` list using the standard selection format.
 
     Access methods:
-    - get_selection(category): Get first modifier for a category
-    - get_selections(category): Get all modifiers for a category
-    - get_selection_value(category): Get slug of first modifier
-    - has_selection(category): Check if any modifier exists
-    - add_selection(...): Add a new modifier
-    - remove_selection(...): Remove modifier(s)
+    - get_selection(category): Get first selection for a category
+    - get_selections(category): Get all selections for a category
+    - get_selection_value(category): Get slug of first selection
+    - has_selection(category): Check if any selection exists
+    - add_selection(...): Add a new selection
+    - remove_selection(...): Remove selection(s)
     - duplicate(): Create a deep copy with a new UUID
 
     Examples:
         item.add_selection("everything", "bread", display_name="Everything")
         item.add_selection("yes", "toasted", display_name="Toasted")
-        item.add_selection("bacon", "protein", quantity=2, price=1.50)
+        item.add_selection("bacon", "protein", quantity=2)  # price calculated later
 
         bread = item.get_selection_value("bread")  # "everything"
         is_toasted = item.get_selection_value("toasted") == "yes"
@@ -86,8 +86,9 @@ class MenuItemTask(ItemTask):
     # Used to show "We don't have X. We have A, B, C..." with pagination
     unmatched_selections: dict[str, dict] = Field(default_factory=dict)
 
-    # Unified modifiers list - all customizations (attributes and modifiers)
-    modifiers: list[dict] = Field(default_factory=list)  # Stored as dict for serialization
+    # Unified selections list - all customizations (attribute choices and add-ons)
+    # Renamed from "modifiers" to "selections" for clarity - everything is a selection
+    selections: list[dict] = Field(default_factory=list)  # Stored as dict for serialization
 
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
@@ -157,6 +158,20 @@ class MenuItemTask(ItemTask):
         return self.bundle_id
 
     # -------------------------------------------------------------------------
+    # Backward compatibility alias
+    # -------------------------------------------------------------------------
+
+    @property
+    def modifiers(self) -> list[dict]:
+        """DEPRECATED: Use `selections` instead. This alias exists for backward compatibility."""
+        return self.selections
+
+    @modifiers.setter
+    def modifiers(self, value: list[dict]) -> None:
+        """DEPRECATED: Use `selections` instead. This alias exists for backward compatibility."""
+        self.selections = value
+
+    # -------------------------------------------------------------------------
     # Selection access methods
     # -------------------------------------------------------------------------
 
@@ -169,7 +184,7 @@ class MenuItemTask(ItemTask):
         Returns:
             Selection dict or None if not found
         """
-        for sel in self.modifiers:
+        for sel in self.selections:
             if sel.get("category") == category:
                 return sel
         return None
@@ -187,7 +202,7 @@ class MenuItemTask(ItemTask):
             List of Selection dicts matching the category
         """
         return [
-            sel for sel in self.modifiers
+            sel for sel in self.selections
             if sel.get("category") == category and sel.get("slug") != "_declined"
         ]
 
@@ -214,7 +229,7 @@ class MenuItemTask(ItemTask):
         Returns:
             True if at least one selection exists for this category
         """
-        return any(sel.get("category") == category for sel in self.modifiers)
+        return any(sel.get("category") == category for sel in self.selections)
 
     def get_missing_required_fields(self, field_configs: dict) -> list:
         """Get list of required fields that are missing values.
@@ -268,39 +283,41 @@ class MenuItemTask(ItemTask):
         slug: str,
         category: str,
         quantity: int = 1,
-        price: float = 0.0,
+        price: float = 0.0,  # DEPRECATED: Price is now calculated in recalculate_item_price()
         display_name: str | None = None,
         ingredient_category: str | None = None,
         is_default: bool = False,
+        _skip_display: bool = False,
     ) -> None:
         """Add a selection to the item.
+
+        Note: The `price` parameter is DEPRECATED and ignored. Prices are now
+        calculated centrally in PricingEngine.recalculate_item_price() using
+        GlobalAttributeOption.price_modifier as the single source of truth.
+        This prevents double-counting bugs from storing prices at multiple points.
 
         Args:
             slug: Selected option identifier (e.g., "plain", "bacon", "yes")
             category: What type of selection (e.g., "bread", "protein", "toasted")
             quantity: How many (default 1)
-            price: Price contribution per unit (default 0.0)
+            price: DEPRECATED - ignored, kept for backward compatibility
             display_name: Human-readable name (looked up from cache if not provided)
             ingredient_category: The ingredient's category (e.g., "syrup", "sweetener")
                 for quantity unit lookup. Different from category (attribute slug).
             is_default: True if this selection is a default ingredient for a signature item.
                 Used for "already comes with X" messaging when user mentions a default.
+            _skip_display: If True, this selection won't appear in get_summary().
+                Used for tracking entries where display is handled elsewhere.
         """
         # Check if already present (same slug and category)
-        for existing in self.modifiers:
+        for existing in self.selections:
             if existing.get("slug") == slug and existing.get("category") == category:
                 # Update quantity if new quantity is explicitly set (> 1)
                 # This handles the case where pre_filled adds with qty=1, then
                 # extracted_selections tries to add with the actual qty
                 if quantity > 1 and existing.get("quantity", 1) == 1:
                     existing["quantity"] = quantity
-                # Update price ONLY if existing is not a default ingredient.
-                # Default ingredients have price=0 because they're included in base price,
-                # not because the price is "unknown".
-                if price > 0 and existing.get("price", 0) == 0 and not existing.get("is_default"):
-                    existing["price"] = price
-                    # Also update unit_price since we now have the real price
-                    self.unit_price = (self.unit_price or 0.0) + (price * existing.get("quantity", 1))
+                # Price updates are no longer done here - all pricing happens in recalculate_item_price()
                 return
 
         # Look up display name from database if not provided
@@ -324,24 +341,23 @@ class MenuItemTask(ItemTask):
             else:
                 display_name = format_slug_for_display(slug)
 
-        # Build selection entry
+        # Build selection entry - price starts at 0, calculated later in recalculate_item_price()
         selection = {
             "slug": slug,
             "category": category,
             "quantity": quantity,
-            "price": price,
+            "price": 0.0,  # Always 0 - real price calculated in recalculate_item_price()
             "display_name": display_name,
         }
         if ingredient_category:
             selection["ingredient_category"] = ingredient_category
         if is_default:
             selection["is_default"] = True
+        if _skip_display:
+            selection["_skip_display"] = True
 
-        self.modifiers.append(selection)
-
-        # Update unit_price if selection has a price
-        if price > 0:
-            self.unit_price = (self.unit_price or 0.0) + (price * quantity)
+        self.selections.append(selection)
+        # Note: unit_price is NOT updated here - it's calculated in recalculate_item_price()
 
     def remove_selection(self, category: str, slug: str | None = None) -> bool:
         """Remove selection(s) by category and optionally slug.
@@ -356,11 +372,11 @@ class MenuItemTask(ItemTask):
         """
         removed_any = False
         i = 0
-        while i < len(self.modifiers):
-            sel = self.modifiers[i]
+        while i < len(self.selections):
+            sel = self.selections[i]
             if sel.get("category") == category:
                 if slug is None or sel.get("slug") == slug:
-                    removed = self.modifiers.pop(i)
+                    removed = self.selections.pop(i)
                     # Subtract price from unit_price
                     price = removed.get("price", 0)
                     if price > 0:
@@ -379,7 +395,7 @@ class MenuItemTask(ItemTask):
         Returns:
             The modifier dict if found, None otherwise
         """
-        for mod in self.modifiers:
+        for mod in self.selections:
             if mod.get("slug") == slug:
                 return mod
         return None
@@ -396,7 +412,7 @@ class MenuItemTask(ItemTask):
         backward compatibility with code that reads attribute_values.
         """
         result: dict[str, Any] = {}
-        for sel in self.modifiers:
+        for sel in self.selections:
             category = sel.get("category", "")
             slug = sel.get("slug", "")
             display_name = sel.get("display_name")
@@ -463,7 +479,7 @@ class MenuItemTask(ItemTask):
         if value and not isinstance(value, bool):
             slugs_to_set = [str(value)] if not isinstance(value, list) else [str(v) for v in value if isinstance(v, str)]
             existing_defaults = [
-                m for m in self.modifiers
+                m for m in self.selections
                 if m.get("category") == key and m.get("is_default") and m.get("slug") in slugs_to_set
             ]
             if existing_defaults:
@@ -479,8 +495,8 @@ class MenuItemTask(ItemTask):
                 value = slugs_to_set if isinstance(value, list) else slugs_to_set[0]
 
         # Remove existing non-default selections for this category
-        self.modifiers = [
-            m for m in self.modifiers
+        self.selections = [
+            m for m in self.selections
             if not (m.get("category") == key and not m.get("is_default"))
         ]
 
@@ -488,7 +504,7 @@ class MenuItemTask(ItemTask):
         # This handles quantity attributes where user says "no" (e.g., "no extra shots" = 0)
         if value is None or value == 0:
             # Mark as explicitly declined (so it's considered "answered")
-            self.modifiers.append({
+            self.selections.append({
                 "slug": "_declined",
                 "category": key,
                 "quantity": 0,
@@ -562,7 +578,7 @@ class MenuItemTask(ItemTask):
         This is more data-driven than checking is_signature flag - it's based
         on whether the item actually has menu_item_ingredients defined.
         """
-        return any(mod.get("is_default", False) for mod in self.modifiers)
+        return any(mod.get("is_default", False) for mod in self.selections)
 
     def get_display_name(self) -> str:
         """Get display name for this menu item.
@@ -582,7 +598,7 @@ class MenuItemTask(ItemTask):
             return self.menu_item_name
 
         # Check for name-forming category modifiers (e.g., bread type)
-        for sel in self.modifiers:
+        for sel in self.selections:
             category = sel.get("category", "")
             if is_name_forming_category(category):
                 # Use the ingredient's display name if available
@@ -618,11 +634,15 @@ class MenuItemTask(ItemTask):
 
         # Collect display names from selections
         displays = []
-        for sel in self.modifiers:
+        for sel in self.selections:
             slug = sel.get("slug", "")
             category = sel.get("category", "")
             display_name = sel.get("display_name", "")
             quantity = sel.get("quantity", 1)
+
+            # Skip selections marked as hidden (e.g., tracking entries for quantity modifiers)
+            if sel.get("_skip_display"):
+                continue
 
             # Skip "no" and "_declined" selections (user declined)
             if slug in ("no", "_declined"):

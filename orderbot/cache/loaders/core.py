@@ -111,6 +111,9 @@ class LoaderMixin(
                 # Pre-load ALL item type attributes at startup (eliminates runtime lazy loading)
                 self._preload_all_item_type_attributes(bulk_data)
 
+                # Load attribute inquiry keywords (data-driven mapping for "what types?" queries)
+                self._load_attribute_inquiry_keywords(db)
+
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
 

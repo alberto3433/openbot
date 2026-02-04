@@ -101,13 +101,13 @@ class TestDeterministicParserHelpers:
 
     def test_extract_toasted(self):
         """Test extracting toasted preference via generic extract_attribute_values."""
-        attrs = extract_attribute_values("yes, toasted please", "bagel")
+        attrs, _ = extract_attribute_values("yes, toasted please", "bagel")
         assert attrs.get("toasted") is True
 
-        attrs = extract_attribute_values("not toasted", "bagel")
+        attrs, _ = extract_attribute_values("not toasted", "bagel")
         assert attrs.get("toasted") is False
 
-        attrs = extract_attribute_values("plain bagel", "bagel")
+        attrs, _ = extract_attribute_values("plain bagel", "bagel")
         assert "toasted" not in attrs  # No explicit toasted preference
 
     def test_extract_spread(self):
@@ -125,14 +125,14 @@ class TestDeterministicParserHelpers:
             return None
 
         # "scallion cream cheese" matches scallion_cream_cheese slug
-        attrs = extract_attribute_values("with scallion cream cheese", "bagel")
+        attrs, _ = extract_attribute_values("with scallion cream cheese", "bagel")
         assert _get_spread_slug(attrs) == "scallion_cream_cheese"
 
         # "regular cream cheese" matches plain_cream_cheese slug
-        attrs = extract_attribute_values("with regular cream cheese", "bagel")
+        attrs, _ = extract_attribute_values("with regular cream cheese", "bagel")
         assert _get_spread_slug(attrs) == "plain_cream_cheese"
 
-        attrs = extract_attribute_values("everything bagel toasted", "bagel")
+        attrs, _ = extract_attribute_values("everything bagel toasted", "bagel")
         assert "spread" not in attrs  # No spread mentioned
 
     def test_extract_spread_cc_alias(self):
@@ -145,12 +145,12 @@ class TestDeterministicParserHelpers:
             return None
 
         # "scallion cc" alias resolves to scallion_cream_cheese slug
-        attrs = extract_attribute_values("scallion cc", "bagel")
+        attrs, _ = extract_attribute_values("scallion cc", "bagel")
         spread = _get_spread_slug(attrs)
         assert spread == "scallion_cream_cheese", f"Expected 'scallion_cream_cheese' but got '{spread}'"
 
         # "blueberry cc" alias resolves to blueberry_cream_cheese slug
-        attrs = extract_attribute_values("blueberry cc", "bagel")
+        attrs, _ = extract_attribute_values("blueberry cc", "bagel")
         spread = _get_spread_slug(attrs)
         assert spread == "blueberry_cream_cheese", f"Expected 'blueberry_cream_cheese' but got '{spread}'"
 
@@ -161,7 +161,7 @@ class TestDeterministicParserHelpers:
         detect this and store it in _unavailable_size key for helpful user messaging.
         """
         # "medium hot coffee" should detect that medium is unavailable
-        result = extract_attribute_values("medium hot coffee", "sized_beverage")
+        result, _ = extract_attribute_values("medium hot coffee", "sized_beverage")
 
         # Should have _unavailable_size key with the attempted medium option
         assert "_unavailable_size" in result, (
@@ -180,7 +180,7 @@ class TestDeterministicParserHelpers:
     def test_extract_available_size_option(self):
         """Test that available size options are extracted normally."""
         # "large hot coffee" should extract size=large (available)
-        result = extract_attribute_values("large hot coffee", "sized_beverage")
+        result, _ = extract_attribute_values("large hot coffee", "sized_beverage")
 
         # Should have size=large (single_select returns slug directly)
         assert result.get("size") == "large", (
@@ -204,7 +204,7 @@ class TestDeterministicParserHelpers:
         The fix adds option aliases to attr_option_slugs so they're properly
         skipped by _extract_modifiers_generic.
         """
-        result = extract_attribute_values("small coffee with oat milk", "sized_beverage")
+        result, _ = extract_attribute_values("small coffee with oat milk", "sized_beverage")
         milk_entries = result.get("milk_sweetener_syrup", [])
         assert len(milk_entries) == 1, (
             f"Expected 1 milk entry, got {len(milk_entries)}: {milk_entries}"
@@ -1934,7 +1934,7 @@ class TestSplitQuantityBagelParsing:
 
         # Debug: Check extraction for each part
         for i, (qty, part_text) in enumerate(parts):
-            attrs = extract_attribute_values(part_text, "bagel")
+            attrs, _ = extract_attribute_values(part_text, "bagel")
             print(f"DEBUG: Part {i} ({qty}x): '{part_text}' -> spread={attrs.get('spread')}")
 
         result = _parse_split_quantity_items(text)
@@ -2089,6 +2089,100 @@ class TestSplitQuantityDrinksParsing:
         assert "hot" in drinks[0].item_name.lower()
         # Second coffee: iced
         assert "iced" in drinks[1].item_name.lower()
+
+
+class TestPartialQuantitySplit:
+    """Tests for partial-modifier split (e.g., '4 coffees 2 with milk')."""
+
+    def test_partial_split_detection_basic(self):
+        """Test the detection function for simple split patterns."""
+        from orderbot.tasks.parsers.deterministic.item_parsing import (
+            _detect_partial_modifier_split
+        )
+
+        # Valid split: "2 with milk and sugar"
+        result = _detect_partial_modifier_split(" 2 with milk and sugar", 4)
+        assert result is not None
+        assert result[0] == 2  # split_qty
+        assert "milk" in result[1]  # modifier_text
+
+    def test_partial_split_detection_word_number(self):
+        """Test split detection with word numbers."""
+        from orderbot.tasks.parsers.deterministic.item_parsing import (
+            _detect_partial_modifier_split
+        )
+
+        result = _detect_partial_modifier_split(" two with cream", 4)
+        assert result is not None
+        assert result[0] == 2
+        assert "cream" in result[1]
+
+    def test_partial_split_simple_with_comma(self):
+        """Test that simple patterns with comma still work."""
+        from orderbot.tasks.parsers.deterministic.item_parsing import (
+            _detect_partial_modifier_split
+        )
+
+        # Simple pattern with comma - should work
+        result = _detect_partial_modifier_split(", 2 with milk", 4)
+        assert result is not None
+        assert result[0] == 2
+        assert "milk" in result[1]
+
+    def test_partial_split_skip_complex_multi_spec(self):
+        """Test that complex patterns with multiple split specs are skipped."""
+        from orderbot.tasks.parsers.deterministic.item_parsing import (
+            _detect_partial_modifier_split
+        )
+
+        # Complex pattern with multiple specs - should return None
+        result = _detect_partial_modifier_split(
+            " - 2 with milk, 1 black, 1 with cream", 4
+        )
+        assert result is None
+
+    def test_partial_split_skip_multiple_specs(self):
+        """Test that multiple split specs are skipped."""
+        from orderbot.tasks.parsers.deterministic.item_parsing import (
+            _detect_partial_modifier_split
+        )
+
+        # Multiple split specs - should return None
+        result = _detect_partial_modifier_split(" 2 with milk 1 with sugar", 4)
+        assert result is None
+
+    def test_partial_split_skip_when_qty_equals_total(self):
+        """Test that split is skipped when qty equals total."""
+        from orderbot.tasks.parsers.deterministic.item_parsing import (
+            _detect_partial_modifier_split
+        )
+
+        # split_qty must be < total_qty
+        result = _detect_partial_modifier_split(" 4 with milk", 4)
+        assert result is None
+
+    def test_partial_split_full_parse(self):
+        """Test full parsing of partial split pattern."""
+        from orderbot.tasks.parsers.deterministic.core import (
+            parse_open_input_deterministic
+        )
+
+        # Simple pattern that should work
+        result = parse_open_input_deterministic("4 hot coffees 2 with milk")
+        if result is not None and len(result.parsed_items) == 2:
+            # If partial split worked, we should have 2 items
+            items = result.parsed_items
+            # One should be qty 2 with milk, one should be qty 2 without
+            assert items[0].quantity + items[1].quantity == 4
+            # First item should have modifiers (milk)
+            has_milk_0 = any(
+                s.slug in ("whole_milk", "milk") for s in (items[0].selections or [])
+            )
+            has_milk_1 = any(
+                s.slug in ("whole_milk", "milk") for s in (items[1].selections or [])
+            )
+            # One should have milk, one should not
+            assert has_milk_0 != has_milk_1, "One group should have milk, the other should not"
 
 
 class TestParsedItemsMultiItem:

@@ -1274,7 +1274,7 @@ def update_item_type_global_attribute_link(
         link.ask_in_conversation = payload.ask_in_conversation
     if payload.listen_only is not None:
         link.listen_only = payload.listen_only
-    if payload.question_text is not None:
+    if "question_text" in payload.model_fields_set:
         link.question_text = payload.question_text
     if payload.min_selections is not None:
         link.min_selections = payload.min_selections

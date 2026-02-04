@@ -511,7 +511,7 @@ def update_ingredient(
         linked_count = _sync_ingredient_to_global_options(db, ingredient)
         if linked_count > 0:
             logger.info("Auto-linked %d GlobalAttributeOptions after must_match update", linked_count)
-    if payload.abbreviation is not None:
+    if "abbreviation" in payload.model_fields_set:
         ingredient.abbreviation = payload.abbreviation
 
     db.commit()

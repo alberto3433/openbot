@@ -1456,6 +1456,9 @@
 
       const aliases = document.getElementById("optionAliases").value.trim();
 
+      // Get display name for toast message (always visible in the form)
+      const displayName = document.getElementById("optionDisplayName").value.trim();
+
       // Build payload - backend derives slug/display_name from ingredient when linked
       const payload = {
         price_modifier: priceModifier,
@@ -1470,7 +1473,6 @@
       if (!ingredientId) {
         // Only include slug/display_name for non-ingredient options
         const slug = document.getElementById("optionSlug").value.trim().toLowerCase();
-        const displayName = document.getElementById("optionDisplayName").value.trim();
 
         if (!slug || !displayName) {
           showToast("Slug and display name are required", "error");

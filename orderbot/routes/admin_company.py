@@ -90,25 +90,26 @@ def update_company(
         company.name = payload.name
     if payload.bot_persona_name is not None:
         company.bot_persona_name = payload.bot_persona_name
-    if payload.tagline is not None:
+    # Use model_fields_set for clearable string fields (allows setting to null)
+    if "tagline" in payload.model_fields_set:
         company.tagline = payload.tagline
-    if payload.headquarters_address is not None:
+    if "headquarters_address" in payload.model_fields_set:
         company.headquarters_address = payload.headquarters_address
-    if payload.corporate_phone is not None:
+    if "corporate_phone" in payload.model_fields_set:
         company.corporate_phone = payload.corporate_phone
-    if payload.corporate_email is not None:
+    if "corporate_email" in payload.model_fields_set:
         company.corporate_email = payload.corporate_email
-    if payload.website is not None:
+    if "website" in payload.model_fields_set:
         company.website = payload.website
-    if payload.instagram_handle is not None:
+    if "instagram_handle" in payload.model_fields_set:
         company.instagram_handle = payload.instagram_handle
-    if payload.feedback_form_url is not None:
+    if "feedback_form_url" in payload.model_fields_set:
         company.feedback_form_url = payload.feedback_form_url
-    if payload.logo_url is not None:
+    if "logo_url" in payload.model_fields_set:
         company.logo_url = payload.logo_url
-    if payload.business_hours is not None:
+    if "business_hours" in payload.model_fields_set:
         company.business_hours = payload.business_hours
-    if payload.signature_item_label is not None:
+    if "signature_item_label" in payload.model_fields_set:
         company.signature_item_label = payload.signature_item_label
 
     # Payment Methods
@@ -130,7 +131,7 @@ def update_company(
     # Dietary & Certification Info
     if payload.is_kosher is not None:
         company.is_kosher = payload.is_kosher
-    if payload.kosher_certification is not None:
+    if "kosher_certification" in payload.model_fields_set:
         company.kosher_certification = payload.kosher_certification
     if payload.is_halal is not None:
         company.is_halal = payload.is_halal
@@ -156,9 +157,9 @@ def update_company(
         company.catering_minimum_order = payload.catering_minimum_order
     if payload.catering_advance_notice_hours is not None:
         company.catering_advance_notice_hours = payload.catering_advance_notice_hours
-    if payload.catering_phone is not None:
+    if "catering_phone" in payload.model_fields_set:
         company.catering_phone = payload.catering_phone
-    if payload.catering_email is not None:
+    if "catering_email" in payload.model_fields_set:
         company.catering_email = payload.catering_email
 
     db.commit()

@@ -595,10 +595,35 @@ class SelectInputHandler:
         if numeric_match:
             return numeric_match
 
-        # Check if input is an affirmative response
+        # Check if input is an affirmative response ("yes", "sure", etc.)
         if is_affirmative(user_input):
+            available_opts = [opt for opt in options if opt.get("is_available", True)]
+
+            # If there's exactly ONE option, auto-select it
+            # This handles "Would you like an espresso shot?" -> "yes" -> add 1 shot
+            if len(available_opts) == 1:
+                single_opt = available_opts[0]
+                opt_price = single_opt.get("price") or single_opt.get("price_modifier") or 0.0
+                display_name = single_opt.get("display_name", single_opt["slug"])
+
+                item.add_selection(
+                    single_opt["slug"],
+                    attr_slug,
+                    quantity=1,
+                    price=opt_price,
+                    display_name=display_name,
+                )
+
+                logger.info(
+                    "AFFIRMATIVE_SINGLE_OPTION: auto-selected %s=%s for 'yes' response",
+                    attr_slug, single_opt["slug"]
+                )
+
+                return advance_callback(item, order, attr, display_name)
+
+            # Multiple options - ask which one
             attr_name = attr["display_name"].lower()
-            available = [opt["display_name"] for opt in options if opt.get("is_available", True)]
+            available = [opt["display_name"] for opt in available_opts]
             if available and len(available) <= 6:
                 options_str = format_english_list(available, conjunction="or")
                 return StateMachineResult(
@@ -701,6 +726,11 @@ class SelectInputHandler:
 
         This enables data-driven handling of numeric attributes like "shots"
         where options have slugs like "1", "2", "3", "4".
+
+        Also handles affirmative responses ("yes", "sure") by defaulting to "1"
+        when the options are numeric. This supports flows like:
+        - Bot: "Would you like an espresso shot?"
+        - User: "yes" -> adds 1 shot
         """
         # Check if any options have numeric slugs (using utility function)
         numeric_slugs = find_numeric_options(options)
@@ -709,8 +739,14 @@ class SelectInputHandler:
 
         # Parse numeric value from user input
         parsed_num = parse_numeric_input(user_input)
+
+        # If no numeric value found but user said "yes", default to 1
+        # This handles "Would you like a shot?" -> "yes" -> 1 shot
         if parsed_num is None:
-            return None
+            if is_affirmative(user_input) and "1" in numeric_slugs:
+                parsed_num = 1
+            else:
+                return None
 
         # Find option with matching numeric slug
         target_slug = str(parsed_num)

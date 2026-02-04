@@ -416,6 +416,35 @@ class TestShotsHandling:
         assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {len(shot_mods)}"
         assert shot_mods[0].get("quantity") == 2, f"Expected quantity=2, got {shot_mods[0].get('quantity')}"
 
+    def test_yes_to_shot_question_adds_single_shot(self):
+        """
+        Test that 'yes' to 'Would you like an espresso shot?' adds 1 shot.
+
+        Regression test for issue where "yes" would prompt "Which shots would you like?"
+        instead of adding a single shot and advancing.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order a coffee (sized_beverage) to get the shots question
+        result = sm.process("large black coffee", order)
+        assert len(result.order.items.items) == 1
+
+        # Check if database is configured to ask about shots
+        if "shot" not in result.message.lower():
+            pytest.skip("Database not configured to ask about shots")
+
+        # Answer with "yes" - should add 1 shot and advance
+        result = sm.process("yes", result.order)
+
+        # The response should NOT ask "which shots" - it should advance
+        # This was the bug: "yes" used to prompt "Great! Which shots would you like?"
+        assert "which" not in result.message.lower(), (
+            f"'yes' should add a shot and advance, not ask 'which shots'. Got: {result.message}"
+        )
+
     def test_no_extra_shots(self):
         """
         Test that 'none' for shots declines the option (nothing added to cart).

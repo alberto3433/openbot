@@ -172,7 +172,7 @@ def update_store(
         store.zip_code = payload.zip_code
     if payload.phone is not None:
         store.phone = payload.phone
-    if payload.hours is not None:
+    if "hours" in payload.model_fields_set:
         store.hours = payload.hours
     if payload.timezone is not None:
         store.timezone = payload.timezone

@@ -6542,9 +6542,11 @@ class TestUnavailableAttributeOptions:
         """
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.schemas import OrderPhase
 
         sm = OrderStateMachine()
         order = OrderTask()
+        order.set_phase(OrderPhase.TAKING_ITEMS)
 
         # Process user input with unavailable "medium" size
         result = sm.process("medium hot coffee with 2 splendas", order)

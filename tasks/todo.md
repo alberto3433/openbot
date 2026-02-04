@@ -1,3 +1,46 @@
+# COMPLETED: Skip Rules Admin UI
+
+## Summary
+
+Added UI to manage skip rules within the Global Attributes admin page. Skip rules allow an option to skip asking about other attributes when selected (e.g., "Black" coffee skips the "Milk/Sweetener/Syrup" attribute).
+
+### Implementation
+
+1. **Backend API endpoints** (already existed in `admin_global_attributes.py`):
+   - `GET /admin/global-attributes/{attr_id}/options/{option_id}/skip-rules` - List skip rules
+   - `POST /admin/global-attributes/{attr_id}/options/{option_id}/skip-rules` - Add skip rule
+   - `DELETE /admin/global-attributes/{attr_id}/options/{option_id}/skip-rules/{rule_id}` - Delete skip rule
+
+2. **Pydantic schemas** (already existed in `global_attributes.py`):
+   - `SkipRuleOut` - Response model for skip rules
+   - `SkipRuleCreate` - Request model for creating skip rules
+   - `SkipRuleOutBasic` - Embedded in `GlobalAttributeOptionOut.skip_rules`
+
+3. **HTML UI** (`admin_global_attributes.html`):
+   - Skip rules section in option edit modal (shown only for existing options)
+   - Table displaying current skip rules with delete buttons
+   - "Add Skip Rule" modal with attribute dropdown
+   - Skip badge in options list showing count of skip rules
+
+4. **JavaScript functions**:
+   - `loadOptionSkipRules()` - Fetches skip rules from API
+   - `renderSkipRules()` - Renders the table in the modal
+   - `addSkipRule()` - Creates new skip rule via API
+   - `deleteSkipRule()` - Deletes skip rule via API
+   - `loadAvailableAttributesForSkipRule()` - Populates dropdown (excludes already-skipped)
+   - `openAddSkipRuleModal()` / `closeAddSkipRuleModal()` - Modal control
+
+### Verification
+
+1. Open Global Attributes admin → Select "Coffee Preparation" → Edit "Black" option
+2. Should see "Skip Rules" section showing "Milk/Sweetener/Syrup"
+3. Click "+ Add Skip Rule" → dropdown shows available attributes
+4. Add a new skip rule → appears in table
+5. Click delete → rule removed
+6. Changes persist after page refresh
+
+---
+
 # COMPLETED: Consolidate Modifiers and Attributes (Phases 1-2)
 
 ## Summary
@@ -36,6 +79,61 @@ Single-pass pricing + rename `modifiers` to `selections` is pending. This would:
 2. Merge `AttributeUpchargeCalculator` into simpler `_calculate_selection_prices()`
 3. Delete `AttributeUpchargeCalculator` class
 4. Update all files that reference `item.modifiers` to use `item.selections`
+
+---
+
+# Fix: Skip Rules Not Applied for Boolean Attributes
+
+## Problem
+
+Skip rules aren't being applied when boolean attributes like "decaf" are selected. The logs show:
+```
+GET_UNANSWERED_MANDATORY: item_type=sized_beverage, attribute_values={'decaf': True}, skipped=set()
+```
+
+The `skipped` set is empty when it should contain `"shots"` (because "decaf" has a skip rule to skip "shots").
+
+## Root Cause
+
+In `orderbot/tasks/config/handler.py`, the `_get_skipped_attributes()` function handles boolean attribute values incorrectly:
+
+```python
+elif isinstance(value, bool):
+    # Boolean - check if "yes" or "no" triggers skip rules
+    bool_slug = "yes" if value else "no"
+    attr_skips = menu_cache.get_skipped_attributes_for_option(bool_slug)
+```
+
+When `decaf=True`, this code looks up skip rules for the generic option `"yes"` instead of the actual option slug. The skip rules are configured for the `"decaf"` option (or similar), not `"yes"`.
+
+## Solution
+
+For boolean attributes with `True` value, use the **attribute slug** as the option slug, since boolean attributes typically have their "yes" option named after the attribute (e.g., attribute "decaf" has option "yes" with slug "yes" or "decaf").
+
+The fix needs to:
+1. For boolean `True` values, look up skip rules for the **attribute slug** itself
+2. The attribute slug is the key in `attribute_values` dict (e.g., "decaf")
+3. This matches how skip rules are configured in the admin UI
+
+## Implementation
+
+**File:** `orderbot/tasks/config/handler.py`
+
+In `_get_skipped_attributes()`, change:
+```python
+elif isinstance(value, bool) and value:
+    # For boolean True, the option slug is the attribute slug itself
+    # e.g., decaf=True means "decaf" option was selected, check its skip rules
+    attr_skips = menu_cache.get_skipped_attributes_for_option(attr_slug)
+    skipped.update(attr_skips)
+```
+
+## Verification
+
+1. Restart server
+2. Order "decaf coffee"
+3. After size and milk, verify shots question is NOT asked
+4. Logs should show `skipped={'shots'}` instead of `skipped=set()`
 
 ---
 

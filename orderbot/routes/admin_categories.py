@@ -77,7 +77,7 @@ def _handle_before_update(item, payload, db):
             raise HTTPException(status_code=400, detail=f"A category with name '{new_name}' already exists")
         item.name = new_name
 
-    if payload.description is not None:
+    if "description" in payload.model_fields_set:
         item.description = payload.description.strip() if payload.description else None
 
 

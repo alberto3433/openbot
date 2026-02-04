@@ -392,7 +392,7 @@ def update_menu_item(
 
     if payload.name is not None:
         item.name = payload.name
-    if payload.description is not None:
+    if "description" in payload.model_fields_set:
         item.description = payload.description
     # Note: payload.category is ignored - use category_ids for categorization
     if payload.is_signature is not None:
@@ -415,9 +415,9 @@ def update_menu_item(
         item.item_type_id = payload.item_type_id
     if payload.aliases is not None:
         sync_entity_aliases(db, item, payload.aliases, "menu_item")
-    if payload.abbreviation is not None:
+    if "abbreviation" in payload.model_fields_set:
         item.abbreviation = payload.abbreviation
-    if payload.required_match_phrases is not None:
+    if "required_match_phrases" in payload.model_fields_set:
         item.required_match_phrases = payload.required_match_phrases
     if payload.category_ids is not None:
         _set_menu_item_categories(db, item, payload.category_ids)

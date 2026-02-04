@@ -2355,6 +2355,54 @@ class TestParsedItemsMultiItem:
         coffee_types = {"espresso_based", "sized_beverage", "coffee"}
         assert any(t in coffee_types for t in types), f"Expected a coffee-type item, got: {types}"
 
+    def test_egg_and_cheese_on_plain_bagel_and_a_coffee_is_multi_item(self):
+        """Test that 'egg and cheese on plain bagel and a coffee' IS parsed as multi-item.
+
+        Regression test: "egg and cheese" is a compound phrase, "on plain bagel" is a modifier,
+        and "and a coffee" adds a second item. The " and " is NOT at the start of the remainder
+        (which is "on plain bagel and a coffee"), so we need to search for it anywhere.
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order("egg and cheese on plain bagel and a coffee")
+        assert result is not None, "Expected multi-item result for 'egg and cheese on plain bagel and a coffee'"
+        assert len(result.parsed_items) == 2, f"Expected 2 items, got {len(result.parsed_items)}"
+
+        # Check item types
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
+        assert "egg_sandwich" in types, f"Expected egg_sandwich, got: {types}"
+        # Coffee can be sized_beverage or coffee depending on parsing path
+        coffee_types = {"sized_beverage", "coffee"}
+        assert any(t in coffee_types for t in types), f"Expected a coffee-type item, got: {types}"
+
+        # Verify the egg sandwich has the bread attribute
+        egg_items = [i for i in result.parsed_items if _get_parsed_item_type(i) == "egg_sandwich"]
+        assert len(egg_items) == 1, "Expected exactly one egg sandwich"
+        egg = egg_items[0]
+        # Check if "plain" is in the original_text or bread attribute
+        original = getattr(egg, 'original_text', '') or ''
+        bread = getattr(egg, 'attribute_values', {}).get('bread', '')
+        assert "plain" in original.lower() or "plain" in str(bread).lower(), (
+            f"Expected 'plain' in original_text or bread attribute, got: original={original}, bread={bread}"
+        )
+
+    def test_egg_and_cheese_with_modifiers_is_single_item(self):
+        """Test that 'egg and cheese with bacon and cream cheese' is NOT parsed as multi-item.
+
+        Regression test: "egg and cheese" is a compound phrase. The "and cream cheese"
+        follows "with bacon", so it's a modifier chain, not a second item.
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        # This should NOT be parsed as multi-item - it's an egg and cheese sandwich
+        # with multiple modifiers (bacon, cream cheese)
+        result = _parse_multi_item_order("egg and cheese with bacon and cream cheese")
+
+        assert result is None, (
+            "Expected None (single item: egg and cheese with modifiers), but got multi-item result. "
+            f"parsed_items: {[(getattr(i, 'item_name', None), getattr(i, 'item_type', None)) for i in result.parsed_items] if result else 'N/A'}"
+        )
+
 
 class TestDuplicatePatterns:
     """Tests for duplicate item patterns: 'another one', 'one more', 'another bagel', etc."""

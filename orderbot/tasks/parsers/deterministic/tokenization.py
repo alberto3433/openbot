@@ -415,43 +415,68 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
         # Check if a compound phrase appears at the start (e.g., "egg and cheese on plain bagel")
         compound_match = menu_cache.find_compound_phrase_in(text_lower)
         if compound_match:
-            # Found a compound phrase at start - check if remainder is multi-item separator
+            # Found a compound phrase at start - check if there's a second item anywhere
             remainder = text_lower[len(compound_match):].strip()
 
-            # If remainder starts with "and " followed by an item, it's multi-item
-            # e.g., "egg and cheese and a latte" -> ["egg and cheese", "a latte"]
-            if remainder.startswith("and "):
-                potential_item = remainder[4:].strip()  # skip "and "
-                has_next_item, next_item_type, next_resolved = _has_item_indicator(potential_item)
-                if has_next_item:
-                    # Multi-item: compound phrase + another item
-                    # Get item type for the compound phrase (not the whole text)
-                    _, compound_item_type, compound_resolved = _has_item_indicator(compound_match)
-                    qty, _ = _extract_leading_quantity(compound_match)
-                    compound_token = Token(
-                        original=text[:len(compound_match)],
-                        token_type="item",
-                        quantity=qty or 1,
-                        item_type=compound_item_type,
-                        resolved_name=compound_resolved,
-                    )
-                    # Recursively tokenize the remainder
-                    remainder_tokens = _smart_split_and_tokenize(potential_item)
-                    if remainder_tokens:
-                        return [compound_token] + remainder_tokens
-                    else:
-                        # Remainder didn't split further - classify it directly
-                        qty2, _ = _extract_leading_quantity(potential_item)
-                        return [compound_token, Token(
-                            original=potential_item,
-                            token_type="item",
-                            quantity=qty2 or 1,
-                            item_type=next_item_type,
-                            resolved_name=next_resolved,
-                        )]
+            # Helper function to create the multi-item split result
+            def _create_multi_item_split(
+                first_item_text: str, after_and: str, next_item_type: str, next_resolved: str
+            ) -> list:
+                """Create token list for compound phrase + second item split."""
+                # Get item type for the compound phrase
+                _, compound_item_type, compound_resolved = _has_item_indicator(compound_match)
+                qty, _ = _extract_leading_quantity(first_item_text.lower())
 
-            # Remainder is a modifier or continuation (e.g., "on plain bagel")
-            # Treat entire input as single item
+                # Use the full first item text (with modifiers) for original
+                compound_token = Token(
+                    original=first_item_text,
+                    token_type="item",
+                    quantity=qty or 1,
+                    item_type=compound_item_type,
+                    resolved_name=compound_resolved,
+                )
+
+                # Recursively tokenize the remainder (second item + any more items)
+                remainder_tokens = _smart_split_and_tokenize(after_and)
+                if remainder_tokens:
+                    return [compound_token] + remainder_tokens
+                else:
+                    # Remainder didn't split further - classify it directly
+                    qty2, _ = _extract_leading_quantity(after_and)
+                    return [compound_token, Token(
+                        original=after_and,
+                        token_type="item",
+                        quantity=qty2 or 1,
+                        item_type=next_item_type,
+                        resolved_name=next_resolved,
+                    )]
+
+            # First check if remainder starts with "and " (e.g., "and a latte")
+            if remainder.startswith("and "):
+                after_and = remainder[4:].strip()  # skip "and "
+                has_next_item, next_item_type, next_resolved = _has_item_indicator(after_and)
+                if has_next_item:
+                    return _create_multi_item_split(compound_match, after_and, next_item_type, next_resolved)
+
+            # Search for " and " anywhere in remainder (not just at start)
+            # e.g., "on plain bagel and a coffee" -> find " and " at position 14
+            and_idx = remainder.find(" and ")
+            while and_idx != -1:
+                # Check if what follows " and " is an item
+                after_and = remainder[and_idx + 5:].strip()  # skip " and "
+                has_next_item, next_item_type, next_resolved = _has_item_indicator(after_and)
+
+                if has_next_item:
+                    # Multi-item: compound phrase + modifiers + second item
+                    # First item = compound + everything before " and "
+                    first_item_text = compound_match + " " + remainder[:and_idx].strip()
+                    first_item_text = first_item_text.strip()
+                    return _create_multi_item_split(first_item_text, after_and, next_item_type, next_resolved)
+
+                # Not an item after this " and " - search for next occurrence
+                and_idx = remainder.find(" and ", and_idx + 5)
+
+            # No multi-item split found - treat entire input as single item
             is_compound = True
 
     if has_item and (is_compound or (" and " not in text_lower and ", " not in text_lower)):

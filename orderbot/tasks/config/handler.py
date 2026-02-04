@@ -442,13 +442,16 @@ class MenuItemConfigHandler(BaseHandler):
         item_type = item.menu_item_type
         unanswered_optional = self._get_unanswered_optional(item, item_type)
 
+        # Always recalculate price after adding a modifier
+        # This ensures upcharges are applied immediately, not just when config is complete
+        self._recalculate_item_price(item)
+
         # Build acknowledgment prefix if provided
         ack_prefix = f"Got it, {acknowledgment}. " if acknowledgment else ""
 
         if not unanswered_optional:
-            # No optional attributes available, recalculate price and complete
+            # No optional attributes available - price already recalculated above, complete
             item.customization_offered = True
-            self._recalculate_item_price(item)
             item.mark_complete()
             order.clear_pending()
 
@@ -985,12 +988,15 @@ class MenuItemConfigHandler(BaseHandler):
         item_type = item.menu_item_type
         unanswered = self._get_unanswered_optional(item, item_type)
 
+        # Always recalculate price after adding a modifier
+        # This ensures upcharges are applied immediately, not just when config is complete
+        self._recalculate_item_price(item)
+
         # Build acknowledgment prefix if we have a choice to acknowledge
         ack_prefix = f"Okay, {matched_choice}. " if matched_choice else ""
 
         if not unanswered:
-            # No more options, recalculate price and complete
-            self._recalculate_item_price(item)
+            # No more options - price already recalculated above, just complete
             item.mark_complete()
             order.set_phase(OrderPhase.TAKING_ITEMS)
             order.clear_pending()

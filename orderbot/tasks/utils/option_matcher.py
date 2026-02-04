@@ -489,7 +489,11 @@ class OptionMatcher:
         partial_matches = self._phase_partial_input_in_option(user_normalized, options, user_input)
 
         if len(partial_matches) == 0:
-            # No matches at all
+            # No "input in option" matches found - try match_multiple() which also
+            # checks if option names appear IN user input (handles "salt pepper" → ["salt", "pepper"])
+            matched = self.match_multiple(user_input, options)
+            if matched:
+                return (matched, [])
             return ([], [])
         elif len(partial_matches) == 1:
             # Single partial match - use it

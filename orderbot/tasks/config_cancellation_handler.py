@@ -20,6 +20,7 @@ from .modifier_operations import (
     find_default_ingredient_match,
     remove_default_ingredient_from_item,
 )
+from .normalization import format_slug_for_display
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants, singularize
@@ -219,7 +220,7 @@ class ConfigCancellationHandler:
                     if modifier_match:
                         removal_result = remove_modifier_from_item(target_item, modifier_match)
                         if removal_result.success:
-                            removed_name = removal_result.removed_value or modifier_part
+                            removed_name = format_slug_for_display(removal_result.removed_value or modifier_part)
                             logger.info(
                                 "Removed '%s' from '%s' via 'X on Y' pattern",
                                 removed_name, target_item.menu_item_name
@@ -244,7 +245,7 @@ class ConfigCancellationHandler:
                 if default_match:
                     removal_result = remove_default_ingredient_from_item(target_item, default_match)
                     if removal_result.success:
-                        removed_name = removal_result.removed_value or modifier_part
+                        removed_name = format_slug_for_display(removal_result.removed_value or modifier_part)
                         logger.info(
                             "Removed default ingredient '%s' from '%s' via 'X on Y' pattern",
                             removed_name, target_item.menu_item_name
@@ -271,7 +272,7 @@ class ConfigCancellationHandler:
                 if modifier_match:
                     removal_result = remove_modifier_from_item(current_item, modifier_match)
                     if removal_result.success:
-                        removed_modifier_name = removal_result.removed_value or cancel_desc
+                        removed_modifier_name = format_slug_for_display(removal_result.removed_value or cancel_desc)
                         logger.info(
                             "Modifier removal during config: removed '%s' from %s",
                             removed_modifier_name, current_item.menu_item_name

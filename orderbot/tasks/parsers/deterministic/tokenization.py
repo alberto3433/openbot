@@ -69,8 +69,12 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     if not resolved and text_singularized != text_lower:
         resolved = menu_cache.resolve_menu_item_alias(text_singularized)
     if resolved:
-        # Get the item type for this menu item
-        item_type, _ = _detect_item_type(text_lower)
+        # Get the item type from the resolved menu item (not from text triggers)
+        # This ensures "egg and cheese" → "Egg and Cheese Sandwich" → "egg_sandwich"
+        item_type = menu_cache.get_item_type_for_menu_item(resolved)
+        if not item_type:
+            # Fallback to trigger-based detection if menu item lookup fails
+            item_type, _ = _detect_item_type(text_lower)
         return True, item_type, resolved
 
     # Second, check if text matches menu items by word boundary (for ambiguous cases)
@@ -404,7 +408,51 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
     has_item, item_type, resolved_name = _has_item_indicator(text_lower)
 
     # Check if this is a compound phrase that shouldn't be split (e.g., "bacon egg and cheese")
+    # First check exact match, then check if input STARTS with a compound phrase
     is_compound = menu_cache.is_compound_phrase(text_lower)
+    compound_match = None
+    if not is_compound:
+        # Check if a compound phrase appears at the start (e.g., "egg and cheese on plain bagel")
+        compound_match = menu_cache.find_compound_phrase_in(text_lower)
+        if compound_match:
+            # Found a compound phrase at start - check if remainder is multi-item separator
+            remainder = text_lower[len(compound_match):].strip()
+
+            # If remainder starts with "and " followed by an item, it's multi-item
+            # e.g., "egg and cheese and a latte" -> ["egg and cheese", "a latte"]
+            if remainder.startswith("and "):
+                potential_item = remainder[4:].strip()  # skip "and "
+                has_next_item, next_item_type, next_resolved = _has_item_indicator(potential_item)
+                if has_next_item:
+                    # Multi-item: compound phrase + another item
+                    # Get item type for the compound phrase (not the whole text)
+                    _, compound_item_type, compound_resolved = _has_item_indicator(compound_match)
+                    qty, _ = _extract_leading_quantity(compound_match)
+                    compound_token = Token(
+                        original=text[:len(compound_match)],
+                        token_type="item",
+                        quantity=qty or 1,
+                        item_type=compound_item_type,
+                        resolved_name=compound_resolved,
+                    )
+                    # Recursively tokenize the remainder
+                    remainder_tokens = _smart_split_and_tokenize(potential_item)
+                    if remainder_tokens:
+                        return [compound_token] + remainder_tokens
+                    else:
+                        # Remainder didn't split further - classify it directly
+                        qty2, _ = _extract_leading_quantity(potential_item)
+                        return [compound_token, Token(
+                            original=potential_item,
+                            token_type="item",
+                            quantity=qty2 or 1,
+                            item_type=next_item_type,
+                            resolved_name=next_resolved,
+                        )]
+
+            # Remainder is a modifier or continuation (e.g., "on plain bagel")
+            # Treat entire input as single item
+            is_compound = True
 
     if has_item and (is_compound or (" and " not in text_lower and ", " not in text_lower)):
         qty, _ = _extract_leading_quantity(text_lower)

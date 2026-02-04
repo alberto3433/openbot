@@ -16,6 +16,7 @@ from .parsers.intent_patterns import parse_can_you_make_it
 from .checkout_messages import got_it_anything_else
 from .pending_fields import PendingField
 from .modifier_change_handler import ChangeRequest
+from .parsers.quantity_utils import extract_leading_quantity
 from orderbot.cache import menu_cache
 
 if TYPE_CHECKING:
@@ -365,26 +366,57 @@ class ConfigModificationHandler:
         # Apply each modifier to the current item
         added_names = []
         for term in modifier_terms:
+            # Extract quantity from the term (e.g., "two eggs" -> qty=2, term="eggs")
+            extracted_qty, search_term = extract_leading_quantity(term)
+            quantity = extracted_qty or 1
+            # If nothing remains after extracting quantity, use the original term
+            if not search_term.strip():
+                search_term = term
+
             # Find matching ingredients in database
-            matches = menu_cache.find_matching_ingredients(term)
+            matches = menu_cache.find_matching_ingredients(search_term)
             logger.info(
-                "ADD_DURING_CONFIG: Looking up term '%s', found %d matches: %s",
-                term, len(matches), [m.get("name") for m in matches[:5]] if matches else []
+                "ADD_DURING_CONFIG: Looking up term '%s' (qty=%d), found %d matches: %s",
+                search_term, quantity, len(matches), [m.get("name") for m in matches[:5]] if matches else []
             )
 
             if len(matches) == 1:
                 match = matches[0]
+
+                # Check if ingredient slug matches an attribute with multiple options
+                # This handles generic ingredients like "egg" that map to style choices
+                # (scrambled, fried, etc.), but NOT specific ingredients like "bacon"
+                # which should be added directly
+                ingredient_slug = match["slug"]
+                attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
+                attr_config = attrs.get(ingredient_slug, {})
+                options = attr_config.get("options", [])
+
+                # Only trigger selection if ingredient slug matches attribute slug
+                # AND that attribute has multiple options
+                if options and len(options) > 1:
+                    logger.info(
+                        "ADD_DURING_CONFIG: Ingredient '%s' matches attribute '%s' with %d options (qty=%d), starting selection",
+                        match["name"], ingredient_slug, len(options), quantity
+                    )
+                    # Store quantity for when user selects an option
+                    order.pending_modifier_quantity = quantity
+                    return self._start_attribute_option_selection(
+                        ingredient_slug, attr_config, options, item, order
+                    )
+
+                # No matching attribute or single option - add directly
                 item.add_selection(
                     slug=match["slug"],
                     category=match["category"],
                     display_name=match["name"],
-                    quantity=1,
+                    quantity=quantity,
                     price=match.get("base_price", 0.0),
                 )
                 added_names.append(match["name"])
                 logger.info(
-                    "ADD_DURING_CONFIG: Added '%s' (category=%s) to item",
-                    match["name"], match["category"]
+                    "ADD_DURING_CONFIG: Added '%s' (category=%s, qty=%d) to item",
+                    match["name"], match["category"], quantity
                 )
             elif len(matches) > 1:
                 # Multiple matches - start disambiguation for this modifier
@@ -509,5 +541,48 @@ class ConfigModificationHandler:
         options_str = "\n".join(option_lines)
         return StateMachineResult(
             message=f"Which {new_value} would you like?\n{options_str}",
+            order=order,
+        )
+
+    def _start_attribute_option_selection(
+        self,
+        attr_slug: str,
+        attr_config: dict,
+        options: list[dict],
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Start selection flow for attribute options when modifier maps to an attribute.
+
+        When a user says "add an egg" and the ingredient category maps to an attribute
+        with multiple options (scrambled, fried, etc.), this method triggers the
+        selection flow to let the user choose their preferred style.
+
+        Args:
+            attr_slug: The attribute slug (e.g., "egg")
+            attr_config: The attribute configuration dict
+            options: List of option dicts with slug, display_name, price_modifier
+            item: The item being configured
+            order: The current order state
+
+        Returns:
+            StateMachineResult asking user to select which option they want
+        """
+        # Set pending field to trigger attribute question handling
+        order.pending_field = f"{item.menu_item_type}:{attr_slug}"
+
+        # Format options list with "and" before last item
+        option_names = [opt.get("display_name") or opt.get("slug", "").replace("_", " ").title() for opt in options[:6]]
+        if len(option_names) > 1:
+            options_text = ", ".join(option_names[:-1]) + ", and " + option_names[-1]
+        else:
+            options_text = option_names[0] if option_names else ""
+
+        # Build question - use DB question_text or generate a default
+        display_name = attr_config.get("display_name") or attr_slug.replace("_", " ")
+        question = f"How would you like your {display_name}?"
+
+        return StateMachineResult(
+            message=f"We have {options_text}. {question}",
             order=order,
         )

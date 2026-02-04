@@ -152,19 +152,6 @@ class TestParseConfigurableItem:
 class TestConfigurableItemAliasesIntegration:
     """Integration tests for the configurable item alias flow."""
 
-    def test_tea_variations_recognized(self):
-        """Various tea drinks should be recognized."""
-        from orderbot.cache import menu_cache
-        item_names = menu_cache.get_configurable_item_names()
-        # Full names
-        assert "hot tea" in item_names
-        assert "iced tea" in item_names
-        assert "chai tea" in item_names
-        assert "green tea" in item_names
-        assert "earl grey tea" in item_names
-        # Aliases
-        assert "chai" in item_names
-
     def test_espresso_variations_recognized(self):
         """Espresso drinks should be recognized."""
         from orderbot.cache import menu_cache

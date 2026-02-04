@@ -589,6 +589,32 @@ class MenuQueryMixin:
         self._ensure_loaded()
         return text.lower().strip() in self._compound_phrases
 
+    def find_compound_phrase_in(self, text: str) -> str | None:
+        """Find a compound phrase that appears at the start of text.
+
+        Checks if any known compound phrase (menu item names/aliases with "and")
+        matches the beginning of the input text.
+
+        Args:
+            text: Text to search in (case-insensitive)
+
+        Returns:
+            The matching compound phrase if found, None otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        text_lower = text.lower().strip()
+
+        # Sort by length (longest first) to match most specific phrase
+        for phrase in sorted(self._compound_phrases, key=len, reverse=True):
+            if text_lower.startswith(phrase):
+                # Ensure word boundary (end of string or non-alphanumeric)
+                if len(text_lower) == len(phrase) or not text_lower[len(phrase)].isalnum():
+                    return phrase
+        return None
+
     def get_status(self) -> dict[str, Any]:
         """Get cache status information."""
         return {

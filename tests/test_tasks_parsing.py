@@ -2318,6 +2318,43 @@ class TestParsedItemsMultiItem:
             f"parsed_items: {[getattr(i, 'item_name', i) for i in result.parsed_items] if result else 'N/A'}"
         )
 
+    def test_egg_and_cheese_on_plain_bagel_is_single_item(self):
+        """Test that 'egg and cheese on plain bagel' is NOT parsed as multi-item.
+
+        Regression test: "egg and cheese" is a compound phrase (menu item alias).
+        The " on plain bagel" is a modifier/bread specification, not a second item.
+        This should NOT be split into two items.
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        # This should NOT be parsed as multi-item - it's an egg and cheese sandwich
+        # with "plain bagel" as the bread choice
+        result = _parse_multi_item_order("egg and cheese on plain bagel")
+
+        assert result is None, (
+            "Expected None (single item: egg and cheese on plain bagel), but got multi-item result. "
+            f"parsed_items: {[(getattr(i, 'item_name', None), getattr(i, 'item_type', None)) for i in result.parsed_items] if result else 'N/A'}"
+        )
+
+    def test_egg_and_cheese_and_a_latte_is_multi_item(self):
+        """Test that 'egg and cheese and a latte' IS parsed as multi-item.
+
+        "egg and cheese" is a compound phrase, but "and a latte" contains an item
+        indicator (article + item), so this should be parsed as two items.
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order("egg and cheese and a latte")
+        assert result is not None, "Expected multi-item result for 'egg and cheese and a latte'"
+        assert len(result.parsed_items) == 2, f"Expected 2 items, got {len(result.parsed_items)}"
+
+        # Check item types
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
+        assert "egg_sandwich" in types, f"Expected egg_sandwich, got: {types}"
+        # Latte can be espresso_based, sized_beverage, or coffee depending on parsing path
+        coffee_types = {"espresso_based", "sized_beverage", "coffee"}
+        assert any(t in coffee_types for t in types), f"Expected a coffee-type item, got: {types}"
+
 
 class TestDuplicatePatterns:
     """Tests for duplicate item patterns: 'another one', 'one more', 'another bagel', etc."""

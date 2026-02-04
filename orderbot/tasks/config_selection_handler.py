@@ -318,10 +318,23 @@ class ConfigSelectionHandler:
         if has_component_slots:
             # Get the component slot question from database (e.g., "side" slot)
             side_slot = menu_cache.get_component_slot(selected_item_type, "side")
-            question = (
-                side_slot.get("prompt_text") if side_slot
-                else f"Would you like a bagel or fruit salad with your {selected_name}?"
-            )
+            if side_slot and side_slot.get("prompt_text"):
+                question = side_slot["prompt_text"]
+            else:
+                # Build question dynamically from options
+                options = menu_cache.get_component_slot_options(selected_item_type, "side")
+                if options:
+                    option_names = [
+                        opt.get("display_name") or opt.get("allowed_item_type", "item")
+                        for opt in options
+                    ]
+                    if len(option_names) <= 2:
+                        options_str = " or ".join(option_names)
+                    else:
+                        options_str = ", ".join(option_names[:-1]) + f", or {option_names[-1]}"
+                    question = f"Would you like {options_str.lower()} with your {selected_name}?"
+                else:
+                    question = f"Would you like a side with your {selected_name}?"
             # Set state to wait for side choice
             order.set_phase(OrderPhase.CONFIGURING_ITEM)
             order.pending_item_id = first_item.id

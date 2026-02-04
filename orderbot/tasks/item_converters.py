@@ -1,12 +1,52 @@
 """
-Item Converters for Adapter Layer.
+Item-Level Serialization Converter.
 
-This module provides conversion between dict-based item representations
-and ItemTask objects.
+This module handles ITEM-LEVEL conversion between:
+- Dict-based item representation (JSON format in order_state["items"])
+- MenuItemTask (internal Pydantic model used by state machine)
 
-The UnifiedItemConverter handles all item types using a data-driven approach
-based on database configuration. All item type slugs (bagel, coffee, sandwich,
-sized_beverage, etc.) are aliases that map to the single UnifiedItemConverter.
+Architecture Layer: PERSISTENCE (Item-level)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           adapter.py                                        │
+│                      Order-level serialization                              │
+│                                                                             │
+│   dict_to_order_task() iterates items, calls:                              │
+│       _unified_converter.from_dict(item) -> MenuItemTask                   │
+│                                                                             │
+│   order_task_to_dict() iterates items, calls:                              │
+│       _unified_converter.to_dict(item, pricing) -> dict                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    THIS MODULE (item_converters.py)                         │
+│                       Item-level serialization                              │
+│                                                                             │
+│   UnifiedItemConverter: Data-driven converter for ALL item types            │
+│   • from_dict(): Restores MenuItemTask from persisted dict                 │
+│   • to_dict(): Serializes MenuItemTask for API/persistence                 │
+│                                                                             │
+│   Handles:                                                                  │
+│   • attribute_values (DB-driven customizations)                            │
+│   • selections (unified modifier list with quantity/price)                 │
+│   • bundle fields (parent/child item relationships)                        │
+│   • Display name generation (via item.get_display_name())                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Data-Driven Design:
+    All item types (bagel, coffee, sandwich, sized_beverage, etc.) use the
+    single UnifiedItemConverter. Item-type-specific behavior comes from
+    database configuration (item_type_attributes table), not code branching.
+
+Public API:
+    _unified_converter: Module-level singleton instance
+        .from_dict(item_dict) -> MenuItemTask
+        .to_dict(item, pricing) -> dict
+
+Related Modules:
+    - adapter.py: Uses this for order-level serialization
+    - order_item_builder.py: Creates INITIAL item dicts (different concern)
+    - models.py: Defines MenuItemTask Pydantic model
 """
 
 import logging

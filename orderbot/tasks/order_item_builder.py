@@ -1,8 +1,51 @@
 """
-Order Item Builder.
+Item Creation Builder.
 
-Builds menu item dictionaries for item creation.
-Extracted from item_adder_handler.py for better separation of concerns.
+This module handles INITIAL ITEM CREATION - converting parsed user input
+into the initial item dict that will become a MenuItemTask.
+
+Architecture Layer: ITEM CREATION (during order flow)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Deterministic Parser Output                              │
+│              (item_type="bagel", item_name="Plain Bagel", ...)             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ build_menu_item_dict()
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 THIS MODULE (order_item_builder.py)                         │
+│                        Item creation builder                                │
+│                                                                             │
+│   OrderItemBuilder: Creates initial item dict from parser output            │
+│   • Looks up menu item by name (gets DB id, is_signature, etc.)            │
+│   • Resolves base price from PricingEngine                                 │
+│   • Detects if item type is configurable (needs questions)                 │
+│                                                                             │
+│   Output: Dict with name, item_type, base_price, id, is_signature          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ (dict becomes MenuItemTask.from_dict)
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        item_adder_handler.py                                │
+│              Creates MenuItemTask and adds to order.items                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Key Distinction from item_converters.py:
+    - order_item_builder.py: Creates NEW items from parser output (forward flow)
+    - item_converters.py: Serializes/deserializes EXISTING items (persistence)
+
+    This module answers: "User said 'plain bagel' - what item dict should I create?"
+    item_converters answers: "Here's a persisted dict - restore the MenuItemTask"
+
+Public API:
+    OrderItemBuilder(menu_lookup_func, pricing)
+        .build_menu_item_dict(item_type, item_name, kwargs) -> dict
+
+Related Modules:
+    - item_adder_handler.py: Uses this to create items during order flow
+    - pricing.py: Provides PricingEngine for base price lookups
+    - item_converters.py: Different concern - persistence/serialization
 """
 
 import logging

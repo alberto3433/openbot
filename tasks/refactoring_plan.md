@@ -284,25 +284,30 @@ These overlapped with `OptionMatcher`'s multi-phase matching.
 ---
 
 ### 11. Config Handler Consolidation
-**Status:** [ ] Not Started
-**Effort:** Medium-High
-**Files:** 5 config-related handler files
+**Status:** [x] Complete
+**Effort:** Medium
+**Files:** `config_helper_handler.py`, `config_side_choice_handler.py` (new), `config_change_handler.py` (new)
 
-**Problem:** Over-abstracted config handling split across:
-- `tasks/config/handler.py` - MenuItemConfigHandler
-- `tasks/config_helper_handler.py` - Config utilities
-- `tasks/config_cancellation_handler.py` - Cancellation during config
-- `tasks/config_modification_handler.py` - Modification during config
-- `tasks/config_selection_handler.py` - Selection during config
+**Problem:** `config_helper_handler.py` was 560+ lines with mixed responsibilities:
+- Side choice handling (bundled child items)
+- Change request handling (modifier changes, clarifications)
+- Question lookup utilities
 
-**Solution:** Consolidate into single `ConfigurationOrchestrator` with internal methods.
+**Solution:** Extract specialized handlers, keep delegation hub pattern (not merge).
+
+After analysis, the existing architecture was found to be healthy with proper separation of concerns:
+- `config/handler.py` - Core attribute configuration flow
+- `config_helper_handler.py` - Delegation hub + utilities
+- Other handlers - Well-defined single responsibilities
+
+The solution was **extraction** (splitting large file) rather than consolidation (merging).
 
 **Implementation Steps:**
-- [ ] Map responsibilities of each handler
-- [ ] Design unified `ConfigurationOrchestrator` interface
-- [ ] Implement consolidated handler
-- [ ] Update state machine to use new handler
-- [ ] Remove old handler files
+- [x] Extract `ConfigSideChoiceHandler` to `config_side_choice_handler.py` (~290 lines)
+- [x] Extract `ConfigChangeHandler` to `config_change_handler.py` (~180 lines)
+- [x] Refactor `config_helper_handler.py` to delegation hub (~190 lines)
+- [x] Use lazy initialization via properties for specialized handlers
+- [x] Run tests to verify no regressions (98 config tests pass)
 
 ---
 
@@ -367,17 +372,32 @@ These overlapped with `OptionMatcher`'s multi-phase matching.
 ---
 
 ### 14. Adapter/Converter Clarification
-**Status:** [ ] Not Started
-**Effort:** Medium
+**Status:** [x] Complete
+**Effort:** Low
 **Files:** `adapter.py`, `state_machine_adapter.py`, `item_converters.py`, `order_item_builder.py`
 
-**Problem:** 4 files with unclear responsibility boundaries.
+**Problem:** 4 files with unclear responsibility boundaries and relationships.
+
+**Analysis:** The architecture is sound - each file has a distinct purpose:
+| File | Layer | Purpose |
+|------|-------|---------|
+| `adapter.py` | Persistence | Order-level dict ↔ OrderTask conversion |
+| `state_machine_adapter.py` | API Boundary | Wraps state machine for API endpoints |
+| `item_converters.py` | Persistence | Item-level dict ↔ MenuItemTask conversion |
+| `order_item_builder.py` | Item Creation | Creates initial item dicts from parser output |
+
+**Key distinction clarified:**
+- `order_item_builder.py`: Creates NEW items from parser output (forward flow)
+- `item_converters.py`: Serializes/deserializes EXISTING items (persistence)
+
+**Solution:** Added comprehensive module docstrings with ASCII architecture diagrams
+showing the relationships and data flow between modules. No code changes needed.
 
 **Implementation Steps:**
-- [ ] Document current responsibility of each file
-- [ ] Identify overlaps
-- [ ] Either merge or clearly separate with docstrings
-- [ ] Consider renaming for clarity
+- [x] Document current responsibility of each file with ASCII diagrams
+- [x] Clarify the key distinction between item_builder vs item_converters
+- [x] Document public API and related modules for each file
+- [x] Run tests to verify no regressions (34 adapter tests pass)
 
 ---
 
@@ -422,10 +442,10 @@ These overlapped with `OptionMatcher`'s multi-phase matching.
 | 8. Address TODO attribute_queries | Documented | 2026-02-04 |
 | 9. Normalization Consolidation | [x] | 2026-02-04 |
 | 10. Deprecate Old Matching Utils | [x] | 2026-02-04 |
-| 11. Config Handler Consolidation | [ ] | |
+| 11. Config Handler Consolidation | [x] | 2026-02-04 |
 | 12. Split Large Handlers | [ ] | |
 | 13. Cache Query Consolidation | [ ] | |
-| 14. Adapter/Converter Clarification | [ ] | |
+| 14. Adapter/Converter Clarification | [x] | 2026-02-04 |
 | 15. Handler DI | [ ] | |
 
 ## Review Notes
@@ -472,3 +492,27 @@ These overlapped with `OptionMatcher`'s multi-phase matching.
 - Kept only display utilities: `normalize_input()`, `get_aliases()`, `format_options_list()`
 - `disambiguation_utils.py` reduced from 248 lines to 83 lines (66% reduction)
 - All 41 disambiguation tests pass
+
+### 2026-02-04: Config Handler Consolidation
+
+**Item #11 (Config Handler Consolidation):**
+- Analysis revealed the existing architecture was healthy - opted for **extraction** instead of consolidation
+- Created `config_side_choice_handler.py` (~290 lines) - handles component slot choices that create bundled child items
+- Created `config_change_handler.py` (~180 lines) - handles modifier change requests and clarifications
+- Refactored `config_helper_handler.py` from ~560 lines to ~190 lines (66% reduction)
+- Now serves as a delegation hub with lazy initialization of specialized handlers via properties
+- Keeps `get_current_config_question()` utility for database-driven question lookup
+- All 98 config-related tests pass
+
+### 2026-02-04: Adapter/Converter Clarification
+
+**Item #14 (Adapter/Converter Clarification):**
+- Analysis revealed the architecture is sound - 4 files with distinct responsibilities
+- Added comprehensive module docstrings with ASCII architecture diagrams to all 4 files:
+  - `adapter.py` - Order-level serialization (dict ↔ OrderTask)
+  - `state_machine_adapter.py` - API boundary adapter (wraps state machine for endpoints)
+  - `item_converters.py` - Item-level serialization (dict ↔ MenuItemTask)
+  - `order_item_builder.py` - Item creation (parser output → initial item dict)
+- Clarified the key distinction: `order_item_builder` creates NEW items, `item_converters` serializes EXISTING items
+- All 34 adapter tests pass
+- No code changes needed - documentation-only improvement

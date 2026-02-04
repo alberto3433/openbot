@@ -1,9 +1,46 @@
 """
-Adapter layer to bridge the OrderStateMachine with existing endpoints.
+API Entry Point Adapter for the Order State Machine.
 
-This module provides:
-1. Feature flag for enabling the state machine
-2. Wrapper functions that match the existing API signatures
+This module bridges the OrderStateMachine with the external API layer.
+It provides a drop-in replacement interface that matches the existing
+API endpoint signatures.
+
+Architecture Layer: API BOUNDARY
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           FastAPI Route Handlers                            │
+│                      (routes/chat.py, routes/order.py)                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ process_message_with_state_machine()
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     THIS MODULE (state_machine_adapter.py)                  │
+│                           API boundary adapter                              │
+│                                                                             │
+│   • Manages singleton state machine instance                                │
+│   • Converts API params → state machine inputs                              │
+│   • Converts state machine outputs → API responses                          │
+│   • Infers backward-compatible "actions" from state changes                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+                    │                           ▲
+                    │ dict_to_order_task()      │ order_task_to_dict()
+                    ▼                           │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           adapter.py                                        │
+│                      Order-level serialization                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Public API:
+    get_state_machine(menu_data) -> OrderStateMachine
+        Get or create the global state machine singleton.
+
+    process_message_with_state_machine(user_message, order_state_dict, ...) -> (reply, dict, actions)
+        Main entry point. Processes a user message and returns the response
+        in the format expected by API endpoints.
+
+Related Modules:
+    - adapter.py: Order-level dict ↔ OrderTask conversion (used internally)
+    - state_machine.py: The actual state machine implementation
 """
 
 import logging

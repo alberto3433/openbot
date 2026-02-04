@@ -1,11 +1,42 @@
 """
-Adapter layer for state conversion.
+Order-Level Serialization Adapter.
 
-This module provides bidirectional conversion between:
-- Dict-based order_state (used by database/API layer)
-- OrderTask (used by state machine)
+This module handles ORDER-LEVEL conversion between:
+- Dict-based order_state (database/API JSON format)
+- OrderTask (internal Pydantic model used by state machine)
 
-Item type conversions are delegated to the UnifiedItemConverter (see item_converters.py).
+Architecture Layer: PERSISTENCE
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          API / Database Layer                               │
+│                        (dict-based order_state)                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                    ▲                           │
+                    │ order_task_to_dict()      │ dict_to_order_task()
+                    │                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           THIS MODULE (adapter.py)                          │
+│                         Order-level serialization                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                    ▲                           │
+                    │ _unified_converter        │ _unified_converter
+                    │ .to_dict()               │ .from_dict()
+                    ▼                           ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        item_converters.py                                   │
+│                      Item-level serialization                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Public API:
+    dict_to_order_task(order_dict, session_id) -> OrderTask
+        Deserialize a dict from database/API into an OrderTask for processing.
+
+    order_task_to_dict(order, store_info, pricing) -> dict
+        Serialize an OrderTask back to dict format for persistence/API response.
+
+Related Modules:
+    - item_converters.py: Handles individual item dict ↔ MenuItemTask conversion
+    - state_machine_adapter.py: Uses this module to wrap state machine for API endpoints
+    - order_item_builder.py: Creates initial item dicts (separate concern - item creation)
 """
 
 import logging

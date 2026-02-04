@@ -222,6 +222,7 @@ def _serialize_item_type_link(
         is_required=link.is_required,
         allow_none=link.allow_none,
         ask_in_conversation=link.ask_in_conversation,
+        listen_only=link.listen_only,
         question_text=link.question_text,
         min_selections=link.min_selections,
         max_selections=link.max_selections,
@@ -415,14 +416,15 @@ def update_global_attribute(
                 detail=f"Global attribute with slug '{payload.slug}' already exists"
             )
 
-    # Apply updates
-    if payload.slug is not None:
+    # Apply updates - use model_fields_set to detect explicit null (clearing a field)
+    # For string fields, also skip empty strings (treat "" same as None for updates)
+    if payload.slug:
         attr.slug = payload.slug
-    if payload.display_name is not None:
+    if payload.display_name:
         attr.display_name = payload.display_name
-    if payload.input_type is not None:
+    if payload.input_type:
         attr.input_type = payload.input_type
-    if payload.description is not None:
+    if "description" in payload.model_fields_set:
         attr.description = payload.description
 
     db.commit()
@@ -1219,6 +1221,7 @@ def link_global_attribute_to_item_type(
         is_required=payload.is_required,
         allow_none=payload.allow_none,
         ask_in_conversation=payload.ask_in_conversation,
+        listen_only=payload.listen_only,
         question_text=payload.question_text,
         min_selections=payload.min_selections,
         max_selections=payload.max_selections,
@@ -1269,6 +1272,8 @@ def update_item_type_global_attribute_link(
         link.allow_none = payload.allow_none
     if payload.ask_in_conversation is not None:
         link.ask_in_conversation = payload.ask_in_conversation
+    if payload.listen_only is not None:
+        link.listen_only = payload.listen_only
     if payload.question_text is not None:
         link.question_text = payload.question_text
     if payload.min_selections is not None:

@@ -287,6 +287,7 @@ class ItemTypeLoaderMixin:
                     "is_required": link.is_required,
                     "allow_none": link.allow_none,
                     "ask_in_conversation": link.ask_in_conversation,
+                    "listen_only": link.listen_only,
                     "display_order": link.display_order,
                     "question_text": link.question_text,
                     "options": options,

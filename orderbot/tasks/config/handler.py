@@ -179,20 +179,28 @@ class MenuItemConfigHandler(BaseHandler):
         return menu_cache.get_item_type_attributes(item_type_slug)
 
     def _get_mandatory_attributes(self, item_type_slug: str) -> list[dict]:
-        """Get mandatory attributes (ask_in_conversation=True) in display order."""
+        """Get mandatory attributes (ask_in_conversation=True) in display order.
+
+        Excludes listen_only attributes which are never asked.
+        """
         attrs = self._get_item_type_attributes(item_type_slug)
         mandatory = [
             attr for attr in attrs.values()
             if attr.get("ask_in_conversation", False)
+            and not attr.get("listen_only", False)
         ]
         return sorted(mandatory, key=lambda x: x.get("display_order", 999))
 
     def _get_optional_attributes(self, item_type_slug: str) -> list[dict]:
-        """Get optional attributes (ask_in_conversation=False) in display order."""
+        """Get optional attributes (ask_in_conversation=False) in display order.
+
+        Excludes listen_only attributes which are never asked.
+        """
         attrs = self._get_item_type_attributes(item_type_slug)
         optional = [
             attr for attr in attrs.values()
             if not attr.get("ask_in_conversation", True)
+            and not attr.get("listen_only", False)
         ]
         return sorted(optional, key=lambda x: x.get("display_order", 999))
 

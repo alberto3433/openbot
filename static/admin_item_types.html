@@ -1023,6 +1023,17 @@
             </div>
           </div>
 
+          <div class="attr-form-row">
+            <div class="form-group">
+              <div class="checkbox-row">
+                <input type="checkbox" id="attrListenOnly" />
+                <label for="attrListenOnly">Listen Only</label>
+              </div>
+              <div class="hint">Never ask; only capture if user volunteers it</div>
+            </div>
+            <div class="form-group"></div>
+          </div>
+
           <div class="form-group">
             <label for="attrQuestionText">Question Text</label>
             <input type="text" id="attrQuestionText" placeholder="e.g., What type of spread would you like?" />
@@ -1831,6 +1842,7 @@
       document.getElementById("attrIsRequired").checked = link.is_required || false;
       document.getElementById("attrAllowNone").checked = link.allow_none !== false;
       document.getElementById("attrAskInConversation").checked = link.ask_in_conversation !== false;
+      document.getElementById("attrListenOnly").checked = link.listen_only || false;
       document.getElementById("attrQuestionText").value = link.question_text || '';
       document.getElementById("attrMinSelections").value = link.min_selections || '';
       document.getElementById("attrMaxSelections").value = link.max_selections || '';
@@ -1853,6 +1865,7 @@
         is_required: document.getElementById("attrIsRequired").checked,
         allow_none: document.getElementById("attrAllowNone").checked,
         ask_in_conversation: document.getElementById("attrAskInConversation").checked,
+        listen_only: document.getElementById("attrListenOnly").checked,
         question_text: document.getElementById("attrQuestionText").value.trim() || null,
         min_selections: parseInt(document.getElementById("attrMinSelections").value) || null,
         max_selections: parseInt(document.getElementById("attrMaxSelections").value) || null

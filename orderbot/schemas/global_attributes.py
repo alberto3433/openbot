@@ -198,6 +198,7 @@ class ItemTypeGlobalAttributeOut(BaseModel):
     is_required: bool = False
     allow_none: bool = True
     ask_in_conversation: bool = True
+    listen_only: bool = False
     question_text: Optional[str] = None
     min_selections: Optional[int] = None
     max_selections: Optional[int] = None
@@ -216,6 +217,7 @@ class ItemTypeGlobalAttributeLinkCreate(BaseModel):
     is_required: bool = False
     allow_none: bool = True
     ask_in_conversation: bool = True
+    listen_only: bool = False
     question_text: Optional[str] = None
     min_selections: Optional[int] = None
     max_selections: Optional[int] = None
@@ -227,6 +229,7 @@ class ItemTypeGlobalAttributeLinkUpdate(BaseModel):
     is_required: Optional[bool] = None
     allow_none: Optional[bool] = None
     ask_in_conversation: Optional[bool] = None
+    listen_only: Optional[bool] = None
     question_text: Optional[str] = None
     min_selections: Optional[int] = None
     max_selections: Optional[int] = None

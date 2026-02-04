@@ -246,6 +246,7 @@ class ItemTypeGlobalAttribute(Base):
     is_required = Column(Boolean, nullable=False, default=False)  # Must be specified
     allow_none = Column(Boolean, nullable=False, default=True)  # Can select "none" option
     ask_in_conversation = Column(Boolean, nullable=False, default=True)  # Should prompt user
+    listen_only = Column(Boolean, nullable=False, default=False)  # Never ask, only capture if volunteered
     question_text = Column(Text, nullable=True)  # Question to ask user for this field
 
     # For multi_select types

@@ -388,7 +388,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     following_word_singular in all_triggers
                 )
                 if is_item_trigger:
-                    logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty on both sides with item trigger '%s'), delegating to multi-item parser: '%s'", following_word, text[:50])
+                    logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty before and after 'and' with item trigger '%s'), delegating to multi-item parser: '%s'", following_word, text[:50])
                     return None
 
                 # Also check if after_and (minus the quantity) is a menu item or item with defaults
@@ -399,7 +399,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 from .tokenization import _has_item_indicator
                 has_item, _, _ = _has_item_indicator(after_and_item_part)
                 if has_item:
-                    logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty on both sides, right side '%s' is item indicator), delegating to multi-item parser: '%s'", after_and_item_part, text[:50])
+                    logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty before and after 'and', right part '%s' is item indicator), delegating to multi-item parser: '%s'", after_and_item_part, text[:50])
                     return None
 
     # Pattern 2: Same item type trigger appears on BOTH sides of " and "
@@ -424,7 +424,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     right_match = re.search(trigger_pattern, right_part)
                     if left_match and right_match:
                         logger.debug(
-                            "CONFIGURABLE_ITEM: skipping multi-item pattern (trigger '%s' on both sides), "
+                            "CONFIGURABLE_ITEM: skipping multi-item pattern (trigger '%s' appears before and after 'and'), "
                             "delegating to multi-item parser: '%s'",
                             trigger, text[:50]
                         )
@@ -460,10 +460,17 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
         }
 
+        # Find position of " with " to detect modifier patterns
+        # In "everything bagel with cream cheese", triggers after "with" are modifiers, not main items
+        with_pos = text_lower.find(" with ")
+
+        # Get all known modifier phrases (including multi-word ones like "cream cheese")
+        # Used to skip triggers that are part of a larger modifier phrase
+        all_modifiers = menu_cache.get_all_modifier_words()
+
         # Collect all matches with position info for smarter selection
-        # Format: (item_type, trigger, length, end_pos, is_at_end, slug_matches)
+        # Format: (item_type, trigger, length, start_pos, is_before_with, slug_matches)
         matches: list[tuple[str, str, int, int, bool, bool]] = []
-        text_len = len(text_lower)
 
         for item_type_slug in configurable_slugs:
             triggers = menu_cache.get_item_type_triggers(item_type_slug)
@@ -475,18 +482,57 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 pattern = rf'\b{re.escape(trigger)}s?\b'
                 match = re.search(pattern, text_lower)
                 if match:
+                    start_pos = match.start()
                     end_pos = match.end()
-                    # Check if match is in "end region" (last 20% or last 15 chars)
-                    end_region_start = max(text_len - 15, int(text_len * 0.8))
-                    is_at_end = end_pos >= end_region_start
+                    trigger_lower = trigger.lower()
+
+                    # Skip if this trigger is part of a known compound modifier phrase
+                    # that belongs to an UNRELATED category
+                    # e.g., "cream cheese" is a "spread" - skip for "cheese" item type
+                    # But "plain bagel" is "bread" - don't skip for "bagel" because bread
+                    # is an attribute of the bagel item type
+                    is_part_of_modifier = False
+                    if start_pos > 0:
+                        # Get the word immediately before this trigger
+                        text_before = text_lower[:start_pos].rstrip()
+                        if text_before:
+                            words_before = text_before.split()
+                            if words_before:
+                                prev_word = words_before[-1]
+                                compound = f"{prev_word} {trigger_lower}"
+                                # Check if this compound is a known modifier
+                                if compound in all_modifiers:
+                                    # Check what category this modifier belongs to
+                                    compound_category = menu_cache.get_ingredient_category(compound)
+                                    if compound_category:
+                                        # Get attributes for this item type
+                                        item_attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                                        # Skip if the compound's category is NOT an attribute of this item type
+                                        # e.g., "spread" is not an attribute of "cheese" item type
+                                        # But "bread" IS an attribute of "bagel" item type
+                                        if compound_category not in item_attrs:
+                                            is_part_of_modifier = True
+                    if is_part_of_modifier:
+                        continue
+
+                    # Triggers BEFORE "with" are main items; triggers AFTER are modifiers
+                    # If no "with" in text, all triggers are considered main items
+                    is_before_with = with_pos == -1 or start_pos < with_pos
                     # Prefer item types where slug matches trigger
                     slug_matches = trigger.lower() == item_type_slug or trigger.lower().rstrip("s") == item_type_slug
-                    matches.append((item_type_slug, trigger, len(trigger), end_pos, is_at_end, slug_matches))
+                    matches.append((item_type_slug, trigger, len(trigger), start_pos, is_before_with, slug_matches))
 
         if matches:
-            # Sort by: (1) slug_matches (True first), (2) is_at_end (True first), (3) length (longer first)
-            # This ensures "bagel" wins over "egg" in "everything bagel with bacon and egg"
-            matches.sort(key=lambda x: (not x[5], not x[4], -x[2]))
+            # Sort by:
+            # (1) is_before_with (True first) - triggers before "with" are main items
+            # (2) slug_matches (True first) - prefer when trigger matches item type slug
+            # (3) length (LONGER first) - prefer specific item names over short adjectives
+            # (4) start_pos (LATER first) - among equal-length triggers, prefer nouns at end
+            # This ensures:
+            # - "bagel" wins over "cheese" in "everything bagel with cream cheese" (via rule 1)
+            # - "latte" wins over "hot" in "hot latte please" (via rule 3/4)
+            # - "coffee" wins over "iced" in "large coffee iced" (via rule 3)
+            matches.sort(key=lambda x: (not x[4], not x[5], -x[2], -x[3]))
             detected_item_type = matches[0][0]
 
     if not detected_item_type:
@@ -596,7 +642,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 remaining_qty = quantity - split_qty
 
                 logger.info(
-                    "PARTIAL_SPLIT: detected %d with '%s', %d plain",
+                    "PARTIAL_SPLIT: detected %d with '%s', %d unmodified",
                     split_qty, modifier_text, remaining_qty
                 )
 
@@ -689,10 +735,15 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             if instr_lower.startswith(prefix):
                 item_word = instr_lower[len(prefix):].strip()
                 break
-        # Check if suffix like " on the side" and remove
-        for suffix in [" on the side"]:
-            if item_word.endswith(suffix):
-                item_word = item_word[:-len(suffix)].strip()
+        # Check if suffix is a position qualifier (e.g., "on the side") and remove
+        # These are loaded from the database via modifier_qualifiers table
+        for pattern in menu_cache.get_qualifier_patterns():
+            qualifier_info = menu_cache.get_qualifier_info(pattern)
+            if qualifier_info and qualifier_info.get("category") == "position":
+                suffix = f" {pattern}"
+                if item_word.endswith(suffix):
+                    item_word = item_word[:-len(suffix)].strip()
+                    break
 
         # If item_word is already captured as a selection, skip this instruction
         if item_word in captured_slugs:
@@ -773,6 +824,8 @@ def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
             words_in_option_aliases.update(alias.split())
 
     # Words that are common ordering phrases (not potential item names)
+    # NOTE: Domain-specific words (sizes, temperatures, cooking terms) are loaded
+    # from the database via all_attr_options below - do NOT hardcode them here.
     common_ordering_words = {
         # Articles/prepositions
         "a", "an", "the", "some", "with", "and", "or", "on", "in", "of", "to", "for",
@@ -781,12 +834,9 @@ def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
         "can", "could", "may", "please", "order", "add", "make", "it", "that",
         # Numbers
         "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        # Modifiers that apply to any drink
-        "hot", "iced", "cold", "large", "medium", "small", "regular", "extra",
-        "decaf", "half", "double", "triple",
-        # Cooking/preparation terms (common for eggs, meat, etc.)
-        "scrambled", "fried", "poached", "boiled", "over", "easy", "hard", "soft",
-        "well", "done", "rare", "medium", "runny", "dry", "wet", "crispy", "light",
+        # Generic quantity/intensity words (not food-specific)
+        "extra", "half", "double", "triple", "regular",
+        # Generic negation/exclusion words
         "no", "without", "hold",
     }
 

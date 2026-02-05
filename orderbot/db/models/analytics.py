@@ -74,3 +74,20 @@ class UnrecognizedItemLog(Base):
     fallback_level = Column(String(20), nullable=False, index=True)  # curated, fuzzy, llm, generic
     inferred_category = Column(String(50), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
+class UnrecognizedOptionSuggestion(Base):
+    """
+    Curated suggestions for unrecognized attribute option requests.
+
+    When users ask for options not on the menu (e.g., "venti" size),
+    this table stores common terms to detect and respond appropriately.
+    """
+    __tablename__ = "unrecognized_option_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    input_pattern = Column(String(100), nullable=False, index=True)  # "venti"
+    attribute_slug = Column(String(50), nullable=False, index=True)  # "size"
+    suggested_display_name = Column(String(100), nullable=False)     # "Venti"
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

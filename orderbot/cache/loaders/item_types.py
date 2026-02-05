@@ -677,3 +677,32 @@ class ItemTypeLoaderMixin:
             len(component_slots),
             list(component_slots.keys()),
         )
+
+    def _load_unrecognized_option_suggestions_from_bulk(self, bulk_data: dict) -> None:
+        """Load unrecognized option suggestions from bulk data.
+
+        These are common attribute option terms that aren't in our menu
+        (e.g., "venti" size) that we want to detect and respond appropriately to.
+        """
+        suggestions = bulk_data.get("unrecognized_option_suggestions", [])
+
+        result: dict[str, dict[str, str]] = {}
+
+        for s in suggestions:
+            if not s.is_active:
+                continue
+            attr_slug = s.attribute_slug
+            pattern = s.input_pattern.lower()
+            display = s.suggested_display_name
+
+            if attr_slug not in result:
+                result[attr_slug] = {}
+            result[attr_slug][pattern] = display
+
+        self._unrecognized_option_suggestions = result
+
+        logger.debug(
+            "Loaded unrecognized option suggestions: %d attributes, %d total patterns",
+            len(result),
+            sum(len(v) for v in result.values()),
+        )

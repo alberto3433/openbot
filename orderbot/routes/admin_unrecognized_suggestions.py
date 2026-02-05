@@ -34,7 +34,10 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..db.models import UnrecognizedItemSuggestion, UnrecognizedItemLog, ItemType, MenuItem
+from ..db.models import (
+    UnrecognizedItemSuggestion, UnrecognizedItemLog, ItemType, MenuItem,
+    UnrecognizedOptionSuggestion, GlobalAttribute,
+)
 from ..schemas.unrecognized_suggestions import (
     UnrecognizedSuggestionOut,
     UnrecognizedSuggestionCreate,
@@ -42,6 +45,10 @@ from ..schemas.unrecognized_suggestions import (
     UnrecognizedSuggestionStats,
     UnrecognizedLogEntry,
     UnrecognizedLogStats,
+    UnrecognizedOptionSuggestionOut,
+    UnrecognizedOptionSuggestionCreate,
+    UnrecognizedOptionSuggestionUpdate,
+    UnrecognizedOptionSuggestionStats,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,6 +62,11 @@ admin_unrecognized_suggestions_router = APIRouter(
 admin_unrecognized_logs_router = APIRouter(
     prefix="/admin/unrecognized-logs",
     tags=["Admin - Unrecognized Logs"]
+)
+
+admin_unrecognized_option_suggestions_router = APIRouter(
+    prefix="/admin/unrecognized-option-suggestions",
+    tags=["Admin - Unrecognized Option Suggestions"]
 )
 
 # Valid match types
@@ -491,3 +503,202 @@ def clear_old_logs(
     logger.info("Cleared %d unrecognized item logs older than %d days", deleted, days)
 
     return {"deleted": deleted, "days_threshold": days}
+
+
+# =============================================================================
+# Option Suggestions Endpoints
+# =============================================================================
+
+@admin_unrecognized_option_suggestions_router.get("", response_model=List[UnrecognizedOptionSuggestionOut])
+def list_option_suggestions(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+    attribute_slug: Optional[str] = Query(None, description="Filter by attribute slug"),
+    active_only: bool = Query(False, description="Only show active suggestions"),
+) -> List[UnrecognizedOptionSuggestionOut]:
+    """List all unrecognized option suggestions."""
+    query = db.query(UnrecognizedOptionSuggestion)
+
+    if attribute_slug:
+        query = query.filter(UnrecognizedOptionSuggestion.attribute_slug == attribute_slug)
+
+    if active_only:
+        query = query.filter(UnrecognizedOptionSuggestion.is_active == True)
+
+    suggestions = query.order_by(
+        UnrecognizedOptionSuggestion.attribute_slug,
+        UnrecognizedOptionSuggestion.input_pattern
+    ).all()
+
+    return [UnrecognizedOptionSuggestionOut.model_validate(s) for s in suggestions]
+
+
+@admin_unrecognized_option_suggestions_router.get("/stats", response_model=UnrecognizedOptionSuggestionStats)
+def get_option_suggestion_stats(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> UnrecognizedOptionSuggestionStats:
+    """Get statistics for unrecognized option suggestions."""
+    suggestions = db.query(UnrecognizedOptionSuggestion).all()
+
+    total = len(suggestions)
+    active = sum(1 for s in suggestions if s.is_active)
+
+    # Group by attribute
+    by_attribute: dict[str, int] = {}
+    for s in suggestions:
+        by_attribute[s.attribute_slug] = by_attribute.get(s.attribute_slug, 0) + 1
+
+    return UnrecognizedOptionSuggestionStats(
+        total_suggestions=total,
+        active_suggestions=active,
+        by_attribute=by_attribute,
+    )
+
+
+@admin_unrecognized_option_suggestions_router.get("/lookups/attributes", response_model=List[dict])
+def get_attributes_for_dropdown(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[dict]:
+    """Get all global attributes for dropdown selection."""
+    attributes = db.query(GlobalAttribute).order_by(GlobalAttribute.display_name).all()
+    return [
+        {"slug": a.slug, "display_name": a.display_name}
+        for a in attributes
+    ]
+
+
+@admin_unrecognized_option_suggestions_router.get("/{suggestion_id}", response_model=UnrecognizedOptionSuggestionOut)
+def get_option_suggestion(
+    suggestion_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> UnrecognizedOptionSuggestionOut:
+    """Get a specific option suggestion by ID."""
+    suggestion = db.query(UnrecognizedOptionSuggestion).filter(
+        UnrecognizedOptionSuggestion.id == suggestion_id
+    ).first()
+
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Option suggestion not found")
+
+    return UnrecognizedOptionSuggestionOut.model_validate(suggestion)
+
+
+@admin_unrecognized_option_suggestions_router.post("", response_model=UnrecognizedOptionSuggestionOut, status_code=201)
+def create_option_suggestion(
+    payload: UnrecognizedOptionSuggestionCreate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> UnrecognizedOptionSuggestionOut:
+    """Create a new unrecognized option suggestion."""
+    # Normalize pattern to lowercase
+    pattern_normalized = payload.input_pattern.lower().strip()
+
+    # Check for duplicate
+    existing = db.query(UnrecognizedOptionSuggestion).filter(
+        UnrecognizedOptionSuggestion.input_pattern == pattern_normalized,
+        UnrecognizedOptionSuggestion.attribute_slug == payload.attribute_slug
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Pattern '{pattern_normalized}' for attribute '{payload.attribute_slug}' already exists"
+        )
+
+    suggestion = UnrecognizedOptionSuggestion(
+        input_pattern=pattern_normalized,
+        attribute_slug=payload.attribute_slug,
+        suggested_display_name=payload.suggested_display_name,
+        is_active=payload.is_active,
+    )
+
+    db.add(suggestion)
+    db.commit()
+    db.refresh(suggestion)
+
+    logger.info(
+        "Created unrecognized option suggestion: '%s' -> '%s' for attribute '%s' (id=%d)",
+        suggestion.input_pattern,
+        suggestion.suggested_display_name,
+        suggestion.attribute_slug,
+        suggestion.id
+    )
+
+    return UnrecognizedOptionSuggestionOut.model_validate(suggestion)
+
+
+@admin_unrecognized_option_suggestions_router.put("/{suggestion_id}", response_model=UnrecognizedOptionSuggestionOut)
+def update_option_suggestion(
+    suggestion_id: int,
+    payload: UnrecognizedOptionSuggestionUpdate,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> UnrecognizedOptionSuggestionOut:
+    """Update an unrecognized option suggestion."""
+    suggestion = db.query(UnrecognizedOptionSuggestion).filter(
+        UnrecognizedOptionSuggestion.id == suggestion_id
+    ).first()
+
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Option suggestion not found")
+
+    # Normalize pattern if changing it
+    new_pattern = payload.input_pattern.lower().strip() if payload.input_pattern else suggestion.input_pattern
+    new_attr_slug = payload.attribute_slug if payload.attribute_slug else suggestion.attribute_slug
+
+    # Check for duplicate if changing pattern or attribute
+    if new_pattern != suggestion.input_pattern or new_attr_slug != suggestion.attribute_slug:
+        existing = db.query(UnrecognizedOptionSuggestion).filter(
+            UnrecognizedOptionSuggestion.input_pattern == new_pattern,
+            UnrecognizedOptionSuggestion.attribute_slug == new_attr_slug,
+            UnrecognizedOptionSuggestion.id != suggestion_id
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Pattern '{new_pattern}' for attribute '{new_attr_slug}' already exists"
+            )
+
+    # Apply updates
+    if payload.input_pattern is not None:
+        suggestion.input_pattern = new_pattern
+    if payload.attribute_slug is not None:
+        suggestion.attribute_slug = payload.attribute_slug
+    if payload.suggested_display_name is not None:
+        suggestion.suggested_display_name = payload.suggested_display_name
+    if payload.is_active is not None:
+        suggestion.is_active = payload.is_active
+
+    db.commit()
+    db.refresh(suggestion)
+
+    logger.info("Updated unrecognized option suggestion: '%s' (id=%d)", suggestion.input_pattern, suggestion.id)
+
+    return UnrecognizedOptionSuggestionOut.model_validate(suggestion)
+
+
+@admin_unrecognized_option_suggestions_router.delete("/{suggestion_id}", status_code=204)
+def delete_option_suggestion(
+    suggestion_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> None:
+    """Delete an unrecognized option suggestion."""
+    suggestion = db.query(UnrecognizedOptionSuggestion).filter(
+        UnrecognizedOptionSuggestion.id == suggestion_id
+    ).first()
+
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Option suggestion not found")
+
+    logger.info(
+        "Deleting unrecognized option suggestion: '%s' (id=%d)",
+        suggestion.input_pattern,
+        suggestion.id
+    )
+    db.delete(suggestion)
+    db.commit()
+    return None

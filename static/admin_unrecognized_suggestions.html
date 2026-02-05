@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Unrecognized Item Suggestions</title>
+  <title>Unrecognized Suggestions</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
@@ -459,7 +459,7 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <div class="app-header">
-    <div>Unrecognized Item Suggestions</div>
+    <div>Unrecognized Suggestions</div>
     <div>
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
@@ -494,12 +494,13 @@
   <div class="container">
     <!-- Tabs -->
     <div class="tabs">
-      <div class="tab active" onclick="switchTab('suggestions')">Suggestions</div>
+      <div class="tab active" onclick="switchTab('items')">Items</div>
+      <div class="tab" onclick="switchTab('options')">Options</div>
       <div class="tab" onclick="switchTab('logs')">Request Logs</div>
     </div>
 
-    <!-- Suggestions Tab -->
-    <div id="suggestionsTab" class="tab-content active">
+    <!-- Items Tab -->
+    <div id="itemsTab" class="tab-content active">
       <!-- Stats Cards -->
       <div class="stats-grid">
         <div class="stat-card">
@@ -548,6 +549,48 @@
           </div>
           <div id="suggestionsTable">
             <div class="loading">Loading suggestions...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Options Tab -->
+    <div id="optionsTab" class="tab-content">
+      <!-- Options Stats Cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Option Suggestions</div>
+          <div class="stat-value" id="optStatTotal">-</div>
+          <div class="stat-detail" id="optStatActive">Loading...</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">By Attribute</div>
+          <div class="stat-value" id="optStatAttrs">-</div>
+          <div class="stat-detail" id="optStatAttrDetail">Loading...</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span>Unrecognized Option Suggestions</span>
+          <button class="btn primary" onclick="openOptionModal()">+ Add Option Suggestion</button>
+        </div>
+        <div class="section-body">
+          <div class="toolbar">
+            <div class="filter-group">
+              <select id="filterAttrSlug" onchange="loadOptionSuggestions()">
+                <option value="">All Attributes</option>
+              </select>
+              <label style="font-size:13px;">
+                <input type="checkbox" id="filterOptActive" onchange="loadOptionSuggestions()"> Active only
+              </label>
+            </div>
+          </div>
+          <p style="color:#666;font-size:13px;margin-bottom:16px;">
+            These are common attribute option terms that users request but aren't in our menu (e.g., "venti" size).
+          </p>
+          <div id="optionSuggestionsTable">
+            <div class="loading">Loading option suggestions...</div>
           </div>
         </div>
       </div>
@@ -668,6 +711,48 @@
     </div>
   </div>
 
+  <!-- Option Suggestion Modal -->
+  <div id="optionModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <span id="optionModalTitle">Add Option Suggestion</span>
+        <button class="modal-close" onclick="closeOptionModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="optionSuggestionForm">
+          <input type="hidden" id="optionSuggestionId">
+          <div class="form-group">
+            <label>Input Pattern *</label>
+            <input type="text" id="optInputPattern" required placeholder="e.g., venti">
+            <div class="hint">The text to match against user input (lowercase)</div>
+          </div>
+          <div class="form-group">
+            <label>Attribute *</label>
+            <select id="optAttrSlug" required>
+              <option value="">-- Select Attribute --</option>
+            </select>
+            <div class="hint">The attribute this suggestion is for (e.g., size)</div>
+          </div>
+          <div class="form-group">
+            <label>Display Name *</label>
+            <input type="text" id="optDisplayName" required placeholder="e.g., Venti">
+            <div class="hint">Human-readable name shown in messages</div>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="optIsActive" checked> Active
+            </label>
+            <div class="hint">Inactive suggestions won't be used</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeOptionModal()">Cancel</button>
+        <button class="btn primary" onclick="saveOptionSuggestion()">Save</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/admin_common.js"></script>
   <script>
     const API_BASE = '/api/v1';
@@ -675,19 +760,25 @@
     let allItemTypes = [];
     let allMenuItems = [];
     let selectedMenuItems = [];  // Currently selected menu item names
+    let allAttributes = [];  // For option suggestions
 
     // Tab switching
     function switchTab(tab) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-      if (tab === 'suggestions') {
+      if (tab === 'items') {
         document.querySelector('.tab:nth-child(1)').classList.add('active');
-        document.getElementById('suggestionsTab').classList.add('active');
+        document.getElementById('itemsTab').classList.add('active');
         loadSuggestions();
         loadSuggestionStats();
-      } else {
+      } else if (tab === 'options') {
         document.querySelector('.tab:nth-child(2)').classList.add('active');
+        document.getElementById('optionsTab').classList.add('active');
+        loadOptionSuggestions();
+        loadOptionStats();
+      } else {
+        document.querySelector('.tab:nth-child(3)').classList.add('active');
         document.getElementById('logsTab').classList.add('active');
         loadLogStats();
         loadLogs();
@@ -1115,9 +1206,204 @@
       });
     }
 
+    // =============================================================================
+    // Option Suggestions Functions
+    // =============================================================================
+
+    async function loadOptionSuggestions() {
+      const attrSlug = document.getElementById('filterAttrSlug').value;
+      const activeOnly = document.getElementById('filterOptActive').checked;
+
+      let url = `${API_BASE}/admin/unrecognized-option-suggestions?`;
+      if (attrSlug) url += `attribute_slug=${attrSlug}&`;
+      if (activeOnly) url += `active_only=true&`;
+
+      try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load option suggestions');
+        const data = await res.json();
+        renderOptionSuggestionsTable(data);
+      } catch (err) {
+        document.getElementById('optionSuggestionsTable').innerHTML =
+          `<div class="empty-state">Error loading option suggestions: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderOptionSuggestionsTable(suggestions) {
+      if (!suggestions.length) {
+        document.getElementById('optionSuggestionsTable').innerHTML =
+          '<div class="empty-state">No option suggestions found. Add your first one!</div>';
+        return;
+      }
+
+      let html = `<table>
+        <thead>
+          <tr>
+            <th>Pattern</th>
+            <th>Attribute</th>
+            <th>Display Name</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      suggestions.forEach(s => {
+        html += `<tr>
+          <td><strong>${escapeHtml(s.input_pattern)}</strong></td>
+          <td><span class="badge badge-prefix">${escapeHtml(s.attribute_slug)}</span></td>
+          <td>${escapeHtml(s.suggested_display_name)}</td>
+          <td><span class="badge badge-${s.is_active ? 'active' : 'inactive'}">${s.is_active ? 'Active' : 'Inactive'}</span></td>
+          <td>
+            <button class="btn small" onclick="editOptionSuggestion(${s.id})">Edit</button>
+            <button class="btn small danger" onclick="deleteOptionSuggestion(${s.id}, '${escapeHtml(s.input_pattern)}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('optionSuggestionsTable').innerHTML = html;
+    }
+
+    async function loadOptionStats() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-option-suggestions/stats`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load option stats');
+        const stats = await res.json();
+
+        document.getElementById('optStatTotal').textContent = stats.total_suggestions;
+        document.getElementById('optStatActive').textContent = `${stats.active_suggestions} active`;
+
+        // By attribute
+        const attrs = Object.entries(stats.by_attribute);
+        document.getElementById('optStatAttrs').textContent = attrs.length;
+        document.getElementById('optStatAttrDetail').textContent =
+          attrs.slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ') || 'None';
+
+        // Populate attribute filter dropdown
+        const attrSelect = document.getElementById('filterAttrSlug');
+        attrSelect.innerHTML = '<option value="">All Attributes</option>';
+        attrs.forEach(([attr]) => {
+          attrSelect.innerHTML += `<option value="${attr}">${attr}</option>`;
+        });
+      } catch (err) {
+        console.error('Failed to load option stats:', err);
+      }
+    }
+
+    async function loadAttributeOptions() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-option-suggestions/lookups/attributes`, { credentials: 'include' });
+        if (res.ok) {
+          allAttributes = await res.json();
+          const attrSelect = document.getElementById('optAttrSlug');
+          attrSelect.innerHTML = '<option value="">-- Select Attribute --</option>';
+          allAttributes.forEach(a => {
+            attrSelect.innerHTML += `<option value="${a.slug}">${escapeHtml(a.display_name)} (${a.slug})</option>`;
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load attributes:', err);
+      }
+    }
+
+    function openOptionModal() {
+      document.getElementById('optionModalTitle').textContent = 'Add Option Suggestion';
+      document.getElementById('optionSuggestionId').value = '';
+      document.getElementById('optInputPattern').value = '';
+      document.getElementById('optAttrSlug').value = '';
+      document.getElementById('optDisplayName').value = '';
+      document.getElementById('optIsActive').checked = true;
+      document.getElementById('optionModal').classList.add('active');
+    }
+
+    async function editOptionSuggestion(id) {
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-option-suggestions/${id}`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load option suggestion');
+        const s = await res.json();
+
+        document.getElementById('optionModalTitle').textContent = 'Edit Option Suggestion';
+        document.getElementById('optionSuggestionId').value = s.id;
+        document.getElementById('optInputPattern').value = s.input_pattern;
+        document.getElementById('optAttrSlug').value = s.attribute_slug;
+        document.getElementById('optDisplayName').value = s.suggested_display_name;
+        document.getElementById('optIsActive').checked = s.is_active;
+        document.getElementById('optionModal').classList.add('active');
+      } catch (err) {
+        showToast('Failed to load option suggestion: ' + err.message, 'error');
+      }
+    }
+
+    function closeOptionModal() {
+      document.getElementById('optionModal').classList.remove('active');
+    }
+
+    async function saveOptionSuggestion() {
+      const id = document.getElementById('optionSuggestionId').value;
+
+      const payload = {
+        input_pattern: document.getElementById('optInputPattern').value,
+        attribute_slug: document.getElementById('optAttrSlug').value,
+        suggested_display_name: document.getElementById('optDisplayName').value,
+        is_active: document.getElementById('optIsActive').checked,
+      };
+
+      if (!payload.input_pattern || !payload.attribute_slug || !payload.suggested_display_name) {
+        showToast('Please fill in all required fields', 'error');
+        return;
+      }
+
+      try {
+        const url = id
+          ? `${API_BASE}/admin/unrecognized-option-suggestions/${id}`
+          : `${API_BASE}/admin/unrecognized-option-suggestions`;
+        const method = id ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Failed to save');
+        }
+
+        showToast(id ? 'Option suggestion updated!' : 'Option suggestion created!', 'success');
+        closeOptionModal();
+        loadOptionSuggestions();
+        loadOptionStats();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
+    }
+
+    async function deleteOptionSuggestion(id, pattern) {
+      if (!confirm(`Delete option suggestion for "${pattern}"?`)) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-option-suggestions/${id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        if (!res.ok) throw new Error('Failed to delete');
+
+        showToast('Option suggestion deleted', 'success');
+        loadOptionSuggestions();
+        loadOptionStats();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
+    }
+
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
       loadDropdownOptions();
+      loadAttributeOptions();
       loadSuggestions();
       loadSuggestionStats();
       setupMenuItemsMultiSelect();

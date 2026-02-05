@@ -444,6 +444,11 @@ class BaseCacheMixin:
         # e.g., "black" -> {"milk_sweetener_syrup"} means if "black" is selected, skip that attribute
         self._option_skip_rules: dict[str, set[str]] = {}
 
+        # Unrecognized option suggestions (for detecting terms not in our menu)
+        # Maps attribute_slug -> {input_pattern_lowercase -> display_name}
+        # e.g., {"size": {"venti": "Venti", "grande": "Grande"}}
+        self._unrecognized_option_suggestions: dict[str, dict[str, str]] = {}
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False

@@ -158,3 +158,67 @@ class UnrecognizedLogStats(BaseModel):
     by_inferred_category: dict[str, int]
     top_unrecognized: List[dict[str, Any]]
     recent_entries: List[UnrecognizedLogEntry]
+
+
+# =============================================================================
+# Unrecognized Option Suggestion Schemas
+# =============================================================================
+
+class UnrecognizedOptionSuggestionOut(BaseModel):
+    """
+    Response model for an unrecognized attribute option suggestion.
+
+    Attributes:
+        id: Database primary key
+        input_pattern: The pattern to match against user input (e.g., "venti")
+        attribute_slug: The attribute this suggestion is for (e.g., "size")
+        suggested_display_name: Human-readable name (e.g., "Venti")
+        is_active: Whether this suggestion is enabled
+        created_at: When the suggestion was created
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    input_pattern: str
+    attribute_slug: str
+    suggested_display_name: str
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+
+class UnrecognizedOptionSuggestionCreate(BaseModel):
+    """
+    Request model for creating an unrecognized option suggestion.
+
+    Example:
+        {
+            "input_pattern": "venti",
+            "attribute_slug": "size",
+            "suggested_display_name": "Venti"
+        }
+    """
+    input_pattern: str
+    attribute_slug: str
+    suggested_display_name: str
+    is_active: bool = True
+
+
+class UnrecognizedOptionSuggestionUpdate(BaseModel):
+    """
+    Request model for updating an unrecognized option suggestion.
+
+    All fields optional - only provided fields are updated.
+    """
+    input_pattern: Optional[str] = None
+    attribute_slug: Optional[str] = None
+    suggested_display_name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class UnrecognizedOptionSuggestionStats(BaseModel):
+    """
+    Statistics for unrecognized option suggestions.
+    """
+    total_suggestions: int
+    active_suggestions: int
+    by_attribute: dict[str, int]

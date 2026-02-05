@@ -69,7 +69,7 @@ from .company import (
 )
 
 # Analytics models
-from .analytics import UnrecognizedItemLog, UnrecognizedItemSuggestion
+from .analytics import UnrecognizedItemLog, UnrecognizedItemSuggestion, UnrecognizedOptionSuggestion
 
 __all__ = [
     # Base
@@ -123,4 +123,5 @@ __all__ = [
     # Analytics
     "UnrecognizedItemSuggestion",
     "UnrecognizedItemLog",
+    "UnrecognizedOptionSuggestion",
 ]

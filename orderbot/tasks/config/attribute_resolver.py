@@ -118,6 +118,10 @@ def get_unanswered_mandatory(
 
     Filters out attributes that should be skipped based on already-selected
     options (e.g., "black" coffee skips milk/sweetener/syrup questions).
+
+    Special handling for auto-populated defaults: If an attribute only has
+    a default value (is_default=True) and the attribute has ask_in_conversation=True,
+    we still consider it "unanswered" so the user can confirm or change the default.
     """
     mandatory = get_mandatory_attributes(item_type_slug)
 
@@ -135,11 +139,23 @@ def get_unanswered_mandatory(
         if slug in skipped_attrs:
             logger.debug("  %s: SKIPPED by option skip rule", slug)
             continue
-        # Check canonical slug in attribute_values
-        # All properties (bread, toasted, etc.) now use attribute_values as backing store
+
+        # Check if attribute has a value
         if slug in item:
-            logger.debug("  %s: FOUND in attribute_values", slug)
+            # Check if the value is only an auto-populated default
+            # If so, we should still ask the question to let user confirm/change
+            selections = item.get_selections(slug)
+            all_defaults = selections and all(
+                sel.get("is_default", False) if isinstance(sel, dict) else getattr(sel, "is_default", False)
+                for sel in selections
+            )
+            if all_defaults:
+                logger.debug("  %s: FOUND but only defaults - adding to unanswered", slug)
+                unanswered.append(attr)
+            else:
+                logger.debug("  %s: FOUND in attribute_values (user-selected)", slug)
             continue
+
         logger.debug("  %s: NOT FOUND - adding to unanswered", slug)
         unanswered.append(attr)
     logger.info(

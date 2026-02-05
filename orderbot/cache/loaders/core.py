@@ -114,6 +114,9 @@ class LoaderMixin(
                 # Load attribute option skip rules (for question skipping logic)
                 self._load_option_skip_rules_from_bulk(bulk_data)
 
+                # Load unrecognized option suggestions (for detecting terms not in our menu)
+                self._load_unrecognized_option_suggestions_from_bulk(bulk_data)
+
                 # Load attribute inquiry keywords (data-driven mapping for "what types?" queries)
                 self._load_attribute_inquiry_keywords(db)
 
@@ -159,6 +162,7 @@ class LoaderMixin(
             Category, MenuItemCategory, ResponsePattern, ModifierQualifier,
             ModifierCategory, IngredientCategory, GlobalAttributeAlias,
             MenuItemIngredient, ItemTypeComponentSlot, ComponentSlotOption,
+            UnrecognizedOptionSuggestion,
         )
 
         start_time = time.time()
@@ -309,6 +313,17 @@ class LoaderMixin(
             # Table may not exist yet if migrations haven't run
             option_skip_rules = []
 
+        # 17. Load unrecognized option suggestions (for detecting terms not in our menu)
+        try:
+            unrecognized_option_suggestions = (
+                db.query(UnrecognizedOptionSuggestion)
+                .filter(UnrecognizedOptionSuggestion.is_active == True)  # noqa: E712
+                .all()
+            )
+        except Exception:
+            # Table may not exist yet if migrations haven't run
+            unrecognized_option_suggestions = []
+
         elapsed = time.time() - start_time
         logger.info(
             "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
@@ -339,6 +354,7 @@ class LoaderMixin(
             "menu_item_ingredients": menu_item_ingredients,
             "component_slots": component_slots,
             "option_skip_rules": option_skip_rules,
+            "unrecognized_option_suggestions": unrecognized_option_suggestions,
         }
 
     def _load_menu_index(self, db: Session) -> None:

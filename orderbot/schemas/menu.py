@@ -16,21 +16,19 @@ Endpoint Coverage:
 
 Menu Item Concepts:
 -------------------
-1. **Categories**: Group items for display (sandwiches, drinks, sides, etc.)
-
-2. **Signature Items**: Pre-configured items on the "speed menu" that can be
+1. **Signature Items**: Pre-configured items on the "speed menu" that can be
    ordered by name without customization (e.g., "The Italian", "Classic BLT").
 
-3. **Item Types**: Link to ItemType for configurable items. Determines what
+2. **Item Types**: Link to ItemType for configurable items. Determines what
    attributes (bread, size, toppings) are available for customization.
 
-4. **Base Price**: Starting price before any modifiers. Actual price may vary
+3. **Base Price**: Starting price before any modifiers. Actual price may vary
    based on size, add-ons, and other attribute selections.
 
-5. **Ingredients**: Default ingredients stored via menu_item_ingredients
+4. **Ingredients**: Default ingredients stored via menu_item_ingredients
    junction table (e.g., a BEC sandwich has bacon, egg, cheese).
 
-6. **Available Qty**: Legacy inventory field (kept for compatibility).
+5. **Available Qty**: Legacy inventory field (kept for compatibility).
    Modern inventory uses the "86" system via Ingredient.is_available.
 
 Availability:
@@ -47,7 +45,6 @@ Usage:
         is_signature=True,
         base_price=12.99,
         item_type_id=3,
-        category_ids=[1, 2]
     )
 
     # Response will include the generated ID
@@ -97,7 +94,6 @@ class MenuItemOut(BaseModel):
         item_type_id: Foreign key to ItemType for configuration options
         aliases: List of synonyms for matching (e.g., ["coke", "coca cola"])
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
-        category_ids: List of category IDs this item belongs to (e.g., [1, 2] for drink & food)
         ingredients: Default ingredients via menu_item_ingredients junction table
     """
     model_config = ConfigDict(from_attributes=True)
@@ -113,7 +109,6 @@ class MenuItemOut(BaseModel):
     aliases: list[str] = []
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
-    category_ids: List[int] = []
     size_category_id: Optional[int] = None
     size_prices: List[SizePriceOut] = []
     ingredients: List[MenuItemIngredientOut] = []
@@ -143,31 +138,27 @@ class MenuItemCreate(BaseModel):
     Request model for creating a new menu item.
 
     Required fields: name, base_price (or size_prices)
-    Recommended: item_type_id (for configuration), category_ids (for categorization)
+    Recommended: item_type_id (for configuration)
 
     Attributes:
         name: Display name (required, must be unique)
-        category: DEPRECATED - Ignored, use item_type_id and category_ids instead
         is_signature: Whether this is a signature item (default: False)
         base_price: Starting price in dollars (required if no size_prices)
         available_qty: Legacy inventory count (default: 0)
         item_type_id: Link to ItemType for configuration (recommended)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
-        category_ids: List of category IDs to assign (e.g., [1, 2] for drink & food)
 
     Example:
         {
             "name": "Veggie Delight",
             "item_type_id": 3,
             "is_signature": true,
-            "base_price": 10.99,
-            "category_ids": [1, 2]
+            "base_price": 10.99
         }
     """
     name: str
     description: Optional[str] = None
-    category: Optional[str] = None  # DEPRECATED - ignored, use item_type_id and category_ids
     is_signature: bool = False
     base_price: Optional[float] = None
     available_qty: int = 0
@@ -175,7 +166,6 @@ class MenuItemCreate(BaseModel):
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
-    category_ids: Optional[List[int]] = None
     size_category_id: Optional[int] = None
     size_prices: Optional[List[SizePriceInput]] = None
 
@@ -202,14 +192,12 @@ class MenuItemUpdate(BaseModel):
 
     Attributes:
         name: New display name (optional)
-        category: DEPRECATED - Ignored, use item_type_id and category_ids instead
         is_signature: Update signature status (optional)
         base_price: New base price (optional)
         available_qty: Update inventory count (optional)
         item_type_id: Change linked ItemType (optional)
         aliases: Comma-separated synonyms for matching (optional)
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
-        category_ids: List of category IDs to assign (replaces existing)
         ingredients: List of ingredient entries to assign (replaces existing)
 
     Example:
@@ -218,13 +206,9 @@ class MenuItemUpdate(BaseModel):
 
         # Update multiple fields
         {"name": "Super Veggie Delight", "base_price": 12.99}
-
-        # Update categories
-        {"category_ids": [1, 2]}
     """
     name: Optional[str] = None
     description: Optional[str] = None
-    category: Optional[str] = None  # DEPRECATED - ignored
     is_signature: Optional[bool] = None
     base_price: Optional[float] = None
     available_qty: Optional[int] = None
@@ -232,7 +216,6 @@ class MenuItemUpdate(BaseModel):
     aliases: Optional[str] = None
     abbreviation: Optional[str] = None
     required_match_phrases: Optional[str] = None
-    category_ids: Optional[List[int]] = None
     size_category_id: Optional[int] = None
     size_prices: Optional[List[SizePriceInput]] = None
     ingredients: Optional[List[MenuItemIngredientInput]] = None

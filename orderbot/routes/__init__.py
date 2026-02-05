@@ -79,7 +79,6 @@ from .admin_testing import admin_testing_router
 from .admin_response_patterns import admin_response_patterns_router
 from .admin_modifier_qualifiers import admin_modifier_qualifiers_router
 from .admin_ingredient_categories import admin_ingredient_categories_router
-from .admin_categories import admin_categories_router
 from .admin_menu_display_groups import admin_menu_display_groups_router
 from .admin_global_attributes import admin_global_attributes_router, admin_item_type_global_attrs_router
 from .admin_menu_item_sizes import admin_size_categories_router, admin_sizes_router
@@ -106,7 +105,6 @@ __all__ = [
     "admin_response_patterns_router",
     "admin_modifier_qualifiers_router",
     "admin_ingredient_categories_router",
-    "admin_categories_router",
     "admin_menu_display_groups_router",
     "admin_global_attributes_router",
     "admin_item_type_global_attrs_router",

@@ -22,11 +22,12 @@ Menu Item Structure:
 --------------------
 Menu items have:
 - name: Display name (e.g., "Turkey Club")
-- category: Grouping (sandwiches, drinks, sides)
 - is_signature: Pre-configured items on the speed menu
 - base_price: Starting price before modifiers
 - item_type_id: Links to ItemType for configuration options
 - ingredients: Default ingredients via menu_item_ingredients junction table
+
+Note: Categories are now derived from item_type -> display_group -> overall_category
 
 Usage:
 ------
@@ -34,7 +35,7 @@ Usage:
     POST /admin/menu
     {
         "name": "The Italian",
-        "category_ids": [1],
+        "item_type_id": 3,
         "is_signature": true,
         "base_price": 12.99,
         "ingredients": [
@@ -55,12 +56,11 @@ from ..db import get_db
 from ..db.models import (
     MenuItem,
     MenuItemAlias,
-    MenuItemCategory,
+    MenuItemCategory,  # Still needed for delete cleanup until table is dropped
     MenuItemIngredient,
     MenuItemSizePrice,
     MenuItemSize,
     MenuItemSizeCategory,
-    Category,
     Ingredient,
 )
 from ..schemas.menu import (
@@ -83,47 +83,6 @@ admin_menu_router = APIRouter(prefix="/admin/menu", tags=["Admin - Menu"])
 # =============================================================================
 # Helper Functions
 # =============================================================================
-
-def _set_menu_item_categories(db: Session, item: MenuItem, category_ids: Optional[List[int]]) -> None:
-    """
-    Set menu item categories from a list of category IDs.
-    Clears existing category assignments and creates new ones.
-
-    Args:
-        db: Database session
-        item: The menu item to update
-        category_ids: List of category IDs to assign (None means don't change)
-
-    Raises:
-        HTTPException: If any category ID is invalid
-    """
-    if category_ids is None:
-        return
-
-    # Clear existing category assignments
-    for cr in list(item.category_records):
-        db.delete(cr)
-
-    # Flush deletes before inserting new records to avoid unique constraint violations
-    db.flush()
-
-    if not category_ids:
-        return
-
-    # Batch-fetch all categories in one query to avoid N+1
-    categories = db.query(Category).filter(Category.id.in_(category_ids)).all()
-    found_ids = {c.id for c in categories}
-    missing_ids = set(category_ids) - found_ids
-    if missing_ids:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Category IDs not found: {sorted(missing_ids)}"
-        )
-
-    # Add new category assignments
-    for cat_id in category_ids:
-        db.add(MenuItemCategory(menu_item_id=item.id, category_id=cat_id))
-
 
 def _set_menu_item_size_prices(
     db: Session,
@@ -239,9 +198,6 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
         db: Database session
         include_ingredients: Whether to include ingredients (set False for list endpoints to avoid N+1)
     """
-    # Get category IDs from the category_records relationship
-    category_ids = [cr.category_id for cr in item.category_records] if item.category_records else []
-
     # Get size prices
     size_prices = []
     if item.size_prices:
@@ -278,7 +234,6 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
         aliases=item.aliases,
         abbreviation=item.abbreviation,
         required_match_phrases=item.required_match_phrases,
-        category_ids=category_ids,
         size_category_id=item.size_category_id,
         size_prices=size_prices,
         ingredients=ingredients,
@@ -310,7 +265,6 @@ def admin_menu(
         db.query(MenuItem)
         .options(
             joinedload(MenuItem.alias_records),
-            joinedload(MenuItem.category_records),
             joinedload(MenuItem.size_prices).joinedload(MenuItemSizePrice.size),
             joinedload(MenuItem.item_type),  # For category display name
         )
@@ -331,7 +285,6 @@ def create_menu_item(
     item = MenuItem(
         name=payload.name,
         description=payload.description,
-        # Note: category column removed - use category_ids for categorization
         is_signature=payload.is_signature,
         available_qty=payload.available_qty,
         item_type_id=payload.item_type_id,
@@ -355,9 +308,6 @@ def create_menu_item(
 
     # Add aliases through child table
     sync_entity_aliases(db, item, payload.aliases, "menu_item")
-
-    # Add category assignments
-    _set_menu_item_categories(db, item, payload.category_ids)
 
     # Add size prices - if no size_prices provided, create default from base_price
     size_prices_to_set = payload.size_prices
@@ -390,7 +340,6 @@ def get_menu_item(
             joinedload(MenuItem.ingredient_links).joinedload(MenuItemIngredient.ingredient),
             joinedload(MenuItem.item_type),
             joinedload(MenuItem.alias_records),
-            joinedload(MenuItem.category_records),
         )
         .filter(MenuItem.id == item_id)
         .first()
@@ -416,7 +365,6 @@ def update_menu_item(
         item.name = payload.name
     if "description" in payload.model_fields_set:
         item.description = payload.description
-    # Note: payload.category is ignored - use category_ids for categorization
     if payload.is_signature is not None:
         item.is_signature = payload.is_signature
     # Note: base_price is now computed from size_prices, not stored directly
@@ -441,8 +389,6 @@ def update_menu_item(
         item.abbreviation = payload.abbreviation
     if "required_match_phrases" in payload.model_fields_set:
         item.required_match_phrases = payload.required_match_phrases
-    if payload.category_ids is not None:
-        _set_menu_item_categories(db, item, payload.category_ids)
 
     # Update size pricing
     _set_menu_item_size_prices(db, item, payload.size_category_id, payload.size_prices)

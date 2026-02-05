@@ -25,7 +25,6 @@ from .checkout_messages import got_it_anything_else
 from .attribute_inference import (
     infer_attributes_from_item_name,
     extract_pre_filled_attributes,
-    extract_generic_term,
 )
 from .unrecognized_item_handler import UnrecognizedItemHandler
 from .order_item_builder import OrderItemBuilder
@@ -314,13 +313,6 @@ class ItemAdderHandler(MenuDataMixin):
         Delegates to attribute_inference.extract_pre_filled_attributes().
         """
         return extract_pre_filled_attributes(item_type, kwargs)
-
-    def _extract_generic_term(self, item_name: str) -> str | None:
-        """Extract a generic category term from item_name if present.
-
-        Delegates to attribute_inference.extract_generic_term().
-        """
-        return extract_generic_term(item_name)
 
     def add_menu_item(
         self,

@@ -13,6 +13,7 @@ from .pending_fields import PendingField
 from .schemas import StateMachineResult
 from .disambiguation_handler import DisambiguationHandler
 from .mixins import MenuDataMixin
+from .attribute_inference import extract_generic_term
 from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
@@ -103,7 +104,7 @@ class ItemLookupHandler(MenuDataMixin):
                 return (None, result)
 
         # Check for generic terms that match multiple items (data-driven)
-        generic_term = self._extract_generic_term(item_name)
+        generic_term = extract_generic_term(item_name)
         # Input is "exact generic" if it directly matches multiple items (e.g., "chips")
         is_exact_generic = generic_term == item_lower
 
@@ -235,10 +236,3 @@ class ItemLookupHandler(MenuDataMixin):
         logger.warning("Menu item not found: '%s'", item_name)
         return (None, None)
 
-    def _extract_generic_term(self, item_name: str) -> str | None:
-        """Extract a generic category term from item_name if present.
-
-        Delegates to attribute_inference.extract_generic_term().
-        """
-        from .attribute_inference import extract_generic_term
-        return extract_generic_term(item_name)

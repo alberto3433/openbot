@@ -144,19 +144,6 @@ def get_all_modifier_patterns_for_item(item_type_slug: str | None) -> set[str]:
     return patterns
 
 
-def _extract_quantity_from_input(input_lower: str, pattern: str) -> int:
-    """Extract quantity from user input for a modifier.
-
-    Args:
-        input_lower: Lowercase user input
-        pattern: The modifier pattern to look for quantity before
-
-    Returns:
-        Quantity (defaults to 1 if not found)
-    """
-    return extract_quantity_for_pattern(input_lower, pattern)
-
-
 def add_modifier_to_item(
     item: "MenuItemTask",
     slug: str,

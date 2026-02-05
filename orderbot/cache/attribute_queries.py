@@ -293,19 +293,6 @@ class AttributeQueryMixin:
         if code_field and code_field in attrs:
             return code_field
 
-        # Fourth try: known category-to-attribute mappings for mismatches
-        # This handles cases where ingredient.category doesn't match the attribute slug
-        # e.g., egg_sandwich uses "meat" attribute but ingredient category is "protein"
-        # TODO: Remove once DB has proper ingredient_group -> attribute mapping
-        fallback_mappings = {
-            "protein": ["meat", "extra_protein", "protein"],
-            "condiment": ["spread", "toppings", "condiments"],
-        }
-        if ingredient_category in fallback_mappings:
-            for candidate in fallback_mappings[ingredient_category]:
-                if candidate in attrs:
-                    return candidate
-
         return None
 
     def get_item_type_from_option_alias(self, alias: str) -> tuple[str, str, str] | None:

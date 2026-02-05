@@ -103,7 +103,7 @@ class OrderItemBuilder:
         # Step 1: Try menu lookup (works for all menu-backed items)
         menu_data = self._menu_lookup(lookup_name) if self._menu_lookup else None
         if menu_data:
-            return {
+            result = {
                 "name": menu_data.get("name", lookup_name),
                 "item_type": menu_data.get("item_type") or item_type,
                 "base_price": menu_data.get("base_price", 0),
@@ -111,6 +111,11 @@ class OrderItemBuilder:
                 "is_signature": menu_data.get("is_signature", False),
                 "skip_config": menu_data.get("skip_config", False),
             }
+            # Include size_category_slug for items with variant pricing
+            # This allows cart to display which variant the price is for (e.g., "1/4 lb")
+            if menu_data.get("size_category_slug"):
+                result["size_category_slug"] = menu_data["size_category_slug"]
+            return result
 
         # Step 2: Check if this is a configurable item type (has conversation attributes)
         # For configurable types where menu lookup failed, keep the user's item name

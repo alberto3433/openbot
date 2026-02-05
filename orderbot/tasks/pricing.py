@@ -238,6 +238,55 @@ class PricingEngine(MenuDataMixin):
 
         return 0.0
 
+    def get_default_variant_for_item(
+        self,
+        menu_item_name: str,
+    ) -> dict | None:
+        """Get the default variant for an item with variant-based pricing.
+
+        For items with size/weight-based pricing (e.g., spreads, coffee), this returns
+        the default variant that determines the base price. The default is the first
+        variant by display_order.
+
+        Args:
+            menu_item_name: Name of the menu item
+
+        Returns:
+            Dict with variant info {"slug": str, "display_name": str} or None if:
+            - Item doesn't have variant pricing
+            - Item has only one variant (no need to display "each" for bagels, etc.)
+        """
+        menu_item = self._lookup_menu_item(menu_item_name)
+        if not menu_item:
+            menu_item = self._lookup_menu_item(menu_item_name.title())
+        if not menu_item:
+            return None
+
+        size_prices = menu_item.get("size_prices")
+        if not size_prices:
+            return None
+
+        # If only one variant, don't show it in cart (e.g., "each" for bagels is redundant)
+        if len(size_prices) == 1:
+            return None
+
+        # Sort by display_order to find the default (first) variant
+        sorted_sizes = sorted(size_prices, key=lambda sp: sp.get("display_order", 999))
+        default_size = sorted_sizes[0]
+
+        # Get the size name and convert to slug
+        size_name = default_size.get("size_name")
+        if not size_name:
+            return None
+
+        # Convert display name to slug (e.g., "1/4 lb" -> "quarter_pound")
+        slug = normalize_to_slug(size_name)
+
+        return {
+            "slug": slug,
+            "display_name": size_name,
+        }
+
     def lookup_base_price(self, menu_item_name: str, size_name: str | None = None) -> float:
         """Look up base price for any menu item by name.
 

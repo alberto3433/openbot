@@ -559,7 +559,8 @@ class TestPriceRecalculationInvariants:
             menu_item_type="fish",
             unit_price=12.0,  # Initial base price (1/4 lb)
         )
-        item.attribute_values["weight"] = "one_pound"
+        # Use dict-style access (calls __setitem__) to properly set the attribute
+        item["weight"] = "one_pound"
 
         # Recalculate price using the pricing engine
         new_price = sm.pricing.recalculate_item_price(item)
@@ -585,7 +586,8 @@ class TestPriceRecalculationInvariants:
             menu_item_type="fish",
             unit_price=0.0,  # Will be recalculated
         )
-        item.attribute_values["weight"] = "quarter_pound"
+        # Use dict-style access (calls __setitem__) to properly set the attribute
+        item["weight"] = "quarter_pound"
 
         # Recalculate price
         new_price = sm.pricing.recalculate_item_price(item)
@@ -593,6 +595,140 @@ class TestPriceRecalculationInvariants:
         # Should be $12 (the 1/4 lb price)
         assert new_price == 12.0, (
             f"Expected $12.00 for 1/4 lb Belly Lox, got ${new_price:.2f}"
+        )
+
+    def test_fish_item_has_default_weight_in_cart(self):
+        """Test that fish items display default weight in cart.
+
+        Fish items have variant-based pricing, so:
+        - Default weight (1/4 lb) should be auto-populated for cart display
+        - The system should still ask the weight question (ask_in_conversation=True)
+        - User can change the weight when answering the question
+
+        This ensures the cart always shows which variant the price is for.
+        """
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.schemas import OrderPhase
+        from orderbot.tasks.item_converters import _unified_converter
+
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        # Add a fish item (Belly Lox)
+        result = sm.item_adder_handler.add_item(
+            item_type="fish",
+            order=order,
+            item_name="Belly Lox",
+        )
+
+        # Should have the item in the order
+        items = result.order.items.get_active_items()
+        assert len(items) >= 1, (
+            f"Should have at least 1 item, got {len(items)}. "
+            f"Message: {result.message}. Phase: {result.order.phase}"
+        )
+
+        # Find the fish item
+        fish_item = items[0]
+        assert "lox" in fish_item.menu_item_name.lower(), (
+            f"Expected Belly Lox item, got: {fish_item.menu_item_name}"
+        )
+
+        # Weight should be auto-populated with default variant (1/4 lb)
+        weight_selections = fish_item.get_selections("weight")
+        assert len(weight_selections) > 0, (
+            f"Fish weight should be auto-populated for cart display. "
+            f"Got selections: {fish_item.selections}"
+        )
+
+        # The default weight should be 1/4 lb
+        weight_sel = weight_selections[0]
+        weight_slug = weight_sel.get("slug") if isinstance(weight_sel, dict) else weight_sel.slug
+        weight_display = weight_sel.get("display_name") if isinstance(weight_sel, dict) else weight_sel.display_name
+        assert "quarter" in weight_slug.lower() or "1/4" in str(weight_display).lower(), (
+            f"Default weight should be quarter pound. Got slug={weight_slug}, display={weight_display}"
+        )
+
+        # Note: Even though weight is auto-populated, the system should still ask
+        # the weight question if ask_in_conversation=True. The item status depends
+        # on whether there are other mandatory questions. For fish, once weight has
+        # a value (even the default), the item can be complete.
+
+        # Cart should show the weight
+        item_dict = _unified_converter.to_dict(fish_item, pricing=sm.pricing)
+        modifiers = item_dict.get("modifiers", [])
+        modifier_names = [m.get("name", "") for m in modifiers]
+        has_weight_modifier = any("1/4" in name or "lb" in name.lower() for name in modifier_names)
+        assert has_weight_modifier, (
+            f"Cart should show weight (1/4 lb) in modifiers. Got modifiers: {modifier_names}"
+        )
+
+    def test_spread_item_displays_weight_in_cart(self):
+        """Test that spread items (cream cheese) display weight selection in cart.
+
+        When ordering "blueberry cream cheese", the cart should show:
+        - Blueberry Cream Cheese
+        - 1/4 lb (as a modifier line)
+        - $5.00
+
+        This tests that variant pricing items auto-populate the default variant
+        selection so it appears in the cart display.
+        """
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.schemas import OrderPhase
+        from orderbot.tasks.item_converters import _unified_converter
+
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        # Use the item adder handler directly to add a spread item
+        # This avoids disambiguation issues from the full parsing flow
+        result = sm.item_adder_handler.add_item(
+            item_type="spread",
+            order=order,
+            item_name="Blueberry Cream Cheese",
+        )
+
+        # Should have the item in the order
+        items = result.order.items.get_active_items()
+        assert len(items) >= 1, (
+            f"Should have at least 1 item, got {len(items)}. "
+            f"Message: {result.message}. Phase: {result.order.phase}"
+        )
+
+        # Find the cream cheese item
+        cream_cheese = items[0]  # Should be the first item
+        assert "cream cheese" in cream_cheese.menu_item_name.lower(), (
+            f"Expected cream cheese item, got: {cream_cheese.menu_item_name}"
+        )
+
+        # Check that the weight selection was auto-populated
+        weight_selections = cream_cheese.get_selections("weight")
+        assert len(weight_selections) > 0, (
+            f"Weight selection should be auto-populated. Selections: {cream_cheese.selections}"
+        )
+
+        # The default weight should be 1/4 lb
+        weight_sel = weight_selections[0]
+        weight_slug = weight_sel.get("slug") if isinstance(weight_sel, dict) else weight_sel.slug
+        weight_display = weight_sel.get("display_name") if isinstance(weight_sel, dict) else weight_sel.display_name
+        assert "quarter" in weight_slug.lower() or "1/4" in str(weight_display).lower(), (
+            f"Default weight should be quarter pound. Got slug={weight_slug}, display={weight_display}"
+        )
+
+        # Check the cart display (to_dict)
+        item_dict = _unified_converter.to_dict(cream_cheese, pricing=sm.pricing)
+        modifiers = item_dict.get("modifiers", [])
+        modifier_names = [m.get("name", "") for m in modifiers]
+
+        # The weight should appear in modifiers
+        has_weight_modifier = any("1/4" in name or "lb" in name.lower() for name in modifier_names)
+        assert has_weight_modifier, (
+            f"Cart should show weight (1/4 lb) in modifiers. Got modifiers: {modifier_names}"
         )
 
 

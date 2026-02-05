@@ -711,6 +711,22 @@ class ItemAdderHandler(MenuDataMixin):
             if menu_item_id:
                 populate_default_ingredients(item)
 
+            # Auto-populate variant selection for items with weight-based pricing
+            # This ensures cart displays which weight the price is for (e.g., "1/4 lb")
+            # Only auto-populate for "weight" category (spreads, fish), NOT for:
+            # - "size" (coffee drinks - user should choose small/medium/large)
+            # - "quantity" (bagel packages - user should choose 6/dozen)
+            size_category_slug = menu_item.get("size_category_slug")
+            if size_category_slug == "weight" and self.pricing:
+                default_variant = self.pricing.get_default_variant_for_item(canonical_name)
+                if default_variant:
+                    item.add_selection(
+                        slug=default_variant["slug"],
+                        category=size_category_slug,
+                        display_name=default_variant["display_name"],
+                        is_default=True,  # Mark as auto-populated default
+                    )
+
             # Apply pre-filled attributes
             if pre_filled_attributes:
                 for attr_name, attr_value in pre_filled_attributes.items():

@@ -155,6 +155,10 @@ class ConfiguringItemHandler:
         if order.pending_field == PendingField.CONFIRM_INGREDIENT_SUGGESTION:
             return self._taking_items_handler.handle_confirm_ingredient_suggestion(user_input, order)
 
+        # Handle dietary follow-up confirmation ("Would you like to see our vegan options?" -> "yes")
+        if order.pending_field == PendingField.CONFIRM_DIETARY_FOLLOWUP:
+            return self._taking_items_handler.handle_confirm_dietary_followup(user_input, order)
+
         # Handle item switch confirmation ("can you make it X?" -> similar item found)
         if order.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
             return self.config_modification_handler.handle_confirm_item_switch(user_input, order)

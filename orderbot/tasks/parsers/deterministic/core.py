@@ -46,6 +46,7 @@ from .inquiry import (
     parse_modifier_inquiry,
     parse_more_menu_items,
     parse_ingredient_search,
+    parse_dietary_inquiry,
 )
 from .modification_parsing import (
     _extract_menu_item_modifications,
@@ -286,6 +287,11 @@ def parse_open_input_deterministic(
     modifier_inquiry_result = parse_modifier_inquiry(text, modifier_category_keywords, modifier_item_keywords)
     if modifier_inquiry_result:
         return modifier_inquiry_result
+
+    # Check for dietary/allergen/availability/customization inquiries
+    dietary_result = parse_dietary_inquiry(text)
+    if dietary_result:
+        return dietary_result
 
     # Check for ingredient-based menu search
     # When user says "chicken" or "something with bacon", show matching items

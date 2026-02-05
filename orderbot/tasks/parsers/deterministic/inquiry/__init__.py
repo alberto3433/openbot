@@ -9,10 +9,23 @@ This package contains parsers for non-order queries including:
 - Modifier/add-on inquiries
 - Ingredient-based menu search
 - Attribute option inquiries
+- Dietary/allergen inquiries
+- Availability inquiries
+- Customization inquiries
 """
 
 from .attribute import parse_attribute_inquiry
 from .description import parse_item_description_inquiry
+from .dietary import (
+    parse_dietary_inquiry,
+    parse_dietary_category_inquiry,
+    parse_dietary_options_inquiry,
+    parse_dietary_item_inquiry,
+    parse_allergen_inquiry,
+    parse_allergen_free_options_inquiry,
+    parse_availability_inquiry,
+    parse_customization_inquiry,
+)
 from .ingredient import (
     get_order_signals,
     parse_ingredient_search,
@@ -42,4 +55,13 @@ __all__ = [
     "get_order_signals",
     # Attribute
     "parse_attribute_inquiry",
+    # Dietary/allergen/availability/customization
+    "parse_dietary_inquiry",
+    "parse_dietary_category_inquiry",
+    "parse_dietary_options_inquiry",
+    "parse_dietary_item_inquiry",
+    "parse_allergen_inquiry",
+    "parse_allergen_free_options_inquiry",
+    "parse_availability_inquiry",
+    "parse_customization_inquiry",
 ]

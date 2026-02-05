@@ -53,11 +53,15 @@ TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATAB
 
 
 @pytest.fixture(scope="session")
-def _app_client_session(tmp_path_factory):
+def _app_client_session(tmp_path_factory, menu_cache_loaded):
     """Session-scoped FastAPI TestClient setup.
 
     Creates the TestClient once for the entire test session to avoid
     restarting the server (lifespan events) for every test.
+
+    Depends on menu_cache_loaded to ensure the cache is populated before
+    TestClient triggers the app lifespan (which also calls load_from_db).
+    With _is_loaded=True, the lifespan's load_from_db returns immediately.
 
     Uses file locking to coordinate database initialization across
     pytest-xdist workers, preventing race conditions.

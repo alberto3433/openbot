@@ -100,6 +100,7 @@ from .routes import (
     admin_modifier_qualifiers_router,
     admin_ingredient_categories_router,
     admin_categories_router,
+    admin_menu_display_groups_router,
     admin_global_attributes_router,
     admin_item_type_global_attrs_router,
     admin_size_categories_router,
@@ -335,6 +336,7 @@ api_v1_router.include_router(admin_response_patterns_router)
 api_v1_router.include_router(admin_modifier_qualifiers_router)
 api_v1_router.include_router(admin_ingredient_categories_router)
 api_v1_router.include_router(admin_categories_router)
+api_v1_router.include_router(admin_menu_display_groups_router)
 api_v1_router.include_router(admin_global_attributes_router)
 api_v1_router.include_router(admin_item_type_global_attrs_router)
 api_v1_router.include_router(admin_size_categories_router)

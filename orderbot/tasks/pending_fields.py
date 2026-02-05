@@ -22,3 +22,6 @@ class PendingField:
     MENU_ITEM_CONFIG = "menu_item_config"
     ADDRESS_CONFIRMATION = "address_confirmation"
     CATEGORY_INQUIRY = "category_inquiry"
+    ORDER_HISTORY_SELECTION = "order_history_selection"
+    REORDER_ITEM_SELECTION = "reorder_item_selection"
+    CONFIRM_DIETARY_FOLLOWUP = "confirm_dietary_followup"

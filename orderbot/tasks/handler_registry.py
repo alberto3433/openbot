@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from .config_modification_handler import ConfigModificationHandler
     from .taking_items_handler import TakingItemsHandler
     from .slot_orchestration_handler import SlotOrchestrationHandler
+    from .order_history_handler import OrderHistoryHandler
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ class HandlerRegistry:
         from .config_modification_handler import ConfigModificationHandler
         from .taking_items_handler import TakingItemsHandler
         from .slot_orchestration_handler import SlotOrchestrationHandler
+        from .order_history_handler import OrderHistoryHandler
 
         # Phase 1: Slot orchestration (no dependencies)
         self._handlers["slot_orchestration"] = SlotOrchestrationHandler()
@@ -166,6 +168,11 @@ class HandlerRegistry:
         # Wire back config_helper reference to cancellation handler
         self._handlers["config_cancellation"].config_helper_handler = self._handlers["config_helper"]
 
+        # Phase 3.5: Order history handler (depends on checkout)
+        self._handlers["order_history"] = OrderHistoryHandler(
+            checkout_handler=self._handlers["checkout"],
+        )
+
         # Phase 4: Wire cross-handler callbacks
         self._handlers["checkout"].order_utils_handler = self._handlers["order_utils"]
         self._handlers["checkout"]._handle_taking_items_with_parsed = self._handle_taking_items_with_parsed
@@ -213,6 +220,10 @@ class HandlerRegistry:
         self._handlers["menu_item"].process_pending_parsed_items = (
             self._handlers["configuring_item"]._process_pending_parsed_items
         )
+        # Wire order_history_handler to taking_items' duplicate_handler
+        self._handlers["taking_items"]._duplicate_handler.order_history_handler = (
+            self._handlers["order_history"]
+        )
 
     def distribute_context(self, ctx: OrderContext) -> None:
         """Distribute context to all handlers that need it.
@@ -227,6 +238,7 @@ class HandlerRegistry:
             "checkout_utils",
             "taking_items",
             "item_adder",
+            "order_history",
         ]
 
         for name in context_handlers:
@@ -312,3 +324,7 @@ class HandlerRegistry:
     @property
     def taking_items(self) -> "TakingItemsHandler":
         return self._handlers["taking_items"]
+
+    @property
+    def order_history(self) -> "OrderHistoryHandler":
+        return self._handlers["order_history"]

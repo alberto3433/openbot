@@ -706,3 +706,60 @@ class ItemTypeLoaderMixin:
             len(result),
             sum(len(v) for v in result.values()),
         )
+
+    def _load_menu_display_groups_from_bulk(self, bulk_data: dict) -> None:
+        """Load menu display groups from bulk data.
+
+        Display groups are high-level menu categories shown when user asks
+        "what's on your menu?" - e.g., "breads", "sandwiches", "drinks".
+
+        Also builds:
+        - mapping of display group slug -> item type slugs for queries like "what breads do you have?"
+        - mapping of alias -> group slug for recognizing user references like "pastries"
+        """
+        groups = bulk_data.get("menu_display_groups", [])
+        item_types = bulk_data.get("item_types", [])
+
+        self._menu_display_groups_ordered = [
+            {
+                "slug": g.slug,
+                "display_name": g.display_name,
+                "display_order": g.display_order,
+            }
+            for g in sorted(groups, key=lambda g: g.display_order)
+        ]
+
+        # Build mapping: display_group_slug -> list of item_type_slugs
+        item_types_by_group: dict[str, list[str]] = {}
+        for it in item_types:
+            if it.menu_display_group:
+                group_slug = it.menu_display_group.slug
+                if group_slug not in item_types_by_group:
+                    item_types_by_group[group_slug] = []
+                item_types_by_group[group_slug].append(it.slug)
+
+        self._item_types_by_display_group = item_types_by_group
+
+        # Build mapping: alias -> group_slug
+        alias_to_slug: dict[str, str] = {}
+        for g in groups:
+            # alias_records is eagerly loaded
+            for alias_record in g.alias_records:
+                alias_lower = alias_record.alias.lower()
+                alias_to_slug[alias_lower] = g.slug
+
+        self._display_group_alias_to_slug = alias_to_slug
+
+        logger.debug(
+            "Loaded %d menu display groups: %s",
+            len(self._menu_display_groups_ordered),
+            [g["slug"] for g in self._menu_display_groups_ordered],
+        )
+        logger.debug(
+            "Item types by display group: %s",
+            {k: len(v) for k, v in item_types_by_group.items()},
+        )
+        logger.debug(
+            "Loaded %d display group aliases",
+            len(alias_to_slug),
+        )

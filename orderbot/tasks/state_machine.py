@@ -235,6 +235,10 @@ class OrderStateMachine:
         return self._registry.taking_items
 
     @property
+    def order_history_handler(self):
+        return self._registry.order_history
+
+    @property
     def menu_data(self) -> dict:
         return self._menu_data
 
@@ -345,6 +349,40 @@ class OrderStateMachine:
             result = self.order_utils_handler.handle_order_status(order)
             order.add_message("assistant", result.message)
             return result
+
+        # Check for order history inquiry (works from any state)
+        if self.order_history_handler.is_order_history_inquiry(user_input):
+            logger.info("ORDER HISTORY: User asked for order history")
+            result = self.order_history_handler.handle_order_history_inquiry(order)
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
+        # Check for view last order inquiry (works from any state)
+        if self.order_history_handler.is_view_last_order(user_input):
+            logger.info("ORDER HISTORY: User asked for last order details")
+            result = self.order_history_handler.handle_view_last_order(order)
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
+        # Check for pending order history selection response
+        if getattr(order, "pending_order_history", None):
+            result = self.order_history_handler.handle_order_history_selection(
+                user_input, order
+            )
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
+        # Check for pending reorder item selection response
+        if getattr(order, "pending_reorder_items", None):
+            result = self.order_history_handler.handle_reorder_item_selection(
+                user_input, order
+            )
+            if result:
+                order.add_message("assistant", result.message)
+                return result
 
         # Check for pending change clarification response
         if order.pending_change_clarification:

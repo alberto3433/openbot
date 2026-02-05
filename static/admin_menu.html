@@ -519,6 +519,7 @@
           <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
           <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
           <a href="/static/admin_overall_categories.html">Overall Categories</a>
+          <a href="/static/admin_menu_display_groups.html">Display Groups</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
           <a href="/static/admin_unrecognized_suggestions.html">Unrecognized Suggestions</a>
           <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
@@ -606,6 +607,56 @@
             <input id="itemSignature" type="checkbox" />
             <label for="itemSignature">Signature item (speed menu)</label>
           </div>
+        </div>
+
+        <div class="field">
+          <label>Dietary Options</label>
+          <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 4px;">
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="isVegan" type="checkbox" />
+              <label for="isVegan">Vegan</label>
+            </div>
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="isVegetarian" type="checkbox" />
+              <label for="isVegetarian">Vegetarian</label>
+            </div>
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="isGlutenFree" type="checkbox" />
+              <label for="isGlutenFree">Gluten-Free</label>
+            </div>
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="isDairyFree" type="checkbox" />
+              <label for="isDairyFree">Dairy-Free</label>
+            </div>
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="isKosher" type="checkbox" />
+              <label for="isKosher">Kosher</label>
+            </div>
+          </div>
+          <small style="color: #666; font-size: 0.8em;">Check if this item qualifies for these dietary restrictions</small>
+        </div>
+
+        <div class="field">
+          <label>Contains Allergens</label>
+          <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 4px;">
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="containsEggs" type="checkbox" />
+              <label for="containsEggs">Eggs</label>
+            </div>
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="containsFish" type="checkbox" />
+              <label for="containsFish">Fish</label>
+            </div>
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="containsSesame" type="checkbox" />
+              <label for="containsSesame">Sesame</label>
+            </div>
+            <div class="field-checkbox" style="margin-top: 0;">
+              <input id="containsNuts" type="checkbox" />
+              <label for="containsNuts">Nuts</label>
+            </div>
+          </div>
+          <small style="color: #666; font-size: 0.8em;">Check if this item contains these allergens</small>
         </div>
 
         <div class="field">
@@ -1284,6 +1335,17 @@
       clearTags(aliasesContainerEl, aliasInputEl);
       clearTags(requiredPhrasesContainerEl, requiredPhraseInputEl);
 
+      // Reset dietary/allergen checkboxes
+      document.getElementById("isVegan").checked = false;
+      document.getElementById("isVegetarian").checked = false;
+      document.getElementById("isGlutenFree").checked = false;
+      document.getElementById("isDairyFree").checked = false;
+      document.getElementById("isKosher").checked = false;
+      document.getElementById("containsEggs").checked = false;
+      document.getElementById("containsFish").checked = false;
+      document.getElementById("containsSesame").checked = false;
+      document.getElementById("containsNuts").checked = false;
+
       // Reset categories to none selected
       setCategoryTags([]);
 
@@ -1336,6 +1398,17 @@
       itemSignatureEl.checked = !!item.is_signature;
       setTags(aliasesContainerEl, aliasInputEl, item.aliases || []);
       setTags(requiredPhrasesContainerEl, requiredPhraseInputEl, item.required_match_phrases || "");
+
+      // Set dietary/allergen checkboxes
+      document.getElementById("isVegan").checked = !!item.is_vegan;
+      document.getElementById("isVegetarian").checked = !!item.is_vegetarian;
+      document.getElementById("isGlutenFree").checked = !!item.is_gluten_free;
+      document.getElementById("isDairyFree").checked = !!item.is_dairy_free;
+      document.getElementById("isKosher").checked = !!item.is_kosher;
+      document.getElementById("containsEggs").checked = !!item.contains_eggs;
+      document.getElementById("containsFish").checked = !!item.contains_fish;
+      document.getElementById("containsSesame").checked = !!item.contains_sesame;
+      document.getElementById("containsNuts").checked = !!item.contains_nuts;
 
       // Set category tags with item's current categories
       setCategoryTags(item.category_ids || []);
@@ -1426,6 +1499,17 @@
           ingredient_id: i.ingredient_id,
           quantity: i.quantity,
         })),
+        // Dietary attributes
+        is_vegan: document.getElementById("isVegan").checked,
+        is_vegetarian: document.getElementById("isVegetarian").checked,
+        is_gluten_free: document.getElementById("isGlutenFree").checked,
+        is_dairy_free: document.getElementById("isDairyFree").checked,
+        is_kosher: document.getElementById("isKosher").checked,
+        // Allergen attributes
+        contains_eggs: document.getElementById("containsEggs").checked,
+        contains_fish: document.getElementById("containsFish").checked,
+        contains_sesame: document.getElementById("containsSesame").checked,
+        contains_nuts: document.getElementById("containsNuts").checked,
       };
 
       if (!payload.name) {

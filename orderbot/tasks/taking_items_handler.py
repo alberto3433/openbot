@@ -46,6 +46,7 @@ from .inquiry_router import InquiryRouter
 from .duplicate_handler import DuplicateHandler
 from .early_pattern_handler import EarlyPatternHandler
 from .response_utils import is_affirmative
+from .dietary_inquiry_handler import DietaryInquiryHandler
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -135,9 +136,11 @@ class TakingItemsHandler(MenuDataMixin):
             item_adder_handler=item_adder_handler,
             pricing=config.pricing,
         )
+        self._dietary_inquiry_handler = DietaryInquiryHandler(config=config)
         self._inquiry_router = InquiryRouter(
             menu_inquiry_handler=menu_inquiry_handler,
             store_info_handler=store_info_handler,
+            dietary_inquiry_handler=self._dietary_inquiry_handler,
         )
         self._duplicate_handler = DuplicateHandler(
             pricing=config.pricing,
@@ -340,7 +343,9 @@ class TakingItemsHandler(MenuDataMixin):
             return result
 
         # Handle repeat order / "same thing" request - delegate to DuplicateHandler
-        result = self._duplicate_handler.handle_repeat_order_request(parsed, order)
+        result = self._duplicate_handler.handle_repeat_order_request(
+            parsed, order, raw_user_input=raw_user_input
+        )
         if result:
             return result
 
@@ -752,4 +757,43 @@ class TakingItemsHandler(MenuDataMixin):
             ingredient, user_input
         )
         order.pending_ingredient_to_apply = ingredient
+        return self.handle_taking_items(user_input, order)
+
+    def handle_confirm_dietary_followup(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user's response to dietary follow-up offer.
+
+        Called when user asked about a specific item's dietary property (e.g., 'is the classic vegan?'),
+        got a negative answer, and was offered to see dietary options instead.
+
+        Handles two cases:
+        1. User says "yes" → show the dietary options
+        2. User says "no" or something else → process as normal taking_items input
+        """
+        followup = order.pending_dietary_followup
+        dietary_type = followup.get("dietary_type", "") if followup else ""
+        category = followup.get("category") if followup else None
+
+        # Clear follow-up context
+        order.pending_dietary_followup = None
+        order.pending_field = None
+
+        if is_affirmative(user_input) and dietary_type:
+            logger.info(
+                "User confirmed dietary follow-up for '%s', showing options",
+                dietary_type
+            )
+            # Call the dietary handler to show the options
+            return self._dietary_inquiry_handler.handle_dietary_options_inquiry(
+                dietary_type, order, category=category
+            )
+
+        # Not affirmative - process as normal taking_items input
+        logger.info(
+            "User did not confirm dietary follow-up for '%s', processing as normal input: '%s'",
+            dietary_type, user_input
+        )
         return self.handle_taking_items(user_input, order)

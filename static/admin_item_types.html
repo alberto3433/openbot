@@ -814,6 +814,7 @@
           <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
           <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
           <a href="/static/admin_overall_categories.html">Overall Categories</a>
+          <a href="/static/admin_menu_display_groups.html">Display Groups</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
           <a href="/static/admin_unrecognized_suggestions.html">Unrecognized Suggestions</a>
           <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
@@ -879,11 +880,11 @@
           </div>
 
           <div class="field">
-            <label for="itemTypeCategory">Category</label>
-            <select id="itemTypeCategory">
-              <option value="">-- None --</option>
+            <label for="itemTypeDisplayGroup">Menu Display Group *</label>
+            <select id="itemTypeDisplayGroup" required>
+              <option value="">-- Select a display group --</option>
             </select>
-            <div class="hint">Determines modifier extraction rules (food items get proteins/cheeses, beverages get milk/sweetener).</div>
+            <div class="hint">Required. Groups item types for menu listing. Category (food/beverage) is inherited from the display group.</div>
           </div>
 
           <div class="config-note">
@@ -1231,7 +1232,7 @@
     const API_BASE = "/api/v1/admin/modifiers/item-types";
     const GLOBAL_ATTRS_API = "/api/v1/admin/global-attributes";
     const ITEM_TYPE_GLOBAL_ATTRS_API = "/api/v1/admin/item-types";
-    const CATEGORIES_API = "/api/v1/admin/modifiers/overall-categories";
+    const DISPLAY_GROUPS_API = "/api/v1/admin/modifiers/menu-display-groups";
     const COMPONENT_SLOTS_API = "/api/v1/admin/component-slots";
 
     // Auth credentials storage
@@ -1246,7 +1247,7 @@
     let linkedAttributes = [];
     let allGlobalAttributes = [];
     let editingLinkId = null;
-    let allCategories = [];
+    let allDisplayGroups = [];
 
     // Included choices state
     let componentSlots = [];
@@ -1417,24 +1418,24 @@
       }
     }
 
-    // Load item type categories for dropdown
-    async function loadCategories() {
+    // Load menu display groups for dropdown
+    async function loadDisplayGroups() {
       try {
-        const response = await authFetch(CATEGORIES_API);
+        const response = await authFetch(DISPLAY_GROUPS_API);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        allCategories = await response.json();
-        populateCategoryDropdown();
+        allDisplayGroups = await response.json();
+        populateDisplayGroupDropdown();
       } catch (error) {
-        console.error("Failed to load categories:", error);
-        allCategories = [];
+        console.error("Failed to load display groups:", error);
+        allDisplayGroups = [];
       }
     }
 
-    // Populate category dropdown
-    function populateCategoryDropdown() {
-      const select = document.getElementById("itemTypeCategory");
-      select.innerHTML = '<option value="">-- None --</option>' +
-        allCategories.map(c => `<option value="${c.id}">${escapeHtml(c.display_name)}</option>`).join("");
+    // Populate display group dropdown
+    function populateDisplayGroupDropdown() {
+      const select = document.getElementById("itemTypeDisplayGroup");
+      select.innerHTML = '<option value="">-- Select a display group --</option>' +
+        allDisplayGroups.map(g => `<option value="${g.id}">${escapeHtml(g.display_name)}</option>`).join("");
     }
 
     // Populate global attribute dropdown
@@ -1570,7 +1571,7 @@
       document.getElementById("slug").value = "";
       document.getElementById("slug").dataset.manuallyEdited = "";
       clearTags(aliasesContainerEl, aliasInputEl);
-      document.getElementById("itemTypeCategory").value = "";
+      document.getElementById("itemTypeDisplayGroup").value = "";
       document.getElementById("itemStats").style.display = "none";
       linkedAttributes = [];
       renderAttributes();
@@ -1613,15 +1614,15 @@
           showItemStats(fullDetails);
           // Populate aliases from full details
           setTags(aliasesContainerEl, aliasInputEl, fullDetails.aliases || []);
-          // Set category dropdown
-          document.getElementById("itemTypeCategory").value = fullDetails.overall_category_id || "";
+          // Set display group dropdown
+          document.getElementById("itemTypeDisplayGroup").value = fullDetails.menu_display_group_id || "";
         }
       } catch (error) {
         console.error("Failed to load full item type details:", error);
         // Hide stats on error
         document.getElementById("itemStats").style.display = "none";
         clearTags(aliasesContainerEl, aliasInputEl);
-        document.getElementById("itemTypeCategory").value = "";
+        document.getElementById("itemTypeDisplayGroup").value = "";
       }
 
       // Load attributes
@@ -1656,11 +1657,16 @@
       const displayName = document.getElementById("displayName").value.trim();
       const slug = document.getElementById("slug").value.trim().toLowerCase();
       const aliases = getTagValues(aliasesContainerEl).join(",");
-      const categoryValue = document.getElementById("itemTypeCategory").value;
-      const categoryId = categoryValue ? parseInt(categoryValue) : null;
+      const displayGroupValue = document.getElementById("itemTypeDisplayGroup").value;
+      const displayGroupId = displayGroupValue ? parseInt(displayGroupValue) : null;
 
       if (!displayName || !slug) {
         showToast("Please fill in all required fields", "error");
+        return;
+      }
+
+      if (!displayGroupId) {
+        showToast("Please select a Menu Display Group", "error");
         return;
       }
 
@@ -1673,7 +1679,7 @@
         display_name: displayName,
         slug: slug,
         aliases: aliases,  // Empty string clears aliases, null means don't update
-        overall_category_id: categoryId
+        menu_display_group_id: displayGroupId
       };
 
       setSaveButtonState(saveBtn, "saving");
@@ -2481,7 +2487,7 @@
 
     // Initial load
     loadItemTypes();
-    loadCategories();
+    loadDisplayGroups();
   </script>
 </body>
 </html>

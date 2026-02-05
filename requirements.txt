@@ -1,6 +1,7 @@
 alembic==1.17.2
 email-validator==2.2.0
 fastapi==0.123.0
+inflect==7.5.0
 instructor>=1.13.0
 openai==2.9.0
 phonenumbers==8.13.52

@@ -367,6 +367,62 @@ class OpenInputResponse(BaseModel):
         description="Specific modifier category asked about: 'sweeteners', 'milks', 'syrups', 'spreads', 'toppings', 'proteins', 'cheeses', or None for all options"
     )
 
+    # Dietary inquiries (should NOT add to cart)
+    asks_dietary_options: bool = Field(
+        default=False,
+        description="User is asking about dietary options (e.g., 'do you have vegan options?', 'what's gluten-free?')"
+    )
+    dietary_query_type: str | None = Field(
+        default=None,
+        description="The dietary property being queried: 'is_vegan', 'is_vegetarian', 'is_gluten_free', 'is_dairy_free', 'is_kosher'"
+    )
+    dietary_query_item: str | None = Field(
+        default=None,
+        description="Specific item user is asking about dietary info for (e.g., 'the classic' in 'is the classic vegan?')"
+    )
+    dietary_query_category: str | None = Field(
+        default=None,
+        description="Category filter for dietary query (e.g., 'drinks' in 'what vegan drinks do you have?')"
+    )
+
+    # Allergen inquiries (should NOT add to cart)
+    asks_allergen_info: bool = Field(
+        default=False,
+        description="User is asking about allergens (e.g., 'does X contain nuts?', 'what allergens are in this?')"
+    )
+    allergen_query_item: str | None = Field(
+        default=None,
+        description="Specific item user is asking about allergens for (e.g., 'the classic' in 'does the classic contain nuts?')"
+    )
+    allergen_query_type: str | None = Field(
+        default=None,
+        description="The specific allergen being queried: 'contains_eggs', 'contains_fish', 'contains_sesame', 'contains_nuts', or None for all allergens"
+    )
+    asks_allergen_free_options: bool = Field(
+        default=False,
+        description="User is asking for items WITHOUT a specific allergen (e.g., 'anything nut-free?', 'options without eggs?')"
+    )
+
+    # Availability inquiries (should NOT add to cart)
+    asks_availability: bool = Field(
+        default=False,
+        description="User is asking about item availability/stock (e.g., 'do you have X in stock?', 'is X available?')"
+    )
+    availability_query_item: str | None = Field(
+        default=None,
+        description="The item user is asking about availability for (e.g., 'everything bagels')"
+    )
+
+    # Customization inquiries (should NOT add to cart)
+    asks_customization_options: bool = Field(
+        default=False,
+        description="User is asking about customization possibilities (e.g., 'can I customize the classic?', 'what can I change?')"
+    )
+    customization_query_item: str | None = Field(
+        default=None,
+        description="The item user is asking about customization for (e.g., 'the classic')"
+    )
+
     # Ingredient-based menu search
     # When user types just an ingredient (e.g., "chicken"), show items containing it
     ingredient_search_query: str | None = Field(

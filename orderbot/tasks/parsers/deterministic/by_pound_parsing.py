@@ -11,8 +11,9 @@ This parser MUST be called BEFORE menu item parsing to prevent items like
 import re
 import logging
 
-from ...schemas import OpenInputResponse, ParsedItemEntry
+from ...schemas import OpenInputResponse, ParsedItemEntry, Selection
 from ..constants import find_item_by_unit_type
+from orderbot.cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,18 @@ def _find_by_weight_item(item_name: str) -> tuple[str, str] | None:
         Tuple of (canonical_name, item_type_slug) or None if not found.
     """
     return find_item_by_unit_type(item_name, "by_weight")
+
+
+def _find_by_weight_items_partial(search_term: str) -> list[tuple[str, str]]:
+    """Find all by-weight items matching a search term (for disambiguation).
+
+    Args:
+        search_term: The term to search for (e.g., "salmon")
+
+    Returns:
+        List of (canonical_name, item_type_slug) tuples for matching items.
+    """
+    return menu_cache.find_items_by_unit_type_partial(search_term, "by_weight")
 
 
 def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
@@ -130,23 +143,62 @@ def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
     # Look up the item in database via find_item_by_unit_type
     result = _find_by_weight_item(item_name)
     if not result:
-        logger.debug("By-weight pattern matched but item not found: '%s'", item_name)
-        return None
+        # No exact match - try partial matching for disambiguation
+        partial_matches = _find_by_weight_items_partial(item_name)
+        if not partial_matches:
+            logger.debug("By-weight pattern matched but item not found: '%s'", item_name)
+            return None
 
-    canonical_name, item_type_slug = result
+        if len(partial_matches) == 1:
+            # Single partial match - use it
+            canonical_name, item_type_slug = partial_matches[0]
+            logger.info(
+                "BY-WEIGHT ORDER: single partial match for '%s' -> %s",
+                item_name, canonical_name
+            )
+        else:
+            # Multiple matches - return the search term as item_name for disambiguation
+            # item_adder_handler will trigger disambiguation when it finds multiple matches
+            _, item_type_slug = partial_matches[0]  # Use first match's item_type
+            canonical_name = item_name  # Use search term, not canonical name
+            logger.info(
+                "BY-WEIGHT ORDER: multiple matches for '%s' (%d options) - will trigger disambiguation",
+                item_name, len(partial_matches)
+            )
+    else:
+        canonical_name, item_type_slug = result
+
+    # Look up the correct attribute slug for this item type (data-driven)
+    # e.g., "cheese" uses "weight", "sized_beverage" uses "size"
+    attr_slug = menu_cache.get_first_priced_attribute(item_type_slug)
+    if not attr_slug:
+        # Fallback to "weight" for by-weight items if no priced attribute found
+        attr_slug = "weight"
+
+    # Resolve the option slug from the display name (data-driven)
+    # e.g., "1 lb" -> {"slug": "one_pound", "display_name": "1 lb", ...}
+    option = menu_cache.resolve_option_by_alias(attr_slug, size)
+    if option:
+        option_slug = option.get("slug", size)
+        option_display = option.get("display_name", size)
+    else:
+        # Fallback: convert display name to slug format
+        option_slug = size.replace(" ", "_").replace("/", "_")
+        option_display = size
+
     logger.info(
-        "BY-WEIGHT ORDER: '%s' -> %s (size=%s, qty=%d, item_type=%s)",
-        text[:50], canonical_name, size, item_quantity, item_type_slug
+        "BY-WEIGHT ORDER: '%s' -> %s (attr=%s, option=%s, qty=%d, item_type=%s)",
+        text[:50], canonical_name, attr_slug, option_slug, item_quantity, item_type_slug
     )
 
     # Build parsed_items using ParsedItemEntry (unified type)
-    # By-weight items are just sized menu items
+    # Use the data-driven attribute slug and option slug
     parsed_items = [
         ParsedItemEntry(
             item_type=item_type_slug,  # "cheese", "fish", "spread", etc.
             item_name=canonical_name,
             quantity=item_quantity,
-            attribute_values={"size": size},
+            selections=[Selection(slug=option_slug, category=attr_slug, display_name=option_display)],
         )
     ]
 

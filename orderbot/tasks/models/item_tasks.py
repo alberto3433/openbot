@@ -498,11 +498,22 @@ class MenuItemTask(ItemTask):
                 # Update value to only include non-defaults
                 value = slugs_to_set if isinstance(value, list) else slugs_to_set[0]
 
-        # Remove existing non-default selections for this category
-        self.selections = [
-            m for m in self.selections
-            if not (m.get("category") == key and not m.get("is_default"))
-        ]
+        # Remove existing selections for this category
+        # For single-select attributes: remove ALL (including defaults) - user's choice replaces default
+        # For multi-select attributes: only remove non-defaults (user is adding to the list)
+        is_multi_select = menu_cache.is_multi_select_attribute(key)
+        if is_multi_select:
+            # Multi-select: preserve defaults, only remove non-defaults
+            self.selections = [
+                m for m in self.selections
+                if not (m.get("category") == key and not m.get("is_default"))
+            ]
+        else:
+            # Single-select: user's explicit choice replaces any existing (including default)
+            self.selections = [
+                m for m in self.selections
+                if m.get("category") != key
+            ]
 
         # Treat None and integer 0 as "declined" (answered but no selection)
         # This handles quantity attributes where user says "no" (e.g., "no extra shots" = 0)

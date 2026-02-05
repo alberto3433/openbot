@@ -571,6 +571,43 @@ class MenuQueryMixin:
         unit_aliases = self._unit_type_aliases.get(unit_type, {})
         return unit_aliases.get(name_lower)
 
+    def find_items_by_unit_type_partial(
+        self, search_term: str, unit_type: str
+    ) -> list[tuple[str, str]]:
+        """Find all items matching a search term within a specific unit type.
+
+        Used for disambiguation when user says something like "salmon" and there
+        are multiple salmon items (Nova Scotia Salmon, Scottish Salmon, etc.).
+
+        Args:
+            search_term: The term to search for (e.g., "salmon")
+            unit_type: The unit type to search in (e.g., "by_weight")
+
+        Returns:
+            List of (canonical_name, item_type_slug) tuples for matching items.
+            Returns empty list if no matches.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        term_lower = search_term.lower().strip()
+        unit_aliases = self._unit_type_aliases.get(unit_type, {})
+
+        # Find all items where the canonical name contains the search term
+        # Use a set to dedupe by canonical name (multiple aliases may point to same item)
+        seen = set()
+        matches = []
+
+        for alias, (canonical_name, item_type_slug) in unit_aliases.items():
+            canonical_lower = canonical_name.lower()
+            # Match if search term is in canonical name (word boundary preferred)
+            if term_lower in canonical_lower and canonical_name not in seen:
+                seen.add(canonical_name)
+                matches.append((canonical_name, item_type_slug))
+
+        return matches
+
     def is_compound_phrase(self, text: str) -> bool:
         """Check if text is a known compound phrase that shouldn't be split on 'and'.
 
@@ -743,3 +780,132 @@ class MenuQueryMixin:
                     "base_price": item_data.get("base_price", 0.0),
                 }
         return None
+
+    # =========================================================================
+    # Dietary and Allergen Query Methods
+    # =========================================================================
+
+    def get_items_by_dietary_property(self, property_name: str) -> list[dict]:
+        """Get all menu items that have a specific dietary property.
+
+        Args:
+            property_name: The dietary property to filter by, e.g.:
+                - "is_vegan", "is_vegetarian", "is_gluten_free", "is_dairy_free", "is_kosher"
+                - "eggs_free", "fish_free", "sesame_free", "nuts_free" (for allergen-free)
+
+        Returns:
+            List of menu item dicts: [{id, name, item_type_slug, base_price}, ...]
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        return self._items_by_dietary_property.get(property_name, []).copy()
+
+    def get_items_by_dietary_property_filtered(
+        self,
+        property_name: str,
+        item_type_slugs: list[str] | None = None
+    ) -> list[dict]:
+        """Get dietary items, optionally filtered by item types.
+
+        Used for combined dietary + category queries like "what vegan drinks do you have?"
+        where we want to filter by both dietary property AND item type.
+
+        Args:
+            property_name: The dietary property to filter by (e.g., "is_vegan")
+            item_type_slugs: Optional list of item type slugs to filter by.
+                If None, returns all items matching the dietary property.
+
+        Returns:
+            List of menu item dicts: [{id, name, item_type_slug, base_price}, ...]
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        all_items = self._items_by_dietary_property.get(property_name, [])
+
+        if not item_type_slugs:
+            return all_items.copy()
+
+        item_type_set = set(item_type_slugs)
+        return [item for item in all_items if item.get("item_type_slug") in item_type_set]
+
+    def get_item_dietary_info(self, item_name: str) -> dict | None:
+        """Get dietary and allergen information for a specific menu item.
+
+        Args:
+            item_name: The menu item name or alias (case-insensitive)
+
+        Returns:
+            Dict with dietary info: {
+                "id": int,
+                "name": str,
+                "item_type_slug": str | None,
+                "base_price": float,
+                "is_vegan": bool | None,
+                "is_vegetarian": bool | None,
+                "is_gluten_free": bool | None,
+                "is_dairy_free": bool | None,
+                "is_kosher": bool | None,
+                "contains_eggs": bool | None,
+                "contains_fish": bool | None,
+                "contains_sesame": bool | None,
+                "contains_nuts": bool | None,
+            }
+            or None if item not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        name_lower = item_name.lower().strip()
+        return self._item_dietary_info.get(name_lower)
+
+    def get_item_allergens(self, item_name: str) -> list[str]:
+        """Get list of allergens contained in a menu item.
+
+        Args:
+            item_name: The menu item name or alias (case-insensitive)
+
+        Returns:
+            List of allergen names that the item contains (e.g., ["eggs", "fish"])
+            Returns empty list if item not found or has no allergen data.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        info = self.get_item_dietary_info(item_name)
+        if not info:
+            return []
+
+        allergens = []
+        allergen_map = {
+            "contains_eggs": "eggs",
+            "contains_fish": "fish",
+            "contains_sesame": "sesame",
+            "contains_nuts": "nuts",
+        }
+
+        for prop, name in allergen_map.items():
+            if info.get(prop) is True:
+                allergens.append(name)
+
+        return allergens
+
+    def has_dietary_data(self) -> bool:
+        """Check if any dietary data is available in the cache.
+
+        Returns:
+            True if at least one item has dietary data configured.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        self._ensure_loaded()
+        # Check if any dietary property has items
+        return any(
+            items for items in self._items_by_dietary_property.values()
+        )

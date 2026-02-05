@@ -94,18 +94,36 @@ class MenuInquiryHandler(MenuDataMixin):
         """Get items and display name for a menu category.
 
         Uses DB-driven approach with lookup_type:
-        1. Look up category in menu_cache.get_category_keyword_mapping() first
-        2. If lookup_type=="category", query via MenuItemCategory join table
-        3. If lookup_type=="item_type", query by item_type_id
-        4. Fall back to direct slug in items_by_type (for pagination state)
-        5. Fall back to partial string matching on all items
+        1. Check if query matches a display group slug (e.g., "breads")
+        2. Look up category in menu_cache.get_category_keyword_mapping()
+        3. If lookup_type=="category", query via MenuItemCategory join table
+        4. If lookup_type=="item_type", query by item_type_id
+        5. Fall back to direct slug in items_by_type (for pagination state)
+        6. Fall back to partial string matching on all items
 
         Returns:
             Tuple of (items list, category_key for pagination)
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
-        # Look up category info from DB-loaded cache FIRST
+        # Check if query matches a display group (e.g., "breads", "sandwiches", "drinks")
+        # Display groups aggregate multiple item types
+        display_group = menu_cache.get_display_group_by_slug(menu_query_type)
+        if display_group:
+            item_type_slugs = menu_cache.get_item_types_in_display_group(display_group["slug"])
+            if item_type_slugs:
+                # Collect items from all item types in this display group
+                items = []
+                for item_type_slug in item_type_slugs:
+                    items.extend(items_by_type.get(item_type_slug, []))
+                if items:
+                    logger.info(
+                        "Menu query: '%s' matched display group with %d item types, %d total items",
+                        menu_query_type, len(item_type_slugs), len(items)
+                    )
+                    return items, display_group["slug"]
+
+        # Look up category info from DB-loaded cache
         # This ensures "beverage" maps to sized_beverage/espresso_based per DB config
         category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
 
@@ -246,12 +264,20 @@ class MenuInquiryHandler(MenuDataMixin):
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
         if not menu_query_type:
-            # Generic "what do you have?" - list available types
+            # Generic "what do you have?" - list display groups (not granular item types)
+            display_groups = menu_cache.get_menu_display_groups()
+            if display_groups:
+                group_names = [g["display_name"].lower() for g in display_groups]
+                return StateMachineResult(
+                    message=f"We have {format_english_list(group_names)}. What would you like?",
+                    order=order,
+                )
+            # Fallback to item types if no display groups configured
             display_names = self.menu_data.get("item_type_display_names", {}) if self.menu_data else {}
             available_types = [get_item_type_display_name(t, display_names) for t, items in items_by_type.items() if items]
             if available_types:
                 return StateMachineResult(
-                    message=f"We have: {', '.join(available_types)}. What would you like?",
+                    message=f"We have {format_english_list(available_types)}. What would you like?",
                     order=order,
                 )
             return StateMachineResult(
@@ -311,14 +337,34 @@ class MenuInquiryHandler(MenuDataMixin):
         options from the specified category.
 
         Args:
-            category_slug: The category slug to look up items from (e.g., "soda", "tea")
+            category_slug: The category slug to look up items from (e.g., "soda", "tea",
+                          or display group aliases like "pastry", "desserts")
             order: Current order state
 
         Returns:
             StateMachineResult asking for clarification with available options
         """
-        # Get items from category-based lookup
-        category_items = menu_cache.get_items_by_category(category_slug)
+        items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
+        category_items = []
+        pagination_key = category_slug
+
+        # First, check if this matches a display group (or alias like "pastry" -> "desserts_pastries")
+        display_group = menu_cache.get_display_group_by_slug(category_slug)
+        if display_group:
+            item_type_slugs = menu_cache.get_item_types_in_display_group(display_group["slug"])
+            if item_type_slugs:
+                # Collect items from all item types in this display group
+                for item_type_slug in item_type_slugs:
+                    category_items.extend(items_by_type.get(item_type_slug, []))
+                pagination_key = display_group["slug"]
+                logger.info(
+                    "Category clarification: '%s' matched display group '%s' with %d items",
+                    category_slug, display_group["slug"], len(category_items)
+                )
+
+        # Fall back to category-based lookup (MenuItemCategory junction table)
+        if not category_items:
+            category_items = menu_cache.get_items_by_category(category_slug)
 
         if category_items:
             # Get all item names, filter out empty
@@ -346,7 +392,7 @@ class MenuInquiryHandler(MenuDataMixin):
 
                 # Save pagination state for "what else" follow-ups
                 order.set_menu_pagination(
-                    category_slug, DEFAULT_PAGINATION_SIZE, len(all_item_names)
+                    pagination_key, DEFAULT_PAGINATION_SIZE, len(all_item_names)
                 )
             else:
                 # All items fit in one response

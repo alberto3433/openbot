@@ -39,11 +39,11 @@ PRICE_INQUIRY_PATTERNS = [
 # =============================================================================
 
 STORE_HOURS_PATTERNS = [
-    re.compile(r"what\s+(?:are|is)\s+(?:your|the)\s+hours", re.IGNORECASE),
+    re.compile(r"what\s+(?:are|is)\s+(?:your|the)\s+(?:store\s+)?hours", re.IGNORECASE),
     re.compile(r"when\s+(?:do\s+you|are\s+you)\s+(?:open|close)", re.IGNORECASE),
     re.compile(r"(?:are\s+you|you)\s+open\s+(?:today|now|on)", re.IGNORECASE),
     re.compile(r"what\s+time\s+(?:do\s+you|are\s+you)\s+(?:open|close)", re.IGNORECASE),
-    re.compile(r"(?:your|the)\s+(?:hours|opening\s+hours|business\s+hours)", re.IGNORECASE),
+    re.compile(r"(?:your|the)\s+(?:hours|opening\s+hours|business\s+hours|store\s+hours)", re.IGNORECASE),
     re.compile(r"how\s+late\s+(?:are\s+you|do\s+you\s+stay)\s+open", re.IGNORECASE),
 ]
 
@@ -53,6 +53,7 @@ STORE_LOCATION_PATTERNS = [
     re.compile(r"(?:your|the)\s+(?:address|location)", re.IGNORECASE),
     re.compile(r"where\s+(?:are\s+you|is\s+(?:this|the\s+store))", re.IGNORECASE),
     re.compile(r"how\s+do\s+i\s+(?:get|find)\s+(?:you|there|the\s+store)", re.IGNORECASE),
+    re.compile(r"what\s+(?:are|is)\s+(?:your|the)\s+(?:store\s+)?locations?", re.IGNORECASE),
 ]
 
 # Delivery zone inquiry patterns - capture the location they're asking about
@@ -231,3 +232,218 @@ ATTRIBUTE_INQUIRY_PATTERNS = [
     # "what sizes do you have?" - item=None, signal=sizes (standalone)
     (re.compile(r"what\s+(size|sizes|temperature|temperatures)\s+do\s+you\s+have", re.IGNORECASE), 0, 1),
 ]
+
+
+# =============================================================================
+# Dietary & Allergen Inquiry Patterns
+# =============================================================================
+
+# Dietary property names (matching database column names)
+DIETARY_PROPERTIES = {
+    "vegan": "is_vegan",
+    "vegetarian": "is_vegetarian",
+    "gluten-free": "is_gluten_free",
+    "gluten free": "is_gluten_free",
+    "gf": "is_gluten_free",
+    "dairy-free": "is_dairy_free",
+    "dairy free": "is_dairy_free",
+    "non-dairy": "is_dairy_free",
+    "lactose-free": "is_dairy_free",
+    "kosher": "is_kosher",
+}
+
+# Allergen property names (matching database column names)
+ALLERGEN_PROPERTIES = {
+    "eggs": "contains_eggs",
+    "egg": "contains_eggs",
+    "fish": "contains_fish",
+    "seafood": "contains_fish",
+    "sesame": "contains_sesame",
+    "nuts": "contains_nuts",
+    "nut": "contains_nuts",
+    "tree nuts": "contains_nuts",
+    "peanuts": "contains_nuts",
+}
+
+# Patterns for combined dietary + category queries ("what vegan drinks do you have?")
+# These ask about dietary options filtered by a category
+# Group 1: dietary term, Group 2: category term
+DIETARY_CATEGORY_PATTERNS = [
+    # "what vegan drinks do you have?"
+    re.compile(r"what\s+(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy)\s+(\w+(?:\s+\w+)?)\s+(?:do\s+you\s+have|are\s+there)", re.IGNORECASE),
+    # "do you have vegan drinks?" / "do you have any gluten-free sandwiches?"
+    re.compile(r"do\s+you\s+have\s+(?:any\s+)?(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy)\s+(\w+(?:\s+\w+)?)\s*\??$", re.IGNORECASE),
+    # "any vegan drinks?" / "any vegetarian sandwiches?"
+    re.compile(r"(?:any|got\s+any|have\s+any)\s+(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy)\s+(\w+(?:\s+\w+)?)\s*\??$", re.IGNORECASE),
+    # "vegan drinks?" / "gluten-free bagels?"
+    re.compile(r"^(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy)\s+(\w+(?:\s+\w+)?)\s*\??$", re.IGNORECASE),
+    # "show me vegan drinks"
+    re.compile(r"(?:show|list|tell)\s+(?:me\s+)?(?:your\s+|the\s+)?(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy)\s+(\w+(?:\s+\w+)?)\s*$", re.IGNORECASE),
+]
+
+# Patterns for general dietary options inquiry ("do you have vegan options?")
+# These ask about what items match a dietary property
+DIETARY_OPTIONS_PATTERNS = [
+    # "do you have vegan options?" / "do you have any gluten-free items?"
+    re.compile(r"do\s+you\s+have\s+(?:any\s+)?(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy|lactose[- ]?free)\s+(?:options?|items?|choices?|food|menu items?)", re.IGNORECASE),
+    # "what vegan options do you have?" / "what gluten-free items are there?"
+    re.compile(r"what\s+(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy|lactose[- ]?free)\s+(?:options?|items?|choices?|food|menu items?)\s+(?:do\s+you\s+have|are\s+there|you\s+got)", re.IGNORECASE),
+    # "any vegan options?" / "any vegetarian items?"
+    re.compile(r"(?:any|got\s+any|have\s+any)\s+(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy|lactose[- ]?free)\s+(?:options?|items?|choices?|food)?", re.IGNORECASE),
+    # "vegan options?" / "vegetarian menu?"
+    re.compile(r"^(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy|lactose[- ]?free)\s+(?:options?|items?|menu|choices?|food)?\s*\??$", re.IGNORECASE),
+    # "what's vegan?" / "what is vegetarian?"
+    re.compile(r"what(?:'?s|\s+is)\s+(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf)", re.IGNORECASE),
+    # "show me vegan items" / "list vegetarian options"
+    re.compile(r"(?:show|list|tell)\s+(?:me\s+)?(?:your\s+|the\s+)?(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf|non[- ]?dairy|lactose[- ]?free)\s+(?:options?|items?|menu|choices?)", re.IGNORECASE),
+]
+
+# Patterns for specific item dietary inquiry ("is the classic gluten-free?")
+DIETARY_ITEM_PATTERNS = [
+    # "is the classic vegan?" / "is the BLT gluten-free?"
+    re.compile(r"is\s+(?:the\s+|a\s+)?(.+?)\s+(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf)\s*\??$", re.IGNORECASE),
+    # "is the classic sandwich vegan?" (handle "sandwich" suffix)
+    re.compile(r"is\s+(?:the\s+|a\s+)?(.+?)\s+(?:sandwich\s+|bagel\s+)?(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf)\s*\??$", re.IGNORECASE),
+]
+
+# Patterns for allergen inquiry ("does X contain nuts?")
+ALLERGEN_ITEM_PATTERNS = [
+    # "does the classic contain nuts?" / "does this have eggs?"
+    re.compile(r"does\s+(?:the\s+|a\s+|this\s+)?(.+?)\s+(?:contain|have|include)\s+(nuts?|eggs?|fish|seafood|sesame|peanuts?|tree\s*nuts?)", re.IGNORECASE),
+    # "is there nuts in the classic?" / "are there eggs in this?"
+    re.compile(r"(?:is|are)\s+there\s+(nuts?|eggs?|fish|seafood|sesame|peanuts?|tree\s*nuts?)\s+in\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    # "does the classic have any allergens?" (general allergen question)
+    re.compile(r"does\s+(?:the\s+|a\s+)?(.+?)\s+have\s+(?:any\s+)?allergens?\s*\??$", re.IGNORECASE),
+    # "what allergens are in the classic?"
+    re.compile(r"what\s+allergens?\s+(?:are\s+)?in\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    # "allergens in the classic?" / "nuts in the BLT?"
+    re.compile(r"^(nuts?|eggs?|fish|seafood|sesame|allergens?)\s+in\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+]
+
+# Patterns for general allergen-free options inquiry
+ALLERGEN_FREE_OPTIONS_PATTERNS = [
+    # "do you have anything without nuts?" / "anything nut-free?"
+    re.compile(r"(?:do\s+you\s+have\s+)?(?:any(?:thing)?|items?|options?)\s+(?:without|with\s+no|free\s+of)\s+(nuts?|eggs?|fish|seafood|sesame|dairy)", re.IGNORECASE),
+    # "nut-free options?" / "egg-free items?"
+    re.compile(r"(nut|egg|fish|seafood|sesame|dairy)[- ]?free\s+(?:options?|items?|choices?|menu)?", re.IGNORECASE),
+]
+
+
+# =============================================================================
+# Availability Inquiry Patterns
+# =============================================================================
+
+# Patterns for checking if specific items are in stock
+AVAILABILITY_PATTERNS = [
+    # "do you have everything bagels in stock?"
+    re.compile(r"do\s+you\s+have\s+(?:any\s+)?(.+?)\s+(?:in\s+stock|available|left|today)\s*\??$", re.IGNORECASE),
+    # "are everything bagels available?" / "is the classic available?"
+    re.compile(r"(?:are|is)\s+(?:the\s+|any\s+)?(.+?)\s+(?:available|in\s+stock|left)\s*\??$", re.IGNORECASE),
+    # "are you out of everything bagels?" / "out of cream cheese?"
+    re.compile(r"(?:are\s+you\s+)?out\s+of\s+(?:the\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    # "do you still have lox?" / "still have cream cheese?"
+    re.compile(r"(?:do\s+you\s+)?still\s+have\s+(?:any\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    # "is the special still available?" / "is the seasonal item available?"
+    re.compile(r"is\s+(?:the\s+)?(.+?)\s+still\s+(?:available|in\s+stock)\s*\??$", re.IGNORECASE),
+    # "any X left?" / "any everything bagels left?"
+    re.compile(r"any\s+(.+?)\s+left\s*\??$", re.IGNORECASE),
+]
+
+
+# =============================================================================
+# Customization Inquiry Patterns
+# =============================================================================
+
+# Patterns for asking about customization possibilities
+CUSTOMIZATION_INQUIRY_PATTERNS = [
+    # "can I customize the classic?" / "can I modify the BLT?"
+    re.compile(r"can\s+i\s+(?:customize|modify|change)\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    # "is the classic customizable?" / "is the sandwich customizable?"
+    re.compile(r"is\s+(?:the\s+|a\s+)?(.+?)\s+(?:customizable|modifiable)\s*\??$", re.IGNORECASE),
+    # "what can I change on the classic?" / "what modifications are allowed?"
+    re.compile(r"what\s+(?:can\s+i\s+)?(?:change|modify|customize)\s+(?:on|about|with)\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    # "how customizable is the classic?" / "how customizable is X?"
+    re.compile(r"how\s+(?:customizable|modifiable)\s+is\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    # "what modifications are allowed on X?"
+    re.compile(r"what\s+(?:modifications?|changes?|customizations?)\s+(?:are\s+)?(?:allowed|possible|available)\s+(?:on|for|with)\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    # "can I get it half-toasted?" - requires "it" to refer to current item
+    re.compile(r"can\s+i\s+(?:get|have)\s+it\s+(.+?)\s*\??$", re.IGNORECASE),
+    # "can I get extra cream cheese?" - requires modifier keyword (not "a/an/the" which indicates ordering)
+    re.compile(r"can\s+i\s+(?:get|have)\s+(?:extra|less|no|without|some|more|a\s+little|double)\s+(.+?)\s*\??$", re.IGNORECASE),
+]
+
+
+# =============================================================================
+# Order History Inquiry Patterns
+# =============================================================================
+
+# Patterns to detect order history inquiry ("what did I order before?")
+ORDER_HISTORY_PATTERNS = [
+    # "what did I order before?" / "what have I ordered?"
+    re.compile(r"what\s+(?:did|have)\s+i\s+order(?:ed)?(?:\s+before)?(?:\s+here)?\s*\??$", re.IGNORECASE),
+    # "my order history" / "order history"
+    re.compile(r"(?:my\s+)?(?:order\s+)?history\s*\??$", re.IGNORECASE),
+    # "show my orders" / "show my previous orders"
+    re.compile(r"(?:show|see|view)\s+(?:me\s+)?(?:my\s+)?(?:previous\s+)?orders?\s*\??$", re.IGNORECASE),
+    # "my past orders" / "past orders"
+    re.compile(r"(?:my\s+)?past\s+orders?\s*\??$", re.IGNORECASE),
+    # "what have I gotten here before?"
+    re.compile(r"what\s+have\s+i\s+(?:gotten|had|bought)\s+(?:here\s+)?before\s*\??$", re.IGNORECASE),
+    # "my previous orders"
+    re.compile(r"(?:my\s+)?previous\s+orders?\s*\??$", re.IGNORECASE),
+]
+
+# Patterns to detect view last order inquiry ("what was in my last order?")
+VIEW_LAST_ORDER_PATTERNS = [
+    # "what was in my last order?"
+    re.compile(r"what\s+(?:was|is)\s+in\s+(?:my\s+)?(?:last\s+)?order\s*\??$", re.IGNORECASE),
+    # "what did I order last time?" / "what did I have last time?"
+    re.compile(r"what\s+did\s+i\s+(?:order|have|get)\s+last\s+time\s*\??$", re.IGNORECASE),
+    # "what was my last order?"
+    re.compile(r"what\s+(?:was|is)\s+my\s+last\s+order\s*\??$", re.IGNORECASE),
+    # "show me my last order" / "tell me about my last order"
+    re.compile(r"(?:show|tell)\s+me\s+(?:about\s+)?my\s+last\s+order\s*\??$", re.IGNORECASE),
+    # "details of my last order"
+    re.compile(r"(?:details?\s+)?(?:of|about)\s+my\s+last\s+order\s*\??$", re.IGNORECASE),
+]
+
+# Patterns to detect reorder specific item from history
+# Captures the item reference in group(1) or group(2)
+REORDER_ITEM_PATTERNS = [
+    # "just the bagel from last time" / "the coffee I had before"
+    re.compile(r"(?:just\s+)?(?:the\s+)?(.+?)\s+(?:from|i\s+had)\s+(?:last\s+time|before|my\s+last\s+order)\s*\??$", re.IGNORECASE),
+    # "order the same coffee as before" / "get the same bagel I had"
+    re.compile(r"(?:order|get)\s+(?:the\s+)?same\s+(.+?)\s+(?:i\s+had|as\s+before)\s*\??$", re.IGNORECASE),
+    # "same coffee again" / "same bagel as before"
+    re.compile(r"same\s+(.+?)\s+(?:again|as\s+before|as\s+last\s+time)\s*\??$", re.IGNORECASE),
+]
+
+# Pattern to extract modification text from repeat order requests
+# "same as before but iced", "repeat my order except without the bagel"
+MODIFICATION_EXTRACTOR = re.compile(
+    r"(?:same\s+as\s+(?:before|last\s+time)|repeat\s+(?:my\s+)?(?:last\s+)?order|my\s+usual)"
+    r"\s+(?:but|except|and)\s+(.+)",
+    re.IGNORECASE
+)
+
+# Pattern to detect "without X" modifications
+WITHOUT_PATTERN = re.compile(r"without\s+(?:the\s+)?(.+)", re.IGNORECASE)
+
+# Pattern to detect "iced" / "hot" / size modifications in reorder context
+# Maps keyword -> (attribute, value) for deterministic modification
+REORDER_MODIFICATION_KEYWORDS = {
+    "iced": ("iced", True),
+    "hot": ("iced", False),
+    "large": ("size", "large"),
+    "medium": ("size", "medium"),
+    "small": ("size", "small"),
+    "toasted": ("toasted", True),
+    "not toasted": ("toasted", False),
+    "untoasted": ("toasted", False),
+}
+
+# Pattern to detect order number references ("reorder order number 42")
+ORDER_NUMBER_PATTERN = re.compile(
+    r"(?:reorder|repeat)\s+order\s+(?:number\s+)?#?(\d+)\s*$",
+    re.IGNORECASE
+)

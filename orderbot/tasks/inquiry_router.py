@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .models import OrderTask
     from .menu_inquiry_handler import MenuInquiryHandler
     from .store_info_handler import StoreInfoHandler
+    from .dietary_inquiry_handler import DietaryInquiryHandler
 
 logger = logging.getLogger(__name__)
 
@@ -28,23 +29,26 @@ class InquiryRouter:
     """
     Router for inquiry-type parsed responses.
 
-    Routes inquiries about prices, store info, menu, recommendations, etc.
-    to their appropriate handlers.
+    Routes inquiries about prices, store info, menu, recommendations, dietary,
+    allergen, availability, and customization questions to their appropriate handlers.
     """
 
     def __init__(
         self,
         menu_inquiry_handler: "MenuInquiryHandler | None" = None,
         store_info_handler: "StoreInfoHandler | None" = None,
+        dietary_inquiry_handler: "DietaryInquiryHandler | None" = None,
     ) -> None:
         """Initialize the inquiry router.
 
         Args:
             menu_inquiry_handler: Handler for menu-related inquiries.
             store_info_handler: Handler for store info inquiries.
+            dietary_inquiry_handler: Handler for dietary/allergen/availability inquiries.
         """
         self.menu_inquiry_handler = menu_inquiry_handler
         self.store_info_handler = store_info_handler
+        self.dietary_inquiry_handler = dietary_inquiry_handler
 
     def route_inquiry(
         self,
@@ -102,6 +106,46 @@ class InquiryRouter:
         if parsed.asks_attribute_options:
             return self.store_info_handler.handle_attribute_inquiry(
                 parsed.attribute_query_item_type, parsed.attribute_query_signal, order
+            )
+
+        # Handle dietary inquiries
+        if parsed.asks_dietary_options and self.dietary_inquiry_handler:
+            if parsed.dietary_query_item:
+                # Asking about a specific item ("is the classic vegan?")
+                return self.dietary_inquiry_handler.handle_dietary_item_inquiry(
+                    parsed.dietary_query_item, parsed.dietary_query_type, order
+                )
+            else:
+                # Asking about dietary options in general ("do you have vegan options?")
+                # or filtered by category ("what vegan drinks do you have?")
+                return self.dietary_inquiry_handler.handle_dietary_options_inquiry(
+                    parsed.dietary_query_type,
+                    order,
+                    category=parsed.dietary_query_category,
+                )
+
+        # Handle allergen inquiries
+        if parsed.asks_allergen_info and self.dietary_inquiry_handler:
+            return self.dietary_inquiry_handler.handle_allergen_inquiry(
+                parsed.allergen_query_item, parsed.allergen_query_type, order
+            )
+
+        # Handle allergen-free options inquiries
+        if parsed.asks_allergen_free_options and self.dietary_inquiry_handler:
+            return self.dietary_inquiry_handler.handle_allergen_free_options_inquiry(
+                parsed.allergen_query_type, order
+            )
+
+        # Handle availability inquiries
+        if parsed.asks_availability and self.dietary_inquiry_handler:
+            return self.dietary_inquiry_handler.handle_availability_inquiry(
+                parsed.availability_query_item, order
+            )
+
+        # Handle customization inquiries
+        if parsed.asks_customization_options and self.dietary_inquiry_handler:
+            return self.dietary_inquiry_handler.handle_customization_inquiry(
+                parsed.customization_query_item, order
             )
 
         if parsed.menu_query:

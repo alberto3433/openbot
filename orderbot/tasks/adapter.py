@@ -82,6 +82,7 @@ def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
     order.pending_modifier_quantity = sm_state.get("pending_modifier_quantity")
     order.pending_modifier_target_item_index = sm_state.get("pending_modifier_target_item_index")
     order.pending_parsed_items = sm_state.get("pending_parsed_items", [])
+    order.pending_dietary_followup = sm_state.get("pending_dietary_followup")
 
 
 def _build_flow_state_dict(order: OrderTask) -> dict:
@@ -113,6 +114,7 @@ def _build_flow_state_dict(order: OrderTask) -> dict:
         "pending_modifier_quantity": order.pending_modifier_quantity,
         "pending_modifier_target_item_index": order.pending_modifier_target_item_index,
         "pending_parsed_items": order.pending_parsed_items,
+        "pending_dietary_followup": order.pending_dietary_followup,
     }
 
 

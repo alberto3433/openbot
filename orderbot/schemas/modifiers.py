@@ -272,8 +272,9 @@ class ItemTypeOut(BaseModel):
         display_name: Human-readable name (e.g., "Bagel")
         is_configurable: Whether items need configuration
         skip_config: Skip configuration dialog
-        overall_category_id: FK to overall_categories table
-        overall_category_name: Display name of the category (e.g., "Food")
+        menu_display_group_id: FK to menu_display_groups table (required)
+        menu_display_group_name: Display name of the group (e.g., "Breads")
+        overall_category_name: Category inherited from display group (e.g., "Food")
         menu_item_count: Number of menu items using this type
         global_attribute_count: Number of linked global attributes
         global_attributes: List of linked global attributes (slug and display_name)
@@ -286,8 +287,9 @@ class ItemTypeOut(BaseModel):
     display_name: str
     is_configurable: bool
     skip_config: bool = False
-    overall_category_id: Optional[int] = None
-    overall_category_name: Optional[str] = None
+    menu_display_group_id: int
+    menu_display_group_name: str
+    overall_category_name: Optional[str] = None  # Inherited from display group
     menu_item_count: int = 0
     global_attribute_count: int = 0
     global_attributes: List[GlobalAttributeRef] = []
@@ -301,23 +303,25 @@ class ItemTypeCreate(BaseModel):
     Note: is_configurable and skip_config are derived from linked global
     attributes and cannot be set directly.
 
+    The overall category (food vs beverage) is inherited from the display group.
+
     Attributes:
         slug: URL-safe identifier (required)
         display_name: Human-readable name (required)
-        overall_category_id: FK to overall_categories table (optional)
+        menu_display_group_id: FK to menu_display_groups table (required)
         aliases: Comma-separated synonyms for matching (optional)
 
     Example:
         {
             "slug": "specialty_drink",
             "display_name": "Specialty Drink",
-            "overall_category_id": 2,
+            "menu_display_group_id": 4,
             "aliases": "fancy drink, gourmet beverage"
         }
     """
     slug: str
     display_name: str
-    overall_category_id: Optional[int] = None
+    menu_display_group_id: int
     aliases: Optional[str] = None  # Comma-separated aliases
 
 
@@ -330,15 +334,17 @@ class ItemTypeUpdate(BaseModel):
     Note: is_configurable and skip_config are derived from linked global
     attributes and cannot be set directly.
 
+    The overall category (food vs beverage) is inherited from the display group.
+
     Attributes:
         slug: New slug
         display_name: New display name
-        overall_category_id: FK to overall_categories table
+        menu_display_group_id: FK to menu_display_groups table
         aliases: Comma-separated synonyms for matching
     """
     slug: Optional[str] = None
     display_name: Optional[str] = None
-    overall_category_id: Optional[int] = None
+    menu_display_group_id: Optional[int] = None
     aliases: Optional[str] = None  # Comma-separated aliases
 
 

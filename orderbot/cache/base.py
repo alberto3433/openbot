@@ -65,8 +65,12 @@ def singularize(word: str) -> str:
         return word
 
     # inflect.singular_noun returns False if the word is already singular
-    result = _inflect_engine.singular_noun(word)
-    return result if result else word
+    try:
+        result = _inflect_engine.singular_noun(word)
+        return result if result else word
+    except (TypeError, ValueError):
+        # Handle edge cases where inflect fails on certain inputs
+        return word
 
 
 def pluralize(word: str) -> str:
@@ -448,6 +452,26 @@ class BaseCacheMixin:
         # Maps attribute_slug -> {input_pattern_lowercase -> display_name}
         # e.g., {"size": {"venti": "Venti", "grande": "Grande"}}
         self._unrecognized_option_suggestions: dict[str, dict[str, str]] = {}
+
+        # Dietary data cache - maps dietary property to list of item dicts
+        # e.g., {"is_vegan": [{"id": 1, "name": "Plain Bagel", ...}, ...]}
+        self._items_by_dietary_property: dict[str, list[dict]] = {}
+
+        # Individual item dietary info - maps lowercase item name to dietary/allergen dict
+        # e.g., {"the classic bec": {"is_vegan": False, "is_vegetarian": False, "contains_eggs": True, ...}}
+        self._item_dietary_info: dict[str, dict] = {}
+
+        # Menu display groups for "what's on your menu?" responses
+        # Ordered list of dicts: [{slug, display_name, display_order}, ...]
+        self._menu_display_groups_ordered: list[dict] = []
+
+        # Item types grouped by display group slug
+        # Maps display_group_slug -> list of item_type_slugs
+        self._item_types_by_display_group: dict[str, list[str]] = {}
+
+        # Display group aliases for recognizing user references
+        # Maps lowercase alias -> group_slug (e.g., "pastries" -> "desserts_pastries")
+        self._display_group_alias_to_slug: dict[str, str] = {}
 
         # Metadata
         self._last_refresh: datetime | None = None

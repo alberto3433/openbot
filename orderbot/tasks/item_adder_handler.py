@@ -621,6 +621,44 @@ class ItemAdderHandler(MenuDataMixin):
     # Generic Item Creation (Data-Driven)
     # =========================================================================
 
+    def _check_config_complete(
+        self,
+        item_type: str | None,
+        pre_filled_attributes: dict | None,
+    ) -> bool:
+        """Check if all mandatory attributes for item_type are already filled.
+
+        Returns True if configuration would be complete (no questions needed).
+        Used to decide whether to create a single item with quantity=N vs
+        N separate items for individual configuration.
+
+        Args:
+            item_type: Item type slug (e.g., "cold_cut", "cheese")
+            pre_filled_attributes: Dict of attribute values already filled
+
+        Returns:
+            True if all mandatory attributes are filled, False otherwise
+        """
+        if not item_type:
+            return False
+
+        from .config.attribute_resolver import get_mandatory_attributes
+        mandatory = get_mandatory_attributes(item_type)
+
+        if not mandatory:
+            return True  # No mandatory attributes = config complete
+
+        if not pre_filled_attributes:
+            return False  # Has mandatory attrs but nothing pre-filled
+
+        # Check if all mandatory attrs have values in pre_filled_attributes
+        for attr in mandatory:
+            attr_slug = attr.get("slug")
+            if attr_slug and attr_slug not in pre_filled_attributes:
+                return False
+
+        return True
+
     def _create_configurable_item(
         self,
         menu_item: dict,
@@ -680,10 +718,14 @@ class ItemAdderHandler(MenuDataMixin):
         # Quantity threshold logic:
         # - Non-configurable items: always single item with quantity (no config needed)
         # - Configurable items with qty > 5: single item with quantity (configure once)
-        # - Configurable items with qty <= 5: N separate items (configure each individually)
+        # - Configurable items with ALL mandatory attrs filled: single item with quantity
+        # - Otherwise: N separate items (configure each individually)
         MULTI_CONFIG_THRESHOLD = 5
 
-        if not needs_configuration or quantity > MULTI_CONFIG_THRESHOLD:
+        # Check if all mandatory attributes are already filled (e.g., weight for by-weight items)
+        config_already_complete = self._check_config_complete(item_type, pre_filled_attributes)
+
+        if not needs_configuration or quantity > MULTI_CONFIG_THRESHOLD or config_already_complete:
             # Create single item with quantity=N
             item_count = 1
             item_quantity = quantity

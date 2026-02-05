@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..db.models import ItemType, MenuItem, ItemTypeGlobalAttribute, OverallCategory, GlobalAttribute
+from ..db.models import ItemType, MenuItem, ItemTypeGlobalAttribute, GlobalAttribute, MenuDisplayGroup, OverallCategory
 from ..services.helpers import sync_entity_aliases
 from ..schemas.modifiers import (
     GlobalAttributeRef,
@@ -89,10 +89,14 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
     has_askable = any(link.ask_in_conversation for attr, link in linked_data)
     skip_config = not has_askable if is_configurable else True
 
-    # Get category name if set
+    # Get display group info (required)
+    display_group = item_type.menu_display_group
+    display_group_name = display_group.display_name if display_group else "Unknown"
+
+    # Get category name from display group
     category_name = None
-    if item_type.overall_category:
-        category_name = item_type.overall_category.display_name
+    if display_group and display_group.overall_category:
+        category_name = display_group.overall_category.display_name
 
     return ItemTypeOut(
         id=item_type.id,
@@ -100,7 +104,8 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
         display_name=item_type.display_name,
         is_configurable=is_configurable,
         skip_config=skip_config,
-        overall_category_id=item_type.overall_category_id,
+        menu_display_group_id=item_type.menu_display_group_id,
+        menu_display_group_name=display_group_name,
         overall_category_name=category_name,
         menu_item_count=menu_item_count,
         global_attribute_count=global_attribute_count,
@@ -111,21 +116,20 @@ def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
 
 def _build_create_kwargs(payload: ItemTypeCreate, db: Session) -> dict[str, Any]:
     """Build model kwargs from create payload."""
-    # Validate category ID if provided
-    if payload.overall_category_id is not None:
-        category = db.query(OverallCategory).filter(
-            OverallCategory.id == payload.overall_category_id
-        ).first()
-        if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Overall category with id {payload.overall_category_id} not found"
-            )
+    # Validate display group ID (required)
+    display_group = db.query(MenuDisplayGroup).filter(
+        MenuDisplayGroup.id == payload.menu_display_group_id
+    ).first()
+    if not display_group:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Menu display group with id {payload.menu_display_group_id} not found"
+        )
 
     return {
         "slug": payload.slug,
         "display_name": payload.display_name,
-        "overall_category_id": payload.overall_category_id,
+        "menu_display_group_id": payload.menu_display_group_id,
     }
 
 
@@ -149,17 +153,17 @@ def _handle_before_update(
         item.slug = payload.slug
     if payload.display_name is not None:
         item.display_name = payload.display_name
-    if payload.overall_category_id is not None:
-        # Validate category ID
-        category = db.query(OverallCategory).filter(
-            OverallCategory.id == payload.overall_category_id
+    if payload.menu_display_group_id is not None:
+        # Validate display group ID
+        display_group = db.query(MenuDisplayGroup).filter(
+            MenuDisplayGroup.id == payload.menu_display_group_id
         ).first()
-        if not category:
+        if not display_group:
             raise HTTPException(
                 status_code=400,
-                detail=f"Overall category with id {payload.overall_category_id} not found"
+                detail=f"Menu display group with id {payload.menu_display_group_id} not found"
             )
-        item.overall_category_id = payload.overall_category_id
+        item.menu_display_group_id = payload.menu_display_group_id
     if payload.aliases is not None:
         sync_entity_aliases(db, item, payload.aliases, "item_type")
 
@@ -218,6 +222,19 @@ def list_overall_categories(
     """List all overall categories (e.g., Food, Beverage)."""
     categories = db.query(OverallCategory).order_by(OverallCategory.display_name).all()
     return [OverallCategoryOut.model_validate(c) for c in categories]
+
+
+@admin_modifiers_router.get("/menu-display-groups", response_model=List[dict])
+def list_menu_display_groups(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[dict]:
+    """List all menu display groups for dropdown selection."""
+    groups = db.query(MenuDisplayGroup).order_by(MenuDisplayGroup.display_order).all()
+    return [
+        {"id": g.id, "slug": g.slug, "display_name": g.display_name}
+        for g in groups
+    ]
 
 
 @admin_modifiers_router.get("/item-types/list", response_model=List[ItemTypeListOut])

@@ -273,7 +273,10 @@ class ConfigSideChoiceHandler:
                     unanswered_parent_attrs.append(attr_slug)
 
             # Mark side_choice as answered on the parent
-            side_choice_value = chosen_option.get("slug") or chosen_option.get("display_name")
+            # Normalize the value to use global attribute option slug for skip rule matching
+            side_choice_value = self._normalize_side_choice_value(
+                chosen_option, parent_item_type
+            )
             item["side_choice"] = side_choice_value
 
             # If side choice is a configurable item type (e.g., bagel), and parent has an
@@ -315,3 +318,40 @@ class ConfigSideChoiceHandler:
             message="Got it. Anything else?",
             order=order,
         )
+
+    def _normalize_side_choice_value(
+        self,
+        chosen_option: dict,
+        parent_item_type: str | None,
+    ) -> str:
+        """Normalize side_choice value to use global attribute option slug.
+
+        This ensures skip rules can match. Component slot options may have
+        slugs like "menu_item_9927" but the skip rules are keyed by
+        global_attribute_options slugs like "fruit_salad".
+
+        Falls back to the chosen option's slug or display_name if no match.
+        """
+        # Get the display name to match against global attribute options
+        display_name = chosen_option.get("display_name", "")
+
+        # Try to find matching global attribute option by display name
+        if parent_item_type:
+            side_choice_attrs = menu_cache.get_item_type_attributes(parent_item_type)
+            side_choice_config = side_choice_attrs.get("side_choice", {})
+            options = side_choice_config.get("options", [])
+
+            for opt in options:
+                # Match by display name (case-insensitive)
+                opt_display = opt.get("display_name", "")
+                if opt_display.lower() == display_name.lower():
+                    opt_slug = opt.get("slug")
+                    if opt_slug:
+                        logger.info(
+                            "SIDE_CHOICE: Normalized '%s' to global attr option slug '%s'",
+                            display_name, opt_slug
+                        )
+                        return opt_slug
+
+        # Fallback to component slot slug or display name
+        return chosen_option.get("slug") or display_name

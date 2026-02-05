@@ -263,6 +263,43 @@ def warmup_store_cache(db: Session) -> None:
     logger.info("Store cache warmed up: %d stores", len(stores) + 1)
 
 
+def _normalize_phone_for_lookup(phone: str) -> str:
+    """Normalize phone number for database lookup.
+
+    Strips common formatting characters and returns the last 10 digits
+    to handle country code variations.
+
+    Args:
+        phone: Phone number in any format
+
+    Returns:
+        Normalized phone suffix (last 10 digits)
+    """
+    normalized = phone.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+    return normalized[-10:] if len(normalized) >= 10 else normalized
+
+
+def _get_normalized_phone_filter(phone_column):
+    """Create a SQLAlchemy filter expression for normalized phone matching.
+
+    Args:
+        phone_column: SQLAlchemy column to normalize (e.g., Order.phone)
+
+    Returns:
+        SQLAlchemy expression with formatting characters removed
+    """
+    return func.replace(
+        func.replace(
+            func.replace(
+                func.replace(phone_column, "-", ""),
+                " ", ""
+            ),
+            "(", ""
+        ),
+        ")", ""
+    )
+
+
 def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
     """
     Look up a returning customer by phone number.
@@ -295,22 +332,9 @@ def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]
     if not phone:
         return None
 
-    # Normalize phone number (remove common formatting)
-    normalized_phone = phone.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
-    # Use last 10 digits for matching (handles +1 country code)
-    phone_suffix = normalized_phone[-10:] if len(normalized_phone) >= 10 else normalized_phone
-
-    # Use SQL func.replace to normalize stored phone numbers for comparison
-    normalized_db_phone = func.replace(
-        func.replace(
-            func.replace(
-                func.replace(Order.phone, "-", ""),
-                " ", ""
-            ),
-            "(", ""
-        ),
-        ")", ""
-    )
+    # Normalize phone and get SQL filter expression
+    phone_suffix = _normalize_phone_for_lookup(phone)
+    normalized_db_phone = _get_normalized_phone_filter(Order.phone)
 
     # Find most recent order with this phone number
     # Use joinedload to eagerly load items for repeat order functionality
@@ -358,6 +382,197 @@ def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]
         "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
         "last_order_type": recent_order.order_type,  # "pickup" or "delivery"
         "last_order_address": recent_order.delivery_address,  # For repeat delivery orders
+    }
+
+
+def lookup_customer_order_history(
+    db: Session,
+    phone: str,
+    days: int = 90,
+    limit: int = 10,
+) -> Optional[Dict[str, Any]]:
+    """
+    Look up a customer's full order history by phone number.
+
+    Returns customer info along with a list of recent orders (not just the last one).
+    Each order includes a summary of items for display.
+
+    Args:
+        db: Database session
+        phone: Phone number to look up (any format)
+        days: Number of days to look back (default 90)
+        limit: Maximum number of orders to return (default 10)
+
+    Returns:
+        Dict with customer info and order history if found:
+        - customer: {name, phone, email}
+        - order_count: Total number of orders
+        - orders: List of order dicts with:
+            - order_id: int
+            - order_date: datetime (ISO format)
+            - order_type: "pickup" | "delivery"
+            - items: List of item dicts
+            - total_price: float
+            - summary: Short description (e.g., "2 bagels, 1 latte")
+
+        None if no orders found for this phone number
+    """
+    from datetime import datetime, timedelta
+
+    if not phone:
+        return None
+
+    phone_suffix = _normalize_phone_for_lookup(phone)
+    normalized_db_phone = _get_normalized_phone_filter(Order.phone)
+
+    # Calculate cutoff date
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+    # Find orders within the time window
+    orders = (
+        db.query(Order)
+        .options(joinedload(Order.items))
+        .filter(Order.phone.isnot(None))
+        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .filter(Order.created_at >= cutoff_date)
+        .order_by(Order.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    if not orders:
+        return None
+
+    # Get total order count (all time)
+    total_count = (
+        db.query(Order)
+        .filter(Order.phone.isnot(None))
+        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .count()
+    )
+
+    # Build customer info from most recent order
+    most_recent = orders[0]
+    customer_info = {
+        "name": most_recent.customer_name,
+        "phone": most_recent.phone,
+        "email": most_recent.customer_email,
+    }
+
+    # Build order list with summaries
+    order_list: List[Dict[str, Any]] = []
+    for order in orders:
+        # Build items list
+        items: List[Dict[str, Any]] = []
+        for item in order.items:
+            item_data = {
+                "menu_item_name": item.menu_item_name,
+                "quantity": item.quantity,
+                "price": item.unit_price,
+            }
+            if item.item_config:
+                item_data.update(item.item_config)
+            items.append(item_data)
+
+        # Build summary (e.g., "2 bagels, 1 latte")
+        summary_parts = []
+        for item in order.items:
+            qty = item.quantity
+            name = item.menu_item_name
+            if qty > 1:
+                summary_parts.append(f"{qty} {name}s")
+            else:
+                summary_parts.append(name)
+        summary = ", ".join(summary_parts) if summary_parts else "No items"
+
+        order_list.append({
+            "order_id": order.id,
+            "order_date": order.created_at.isoformat() if order.created_at else None,
+            "order_type": order.order_type,
+            "items": items,
+            "total_price": order.total_price or 0.0,
+            "summary": summary,
+        })
+
+    return {
+        "customer": customer_info,
+        "order_count": total_count,
+        "orders": order_list,
+    }
+
+
+def get_order_by_id(
+    db: Session,
+    order_id: int,
+    phone: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Get a specific order by ID, verifying phone ownership for security.
+
+    Args:
+        db: Database session
+        order_id: The order ID to look up
+        phone: Phone number for ownership verification
+
+    Returns:
+        Dict with order details if found and phone matches:
+        - order_id: int
+        - order_date: datetime (ISO format)
+        - order_type: "pickup" | "delivery"
+        - items: List of item dicts
+        - total_price: float
+        - summary: Short description
+
+        None if order not found or phone doesn't match
+    """
+    if not phone:
+        return None
+
+    phone_suffix = _normalize_phone_for_lookup(phone)
+    normalized_db_phone = _get_normalized_phone_filter(Order.phone)
+
+    order = (
+        db.query(Order)
+        .options(joinedload(Order.items))
+        .filter(Order.id == order_id)
+        .filter(Order.phone.isnot(None))
+        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .first()
+    )
+
+    if not order:
+        return None
+
+    # Build items list
+    items: List[Dict[str, Any]] = []
+    for item in order.items:
+        item_data = {
+            "menu_item_name": item.menu_item_name,
+            "quantity": item.quantity,
+            "price": item.unit_price,
+        }
+        if item.item_config:
+            item_data.update(item.item_config)
+        items.append(item_data)
+
+    # Build summary
+    summary_parts = []
+    for item in order.items:
+        qty = item.quantity
+        name = item.menu_item_name
+        if qty > 1:
+            summary_parts.append(f"{qty} {name}s")
+        else:
+            summary_parts.append(name)
+    summary = ", ".join(summary_parts) if summary_parts else "No items"
+
+    return {
+        "order_id": order.id,
+        "order_date": order.created_at.isoformat() if order.created_at else None,
+        "order_type": order.order_type,
+        "items": items,
+        "total_price": order.total_price or 0.0,
+        "summary": summary,
     }
 
 

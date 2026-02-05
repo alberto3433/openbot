@@ -69,7 +69,8 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
     # Patterns for GENERAL menu inquiries (should list all categories)
     general_menu_patterns = [
         # "what's on your/the menu?" / "whats on your menu?" / "what is on your/the menu?"
-        re.compile(r"what(?:'?s|\s+is)\s+on\s+(?:your|the)\s+menu", re.IGNORECASE),
+        # Also handles typo "what on your menu?" (missing 's)
+        re.compile(r"what(?:'?s|\s+is)?\s+on\s+(?:your|the)\s+menu", re.IGNORECASE),
         # "what do you have?" / "what do you have on the menu?"
         re.compile(r"what\s+do\s+you\s+have(?:\s+on\s+(?:the|your)\s+menu)?(?:\?|$)", re.IGNORECASE),
         # "what do you serve?" / "what do you sell?"
@@ -80,6 +81,10 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
         re.compile(r"(?:show|let\s+me\s+see|can\s+i\s+see)\s+(?:me\s+)?(?:the|your)\s+menu", re.IGNORECASE),
         # "menu please" / "the menu"
         re.compile(r"^(?:the\s+)?menu(?:\s+please)?(?:\?|!|\.)?$", re.IGNORECASE),
+        # "what am I ordering?" - asking about available options
+        re.compile(r"what\s+am\s+i\s+ordering", re.IGNORECASE),
+        # "what's available?" / "what is available?"
+        re.compile(r"what(?:'?s|\s+is)\s+available", re.IGNORECASE),
     ]
 
     # Check for general menu inquiry patterns first
@@ -97,11 +102,19 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
     menu_query_patterns = [
         # "what kind of X do you have" - capture X
         re.compile(r"what\s+(?:kind|type|types|kinds)\s+of\s+(.+?)\s+do\s+you\s+have", re.IGNORECASE),
-        # "what X do you have" - capture X
-        re.compile(r"what\s+(.+?)\s+do\s+you\s+have", re.IGNORECASE),
+        # "what X do you have/sell/carry/offer/make" - capture X
+        re.compile(r"what\s+(.+?)\s+do\s+you\s+(?:have|sell|carry|offer|make)", re.IGNORECASE),
         re.compile(r"what\s+(?:kind\s+of\s+)?(.+?)\s+(?:do\s+you|have\s+you)\s+got", re.IGNORECASE),
         re.compile(r"what\s+(?:are\s+)?(?:your|the)\s+(.+?)(?:\s+options)?(?:\?|$)", re.IGNORECASE),
         re.compile(r"do\s+you\s+have\s+(?:any\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
+        # "tell me about your X" / "tell me about the X"
+        re.compile(r"tell\s+me\s+about\s+(?:your|the)\s+(.+?)(?:\?|$)", re.IGNORECASE),
+        # "show me your X" / "list your X"
+        re.compile(r"(?:show|list)\s+(?:me\s+)?(?:your|the)\s+(.+?)(?:\?|$)", re.IGNORECASE),
+        # "what X are available?" / "what X do you offer?"
+        re.compile(r"what\s+(.+?)\s+(?:are\s+available|is\s+available)", re.IGNORECASE),
+        # "can I see your X?" / "can I get a list of X?"
+        re.compile(r"can\s+i\s+(?:see|get)\s+(?:your|the|a\s+list\s+of)\s+(.+?)(?:\?|$)", re.IGNORECASE),
     ]
 
     for pattern in menu_query_patterns:

@@ -118,6 +118,19 @@ class MenuItemOut(BaseModel):
     size_prices: List[SizePriceOut] = []
     ingredients: List[MenuItemIngredientOut] = []
 
+    # Dietary attributes
+    is_vegan: Optional[bool] = None
+    is_vegetarian: Optional[bool] = None
+    is_gluten_free: Optional[bool] = None
+    is_dairy_free: Optional[bool] = None
+    is_kosher: Optional[bool] = None
+
+    # Allergen attributes
+    contains_eggs: Optional[bool] = None
+    contains_fish: Optional[bool] = None
+    contains_sesame: Optional[bool] = None
+    contains_nuts: Optional[bool] = None
+
 
 class SizePriceInput(BaseModel):
     """Size price entry for creating/updating a menu item."""
@@ -166,6 +179,19 @@ class MenuItemCreate(BaseModel):
     size_category_id: Optional[int] = None
     size_prices: Optional[List[SizePriceInput]] = None
 
+    # Dietary attributes
+    is_vegan: Optional[bool] = None
+    is_vegetarian: Optional[bool] = None
+    is_gluten_free: Optional[bool] = None
+    is_dairy_free: Optional[bool] = None
+    is_kosher: Optional[bool] = None
+
+    # Allergen attributes
+    contains_eggs: Optional[bool] = None
+    contains_fish: Optional[bool] = None
+    contains_sesame: Optional[bool] = None
+    contains_nuts: Optional[bool] = None
+
 
 class MenuItemUpdate(BaseModel):
     """
@@ -210,3 +236,16 @@ class MenuItemUpdate(BaseModel):
     size_category_id: Optional[int] = None
     size_prices: Optional[List[SizePriceInput]] = None
     ingredients: Optional[List[MenuItemIngredientInput]] = None
+
+    # Dietary attributes
+    is_vegan: Optional[bool] = None
+    is_vegetarian: Optional[bool] = None
+    is_gluten_free: Optional[bool] = None
+    is_dairy_free: Optional[bool] = None
+    is_kosher: Optional[bool] = None
+
+    # Allergen attributes
+    contains_eggs: Optional[bool] = None
+    contains_fish: Optional[bool] = None
+    contains_sesame: Optional[bool] = None
+    contains_nuts: Optional[bool] = None

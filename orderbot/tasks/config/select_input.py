@@ -491,6 +491,11 @@ class SelectInputHandler:
                     item.menu_item_name, item.menu_item_type, attr_slug, matched["slug"], option_price
                 )
 
+        # For single-select attributes, remove any existing selection before adding new one
+        # This prevents the attribute_values from becoming a list with [old_value, new_value]
+        if input_type != "multi_select":
+            item.remove_selection(attr_slug)
+
         # Add selection using unified API
         if variant_price_applied:
             # Variant pricing already set unit_price to the full variant price.

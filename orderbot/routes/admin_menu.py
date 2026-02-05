@@ -282,6 +282,17 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
         size_category_id=item.size_category_id,
         size_prices=size_prices,
         ingredients=ingredients,
+        # Dietary attributes
+        is_vegan=item.is_vegan,
+        is_vegetarian=item.is_vegetarian,
+        is_gluten_free=item.is_gluten_free,
+        is_dairy_free=item.is_dairy_free,
+        is_kosher=item.is_kosher,
+        # Allergen attributes
+        contains_eggs=item.contains_eggs,
+        contains_fish=item.contains_fish,
+        contains_sesame=item.contains_sesame,
+        contains_nuts=item.contains_nuts,
     )
 
 
@@ -327,6 +338,17 @@ def create_menu_item(
         abbreviation=payload.abbreviation,
         required_match_phrases=payload.required_match_phrases,
         size_category_id=payload.size_category_id,
+        # Dietary attributes
+        is_vegan=payload.is_vegan,
+        is_vegetarian=payload.is_vegetarian,
+        is_gluten_free=payload.is_gluten_free,
+        is_dairy_free=payload.is_dairy_free,
+        is_kosher=payload.is_kosher,
+        # Allergen attributes
+        contains_eggs=payload.contains_eggs,
+        contains_fish=payload.contains_fish,
+        contains_sesame=payload.contains_sesame,
+        contains_nuts=payload.contains_nuts,
     )
     db.add(item)
     db.flush()  # Get the item ID before adding child records
@@ -428,6 +450,28 @@ def update_menu_item(
     # Update ingredients
     if payload.ingredients is not None:
         _set_menu_item_ingredients(db, item, [ing.model_dump() for ing in payload.ingredients])
+
+    # Update dietary attributes
+    if "is_vegan" in payload.model_fields_set:
+        item.is_vegan = payload.is_vegan
+    if "is_vegetarian" in payload.model_fields_set:
+        item.is_vegetarian = payload.is_vegetarian
+    if "is_gluten_free" in payload.model_fields_set:
+        item.is_gluten_free = payload.is_gluten_free
+    if "is_dairy_free" in payload.model_fields_set:
+        item.is_dairy_free = payload.is_dairy_free
+    if "is_kosher" in payload.model_fields_set:
+        item.is_kosher = payload.is_kosher
+
+    # Update allergen attributes
+    if "contains_eggs" in payload.model_fields_set:
+        item.contains_eggs = payload.contains_eggs
+    if "contains_fish" in payload.model_fields_set:
+        item.contains_fish = payload.contains_fish
+    if "contains_sesame" in payload.model_fields_set:
+        item.contains_sesame = payload.contains_sesame
+    if "contains_nuts" in payload.model_fields_set:
+        item.contains_nuts = payload.contains_nuts
 
     db.commit()
     db.refresh(item)

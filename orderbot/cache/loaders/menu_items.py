@@ -240,6 +240,14 @@ class MenuItemLoaderMixin:
                 if alias:
                     unit_type_aliases[unit_type][alias] = (base_name, item_type_slug)
 
+            # Derive aliases from item names for better by-weight matching
+            # e.g., "muenster" from "Muenster Cheese", "whitefish" from "Whitefish Salad"
+            if unit_type == "by_weight" and " " in base_name_lower:
+                words = base_name_lower.split()
+                first_word = words[0]
+                if first_word not in unit_type_aliases[unit_type]:
+                    unit_type_aliases[unit_type][first_word] = (base_name, item_type_slug)
+
         self._by_unit_type_items = by_unit_type
         self._unit_type_aliases = unit_type_aliases
 
@@ -371,4 +379,91 @@ class MenuItemLoaderMixin:
         logger.debug(
             "Loaded default ingredients for %d menu items (from bulk)",
             len(defaults_by_item),
+        )
+
+    def _load_dietary_data_from_bulk(self, bulk_data: dict) -> None:
+        """Load dietary and allergen data for menu items (from bulk).
+
+        Populates:
+        - _items_by_dietary_property: maps dietary property to list of matching items
+        - _item_dietary_info: maps item name to its dietary/allergen info dict
+
+        Dietary properties: is_vegan, is_vegetarian, is_gluten_free, is_dairy_free, is_kosher
+        Allergen properties: contains_eggs, contains_fish, contains_sesame, contains_nuts
+        """
+        menu_items = bulk_data["menu_items"]
+
+        # All dietary and allergen property names
+        dietary_properties = [
+            "is_vegan", "is_vegetarian", "is_gluten_free", "is_dairy_free", "is_kosher"
+        ]
+        allergen_properties = [
+            "contains_eggs", "contains_fish", "contains_sesame", "contains_nuts"
+        ]
+        all_properties = dietary_properties + allergen_properties
+
+        # Initialize cache structures
+        items_by_property: dict[str, list[dict]] = {prop: [] for prop in all_properties}
+        item_dietary_info: dict[str, dict] = {}
+
+        for item in menu_items:
+            name_lower = item.name.lower()
+            item_type_slug = item.item_type.slug if item.item_type else None
+
+            # Build dietary info dict for this item
+            dietary_info = {
+                "id": item.id,
+                "name": item.name,
+                "item_type_slug": item_type_slug,
+                "base_price": float(item.base_price) if item.base_price else 0.0,
+            }
+
+            # Add all dietary/allergen properties
+            for prop in all_properties:
+                value = getattr(item, prop, None)
+                dietary_info[prop] = value
+
+            # Store per-item info
+            item_dietary_info[name_lower] = dietary_info
+
+            # Also index by aliases
+            for alias in item.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    item_dietary_info[alias_lower] = dietary_info
+
+            # Index items by dietary property (True values only)
+            for prop in dietary_properties:
+                if getattr(item, prop, None) is True:
+                    items_by_property[prop].append({
+                        "id": item.id,
+                        "name": item.name,
+                        "item_type_slug": item_type_slug,
+                        "base_price": float(item.base_price) if item.base_price else 0.0,
+                    })
+
+            # For allergen properties, also index items that DON'T contain the allergen
+            # (useful for "nut-free options" queries)
+            for prop in allergen_properties:
+                # Items where contains_X is explicitly False are allergen-free
+                if getattr(item, prop, None) is False:
+                    free_prop = prop.replace("contains_", "") + "_free"
+                    if free_prop not in items_by_property:
+                        items_by_property[free_prop] = []
+                    items_by_property[free_prop].append({
+                        "id": item.id,
+                        "name": item.name,
+                        "item_type_slug": item_type_slug,
+                        "base_price": float(item.base_price) if item.base_price else 0.0,
+                    })
+
+        self._items_by_dietary_property = items_by_property
+        self._item_dietary_info = item_dietary_info
+
+        # Log summary
+        counts = {k: len(v) for k, v in items_by_property.items() if v}
+        logger.debug(
+            "Loaded dietary data for %d menu items (from bulk): %s",
+            len(item_dietary_info),
+            counts,
         )

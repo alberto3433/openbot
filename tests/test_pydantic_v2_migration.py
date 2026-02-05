@@ -28,7 +28,7 @@ def _cleanup_test_data(session):
     """Clean up test data created by pydantic migration tests."""
     from orderbot.db.models import (
         MenuItem, ItemType, MenuItemSizePrice, MenuItemSize,
-        MenuItemSizeCategory, Order, OrderItem
+        MenuItemSizeCategory, Order, OrderItem, MenuDisplayGroup
     )
     try:
         # Delete in correct order (respect FK constraints)
@@ -73,6 +73,11 @@ def _cleanup_test_data(session):
         # 7. ItemType
         session.query(ItemType).filter(
             ItemType.slug == "test_sandwich_pydantic"
+        ).delete(synchronize_session=False)
+
+        # 8. MenuDisplayGroup
+        session.query(MenuDisplayGroup).filter(
+            MenuDisplayGroup.slug == "test_pydantic_group"
         ).delete(synchronize_session=False)
 
         session.commit()
@@ -136,13 +141,28 @@ class TestPydanticV2ModelValidate:
 
     def test_menu_item_out_model_validate(self, db_session):
         """MenuItemOut.model_validate should work with MenuItem ORM object."""
-        from orderbot.db.models import ItemType, Company, MenuItemSizeCategory, MenuItemSize, MenuItemSizePrice
+        from orderbot.db.models import ItemType, Company, MenuItemSizeCategory, MenuItemSize, MenuItemSizePrice, MenuDisplayGroup
 
         # Get or create required fixtures
+        # 0. MenuDisplayGroup (required FK for ItemType)
+        display_group = db_session.query(MenuDisplayGroup).filter(
+            MenuDisplayGroup.slug == "test_pydantic_group"
+        ).first()
+        if not display_group:
+            display_group = MenuDisplayGroup(
+                slug="test_pydantic_group", display_name="Test Group", display_order=0
+            )
+            db_session.add(display_group)
+            db_session.flush()
+
         # 1. ItemType for category derivation
         item_type = db_session.query(ItemType).filter(ItemType.slug == "test_sandwich_pydantic").first()
         if not item_type:
-            item_type = ItemType(slug="test_sandwich_pydantic", display_name="Sandwich")
+            item_type = ItemType(
+                slug="test_sandwich_pydantic",
+                display_name="Sandwich",
+                menu_display_group_id=display_group.id,
+            )
             db_session.add(item_type)
             db_session.flush()
 

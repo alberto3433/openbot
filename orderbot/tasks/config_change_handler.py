@@ -8,17 +8,84 @@ Extracted from config_helper_handler.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
-from .models import OrderTask
+from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult
 from .handler_utils import get_last_item
+from orderbot.cache import menu_cache
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
     from .handler_config import HandlerConfig
 
 logger = logging.getLogger(__name__)
+
+# Pattern to detect weight/quantity specifications like "2 pounds", "half pound", "1/2 lb"
+WEIGHT_QUANTITY_PATTERN = re.compile(
+    r"""^(?:
+        (?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?     # half pound, a half pound
+        |\d+(?:\s*/\s*\d+)?\s*(?:pound|lb)s?        # 2 pounds, 1/4 lb
+        |(?:a\s+)?quarter\s+(?:pound|lb)s?          # quarter pound
+        |a\s+(?:pound|lb)                           # a pound
+    )$""",
+    re.IGNORECASE | re.VERBOSE
+)
+
+
+def _normalize_weight_variations(value: str) -> list[str]:
+    """Generate normalized variations of a weight specification.
+
+    Converts weight input to multiple formats for alias matching:
+    - "2 pounds" -> ["2 pounds", "2 pound", "2 lb", "2 lbs"]
+    - "half pound" -> ["half pound", "half lb", "1/2 lb", "1/2 pound"]
+
+    Args:
+        value: The weight specification (lowercase, stripped)
+
+    Returns:
+        List of normalized variations to try for alias matching.
+    """
+    variations = [value]
+
+    # Add singular/plural variations
+    if value.endswith("pounds"):
+        variations.append(value[:-1])  # pounds -> pound
+    elif value.endswith("pound"):
+        variations.append(value + "s")  # pound -> pounds
+
+    # Add lb/lbs variations
+    for base in list(variations):
+        if "pound" in base:
+            variations.append(base.replace("pounds", "lb").replace("pound", "lb"))
+            variations.append(base.replace("pounds", "lbs").replace("pound", "lbs"))
+
+    # Handle "half" -> "1/2" conversion
+    if "half" in value:
+        for base in list(variations):
+            variations.append(base.replace("half a ", "1/2 ").replace("half ", "1/2 "))
+
+    # Handle "quarter" -> "1/4" conversion
+    if "quarter" in value:
+        for base in list(variations):
+            variations.append(base.replace("quarter ", "1/4 "))
+
+    # Handle "a pound" -> "1 lb" etc.
+    if value.startswith("a "):
+        for base in list(variations):
+            if base.startswith("a "):
+                variations.append("1 " + base[2:])
+
+    # Dedupe while preserving order
+    seen = set()
+    result = []
+    for v in variations:
+        if v not in seen:
+            seen.add(v)
+            result.append(v)
+
+    return result
 
 
 class ConfigChangeHandler:
@@ -160,21 +227,50 @@ class ConfigChangeHandler:
         # Unambiguous - apply the change directly
         if change_request.possible_attributes:
             attr_slug = change_request.possible_attributes[0]
-
-            # If "unknown" modifier, check if it's actually a menu item replacement
-            if attr_slug == "unknown":
-                from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
-                parsed = parse_open_input_deterministic(change_request.new_value)
-                if parsed and parsed.parsed_items:
-                    # This is a menu item, not a modifier - defer to normal parsing
-                    logger.info(
-                        "CHANGE REQUEST: '%s' is a menu item, deferring to item replacement flow",
-                        change_request.new_value
-                    )
-                    return None
+            resolved_new_value = change_request.new_value  # May be updated if weight resolved
 
             # Find target item
             active_items = order.items.get_active_items()
+
+            # If "unknown" modifier, check if it's a weight/quantity update for last item
+            if attr_slug == "unknown":
+                # Check if value looks like a weight specification (e.g., "2 pounds", "half lb")
+                new_value_lower = change_request.new_value.lower().strip()
+                if WEIGHT_QUANTITY_PATTERN.match(new_value_lower):
+                    # Check if last item has a priced attribute (like "weight")
+                    last_item = get_last_item(active_items)
+                    if last_item and isinstance(last_item, MenuItemTask) and last_item.menu_item_type:
+                        priced_attr = menu_cache.get_first_priced_attribute(last_item.menu_item_type)
+                        if priced_attr:
+                            # Try multiple normalized variations to resolve the weight value
+                            variations = _normalize_weight_variations(new_value_lower)
+                            option = None
+                            for variation in variations:
+                                option = menu_cache.resolve_option_by_alias(priced_attr, variation)
+                                if option:
+                                    break
+                            if option:
+                                # This is a valid weight update - use the priced attribute
+                                # and the resolved option slug for proper normalization
+                                attr_slug = priced_attr
+                                resolved_new_value = option.get("slug", change_request.new_value)
+                                logger.info(
+                                    "CHANGE REQUEST: '%s' resolved to %s=%s for item type %s",
+                                    change_request.new_value, priced_attr,
+                                    resolved_new_value, last_item.menu_item_type
+                                )
+
+                # If still unknown, check if it's actually a menu item replacement
+                if attr_slug == "unknown":
+                    from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
+                    parsed = parse_open_input_deterministic(change_request.new_value)
+                    if parsed and parsed.parsed_items:
+                        # This is a menu item, not a modifier - defer to normal parsing
+                        logger.info(
+                            "CHANGE REQUEST: '%s' is a menu item, deferring to item replacement flow",
+                            change_request.new_value
+                        )
+                        return None
             if not active_items:
                 return StateMachineResult(
                     message="I don't see any items to change. What would you like to order?",
@@ -185,7 +281,7 @@ class ConfigChangeHandler:
                 order=order,
                 item_id=None,  # Last item
                 attr_slug=attr_slug,
-                new_value=change_request.new_value,
+                new_value=resolved_new_value,
                 target=change_request.target,
             )
 

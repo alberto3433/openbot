@@ -25,11 +25,16 @@ from .handler_utils import (
     match_item_from_options,
     get_last_item,
 )
+from .parsers.inquiry_patterns import (
+    MODIFICATION_EXTRACTOR,
+    REORDER_ITEM_PATTERNS,
+)
 
 if TYPE_CHECKING:
     from .models import OrderTask
     from .schemas import OpenInputResponse
     from .checkout_handler import CheckoutHandler
+    from .order_history_handler import OrderHistoryHandler
     from .pricing import PricingEngine
     from .context import OrderContext
 
@@ -64,15 +69,18 @@ class DuplicateHandler:
         self,
         pricing: "PricingEngine | None" = None,
         checkout_handler: "CheckoutHandler | None" = None,
+        order_history_handler: "OrderHistoryHandler | None" = None,
     ) -> None:
         """Initialize the duplicate handler.
 
         Args:
             pricing: PricingEngine for price calculations.
             checkout_handler: Handler for checkout operations (repeat order).
+            order_history_handler: Handler for order history operations.
         """
         self.pricing = pricing
         self.checkout_handler = checkout_handler
+        self.order_history_handler = order_history_handler
 
         # Context set per-request
         self._returning_customer: dict | None = None
@@ -412,18 +420,35 @@ class DuplicateHandler:
         self,
         parsed: "OpenInputResponse",
         order: "OrderTask",
+        raw_user_input: str | None = None,
     ) -> StateMachineResult | None:
         """Handle repeat order / "same thing" request.
 
         Args:
             parsed: The parsed open input response.
             order: The current order task.
+            raw_user_input: Original user input (for detecting modifications).
 
         Returns:
             StateMachineResult if handled, None if not a repeat order request.
         """
         if not parsed.wants_repeat_order:
             return None
+
+        # Check for modifications ("same as before but iced")
+        if raw_user_input and self.order_history_handler:
+            is_modified, modification_text = self.order_history_handler.is_reorder_with_modifications(raw_user_input)
+            if is_modified and modification_text:
+                logger.info("Repeat order with modifications detected: '%s'", modification_text)
+                return self.order_history_handler.handle_reorder_with_modifications(
+                    modification_text, order
+                )
+
+            # Check for specific item reorder ("just the bagel from last time")
+            is_specific, item_ref = self.order_history_handler.is_reorder_specific_item(raw_user_input)
+            if is_specific and item_ref:
+                logger.info("Reorder specific item detected: '%s'", item_ref)
+                return self.order_history_handler.handle_reorder_specific_item(item_ref, order)
 
         active_items = order.items.get_active_items()
         has_cart_items = len(active_items) > 0

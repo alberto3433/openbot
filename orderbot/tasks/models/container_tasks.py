@@ -344,6 +344,22 @@ class OrderTask(BaseTask):
     pending_modifier_target_item_index: int | None = None
     pending_modifier_quantity: int | None = None
 
+    # Order history selection state
+    # Used when user asks "what did I order before?" and we show a list
+    # Dict with: orders (list of order dicts with items and summary)
+    pending_order_history: dict | None = None
+
+    # Reorder item selection state
+    # Used when user says "just the bagel from last time" and there are multiple matches
+    # List of item dicts from order history matching the user's reference
+    pending_reorder_items: list[dict] | None = None
+
+    # Pending dietary follow-up state
+    # Used when user asks "is X vegan?" and we offer to show vegan options instead
+    # Dict with: dietary_type (str), category (str | None)
+    # Example: {"dietary_type": "is_vegan", "category": None}
+    pending_dietary_followup: dict | None = None
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -383,6 +399,9 @@ class OrderTask(BaseTask):
         # Handle ingredient suggestion confirmation ("I want caramel syrup" -> "yes")
         if self.pending_field == PendingField.CONFIRM_INGREDIENT_SUGGESTION:
             return True
+        # Handle dietary follow-up confirmation ("is X vegan?" -> "no" -> "Would you like vegan options?" -> "yes")
+        if self.pending_field == PendingField.CONFIRM_DIETARY_FOLLOWUP:
+            return True
         # Handle attribute disambiguation (e.g., "walnut" -> "honey walnut" or "maple raisin walnut")
         if self.pending_attr_disambiguation is not None:
             return True
@@ -398,6 +417,9 @@ class OrderTask(BaseTask):
         self.pending_item_modifiers = {}
         self.pending_attr_disambiguation = None
         self.pending_unmatched_pagination = None
+        self.pending_order_history = None
+        self.pending_reorder_items = None
+        self.pending_dietary_followup = None
 
     def set_phase(self, phase: "OrderPhase") -> None:
         """Set the order phase from an OrderPhase enum.

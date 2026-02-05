@@ -100,6 +100,9 @@ class LoaderMixin(
                 # Load menu item default ingredients (for signature items)
                 self._load_menu_item_default_ingredients_from_bulk(bulk_data)
 
+                # Load dietary and allergen data (for dietary/allergen inquiries)
+                self._load_dietary_data_from_bulk(bulk_data)
+
                 # Load component slots (for items that include configurable sub-items)
                 self._load_component_slots_from_bulk(bulk_data)
 
@@ -116,6 +119,9 @@ class LoaderMixin(
 
                 # Load unrecognized option suggestions (for detecting terms not in our menu)
                 self._load_unrecognized_option_suggestions_from_bulk(bulk_data)
+
+                # Load menu display groups (for "what's on your menu?" responses)
+                self._load_menu_display_groups_from_bulk(bulk_data)
 
                 # Load attribute inquiry keywords (data-driven mapping for "what types?" queries)
                 self._load_attribute_inquiry_keywords(db)
@@ -162,7 +168,7 @@ class LoaderMixin(
             Category, MenuItemCategory, ResponsePattern, ModifierQualifier,
             ModifierCategory, IngredientCategory, GlobalAttributeAlias,
             MenuItemIngredient, ItemTypeComponentSlot, ComponentSlotOption,
-            UnrecognizedOptionSuggestion,
+            UnrecognizedOptionSuggestion, MenuDisplayGroup,
         )
 
         start_time = time.time()
@@ -190,7 +196,7 @@ class LoaderMixin(
             db.query(ItemType)
             .options(
                 selectinload(ItemType.alias_records),
-                joinedload(ItemType.overall_category),
+                joinedload(ItemType.menu_display_group).joinedload(MenuDisplayGroup.overall_category),
                 selectinload(ItemType.global_attribute_links)
                     .selectinload(ItemTypeGlobalAttribute.global_attribute)
                     .selectinload(GlobalAttribute.options),
@@ -324,6 +330,18 @@ class LoaderMixin(
             # Table may not exist yet if migrations haven't run
             unrecognized_option_suggestions = []
 
+        # 18. Load menu display groups (for "what's on your menu?" responses)
+        try:
+            menu_display_groups = (
+                db.query(MenuDisplayGroup)
+                .options(selectinload(MenuDisplayGroup.alias_records))
+                .order_by(MenuDisplayGroup.display_order)
+                .all()
+            )
+        except Exception:
+            # Table may not exist yet if migrations haven't run
+            menu_display_groups = []
+
         elapsed = time.time() - start_time
         logger.info(
             "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
@@ -355,6 +373,7 @@ class LoaderMixin(
             "component_slots": component_slots,
             "option_skip_rules": option_skip_rules,
             "unrecognized_option_suggestions": unrecognized_option_suggestions,
+            "menu_display_groups": menu_display_groups,
         }
 
     def _load_menu_index(self, db: Session) -> None:

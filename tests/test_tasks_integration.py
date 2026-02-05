@@ -2579,7 +2579,11 @@ class TestMenuQuery:
     """Tests for _handle_menu_query."""
 
     def test_generic_menu_query_lists_categories(self):
-        """Test generic 'what do you have' lists available categories."""
+        """Test generic 'what do you have' lists display groups from database.
+
+        Display groups are high-level categories like "breads", "sandwiches", "drinks"
+        that consolidate the more granular item types.
+        """
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
@@ -2594,9 +2598,36 @@ class TestMenuQuery:
 
         result = sm.menu_inquiry_handler.handle_menu_query(None, order)
 
-        assert "We have:" in result.message
-        assert "bagel" in result.message
-        assert "beverage" in result.message
+        # Should list display groups (from menu_display_groups table)
+        assert "We have" in result.message
+        # Display groups: breads, sandwiches, omelettes and breakfasts, drinks,
+        # desserts and pastries, sides, food by the pound
+        assert "breads" in result.message or "sandwiches" in result.message or "drinks" in result.message
+        assert "What would you like?" in result.message
+
+    def test_display_group_query_returns_items_from_group(self):
+        """Test querying a display group returns items from all item types in that group.
+
+        When user asks 'what breads do you have?', should return items from all
+        item types mapped to the 'breads' display group (e.g., bagel items).
+        """
+        from orderbot.cache import menu_cache
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+
+        # Get real menu data from cache (display groups are DB-driven)
+        menu_data = menu_cache.get_menu_index()
+
+        sm = OrderStateMachine(menu_data=menu_data)
+        order = OrderTask()
+
+        # Query the 'breads' display group
+        result = sm.menu_inquiry_handler.handle_menu_query("breads", order)
+
+        # Should list items from the breads group (bagels)
+        assert "include" in result.message.lower()
+        # Breads group contains bagel item type
+        assert "bagel" in result.message.lower() or "Bagel" in result.message
 
     def test_beverage_query_uses_database_mapping(self):
         """Test that 'beverage' query uses database-driven category mapping.
@@ -4233,6 +4264,46 @@ class TestCategoryClarification:
         # Should have "Coke, and Sprite" or similar format
         assert "coke" in result.message.lower()
         assert "sprite" in result.message.lower()
+
+    def test_display_group_alias_returns_group_items(self):
+        """Test that display group aliases (e.g., 'pastry') return items from that group.
+
+        When user says "pastries" and it matches a display group alias, we should
+        list items from all item types in that display group, not just look up
+        by category (which would return empty).
+        """
+        from unittest.mock import patch, MagicMock
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+
+        # Mock display group lookup - "pastry" maps to "desserts_pastries" group
+        mock_display_group = {
+            "slug": "desserts_pastries",
+            "display_name": "Desserts and Pastries",
+            "display_order": 5
+        }
+
+        # Mock items from the desserts/pastries item types
+        mock_items_by_type = {
+            "cookie": [{"name": "Chocolate Chip Cookie"}, {"name": "Oatmeal Cookie"}],
+            "muffin": [{"name": "Blueberry Muffin"}, {"name": "Bran Muffin"}],
+            "rugalach": [{"name": "Chocolate Rugalach"}],
+        }
+
+        sm = OrderStateMachine(menu_data={"items_by_type": mock_items_by_type})
+        order = OrderTask()
+
+        with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_display_group_by_slug", return_value=mock_display_group), \
+             patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_item_types_in_display_group", return_value=["cookie", "muffin", "rugalach"]), \
+             patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=[]):
+            result = sm.menu_inquiry_handler.handle_category_clarification("pastry", order)
+
+        # Should list items from the display group, not say "I don't have that"
+        assert "don't have that" not in result.message.lower()
+        assert "what kind" in result.message.lower()
+        # Should contain at least one of the pastry items
+        message_lower = result.message.lower()
+        assert any(item in message_lower for item in ["cookie", "muffin", "rugalach"])
 
 
 # =============================================================================

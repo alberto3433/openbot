@@ -596,6 +596,32 @@ class SelectInputHandler:
         if numeric_match:
             return numeric_match
 
+        # Try numeric quantity for single-option attributes
+        # This handles "2" for attributes with a single option like "Shot"
+        # where user is specifying quantity, not selecting an option
+        available_opts = [opt for opt in options if opt.get("is_available", True)]
+        if len(available_opts) == 1:
+            parsed_qty = parse_numeric_input(user_input)
+            if parsed_qty is not None and parsed_qty >= 1:
+                single_opt = available_opts[0]
+                opt_price = single_opt.get("price") or single_opt.get("price_modifier") or 0.0
+                display_name = single_opt.get("display_name", single_opt["slug"])
+
+                item.add_selection(
+                    single_opt["slug"],
+                    attr_slug,
+                    quantity=parsed_qty,
+                    price=opt_price,
+                    display_name=display_name,
+                )
+
+                logger.info(
+                    "NUMERIC_SINGLE_OPTION: auto-selected %s=%s qty=%d for numeric input '%s'",
+                    attr_slug, single_opt["slug"], parsed_qty, user_input
+                )
+
+                return advance_callback(item, order, attr, display_name)
+
         # Check if input is an affirmative response ("yes", "sure", etc.)
         if is_affirmative(user_input):
             available_opts = [opt for opt in options if opt.get("is_available", True)]

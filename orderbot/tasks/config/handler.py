@@ -25,6 +25,7 @@ from ..handler_config import BaseHandler
 from ..checkout_messages import got_it_anything_else
 from ..utils import OptionMatcher, InputNormalizer
 from ..utils.text import format_display_list
+from .context import ConfigHandlerContext
 from .select_input import SelectInputHandler
 from .options_inquiry import OptionsInquiryHandler
 from .disambiguation import ConfigDisambiguationHandler
@@ -71,59 +72,59 @@ class MenuItemConfigHandler(BaseHandler):
         # Note: Item type attributes are cached in menu_cache (single source of truth)
         self._input_normalizer = InputNormalizer()
         self._option_matcher = OptionMatcher(self._input_normalizer)
-        # Extracted sub-handler for select input processing
+
+        # Callback for processing pending parsed items (set via setter to avoid circular deps)
+        self._process_pending_parsed_items_callback: "Callable[[OrderTask], StateMachineResult | None] | None" = None
+
+        # Create shared context for sub-handlers
+        # This replaces the callback jungle pattern where each sub-handler received 10+ callbacks
+        self._ctx = ConfigHandlerContext(
+            pricing=config.pricing,
+            option_matcher=self._option_matcher,
+            input_normalizer=self._input_normalizer,
+            # Attribute resolution
+            get_item_type_attributes=self._get_item_type_attributes,
+            get_optional_attributes=self._get_optional_attributes,
+            get_unanswered_optional=self._get_unanswered_optional,
+            # Display/formatting
+            format_display_list=self._format_display_list,
+            # Navigation
+            advance_to_next_question=self._advance_to_next_question,
+            get_next_question=self._get_next_question,
+            # Matching
+            match_attribute_from_input=self._match_attribute_from_input,
+            extract_quantity_from_input=self._extract_quantity_from_input,
+            extract_qualifier_for_option=self._extract_qualifier_for_option,
+            # Price
+            recalculate_item_price=self._recalculate_item_price,
+            # Question/action callbacks
+            ask_disambiguation_for_options=self._ask_disambiguation_for_options,
+            ask_customization_checkpoint=self._ask_customization_checkpoint,
+            ask_optional_attribute=self._ask_optional_attribute,
+            ask_more_customizations=self._ask_more_customizations,
+            try_direct_option_match=self._try_direct_option_match,
+            # Optional callback (set via property setter)
+            process_pending_parsed_items=None,
+        )
+
+        # Initialize sub-handlers using shared context
         self._select_input_handler = SelectInputHandler(
             pricing=config.pricing,
             option_matcher=self._option_matcher,
             input_normalizer=self._input_normalizer,
         )
-        # Callback for processing pending parsed items (set via setter to avoid circular deps)
-        # Used when disambiguation was triggered during multi-item orders and there are
-        # remaining items to process after configuration completes
-        self._process_pending_parsed_items_callback: "Callable[[OrderTask], StateMachineResult | None] | None" = None
-        # Sub-handler for options inquiry and pagination
-        self._options_inquiry_handler = OptionsInquiryHandler(
-            get_optional_attributes=self._get_optional_attributes,
-        )
-        # Sub-handler for disambiguation resolution
-        self._disambiguation_handler = ConfigDisambiguationHandler(
-            get_item_type_attributes=self._get_item_type_attributes,
-            format_display_list=self._format_display_list,
-            extract_qualifier_for_option=self._extract_qualifier_for_option,
-            advance_to_next_question=self._advance_to_next_question,
-            get_next_question=self._get_next_question,
-        )
-        # Sub-handler for question building
+        self._options_inquiry_handler = OptionsInquiryHandler(ctx=self._ctx)
+        self._disambiguation_handler = ConfigDisambiguationHandler(ctx=self._ctx)
         self._question_builder = QuestionBuilder()
-        # Sub-handler for selection extraction
         self._selection_extractor = SelectionExtractor(pricing=config.pricing)
-        # Sub-handler for direct option matching (e.g., "add mayo" without saying "condiments")
         self._direct_option_matcher = DirectOptionMatcher(
             option_matcher=self._option_matcher,
-            extract_qualifier_callback=self._extract_qualifier_for_option,
-            match_option_callback=self._option_matcher.match_single,
-            ask_more_customizations_callback=self._ask_more_customizations,
+            ctx=self._ctx,
         )
-        # Sub-handler for quantity input (shots, syrups, etc.)
-        self._quantity_input_handler = QuantityInputHandler(
-            advance_callback=self._advance_to_next_question,
-        )
-        # Sub-handler for customization checkpoint (optional modifiers)
+        self._quantity_input_handler = QuantityInputHandler(ctx=self._ctx)
         self._customization_checkpoint_handler = CustomizationCheckpointHandler(
             options_inquiry_handler=self._options_inquiry_handler,
-            option_matcher=self._option_matcher,
-            recalculate_item_price=self._recalculate_item_price,
-            get_unanswered_optional=self._get_unanswered_optional,
-            get_optional_attributes=self._get_optional_attributes,
-            format_display_list=self._format_display_list,
-            match_attribute_from_input=self._match_attribute_from_input,
-            extract_quantity_from_input=self._extract_quantity_from_input,
-            ask_disambiguation_for_options=self._ask_disambiguation_for_options,
-            ask_customization_checkpoint=self._ask_customization_checkpoint,
-            ask_optional_attribute=self._ask_optional_attribute,
-            try_direct_option_match=self._try_direct_option_match,
-            get_next_question=self._get_next_question,
-            process_pending_parsed_items_callback=None,  # Set via setter
+            ctx=self._ctx,
         )
 
     def _apply_selections(self, item: "MenuItemTask", selections: list) -> str | None:
@@ -151,7 +152,8 @@ class MenuItemConfigHandler(BaseHandler):
     def process_pending_parsed_items(self, callback: "Callable[[OrderTask], StateMachineResult | None] | None") -> None:
         """Set callback for processing pending parsed items."""
         self._process_pending_parsed_items_callback = callback
-        # Also update the customization checkpoint handler
+        # Update the shared context and sub-handler
+        self._ctx.process_pending_parsed_items = callback
         self._customization_checkpoint_handler._process_pending_parsed_items_callback = callback
 
     def supports_item_type(self, item_type_slug: str | None) -> bool:

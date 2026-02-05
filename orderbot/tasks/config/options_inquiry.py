@@ -16,6 +16,7 @@ from ..utils.text import format_english_list
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
+    from .context import ConfigHandlerContext
 
 __all__ = ["OptionsInquiryHandler"]
 
@@ -33,15 +34,24 @@ class OptionsInquiryHandler:
 
     def __init__(
         self,
+        ctx: "ConfigHandlerContext | None" = None,
+        # Legacy parameter for backward compatibility (deprecated)
         get_optional_attributes: Callable[[str], list[dict]] | None = None,
     ) -> None:
         """Initialize the options inquiry handler.
 
         Args:
+            ctx: ConfigHandlerContext with shared dependencies. If provided,
+                 individual callback parameters are ignored.
+
+        Deprecated args (use ctx instead):
             get_optional_attributes: Callback to get optional attributes for an item type.
-                                    Signature: (item_type_slug: str) -> list[dict]
         """
-        self._get_optional_attributes = get_optional_attributes
+        if ctx is not None:
+            self._get_optional_attributes = ctx.get_optional_attributes
+        else:
+            # Legacy: individual parameter
+            self._get_optional_attributes = get_optional_attributes
 
     def is_options_inquiry(self, user_input: str, topic: str | None = None) -> bool:
         """Check if user is asking about available options.

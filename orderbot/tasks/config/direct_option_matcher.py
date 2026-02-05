@@ -18,6 +18,7 @@ from ..utils import OptionMatchingOrchestrator, OptionMatcher
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
+    from .context import ConfigHandlerContext
 
 logger = logging.getLogger(__name__)
 
@@ -33,25 +34,41 @@ class DirectOptionMatcher:
 
     def __init__(
         self,
-        option_matcher: OptionMatcher,
-        extract_qualifier_callback: Callable[[str, str], str | None],
-        match_option_callback: Callable[[str, list[dict]], tuple[dict | None, list[dict]]],
-        ask_more_customizations_callback: Callable[["MenuItemTask", "OrderTask", str | None], StateMachineResult],
+        option_matcher: "OptionMatcher | None" = None,
+        ctx: "ConfigHandlerContext | None" = None,
+        # Legacy parameters for backward compatibility (deprecated)
+        extract_qualifier_callback: Callable[[str, str], str | None] | None = None,
+        match_option_callback: Callable[[str, list[dict]], tuple[dict | None, list[dict]]] | None = None,
+        ask_more_customizations_callback: Callable[["MenuItemTask", "OrderTask", str | None], StateMachineResult] | None = None,
     ):
         """
         Initialize the direct option matcher.
 
         Args:
             option_matcher: OptionMatcher instance for matching logic.
-            extract_qualifier_callback: Callback to extract qualifiers (e.g., "extra", "on the side").
-            match_option_callback: Callback for single option matching.
-            ask_more_customizations_callback: Callback to ask about more customizations.
+            ctx: ConfigHandlerContext with shared dependencies. If provided,
+                 individual callback parameters are ignored.
+
+        Deprecated args (use ctx instead):
+            extract_qualifier_callback, match_option_callback, ask_more_customizations_callback
         """
-        self._option_matcher = option_matcher
-        self._orchestrator = OptionMatchingOrchestrator(option_matcher=option_matcher)
-        self._extract_qualifier = extract_qualifier_callback
-        self._match_option = match_option_callback
-        self._ask_more_customizations = ask_more_customizations_callback
+        # Option matcher can come from ctx or be passed directly
+        if ctx is not None and ctx.option_matcher is not None:
+            self._option_matcher = ctx.option_matcher
+        else:
+            self._option_matcher = option_matcher
+
+        self._orchestrator = OptionMatchingOrchestrator(option_matcher=self._option_matcher)
+
+        if ctx is not None:
+            self._extract_qualifier = ctx.extract_qualifier_for_option
+            self._match_option = ctx.option_matcher.match_single if ctx.option_matcher else match_option_callback
+            self._ask_more_customizations = ctx.ask_more_customizations
+        else:
+            # Legacy: individual parameters
+            self._extract_qualifier = extract_qualifier_callback
+            self._match_option = match_option_callback
+            self._ask_more_customizations = ask_more_customizations_callback
 
     def try_direct_option_match(
         self,

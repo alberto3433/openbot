@@ -17,7 +17,7 @@ from ..response_utils import is_negative, is_affirmative
 from ..parsers.quantity_utils import parse_numeric_input
 
 if TYPE_CHECKING:
-    pass
+    from .context import ConfigHandlerContext
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +36,27 @@ class QuantityInputHandler:
 
     def __init__(
         self,
+        ctx: "ConfigHandlerContext | None" = None,
+        # Legacy parameter for backward compatibility (deprecated)
         advance_callback: Callable[
             [MenuItemTask, OrderTask, dict, str | None], StateMachineResult
-        ],
+        ] | None = None,
     ):
         """
         Initialize the quantity input handler.
 
         Args:
+            ctx: ConfigHandlerContext with shared dependencies. If provided,
+                 individual callback parameters are ignored.
+
+        Deprecated args (use ctx instead):
             advance_callback: Callback to advance to next question after handling input.
-                             Signature: (item, order, attr, ack_text) -> StateMachineResult
         """
-        self._advance_to_next_question = advance_callback
+        if ctx is not None:
+            self._advance_to_next_question = ctx.advance_to_next_question
+        else:
+            # Legacy: individual parameter
+            self._advance_to_next_question = advance_callback
 
     def handle_quantity_input(
         self,

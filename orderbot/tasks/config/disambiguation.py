@@ -17,6 +17,7 @@ from ..utils import OptionMatcher
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
+    from .context import ConfigHandlerContext
 
 logger = logging.getLogger(__name__)
 
@@ -38,26 +39,37 @@ class ConfigDisambiguationHandler:
 
     def __init__(
         self,
-        get_item_type_attributes: Callable[[str], dict],
-        format_display_list: Callable[[list[dict]], str],
-        extract_qualifier_for_option: Callable[[str, str], str | None],
-        advance_to_next_question: Callable[["MenuItemTask", "OrderTask", dict, str], StateMachineResult],
-        get_next_question: Callable[["OrderTask"], StateMachineResult],
+        ctx: "ConfigHandlerContext | None" = None,
+        # Legacy parameters for backward compatibility (deprecated)
+        get_item_type_attributes: Callable[[str], dict] | None = None,
+        format_display_list: Callable[[list[dict]], str] | None = None,
+        extract_qualifier_for_option: Callable[[str, str], str | None] | None = None,
+        advance_to_next_question: Callable[["MenuItemTask", "OrderTask", dict, str], StateMachineResult] | None = None,
+        get_next_question: Callable[["OrderTask"], StateMachineResult] | None = None,
     ) -> None:
         """Initialize the disambiguation handler.
 
         Args:
-            get_item_type_attributes: Callback to get attributes for an item type.
-            format_display_list: Callback to format a list of options for display.
-            extract_qualifier_for_option: Callback to extract qualifiers like "extra" or "on the side".
-            advance_to_next_question: Callback to advance to the next question after resolution.
-            get_next_question: Callback to get the next question when disambiguation is cleared.
+            ctx: ConfigHandlerContext with shared dependencies. If provided,
+                 individual callback parameters are ignored.
+
+        Deprecated args (use ctx instead):
+            get_item_type_attributes, format_display_list, extract_qualifier_for_option,
+            advance_to_next_question, get_next_question
         """
-        self._get_item_type_attributes = get_item_type_attributes
-        self._format_display_list = format_display_list
-        self._extract_qualifier_for_option = extract_qualifier_for_option
-        self._advance_to_next_question = advance_to_next_question
-        self._get_next_question = get_next_question
+        if ctx is not None:
+            self._get_item_type_attributes = ctx.get_item_type_attributes
+            self._format_display_list = ctx.format_display_list
+            self._extract_qualifier_for_option = ctx.extract_qualifier_for_option
+            self._advance_to_next_question = ctx.advance_to_next_question
+            self._get_next_question = ctx.get_next_question
+        else:
+            # Legacy: individual parameters
+            self._get_item_type_attributes = get_item_type_attributes
+            self._format_display_list = format_display_list
+            self._extract_qualifier_for_option = extract_qualifier_for_option
+            self._advance_to_next_question = advance_to_next_question
+            self._get_next_question = get_next_question
 
     def resolve_disambiguation(
         self,

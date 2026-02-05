@@ -21,6 +21,7 @@ from ..parsers.constants import extract_quantity_for_pattern
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
     from .options_inquiry import OptionsInquiryHandler
+    from .context import ConfigHandlerContext
     from ..utils import OptionMatcher
 
 logger = logging.getLogger(__name__)
@@ -43,25 +44,27 @@ class CustomizationCheckpointHandler:
     def __init__(
         self,
         options_inquiry_handler: "OptionsInquiryHandler",
-        option_matcher: "OptionMatcher",
-        recalculate_item_price: Callable[["MenuItemTask"], None],
-        get_unanswered_optional: Callable[["MenuItemTask", str], list[dict]],
-        get_optional_attributes: Callable[[str], list[dict]],
-        format_display_list: Callable[[list[dict]], str],
-        match_attribute_from_input: Callable[[str, list[dict]], list[dict]],
-        extract_quantity_from_input: Callable[[str], tuple[int, str]],
+        ctx: "ConfigHandlerContext | None" = None,
+        # Legacy parameters for backward compatibility (deprecated)
+        option_matcher: "OptionMatcher | None" = None,
+        recalculate_item_price: Callable[["MenuItemTask"], None] | None = None,
+        get_unanswered_optional: Callable[["MenuItemTask", str], list[dict]] | None = None,
+        get_optional_attributes: Callable[[str], list[dict]] | None = None,
+        format_display_list: Callable[[list[dict]], str] | None = None,
+        match_attribute_from_input: Callable[[str, list[dict]], list[dict]] | None = None,
+        extract_quantity_from_input: Callable[[str], tuple[int, str]] | None = None,
         ask_disambiguation_for_options: Callable[
             ["MenuItemTask", "OrderTask", dict, dict, str], StateMachineResult
-        ],
+        ] | None = None,
         ask_customization_checkpoint: Callable[
             ["MenuItemTask", "OrderTask", str | None], StateMachineResult
-        ],
+        ] | None = None,
         ask_optional_attribute: Callable[
             ["MenuItemTask", "OrderTask", dict], StateMachineResult
-        ],
+        ] | None = None,
         try_direct_option_match: Callable[
             [str, list[dict], "MenuItemTask", "OrderTask"], StateMachineResult | None
-        ],
+        ] | None = None,
         get_next_question: Callable[["OrderTask"], StateMachineResult | None] | None = None,
         process_pending_parsed_items_callback: Callable[
             ["OrderTask"], StateMachineResult | None
@@ -71,34 +74,48 @@ class CustomizationCheckpointHandler:
 
         Args:
             options_inquiry_handler: Handler for options inquiry questions.
-            option_matcher: Matcher for option values.
-            recalculate_item_price: Callback to recalculate item price.
-            get_unanswered_optional: Callback to get unanswered optional attributes.
-            get_optional_attributes: Callback to get all optional attributes for item type.
-            format_display_list: Callback to format a list of options for display.
-            match_attribute_from_input: Callback to match attributes from user input.
-            extract_quantity_from_input: Callback to extract quantity from user input.
-            ask_disambiguation_for_options: Callback to ask disambiguation for options.
-            ask_customization_checkpoint: Callback to ask customization checkpoint.
-            ask_optional_attribute: Callback to ask for a specific optional attribute.
-            try_direct_option_match: Callback to try matching option values directly.
-            get_next_question: Callback to get next question when item is complete.
-            process_pending_parsed_items_callback: Callback to process pending parsed items.
+            ctx: ConfigHandlerContext with shared dependencies. If provided,
+                 individual callback parameters are ignored.
+
+        Deprecated args (use ctx instead):
+            option_matcher, recalculate_item_price, get_unanswered_optional,
+            get_optional_attributes, format_display_list, match_attribute_from_input,
+            extract_quantity_from_input, ask_disambiguation_for_options,
+            ask_customization_checkpoint, ask_optional_attribute, try_direct_option_match,
+            get_next_question, process_pending_parsed_items_callback
         """
         self._options_inquiry_handler = options_inquiry_handler
-        self._option_matcher = option_matcher
-        self._recalculate_item_price = recalculate_item_price
-        self._get_unanswered_optional = get_unanswered_optional
-        self._get_optional_attributes = get_optional_attributes
-        self._format_display_list = format_display_list
-        self._match_attribute_from_input = match_attribute_from_input
-        self._extract_quantity_from_input = extract_quantity_from_input
-        self._ask_disambiguation_for_options = ask_disambiguation_for_options
-        self._ask_customization_checkpoint = ask_customization_checkpoint
-        self._ask_optional_attribute = ask_optional_attribute
-        self._try_direct_option_match = try_direct_option_match
-        self._get_next_question = get_next_question
-        self._process_pending_parsed_items_callback = process_pending_parsed_items_callback
+
+        # Use context if provided, otherwise fall back to individual parameters
+        if ctx is not None:
+            self._option_matcher = ctx.option_matcher
+            self._recalculate_item_price = ctx.recalculate_item_price
+            self._get_unanswered_optional = ctx.get_unanswered_optional
+            self._get_optional_attributes = ctx.get_optional_attributes
+            self._format_display_list = ctx.format_display_list
+            self._match_attribute_from_input = ctx.match_attribute_from_input
+            self._extract_quantity_from_input = ctx.extract_quantity_from_input
+            self._ask_disambiguation_for_options = ctx.ask_disambiguation_for_options
+            self._ask_customization_checkpoint = ctx.ask_customization_checkpoint
+            self._ask_optional_attribute = ctx.ask_optional_attribute
+            self._try_direct_option_match = ctx.try_direct_option_match
+            self._get_next_question = ctx.get_next_question
+            self._process_pending_parsed_items_callback = ctx.process_pending_parsed_items
+        else:
+            # Legacy: individual parameters
+            self._option_matcher = option_matcher
+            self._recalculate_item_price = recalculate_item_price
+            self._get_unanswered_optional = get_unanswered_optional
+            self._get_optional_attributes = get_optional_attributes
+            self._format_display_list = format_display_list
+            self._match_attribute_from_input = match_attribute_from_input
+            self._extract_quantity_from_input = extract_quantity_from_input
+            self._ask_disambiguation_for_options = ask_disambiguation_for_options
+            self._ask_customization_checkpoint = ask_customization_checkpoint
+            self._ask_optional_attribute = ask_optional_attribute
+            self._try_direct_option_match = try_direct_option_match
+            self._get_next_question = get_next_question
+            self._process_pending_parsed_items_callback = process_pending_parsed_items_callback
 
     def handle_customization_checkpoint(
         self, user_input: str, item: "MenuItemTask", order: "OrderTask"

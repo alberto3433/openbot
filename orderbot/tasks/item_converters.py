@@ -348,8 +348,9 @@ class UnifiedItemConverter:
 
             # Skip attribute selections that modify ingredients (shown via the updated modifier)
             # e.g., skip "egg_quantity=3_eggs" since the egg modifier already shows "3 Eggs"
+            # BUT: keep default ingredients (is_default=True) - they should always display
             attr_config = item_attrs.get(mod_category, {})
-            if attr_config.get("modifies_ingredient_slug"):
+            if attr_config.get("modifies_ingredient_slug") and not mod.get("is_default"):
                 continue
 
             mod_slug = mod.get("slug", "")

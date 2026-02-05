@@ -174,7 +174,7 @@ class DirectOptionMatcher:
             display_parts.append(display)
 
             # Add selection using unified API
-            opt_price = opt.get("price") or opt.get("price_modifier") or 0
+            opt_price = OptionMatcher.get_option_price(opt)
             item.add_selection(
                 opt["slug"],
                 attr_slug,
@@ -210,7 +210,7 @@ class DirectOptionMatcher:
         if matched_opt:
             opt_name = matched_opt["display_name"]
             qualifier = self._extract_qualifier(user_input, opt_name)
-            opt_price = matched_opt.get("price") or matched_opt.get("price_modifier") or 0
+            opt_price = OptionMatcher.get_option_price(matched_opt)
 
             # Check if this attribute modifies an existing ingredient
             modifies_slug = attr.get("modifies_ingredient_slug")
@@ -311,7 +311,7 @@ class DirectOptionMatcher:
                 target_slug = str(parsed_num)
                 for opt in options:
                     if opt["slug"] == target_slug:
-                        opt_price = opt.get("price") or opt.get("price_modifier") or 0.0
+                        opt_price = OptionMatcher.get_option_price(opt)
                         display_name = opt.get("display_name", f"{parsed_num}")
                         item.add_selection(
                             opt["slug"],

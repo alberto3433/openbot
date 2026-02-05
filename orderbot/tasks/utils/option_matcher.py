@@ -732,3 +732,80 @@ class OptionMatcher:
             return True
 
         return False
+
+    # =========================================================================
+    # Static Utility Methods
+    # =========================================================================
+
+    @staticmethod
+    def get_option_price(option: dict) -> float:
+        """Extract price from option dict.
+
+        Consolidates the repeated pattern of checking both 'price' and 'price_modifier' keys.
+
+        Args:
+            option: Option dict with optional 'price' or 'price_modifier' keys
+
+        Returns:
+            Price as float, or 0.0 if not found
+        """
+        return option.get("price") or option.get("price_modifier") or 0.0
+
+    @staticmethod
+    def filter_available_options(options: list[dict]) -> tuple[list[dict], list[dict]]:
+        """Split options into available and unavailable.
+
+        Args:
+            options: List of option dicts with optional 'is_available' key
+
+        Returns:
+            Tuple of (available_options, unavailable_options)
+        """
+        available = [opt for opt in options if opt.get("is_available", True)]
+        unavailable = [opt for opt in options if not opt.get("is_available", True)]
+        return available, unavailable
+
+    def match_numeric_option(
+        self,
+        user_input: str,
+        options: list[dict],
+    ) -> dict | None:
+        """Match numeric input to options with numeric slugs.
+
+        Handles options like shots: "1", "2", "3" or eggs: "2_eggs", "3_eggs".
+        Supports numeric words ("double", "triple") via parse_numeric_input.
+
+        Args:
+            user_input: User's input text
+            options: List of option dicts to match against
+
+        Returns:
+            Matched option dict if found, None otherwise
+        """
+        from ..parsers.quantity_utils import parse_numeric_input
+        from ..response_utils import is_affirmative
+
+        user_lower = user_input.lower().strip()
+
+        # Check if any options have numeric slugs
+        numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}
+        if not numeric_slugs:
+            return None
+
+        # Parse the user input as a number
+        parsed_num = parse_numeric_input(user_lower)
+
+        # Default to 1 for affirmative responses when options are numeric
+        if parsed_num is None and is_affirmative(user_input):
+            parsed_num = 1
+
+        if parsed_num is None:
+            return None
+
+        # Find matching option
+        target_slug = str(parsed_num)
+        for opt in options:
+            if opt["slug"] == target_slug:
+                return opt
+
+        return None

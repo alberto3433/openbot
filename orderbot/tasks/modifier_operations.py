@@ -25,6 +25,7 @@ from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 from .utils.constants import is_price_metadata_key
 from .utils.text import strip_leading_article
+from .modifier_resolver import normalize_modifier_input
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +105,11 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
 
 
 def _normalize_modifier_name(name: str) -> str:
-    """Normalize a modifier name for matching."""
-    return ' '.join(name.lower().strip().split())
+    """Normalize a modifier name for matching.
+
+    Delegates to modifier_resolver.normalize_modifier_input().
+    """
+    return normalize_modifier_input(name, strip_articles=False)
 
 
 def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None:

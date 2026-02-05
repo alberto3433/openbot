@@ -26,11 +26,12 @@ from ..schemas import StateMachineResult, OrderPhase
 from ..parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
 from ..parsers.quantity_utils import parse_numeric_input
 from ..utils.text import format_english_list
+from ..utils import OptionMatcher
 from ..response_utils import is_affirmative
 
 if TYPE_CHECKING:
     from ..pricing import PricingEngine
-    from ..utils import OptionMatcher, InputNormalizer
+    from ..utils import InputNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +229,7 @@ class SelectInputHandler:
                             opt = other_matches[0]
                             existing_slugs = {sel.get("slug") for sel in item.get_selections(attr_slug)}
                             if opt["slug"] not in existing_slugs:
-                                opt_price = opt.get("price") or opt.get("price_modifier") or 0
+                                opt_price = OptionMatcher.get_option_price(opt)
                                 if opt_price == 0 and self.pricing:
                                     opt_price = self.pricing.lookup_generic_modifier_price(
                                         opt["slug"], item.menu_item_type
@@ -289,7 +290,7 @@ class SelectInputHandler:
                                     opt_quantity = alias_qty
                                     break
 
-                    opt_price = opt.get("price") or opt.get("price_modifier") or 0
+                    opt_price = OptionMatcher.get_option_price(opt)
 
                     # Look up price from pricing engine if not in option
                     if opt_price == 0 and self.pricing:

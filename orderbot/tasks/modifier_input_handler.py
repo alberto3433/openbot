@@ -21,6 +21,10 @@ from .handler_utils import (
 )
 from .schemas import StateMachineResult
 from .utils.text import find_first_word_boundary_match
+from .modifier_resolver import (
+    match_pattern_in_input,
+    belongs_to_category as _belongs_to_category,
+)
 
 if TYPE_CHECKING:
     from .models import MenuItemTask
@@ -93,7 +97,7 @@ def match_modifier(
         for pattern in detail["patterns"]:
             # Use word-boundary matching to avoid false positives
             # e.g., "egg" should not match "veggie" (v-egg-ie)
-            if re.search(rf'\b{re.escape(pattern)}\b', input_lower):
+            if match_pattern_in_input(pattern, input_lower):
                 return {
                     "slug": detail["slug"],
                     "name": detail["name"],
@@ -293,8 +297,8 @@ def add_modifiers_from_input(
 
             # Check if option matches input (use word-boundary to avoid false positives)
             # e.g., "add" in "add veggie cream cheese" should NOT match an "add" option slug
-            slug_match = re.search(rf'\b{re.escape(opt_slug_pattern)}\b', input_lower)
-            display_match = re.search(rf'\b{re.escape(opt_display_pattern)}\b', input_lower)
+            slug_match = match_pattern_in_input(opt_slug_pattern, input_lower)
+            display_match = match_pattern_in_input(opt_display_pattern, input_lower)
             if slug_match or display_match:
                 # Skip if this slug was already added by the category loop above
                 # This prevents double-adding when categories and attribute options overlap
@@ -421,7 +425,7 @@ def match_category_removal_pattern(input_lower: str, item_type_slug: str) -> str
         for template in TEMPLATES_WITH_THE:
             for name in category_names:
                 pattern = template.format(name)
-                if re.search(rf'\b{re.escape(pattern)}\b', input_lower):
+                if match_pattern_in_input(pattern, input_lower):
                     return category
 
         # Check templates WITHOUT "the" - match category names AND ingredient names
@@ -429,7 +433,7 @@ def match_category_removal_pattern(input_lower: str, item_type_slug: str) -> str
         for template in TEMPLATES_WITHOUT_THE:
             for name in all_names:
                 pattern = template.format(name)
-                if re.search(rf'\b{re.escape(pattern)}\b', input_lower):
+                if match_pattern_in_input(pattern, input_lower):
                     return category
 
     return None
@@ -454,36 +458,9 @@ def remove_modifiers_by_category(
     if not current_selections:
         return False
 
-    def belongs_to_category(modifier: dict, target_category: str) -> bool:
-        """Check if modifier belongs to target category.
-
-        Checks both the stored category field AND looks up the ingredient category
-        from the modifier's slug. This handles cases where modifiers are stored
-        with attribute slugs (e.g., "milk_sweetener_syrup") but we want to remove
-        by ingredient category (e.g., "milk").
-        """
-        # Direct category match
-        if modifier.get("category") == target_category:
-            return True
-
-        # Look up ingredient category from slug
-        slug = modifier.get("slug", "")
-        if slug:
-            # Try full slug first, then with common suffixes
-            ingredient_cat = menu_cache.get_ingredient_category(slug)
-            if ingredient_cat == target_category:
-                return True
-
-            # Try adding common suffixes (e.g., "whole" -> "whole milk")
-            for suffix in [" milk", " syrup"]:
-                ingredient_cat = menu_cache.get_ingredient_category(slug + suffix)
-                if ingredient_cat == target_category:
-                    return True
-
-        return False
-
     # Filter out selections of the specified category
-    new_selections = [m for m in current_selections if not belongs_to_category(m, category)]
+    # Uses _belongs_to_category from modifier_resolver for unified category lookup
+    new_selections = [m for m in current_selections if not _belongs_to_category(m, category)]
 
     if len(new_selections) < len(current_selections):
         item.selections = new_selections
@@ -566,7 +543,7 @@ class ModifierInputHandler:
                 item_modifier_patterns = get_all_modifier_patterns_for_item(last_item_check.menu_item_type)
                 # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
                 has_item_modifier = any(
-                    re.search(rf'\b{re.escape(mod)}\b', input_lower)
+                    match_pattern_in_input(mod, input_lower)
                     for mod in item_modifier_patterns
                 )
 
@@ -708,7 +685,7 @@ class ModifierInputHandler:
                 item_modifier_patterns = get_all_modifier_patterns_for_item(last_item.menu_item_type)
                 # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
                 has_item_modifier = any(
-                    re.search(rf'\b{re.escape(mod)}\b', input_lower)
+                    match_pattern_in_input(mod, input_lower)
                     for mod in item_modifier_patterns
                 )
 

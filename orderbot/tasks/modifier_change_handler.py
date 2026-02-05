@@ -28,6 +28,7 @@ from .utils.text import format_english_list
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from .handler_utils import is_configurable_menu_item, get_last_item
+from .modifier_resolver import normalize_modifier_input
 
 logger = logging.getLogger(__name__)
 
@@ -167,23 +168,21 @@ class ModifierChangeHandler:
             "the everything bagel" → "everything bagel"
             "decaf please" → "decaf"
             "an iced one" → "iced"
+
+        Uses normalize_modifier_input() from modifier_resolver for common normalization,
+        then handles additional change-specific trailing fillers.
         """
-        value = value.lower().strip()
+        # Use resolver for article stripping and basic normalization
+        result = normalize_modifier_input(value, strip_articles=True, strip_trailing_fillers=True)
 
-        # Strip leading articles
-        for article in ("a ", "an ", "the "):
-            if value.startswith(article):
-                value = value[len(article):]
+        # Handle additional change-specific trailing fillers
+        extra_fillers = [" one", " thing", " instead"]
+        for filler in extra_fillers:
+            if result.endswith(filler):
+                result = result[:-len(filler)]
                 break
 
-        # Strip trailing fillers
-        trailing_fillers = [" one", " thing", " please", " instead"]
-        for filler in trailing_fillers:
-            if value.endswith(filler):
-                value = value[:-len(filler)]
-                break
-
-        return value.strip()
+        return result.strip()
 
     def _analyze_modifier(
         self, new_value: str, target: str | None

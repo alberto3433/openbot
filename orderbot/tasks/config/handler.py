@@ -34,6 +34,14 @@ from .direct_option_matcher import DirectOptionMatcher
 from ..response_utils import is_negative, is_affirmative
 from .quantity_input import QuantityInputHandler
 from .customization_checkpoint import CustomizationCheckpointHandler
+from .attribute_resolver import (
+    get_item_type_attributes,
+    get_mandatory_attributes,
+    get_optional_attributes,
+    get_skipped_attributes,
+    get_unanswered_mandatory,
+    get_unanswered_optional,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -156,157 +164,32 @@ class MenuItemConfigHandler(BaseHandler):
         return item_type_slug in menu_cache.get_configurable_item_types()
 
     def _get_item_type_attributes(self, item_type_slug: str) -> dict:
-        """
-        Get item type attributes from centralized cache.
-
-        Uses menu_cache as the single source of truth for all item type
-        attributes (both item-type-specific and global attributes).
-
-        Returns dict with structure:
-        {
-            "bread": {
-                "slug": "bread",
-                "display_name": "Bread",
-                "question_text": "What kind of bread?",
-                "ask_in_conversation": True,
-                "input_type": "single_select",
-                "display_order": 1,
-                "options": [{"slug": "plain", "display_name": "Plain", "price": 0}, ...]
-            },
-            ...
-        }
-        """
-        return menu_cache.get_item_type_attributes(item_type_slug)
+        """Get item type attributes. Delegates to attribute_resolver."""
+        return get_item_type_attributes(item_type_slug)
 
     def _get_mandatory_attributes(self, item_type_slug: str) -> list[dict]:
-        """Get mandatory attributes (ask_in_conversation=True) in display order.
-
-        Excludes listen_only attributes which are never asked.
-        """
-        attrs = self._get_item_type_attributes(item_type_slug)
-        mandatory = [
-            attr for attr in attrs.values()
-            if attr.get("ask_in_conversation", False)
-            and not attr.get("listen_only", False)
-        ]
-        return sorted(mandatory, key=lambda x: x.get("display_order", 999))
+        """Get mandatory attributes. Delegates to attribute_resolver."""
+        return get_mandatory_attributes(item_type_slug)
 
     def _get_optional_attributes(self, item_type_slug: str) -> list[dict]:
-        """Get optional attributes (ask_in_conversation=False) in display order.
-
-        Excludes listen_only attributes which are never asked.
-        """
-        attrs = self._get_item_type_attributes(item_type_slug)
-        optional = [
-            attr for attr in attrs.values()
-            if not attr.get("ask_in_conversation", True)
-            and not attr.get("listen_only", False)
-        ]
-        return sorted(optional, key=lambda x: x.get("display_order", 999))
+        """Get optional attributes. Delegates to attribute_resolver."""
+        return get_optional_attributes(item_type_slug)
 
     def _get_unanswered_mandatory(
         self, item: MenuItemTask, item_type_slug: str
     ) -> list[dict]:
-        """Get mandatory attributes that haven't been answered yet.
-
-        Checks both canonical attribute slugs and legacy aliases to handle
-        backward compatibility with items created by legacy handlers.
-        Also checks direct model fields for certain attributes.
-
-        Filters out attributes that should be skipped based on already-selected
-        options (e.g., "black" coffee skips milk/sweetener/syrup questions).
-        """
-        mandatory = self._get_mandatory_attributes(item_type_slug)
-
-        # Get attributes to skip based on current selections
-        skipped_attrs = self._get_skipped_attributes(item)
-
-        unanswered = []
-        logger.info(
-            "GET_UNANSWERED_MANDATORY: item_type=%s, attribute_values=%s, skipped=%s",
-            item_type_slug, item.attribute_values, skipped_attrs
-        )
-        for attr in mandatory:
-            slug = attr["slug"]
-            # Check if this attribute should be skipped based on skip rules
-            if slug in skipped_attrs:
-                logger.debug("  %s: SKIPPED by option skip rule", slug)
-                continue
-            # Check canonical slug in attribute_values
-            # All properties (bread, toasted, etc.) now use attribute_values as backing store
-            if slug in item:
-                logger.debug("  %s: FOUND in attribute_values", slug)
-                continue
-            logger.debug("  %s: NOT FOUND - adding to unanswered", slug)
-            unanswered.append(attr)
-        logger.info(
-            "GET_UNANSWERED_MANDATORY result: %s",
-            [a["slug"] for a in unanswered]
-        )
-        return unanswered
+        """Get unanswered mandatory attributes. Delegates to attribute_resolver."""
+        return get_unanswered_mandatory(item, item_type_slug)
 
     def _get_skipped_attributes(self, item: MenuItemTask) -> set[str]:
-        """Get attributes that should be skipped based on item's current selections.
-
-        Iterates through the item's attribute_values and selections to find
-        any options that trigger skip rules (e.g., "black" skips milk-related attrs).
-
-        Args:
-            item: The menu item being configured
-
-        Returns:
-            Set of attribute slugs to skip
-        """
-        skipped: set[str] = set()
-
-        # Check attribute_values (single-select values)
-        for attr_slug, value in item.attribute_values.items():
-            if isinstance(value, str):
-                # Single-select value - check if it triggers skip rules
-                attr_skips = menu_cache.get_skipped_attributes_for_option(value)
-                skipped.update(attr_skips)
-            elif isinstance(value, bool):
-                # Boolean - option slugs are "true"/"false" to match DB storage
-                bool_slug = "true" if value else "false"
-                attr_skips = menu_cache.get_skipped_attributes_for_option(bool_slug)
-                skipped.update(attr_skips)
-
-        # Check selections list (multi-select values)
-        for selection in item.selections:
-            slug = selection.get("slug") if isinstance(selection, dict) else getattr(selection, "slug", None)
-            if slug:
-                attr_skips = menu_cache.get_skipped_attributes_for_option(slug)
-                skipped.update(attr_skips)
-
-        return skipped
+        """Get skipped attributes. Delegates to attribute_resolver."""
+        return get_skipped_attributes(item)
 
     def _get_unanswered_optional(
         self, item: MenuItemTask, item_type_slug: str
     ) -> list[dict]:
-        """Get optional attributes that haven't been answered yet.
-
-        Checks canonical attribute slugs in attribute_values.
-        All properties (bread, toasted, etc.) now use attribute_values as backing store.
-
-        Filters out attributes that should be skipped based on already-selected
-        options (e.g., "black" coffee skips milk/sweetener/syrup options).
-        """
-        optional = self._get_optional_attributes(item_type_slug)
-
-        # Get attributes to skip based on current selections
-        skipped_attrs = self._get_skipped_attributes(item)
-
-        unanswered = []
-        for attr in optional:
-            slug = attr["slug"]
-            # Check if this attribute should be skipped based on skip rules
-            if slug in skipped_attrs:
-                continue
-            # Check canonical slug in attribute_values
-            if slug in item:
-                continue
-            unanswered.append(attr)
-        return unanswered
+        """Get unanswered optional attributes. Delegates to attribute_resolver."""
+        return get_unanswered_optional(item, item_type_slug)
 
     def _extract_quantity_from_input(self, user_input: str) -> tuple[int, str]:
         """

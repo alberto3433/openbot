@@ -2873,3 +2873,62 @@ class TestExtractQuantityForPattern:
         from orderbot.tasks.parsers.quantity_utils import extract_quantity_for_pattern
         assert extract_quantity_for_pattern("DOUBLE BACON", "bacon") == 2
         assert extract_quantity_for_pattern("Extra Cheese", "cheese") == 2
+
+
+# =============================================================================
+# Order Type Detection Tests
+# =============================================================================
+
+class TestOrderTypeDetection:
+    """Tests for pickup/delivery order type detection."""
+
+    @pytest.mark.parametrize("input_text,expected", [
+        # Delivery order patterns
+        ("I would like to place a delivery order", "delivery"),
+        ("I'd like to place a delivery order", "delivery"),
+        ("place a delivery order", "delivery"),
+        ("this is for delivery", "delivery"),
+        ("for delivery please", "delivery"),
+        ("can you deliver", "delivery"),
+        ("delivery please", "delivery"),
+        ("delivery", "delivery"),
+        ("to be delivered", "delivery"),
+        # Pickup order patterns
+        ("I would like to place a pickup order", "pickup"),
+        ("I'd like to place a pick up order", "pickup"),
+        ("place a pickup order", "pickup"),
+        ("this is for pickup", "pickup"),
+        ("for pickup please", "pickup"),
+        ("I'll pick it up", "pickup"),
+        ("I will pick it up", "pickup"),
+        ("pickup please", "pickup"),
+        ("pickup", "pickup"),
+        ("pick-up", "pickup"),
+    ])
+    def test_order_type_detection_only(self, input_text, expected):
+        """Test detecting order type when no items are specified."""
+        from orderbot.tasks.parsers.deterministic.core import parse_open_input_deterministic
+        result = parse_open_input_deterministic(input_text)
+        assert result is not None, f"Expected result for '{input_text}'"
+        assert result.order_type == expected, f"Expected order_type='{expected}' for '{input_text}', got '{result.order_type}'"
+        # When only order type is specified, no items should be parsed
+        assert not result.parsed_items, f"Expected no items for '{input_text}', got {result.parsed_items}"
+
+    def test_order_type_not_detected_for_regular_input(self):
+        """Test that order type is not detected for unrelated input."""
+        from orderbot.tasks.parsers.deterministic.core import parse_open_input_deterministic
+        # These should not trigger order type detection
+        result = parse_open_input_deterministic("I'd like a bagel")
+        assert result is not None
+        assert result.order_type is None
+
+    def test_delivery_with_items(self):
+        """Test that order type is captured along with items when both are specified."""
+        from orderbot.tasks.parsers.deterministic.core import parse_open_input_deterministic
+        # This tests that "delivery order" + item works
+        result = parse_open_input_deterministic("I'd like to place a delivery order and get a bagel")
+        assert result is not None
+        assert result.order_type == "delivery"
+        # Should also have parsed the bagel
+        assert result.parsed_items is not None
+        assert len(result.parsed_items) > 0

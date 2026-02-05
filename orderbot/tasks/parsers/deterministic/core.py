@@ -7,6 +7,7 @@ all sub-parsers to parse user input without LLM calls.
 
 import re
 import logging
+from typing import Literal
 
 from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
@@ -56,6 +57,110 @@ from .modification_parsing import (
 from .tokenization import _parse_multi_item_order
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Order Type Detection (Pickup/Delivery)
+# =============================================================================
+
+# Patterns for pickup/delivery detection
+ORDER_TYPE_PATTERNS: dict[str, re.Pattern] = {
+    "pickup": re.compile(
+        r"(?:place\s+)?(?:a\s+)?(?:pick[\s-]?up)\s+order"
+        r"|(?:for|is\s+for)\s+(?:pick[\s-]?up)"
+        r"|i(?:'ll|\s+will)\s+pick\s+(?:it\s+)?up"
+        r"|(?:^|\s)(?:pick[\s-]?up)(?:\s+please)?(?:$|\s)",
+        re.IGNORECASE
+    ),
+    "delivery": re.compile(
+        r"(?:place\s+)?(?:a\s+)?delivery\s+order"
+        r"|(?:for|is\s+for)\s+delivery"
+        r"|to\s+be\s+deliver(?:y|ed)"
+        r"|can\s+you\s+deliver"
+        r"|(?:^|\s)delivery(?:\s+please)?(?:$|\s)",
+        re.IGNORECASE
+    ),
+}
+
+
+def _extract_order_type(text: str) -> Literal["pickup", "delivery"] | None:
+    """Extract pickup/delivery order type from text.
+
+    Args:
+        text: User input text
+
+    Returns:
+        "pickup", "delivery", or None if not detected
+    """
+    for order_type, pattern in ORDER_TYPE_PATTERNS.items():
+        if pattern.search(text):
+            return order_type  # type: ignore[return-value]
+    return None
+
+
+def _strip_order_type_phrase(text: str) -> str:
+    """Remove order type phrases from text to continue parsing remaining content.
+
+    Args:
+        text: User input text
+
+    Returns:
+        Text with order type phrases removed
+    """
+    result = text
+    # Remove common order type phrases
+    result = re.sub(
+        r"(?:i(?:'d| would) like to )?(?:place\s+)?(?:a\s+)?(?:pick[\s-]?up|delivery)\s+order",
+        "", result, flags=re.IGNORECASE
+    )
+    result = re.sub(r"(?:for|is\s+for)\s+(?:pick[\s-]?up|delivery)", "", result, flags=re.IGNORECASE)
+    result = re.sub(r"i(?:'ll|\s+will)\s+pick\s+(?:it\s+)?up", "", result, flags=re.IGNORECASE)
+    result = re.sub(r"to\s+be\s+deliver(?:y|ed)", "", result, flags=re.IGNORECASE)
+    result = re.sub(r"can\s+you\s+deliver", "", result, flags=re.IGNORECASE)
+    result = re.sub(r"(?:^|\s)(?:pick[\s-]?up|delivery)(?:\s+please)?(?:$|\s)", " ", result, flags=re.IGNORECASE)
+    return result.strip()
+
+
+def _is_only_filler(text: str) -> bool:
+    """Check if text contains only filler words after stripping order type.
+
+    Args:
+        text: Text to check
+
+    Returns:
+        True if text is empty or only contains filler words
+    """
+    # Remove common filler words and check if anything meaningful remains
+    filler_words = {
+        "and", "also", "i", "want", "would", "like", "to", "a", "an", "the", "please",
+        "this", "is", "it", "that", "for", "can", "you", "be",
+    }
+    words = text.lower().split()
+    meaningful_words = [w for w in words if w not in filler_words]
+    return len(meaningful_words) == 0
+
+
+def _add_order_type_to_response(
+    response: OpenInputResponse | None,
+    order_type: Literal["pickup", "delivery"] | None
+) -> OpenInputResponse | None:
+    """Add order_type to a response if it has parsed_items.
+
+    Args:
+        response: The parser response (may be None)
+        order_type: The detected order type (may be None)
+
+    Returns:
+        Response with order_type added if applicable, otherwise unchanged
+    """
+    if response is None or order_type is None:
+        return response
+
+    # Only add order_type if response has items
+    if response.parsed_items:
+        response.order_type = order_type
+
+    return response
 
 
 # =============================================================================
@@ -118,6 +223,20 @@ def parse_open_input_deterministic(
     # Strip conversational fillers (after greeting/done checks, before order parsing)
     # e.g., "actually, make it two" -> "make it two"
     text = strip_conversational_fillers(text)
+
+    # Check for order type mentions (pickup/delivery)
+    order_type = _extract_order_type(text)
+    if order_type:
+        logger.debug("Deterministic parse: order type '%s' detected", order_type)
+        # Strip order type phrase from text to continue parsing any items
+        text_for_items = _strip_order_type_phrase(text)
+
+        # If nothing meaningful left, return just order type
+        if not text_for_items.strip() or _is_only_filler(text_for_items):
+            return OpenInputResponse(order_type=order_type)
+
+        # Continue parsing with cleaned text, will add order_type at the end
+        text = text_for_items
 
     # Check for price inquiries
     price_result = parse_price_inquiry(text)
@@ -360,20 +479,20 @@ def parse_open_input_deterministic(
     # Generic, data-driven parser that works for any configurable item type
     split_qty_result = _parse_split_quantity_items(text)
     if split_qty_result:
-        return split_qty_result
+        return _add_order_type_to_response(split_qty_result, order_type)
 
     # Check for multi-item orders (e.g., "the leo and avocado toast")
     # Must run BEFORE single-item parsers to handle "X and Y" patterns
     # Has built-in logic to avoid splitting modifier chains like "bagel with butter and cream cheese"
     multi_item_result = _parse_multi_item_order(text)
     if multi_item_result:
-        return multi_item_result
+        return _add_order_type_to_response(multi_item_result, order_type)
 
     # Check for configurable items using data-driven patterns
     # This ensures "bagel with cream cheese" goes to bagel parser, not cream cheese menu item
     configurable_item_result = _parse_configurable_item(text)
     if configurable_item_result:
-        return configurable_item_result
+        return _add_order_type_to_response(configurable_item_result, order_type)
 
     # Data-driven menu item lookup - runs AFTER configurable item parsing
     # This matches direct menu items from the database (known_menu_items already excludes
@@ -407,13 +526,15 @@ def parse_open_input_deterministic(
             )
             for _ in range(qty)
         ]
-        return OpenInputResponse(parsed_items=menu_item_parsed_items)
+        return _add_order_type_to_response(
+            OpenInputResponse(parsed_items=menu_item_parsed_items), order_type
+        )
 
     # Check for simple items (beverages, pastries, sides, etc. - no config needed)
     simple_result = _parse_simple_item_deterministic(text)
     if simple_result:
         logger.info("DETERMINISTIC SIMPLE ITEM: matched '%s'", text[:50])
-        return simple_result
+        return _add_order_type_to_response(simple_result, order_type)
 
     # Check if user ordered just an ingredient/modifier without specifying an item
     # e.g., "I want caramel syrup" - we should suggest items that can have this modifier

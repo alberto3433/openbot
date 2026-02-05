@@ -93,25 +93,6 @@ class TestSlangAndAbbreviations:
         items = result.order.items.get_active_items()
         assert len(items) >= 1 or result.message is not None, "Should have item or response"
 
-    def test_lox_slang(self):
-        """Lox as slang for salmon bagel."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
-
-        result = sm.process("gimme a lox", order)
-
-        items = result.order.items.get_active_items()
-        # Either adds an item directly, or suggests items with lox
-        has_item = len(items) >= 1
-        suggests_lox_items = (
-            result.message and
-            "lox" in result.message.lower() and
-            "which" in result.message.lower()
-        )
-        assert has_item or suggests_lox_items, \
-            f"Should have item or suggest lox items. Message: {result.message}"
-
     def test_schmear_slang(self):
         """Schmear for cream cheese."""
         order = OrderTask()

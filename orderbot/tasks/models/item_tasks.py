@@ -520,6 +520,15 @@ class MenuItemTask(ItemTask):
             for item in value:
                 if isinstance(item, str):
                     self.add_selection(item, key)
+                elif isinstance(item, dict) and "slug" in item:
+                    # Handle dict entries from extraction (e.g., spread modifiers)
+                    self.add_selection(
+                        slug=item["slug"],
+                        category=key,
+                        quantity=item.get("quantity", 1),
+                        display_name=item.get("display_name"),
+                        ingredient_category=item.get("category"),
+                    )
         else:
             self.add_selection(str(value), key)
 

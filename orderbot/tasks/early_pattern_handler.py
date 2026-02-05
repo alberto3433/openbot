@@ -33,6 +33,12 @@ from .modifier_input_handler import (
     match_category_removal_pattern,
     remove_modifiers_by_category,
 )
+from .checkout_messages import (
+    item_added_anything_else,
+    sure_added_to_anything_else,
+    sure_removed_anything_else,
+    sure_updated_anything_else,
+)
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -110,16 +116,10 @@ class EarlyPatternHandler:
 
         logger.info("TAKING_ITEMS: Added %d more of '%s'", added_count, last_item_name)
 
-        if added_count == 1:
-            return StateMachineResult(
-                message=f"I've added a second {last_item_name}. Anything else?",
-                order=order,
-            )
-        else:
-            return StateMachineResult(
-                message=f"I've added {added_count} more {last_item_name}. Anything else?",
-                order=order,
-            )
+        return StateMachineResult(
+            message=item_added_anything_else(added_count, last_item_name),
+            order=order,
+        )
 
     def handle_modifier_change_request(
         self,
@@ -164,7 +164,7 @@ class EarlyPatternHandler:
         last_item = get_last_item(active_items)
         updated_summary = recalculate_and_summarize(last_item, self.pricing)
         return StateMachineResult(
-            message=f"Sure, I've updated that to {updated_summary}. Anything else?",
+            message=sure_updated_anything_else(updated_summary),
             order=order,
         )
 
@@ -256,7 +256,7 @@ class EarlyPatternHandler:
                 updated_summary = recalculate_and_summarize(last_item, self.pricing)
                 category_display = menu_cache.get_ingredient_category_display_name(removed_category)
                 return StateMachineResult(
-                    message=f"Sure, I've removed the {category_display.lower()}. Your order is now {updated_summary}. Anything else?",
+                    message=sure_removed_anything_else(category_display.lower(), updated_summary),
                     order=order,
                 )
 
@@ -266,7 +266,7 @@ class EarlyPatternHandler:
         if made_change:
             updated_summary = recalculate_and_summarize(last_item, self.pricing)
             return StateMachineResult(
-                message=f"Sure, I've added that to your {updated_summary}. Anything else?",
+                message=sure_added_to_anything_else(updated_summary),
                 order=order,
             )
 

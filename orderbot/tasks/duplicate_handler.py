@@ -17,7 +17,7 @@ from typing import Callable, TYPE_CHECKING
 from orderbot.cache import menu_cache
 from .pending_fields import PendingField
 from .schemas import StateMachineResult
-from .checkout_messages import ErrorMessages, item_added_anything_else
+from .checkout_messages import ErrorMessages, item_added_anything_else, duplicated_order_anything_else
 from .handler_utils import (
     build_item_options_list,
     build_item_selection_question,
@@ -381,18 +381,11 @@ class DuplicateHandler:
             for _ in range(added_count):
                 order.items.add_item(last_item.duplicate())
 
-            if added_count == 1:
-                logger.info("Added 1 more of '%s' to order", last_item_name)
-                return StateMachineResult(
-                    message=f"I've added a second {last_item_name}. Anything else?",
-                    order=order,
-                )
-            else:
-                logger.info("Added %d more of '%s' to order", added_count, last_item_name)
-                return StateMachineResult(
-                    message=f"I've added {added_count} more {last_item_name}. Anything else?",
-                    order=order,
-                )
+            logger.info("Added %d more of '%s' to order", added_count, last_item_name)
+            return StateMachineResult(
+                message=item_added_anything_else(added_count, last_item_name),
+                order=order,
+            )
 
         # Multiple items in cart - ask which one to duplicate
         else:
@@ -563,6 +556,6 @@ class DuplicateHandler:
             )
         else:
             return StateMachineResult(
-                message="I've duplicated everything in your order. Anything else?",
+                message=duplicated_order_anything_else(),
                 order=order,
             )

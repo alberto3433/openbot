@@ -161,9 +161,9 @@ class TestSyrupToExistingBeverage:
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
         assert item.menu_item_type == "espresso", f"Expected menu_item_type='espresso', got '{item.menu_item_type}'"
 
-        # If database is configured to ask about shots first, answer that
+        # If database is configured to ask about shots first, skip it
         if "shots" in result.message.lower():
-            result = sm.process("single", result.order)
+            result = sm.process("no", result.order)
 
         # Now bot should ask about milk/sweetener/syrup
         assert "milk" in result.message.lower() or "sweetener" in result.message.lower() or "syrup" in result.message.lower(), \

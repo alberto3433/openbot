@@ -97,6 +97,69 @@ def item_added_anything_else(count: int, item_name: str) -> str:
     return f"I've added {count} more {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
+def sure_added_to_anything_else(item_summary: str) -> str:
+    """Generate "Sure, I've added that to your X. Anything else?" response.
+
+    Used when adding modifiers to an existing item.
+
+    Args:
+        item_summary: Summary of the item with the addition
+
+    Returns:
+        Formatted response string
+    """
+    return f"Sure, I've added that to your {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def sure_removed_anything_else(removed_name: str, item_summary: str | None = None) -> str:
+    """Generate "Sure, I've removed the X. Anything else?" response.
+
+    Used when removing modifiers or ingredients.
+
+    Args:
+        removed_name: Name of what was removed (e.g., "milk", "bacon")
+        item_summary: Optional updated item summary to include
+
+    Returns:
+        Formatted response string
+    """
+    if item_summary:
+        return f"Sure, I've removed the {removed_name}. Your order is now {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
+    return f"Sure, I've removed the {removed_name}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def sure_changed_anything_else(
+    attr_name: str,
+    new_value: str,
+    item_summary: str | None = None,
+) -> str:
+    """Generate "Sure, I've changed the X to Y. Anything else?" response.
+
+    Used when changing a modifier or attribute value.
+
+    Args:
+        attr_name: Name of what was changed (e.g., "spread", "milk")
+        new_value: The new value
+        item_summary: Optional updated item summary
+
+    Returns:
+        Formatted response string
+    """
+    if item_summary:
+        return f"Sure, I've changed the {attr_name} to {new_value}. Your order is now {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
+    return f"Sure, I've changed the {attr_name} to {new_value}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def no_problem_removed_anything_else() -> str:
+    """Generate "No problem, I've removed that. Anything else?" response."""
+    return f"No problem, I've removed that. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def duplicated_order_anything_else() -> str:
+    """Generate "I've duplicated all items in your order. Anything else?" response."""
+    return f"I've duplicated all items in your order. {CheckoutMessages.ANYTHING_ELSE}"
+
+
 # =============================================================================
 # Error Recovery Messages
 # =============================================================================

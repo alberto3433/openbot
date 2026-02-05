@@ -871,9 +871,11 @@
           </div>
 
           <div class="field">
-            <label for="aliases">Synonyms</label>
-            <input type="text" id="aliases" placeholder="e.g., coffee, java, brew" />
-            <div class="hint">Comma-separated synonyms for matching this item type. Must be globally unique.</div>
+            <label>Synonyms</label>
+            <div class="tag-input-container" id="aliasesContainer" onclick="document.getElementById('aliasInput').focus()">
+              <input id="aliasInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
+            </div>
+            <div class="hint">Alternative names for matching this item type. Press Enter to add each one. Must be globally unique.</div>
           </div>
 
           <div class="field">
@@ -1223,6 +1225,7 @@
     </div>
   </div>
 
+  <script src="/static/admin_common.js"></script>
   <script>
     // API base URLs
     const API_BASE = "/api/v1/admin/modifiers/item-types";
@@ -1268,6 +1271,11 @@
     const slotModal = document.getElementById("slotModal");
     const slotOptionModal = document.getElementById("slotOptionModal");
     const deleteSlotModal = document.getElementById("deleteSlotModal");
+
+    // Tag input elements for aliases
+    const aliasesContainerEl = document.getElementById("aliasesContainer");
+    const aliasInputEl = document.getElementById("aliasInput");
+    setupTagInput(aliasInputEl, aliasesContainerEl);
 
     // Authenticated fetch helper
     async function authFetch(url, options = {}) {
@@ -1561,7 +1569,7 @@
       document.getElementById("displayName").value = "";
       document.getElementById("slug").value = "";
       document.getElementById("slug").dataset.manuallyEdited = "";
-      document.getElementById("aliases").value = "";
+      clearTags(aliasesContainerEl, aliasInputEl);
       document.getElementById("itemTypeCategory").value = "";
       document.getElementById("itemStats").style.display = "none";
       linkedAttributes = [];
@@ -1604,7 +1612,7 @@
           const fullDetails = await response.json();
           showItemStats(fullDetails);
           // Populate aliases from full details
-          document.getElementById("aliases").value = (fullDetails.aliases || []).join(", ");
+          setTags(aliasesContainerEl, aliasInputEl, fullDetails.aliases || []);
           // Set category dropdown
           document.getElementById("itemTypeCategory").value = fullDetails.overall_category_id || "";
         }
@@ -1612,7 +1620,7 @@
         console.error("Failed to load full item type details:", error);
         // Hide stats on error
         document.getElementById("itemStats").style.display = "none";
-        document.getElementById("aliases").value = "";
+        clearTags(aliasesContainerEl, aliasInputEl);
         document.getElementById("itemTypeCategory").value = "";
       }
 
@@ -1647,7 +1655,7 @@
       const saveBtn = document.getElementById("saveBtn");
       const displayName = document.getElementById("displayName").value.trim();
       const slug = document.getElementById("slug").value.trim().toLowerCase();
-      const aliases = document.getElementById("aliases").value.trim();
+      const aliases = getTagValues(aliasesContainerEl).join(",");
       const categoryValue = document.getElementById("itemTypeCategory").value;
       const categoryId = categoryValue ? parseInt(categoryValue) : null;
 
@@ -2475,6 +2483,5 @@
     loadItemTypes();
     loadCategories();
   </script>
-  <script src="/static/admin_common.js"></script>
 </body>
 </html>

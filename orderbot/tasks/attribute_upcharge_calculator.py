@@ -111,7 +111,7 @@ class AttributeUpchargeCalculator:
         if isinstance(attr_value, list):
             # Multi-select: sum prices for each item
             return self._process_list_attribute(
-                item_type, attr_slug, attr_value, included_categories
+                item_type, attr_slug, attr_value, item_modifiers, included_categories
             )
 
         if isinstance(attr_value, (int, float)):
@@ -131,6 +131,7 @@ class AttributeUpchargeCalculator:
         item_type: str,
         attr_slug: str,
         values: list,
+        item_modifiers: list,
         included_categories: set[str],
     ) -> tuple[float, set[str]]:
         """Process a multi-select attribute value list.
@@ -145,13 +146,25 @@ class AttributeUpchargeCalculator:
             if isinstance(item_val, str) and item_val.lower() != "none":
                 # Normalize for consistent tracking
                 item_val_normalized = normalize_to_slug(item_val)
+
+                # Look up quantity from item_modifiers
+                matching_modifier = next(
+                    (m for m in item_modifiers
+                     if normalize_to_slug(m.get("slug") or "") == item_val_normalized),
+                    None
+                )
+                quantity = matching_modifier.get("quantity", 1) if matching_modifier else 1
+
                 # Always look up from DB - single source of truth
                 upcharge = self._pricing.lookup_attribute_option_upcharge(
                     item_type, attr_slug, item_val, included_categories
                 )
                 if upcharge > 0:
-                    total += upcharge
+                    total += upcharge * quantity
                     priced_slugs.add(item_val_normalized)
+                    # Update modifier's price for display purposes
+                    if matching_modifier:
+                        matching_modifier["price"] = upcharge
                 else:
                     # Check if category is included
                     option_category = self._pricing._get_option_ingredient_category(
@@ -160,11 +173,16 @@ class AttributeUpchargeCalculator:
                     if option_category and option_category in included_categories:
                         # Mark as priced even at $0 to prevent double-counting
                         priced_slugs.add(item_val_normalized)
+                        if matching_modifier:
+                            matching_modifier["price"] = 0.0
                     else:
                         price = self._pricing.lookup_modifier_price(item_val, item_type)
-                        total += price
+                        total += price * quantity
                         # Always mark as priced to prevent double-counting
                         priced_slugs.add(item_val_normalized)
+                        # Update modifier's price for display purposes
+                        if matching_modifier:
+                            matching_modifier["price"] = price
 
             elif isinstance(item_val, dict):
                 slug, qty = extract_modifier_slug_and_quantity(item_val)

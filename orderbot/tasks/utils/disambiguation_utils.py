@@ -5,7 +5,6 @@ This module provides display formatting utilities for disambiguation scenarios.
 All matching logic has been consolidated into OptionMatcher.match_from_numbered_list().
 
 Utilities:
-- normalize_input(): Delegates to normalization.strip_filler_words()
 - get_aliases(): Extract aliases from an option dict
 - format_options_list(): Format options as a numbered list
 
@@ -13,29 +12,12 @@ For matching, use:
     from orderbot.tasks.utils import OptionMatcher
     matcher = OptionMatcher()
     match = matcher.match_from_numbered_list(user_input, options)
+
+For input normalization, use:
+    from orderbot.tasks.normalization import strip_filler_words
 """
 
-import logging
-
 from .text import format_numbered_list
-from ..normalization import strip_filler_words
-
-logger = logging.getLogger(__name__)
-
-
-def normalize_input(user_input: str) -> str:
-    """Normalize user input by removing common filler words.
-
-    Delegates to normalization.strip_filler_words() - the single source
-    of truth for filler word removal.
-
-    Args:
-        user_input: Raw user input
-
-    Returns:
-        Cleaned, lowercased input
-    """
-    return strip_filler_words(user_input)
 
 
 def get_aliases(opt: dict) -> list[str]:

@@ -16,6 +16,31 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
     """Parse 'what X do you have?' type menu queries."""
     text_lower = text.lower().strip()
 
+    # Check for "X by the pound" pattern first (e.g., "fish by the pound", "cheese by the pound")
+    # This is a bare category reference that should list available items in that category
+    by_pound_pattern = re.compile(
+        r"^(?:the\s+)?(.+?)\s+by\s+the\s+pound\s*(?:please)?[.?!]?$",
+        re.IGNORECASE
+    )
+    by_pound_match = by_pound_pattern.match(text_lower)
+    if by_pound_match:
+        category_term = by_pound_match.group(1).strip()
+        # Check if it maps to a known category (DB lookup)
+        category_info = menu_cache.get_category_keyword_mapping(category_term)
+        if category_info:
+            menu_type = category_info["slug"]
+            logger.info("MENU QUERY (by the pound): '%s' -> menu_query_type=%s", text[:50], menu_type)
+            return OpenInputResponse(
+                menu_query=True,
+                menu_query_type=menu_type,
+            )
+        # Even if not in DB mapping, return as a menu query for fallback search
+        logger.info("MENU QUERY (by the pound fallback): '%s' -> menu_query_type=%s", text[:50], category_term)
+        return OpenInputResponse(
+            menu_query=True,
+            menu_query_type=category_term,
+        )
+
     # Check for specials/signature menu inquiries first
     # "do you have any specials today?", "what are your specials?", "any specials?"
     specials_patterns = [

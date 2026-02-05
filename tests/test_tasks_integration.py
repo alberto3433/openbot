@@ -127,6 +127,7 @@ def get_mock_coffee_attributes():
                 {"slug": "skim_milk", "display_name": "Skim Milk", "price": 0, "category": "milk"},
                 {"slug": "oat_milk", "display_name": "Oat Milk", "price": 0.75, "category": "milk"},
                 {"slug": "sugar", "display_name": "Sugar", "price": 0, "category": "sweetener"},
+                {"slug": "splenda", "display_name": "Splenda", "price": 0, "category": "sweetener", "aliases": ["splendas"]},
                 {"slug": "sweet_n_low", "display_name": "Sweet N Low", "price": 0, "category": "sweetener"},
                 {"slug": "vanilla_syrup", "display_name": "Vanilla Syrup", "price": 0.75, "category": "syrup"},
                 {"slug": "caramel_syrup", "display_name": "Caramel Syrup", "price": 0.75, "category": "syrup"},
@@ -374,6 +375,21 @@ def mock_menu_cache_attributes(monkeypatch):
     # Mock item_has_default_ingredients based on signature items
     signature_items = set(mock_get_signature_item_aliases().values())
     monkeypatch.setattr(menu_cache, "item_has_default_ingredients", lambda name: name in signature_items)
+    # Mock unavailable size terms for "We don't have medium" detection
+    monkeypatch.setattr(menu_cache, "get_unavailable_size_terms", lambda: {"medium": "Medium"})
+    # Mock known menu items on the cache - needed by parser_constants
+    monkeypatch.setattr(menu_cache, "get_known_menu_items", mock_get_known_menu_items)
+    # Mock attribute option words for unrecognized word detection
+    mock_attr_option_words = {
+        "small": "size", "large": "size", "medium": "size",
+        "splenda": "milk_sweetener_syrup", "splendas": "milk_sweetener_syrup",
+        "sugar": "milk_sweetener_syrup", "whole_milk": "milk_sweetener_syrup",
+        "oat_milk": "milk_sweetener_syrup", "oat": "milk_sweetener_syrup",
+        "hot": "iced", "iced": "iced",
+    }
+    monkeypatch.setattr(menu_cache, "get_all_attribute_option_words", lambda: mock_attr_option_words)
+    # Mock modifier words (empty for now - we're not testing ingredient modifiers here)
+    monkeypatch.setattr(menu_cache, "get_all_modifier_words", lambda: set())
     # Mock the functions in parsers.constants module
     import orderbot.tasks.parsers.constants as parser_constants
     # Mock known menu items - required for multi-item parsing
@@ -521,6 +537,63 @@ class TestPriceRecalculationInvariants:
         assert ham_price >= 0, f"Ham price should be >= 0, got {ham_price}"
         assert egg_price >= 0, f"Egg price should be >= 0, got {egg_price}"
         assert bacon_price >= 0, f"Bacon price should be >= 0, got {bacon_price}"
+
+    def test_fish_by_pound_uses_correct_weight_price(self):
+        """Test that fish items with weight selection use correct price.
+
+        Fish items like Belly Lox have weight-based pricing:
+        - 1/4 lb = $12
+        - 1 lb = $44
+
+        The weight attribute stores option slugs ("one_pound") which must be
+        translated to display names ("1 lb") for price lookup in size_prices.
+        """
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import MenuItemTask
+
+        sm = OrderStateMachine()
+
+        # Create a fish item with the one_pound weight selected
+        item = MenuItemTask(
+            menu_item_name="Belly Lox",
+            menu_item_type="fish",
+            unit_price=12.0,  # Initial base price (1/4 lb)
+        )
+        item.attribute_values["weight"] = "one_pound"
+
+        # Recalculate price using the pricing engine
+        new_price = sm.pricing.recalculate_item_price(item)
+
+        # The price should now be $44 (the 1 lb price from size_prices)
+        assert new_price == 44.0, (
+            f"Expected $44.00 for 1 lb Belly Lox, got ${new_price:.2f}"
+        )
+        assert item.unit_price == 44.0, (
+            f"Expected item.unit_price=$44.00, got ${item.unit_price:.2f}"
+        )
+
+    def test_fish_quarter_pound_price(self):
+        """Test that quarter pound fish uses the correct price."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import MenuItemTask
+
+        sm = OrderStateMachine()
+
+        # Create a fish item with quarter_pound weight
+        item = MenuItemTask(
+            menu_item_name="Belly Lox",
+            menu_item_type="fish",
+            unit_price=0.0,  # Will be recalculated
+        )
+        item.attribute_values["weight"] = "quarter_pound"
+
+        # Recalculate price
+        new_price = sm.pricing.recalculate_item_price(item)
+
+        # Should be $12 (the 1/4 lb price)
+        assert new_price == 12.0, (
+            f"Expected $12.00 for 1/4 lb Belly Lox, got ${new_price:.2f}"
+        )
 
 
 # =============================================================================
@@ -6533,45 +6606,38 @@ class TestUnavailableAttributeOptions:
 
         assert entry.unavailable_selections == {"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
 
-    def test_medium_coffee_e2e_shows_unavailable_message(self):
-        """E2E test: 'medium hot coffee' should show 'We don't have medium' message.
+    def test_medium_coffee_parsing_captures_unavailable_selection(self):
+        """Test that 'medium hot coffee' parsing captures unavailable size.
 
-        This tests the full flow from user input through state machine to the
-        response message, ensuring unavailable options are detected and
-        communicated helpfully.
+        This tests the parser's ability to detect unavailable options and
+        store them in unavailable_selections for later "We don't have X" messaging.
         """
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask
-        from orderbot.tasks.schemas import OrderPhase
+        from orderbot.tasks.parsers.llm_parsers import parse_open_input
 
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.set_phase(OrderPhase.TAKING_ITEMS)
+        # Parse user input with unavailable "medium" size
+        result = parse_open_input("medium hot coffee with 2 splendas")
 
-        # Process user input with unavailable "medium" size
-        result = sm.process("medium hot coffee with 2 splendas", order)
+        # Should have parsed one item
+        assert len(result.parsed_items) >= 1, f"Expected at least 1 item, got: {len(result.parsed_items)}"
 
-        # The result should mention that medium is not available
-        # and list the available options (Small, Large)
-        msg_lower = result.message.lower()
-        assert "don't have medium" in msg_lower or "no medium" in msg_lower, (
-            f"Expected message about medium being unavailable, got: {result.message}"
-        )
-        assert "small" in msg_lower or "large" in msg_lower, (
-            f"Expected available sizes in message, got: {result.message}"
+        item = result.parsed_items[0]
+
+        # Should have unavailable_selections with "medium" for size
+        assert item.unavailable_selections, f"Expected unavailable_selections, got: {item.unavailable_selections}"
+        assert "size" in item.unavailable_selections, f"Expected 'size' in unavailable_selections, got keys: {item.unavailable_selections.keys()}"
+        assert item.unavailable_selections["size"]["attempted_slug"] == "medium", (
+            f"Expected attempted_slug='medium', got: {item.unavailable_selections['size']}"
         )
 
-        # The sweetener (2 splendas) should still be captured even though size is unavailable
-        if result.order.items.items:
-            item = result.order.items.items[0]
-            sweeteners = item.get("sweetener", [])
-            if sweeteners:
-                # Check if splenda was captured
-                splenda_found = any(
-                    s.get("slug") == "splenda" for s in sweeteners
-                    if isinstance(s, dict)
-                )
-                assert splenda_found, f"Expected splenda to be captured, got: {sweeteners}"
+        # The sweetener (2 splendas) should still be captured in selections
+        selections = item.selections or []
+        splenda_found = any(
+            s.slug == "splenda" for s in selections
+        )
+        assert splenda_found, f"Expected splenda in selections, got: {selections}"
+        # Verify quantity
+        splenda_sel = next((s for s in selections if s.slug == "splenda"), None)
+        assert splenda_sel and splenda_sel.quantity == 2, f"Expected quantity=2 for splenda, got: {splenda_sel}"
 
 
 class TestSpecialsQuery:

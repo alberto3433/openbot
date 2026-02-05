@@ -1586,91 +1586,7 @@ orderbot/tasks/pricing.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
-orderbot/tasks/schemas/parser_responses.py:
-  - term: bacon
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: bagel
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: bagels
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: beverage
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: cinnamon raisin
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: coffee
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: cream cheese
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: everything
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: hot
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: hot chocolate
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: iced
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: juice
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: large
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: latte
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: lox
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: mayo
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: medium
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: omelette
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: plain
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sandwich
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sesame
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: side
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: snack
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: soda
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: tea
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: toasted
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
-  - term: vanilla
-    context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
+orderbot/tasks/schemas/parser_responses.py: "*"
 
 orderbot/tasks/state_machine.py:
   - term: bagel
@@ -1803,3 +1719,63 @@ orderbot/voice_vapi.py:
   - term: bagels
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/cache/loaders/menu_items.py:
+  - term: side
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/config_selection_handler.py:
+  - term: side
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/config_side_choice_handler.py:
+  - term: side
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/duplicate_handler.py:
+  - term: everything
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/menu_pagination_handler.py:
+  - term: everything
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/parsers/deterministic/core.py:
+  - term: everything
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/parsers/deterministic/instructions_extraction.py:
+  - term: side
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/parsers/deterministic/tokenization.py:
+  - term: side
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+  - term: snack
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+  - term: beverage
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/parsers/inquiry_patterns.py:
+  - term: breakfast
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+  - term: lunch
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
+orderbot/tasks/parsers/intent_patterns.py:
+  - term: everything
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+

@@ -88,9 +88,8 @@ def _lookup_option_price_in_attributes(
                     continue
 
                 if OptionMatcher.matches_value(opt, normalized_value, raw_value_lower, exact_only=exact_only):
-                    # Check both keys: "price_modifier" for attribute options,
-                    # "price" for ingredient-based options
-                    price = opt.get("price_modifier") or opt.get("price") or 0.0
+                    # Use consolidated price extraction utility
+                    price = OptionMatcher.get_option_price(opt)
                     return price, attr_slug
 
     return None, None
@@ -182,6 +181,19 @@ class PricingEngine(MenuDataMixin):
             for sp in size_prices:
                 if sp["size_name"] and sp["size_name"].lower() == size_lower:
                     return sp["price"], sp
+
+            # Try translating option slug to display name
+            # (e.g., "one_pound" -> "1 lb" for weight-based pricing)
+            size_category_slug = menu_item.get("size_category_slug")
+            if size_category_slug:
+                display_name = menu_cache.get_global_option_display_name(
+                    size_category_slug, size_name
+                )
+                if display_name:
+                    display_lower = display_name.lower().strip()
+                    for sp in size_prices:
+                        if sp["size_name"] and sp["size_name"].lower() == display_lower:
+                            return sp["price"], sp
 
         # No size specified and multiple sizes - return None to trigger disambiguation
         return None, None

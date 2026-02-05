@@ -145,6 +145,12 @@ class ItemTypeLoaderMixin:
                 if item_type.display_name.lower().endswith("s"):
                     triggers.add(item_type.display_name.lower()[:-1])
 
+            # Add item type aliases (e.g., "omelet" for "omelette")
+            for alias in item_type.aliases:
+                alias_lower = alias.strip().lower()
+                if alias_lower:
+                    triggers.add(alias_lower)
+
             # Use pre-built index instead of per-item-type query
             type_menu_items = menu_items_by_type_id.get(item_type.id, [])
 

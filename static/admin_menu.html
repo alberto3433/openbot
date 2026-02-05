@@ -260,10 +260,7 @@
     .attr-chip input[type="checkbox"] {
       display: none;
     }
-    /* Category autocomplete dropdown styles */
-    .category-input-wrapper {
-      position: relative;
-    }
+    /* Autocomplete dropdown styles */
     .autocomplete-dropdown {
       position: absolute;
       left: 0;
@@ -297,28 +294,6 @@
       color: #888;
       font-size: 13px;
       font-style: italic;
-    }
-    /* Category tag styling (reuses tag-item from admin_common.css) */
-    .category-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 8px;
-      background: #e3f2fd;
-      border: 1px solid #90caf9;
-      border-radius: 12px;
-      font-size: 12px;
-      color: #1565c0;
-    }
-    .category-tag .tag-remove {
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: bold;
-      color: #1976d2;
-      line-height: 1;
-    }
-    .category-tag .tag-remove:hover {
-      color: #d32f2f;
     }
     /* Toast notification styles */
     .toast-container {
@@ -660,15 +635,6 @@
         </div>
 
         <div class="field">
-          <label>Categories</label>
-          <div class="tag-input-container category-input-wrapper" id="categoriesContainer" onclick="document.getElementById('categoryInput').focus()">
-            <input id="categoryInput" class="tag-input" type="text" placeholder="Type to search categories..." autocomplete="off" />
-          </div>
-          <div class="autocomplete-dropdown" id="categoryDropdown"></div>
-          <small style="color: #666; font-size: 0.8em;">Type to search and select categories (e.g., Drink, Food)</small>
-        </div>
-
-        <div class="field">
           <label>Aliases (synonyms for matching)</label>
           <div class="tag-input-container" id="aliasesContainer" onclick="document.getElementById('aliasInput').focus()">
             <input id="aliasInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
@@ -722,7 +688,6 @@
     let currentIndex = -1;
     let currentTab = "details";  // Track selected tab across row changes
     let itemTypes = []; // Store item types for dropdown
-    let allCategories = []; // Store categories for multi-select
     let sizeCategories = []; // Store size categories with their sizes
     let allIngredients = []; // All ingredients from API
     let itemIngredients = []; // Current item's ingredients [{ingredient_id, quantity, ingredient_name, ingredient_category}, ...]
@@ -789,16 +754,8 @@
     const requiredPhrasesContainerEl = document.getElementById("requiredPhrasesContainer");
     const requiredPhraseInputEl = document.getElementById("requiredPhraseInput");
 
-    // Category autocomplete elements
-    const categoriesContainerEl = document.getElementById("categoriesContainer");
-    const categoryInputEl = document.getElementById("categoryInput");
-    const categoryDropdownEl = document.getElementById("categoryDropdown");
-    let selectedCategoryIds = []; // Track selected categories
-    let highlightedIndex = -1; // For keyboard navigation
-
     setupTagInput(aliasInputEl, aliasesContainerEl);
     setupTagInput(requiredPhraseInputEl, requiredPhrasesContainerEl);
-    setupCategoryAutocomplete();
 
     document.getElementById("newItemBtn").addEventListener("click", () => {
       selectItemByIndex(-1, true);
@@ -856,18 +813,6 @@
       }
     }
 
-    // Load categories for the multi-select
-    async function loadCategories() {
-      try {
-        const resp = await fetch(`${API_BASE}/admin/categories`, { credentials: 'include' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        allCategories = data.categories || [];
-      } catch (err) {
-        console.error("Error loading categories:", err);
-        allCategories = [];
-      }
-    }
 
     // Load size categories with their sizes
     async function loadSizeCategories() {
@@ -1070,153 +1015,6 @@
       });
     }
 
-    // Setup category autocomplete functionality
-    function setupCategoryAutocomplete() {
-      // Input event - filter and show dropdown
-      categoryInputEl.addEventListener("input", () => {
-        const query = categoryInputEl.value.toLowerCase().trim();
-        showCategoryDropdown(query);
-      });
-
-      // Focus event - show all available categories
-      categoryInputEl.addEventListener("focus", () => {
-        const query = categoryInputEl.value.toLowerCase().trim();
-        showCategoryDropdown(query);
-      });
-
-      // Blur event - hide dropdown (with delay for click)
-      categoryInputEl.addEventListener("blur", () => {
-        setTimeout(() => {
-          categoryDropdownEl.classList.remove("show");
-        }, 200);
-      });
-
-      // Keyboard navigation
-      categoryInputEl.addEventListener("keydown", (e) => {
-        const items = categoryDropdownEl.querySelectorAll(".autocomplete-item");
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          highlightedIndex = Math.min(highlightedIndex + 1, items.length - 1);
-          updateHighlight(items);
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          highlightedIndex = Math.max(highlightedIndex - 1, 0);
-          updateHighlight(items);
-        } else if (e.key === "Enter") {
-          e.preventDefault();
-          if (highlightedIndex >= 0 && items[highlightedIndex]) {
-            const catId = parseInt(items[highlightedIndex].dataset.categoryId, 10);
-            addCategoryTag(catId);
-          }
-        } else if (e.key === "Escape") {
-          categoryDropdownEl.classList.remove("show");
-          categoryInputEl.blur();
-        } else if (e.key === "Backspace" && !categoryInputEl.value) {
-          // Remove last tag on backspace if input is empty
-          if (selectedCategoryIds.length > 0) {
-            const lastId = selectedCategoryIds[selectedCategoryIds.length - 1];
-            removeCategoryTag(lastId);
-          }
-        }
-      });
-
-      // Click outside to close
-      document.addEventListener("click", (e) => {
-        if (!categoriesContainerEl.contains(e.target) && !categoryDropdownEl.contains(e.target)) {
-          categoryDropdownEl.classList.remove("show");
-        }
-      });
-    }
-
-    function updateHighlight(items) {
-      items.forEach((item, i) => {
-        item.classList.toggle("highlighted", i === highlightedIndex);
-      });
-    }
-
-    function showCategoryDropdown(query) {
-      // Filter categories not already selected
-      const available = allCategories.filter(cat =>
-        !selectedCategoryIds.includes(cat.id) &&
-        (query === "" || cat.name.toLowerCase().includes(query))
-      );
-
-      if (available.length === 0) {
-        if (allCategories.length === 0) {
-          categoryDropdownEl.innerHTML = '<div class="autocomplete-no-results">No categories defined. <a href="/static/admin_overall_categories.html">Create categories</a></div>';
-        } else if (query) {
-          categoryDropdownEl.innerHTML = '<div class="autocomplete-no-results">No matching categories</div>';
-        } else {
-          categoryDropdownEl.innerHTML = '<div class="autocomplete-no-results">All categories selected</div>';
-        }
-      } else {
-        categoryDropdownEl.innerHTML = available.map(cat =>
-          `<div class="autocomplete-item" data-category-id="${cat.id}">${escapeHtml(cat.name)}</div>`
-        ).join("");
-
-        // Add click listeners
-        categoryDropdownEl.querySelectorAll(".autocomplete-item").forEach(item => {
-          item.addEventListener("mousedown", (e) => {
-            e.preventDefault(); // Prevent blur
-            const catId = parseInt(item.dataset.categoryId, 10);
-            addCategoryTag(catId);
-          });
-        });
-      }
-
-      highlightedIndex = -1;
-      categoryDropdownEl.classList.add("show");
-    }
-
-    function addCategoryTag(categoryId) {
-      if (selectedCategoryIds.includes(categoryId)) return;
-
-      const cat = allCategories.find(c => c.id === categoryId);
-      if (!cat) return;
-
-      selectedCategoryIds.push(categoryId);
-
-      // Create tag element
-      const tag = document.createElement("span");
-      tag.className = "category-tag";
-      tag.dataset.categoryId = categoryId;
-      tag.innerHTML = `<span class="tag-text">${escapeHtml(cat.name)}</span><span class="tag-remove">&times;</span>`;
-
-      tag.querySelector(".tag-remove").addEventListener("click", (e) => {
-        e.stopPropagation();
-        removeCategoryTag(categoryId);
-      });
-
-      // Insert before the input
-      categoriesContainerEl.insertBefore(tag, categoryInputEl);
-
-      // Clear input and hide dropdown
-      categoryInputEl.value = "";
-      categoryDropdownEl.classList.remove("show");
-    }
-
-    function removeCategoryTag(categoryId) {
-      selectedCategoryIds = selectedCategoryIds.filter(id => id !== categoryId);
-      const tag = categoriesContainerEl.querySelector(`.category-tag[data-category-id="${categoryId}"]`);
-      if (tag) tag.remove();
-    }
-
-    // Set categories from array of IDs (used when loading an item)
-    function setCategoryTags(ids = []) {
-      // Clear existing tags
-      categoriesContainerEl.querySelectorAll(".category-tag").forEach(tag => tag.remove());
-      selectedCategoryIds = [];
-      categoryInputEl.value = "";
-
-      // Add tags for each ID
-      ids.forEach(id => addCategoryTag(id));
-    }
-
-    // Get selected category IDs
-    function getSelectedCategoryIds() {
-      return [...selectedCategoryIds];
-    }
-
     function buildCategoryFilterFromItemTypes() {
       categoryFilterEl.innerHTML = '<option value="">All categories</option>';
       itemTypes.forEach(it => {
@@ -1346,9 +1144,6 @@
       document.getElementById("containsSesame").checked = false;
       document.getElementById("containsNuts").checked = false;
 
-      // Reset categories to none selected
-      setCategoryTags([]);
-
       // Reset size pricing to single price
       sizeCategorySelectEl.value = "";
       renderSizePrices(null, []);
@@ -1409,9 +1204,6 @@
       document.getElementById("containsFish").checked = !!item.contains_fish;
       document.getElementById("containsSesame").checked = !!item.contains_sesame;
       document.getElementById("containsNuts").checked = !!item.contains_nuts;
-
-      // Set category tags with item's current categories
-      setCategoryTags(item.category_ids || []);
 
       // Set size category and render prices
       sizeCategorySelectEl.value = item.size_category_id || "";
@@ -1477,9 +1269,6 @@
       const aliasValues = getTagValues(aliasesContainerEl);
       const requiredPhraseValues = getTagValues(requiredPhrasesContainerEl);
 
-      // Get selected category IDs
-      const selectedCategoryIds = getSelectedCategoryIds();
-
       // Collect size pricing
       const { sizeCategoryId, sizePrices, basePrice } = collectSizePrices();
 
@@ -1492,7 +1281,6 @@
         base_price: basePrice, // Set from first size price for backwards compatibility
         aliases: aliasValues.join(","),
         required_match_phrases: requiredPhraseValues.join(","),
-        category_ids: selectedCategoryIds,
         size_category_id: sizeCategoryId,
         size_prices: sizePrices,
         ingredients: itemIngredients.map(i => ({
@@ -1587,7 +1375,7 @@
     // Initialize: load all data in parallel for faster page load
     // Note: ingredients are lazy-loaded when Ingredients tab is clicked
     async function init() {
-      await Promise.all([loadItemTypes(), loadCategories(), loadSizeCategories(), loadMenuItems()]);
+      await Promise.all([loadItemTypes(), loadSizeCategories(), loadMenuItems()]);
 
       // Setup tab event listeners
       document.querySelectorAll('.detail-tab').forEach(tab => {

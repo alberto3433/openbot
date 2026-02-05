@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from .parsers.constants import ADD_MODIFIER_PATTERNS
-from .parsers.quantity_utils import extract_quantity_for_pattern, extract_additive_quantity
+from .parsers.quantity_utils import extract_additive_quantity
 from .handler_utils import (
     is_configurable_menu_item,
     get_last_item,

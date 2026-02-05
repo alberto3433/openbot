@@ -150,11 +150,6 @@ def sure_changed_anything_else(
     return f"Sure, I've changed the {attr_name} to {new_value}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
-def no_problem_removed_anything_else() -> str:
-    """Generate "No problem, I've removed that. Anything else?" response."""
-    return f"No problem, I've removed that. {CheckoutMessages.ANYTHING_ELSE}"
-
-
 def duplicated_order_anything_else() -> str:
     """Generate "I've duplicated all items in your order. Anything else?" response."""
     return f"I've duplicated all items in your order. {CheckoutMessages.ANYTHING_ELSE}"

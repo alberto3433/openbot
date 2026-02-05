@@ -131,6 +131,14 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
             for match in re.finditer(pattern, text_lower):
                 idx = match.start()
                 end_pos = match.end()
+                # Skip triggers preceded by negation words ("no", "without", "skip", "not")
+                # "no spread" is a modifier negation, not an item type reference
+                if idx > 0:
+                    text_before = text_lower[:idx].rstrip()
+                    if text_before:
+                        last_word = text_before.split()[-1] if text_before.split() else ""
+                        if last_word in {"no", "without", "skip", "not"}:
+                            continue
                 # Check if this match is in the "end region" (last 20% of text or last 15 chars)
                 text_len = len(text_lower)
                 end_region_start = max(text_len - 15, int(text_len * 0.8))
@@ -485,6 +493,15 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     start_pos = match.start()
                     end_pos = match.end()
                     trigger_lower = trigger.lower()
+
+                    # Skip triggers preceded by negation words ("no", "without", "skip", "not")
+                    # "no spread" is a modifier negation, not an item type reference
+                    if start_pos > 0:
+                        text_before = text_lower[:start_pos].rstrip()
+                        if text_before:
+                            last_word = text_before.split()[-1] if text_before.split() else ""
+                            if last_word in {"no", "without", "skip", "not"}:
+                                continue
 
                     # Skip if this trigger is part of a known compound modifier phrase
                     # that belongs to an UNRELATED category

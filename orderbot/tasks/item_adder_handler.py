@@ -31,6 +31,10 @@ from .unrecognized_item_handler import UnrecognizedItemHandler
 from .order_item_builder import OrderItemBuilder
 from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
+from .default_ingredients import (
+    populate_default_ingredients,
+    filter_redundant_default_selections,
+)
 
 if TYPE_CHECKING:
     from .context import OrderContext
@@ -441,7 +445,7 @@ class ItemAdderHandler(MenuDataMixin):
             # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
             # Check if item has default ingredients (more reliable than is_signature flag)
             if menu_item_id:
-                self._populate_default_ingredients(item)
+                populate_default_ingredients(item)
             # Apply pre-filled attributes
             if attributes:
                 for attr_name, attr_value in attributes.items():
@@ -451,55 +455,8 @@ class ItemAdderHandler(MenuDataMixin):
             # Apply pending ingredient from ingredient suggestion flow
             # (e.g., "I want caramel syrup" -> "yes" -> "iced coffee" -> apply caramel)
             # Only apply to the first item (first_item is None means this is the first)
-            if order.pending_ingredient_to_apply and self.menu_item_handler and first_item is None:
-                pending_ingredient = order.pending_ingredient_to_apply
-                # Clear it now so it's not applied to subsequent items in the loop
-                order.pending_ingredient_to_apply = None
-                # Find the attribute and option that match this ingredient
-                # Search through item type's attributes for an option matching the ingredient
-                attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
-                pending_lower = pending_ingredient.lower().strip()
-                pending_slug = pending_lower.replace(' ', '_')
-                found_attr_slug = None
-                found_option = None
-                for attr_slug_iter, attr_config in attrs.items():
-                    options = attr_config.get('options', [])
-                    for opt in options:
-                        opt_slug = opt.get('slug', '').lower()
-                        opt_display = opt.get('display_name', '').lower()
-                        opt_aliases = [a.lower() for a in (opt.get('aliases') or [])]
-                        # Match by slug, display name, or alias
-                        if (opt_slug == pending_slug or
-                            opt_display == pending_lower or
-                            pending_lower in opt_aliases):
-                            found_attr_slug = attr_slug_iter
-                            found_option = opt
-                            break
-                    if found_option:
-                        break
-
-                if found_attr_slug and found_option:
-                    # Get the correct slug and price from the matched option
-                    option_slug = found_option.get('slug', pending_ingredient)
-                    option_price = found_option.get('price_modifier', 0.0)
-                    # Create and apply the selection
-                    pending_selection = Selection(
-                        slug=option_slug,
-                        category=found_attr_slug,
-                        quantity=1,
-                        price=option_price,
-                        display_name=found_option.get('display_name'),
-                    )
-                    self.menu_item_handler._apply_selections(item, [pending_selection])
-                    logger.info(
-                        "Applied pending ingredient '%s' to %s (attr=%s, price=$%.2f)",
-                        pending_ingredient, canonical_name, found_attr_slug, option_price
-                    )
-                else:
-                    logger.warning(
-                        "Could not find attribute for pending ingredient '%s' on item type '%s'",
-                        pending_ingredient, item_type
-                    )
+            if first_item is None:
+                self._apply_pending_ingredient(item, order, item_type, canonical_name)
 
             # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
             self._infer_attributes_from_item_name(item)
@@ -592,117 +549,81 @@ class ItemAdderHandler(MenuDataMixin):
         logger.info("Added %d side item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
         return (canonical_name, None)
 
-    def _populate_default_ingredients(self, item: MenuItemTask) -> None:
-        """Load default ingredients for a menu item and populate as selections.
-
-        Loads from menu_item_ingredients junction table and adds each ingredient
-        as a selection with is_default=True. Default ingredients are included in
-        the base price (price=0.0) and won't trigger upsell questions.
-
-        Args:
-            item: The MenuItemTask to populate with default ingredients.
-        """
-        if not item.menu_item_id or not item.menu_item_type:
-            return
-
-        defaults = menu_cache.get_menu_item_default_ingredients(item.menu_item_id)
-        if not defaults:
-            logger.debug(
-                "No default ingredients found for menu item: %s (id=%s)",
-                item.menu_item_name, item.menu_item_id
-            )
-            return
-
-        logger.info(
-            "Populating %d default ingredients for menu item: %s",
-            len(defaults), item.menu_item_name
-        )
-
-        for default in defaults:
-            # Map ingredient category to attribute slug
-            attr_slug = menu_cache.get_attribute_for_ingredient_category(
-                item.menu_item_type,
-                default["ingredient_category"]
-            )
-            if not attr_slug:
-                logger.warning(
-                    "No attribute mapping for ingredient category '%s' on item type '%s'",
-                    default["ingredient_category"], item.menu_item_type
-                )
-                continue
-
-            # Add as selection with is_default=True
-            # Price is 0.0 because defaults are included in base price
-            item.add_selection(
-                slug=default["ingredient_slug"],
-                category=attr_slug,
-                quantity=default.get("quantity", 1),
-                price=0.0,
-                display_name=default["ingredient_name"],
-                ingredient_category=default["ingredient_category"],
-                is_default=True,
-            )
-
-            logger.debug(
-                "  Added default: %s (%s) -> attr=%s",
-                default["ingredient_name"], default["ingredient_slug"], attr_slug
-            )
-
-    def _filter_redundant_default_selections(
+    def _apply_pending_ingredient(
         self,
         item: MenuItemTask,
-        selections: list[Selection],
-    ) -> list[Selection]:
-        """Filter out selections that are redundant with default ingredients.
+        order: OrderTask,
+        item_type: str | None,
+        canonical_name: str,
+    ) -> None:
+        """Apply pending ingredient from ingredient suggestion flow.
 
-        When parsing "egg sandwich with eggs over easy", the parser extracts both
-        "egg" and "eggs" as protein modifiers. But The Classic already has eggs
-        as a default ingredient, so these are redundant.
+        When a user orders a modifier without an item (e.g., "I want caramel syrup"),
+        then confirms they want to add it to a drink (e.g., "yes"), then orders the item
+        (e.g., "iced coffee"), this method applies the pending ingredient to the new item.
 
-        This filters out selections where:
-        - The slug (or its singular form) matches a default ingredient slug
-        - AND quantity == 1 (explicit "extra eggs" or "2 eggs" should still add)
+        The pending ingredient is stored in order.pending_ingredient_to_apply and is
+        cleared after being applied to prevent it from being applied to subsequent items.
 
         Args:
-            item: The MenuItemTask with default ingredients already populated
-            selections: List of extracted selections to filter
-
-        Returns:
-            Filtered list of selections with redundant defaults removed
+            item: The MenuItemTask to apply the ingredient to.
+            order: The OrderTask containing the pending ingredient.
+            item_type: The item type slug for attribute lookup.
+            canonical_name: The menu item name for logging.
         """
-        if not selections:
-            return selections
+        if not order.pending_ingredient_to_apply or not self.menu_item_handler:
+            return
 
-        # Get default ingredient slugs from item's modifiers
-        default_slugs = set()
-        for mod in item.selections:
-            if mod.get("is_default"):
-                default_slugs.add(mod.get("slug", "").lower())
+        pending_ingredient = order.pending_ingredient_to_apply
+        # Clear it now so it's not applied to subsequent items
+        order.pending_ingredient_to_apply = None
 
-        if not default_slugs:
-            return selections
+        # Find the attribute and option that match this ingredient
+        # Search through item type's attributes for an option matching the ingredient
+        attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
+        pending_lower = pending_ingredient.lower().strip()
+        pending_slug = pending_lower.replace(' ', '_')
+        found_attr_slug = None
+        found_option = None
 
-        filtered = []
-        for sel in selections:
-            slug_lower = sel.slug.lower()
-            singular_slug = singularize(slug_lower)
+        for attr_slug_iter, attr_config in attrs.items():
+            options = attr_config.get('options', [])
+            for opt in options:
+                opt_slug = opt.get('slug', '').lower()
+                opt_display = opt.get('display_name', '').lower()
+                opt_aliases = [a.lower() for a in (opt.get('aliases') or [])]
+                # Match by slug, display name, or alias
+                if (opt_slug == pending_slug or
+                    opt_display == pending_lower or
+                    pending_lower in opt_aliases):
+                    found_attr_slug = attr_slug_iter
+                    found_option = opt
+                    break
+            if found_option:
+                break
 
-            # Check if this selection matches a default (exact or singular form)
-            matches_default = (
-                slug_lower in default_slugs or
-                singular_slug in default_slugs
+        if found_attr_slug and found_option:
+            # Get the correct slug and price from the matched option
+            option_slug = found_option.get('slug', pending_ingredient)
+            option_price = found_option.get('price_modifier', 0.0)
+            # Create and apply the selection
+            pending_selection = Selection(
+                slug=option_slug,
+                category=found_attr_slug,
+                quantity=1,
+                price=option_price,
+                display_name=found_option.get('display_name'),
             )
-
-            # Keep selection if it doesn't match defaults OR has explicit quantity > 1
-            if not matches_default or sel.quantity > 1:
-                filtered.append(sel)
-            else:
-                logger.debug(
-                    "Filtered redundant selection '%s' - matches default ingredient",
-                    sel.slug
-                )
-
-        return filtered
+            self.menu_item_handler._apply_selections(item, [pending_selection])
+            logger.info(
+                "Applied pending ingredient '%s' to %s (attr=%s, price=$%.2f)",
+                pending_ingredient, canonical_name, found_attr_slug, option_price
+            )
+        else:
+            logger.warning(
+                "Could not find attribute for pending ingredient '%s' on item type '%s'",
+                pending_ingredient, item_type
+            )
 
     # =========================================================================
     # Generic Item Creation (Data-Driven)
@@ -796,7 +717,7 @@ class ItemAdderHandler(MenuDataMixin):
             # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
             # Check if item has default ingredients (more reliable than is_signature flag)
             if menu_item_id:
-                self._populate_default_ingredients(item)
+                populate_default_ingredients(item)
 
             # Apply pre-filled attributes
             if pre_filled_attributes:
@@ -808,7 +729,7 @@ class ItemAdderHandler(MenuDataMixin):
                 # Filter out selections that are redundant with default ingredients
                 # e.g., "egg sandwich with eggs over easy" shouldn't add extra eggs
                 # because The Classic already has eggs as a default
-                filtered_selections = self._filter_redundant_default_selections(
+                filtered_selections = filter_redundant_default_selections(
                     item, extracted_selections
                 )
                 self.menu_item_handler._apply_selections(item, filtered_selections)
@@ -816,55 +737,8 @@ class ItemAdderHandler(MenuDataMixin):
             # Apply pending ingredient from ingredient suggestion flow
             # (e.g., "I want caramel syrup" -> "yes" -> "iced coffee" -> apply caramel)
             # Only apply to the first item (first_item is None means this is the first)
-            if order.pending_ingredient_to_apply and self.menu_item_handler and first_item is None:
-                pending_ingredient = order.pending_ingredient_to_apply
-                # Clear it now so it's not applied to subsequent items in the loop
-                order.pending_ingredient_to_apply = None
-                # Find the attribute and option that match this ingredient
-                # Search through item type's attributes for an option matching the ingredient
-                attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
-                pending_lower = pending_ingredient.lower().strip()
-                pending_slug = pending_lower.replace(' ', '_')
-                found_attr_slug = None
-                found_option = None
-                for attr_slug_iter, attr_config in attrs.items():
-                    options = attr_config.get('options', [])
-                    for opt in options:
-                        opt_slug = opt.get('slug', '').lower()
-                        opt_display = opt.get('display_name', '').lower()
-                        opt_aliases = [a.lower() for a in (opt.get('aliases') or [])]
-                        # Match by slug, display name, or alias
-                        if (opt_slug == pending_slug or
-                            opt_display == pending_lower or
-                            pending_lower in opt_aliases):
-                            found_attr_slug = attr_slug_iter
-                            found_option = opt
-                            break
-                    if found_option:
-                        break
-
-                if found_attr_slug and found_option:
-                    # Get the correct slug and price from the matched option
-                    option_slug = found_option.get('slug', pending_ingredient)
-                    option_price = found_option.get('price_modifier', 0.0)
-                    # Create and apply the selection
-                    pending_selection = Selection(
-                        slug=option_slug,
-                        category=found_attr_slug,
-                        quantity=1,
-                        price=option_price,
-                        display_name=found_option.get('display_name'),
-                    )
-                    self.menu_item_handler._apply_selections(item, [pending_selection])
-                    logger.info(
-                        "Applied pending ingredient '%s' to %s (attr=%s, price=$%.2f)",
-                        pending_ingredient, canonical_name, found_attr_slug, option_price
-                    )
-                else:
-                    logger.warning(
-                        "Could not find attribute for pending ingredient '%s' on item type '%s'",
-                        pending_ingredient, item_type
-                    )
+            if first_item is None:
+                self._apply_pending_ingredient(item, order, item_type, canonical_name)
 
             # Set unavailable_selections (for "We don't have X" messaging)
             # Must be set BEFORE get_first_question() is called

@@ -8,7 +8,8 @@ All handlers, parsers, and matchers should use these functions for consistent be
 
 ### Text Cleaning
 - `strip_ordering_prefix(text)` - Remove "I want", "can I get", etc.
-- `strip_filler_words(text)` - Remove "the", "please", "just", etc.
+- `strip_filler_words(text)` - Remove "the", "please", "just", etc. (anywhere in text)
+- `strip_leading_filler_words(text)` - Remove "a", "an", "the", "some" from start only
 
 ### For Option Matching
 - `normalize_for_option_match(text)` - Strip quantities, singularize plurals
@@ -57,6 +58,7 @@ __all__ = [
     # Text cleaning
     "strip_ordering_prefix",
     "strip_filler_words",
+    "strip_leading_filler_words",
     # Option matching
     "normalize_for_option_match",
     "normalize_for_match",
@@ -144,6 +146,37 @@ def strip_filler_words(user_input: str) -> str:
     for filler in ["i want ", "i'll take ", "just ", "the ", "please", "a ", "an "]:
         input_lower = input_lower.replace(filler, "").strip()
     return input_lower
+
+
+def strip_leading_filler_words(text: str) -> str:
+    """Strip common filler words from the START of user input only.
+
+    Removes leading articles (some, a, an, the) for cleaner display names.
+    Unlike strip_filler_words(), this only removes words at the beginning,
+    preserving words like "the" that may appear in item names.
+
+    Handles patterns like:
+    - "some hash browns" -> "hash browns"
+    - "a croissant" -> "croissant"
+    - "the classic" -> "classic"
+    - "an iced coffee" -> "iced coffee"
+
+    Args:
+        text: The text to clean
+
+    Returns:
+        Text with leading filler words removed (preserves original case)
+
+    Examples:
+        >>> strip_leading_filler_words("some hash browns")
+        "hash browns"
+        >>> strip_leading_filler_words("The Classic BEC")
+        "Classic BEC"
+    """
+    import re
+    # Strip leading filler words (case-insensitive)
+    cleaned = re.sub(r'^(some|a|an|the)\s+', '', text.strip(), flags=re.IGNORECASE)
+    return cleaned or text
 
 
 def _get_negation_patterns() -> frozenset[str]:

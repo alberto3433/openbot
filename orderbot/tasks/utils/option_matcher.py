@@ -275,14 +275,6 @@ class OptionMatcher:
         matched: list[dict] = []
         matched_slugs: set[str] = set()
 
-        def add_match(opt: dict) -> bool:
-            """Add option to matches if not already present."""
-            if opt["slug"] not in matched_slugs:
-                matched_slugs.add(opt["slug"])
-                matched.append(opt)
-                return True
-            return False
-
         # Get all input variants (raw, normalized, tokenized)
         all_inputs = self.normalizer.get_all_input_variants(user_input)
         raw_tokens = [t.lower().strip() for t in self.normalizer.tokenize_multi_input(user_input)]
@@ -296,61 +288,14 @@ class OptionMatcher:
                 )
                 continue
 
-            display_lower = opt["display_name"].lower()
-            slug_readable = opt["slug"].replace("_", " ")
-            display_normalized = self.normalizer.normalize_for_matching(display_lower)
-            slug_normalized = self.normalizer.normalize_for_matching(slug_readable)
-
-            # === Phase 0: Exact match with raw input ===
-            if display_lower == user_raw_lower or slug_readable == user_raw_lower:
-                add_match(opt)
-                continue
-            if display_lower in raw_tokens or slug_readable in raw_tokens:
-                add_match(opt)
-                continue
-
-            # === Phase 1: Exact match with normalized input ===
-            if display_normalized == user_lower or slug_normalized == user_lower:
-                add_match(opt)
-                continue
-            if display_normalized in normalized_tokens or slug_normalized in normalized_tokens:
-                add_match(opt)
-                continue
-
-            # === Direction 1: Option name/alias appears in user input ===
-            if self._is_whole_word_match(display_lower, user_raw_lower):
-                add_match(opt)
-                continue
-            if self._is_whole_word_match(slug_readable, user_raw_lower):
-                add_match(opt)
-                continue
-
-            # Check aliases in user input
-            alias_matched = False
-            for alias in self._get_aliases(opt):
-                alias_lower = alias.lower()
-                if len(alias_lower) >= 2 and self._is_whole_word_match(alias_lower, user_raw_lower):
-                    add_match(opt)
-                    alias_matched = True
-                    break
-            if alias_matched:
-                continue
-
-            # === Direction 2: User token appears in option name ===
-            for token in all_inputs:
-                if not token or len(token) < 2:
-                    continue
-                if self._is_whole_word_match(token, display_lower):
-                    add_match(opt)
-                    break
-                if self._is_whole_word_match(token, slug_readable):
-                    add_match(opt)
-                    break
-                for alias in self._get_aliases(opt):
-                    alias_lower = alias.lower()
-                    if len(alias_lower) >= 2 and self._is_whole_word_match(token, alias_lower):
-                        add_match(opt)
-                        break
+            # Use the extracted helper method for matching logic
+            if self._option_matches_input(
+                opt, user_raw_lower, user_lower, raw_tokens, normalized_tokens, all_inputs
+            ):
+                # Add if not already present
+                if opt["slug"] not in matched_slugs:
+                    matched_slugs.add(opt["slug"])
+                    matched.append(opt)
 
         return matched
 
@@ -593,6 +538,80 @@ class OptionMatcher:
     # =========================================================================
     # Helper Methods
     # =========================================================================
+
+    def _option_matches_input(
+        self,
+        opt: dict,
+        user_raw_lower: str,
+        user_lower: str,
+        raw_tokens: list[str],
+        normalized_tokens: list[str],
+        all_inputs: list[str],
+    ) -> bool:
+        """Check if a single option matches any variant of the user input.
+
+        This is the core matching logic used by match_multiple(). It checks
+        multiple matching strategies in order of specificity:
+
+        1. Exact raw match (display_name or slug matches raw input)
+        2. Exact normalized match
+        3. Option name/alias appears as whole word in input
+        4. User token appears as whole word in option name/alias
+
+        Args:
+            opt: Option dict with display_name, slug, and optional aliases
+            user_raw_lower: Raw user input, lowercased
+            user_lower: Normalized user input (plurals removed, etc.)
+            raw_tokens: List of raw tokens from input (split on "and", ",", etc.)
+            normalized_tokens: Normalized version of raw_tokens
+            all_inputs: All input variants (raw, normalized, tokenized)
+
+        Returns:
+            True if the option matches by any strategy, False otherwise
+        """
+        display_lower = opt["display_name"].lower()
+        slug_readable = opt["slug"].replace("_", " ")
+        display_normalized = self.normalizer.normalize_for_matching(display_lower)
+        slug_normalized = self.normalizer.normalize_for_matching(slug_readable)
+
+        # === Phase 0: Exact match with raw input ===
+        if display_lower == user_raw_lower or slug_readable == user_raw_lower:
+            return True
+        if display_lower in raw_tokens or slug_readable in raw_tokens:
+            return True
+
+        # === Phase 1: Exact match with normalized input ===
+        if display_normalized == user_lower or slug_normalized == user_lower:
+            return True
+        if display_normalized in normalized_tokens or slug_normalized in normalized_tokens:
+            return True
+
+        # === Direction 1: Option name/alias appears in user input ===
+        if self._is_whole_word_match(display_lower, user_raw_lower):
+            return True
+        if self._is_whole_word_match(slug_readable, user_raw_lower):
+            return True
+
+        # Check aliases in user input
+        for alias in self._get_aliases(opt):
+            alias_lower = alias.lower()
+            if len(alias_lower) >= 2 and self._is_whole_word_match(alias_lower, user_raw_lower):
+                return True
+
+        # === Direction 2: User token appears in option name ===
+        for token in all_inputs:
+            if not token or len(token) < 2:
+                continue
+            if self._is_whole_word_match(token, display_lower):
+                return True
+            if self._is_whole_word_match(token, slug_readable):
+                return True
+            for alias in self._get_aliases(opt):
+                alias_lower = alias.lower()
+                if len(alias_lower) >= 2 and self._is_whole_word_match(token, alias_lower):
+                    return True
+
+        return False
 
     def _get_aliases(self, opt: dict) -> list[str]:
         """Get aliases from option, handling both pipe and comma separated formats."""

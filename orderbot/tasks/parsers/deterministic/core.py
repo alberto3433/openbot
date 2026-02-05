@@ -19,7 +19,7 @@ from ..constants import (
     REPEAT_ORDER_PATTERNS,
 )
 from ..intent_patterns import (
-    strip_filler_words,
+    strip_conversational_fillers,
     MAKE_IT_N_PATTERN,
     REDUCE_TO_ONE_PATTERN,
     ONE_MORE_PATTERN,
@@ -115,9 +115,9 @@ def parse_open_input_deterministic(
         logger.debug("Deterministic parse: repeat order detected")
         return OpenInputResponse(wants_repeat_order=True)
 
-    # Strip filler words (after greeting/done checks, before order parsing)
+    # Strip conversational fillers (after greeting/done checks, before order parsing)
     # e.g., "actually, make it two" -> "make it two"
-    text = strip_filler_words(text)
+    text = strip_conversational_fillers(text)
 
     # Check for price inquiries
     price_result = parse_price_inquiry(text)

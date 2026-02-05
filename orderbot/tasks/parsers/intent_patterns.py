@@ -123,8 +123,30 @@ FILLER_WORDS_PATTERN = re.compile(
 )
 
 
-def strip_filler_words(text: str) -> str:
-    """Remove common filler words from the start of user input."""
+def strip_conversational_fillers(text: str) -> str:
+    """Remove conversational filler words from the start of user input.
+
+    Strips hesitation markers and conversational fillers that appear at the
+    beginning of user input, such as "um", "uh", "actually,", "wait,", etc.
+
+    Unlike normalization.strip_filler_words() which removes articles and
+    ordering phrases from anywhere in the text, this function specifically
+    handles conversational hesitation at the start of input.
+
+    Args:
+        text: User input text
+
+    Returns:
+        Text with leading conversational fillers removed
+
+    Examples:
+        >>> strip_conversational_fillers("um, I want a bagel")
+        "I want a bagel"
+        >>> strip_conversational_fillers("actually, make it two")
+        "make it two"
+        >>> strip_conversational_fillers("wait, cancel that")
+        "cancel that"
+    """
     result = text
     while True:
         match = FILLER_WORDS_PATTERN.match(result)

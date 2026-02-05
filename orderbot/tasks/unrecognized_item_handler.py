@@ -15,6 +15,7 @@ import logging
 from orderbot.cache import menu_cache
 
 from .menu_lookup import MenuLookup
+from .normalization import strip_leading_filler_words
 from .utils.text import format_english_list
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,7 @@ class UnrecognizedItemHandler:
         """
         item_name_normalized = item_name.lower().strip()
         # Strip filler words for lookup (some, a, an, the)
-        item_name_for_lookup = self._strip_filler_words(item_name_normalized)
+        item_name_for_lookup = strip_leading_filler_words(item_name_normalized)
 
         order_item_count = 0
         if order and hasattr(order, 'items') and hasattr(order.items, 'items'):
@@ -237,7 +238,7 @@ class UnrecognizedItemHandler:
     ) -> tuple[str, str | None]:
         """Build response from curated suggestion."""
         # Clean up item name by removing filler words
-        clean_name = self._strip_filler_words(item_name)
+        clean_name = strip_leading_filler_words(item_name)
 
         # If specific menu items are suggested
         if curated.get("menu_items"):
@@ -329,7 +330,7 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> str:
         """Build response with fuzzy match suggestions."""
-        clean_name = self._strip_filler_words(item_name)
+        clean_name = strip_leading_filler_words(item_name)
         match_list = format_english_list(fuzzy_matches, conjunction="or")
         followup = self._get_order_aware_followup(order_item_count, len(fuzzy_matches))
         return f"We don't have {clean_name}. Did you mean {match_list}? {followup}"
@@ -364,7 +365,7 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> tuple[str, str | None]:
         """Build response based on LLM-inferred category."""
-        clean_name = self._strip_filler_words(item_name)
+        clean_name = strip_leading_filler_words(item_name)
         suggestions = self.menu_lookup.get_suggestions_for_item_type(
             category_slug, limit=4
         )
@@ -391,7 +392,7 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> str:
         """Build generic fallback response with top categories."""
-        clean_name = self._strip_filler_words(item_name)
+        clean_name = strip_leading_filler_words(item_name)
         # Get available categories
         categories = menu_cache.get_available_menu_categories()
 
@@ -430,18 +431,6 @@ class UnrecognizedItemHandler:
                 return "Would any of those work, or is there something else to add?"
         else:
             return "Would you like to add one, or are you ready to check out?"
-
-    def _strip_filler_words(self, item_name: str) -> str:
-        """Strip common filler words from item name for cleaner responses.
-
-        Removes: some, a, an, the (when at the start)
-        "some hash browns" -> "hash browns"
-        "a croissant" -> "croissant"
-        """
-        import re
-        # Strip leading filler words (case-insensitive)
-        cleaned = re.sub(r'^(some|a|an|the)\s+', '', item_name.strip(), flags=re.IGNORECASE)
-        return cleaned or item_name
 
     def _get_category_display_name(self, category_slug: str) -> str:
         """Get display name for a category slug."""

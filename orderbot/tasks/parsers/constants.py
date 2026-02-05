@@ -183,25 +183,8 @@ REPEAT_ORDER_PATTERNS = re.compile(
 )
 
 # =============================================================================
-# String Normalization Utilities
+# Text Extraction Utility
 # =============================================================================
-
-
-def normalize_text(text: str) -> str:
-    """
-    Normalize text for comparison by lowercasing and stripping whitespace.
-
-    This is the canonical function for preparing user input for pattern matching,
-    lookups, and comparisons. Using this function ensures consistent normalization
-    across the codebase.
-
-    Args:
-        text: The text to normalize
-
-    Returns:
-        Lowercased, whitespace-stripped text
-    """
-    return text.lower().strip()
 
 
 def clean_extracted_text(text: str) -> str:

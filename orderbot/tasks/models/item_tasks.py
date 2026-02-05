@@ -483,8 +483,12 @@ class MenuItemTask(ItemTask):
                 if m.get("category") == key and m.get("is_default") and m.get("slug") in slugs_to_set
             ]
             if existing_defaults:
-                # All values we're trying to set are already defaults - nothing to do
+                # All values we're trying to set are already defaults
                 if len(existing_defaults) == len(slugs_to_set):
+                    # User explicitly selected the same option as the default
+                    # Mark as user-selected (not auto-populated) so it's not re-asked
+                    for sel in existing_defaults:
+                        sel["is_default"] = False
                     return
                 # Some values are defaults, some aren't - only add the non-defaults
                 default_slugs = {m.get("slug") for m in existing_defaults}

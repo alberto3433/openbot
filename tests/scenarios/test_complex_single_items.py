@@ -395,6 +395,45 @@ class TestComplexSandwichOrders:
         items = result.order.items.get_active_items()
         assert len(items) >= 1 or result.message is not None, "Should have item or response"
 
+    def test_egg_sandwich_with_plain_bagel_skips_bread_question(self):
+        """
+        When user specifies bread type that matches the default, should NOT re-ask for bread.
+
+        Bug fix test: "ham egg and cheese on a plain bagel" was asking "What kind of bread?"
+        even though plain bagel was already specified and is the default bread option.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        result = sm.process(
+            "ham egg and cheese on a plain bagel",
+            order
+        )
+
+        items = result.order.items.get_active_items()
+        assert len(items) >= 1, "Should have at least 1 item"
+
+        # The item should have bread set
+        item = items[0]
+        bread_selections = [s for s in item.selections if s.get("category") == "bread"]
+        assert len(bread_selections) == 1, "Should have exactly one bread selection"
+
+        # Should NOT be marked as default since user explicitly chose it
+        bread_sel = bread_selections[0]
+        assert bread_sel.get("is_default") is False, (
+            "Bread should be marked as user-selected (is_default=False), not auto-populated"
+        )
+
+        # Response should NOT ask about bread
+        message_lower = result.message.lower() if result.message else ""
+        assert "what kind of bread" not in message_lower, (
+            f"Should not ask about bread type when already specified. Got: {result.message}"
+        )
+        assert "what type of bread" not in message_lower, (
+            f"Should not ask about bread type when already specified. Got: {result.message}"
+        )
+
     def test_sandwich_cut_in_half(self):
         """Sandwich cut in half request."""
         order = OrderTask()

@@ -21,10 +21,11 @@ from .parsers.inquiry_patterns import (
     REORDER_ITEM_PATTERNS,
     MODIFICATION_EXTRACTOR,
     WITHOUT_PATTERN,
-    REORDER_MODIFICATION_KEYWORDS,
+    get_reorder_modification_keywords,
     ORDER_NUMBER_PATTERN,
 )
 from .mixins import ContextMixin, MenuDataMixin
+from .utils.text import parse_selection
 from ..cache import menu_cache
 
 if TYPE_CHECKING:
@@ -429,10 +430,8 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             return None
 
         orders = pending_history.get("orders", [])
-        text = user_input.strip().lower()
-
         # Try to parse order selection
-        selected_idx = self._parse_order_selection(text, len(orders))
+        selected_idx = parse_selection(user_input, len(orders))
 
         if selected_idx is not None and 0 <= selected_idx < len(orders):
             # User selected an order - add its items
@@ -497,18 +496,18 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             order.pending_field = None
             return None
 
-        text = user_input.strip().lower()
+        text_lower = user_input.strip().lower()
 
         # Try to match by name
         for item in pending_items:
             name = item.get("menu_item_name", "").lower()
-            if text in name or name in text:
+            if text_lower in name or name in text_lower:
                 order.pending_reorder_items = None
                 order.pending_field = None
                 return self._add_item_from_history(item, order)
 
         # Try ordinal (1, 2, first, second, etc.)
-        selected_idx = self._parse_order_selection(text, len(pending_items))
+        selected_idx = parse_selection(user_input, len(pending_items))
         if selected_idx is not None and 0 <= selected_idx < len(pending_items):
             order.pending_reorder_items = None
             order.pending_field = None
@@ -611,34 +610,6 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
                 parts.append(name)
         return ", ".join(parts) if parts else "no items"
 
-    def _parse_order_selection(self, text: str, max_options: int) -> int | None:
-        """Parse user's selection from a numbered list.
-
-        Returns 0-based index or None.
-        """
-        text = text.strip().lower()
-
-        # Direct number
-        if text.isdigit():
-            idx = int(text) - 1
-            if 0 <= idx < max_options:
-                return idx
-
-        # Ordinal words
-        ordinal_map = {
-            "first": 0, "1st": 0, "the first": 0, "the first one": 0,
-            "second": 1, "2nd": 1, "the second": 1, "the second one": 1,
-            "third": 2, "3rd": 2, "the third": 2, "the third one": 2,
-            "fourth": 3, "4th": 3, "the fourth": 3, "the fourth one": 3,
-            "fifth": 4, "5th": 4, "the fifth": 4, "the fifth one": 4,
-        }
-        for key, idx in ordinal_map.items():
-            if text == key or text.startswith(key + " "):
-                if idx < max_options:
-                    return idx
-
-        return None
-
     def apply_modifications(
         self,
         items: list,
@@ -663,8 +634,8 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             item_to_remove = without_match.group(1).strip()
             items_to_remove.append(item_to_remove)
 
-        # Check for attribute modifications (iced, hot, size, toasted)
-        for keyword, (attr, value) in REORDER_MODIFICATION_KEYWORDS.items():
+        # Check for attribute modifications (built dynamically from cache)
+        for keyword, (attr, value) in get_reorder_modification_keywords().items():
             if keyword in text_lower:
                 modifications.append((attr, value))
 
@@ -699,16 +670,16 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
 
             modified_items.append(modified_item)
 
-        # Build description
+        # Build description using generic attribute formatting
         if modifications:
             mod_descs = []
             for attr, value in modifications:
-                if attr == "iced":
-                    mod_descs.append("iced" if value else "hot")
-                elif attr == "size":
-                    mod_descs.append(value)
-                elif attr == "toasted":
-                    mod_descs.append("toasted" if value else "not toasted")
+                if isinstance(value, bool):
+                    # Boolean: show slug if True, "not {slug}" if False
+                    mod_descs.append(attr if value else f"not {attr}")
+                else:
+                    # Non-boolean: show the value directly
+                    mod_descs.append(str(value))
             if mod_descs:
                 description_parts.append(", ".join(mod_descs))
 

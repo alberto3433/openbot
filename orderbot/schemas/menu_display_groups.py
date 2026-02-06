@@ -54,7 +54,7 @@ class MenuDisplayGroupCreate(MenuDisplayGroupBase):
     """Request model for creating a new menu display group."""
     aliases: list[str] = Field(
         default_factory=list,
-        description="List of aliases for this group (e.g., ['pastry', 'pastries', 'sweets'])"
+        description="List of aliases for this group (e.g., ['alias1', 'alias2', 'alias3'])"
     )
 
 

@@ -287,10 +287,13 @@ def extract_make_it_n_target(match: re.Match) -> int | None:
     Returns:
         Target quantity (>= 2) if found, None otherwise.
     """
-    for i in range(1, 10):
-        group = match.group(i)
-        if group:
-            return parse_make_it_n_quantity(group.lower())
+    for i in range(1, 15):
+        try:
+            group = match.group(i)
+            if group:
+                return parse_make_it_n_quantity(group.lower())
+        except IndexError:
+            break
     return None
 
 

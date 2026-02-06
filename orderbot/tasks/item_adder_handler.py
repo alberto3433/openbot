@@ -909,14 +909,16 @@ class ItemAdderHandler(MenuDataMixin):
                     return self.menu_item_handler.get_first_question(next_item, order)
 
             # No queued items - return confirmation
+            # Use get_display_name() to include unit suffix (e.g., "(3 pack)")
+            display_name = first_item.get_display_name()
             if quantity > 1:
                 return StateMachineResult(
-                    message=got_it_anything_else(f"{quantity} {canonical_name}"),
+                    message=got_it_anything_else(f"{quantity} {display_name}"),
                     order=order,
                 )
             else:
                 return StateMachineResult(
-                    message=got_it_anything_else(canonical_name),
+                    message=got_it_anything_else(display_name),
                     order=order,
                 )
 

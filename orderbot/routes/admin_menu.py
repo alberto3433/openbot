@@ -247,6 +247,9 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
         contains_fish=item.contains_fish,
         contains_sesame=item.contains_sesame,
         contains_nuts=item.contains_nuts,
+        # Unit of sale
+        unit_type=item.unit_type,
+        quantity_per_unit=item.quantity_per_unit,
     )
 
 
@@ -301,6 +304,9 @@ def create_menu_item(
         contains_fish=payload.contains_fish,
         contains_sesame=payload.contains_sesame,
         contains_nuts=payload.contains_nuts,
+        # Unit of sale
+        unit_type=payload.unit_type or "each",
+        quantity_per_unit=payload.quantity_per_unit,
     )
     db.add(item)
     db.flush()  # Get the item ID before adding child records
@@ -417,6 +423,12 @@ def update_menu_item(
         item.contains_sesame = payload.contains_sesame
     if "contains_nuts" in payload.model_fields_set:
         item.contains_nuts = payload.contains_nuts
+
+    # Update unit of sale
+    if "unit_type" in payload.model_fields_set:
+        item.unit_type = payload.unit_type
+    if "quantity_per_unit" in payload.model_fields_set:
+        item.quantity_per_unit = payload.quantity_per_unit
 
     db.commit()
     db.refresh(item)

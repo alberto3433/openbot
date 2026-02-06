@@ -584,6 +584,23 @@
           </div>
         </div>
 
+        <div class="field-row" style="display: flex; gap: 16px;">
+          <div class="field" style="flex: 1;">
+            <label for="unitType">Unit Type</label>
+            <select id="unitType" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 13px;">
+              <option value="each">Each (single item)</option>
+              <option value="pack">Pack (multiple items)</option>
+              <option value="dozen">Dozen</option>
+              <option value="by_weight">By Weight</option>
+            </select>
+          </div>
+          <div class="field" style="flex: 1;" id="quantityPerUnitField">
+            <label for="quantityPerUnit">Quantity per Unit</label>
+            <input id="quantityPerUnit" type="number" min="1" max="100" placeholder="e.g., 3" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 13px;" />
+            <small style="color: #666; font-size: 0.8em;">How many items in one pack</small>
+          </div>
+        </div>
+
         <div class="field">
           <label>Dietary Options</label>
           <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 4px;">
@@ -745,8 +762,20 @@
     const itemDescriptionEl = document.getElementById("itemDescription");
     const itemCategoryEl = document.getElementById("itemCategory");
     const itemSignatureEl = document.getElementById("itemSignature");
+    const unitTypeEl = document.getElementById("unitType");
+    const quantityPerUnitEl = document.getElementById("quantityPerUnit");
+    const quantityPerUnitFieldEl = document.getElementById("quantityPerUnitField");
     const sizeCategorySelectEl = document.getElementById("sizeCategorySelect");
     const sizePricesContainerEl = document.getElementById("sizePricesContainer");
+
+    // Show/hide quantity field based on unit type
+    unitTypeEl.addEventListener("change", () => {
+      const showQuantity = unitTypeEl.value === "pack" || unitTypeEl.value === "dozen";
+      quantityPerUnitFieldEl.style.display = showQuantity ? "block" : "none";
+      if (unitTypeEl.value === "dozen") {
+        quantityPerUnitEl.value = "12";
+      }
+    });
 
     // Tag input elements (functions from admin_common.js)
     const aliasesContainerEl = document.getElementById("aliasesContainer");
@@ -1130,6 +1159,9 @@
       itemDescriptionEl.value = "";
       itemCategoryEl.value = "";
       itemSignatureEl.checked = false;
+      unitTypeEl.value = "each";
+      quantityPerUnitEl.value = "";
+      quantityPerUnitFieldEl.style.display = "none";
       clearTags(aliasesContainerEl, aliasInputEl);
       clearTags(requiredPhrasesContainerEl, requiredPhraseInputEl);
 
@@ -1191,6 +1223,13 @@
       // Set item type dropdown by item_type_id
       itemCategoryEl.value = item.item_type_id || "";
       itemSignatureEl.checked = !!item.is_signature;
+
+      // Set unit type and quantity
+      unitTypeEl.value = item.unit_type || "each";
+      quantityPerUnitEl.value = item.quantity_per_unit || "";
+      const showQuantity = unitTypeEl.value === "pack" || unitTypeEl.value === "dozen";
+      quantityPerUnitFieldEl.style.display = showQuantity ? "block" : "none";
+
       setTags(aliasesContainerEl, aliasInputEl, item.aliases || []);
       setTags(requiredPhrasesContainerEl, requiredPhraseInputEl, item.required_match_phrases || "");
 
@@ -1298,6 +1337,9 @@
         contains_fish: document.getElementById("containsFish").checked,
         contains_sesame: document.getElementById("containsSesame").checked,
         contains_nuts: document.getElementById("containsNuts").checked,
+        // Unit of sale
+        unit_type: unitTypeEl.value,
+        quantity_per_unit: quantityPerUnitEl.value ? parseInt(quantityPerUnitEl.value, 10) : null,
       };
 
       if (!payload.name) {

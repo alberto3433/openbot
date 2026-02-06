@@ -58,7 +58,13 @@ class MenuItem(Base):
     # - 'each' (default): sold individually (bagels, sandwiches, drinks)
     # - 'by_weight': sold by weight (cream cheese by the lb, smoked fish)
     # - 'dozen': sold by the dozen (bagel packages)
+    # - 'pack': sold in packs (e.g., macaroons in a 3-pack)
     unit_type = Column(String(20), nullable=False, default="each")
+
+    # Number of items in one unit (for pack/dozen items)
+    # NULL or 1 means single item. Used with unit_type='pack' or 'dozen'.
+    # Example: quantity_per_unit=3 with unit_type='pack' displays as "(3 pack)"
+    quantity_per_unit = Column(Integer, nullable=True)
 
     # Dietary attributes (computed/cached from ingredients - NULL = not computed)
     # For "is_X" flags: True only if ALL ingredients qualify

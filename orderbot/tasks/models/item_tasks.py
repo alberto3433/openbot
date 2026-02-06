@@ -614,8 +614,18 @@ class MenuItemTask(ItemTask):
         For configurable items without defaults (like generic "Bagel"),
         uses the name-forming modifier's display name instead.
 
+        For pack items, appends the pack size (e.g., "Macaroons (3 pack)").
+
         Example: A "Bagel" with bread="garlic_bagel" returns "Garlic Bagel"
         """
+        # Compute base display name
+        base_name = self._get_base_display_name()
+
+        # Append unit suffix for pack items (e.g., "(3 pack)")
+        return self._append_unit_suffix(base_name)
+
+    def _get_base_display_name(self) -> str:
+        """Get the base display name without unit suffix."""
         # Items with default ingredients keep their fixed name
         # (e.g., "The Classic BEC", "The Leo Omelette")
         # Check both selections AND database - defaults may exist in DB
@@ -654,6 +664,24 @@ class MenuItemTask(ItemTask):
                         logger.debug("Menu cache not loaded when getting display name for slug: %s", slug)
         # Default to menu item name
         return self.menu_item_name
+
+    def _append_unit_suffix(self, name: str) -> str:
+        """Append unit display suffix to item name if applicable.
+
+        For pack items (e.g., macaroons sold in 3-packs), appends "(3 pack)".
+        For dozen items, appends "(dozen)".
+        For regular items, returns the name unchanged.
+        """
+        if not self.menu_item_name:
+            return name
+        try:
+            unit_type, qty = menu_cache.get_menu_item_unit_info(self.menu_item_name)
+            suffix = menu_cache.format_unit_display(unit_type, qty)
+            if suffix:
+                return f"{name} {suffix}"
+        except MenuDataNotLoadedError:
+            pass
+        return name
 
     def get_summary(self) -> str:
         """Get a summary description of this menu item.

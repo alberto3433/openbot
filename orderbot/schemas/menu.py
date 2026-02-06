@@ -126,6 +126,10 @@ class MenuItemOut(BaseModel):
     contains_sesame: Optional[bool] = None
     contains_nuts: Optional[bool] = None
 
+    # Unit of sale
+    unit_type: str = "each"  # each, by_weight, dozen, pack
+    quantity_per_unit: Optional[int] = None  # Number of items per unit (for packs)
+
 
 class SizePriceInput(BaseModel):
     """Size price entry for creating/updating a menu item."""
@@ -182,6 +186,10 @@ class MenuItemCreate(BaseModel):
     contains_sesame: Optional[bool] = None
     contains_nuts: Optional[bool] = None
 
+    # Unit of sale
+    unit_type: Optional[str] = None  # each, by_weight, dozen, pack
+    quantity_per_unit: Optional[int] = None  # Number of items per unit (for packs)
+
 
 class MenuItemUpdate(BaseModel):
     """
@@ -232,3 +240,7 @@ class MenuItemUpdate(BaseModel):
     contains_fish: Optional[bool] = None
     contains_sesame: Optional[bool] = None
     contains_nuts: Optional[bool] = None
+
+    # Unit of sale
+    unit_type: Optional[str] = None  # each, by_weight, dozen, pack
+    quantity_per_unit: Optional[int] = None  # Number of items per unit (for packs)

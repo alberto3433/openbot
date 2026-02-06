@@ -25,3 +25,4 @@ class PendingField:
     ORDER_HISTORY_SELECTION = "order_history_selection"
     REORDER_ITEM_SELECTION = "reorder_item_selection"
     CONFIRM_DIETARY_FOLLOWUP = "confirm_dietary_followup"
+    QUANTITY_ADDITION_SELECTION = "quantity_addition_selection"

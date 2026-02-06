@@ -3,27 +3,6 @@ Text formatting utilities for human-readable output.
 """
 
 
-def normalize_text(text: str) -> str:
-    """Normalize text for comparison by lowercasing and stripping whitespace.
-
-    This is the canonical way to normalize user input or database values
-    for case-insensitive matching throughout the codebase.
-
-    Args:
-        text: The text to normalize.
-
-    Returns:
-        Lowercased and whitespace-stripped text.
-
-    Examples:
-        >>> normalize_text("  Bacon  ")
-        'bacon'
-        >>> normalize_text("CREAM CHEESE")
-        'cream cheese'
-    """
-    return text.lower().strip()
-
-
 # Ordinal word mapping for selection parsing
 ORDINAL_MAP = {
     "first": 0, "1st": 0, "the first": 0, "the first one": 0,

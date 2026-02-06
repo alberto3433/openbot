@@ -12,6 +12,68 @@ from ...inquiry_patterns import MORE_MENU_ITEMS_PATTERNS
 logger = logging.getLogger(__name__)
 
 
+def parse_signature_menu_inquiry(text: str) -> OpenInputResponse | None:
+    """Parse inquiries about signature items, specials, popular items, etc.
+
+    This function should be called BEFORE parse_dietary_inquiry to prevent
+    "do you have any specials today" from being caught by availability patterns.
+
+    Returns:
+        OpenInputResponse with asking_signature_menu=True, or None if not a match
+    """
+    text_lower = text.lower().strip()
+
+    # Patterns for specials/signature menu inquiries
+    # "do you have any specials today?", "what are your specials?", "any specials?"
+    specials_patterns = [
+        re.compile(r"(?:do\s+you\s+have\s+)?(?:any\s+)?specials?\b", re.IGNORECASE),
+        re.compile(r"what(?:'?s|\s+are)\s+(?:your|the)\s+specials?", re.IGNORECASE),
+        re.compile(r"(?:got\s+)?any\s+specials?\s*(?:today|right now)?", re.IGNORECASE),
+        re.compile(r"today'?s?\s+specials?", re.IGNORECASE),
+        re.compile(r"specials?\s+(?:today|of\s+the\s+day)", re.IGNORECASE),
+    ]
+
+    for pattern in specials_patterns:
+        if pattern.search(text_lower):
+            logger.info("SIGNATURE MENU INQUIRY (specials): '%s'", text[:50])
+            return OpenInputResponse(
+                asking_signature_menu=True,
+                signature_menu_type=None,  # None means all signature items
+            )
+
+    # Patterns for signature items, popular items, best sellers, favorites
+    # "what are your signature items?", "signature items", "popular items", "best sellers"
+    signature_patterns = [
+        # Signature items
+        re.compile(r"(?:what\s+are\s+)?(?:your|the)\s+signature\s+items?", re.IGNORECASE),
+        re.compile(r"signature\s+(?:items?|menu|dishes?)", re.IGNORECASE),
+        re.compile(r"(?:show|list)\s+(?:me\s+)?(?:your\s+)?signature\s+items?", re.IGNORECASE),
+        # Popular items
+        re.compile(r"(?:what\s+are\s+)?(?:your|the)\s+(?:most\s+)?popular\s+(?:items?|dishes?)?", re.IGNORECASE),
+        re.compile(r"popular\s+(?:items?|menu|dishes?)", re.IGNORECASE),
+        re.compile(r"what(?:'?s|\s+is)\s+popular", re.IGNORECASE),
+        # Best sellers
+        re.compile(r"(?:what\s+are\s+)?(?:your|the)\s+best\s*sellers?", re.IGNORECASE),
+        re.compile(r"best\s*sell(?:ers?|ing)", re.IGNORECASE),
+        # Favorites / house favorites
+        re.compile(r"(?:what\s+are\s+)?(?:your|the)\s+(?:house\s+)?favorites?", re.IGNORECASE),
+        re.compile(r"(?:house|customer|staff)\s+favorites?", re.IGNORECASE),
+        # Featured items
+        re.compile(r"(?:what\s+are\s+)?(?:your|the)\s+featured\s+(?:items?|dishes?)?", re.IGNORECASE),
+        re.compile(r"featured\s+(?:items?|menu|dishes?)", re.IGNORECASE),
+    ]
+
+    for pattern in signature_patterns:
+        if pattern.search(text_lower):
+            logger.info("SIGNATURE MENU INQUIRY (signature/popular): '%s'", text[:50])
+            return OpenInputResponse(
+                asking_signature_menu=True,
+                signature_menu_type=None,
+            )
+
+    return None
+
+
 def parse_menu_query(text: str) -> OpenInputResponse | None:
     """Parse 'what X do you have?' type menu queries."""
     text_lower = text.lower().strip()
@@ -41,23 +103,8 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
             menu_query_type=category_term,
         )
 
-    # Check for specials/signature menu inquiries first
-    # "do you have any specials today?", "what are your specials?", "any specials?"
-    specials_patterns = [
-        re.compile(r"(?:do\s+you\s+have\s+)?(?:any\s+)?specials?\b", re.IGNORECASE),
-        re.compile(r"what(?:'?s|\s+are)\s+(?:your|the)\s+specials?", re.IGNORECASE),
-        re.compile(r"(?:got\s+)?any\s+specials?\s*(?:today|right now)?", re.IGNORECASE),
-        re.compile(r"today'?s?\s+specials?", re.IGNORECASE),
-        re.compile(r"specials?\s+(?:today|of\s+the\s+day)", re.IGNORECASE),
-    ]
-
-    for pattern in specials_patterns:
-        if pattern.search(text_lower):
-            logger.info("SIGNATURE MENU INQUIRY (specials): '%s'", text[:50])
-            return OpenInputResponse(
-                asking_signature_menu=True,
-                signature_menu_type=None,  # None means all signature items
-            )
+    # NOTE: Specials/signature menu inquiries are now handled by parse_signature_menu_inquiry()
+    # which is called earlier in the parsing pipeline (before dietary inquiry)
 
     # Generic terms that should trigger a GENERAL menu listing (all categories)
     # These are not specific category queries - they're asking about the whole menu

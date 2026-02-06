@@ -8,7 +8,7 @@ import re
 import logging
 from typing import Any
 
-from .base import ensure_cache_loaded, normalize_text, singularize
+from .base import ensure_cache_loaded, normalize_for_matching, normalize_text, singularize
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +299,9 @@ class MenuQueryMixin:
         Uses word boundary matching (not substring).
         Example: "tea" matches "Hot Tea", "Iced Tea" but NOT "Cheesesteak"
 
+        Special character normalization is applied to both the search word and
+        item names, so "dr brown" matches "Dr. Brown's".
+
         Args:
             word: The word to search for
             item_type_slug: Optional item type to restrict search
@@ -306,13 +309,13 @@ class MenuQueryMixin:
         Returns:
             List of matching menu item dicts with name, item_type, base_price.
         """
-        word_lower = normalize_text(word)
+        word_normalized = normalize_for_matching(word)
 
-        if not word_lower:
+        if not word_normalized:
             return []
 
         # Word boundary pattern - matches whole words only
-        word_pattern = re.compile(rf'\b{re.escape(word_lower)}\b', re.IGNORECASE)
+        word_pattern = re.compile(rf'\b{re.escape(word_normalized)}\b', re.IGNORECASE)
 
         matches = []
         seen_names = set()
@@ -329,7 +332,9 @@ class MenuQueryMixin:
             if item_name_lower in seen_names:
                 continue
 
-            if word_pattern.search(item_name):
+            # Normalize item name for matching (handles Dr. Brown's -> dr browns)
+            item_normalized = normalize_for_matching(item_name)
+            if word_pattern.search(item_normalized):
                 seen_names.add(item_name_lower)
                 matches.append({
                     "name": item_info.get("name", item_name),
@@ -349,21 +354,23 @@ class MenuQueryMixin:
         Uses word-boundary matching: "latte" matches "Hot Latte", "Iced Latte"
         but not "Latteen". Also singularizes the search term.
 
+        Special character normalization is applied, so "dr brown" matches "Dr. Brown's".
+
         Args:
             term: Search term (e.g., "latte", "muffins", "tea")
 
         Returns:
             List of matching menu item dicts from items_by_type, deduplicated by name.
         """
-        term_lower = normalize_text(term)
-        term_singular = singularize(term_lower)
+        term_normalized = normalize_for_matching(term)
+        term_singular = singularize(term_normalized)
 
-        if not term_lower:
+        if not term_normalized:
             return []
 
         # Build word boundary patterns for both original and singular forms
-        patterns = [re.compile(rf'\b{re.escape(term_lower)}\b', re.IGNORECASE)]
-        if term_singular != term_lower:
+        patterns = [re.compile(rf'\b{re.escape(term_normalized)}\b', re.IGNORECASE)]
+        if term_singular != term_normalized:
             patterns.append(re.compile(rf'\b{re.escape(term_singular)}\b', re.IGNORECASE))
 
         matches = []
@@ -381,8 +388,11 @@ class MenuQueryMixin:
                 if item_name_lower in seen_names:
                     continue
 
+                # Normalize item name for matching (handles Dr. Brown's -> dr browns)
+                item_normalized = normalize_for_matching(item_name)
+
                 # Check if term matches item name
-                name_matches = any(p.search(item_name) for p in patterns)
+                name_matches = any(p.search(item_normalized) for p in patterns)
 
                 # Check if term matches any alias for this item
                 alias_matches = False
@@ -392,7 +402,8 @@ class MenuQueryMixin:
                         for alias, canonical in type_aliases.items():
                             if canonical.lower() == item_name_lower:
                                 # This alias points to our item - check if term matches the alias
-                                if any(p.search(alias) for p in patterns):
+                                alias_normalized = normalize_for_matching(alias)
+                                if any(p.search(alias_normalized) for p in patterns):
                                     alias_matches = True
                                     break
                         if alias_matches:

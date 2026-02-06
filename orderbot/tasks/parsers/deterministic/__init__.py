@@ -86,6 +86,7 @@ from .split_quantity_parsing import (
 from .inquiry import (
     parse_price_inquiry,
     parse_menu_query,
+    parse_signature_menu_inquiry,
     parse_recommendation_inquiry,
     parse_store_info_inquiry,
     parse_item_description_inquiry,
@@ -175,6 +176,7 @@ __all__ = [
     # Inquiry parsing
     "parse_price_inquiry",
     "parse_menu_query",
+    "parse_signature_menu_inquiry",
     "parse_recommendation_inquiry",
     "parse_store_info_inquiry",
     "parse_item_description_inquiry",

@@ -360,6 +360,11 @@ class OrderTask(BaseTask):
     # Example: {"dietary_type": "is_vegan", "category": None}
     pending_dietary_followup: dict | None = None
 
+    # Pending quantity addition state
+    # Used when user says "add 3" with multiple item types in cart
+    # Stores the quantity to add after disambiguation resolves
+    pending_quantity_addition: int | None = None
+
     # Legacy single-item property for backwards compatibility
     @property
     def pending_item_id(self) -> str | None:
@@ -402,6 +407,9 @@ class OrderTask(BaseTask):
         # Handle dietary follow-up confirmation ("is X vegan?" -> "no" -> "Would you like vegan options?" -> "yes")
         if self.pending_field == PendingField.CONFIRM_DIETARY_FOLLOWUP:
             return True
+        # Handle quantity addition selection ("add 3" with multiple item types in cart)
+        if self.pending_field == PendingField.QUANTITY_ADDITION_SELECTION:
+            return True
         # Handle attribute disambiguation (e.g., "walnut" -> "honey walnut" or "maple raisin walnut")
         if self.pending_attr_disambiguation is not None:
             return True
@@ -420,6 +428,7 @@ class OrderTask(BaseTask):
         self.pending_order_history = None
         self.pending_reorder_items = None
         self.pending_dietary_followup = None
+        self.pending_quantity_addition = None
 
     def set_phase(self, phase: "OrderPhase") -> None:
         """Set the order phase from an OrderPhase enum.

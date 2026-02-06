@@ -10,7 +10,7 @@ from orderbot.services.order import persist_confirmed_order
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 # Distinctive test data names for easy cleanup
-TEST_MENU_ITEM_NAME = "TEST_OrderPersistence_Sandwich"
+TEST_MENU_ITEM_NAME = "TEST OrderPersistence Sandwich"
 TEST_CUSTOMER_NAME = "TEST_OrderPersistence_Customer"
 
 

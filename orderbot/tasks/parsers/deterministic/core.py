@@ -47,6 +47,7 @@ from .inquiry import (
     parse_more_menu_items,
     parse_ingredient_search,
     parse_dietary_inquiry,
+    parse_signature_menu_inquiry,
 )
 from .modification_parsing import (
     _extract_menu_item_modifications,
@@ -262,6 +263,13 @@ def parse_open_input_deterministic(
     attribute_inquiry_result = parse_attribute_inquiry(text)
     if attribute_inquiry_result:
         return attribute_inquiry_result
+
+    # Check for specials/signature menu inquiries BEFORE dietary inquiry
+    # "do you have any specials today?" was incorrectly matched by availability patterns
+    # because it ends with "today", so we need to check for specials first
+    signature_result = parse_signature_menu_inquiry(text)
+    if signature_result:
+        return signature_result
 
     # Check for dietary/allergen/availability/customization inquiries
     # Must run BEFORE parse_menu_query since "do you have vegan sandwiches?" is a

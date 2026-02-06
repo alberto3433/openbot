@@ -662,6 +662,24 @@ class TakingItemsHandler(MenuDataMixin):
         return self._duplicate_handler._duplicate_all_items(order, active_items)
 
     # =========================================================================
+    # Quantity Addition Selection (delegates to EarlyPatternHandler)
+    # =========================================================================
+
+    def handle_quantity_addition_selection(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user's response to 'Which item would you like to add N more of?'
+
+        Called when user said 'add 3' with multiple item types in cart.
+        Delegates to EarlyPatternHandler.handle_quantity_addition_disambiguation.
+        """
+        return self._early_pattern_handler.handle_quantity_addition_disambiguation(
+            user_input, order
+        )
+
+    # =========================================================================
     # Suggested Item Confirmation
     # =========================================================================
 

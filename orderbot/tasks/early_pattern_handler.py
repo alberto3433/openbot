@@ -5,6 +5,7 @@ This module handles early pattern detection in the taking items phase,
 before LLM parsing is invoked. These patterns can be handled deterministically
 for lower latency:
 - "make it 2" / "make it three" (quantity changes)
+- "add 3" / "add 3 more" (add more of existing cart items)
 - "make 2 vanilla syrups" (modifier quantity changes)
 - "add vanilla syrup" (pure modifier additions)
 
@@ -14,6 +15,8 @@ Extracted from taking_items_handler.py for better separation of concerns.
 import logging
 import re
 from typing import TYPE_CHECKING
+
+from .pending_fields import PendingField
 
 from orderbot.cache import menu_cache
 
@@ -45,6 +48,37 @@ if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
 
 logger = logging.getLogger(__name__)
+
+# Pattern: "add 3", "add 5 more" - explicitly adds N more of existing cart items
+# NOTE: "get N" and "give me N" are handled by MAKE_IT_N_PATTERN which sets total to N
+# This pattern is for "add N" which ADDS N more (additive, not absolute)
+ADD_QUANTITY_PATTERN = re.compile(
+    r"^add\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+    r"(?:\s+more)?(?:\s+(?:of\s+those|of\s+them|of\s+these))?(?:\s+please)?$",
+    re.IGNORECASE
+)
+
+# Word-to-number mapping for quantity parsing
+_WORD_TO_NUM: dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
+
+def _parse_quantity(num_str: str) -> int | None:
+    """Parse quantity from numeric or word string.
+
+    Args:
+        num_str: Number as digit or word (e.g., "3", "three")
+
+    Returns:
+        Integer quantity (>= 1) if valid, None otherwise.
+    """
+    num_str = num_str.lower().strip()
+    if num_str.isdigit():
+        qty = int(num_str)
+        return qty if qty >= 1 else None
+    return _WORD_TO_NUM.get(num_str)
 
 
 class EarlyPatternHandler:
@@ -274,6 +308,247 @@ class EarlyPatternHandler:
 
         return None
 
+    def handle_add_quantity_to_cart(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle 'add 3' pattern to add more of existing cart items.
+
+        When user says "add 3" (or similar):
+        - 0 unique items in cart → return None (fall through to normal parsing)
+        - 1 unique item type in cart → add 3 more of that item
+        - 2+ unique item types → ask which item to add more of
+
+        Args:
+            user_input: Raw user input string.
+            order: Current order state.
+
+        Returns:
+            StateMachineResult if pattern matched, None otherwise.
+        """
+        match = ADD_QUANTITY_PATTERN.match(user_input.strip())
+        if not match:
+            return None
+
+        quantity = _parse_quantity(match.group(1))
+        if not quantity:
+            return None
+
+        # Get unique item types currently in cart
+        unique_items = self._get_unique_cart_items(order)
+
+        if len(unique_items) == 0:
+            # No items in cart - fall through to normal parsing
+            return None
+
+        if len(unique_items) == 1:
+            # Single item type - add N more of it
+            return self._add_copies_of_item(order, unique_items[0], quantity)
+
+        # Multiple item types - need disambiguation
+        return self._start_quantity_addition_disambiguation(order, unique_items, quantity)
+
+    def handle_quantity_addition_disambiguation(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle user response to quantity addition disambiguation.
+
+        Called when user is answering "Which item would you like to add N more of?"
+
+        Args:
+            user_input: User's selection (number or item name).
+            order: Current order state with pending_quantity_addition set.
+
+        Returns:
+            StateMachineResult if selection resolved, None otherwise.
+        """
+        if order.pending_quantity_addition is None:
+            return None
+
+        quantity = order.pending_quantity_addition
+        options = order.pending_item_options
+
+        if not options:
+            # Clear state and fall through
+            order.pending_quantity_addition = None
+            return None
+
+        input_stripped = user_input.strip()
+
+        # Try to match by number selection (e.g., "1", "2")
+        if input_stripped.isdigit():
+            selection_idx = int(input_stripped) - 1  # Convert to 0-indexed
+            if 0 <= selection_idx < len(options):
+                selected_option = options[selection_idx]
+                return self._resolve_quantity_addition_selection(order, selected_option, quantity)
+
+        # Try to match by item name
+        input_lower = input_stripped.lower()
+        for option in options:
+            option_name = option.get("name", "").lower()
+            if input_lower in option_name or option_name in input_lower:
+                return self._resolve_quantity_addition_selection(order, option, quantity)
+
+        # No match - re-prompt
+        return self._reprompt_quantity_addition(order, quantity)
+
+    def _get_unique_cart_items(self, order: OrderTask) -> list[MenuItemTask]:
+        """Get list of unique item types in cart (by menu_item_id).
+
+        Returns one representative item for each unique menu_item_id.
+
+        Args:
+            order: Current order state.
+
+        Returns:
+            List of MenuItemTask items, one per unique menu_item_id.
+        """
+        active_items = order.items.get_active_items()
+        seen_ids: set[int] = set()
+        unique: list[MenuItemTask] = []
+
+        for item in active_items:
+            if isinstance(item, MenuItemTask) and item.menu_item_id:
+                if item.menu_item_id not in seen_ids:
+                    seen_ids.add(item.menu_item_id)
+                    unique.append(item)
+
+        return unique
+
+    def _add_copies_of_item(
+        self,
+        order: OrderTask,
+        template_item: MenuItemTask,
+        quantity: int,
+    ) -> StateMachineResult:
+        """Add N copies of an existing item to the cart.
+
+        Args:
+            order: Current order state.
+            template_item: Item to duplicate.
+            quantity: Number of copies to add.
+
+        Returns:
+            StateMachineResult confirming the addition.
+        """
+        # Clone the item N times (preserving all attributes/modifiers)
+        for _ in range(quantity):
+            new_item = template_item.duplicate(mark_complete=True)
+            order.items.items.append(new_item)
+
+            # Recalculate pricing for the new item
+            if self.pricing:
+                self.pricing.recalculate_item_price(new_item)
+
+        item_name = template_item.get_display_name()
+        return StateMachineResult(
+            message=item_added_anything_else(quantity, item_name),
+            order=order,
+        )
+
+    def _start_quantity_addition_disambiguation(
+        self,
+        order: OrderTask,
+        items: list[MenuItemTask],
+        quantity: int,
+    ) -> StateMachineResult:
+        """Start disambiguation flow when multiple item types exist.
+
+        Args:
+            order: Current order state.
+            items: List of unique items to choose from.
+            quantity: How many to add after selection.
+
+        Returns:
+            StateMachineResult with disambiguation question.
+        """
+        # Store pending state for disambiguation
+        order.pending_quantity_addition = quantity
+        order.pending_item_options = [
+            {"id": item.id, "name": item.get_display_name(), "menu_item_id": item.menu_item_id}
+            for item in items
+        ]
+        order.pending_field = PendingField.QUANTITY_ADDITION_SELECTION
+
+        # Build disambiguation message
+        options_text = "\n".join(
+            f"{i + 1}. {opt['name']}"
+            for i, opt in enumerate(order.pending_item_options)
+        )
+        return StateMachineResult(
+            message=f"Which item would you like to add {quantity} more of?\n{options_text}",
+            order=order,
+        )
+
+    def _resolve_quantity_addition_selection(
+        self,
+        order: OrderTask,
+        selected_option: dict,
+        quantity: int,
+    ) -> StateMachineResult:
+        """Resolve a quantity addition disambiguation selection.
+
+        Args:
+            order: Current order state.
+            selected_option: The selected option dict with id and name.
+            quantity: How many to add.
+
+        Returns:
+            StateMachineResult confirming the addition.
+        """
+        # Clear pending state
+        order.pending_quantity_addition = None
+        order.pending_item_options = []
+        order.pending_field = None
+
+        # Find the template item by menu_item_id
+        menu_item_id = selected_option.get("menu_item_id")
+        template_item = None
+        for item in order.items.get_active_items():
+            if isinstance(item, MenuItemTask) and item.menu_item_id == menu_item_id:
+                template_item = item
+                break
+
+        if not template_item:
+            # Fallback: try to find by item id
+            item_id = selected_option.get("id")
+            template_item = order.items.get_item_by_id(item_id)
+
+        if not template_item or not isinstance(template_item, MenuItemTask):
+            return StateMachineResult(
+                message="Sorry, I couldn't find that item. What else can I get for you?",
+                order=order,
+            )
+
+        return self._add_copies_of_item(order, template_item, quantity)
+
+    def _reprompt_quantity_addition(
+        self,
+        order: OrderTask,
+        quantity: int,
+    ) -> StateMachineResult:
+        """Re-prompt for quantity addition selection.
+
+        Args:
+            order: Current order state (with options already set).
+            quantity: How many to add.
+
+        Returns:
+            StateMachineResult with disambiguation question.
+        """
+        options = order.pending_item_options
+        options_text = "\n".join(
+            f"{i + 1}. {opt['name']}"
+            for i, opt in enumerate(options)
+        )
+        return StateMachineResult(
+            message=f"Sorry, I didn't catch that. Which item would you like {quantity} more of?\n{options_text}",
+            order=order,
+        )
+
     def handle_all_early_patterns(
         self,
         user_input: str,
@@ -282,9 +557,11 @@ class EarlyPatternHandler:
         """Try all early pattern handlers in sequence.
 
         Convenience method that tries each pattern handler in order:
-        1. "make it N" quantity changes
-        2. Modifier quantity changes
-        3. Add modifier / pure modifier input
+        1. Quantity addition disambiguation response (if pending)
+        2. "make it N" quantity changes
+        3. "add N" / "add N more" to add more of existing cart items
+        4. Modifier quantity changes
+        5. Add modifier / pure modifier input
 
         Args:
             user_input: Raw user input string.
@@ -293,17 +570,28 @@ class EarlyPatternHandler:
         Returns:
             StateMachineResult if any pattern matched, None otherwise.
         """
-        # 1. Check for "make it 2" pattern
+        # 1. Check for pending quantity addition disambiguation
+        if order.pending_quantity_addition is not None:
+            result = self.handle_quantity_addition_disambiguation(user_input, order)
+            if result:
+                return result
+
+        # 2. Check for "make it 2" pattern
         result = self.handle_make_it_n(user_input, order)
         if result:
             return result
 
-        # 2. Check for modifier change requests like "make 2 vanilla syrups"
+        # 3. Check for "add N" / "add N more" pattern
+        result = self.handle_add_quantity_to_cart(user_input, order)
+        if result:
+            return result
+
+        # 4. Check for modifier change requests like "make 2 vanilla syrups"
         result = self.handle_modifier_change_request(user_input, order)
         if result:
             return result
 
-        # 3. Check for "add [modifier]" patterns
+        # 5. Check for "add [modifier]" patterns
         result = self.handle_early_modifier_input(user_input, order)
         if result:
             return result

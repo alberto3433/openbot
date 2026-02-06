@@ -6873,11 +6873,28 @@ class TestSpecialsQuery:
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
 
         test_inputs = [
+            # Specials
             "do you have any specials today",
             "what are your specials",
             "any specials?",
             "got any specials today",
             "today's specials",
+            # Signature items
+            "what are your signature items?",
+            "signature items",
+            "show me your signature items",
+            # Popular items
+            "what are your popular items",
+            "popular items",
+            "what's popular",
+            # Best sellers
+            "best sellers",
+            "what are your best sellers",
+            # Favorites
+            "what are your favorites",
+            "house favorites",
+            # Featured
+            "featured items",
         ]
 
         for inp in test_inputs:

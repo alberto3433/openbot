@@ -103,32 +103,32 @@ def _app_client_session(tmp_path_factory, menu_cache_loaded):
         # Use distinctive names so we can identify and clean up test data
         test_menu_items = [
             {
-                "name": "TEST_Turkey Club",
+                "name": "TEST Turkey Club",
                 "is_signature": True,
                 "available_qty": 5,
             },
             {
-                "name": "TEST_Veggie Delight",
+                "name": "TEST Veggie Delight",
                 "is_signature": True,
                 "available_qty": 10,
             },
             {
-                "name": "TEST_Italian Stallion",
+                "name": "TEST Italian Stallion",
                 "is_signature": True,
                 "available_qty": 10,
             },
             {
-                "name": "TEST_Custom Sandwich",
+                "name": "TEST Custom Sandwich",
                 "is_signature": False,
                 "available_qty": 100,
             },
             {
-                "name": "TEST_soda",
+                "name": "TEST soda",
                 "is_signature": False,
                 "available_qty": 10,
             },
             {
-                "name": "TEST_Chips",
+                "name": "TEST Chips",
                 "is_signature": False,
                 "available_qty": 40,
             },
@@ -169,9 +169,9 @@ def _app_client_session(tmp_path_factory, menu_cache_loaded):
     with db_lock:
         cleanup_session = TestingSessionLocal()
         try:
-            # Delete any menu items with TEST_ prefix (our test data)
+            # Delete any menu items with TEST prefix (our test data)
             cleanup_session.query(MenuItem).filter(
-                MenuItem.name.like("TEST_%")
+                MenuItem.name.like("TEST %")
             ).delete(synchronize_session=False)
             cleanup_session.commit()
         except Exception as e:

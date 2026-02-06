@@ -30,7 +30,7 @@ from .ingredient import (
     get_order_signals,
     parse_ingredient_search,
 )
-from .menu import parse_menu_query, parse_more_menu_items
+from .menu import parse_menu_query, parse_more_menu_items, parse_signature_menu_inquiry
 from .modifier import parse_modifier_inquiry
 from .price import parse_price_inquiry
 from .recommendation import parse_recommendation_inquiry
@@ -42,6 +42,7 @@ __all__ = [
     # Menu
     "parse_menu_query",
     "parse_more_menu_items",
+    "parse_signature_menu_inquiry",
     # Recommendation
     "parse_recommendation_inquiry",
     # Store info

@@ -111,3 +111,274 @@ class TestResumeConfigAfterRemoval:
 
         assert "what would you like" in msg_lower or "what can i get" in msg_lower, \
             f"Expected 'what would you like to order' type message, got: {result.message}"
+
+    @pytest.mark.parametrize("cancel_phrase", [
+        "cancel",
+        "nevermind",
+        "never mind",
+        "forget it",
+        "skip",
+        "skip this",
+        "I changed my mind",
+        "I changed my mind, cancel",
+        "i don't want it",
+        "i don't want this anymore",
+    ])
+    def test_standalone_cancel_during_config(self, cancel_phrase):
+        """Test standalone cancel phrases cancel the current item during config.
+
+        When being asked a config question like "What kind of bread?", standalone
+        phrases like "cancel", "nevermind", or "I changed my mind" should cancel
+        the current item being configured.
+        """
+        sm = OrderStateMachine()
+
+        # Order a plain bagel (will trigger config question about toasting)
+        result = sm.process("plain bagel")
+        order = result.order
+
+        # Should have 1 bagel in the cart, in_progress
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 1, f"Expected 1 item, got {len(active_items)}"
+        assert active_items[0].status == TaskStatus.IN_PROGRESS
+
+        # Use standalone cancel phrase
+        result = sm.process(cancel_phrase, order=order)
+
+        # Should have 0 items remaining (item was cancelled)
+        remaining_items = result.order.items.get_active_items()
+        assert len(remaining_items) == 0, \
+            f"Cancel phrase '{cancel_phrase}' should have cancelled the item, " \
+            f"but {len(remaining_items)} items remain"
+
+        # Response should confirm removal
+        msg_lower = result.message.lower()
+        print(f"Input: '{cancel_phrase}' -> Response: {result.message}")
+        assert "removed" in msg_lower or "cancelled" in msg_lower, \
+            f"Expected removal confirmation for '{cancel_phrase}', got: {result.message}"
+
+    def test_standalone_cancel_with_multiple_items(self):
+        """Test standalone cancel cancels only the current item, continues with next."""
+        sm = OrderStateMachine()
+
+        # Order 2 plain bagels
+        result = sm.process("2 plain bagels")
+        order = result.order
+
+        # Should have 2 bagels
+        assert len(order.items.get_active_items()) == 2
+
+        # Use standalone "cancel" - should cancel current item, continue with next
+        result = sm.process("cancel", order=order)
+
+        # Should have 1 item remaining
+        remaining = result.order.items.get_active_items()
+        assert len(remaining) == 1, f"Expected 1 item after cancel, got {len(remaining)}"
+
+        # Response should confirm removal AND ask about the remaining item
+        msg_lower = result.message.lower()
+        print(f"Bot response: {result.message}")
+        assert "removed" in msg_lower, f"Expected removal confirmation, got: {result.message}"
+        # Should continue with the remaining item's configuration
+        assert "toast" in msg_lower, \
+            f"Expected to continue with toasting question, got: {result.message}"
+
+
+class TestQuantityChangeDuringConfig:
+    """Tests for changing item quantity during configuration."""
+
+    @pytest.mark.parametrize("quantity_phrase,expected_total", [
+        ("make it two", 2),
+        ("make it 2", 2),
+        ("make it three", 3),
+        ("can you make it two", 2),
+        ("can you make it 2", 2),
+        ("could you make it three", 3),
+        ("I want 2", 2),
+        ("I'll have 3", 3),
+        ("give me 2", 2),
+        ("let's do 2", 2),
+        ("2 of those", 2),
+    ])
+    def test_quantity_change_during_config(self, quantity_phrase, expected_total):
+        """Test quantity change phrases work during item configuration.
+
+        When being asked a config question like "What flavor tea?", phrases like
+        "make it two" should duplicate the current item.
+        """
+        sm = OrderStateMachine()
+
+        # Order a hot tea (will trigger config question about flavor)
+        result = sm.process("hot tea")
+        order = result.order
+
+        # Should have 1 tea in the cart
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 1, f"Expected 1 item, got {len(active_items)}"
+
+        # Use quantity change phrase
+        result = sm.process(quantity_phrase, order=order)
+
+        # Should have expected_total items now
+        active_items = result.order.items.get_active_items()
+        assert len(active_items) == expected_total, \
+            f"Quantity phrase '{quantity_phrase}' should result in {expected_total} items, " \
+            f"but got {len(active_items)}"
+
+        # Response should confirm the addition
+        msg_lower = result.message.lower()
+        print(f"Input: '{quantity_phrase}' -> Response: {result.message}")
+        assert "added" in msg_lower, \
+            f"Expected confirmation of adding items for '{quantity_phrase}', got: {result.message}"
+
+    def test_quantity_change_with_item_name(self):
+        """Test 'make it two hot teas' works during config.
+
+        This is the specific case from the bug report where the user says
+        "make it two hot teas" while being asked about tea flavor.
+        """
+        sm = OrderStateMachine()
+
+        # Order a hot tea
+        result = sm.process("hot tea")
+        order = result.order
+        assert len(order.items.get_active_items()) == 1
+
+        # Say "make it two hot teas" while being asked about flavor
+        result = sm.process("make it two hot teas", order=order)
+
+        # Should have 2 teas now
+        active_items = result.order.items.get_active_items()
+        assert len(active_items) == 2, \
+            f"Expected 2 items after 'make it two hot teas', got {len(active_items)}"
+
+        # Response should confirm and continue with config
+        msg_lower = result.message.lower()
+        print(f"Bot response: {result.message}")
+        assert "added" in msg_lower, f"Expected addition confirmation, got: {result.message}"
+
+    def test_can_you_make_it_quantity_change(self):
+        """Test 'can you make it two hot teas' works during config.
+
+        This covers the polite request form of quantity change.
+        """
+        sm = OrderStateMachine()
+
+        # Order a hot tea
+        result = sm.process("hot tea")
+        order = result.order
+        assert len(order.items.get_active_items()) == 1
+
+        # Say "can you make it two hot teas" while being asked about flavor
+        result = sm.process("can you make it two hot teas", order=order)
+
+        # Should have 2 teas now
+        active_items = result.order.items.get_active_items()
+        assert len(active_items) == 2, \
+            f"Expected 2 items after 'can you make it two hot teas', got {len(active_items)}"
+
+        # Response should confirm and continue with config
+        msg_lower = result.message.lower()
+        print(f"Bot response: {result.message}")
+        assert "added" in msg_lower, f"Expected addition confirmation, got: {result.message}"
+
+    def test_quantity_change_continues_config(self):
+        """Test that after quantity change, config question is still asked."""
+        sm = OrderStateMachine()
+
+        # Order a plain bagel (will ask about toasting)
+        result = sm.process("plain bagel")
+        order = result.order
+
+        # Change quantity
+        result = sm.process("make it 2", order=order)
+
+        # Should still be asking about the current item's config
+        msg_lower = result.message.lower()
+        print(f"Bot response: {result.message}")
+        # Should continue with config question (toasted, spread, etc.)
+        assert any(word in msg_lower for word in ["toast", "spread", "anything"]), \
+            f"Expected config question to continue, got: {result.message}"
+
+    def test_duplicate_items_both_get_configured(self):
+        """Test that when quantity is increased, both items eventually get configured.
+
+        This is a regression test for the case where user says "make it two hot teas"
+        and both teas should be configured separately.
+        """
+        sm = OrderStateMachine()
+
+        # Order a hot tea
+        result = sm.process("hot tea")
+        order = result.order
+
+        # Say "make it two"
+        result = sm.process("make it two", order=order)
+        order = result.order
+
+        # Should have 2 teas, both IN_PROGRESS
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 2, f"Expected 2 items, got {len(active_items)}"
+
+        # Debug: print each item's status
+        for i, item in enumerate(active_items):
+            print(f"Item {i}: status={item.status}, name={item.menu_item_name}")
+
+        # At this point, both items should be non-complete (IN_PROGRESS or PENDING)
+        # The duplicate preserves the original's status, so both should be IN_PROGRESS
+        non_complete_count = sum(1 for i in active_items if i.status != TaskStatus.COMPLETE)
+        assert non_complete_count == 2, \
+            f"Expected 2 non-complete items after 'make it two', got {non_complete_count}"
+
+        # Configure the first tea with flavor (note: "camomile" not "chamomile")
+        result = sm.process("earl grey", order=order)
+        order = result.order
+        print(f"After 'earl grey' (first tea): {result.message}")
+
+        # Answer the milk/sweetener question for first tea
+        result = sm.process("nothing", order=order)
+        order = result.order
+        print(f"After 'nothing' (first tea): {result.message}")
+
+        # Check current state
+        active_items = order.items.get_active_items()
+        complete_count = sum(1 for i in active_items if i.status == TaskStatus.COMPLETE)
+        incomplete_count = sum(1 for i in active_items if i.status == TaskStatus.IN_PROGRESS)
+        print(f"After first tea: {complete_count} complete, {incomplete_count} in progress")
+
+        # The first tea should be complete, and we should be asked about the second tea
+        # (either flavor or milk/sweetener depending on what was copied)
+        msg_lower = result.message.lower()
+
+        # Continue configuring until we're done
+        max_steps = 5
+        for step in range(max_steps):
+            if "anything else" in msg_lower and "flavor" not in msg_lower and "milk" not in msg_lower:
+                break
+
+            # Check what the current question is asking for
+            if "flavor" in msg_lower:
+                result = sm.process("green tea", order=order)
+                order = result.order
+                print(f"Step {step + 1} - After 'green tea': {result.message}")
+            elif "milk" in msg_lower or "sweetener" in msg_lower or "syrup" in msg_lower:
+                result = sm.process("nothing", order=order)
+                order = result.order
+                print(f"Step {step + 1} - After 'nothing': {result.message}")
+            else:
+                print(f"Step {step + 1} - Unknown question, breaking: {result.message}")
+                break
+            msg_lower = result.message.lower()
+
+        # Now both items should be complete
+        active_items = order.items.get_active_items()
+        complete_count = sum(1 for i in active_items if i.status == TaskStatus.COMPLETE)
+        print(f"Final: {complete_count} complete out of {len(active_items)}")
+
+        assert complete_count == 2, \
+            f"Expected 2 complete items at the end, got {complete_count}"
+
+        # Final response should be "anything else"
+        msg_lower = result.message.lower()
+        assert "anything else" in msg_lower, \
+            f"Expected 'anything else' after both teas configured, got: {result.message}"

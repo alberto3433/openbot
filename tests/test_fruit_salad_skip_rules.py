@@ -1,7 +1,9 @@
 """Test skip rules for fruit_salad side choice.
 
 When a user selects fruit_salad as the side choice for an omelette,
-the bagel and cheese attributes should be skipped (not asked).
+only the bagel attribute should be skipped (not asked).
+The cheese attribute should still be asked because it's for the omelette
+filling, not the bagel.
 """
 import pytest
 
@@ -20,12 +22,13 @@ class TestFruitSaladSkipRules:
     """Tests for fruit_salad skip rules."""
 
     def test_fruit_salad_triggers_skip_rules(self):
-        """Test that selecting fruit_salad triggers skip rules for bagel and cheese."""
+        """Test that selecting fruit_salad triggers skip rules for bagel only."""
         # Check that menu cache has the skip rules loaded
         skipped = menu_cache.get_skipped_attributes_for_option('fruit_salad')
 
         assert 'bagel' in skipped, f"Expected 'bagel' in skipped attributes, got: {skipped}"
-        assert 'cheese' in skipped, f"Expected 'cheese' in skipped attributes, got: {skipped}"
+        # Cheese should NOT be skipped - it's for the omelette filling
+        assert 'cheese' not in skipped, f"cheese should NOT be in skipped attributes: {skipped}"
 
     def test_omelette_with_fruit_salad_skips_bagel_question(self):
         """Test that omelette with fruit_salad side doesn't ask about bagel type."""
@@ -39,14 +42,15 @@ class TestFruitSaladSkipRules:
         # Check what attributes should be skipped
         skipped = get_skipped_attributes(item)
         assert 'bagel' in skipped, f"bagel should be in skipped attributes: {skipped}"
-        assert 'cheese' in skipped, f"cheese should be in skipped attributes: {skipped}"
+        # Cheese should NOT be skipped
+        assert 'cheese' not in skipped, f"cheese should NOT be skipped: {skipped}"
 
-        # Check that bagel and cheese are not in unanswered mandatory attributes
+        # Check that bagel is not in unanswered mandatory attributes
         unanswered = get_unanswered_mandatory(item, 'omelette')
         unanswered_slugs = [a['slug'] for a in unanswered]
 
         assert 'bagel' not in unanswered_slugs, f"bagel should not be asked: {unanswered_slugs}"
-        assert 'cheese' not in unanswered_slugs, f"cheese should not be asked: {unanswered_slugs}"
+        # Cheese should still be asked (if it's a mandatory attribute)
 
     def test_omelette_with_bagel_asks_about_bagel_type(self):
         """Test that omelette with bagel side still asks about bagel type."""
@@ -60,5 +64,3 @@ class TestFruitSaladSkipRules:
         # Check that bagel is NOT skipped when bagel is the side choice
         skipped = get_skipped_attributes(item)
         assert 'bagel' not in skipped, f"bagel should not be skipped when bagel is chosen: {skipped}"
-
-        # Note: cheese might or might not be asked depending on configuration

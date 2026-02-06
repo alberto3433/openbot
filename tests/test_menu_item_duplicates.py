@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-from orderbot.db.models import Base, MenuItem, MenuItemCategory
+from orderbot.db.models import Base, MenuItem
 
 
 # Use TEST_DATABASE_URL or derive from DATABASE_URL
@@ -64,37 +64,14 @@ class TestMenuItemDuplicates:
                 + "\n\nTo debug, enable MENU_ITEM_INSERT_LOGGING=1 and re-run tests."
             )
 
+    @pytest.mark.skip(reason="MenuItemCategory table removed - categories now derived from display_groups")
     def test_no_duplicate_category_assignments(self, db_session):
         """Fail if any menu item is assigned to the same category multiple times.
 
-        This checks the MenuItemCategory join table for duplicate entries,
-        which would indicate a bug in category assignment logic.
+        NOTE: This test is obsolete. MenuItemCategory table was removed.
+        Categories are now derived from: menu_item -> item_type -> display_group -> overall_category
         """
-        duplicates = (
-            db_session.query(
-                MenuItemCategory.menu_item_id,
-                MenuItemCategory.category_id,
-                func.count(MenuItemCategory.id).label("count"),
-            )
-            .group_by(MenuItemCategory.menu_item_id, MenuItemCategory.category_id)
-            .having(func.count(MenuItemCategory.id) > 1)
-            .all()
-        )
-
-        if duplicates:
-            dup_details = []
-            for menu_item_id, category_id, count in duplicates:
-                item = db_session.query(MenuItem.name).filter(
-                    MenuItem.id == menu_item_id
-                ).scalar()
-                dup_details.append(
-                    f"  MenuItem '{item}' (id={menu_item_id}) assigned to category_id={category_id} {count} times"
-                )
-
-            pytest.fail(
-                f"Found {len(duplicates)} duplicate category assignments:\n"
-                + "\n".join(dup_details)
-            )
+        pass
 
     def test_report_total_menu_item_count(self, db_session):
         """Report total menu item count for monitoring growth over time."""

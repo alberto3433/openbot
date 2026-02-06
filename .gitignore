@@ -30,3 +30,7 @@ nul
 # Database backups
 db_backup*/
 plan.md
+
+# Server/deployment files
+server.log
+_apprunner_update.json

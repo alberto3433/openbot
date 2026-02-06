@@ -223,6 +223,47 @@ class TestResumeConfigAfterRemoval:
         assert "removed" in msg_lower, \
             f"Expected removal confirmation for '{remove_phrase}', got: {result.message}"
 
+    @pytest.mark.parametrize("clear_phrase", [
+        "never mind, cancel everything",
+        "actually, cancel all",
+        "wait, remove all",
+        "um, cancel the whole order",
+        "start over",
+        "Start over",
+        "let's start over",
+        "can I start over",
+    ])
+    def test_clear_order_with_conversational_fillers(self, clear_phrase):
+        """Test clearing entire order with filler words during configuration.
+
+        Phrases like "never mind, cancel everything" should clear all items
+        from the order during configuration phase.
+        """
+        sm = OrderStateMachine()
+
+        # Order 2 items
+        result = sm.process("2 plain bagels")
+        order = result.order
+
+        # Should have 2 items
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 2, f"Expected 2 items, got {len(active_items)}"
+
+        # Use clear phrase with filler
+        result = sm.process(clear_phrase, order=order)
+
+        # Should have 0 items remaining (all cleared)
+        remaining_items = result.order.items.get_active_items()
+        assert len(remaining_items) == 0, \
+            f"Phrase '{clear_phrase}' should have cleared all items, " \
+            f"but {len(remaining_items)} items remain"
+
+        # Response should confirm clearing
+        msg_lower = result.message.lower()
+        print(f"Input: '{clear_phrase}' -> Response: {result.message}")
+        assert "cleared" in msg_lower or "removed" in msg_lower or "start over" in msg_lower, \
+            f"Expected clearing confirmation for '{clear_phrase}', got: {result.message}"
+
 
 class TestQuantityChangeDuringConfig:
     """Tests for changing item quantity during configuration."""

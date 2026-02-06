@@ -361,6 +361,17 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     """
     text_lower = text.lower().strip()
 
+    # Strip ordering phrases for cleaner matching (these don't affect item detection)
+    # This is a cleaned version for menu item matching - original text_lower is still used
+    # for other matching that might need the full context
+    # Note: "i like" is NOT stripped - it's a statement, not an ordering phrase
+    text_cleaned = re.sub(
+        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|'
+        r'can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)',
+        '', text_lower
+    )
+    text_cleaned = re.sub(r'^(a|an|the)\s+', '', text_cleaned)
+
     # 1. Check for exclusion phrases (e.g., "coffee cake" -> not a coffee beverage)
     if menu_cache.text_matches_exclusion_phrase(text):
         logger.debug("CONFIGURABLE_ITEM: excluded by required_match_phrases: '%s'", text[:50])
@@ -574,7 +585,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # 2b. Check if the user's text matches more specific menu items
     # e.g., "bagel chips" should NOT trigger configurable bagel flow if there are
     # specific menu items like "Bagel Chips - Salt", "Bagel Chips - BBQ", etc.
-    more_specific_matches = menu_cache.find_items_by_word_match(text_lower)
+    # Use text_cleaned (ordering phrases stripped) for more accurate matching
+    more_specific_matches = menu_cache.find_items_by_word_match(text_cleaned)
     if more_specific_matches:
         # Check if ANY of the specific matches are from a DIFFERENT item type than detected
         # This indicates the user likely wants a specific menu item, not a configurable one
@@ -585,6 +597,39 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 text[:50], len(more_specific_matches), specific_item_types, detected_item_type
             )
             return None
+
+        # Check if user's input has extra specificity beyond the item type word
+        # e.g., "bagel package" has "package" beyond "bagel", and if "package" appears
+        # in matching menu items like "3 Bagel Package", defer to menu item lookup
+        filler_words = {
+            'a', 'an', 'the', 'i', 'id', 'want', 'like', 'get', 'can', 'have', 'need',
+            'please', 'would', 'could', 'some', 'of', 'with', 'and', 'or', 'for', 'me',
+        }
+        input_words = set(re.findall(r'\b[a-z]+\b', text_lower))
+        # Include both the item type slug words AND the SHORT trigger words that detected this type
+        # e.g., for "coffee", type_words should include "coffee" (the trigger), not just "sized"/"beverage"
+        # But we only include triggers with 2 or fewer words - longer ones are menu item names
+        # (e.g., "3 bagel package" is a menu item, not a type trigger)
+        type_words = set(re.findall(r'\b[a-z]+\b', detected_item_type.lower()))
+        # Add short trigger words for this item type (e.g., "coffee", "latte", "iced coffee")
+        triggers = menu_cache.get_item_type_triggers().get(detected_item_type, [])
+        for trigger in triggers:
+            trigger_word_count = len(trigger.split())
+            if trigger_word_count <= 2:  # Only short triggers (like "coffee", "iced coffee")
+                type_words.update(re.findall(r'\b[a-z]+\b', trigger.lower()))
+        extra_words = input_words - type_words - filler_words
+
+        if extra_words:
+            # Check if any matching menu item name contains these extra words
+            for match in more_specific_matches:
+                match_name_lower = match.get("name", "").lower()
+                matching_extra = [w for w in extra_words if w in match_name_lower]
+                if matching_extra:
+                    logger.info(
+                        "CONFIGURABLE_ITEM: skipping '%s' - extra words %s found in menu item '%s'",
+                        text[:50], matching_extra, match.get("name")
+                    )
+                    return None
 
     logger.info("CONFIGURABLE_ITEM: detected type '%s' in '%s'", detected_item_type, text[:50])
 

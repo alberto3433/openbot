@@ -36,7 +36,7 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
 
     # Strip ordering phrases and articles
     text_lower = re.sub(
-        r'^(i\s+want\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)',
+        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)',
         '', text_lower
     )
     text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)

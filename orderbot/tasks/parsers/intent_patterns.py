@@ -107,6 +107,7 @@ FILLER_WORDS_PATTERN = re.compile(
     r"^(?:"
     r"actually,\s*"  # "actually," with comma is filler
     r"|actually\s+(?=cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)"
+    r"|never\s*mind,\s*"  # "never mind," when followed by another command is a redirect
     r"|oh[,\s]+"
     r"|wait,\s*"
     r"|um+[,\s]+"

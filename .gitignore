@@ -34,3 +34,8 @@ plan.md
 # Server/deployment files
 server.log
 _apprunner_update.json
+
+# Chaos monkey generated tests (auto-generated, not tracked)
+tests/chaos_monkey/generated/*.py
+!tests/chaos_monkey/generated/.gitkeep
+tests/chaos_monkey_failures_run*.md

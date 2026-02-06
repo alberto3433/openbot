@@ -229,6 +229,36 @@ class TestIntentPhrasing:
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
+    def test_i_would_like_chai_tea(self):
+        """'I would like' phrasing adds chai tea to cart."""
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        result = sm.process("I would like a chai tea", order)
+
+        # Chai tea is on the menu, should be added to cart
+        items = result.order.items.get_active_items()
+        assert len(items) >= 1, f"Should have added chai tea, got message: {result.message}"
+        # Verify it's a chai item
+        item_names = [item.menu_item_name.lower() for item in items if item.menu_item_name]
+        assert any("chai" in name for name in item_names), \
+            f"Expected chai tea in cart, got: {item_names}"
+
+    def test_i_like_not_ordering_phrase(self):
+        """'I like a' (without 'would') is not an ordering phrase."""
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        result = sm.process("I like a chai tea", order)
+
+        # "I like a" is not an ordering phrase, should prompt for order
+        items = result.order.items.get_active_items()
+        assert len(items) == 0, f"Should not have added item from non-ordering phrase, got: {[i.menu_item_name for i in items]}"
+        assert "what can i get" in result.message.lower() or "what would you like" in result.message.lower(), \
+            f"Expected prompt for order, got: {result.message}"
+
 
 class TestAffirmativeResponses:
     """Different ways to say yes."""

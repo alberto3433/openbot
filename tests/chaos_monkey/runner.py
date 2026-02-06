@@ -10,7 +10,7 @@ from typing import Any
 from tests.chaos_monkey.config import ChaosMonkeyConfig
 from tests.chaos_monkey.executor import TestExecutor
 from tests.chaos_monkey.generator import ScenarioGenerator
-from tests.chaos_monkey.reporter import FailureReporter
+from tests.chaos_monkey.reporter import FailureReporter, PytestFileGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ class ChaosMonkeyRunner:
         self.generator: ScenarioGenerator | None = None
         self.executor: TestExecutor | None = None
         self.reporter: FailureReporter | None = None
+        self.pytest_generator: PytestFileGenerator | None = None
 
     def _setup_signal_handlers(self) -> None:
         """Set up signal handlers for graceful shutdown."""
@@ -92,6 +93,7 @@ class ChaosMonkeyRunner:
         self.generator = ScenarioGenerator(self.config, self.menu_cache)
         self.executor = TestExecutor(self.config)
         self.reporter = FailureReporter(self.config)
+        self.pytest_generator = PytestFileGenerator(self.config)
 
         # Load menu data
         self.generator.load_menu_data()
@@ -131,6 +133,9 @@ class ChaosMonkeyRunner:
                                 result.scenario_name,
                                 result.failure_summary,
                             )
+                            # Generate pytest file for the failure
+                            if self.pytest_generator:
+                                self.pytest_generator.generate_test_file(result)
                         else:
                             logger.debug("PASS: %s", result.scenario_name)
 

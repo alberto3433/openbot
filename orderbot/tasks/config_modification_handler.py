@@ -474,8 +474,8 @@ class ConfigModificationHandler:
         about bread for their Cheesesteak, we should:
         1. Detect the ordering prefix ("and a")
         2. Parse the item portion using existing parse_open_input_deterministic
-        3. Add the new item(s) using ParsedItemProcessor
-        4. Re-ask the current configuration question
+        3. Add the new item(s) and queue them for later configuration
+        4. Restore the original config state and re-ask the current question
 
         Args:
             user_input: The user's input (e.g., "and a latte", "also two bagels")
@@ -488,6 +488,7 @@ class ConfigModificationHandler:
         from .parsers.intent_patterns import ADD_ITEM_DURING_CONFIG_PREFIX
         from .parsers import parse_open_input_deterministic
         from .parsed_item_processor import ParsedItemProcessor
+        from .models import TaskStatus
         from .utils.text import format_english_list
 
         # Step 1: Check for ordering prefix
@@ -516,7 +517,13 @@ class ConfigModificationHandler:
             [p.item_name or p.item_type for p in parsed.parsed_items]
         )
 
-        # Step 3: Use ParsedItemProcessor to add items (reuse existing logic)
+        # Step 3: Save current config state - we need to restore this after adding items
+        # because process_items() will change pending_field/pending_item_id to the new item
+        original_pending_field = order.pending_field
+        original_pending_item_id = order.pending_item_id
+        current_item_name = item.get_display_name()
+
+        # Step 4: Use ParsedItemProcessor to add items (reuse existing logic)
         processor = ParsedItemProcessor(
             item_adder_handler=self.item_adder_handler,
             pricing=self._taking_items_handler.pricing if self._taking_items_handler else None,
@@ -538,9 +545,29 @@ class ConfigModificationHandler:
                 return result
             return None
 
-        # Step 4: Build response acknowledging addition + re-ask current question
+        # Step 5: Queue ALL new items for later configuration and restore original config state
+        # process_items() starts configuring the first new item, but we want to continue
+        # configuring the ORIGINAL item (The Cheesesteak), not the new one (Blueberry Sandwich)
+        new_items = order.items.items[items_before:]
+        for new_item in new_items:
+            if new_item.status == TaskStatus.IN_PROGRESS:
+                # Queue for later configuration
+                order.queue_item_for_config(
+                    new_item.id,
+                    new_item.menu_item_type,
+                    item_name=new_item.get_display_name()
+                )
+                logger.info(
+                    "ADD_ITEM_DURING_CONFIG: Queued %s (%s) for later config",
+                    new_item.get_display_name(), new_item.id[:8]
+                )
+
+        # Restore original config state so we continue with the original item
+        order.pending_field = original_pending_field
+        order.pending_item_id = original_pending_item_id
+
+        # Step 6: Build response acknowledging addition + re-ask current question
         added_names = [p.item_name or p.item_type for p in parsed.parsed_items]
-        current_item_name = item.get_display_name()
         current_question = self.config_helper_handler.get_current_config_question(order, item)
 
         # Format the added items

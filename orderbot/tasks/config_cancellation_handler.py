@@ -31,6 +31,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Pattern for "start over" / "start fresh" - clears entire order
+START_OVER_PATTERN = re.compile(
+    r"^(?:"
+    r"start\s*over"
+    r"|start\s*fresh"
+    r"|let(?:'?s)?\s+start\s*over"
+    r"|(?:can\s+)?(?:i|we)\s+start\s*over"
+    r"|begin\s*again"
+    r"|from\s+the\s+(?:beginning|start)"
+    r")[\s!.,?]*$",
+    re.IGNORECASE
+)
+
 # Pattern for standalone cancellation phrases (no target specified)
 # During CONFIGURING_ITEM phase, these mean "cancel the current item being configured"
 STANDALONE_CANCEL_PATTERN = re.compile(
@@ -148,7 +161,29 @@ class ConfigCancellationHandler:
         # Strip conversational fillers like "actually," before pattern matching
         user_input_stripped = strip_conversational_fillers(user_input_stripped)
 
-        # First, check for standalone cancellation phrases (no target specified)
+        # Check for "start over" - clears entire order (check before standalone cancel)
+        start_over_match = START_OVER_PATTERN.match(user_input_stripped)
+        if start_over_match:
+            logger.info("Start over during config: '%s'", user_input_stripped)
+            active_items = order.items.get_active_items()
+            if active_items:
+                num_items = len(active_items)
+                for item in active_items:
+                    remove_item_from_order(order, item)
+                order.clear_pending()
+                order.set_phase(OrderPhase.TAKING_ITEMS)
+                logger.info("Start over: cleared ALL %d items from cart", num_items)
+                return StateMachineResult(
+                    message="OK, let's start over. What would you like to order?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message="Your order is already empty. What would you like to order?",
+                    order=order,
+                )
+
+        # Check for standalone cancellation phrases (no target specified)
         # During config, these mean "cancel the current item being configured"
         standalone_match = STANDALONE_CANCEL_PATTERN.match(user_input_stripped)
         if standalone_match:
@@ -202,6 +237,32 @@ class ConfigCancellationHandler:
                     order=order,
                 )
 
+        # Handle "cancel everything", "cancel all", "remove all", etc. - clear entire order
+        all_items_phrases = {
+            "all", "everything", "all of it", "the order", "my order",
+            "the whole order", "my whole order", "all items", "all the items",
+            "the whole thing", "it all", "them all",
+            "order", "whole order", "whole thing"
+        }
+        if cancel_desc.lower() in all_items_phrases:
+            active_items = order.items.get_active_items()
+            if active_items:
+                num_items = len(active_items)
+                for item in active_items:
+                    remove_item_from_order(order, item)
+                order.clear_pending()
+                order.set_phase(OrderPhase.TAKING_ITEMS)
+                logger.info("Cancel during config: cleared ALL %d items from cart", num_items)
+                return StateMachineResult(
+                    message="OK, I've cleared your order. What would you like to order?",
+                    order=order,
+                )
+            else:
+                return StateMachineResult(
+                    message="Your order is already empty. What would you like to order?",
+                    order=order,
+                )
+
         # Check if cancel_desc matches an ITEM TYPE (e.g., "bagels", "coffees")
         # If so, skip modifier removal - user wants to remove items, not modifiers
         cancel_variants = get_singular_plural_variants(cancel_desc)
@@ -213,6 +274,32 @@ class ConfigCancellationHandler:
                 logger.info(
                     "Cancel during config: '%s' matches item type '%s' - skipping modifier removal",
                     cancel_desc, category_mapping.get("slug")
+                )
+                break
+
+        # Check if cancel_desc matches an item's name or summary in the order
+        # If so, skip modifier removal - user wants to remove the item, not a modifier
+        active_items = order.items.get_active_items()
+        matches_item_in_order = False
+        for item in active_items:
+            if not isinstance(item, MenuItemTask):
+                continue
+            item_name = (item.menu_item_name or "").lower()
+            item_summary = item.get_summary().lower()
+            cancel_desc_lower = cancel_desc.lower()
+            # Match if cancel_desc appears in item summary or if item name is in cancel_desc
+            if cancel_desc_lower in item_summary or item_summary in cancel_desc_lower:
+                matches_item_in_order = True
+                logger.info(
+                    "Cancel during config: '%s' matches item '%s' - skipping modifier removal",
+                    cancel_desc, item.get_summary()
+                )
+                break
+            elif item_name and (cancel_desc_lower in item_name or item_name in cancel_desc_lower):
+                matches_item_in_order = True
+                logger.info(
+                    "Cancel during config: '%s' matches item name '%s' - skipping modifier removal",
+                    cancel_desc, item_name
                 )
                 break
 
@@ -292,8 +379,8 @@ class ConfigCancellationHandler:
 
         # Check if this is a modifier removal on the current item being configured
         # Use unified modifier_operations for consistent handling
-        # But SKIP if cancel_desc matches an item type (user wants to remove items, not modifiers)
-        if isinstance(current_item, MenuItemTask) and not matches_item_type:
+        # But SKIP if cancel_desc matches an item type or item in order (user wants to remove items, not modifiers)
+        if isinstance(current_item, MenuItemTask) and not matches_item_type and not matches_item_in_order:
             try:
                 modifier_match = find_modifier_match(current_item, cancel_desc)
                 if modifier_match:

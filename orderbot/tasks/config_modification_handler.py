@@ -462,6 +462,102 @@ class ConfigModificationHandler:
 
         return self._continue_config_with_message(message, item, order)
 
+    def handle_add_item_during_config(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle adding new items during configuration (e.g., 'and a latte').
+
+        When a user says "and a Blueberry Cream Cheese Sandwich" while being asked
+        about bread for their Cheesesteak, we should:
+        1. Detect the ordering prefix ("and a")
+        2. Parse the item portion using existing parse_open_input_deterministic
+        3. Add the new item(s) using ParsedItemProcessor
+        4. Re-ask the current configuration question
+
+        Args:
+            user_input: The user's input (e.g., "and a latte", "also two bagels")
+            item: The item being configured
+            order: The current order state
+
+        Returns:
+            StateMachineResult if new items were added, None if not an add-item pattern
+        """
+        from .parsers.intent_patterns import ADD_ITEM_DURING_CONFIG_PREFIX
+        from .parsers import parse_open_input_deterministic
+        from .parsed_item_processor import ParsedItemProcessor
+        from .utils.text import format_english_list
+
+        # Step 1: Check for ordering prefix
+        prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(user_input)
+        if not prefix_match:
+            return None
+
+        # Step 2: Extract item portion and parse with existing parser
+        item_text = user_input[prefix_match.end():].strip()
+        if not item_text:
+            return None
+
+        logger.info(
+            "ADD_ITEM_DURING_CONFIG: Detected prefix, parsing item text: '%s'",
+            item_text[:50]
+        )
+
+        parsed = parse_open_input_deterministic(item_text)
+        if not parsed or not parsed.parsed_items:
+            logger.debug("ADD_ITEM_DURING_CONFIG: No items parsed from '%s'", item_text[:50])
+            return None
+
+        logger.info(
+            "ADD_ITEM_DURING_CONFIG: Parsed %d item(s): %s",
+            len(parsed.parsed_items),
+            [p.item_name or p.item_type for p in parsed.parsed_items]
+        )
+
+        # Step 3: Use ParsedItemProcessor to add items (reuse existing logic)
+        processor = ParsedItemProcessor(
+            item_adder_handler=self.item_adder_handler,
+            pricing=self._taking_items_handler.pricing if self._taking_items_handler else None,
+        )
+
+        # Track items added for the acknowledgment message
+        items_before = len(order.items.items)
+
+        # Process items - this handles adding, queuing for config, pricing, etc.
+        result = processor.process_items(parsed, order)
+
+        items_after = len(order.items.items)
+        items_added = items_after - items_before
+
+        if items_added == 0:
+            # No items were added (possibly disambiguation needed)
+            # Return the result from process_items if it has a message
+            if result and result.message:
+                return result
+            return None
+
+        # Step 4: Build response acknowledging addition + re-ask current question
+        added_names = [p.item_name or p.item_type for p in parsed.parsed_items]
+        current_item_name = item.get_display_name()
+        current_question = self.config_helper_handler.get_current_config_question(order, item)
+
+        # Format the added items
+        added_text = format_english_list(added_names)
+
+        if current_question:
+            message = f"Got it, I've added {added_text}. Now, for your {current_item_name}, {current_question.lower()}"
+        else:
+            message = f"Got it, I've added {added_text}."
+
+        logger.info(
+            "ADD_ITEM_DURING_CONFIG: Added %d item(s), continuing config for %s",
+            items_added, current_item_name
+        )
+
+        return StateMachineResult(message=message, order=order)
+
     def _replace_or_add_modifier(self, item: MenuItemTask, match: dict) -> None:
         """Replace existing modifier of same category, or add if none exists.
 

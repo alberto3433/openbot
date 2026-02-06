@@ -236,6 +236,11 @@ class ItemCancellationHandler:
         if result:
             return result
 
+        # Handle special "__last_n_items_N__" value for "remove the last 2", etc.
+        result = self._try_last_n_items_removal(parsed, order, active_items)
+        if result:
+            return result
+
         # Handle special "__reduce_to_one__" value for "just one bagel", "only one", etc.
         result = self._try_reduce_to_one(parsed, order, active_items)
         if result:
@@ -392,6 +397,54 @@ class ItemCancellationHandler:
         else:
             return StateMachineResult(
                 message="Your order is already empty. What would you like to order?",
+                order=order,
+            )
+
+    def _try_last_n_items_removal(
+        self,
+        parsed: OpenInputResponse,
+        order: OrderTask,
+        active_items: list,
+    ) -> StateMachineResult | None:
+        """Handle 'remove the last 2', 'cancel last three items', etc."""
+        import re
+        match = re.match(r"^__last_n_items_(\d+)__$", parsed.cancel_item)
+        if not match:
+            return None
+
+        count = int(match.group(1))
+
+        if not active_items:
+            return StateMachineResult(
+                message="Your order is empty. What would you like to order?",
+                order=order,
+            )
+
+        # Can only remove up to the number of items we have
+        actual_count = min(count, len(active_items))
+
+        # Remove the last N items (from the end of the list)
+        items_to_remove = active_items[-actual_count:]
+        removed_names = []
+        for item in items_to_remove:
+            removed_names.append(item.get_summary())
+            remove_item_from_order(order, item)
+
+        logger.info("Cancellation: removed last %d items from cart: %s", actual_count, removed_names)
+
+        remaining_items = order.items.get_active_items()
+
+        if actual_count == 1:
+            return self._build_removal_response(order, removed_names[0], bool(remaining_items))
+
+        if remaining_items:
+            return StateMachineResult(
+                message=f"OK, I've removed the last {actual_count} items. Anything else?",
+                order=order,
+            )
+        else:
+            return StateMachineResult(
+                message=f"OK, I've removed the last {actual_count} items. What would you like to order?",
                 order=order,
             )
 

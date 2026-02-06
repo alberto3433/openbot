@@ -262,6 +262,16 @@ class ConfiguringItemHandler:
                 message = f"Let's finish customizing the {item_name} first."
             return StateMachineResult(message=message, order=order)
 
+        # Check for "and a X" / "also X" patterns that add new items mid-config
+        # This must run BEFORE is_valid_answer check to prevent "blueberry" being
+        # matched as a bread option when user says "and a Blueberry Cream Cheese Sandwich"
+        if isinstance(item, MenuItemTask):
+            add_item_result = self.config_modification_handler.handle_add_item_during_config(
+                user_input, item, order
+            )
+            if add_item_result:
+                return add_item_result
+
         # Context-aware check: if input could be a valid answer to the current question,
         # skip change request and off-topic detection. This prevents "I want avocado" from
         # being misinterpreted as a change request or off-topic when asked about toppings.

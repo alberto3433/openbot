@@ -11,7 +11,7 @@ from typing import Optional, Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
-from .parsers import CANCEL_ITEM_PATTERN
+from .parsers import CANCEL_ITEM_PATTERN, strip_conversational_fillers
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
 from .handler_utils import remove_item_from_order
 from .modifier_operations import (
@@ -145,6 +145,8 @@ class ConfigCancellationHandler:
         Returns StateMachineResult if cancellation handled, None otherwise.
         """
         user_input_stripped = user_input.strip()
+        # Strip conversational fillers like "actually," before pattern matching
+        user_input_stripped = strip_conversational_fillers(user_input_stripped)
 
         # First, check for standalone cancellation phrases (no target specified)
         # During config, these mean "cancel the current item being configured"

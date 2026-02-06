@@ -183,6 +183,46 @@ class TestResumeConfigAfterRemoval:
         assert "toast" in msg_lower, \
             f"Expected to continue with toasting question, got: {result.message}"
 
+    @pytest.mark.parametrize("remove_phrase", [
+        "actually, remove the plain bagel",
+        "Actually, Remove The Plain Bagel",  # capitalized
+        "um, remove the plain bagel",
+        "wait, cancel the plain bagel",
+        "oh, nevermind the plain bagel",
+    ])
+    def test_removal_with_conversational_fillers(self, remove_phrase):
+        """Test removal phrases prefixed with conversational fillers.
+
+        Phrases like "actually, remove the X" should work during configuration.
+        The filler words (actually, um, wait, oh) should be stripped before
+        pattern matching.
+        """
+        sm = OrderStateMachine()
+
+        # Order a plain bagel (will trigger config question about toasting)
+        result = sm.process("plain bagel")
+        order = result.order
+
+        # Should have 1 bagel in the cart, in_progress
+        active_items = order.items.get_active_items()
+        assert len(active_items) == 1, f"Expected 1 item, got {len(active_items)}"
+        assert active_items[0].status == TaskStatus.IN_PROGRESS
+
+        # Use removal phrase with filler
+        result = sm.process(remove_phrase, order=order)
+
+        # Should have 0 items remaining (item was removed)
+        remaining_items = result.order.items.get_active_items()
+        assert len(remaining_items) == 0, \
+            f"Phrase '{remove_phrase}' should have removed the item, " \
+            f"but {len(remaining_items)} items remain"
+
+        # Response should confirm removal
+        msg_lower = result.message.lower()
+        print(f"Input: '{remove_phrase}' -> Response: {result.message}")
+        assert "removed" in msg_lower, \
+            f"Expected removal confirmation for '{remove_phrase}', got: {result.message}"
+
 
 class TestQuantityChangeDuringConfig:
     """Tests for changing item quantity during configuration."""

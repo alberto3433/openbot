@@ -482,6 +482,24 @@ def parse_open_input_deterministic(
             if cancel_item.lower() in last_item_pronouns:
                 logger.info("Deterministic parse: cancellation of last item detected (pronoun='%s')", cancel_item)
                 return OpenInputResponse(cancel_item="__last_item__")
+
+            # Handle "last N" or "last N items" - remove the last N items from cart
+            last_n_match = re.match(
+                r"^last\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+                r"(?:\s+(?:items?|ones?))?$",
+                cancel_item.lower()
+            )
+            if last_n_match:
+                from .quantity_utils import BASIC_WORD_TO_NUM
+                num_str = last_n_match.group(1)
+                if num_str.isdigit():
+                    count = int(num_str)
+                else:
+                    count = BASIC_WORD_TO_NUM.get(num_str, 0)
+                if count >= 1:
+                    logger.info("Deterministic parse: remove last %d items detected", count)
+                    return OpenInputResponse(cancel_item=f"__last_n_items_{count}__")
+
             logger.info("Deterministic parse: cancellation detected, item='%s'", cancel_item)
             return OpenInputResponse(cancel_item=cancel_item)
 

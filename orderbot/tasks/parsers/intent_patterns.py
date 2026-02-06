@@ -398,6 +398,31 @@ ORDERING_LANGUAGE_PATTERN = re.compile(
 
 
 # =============================================================================
+# Add Item During Config Pattern
+# =============================================================================
+
+# Pattern to detect ordering prefixes that indicate a new item during configuration.
+# This only matches the PREFIX - the rest is parsed by parse_open_input_deterministic().
+# Examples: "and a latte", "also a bagel", "plus a coffee", "I'd also like a muffin"
+ADD_ITEM_DURING_CONFIG_PREFIX = re.compile(
+    r"^(?:"
+    # "and a/an/the X", "and two X"
+    r"and\s+(?:a(?:n)?|the|\d+|two|three|four|five)\s+"
+    r"|"
+    # "also a/an/the X", "also X" (no article)
+    r"also\s+(?:a(?:n)?|the)?\s*"
+    r"|"
+    # "plus a/an/the X"
+    r"plus\s+(?:a(?:n)?|the)?\s*"
+    r"|"
+    # "I'd also like X", "I would also like X", "I also want X"
+    r"i(?:'?d|\s+would)?\s+also\s+(?:like|want)\s+"
+    r")",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
 # Configurable Item Pattern (Lazy Built from Database)
 # =============================================================================
 

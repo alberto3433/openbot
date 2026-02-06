@@ -53,6 +53,7 @@ from .deterministic import (
     _parse_multi_item_order,
     parse_open_input_deterministic,
     _extract_quantity,
+    strip_conversational_fillers,
 )
 
 from .llm_parsers import (
@@ -104,4 +105,7 @@ __all__ = [
     # === Constants ===
     "WORD_TO_NUM",
     "normalize_for_match",
+
+    # === Pattern Utilities ===
+    "strip_conversational_fillers",
 ]

@@ -20,7 +20,7 @@ from orderbot.cache import menu_cache
 from .models import OrderTask
 from .schemas import StateMachineResult
 from .mixins import MenuDataMixin
-from .utils.text import format_english_list
+from .utils.text import format_english_list, format_paginated_list
 from .parsers.constants import DEFAULT_PAGINATION_SIZE
 from .pending_fields import PendingField
 
@@ -39,13 +39,9 @@ DIETARY_DISPLAY_NAMES = {
     "is_kosher": "kosher",
 }
 
-# Human-readable names for allergen properties
-ALLERGEN_DISPLAY_NAMES = {
-    "contains_eggs": "eggs",
-    "contains_fish": "fish",
-    "contains_sesame": "sesame",
-    "contains_nuts": "nuts",
-}
+def _allergen_display_name(allergen_type: str) -> str:
+    """Derive display name from allergen property (e.g., 'contains_eggs' -> 'eggs')."""
+    return allergen_type.replace("contains_", "")
 
 
 class DietaryInquiryHandler(MenuDataMixin):
@@ -159,23 +155,19 @@ class DietaryInquiryHandler(MenuDataMixin):
         # Format the list of items with pagination
         item_names = [item.get("name", "Unknown") for item in items]
 
-        if len(item_names) <= DEFAULT_PAGINATION_SIZE:
-            items_list = format_english_list(item_names)
-            order.clear_menu_pagination()
-        else:
-            batch = item_names[:DEFAULT_PAGINATION_SIZE]
-            remaining = len(item_names) - len(batch)
-            items_list = ", ".join(batch) + f", and {remaining} more"
+        items_list, new_offset = format_paginated_list(item_names, DEFAULT_PAGINATION_SIZE)
+        if new_offset > 0:
             # Save pagination state for "show more" follow-ups
-            # Store items directly in pagination (like attribute_options) for proper retrieval
             order.menu_query_pagination = {
                 "type": "dietary_items",
                 "dietary_type": dietary_type,
                 "dietary_display": display_name,
                 "category": category_display,
                 "items": item_names,
-                "offset": DEFAULT_PAGINATION_SIZE,
+                "offset": new_offset,
             }
+        else:
+            order.clear_menu_pagination()
 
         # Build response message
         if category_display:
@@ -299,7 +291,7 @@ class DietaryInquiryHandler(MenuDataMixin):
 
         if allergen_type:
             # Asking about a specific allergen
-            allergen_display = ALLERGEN_DISPLAY_NAMES.get(allergen_type, allergen_type.replace("contains_", ""))
+            allergen_display = _allergen_display_name(allergen_type)
             value = info.get(allergen_type)
 
             if value is None:
@@ -333,9 +325,12 @@ class DietaryInquiryHandler(MenuDataMixin):
             allergens = menu_cache.get_item_allergens(item_name)
 
             if not allergens:
+                # Get all allergen properties from the info dict (keys starting with "contains_")
+                allergen_props = [k for k in info.keys() if k.startswith("contains_")]
+
                 # Check if we have any allergen data at all
                 has_any_allergen_data = any(
-                    info.get(prop) is not None for prop in ALLERGEN_DISPLAY_NAMES.keys()
+                    info.get(prop) is not None for prop in allergen_props
                 )
 
                 if not has_any_allergen_data:
@@ -348,10 +343,14 @@ class DietaryInquiryHandler(MenuDataMixin):
                         order=order,
                     )
 
+                # Build tracked allergens list dynamically from properties
+                tracked_allergens = [_allergen_display_name(p) for p in allergen_props]
+                tracked_list = ", ".join(tracked_allergens)
+
                 return StateMachineResult(
                     message=(
                         f"{item_display_name} doesn't contain any of the common allergens we track "
-                        f"(eggs, fish, sesame, nuts). "
+                        f"({tracked_list}). "
                         f"Would you like to add it to your order?"
                     ),
                     order=order,
@@ -380,7 +379,7 @@ class DietaryInquiryHandler(MenuDataMixin):
         Returns:
             StateMachineResult with allergen-free items
         """
-        allergen_display = ALLERGEN_DISPLAY_NAMES.get(allergen_type, allergen_type.replace("contains_", ""))
+        allergen_display = _allergen_display_name(allergen_type)
 
         # Convert to the "free" property name for cache lookup
         free_property = allergen_type.replace("contains_", "") + "_free"
@@ -411,14 +410,11 @@ class DietaryInquiryHandler(MenuDataMixin):
         # Format the list of items
         item_names = [item.get("name", "Unknown") for item in items]
 
-        if len(item_names) <= DEFAULT_PAGINATION_SIZE:
-            items_list = format_english_list(item_names)
-            order.clear_menu_pagination()
+        items_list, new_offset = format_paginated_list(item_names, DEFAULT_PAGINATION_SIZE)
+        if new_offset > 0:
+            order.set_menu_pagination(f"allergen_{free_property}", new_offset, len(item_names))
         else:
-            batch = item_names[:DEFAULT_PAGINATION_SIZE]
-            remaining = len(item_names) - len(batch)
-            items_list = ", ".join(batch) + f", and {remaining} more"
-            order.set_menu_pagination(f"allergen_{free_property}", DEFAULT_PAGINATION_SIZE, len(item_names))
+            order.clear_menu_pagination()
 
         return StateMachineResult(
             message=f"Our {allergen_display}-free options include: {items_list}. Would you like any of these?",

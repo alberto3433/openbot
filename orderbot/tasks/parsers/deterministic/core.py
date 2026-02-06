@@ -263,6 +263,13 @@ def parse_open_input_deterministic(
     if attribute_inquiry_result:
         return attribute_inquiry_result
 
+    # Check for dietary/allergen/availability/customization inquiries
+    # Must run BEFORE parse_menu_query since "do you have vegan sandwiches?" is a
+    # dietary+category query that should be handled specially, not as a generic menu query
+    dietary_result = parse_dietary_inquiry(text)
+    if dietary_result:
+        return dietary_result
+
     # Check for menu category queries ("what sweets do you have?", "what desserts do you have?")
     menu_query_result = parse_menu_query(text)
     if menu_query_result:
@@ -287,11 +294,6 @@ def parse_open_input_deterministic(
     modifier_inquiry_result = parse_modifier_inquiry(text, modifier_category_keywords, modifier_item_keywords)
     if modifier_inquiry_result:
         return modifier_inquiry_result
-
-    # Check for dietary/allergen/availability/customization inquiries
-    dietary_result = parse_dietary_inquiry(text)
-    if dietary_result:
-        return dietary_result
 
     # Check for ingredient-based menu search
     # When user says "chicken" or "something with bacon", show matching items

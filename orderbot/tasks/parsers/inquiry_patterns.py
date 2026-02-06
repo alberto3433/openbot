@@ -252,18 +252,62 @@ DIETARY_PROPERTIES = {
     "kosher": "is_kosher",
 }
 
-# Allergen property names (matching database column names)
-ALLERGEN_PROPERTIES = {
-    "eggs": "contains_eggs",
-    "egg": "contains_eggs",
-    "fish": "contains_fish",
-    "seafood": "contains_fish",
-    "sesame": "contains_sesame",
-    "nuts": "contains_nuts",
-    "nut": "contains_nuts",
-    "tree nuts": "contains_nuts",
-    "peanuts": "contains_nuts",
-}
+# Default allergen column names (fallback when cache is not loaded)
+# These are schema knowledge (DB column names), not domain knowledge
+_DEFAULT_ALLERGEN_COLUMNS = ["contains_eggs", "contains_fish", "contains_sesame", "contains_nuts"]
+
+
+def _get_allergen_columns() -> list[str]:
+    """Get allergen column names from cache, with fallback.
+
+    Returns the list of allergen columns from the menu cache if available,
+    otherwise falls back to the default list. This makes allergen patterns
+    data-driven rather than hardcoded.
+
+    Returns:
+        List of allergen column names (e.g., ["contains_eggs", "contains_fish", ...]).
+    """
+    try:
+        from orderbot.cache import menu_cache
+        if menu_cache.is_loaded:
+            columns = menu_cache.get_allergen_column_names()
+            if columns:
+                return columns
+    except Exception:
+        pass
+    # Fallback for tests/startup when cache isn't loaded
+    return _DEFAULT_ALLERGEN_COLUMNS
+
+
+def _build_allergen_properties() -> dict[str, str]:
+    """Build allergen keyword -> column mapping from column names."""
+    props = {}
+    for col in _get_allergen_columns():
+        base = col.replace("contains_", "")
+        props[base] = col
+        # Add singular if plural (eggs->egg, nuts->nut), but not for "fish"
+        if base.endswith("s") and base != "fish":
+            props[base[:-1]] = col
+    # Add common synonyms that map to existing columns
+    props["seafood"] = "contains_fish"
+    props["tree nuts"] = "contains_nuts"
+    props["peanuts"] = "contains_nuts"
+    return props
+
+
+# Allergen property names (derived from database column names)
+ALLERGEN_PROPERTIES = _build_allergen_properties()
+
+
+def _build_allergen_regex_part() -> str:
+    """Build regex alternation for allergen terms."""
+    terms = list(ALLERGEN_PROPERTIES.keys())
+    # Sort by length descending so longer terms match first (e.g., "tree nuts" before "nuts")
+    return r"(" + "|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True)) + r")"
+
+
+# Pre-built allergen regex alternation for use in patterns
+_ALLERGEN_TERMS = _build_allergen_regex_part()
 
 # Patterns for combined dietary + category queries ("what vegan drinks do you have?")
 # These ask about dietary options filtered by a category
@@ -299,33 +343,53 @@ DIETARY_OPTIONS_PATTERNS = [
 ]
 
 # Patterns for specific item dietary inquiry ("is the classic gluten-free?")
+# Item type suffixes (sandwich, bagel, etc.) are stripped during menu item matching, not here
 DIETARY_ITEM_PATTERNS = [
     # "is the classic vegan?" / "is the BLT gluten-free?"
     re.compile(r"is\s+(?:the\s+|a\s+)?(.+?)\s+(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf)\s*\??$", re.IGNORECASE),
-    # "is the classic sandwich vegan?" (handle "sandwich" suffix)
-    re.compile(r"is\s+(?:the\s+|a\s+)?(.+?)\s+(?:sandwich\s+|bagel\s+)?(vegan|vegetarian|gluten[- ]?free|dairy[- ]?free|kosher|gf)\s*\??$", re.IGNORECASE),
 ]
 
 # Patterns for allergen inquiry ("does X contain nuts?")
+# Uses dynamically built allergen terms from _ALLERGEN_TERMS
 ALLERGEN_ITEM_PATTERNS = [
     # "does the classic contain nuts?" / "does this have eggs?"
-    re.compile(r"does\s+(?:the\s+|a\s+|this\s+)?(.+?)\s+(?:contain|have|include)\s+(nuts?|eggs?|fish|seafood|sesame|peanuts?|tree\s*nuts?)", re.IGNORECASE),
+    re.compile(rf"does\s+(?:the\s+|a\s+|this\s+)?(.+?)\s+(?:contain|have|include)\s+{_ALLERGEN_TERMS}", re.IGNORECASE),
     # "is there nuts in the classic?" / "are there eggs in this?"
-    re.compile(r"(?:is|are)\s+there\s+(nuts?|eggs?|fish|seafood|sesame|peanuts?|tree\s*nuts?)\s+in\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    re.compile(rf"(?:is|are)\s+there\s+{_ALLERGEN_TERMS}\s+in\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
     # "does the classic have any allergens?" (general allergen question)
     re.compile(r"does\s+(?:the\s+|a\s+)?(.+?)\s+have\s+(?:any\s+)?allergens?\s*\??$", re.IGNORECASE),
     # "what allergens are in the classic?"
     re.compile(r"what\s+allergens?\s+(?:are\s+)?in\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
     # "allergens in the classic?" / "nuts in the BLT?"
-    re.compile(r"^(nuts?|eggs?|fish|seafood|sesame|allergens?)\s+in\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
+    re.compile(rf"^({_ALLERGEN_TERMS[1:-1]}|allergens?)\s+in\s+(?:the\s+|a\s+)?(.+?)\s*\??$", re.IGNORECASE),
 ]
+
+
+def _build_allergen_free_regex_part() -> str:
+    """Build regex alternation for allergen-free terms (singular form + dairy)."""
+    # Get singular base forms for X-free patterns
+    bases = set()
+    for col in _get_allergen_columns():
+        base = col.replace("contains_", "")
+        # Use singular form if ends with 's' (eggs->egg, nuts->nut), else use as-is
+        if base.endswith("s") and base != "fish":
+            bases.add(base[:-1])
+        else:
+            bases.add(base)
+    bases.add("dairy")  # Common allergen-free term not in contains_ columns
+    bases.add("seafood")  # Synonym for fish
+    return r"(" + "|".join(sorted(bases, key=len, reverse=True)) + r")"
+
+
+_ALLERGEN_FREE_TERMS = _build_allergen_free_regex_part()
+
 
 # Patterns for general allergen-free options inquiry
 ALLERGEN_FREE_OPTIONS_PATTERNS = [
     # "do you have anything without nuts?" / "anything nut-free?"
-    re.compile(r"(?:do\s+you\s+have\s+)?(?:any(?:thing)?|items?|options?)\s+(?:without|with\s+no|free\s+of)\s+(nuts?|eggs?|fish|seafood|sesame|dairy)", re.IGNORECASE),
+    re.compile(rf"(?:do\s+you\s+have\s+)?(?:any(?:thing)?|items?|options?)\s+(?:without|with\s+no|free\s+of)\s+{_ALLERGEN_TERMS}", re.IGNORECASE),
     # "nut-free options?" / "egg-free items?"
-    re.compile(r"(nut|egg|fish|seafood|sesame|dairy)[- ]?free\s+(?:options?|items?|choices?|menu)?", re.IGNORECASE),
+    re.compile(rf"{_ALLERGEN_FREE_TERMS}[- ]?free\s+(?:options?|items?|choices?|menu)?", re.IGNORECASE),
 ]
 
 
@@ -429,18 +493,64 @@ MODIFICATION_EXTRACTOR = re.compile(
 # Pattern to detect "without X" modifications
 WITHOUT_PATTERN = re.compile(r"without\s+(?:the\s+)?(.+)", re.IGNORECASE)
 
-# Pattern to detect "iced" / "hot" / size modifications in reorder context
-# Maps keyword -> (attribute, value) for deterministic modification
-REORDER_MODIFICATION_KEYWORDS = {
-    "iced": ("iced", True),
-    "hot": ("iced", False),
-    "large": ("size", "large"),
-    "medium": ("size", "medium"),
-    "small": ("size", "small"),
-    "toasted": ("toasted", True),
-    "not toasted": ("toasted", False),
-    "untoasted": ("toasted", False),
-}
+
+# Reorder modification keywords - lazily built from cache
+_reorder_modification_keywords_cache: dict[str, tuple[str, bool | str]] | None = None
+
+
+def get_reorder_modification_keywords() -> dict[str, tuple[str, bool | str]]:
+    """Get modification keywords for reorder requests, built from menu cache.
+
+    Returns a mapping of keyword -> (attribute_slug, value) for deterministic modification.
+    Built lazily from cache data the first time it's called.
+
+    Returns:
+        Dict mapping keyword to (attribute_slug, value) tuple.
+        Returns empty dict if cache is not loaded.
+    """
+    global _reorder_modification_keywords_cache
+
+    if _reorder_modification_keywords_cache is not None:
+        return _reorder_modification_keywords_cache
+
+    # Build from cache - import here to avoid circular imports
+    from orderbot.cache import menu_cache
+
+    keywords: dict[str, tuple[str, bool | str]] = {}
+
+    try:
+        option_words = menu_cache.get_all_attribute_option_words()
+    except Exception:
+        # Cache not loaded - return empty dict
+        return {}
+
+    # For each option word, determine the appropriate value
+    for word, attr_slug in option_words.items():
+        # Get input type for this attribute
+        input_type = None
+        for item_type_slug, attrs in menu_cache._item_type_attributes.items():
+            if attr_slug in attrs:
+                input_type = attrs[attr_slug].get("input_type")
+                break
+
+        if input_type == "boolean":
+            # Boolean attribute: word maps to True
+            keywords[word] = (attr_slug, True)
+            # Add negation patterns
+            keywords[f"not {word}"] = (attr_slug, False)
+            keywords[f"un{word}"] = (attr_slug, False)
+        else:
+            # Non-boolean: word is the value itself
+            keywords[word] = (attr_slug, word)
+
+    _reorder_modification_keywords_cache = keywords
+    return keywords
+
+
+def clear_reorder_modification_keywords_cache() -> None:
+    """Clear the cached modification keywords. Call when menu cache is reloaded."""
+    global _reorder_modification_keywords_cache
+    _reorder_modification_keywords_cache = None
 
 # Pattern to detect order number references ("reorder order number 42")
 ORDER_NUMBER_PATTERN = re.compile(

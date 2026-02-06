@@ -3,6 +3,93 @@ Text formatting utilities for human-readable output.
 """
 
 
+# Ordinal word mapping for selection parsing
+ORDINAL_MAP = {
+    "first": 0, "1st": 0, "the first": 0, "the first one": 0,
+    "second": 1, "2nd": 1, "the second": 1, "the second one": 1,
+    "third": 2, "3rd": 2, "the third": 2, "the third one": 2,
+    "fourth": 3, "4th": 3, "the fourth": 3, "the fourth one": 3,
+    "fifth": 4, "5th": 4, "the fifth": 4, "the fifth one": 4,
+}
+
+
+def parse_selection(text: str, max_options: int) -> int | None:
+    """Parse user's selection from a numbered list.
+
+    Handles direct numbers ("1", "2") and ordinal words ("first", "the second one").
+
+    Args:
+        text: User's response text (will be lowercased and stripped).
+        max_options: Maximum number of valid options (1-indexed).
+
+    Returns:
+        0-based index of the selection, or None if not parseable.
+
+    Examples:
+        >>> parse_selection("1", 5)
+        0
+        >>> parse_selection("first", 5)
+        0
+        >>> parse_selection("the second one", 3)
+        1
+        >>> parse_selection("10", 5)  # Out of range
+        None
+        >>> parse_selection("hello", 5)  # Not a selection
+        None
+    """
+    text = text.strip().lower()
+
+    # Direct number
+    if text.isdigit():
+        idx = int(text) - 1
+        if 0 <= idx < max_options:
+            return idx
+        return None
+
+    # Ordinal words
+    for key, idx in ORDINAL_MAP.items():
+        if text == key or text.startswith(key + " "):
+            if idx < max_options:
+                return idx
+
+    return None
+
+
+def format_paginated_list(
+    items: list[str],
+    limit: int,
+    offset: int = 0,
+) -> tuple[str, int]:
+    """Format a paginated list with "and X more" suffix.
+
+    Args:
+        items: Full list of item names.
+        limit: Maximum items to show in this batch.
+        offset: Starting offset (for "show more" pagination).
+
+    Returns:
+        Tuple of (formatted_string, new_offset):
+        - If all items shown, new_offset is 0 (signals complete).
+        - Otherwise, new_offset is where to continue from.
+
+    Examples:
+        >>> format_paginated_list(["A", "B", "C"], limit=2)
+        ('A, B, and 1 more', 2)
+        >>> format_paginated_list(["A", "B", "C"], limit=5)
+        ('A, B, and C', 0)
+        >>> format_paginated_list(["A", "B", "C", "D", "E"], limit=2, offset=2)
+        ('C, D, and 1 more', 4)
+    """
+    batch = items[offset:offset + limit]
+    remaining = len(items) - offset - len(batch)
+
+    if remaining > 0:
+        formatted = ", ".join(batch) + f", and {remaining} more"
+        return formatted, offset + len(batch)
+    else:
+        return format_english_list(batch), 0
+
+
 def number_to_word(n: int) -> str:
     """Convert small integers (1-10) to words for natural language output.
 

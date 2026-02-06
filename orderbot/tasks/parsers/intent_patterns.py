@@ -186,6 +186,38 @@ MAKE_IT_N_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# Variant of MAKE_IT_N_PATTERN for use during CONFIGURING_ITEM phase
+# This pattern allows optional trailing text (the item name) after the quantity
+# e.g., "make it two hot teas" when being asked about tea flavor
+# The item name is ignored since we already know which item we're configuring
+MAKE_IT_N_CONFIG_PATTERN = re.compile(
+    r"^(?:"
+    r"actually[,]?\s+make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # "can you make it two" / "could you make that three"
+    r"(?:can|could|would)\s+you\s+make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"i'?ll\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"i\s+(?:want|need)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"(?:can|could|may)\s+i\s+(?:get|have)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"actually[,]?\s+(?:let'?s?\s+(?:do|get|have)\s+)?(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"(?:give|get)\s+me\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"let'?s?\s+(?:do|have|get|make\s+it)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    r"(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+of\s+(?:those|them|that)"
+    r")"
+    # Allow optional trailing item name (e.g., "hot teas", "plain bagels")
+    r"(?:\s+[\w\s]+)?[\s!.,?]*$",
+    re.IGNORECASE
+)
+
 # "just one" / "only one" pattern - reduces quantity to 1
 REDUCE_TO_ONE_PATTERN = re.compile(
     r"^(?:"

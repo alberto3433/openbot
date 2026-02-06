@@ -427,6 +427,22 @@ class MenuItemConfigHandler(BaseHandler):
                     )
                     return self.get_first_question(next_item, order)
 
+            # Check for other incomplete items that need configuration
+            # This handles duplicated items (e.g., "make it two hot teas")
+            next_result = self._get_next_question(order)
+            if next_result and next_result.order.pending_field:
+                # Prepend acknowledgment to the next question
+                summary = item.get_summary()
+                if ack_prefix:
+                    return StateMachineResult(
+                        message=f"{ack_prefix}Got it, {summary}. {next_result.message}",
+                        order=next_result.order,
+                    )
+                return StateMachineResult(
+                    message=f"Got it, {summary}. {next_result.message}",
+                    order=next_result.order,
+                )
+
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?" if ack_prefix else got_it_anything_else(item.get_summary()),
@@ -948,8 +964,25 @@ class MenuItemConfigHandler(BaseHandler):
         if not unanswered:
             # No more options - price already recalculated above, just complete
             item.mark_complete()
-            order.set_phase(OrderPhase.TAKING_ITEMS)
             order.clear_pending()
+
+            # Check for other incomplete items that need configuration
+            # This handles duplicated items (e.g., "make it two hot teas")
+            next_result = self._get_next_question(order)
+            if next_result and next_result.order.pending_field:
+                # Prepend acknowledgment to the next question
+                summary = item.get_summary()
+                if ack_prefix:
+                    return StateMachineResult(
+                        message=f"{ack_prefix}Got it, {summary}. {next_result.message}",
+                        order=next_result.order,
+                    )
+                return StateMachineResult(
+                    message=f"Got it, {summary}. {next_result.message}",
+                    order=next_result.order,
+                )
+
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?",
                 order=order,

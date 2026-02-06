@@ -31,6 +31,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Pattern for standalone cancellation phrases (no target specified)
+# During CONFIGURING_ITEM phase, these mean "cancel the current item being configured"
+STANDALONE_CANCEL_PATTERN = re.compile(
+    r"^(?:"
+    r"cancel"
+    r"|never\s*mind"
+    r"|nevermind"
+    r"|forget\s*it"
+    r"|skip\s*(?:this|it)?"
+    r"|(?:i\s+)?changed?\s*my\s*mind(?:,?\s*cancel)?"
+    r"|(?:i\s+)?don'?t\s+want\s+(?:it|this)(?:\s+anymore)?"
+    r")[\s!.,?]*$",
+    re.IGNORECASE
+)
+
 
 def _extract_modifier_and_item_reference(cancel_desc: str) -> tuple[str, str] | None:
     """Extract modifier and item reference from phrases like 'onions on the leo'.
@@ -129,19 +144,29 @@ class ConfigCancellationHandler:
 
         Returns StateMachineResult if cancellation handled, None otherwise.
         """
-        cancel_match = CANCEL_ITEM_PATTERN.match(user_input.strip())
-        if not cancel_match:
-            return None
+        user_input_stripped = user_input.strip()
 
-        # Extract what they want to cancel from any of the capture groups
-        cancel_desc = None
-        for group in cancel_match.groups():
-            if group:
-                cancel_desc = group.strip().lower()
-                break
+        # First, check for standalone cancellation phrases (no target specified)
+        # During config, these mean "cancel the current item being configured"
+        standalone_match = STANDALONE_CANCEL_PATTERN.match(user_input_stripped)
+        if standalone_match:
+            logger.info("Standalone cancel during config: '%s'", user_input_stripped)
+            # Treat as "cancel this" - cancel the current item
+            cancel_desc = "this"
+        else:
+            cancel_match = CANCEL_ITEM_PATTERN.match(user_input_stripped)
+            if not cancel_match:
+                return None
 
-        if not cancel_desc:
-            return None
+            # Extract what they want to cancel from any of the capture groups
+            cancel_desc = None
+            for group in cancel_match.groups():
+                if group:
+                    cancel_desc = group.strip().lower()
+                    break
+
+            if not cancel_desc:
+                return None
 
         logger.info("Cancel request during config: '%s'", cancel_desc)
 

@@ -420,8 +420,10 @@ class OrderStateMachine:
                         order.add_message("assistant", msg)
                         return StateMachineResult(message=msg, order=order)
 
+                    # Use mark_complete=False so duplicates preserve the original's status
+                    # This ensures incomplete items get configured after the original is done
                     for _ in range(added_count):
-                        order.items.add_item(last_item.duplicate())
+                        order.items.add_item(last_item.duplicate(mark_complete=False))
 
                     logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
 

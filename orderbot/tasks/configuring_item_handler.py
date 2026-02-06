@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, parse_pending_field
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
-from .parsers.intent_patterns import ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN
+from .parsers.intent_patterns import ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN, MAKE_IT_N_CONFIG_PATTERN
+from .parsers.quantity_utils import parse_make_it_n_quantity
 from .checkout_messages import ErrorMessages
 from .config_input_validation import (
     detect_modifier_inquiry,
@@ -238,6 +239,12 @@ class ConfiguringItemHandler:
         if cancel_result:
             return cancel_result
 
+        # Check for quantity change requests like "make it two hot teas"
+        # This allows users to change the quantity of the item being configured
+        quantity_result = self._handle_quantity_change_during_config(user_input, item, order)
+        if quantity_result:
+            return quantity_result
+
         # Check for "another item" request - redirect to finish current config first
         # e.g., "another latte" or "one more bagel" while configuring size
         another_match = ANOTHER_ITEM_PATTERN.match(user_input)
@@ -320,3 +327,68 @@ class ConfiguringItemHandler:
             )
 
         return None
+
+    def _handle_quantity_change_during_config(
+        self, user_input: str, item: MenuItemTask, order: OrderTask
+    ) -> StateMachineResult | None:
+        """Handle quantity change requests during item configuration.
+
+        Detects patterns like "make it two hot teas" or "I want 3 of those"
+        and duplicates the current item being configured.
+
+        Args:
+            user_input: Raw user input string.
+            item: The current item being configured.
+            order: Current order state.
+
+        Returns:
+            StateMachineResult if quantity change handled, None otherwise.
+        """
+        if not isinstance(item, MenuItemTask):
+            return None
+
+        match = MAKE_IT_N_CONFIG_PATTERN.match(user_input.strip())
+        if not match:
+            return None
+
+        # Extract the quantity from capture groups
+        num_str = None
+        for i in range(1, 10):
+            group = match.group(i)
+            if group:
+                num_str = group.lower()
+                break
+
+        if not num_str:
+            return None
+
+        target_qty = parse_make_it_n_quantity(num_str)
+        if not target_qty:
+            return None
+
+        # Duplicate the current item to reach target quantity
+        # Use mark_complete=False so duplicates stay IN_PROGRESS and get configured
+        # after the current item is complete
+        item_name = item.get_display_name()
+        added_count = target_qty - 1
+
+        for _ in range(added_count):
+            order.items.add_item(item.duplicate(mark_complete=False))
+
+        logger.info(
+            "QUANTITY CHANGE during config: Added %d more of '%s' (target: %d)",
+            added_count, item_name, target_qty
+        )
+
+        # Continue with the current config question
+        current_question = self.config_helper_handler.get_current_config_question(order, item)
+        if current_question:
+            return StateMachineResult(
+                message=f"Sure, I've added {added_count} more {item_name}. {current_question}",
+                order=order,
+            )
+        else:
+            return StateMachineResult(
+                message=f"Sure, I've added {added_count} more {item_name}. Anything else?",
+                order=order,
+            )

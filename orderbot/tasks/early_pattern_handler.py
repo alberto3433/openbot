@@ -111,8 +111,10 @@ class EarlyPatternHandler:
         last_item_name = last_item.get_summary()
         added_count = target_qty - 1
 
+        # Use mark_complete=False so duplicates preserve the original's status
+        # This ensures incomplete items get configured after the original is done
         for _ in range(added_count):
-            order.items.add_item(last_item.duplicate())
+            order.items.add_item(last_item.duplicate(mark_complete=False))
 
         logger.info("TAKING_ITEMS: Added %d more of '%s'", added_count, last_item_name)
 

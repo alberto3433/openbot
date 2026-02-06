@@ -7,6 +7,8 @@ Contains methods for price lookups and price inquiry resolution.
 import logging
 from typing import Any
 
+from .base import normalize_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +79,7 @@ class PricingQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        ing_lower = ingredient_name.lower().strip()
+        ing_lower = normalize_text(ingredient_name)
 
         contexts = self._ingredient_price_contexts.get(ing_lower)
         if not contexts:
@@ -122,7 +124,7 @@ class PricingQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        query_lower = query.lower().strip()
+        query_lower = normalize_text(query)
 
         # 1. Check for exact menu item match
         if query_lower in self._resolved_item_prices:

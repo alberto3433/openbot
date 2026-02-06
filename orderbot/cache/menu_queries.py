@@ -8,7 +8,7 @@ import re
 import logging
 from typing import Any
 
-from .base import ensure_cache_loaded, singularize
+from .base import ensure_cache_loaded, normalize_text, singularize
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        alias_lower = alias.lower().strip()
+        alias_lower = normalize_text(alias)
 
         if item_type_slug:
             type_aliases = self._item_alias_to_canonical_by_type.get(item_type_slug, {})
@@ -203,7 +203,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        name_lower = name.lower().strip()
+        name_lower = normalize_text(name)
         return self._menu_item_alias_to_canonical.get(name_lower)
 
     @ensure_cache_loaded
@@ -221,7 +221,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        term_lower = term.lower().strip()
+        term_lower = normalize_text(term)
 
         # 1. Try menu item aliases first
         result = self._menu_item_alias_to_canonical.get(term_lower)
@@ -258,7 +258,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        name_lower = name.lower().strip()
+        name_lower = normalize_text(name)
         return self._side_alias_to_canonical.get(name_lower)
 
     @ensure_cache_loaded
@@ -271,7 +271,7 @@ class MenuQueryMixin:
         Returns:
             List of matching menu item dicts.
         """
-        term_lower = term.lower().strip()
+        term_lower = normalize_text(term)
         term_singular = singularize(term_lower)
 
         matches = []
@@ -306,7 +306,7 @@ class MenuQueryMixin:
         Returns:
             List of matching menu item dicts with name, item_type, base_price.
         """
-        word_lower = word.lower().strip()
+        word_lower = normalize_text(word)
 
         if not word_lower:
             return []
@@ -355,7 +355,7 @@ class MenuQueryMixin:
         Returns:
             List of matching menu item dicts from items_by_type, deduplicated by name.
         """
-        term_lower = term.lower().strip()
+        term_lower = normalize_text(term)
         term_singular = singularize(term_lower)
 
         if not term_lower:
@@ -415,7 +415,7 @@ class MenuQueryMixin:
         Returns:
             List of matching menu item names.
         """
-        query_lower = query.lower().strip()
+        query_lower = normalize_text(query)
 
         if not query_lower:
             return []
@@ -496,7 +496,7 @@ class MenuQueryMixin:
         Returns:
             List of matching items.
         """
-        term_lower = term.lower().strip()
+        term_lower = normalize_text(term)
 
         if not term_lower:
             return []
@@ -525,7 +525,7 @@ class MenuQueryMixin:
         Returns:
             Item type slug if match found, None otherwise.
         """
-        term_lower = term.lower().strip()
+        term_lower = normalize_text(term)
 
         if term_lower in self._category_keywords:
             return self._category_keywords[term_lower].get("slug")
@@ -565,7 +565,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        name_lower = item_name.lower().strip()
+        name_lower = normalize_text(item_name)
         unit_aliases = self._unit_type_aliases.get(unit_type, {})
         return unit_aliases.get(name_lower)
 
@@ -589,7 +589,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        term_lower = search_term.lower().strip()
+        term_lower = normalize_text(search_term)
         unit_aliases = self._unit_type_aliases.get(unit_type, {})
 
         # Find all items where the canonical name contains the search term
@@ -622,7 +622,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        return text.lower().strip() in self._compound_phrases
+        return normalize_text(text) in self._compound_phrases
 
     @ensure_cache_loaded
     def find_compound_phrase_in(self, text: str) -> str | None:
@@ -640,7 +640,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        text_lower = text.lower().strip()
+        text_lower = normalize_text(text)
 
         # Sort by length (longest first) to match most specific phrase
         for phrase in sorted(self._compound_phrases, key=len, reverse=True):
@@ -856,7 +856,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        name_lower = item_name.lower().strip()
+        name_lower = normalize_text(item_name)
         return self._item_dietary_info.get(name_lower)
 
     @ensure_cache_loaded
@@ -947,7 +947,7 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        return self._menu_items_by_prefix.get(prefix.lower().strip(), []).copy()
+        return self._menu_items_by_prefix.get(normalize_text(prefix), []).copy()
 
     @ensure_cache_loaded
     def get_known_name_prefixes(self) -> set[str]:

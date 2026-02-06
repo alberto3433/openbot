@@ -153,10 +153,7 @@ class ItemReplacementHandler:
                     )
 
                     # Remove existing selections for this attribute
-                    last_item.selections = [
-                        m for m in last_item.selections
-                        if m.get("category") != attr_slug
-                    ]
+                    last_item.remove_selection(attr_slug)
 
                     # Add the new selection
                     last_item.add_selection(

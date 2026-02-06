@@ -6,7 +6,7 @@ Contains methods for querying and resolving attribute options.
 
 import logging
 
-from .base import ensure_cache_loaded
+from .base import ensure_cache_loaded, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class OptionQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         options = self._global_attribute_options.get(attr_slug, [])
-        input_lower = input_value.lower().strip()
+        input_lower = normalize_text(input_value)
 
         for opt in options:
             if opt.get("slug", "").lower() == input_lower:
@@ -93,7 +93,7 @@ class OptionQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        word_lower = word.lower().strip()
+        word_lower = normalize_text(word)
 
         for attr_slug, options in self._global_attribute_options.items():
             for opt in options:

@@ -6,6 +6,8 @@ Contains methods for querying item types, configurable types, and type metadata.
 
 import logging
 
+from .base import normalize_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -249,7 +251,7 @@ class ItemTypeCoreQueryMixin:
         """
         self._ensure_loaded()
 
-        name_lower = name_or_alias.lower().strip()
+        name_lower = normalize_text(name_or_alias)
         category_info = self._category_keywords.get(name_lower)
 
         if category_info and "slug" in category_info:

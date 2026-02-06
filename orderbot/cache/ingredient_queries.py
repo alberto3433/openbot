@@ -7,7 +7,7 @@ Contains methods for querying ingredients, modifiers, and aliases.
 import re
 import logging
 
-from .base import ensure_cache_loaded
+from .base import ensure_cache_loaded, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        name_lower = ingredient_name.lower().strip()
+        name_lower = normalize_text(ingredient_name)
 
         for category, names in self._ingredients_by_category.items():
             if name_lower in names:
@@ -151,7 +151,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        name_lower = ingredient_name.lower().strip()
+        name_lower = normalize_text(ingredient_name)
 
         categories = []
         for category, names in self._ingredients_by_category.items():
@@ -290,7 +290,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        modifier_lower = modifier.lower().strip()
+        modifier_lower = normalize_text(modifier)
         return self._modifier_aliases.get(modifier_lower, modifier)
 
     @ensure_cache_loaded
@@ -306,7 +306,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        return word.lower().strip() in self._modifier_aliases
+        return normalize_text(word) in self._modifier_aliases
 
     @ensure_cache_loaded
     def get_ingredient_aliases(self) -> dict[str, str]:
@@ -349,7 +349,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        contexts = self._ingredient_price_contexts.get(ingredient_name.lower().strip(), [])
+        contexts = self._ingredient_price_contexts.get(normalize_text(ingredient_name), [])
         item_types = []
         seen = set()
 
@@ -446,7 +446,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        term_lower = term.lower().strip()
+        term_lower = normalize_text(term)
         exact_matches = []
         partial_matches = []
         seen_slugs = set()

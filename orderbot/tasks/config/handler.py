@@ -755,7 +755,8 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Capture any additional attributes mentioned in the input
         # e.g., "yes toasted scooped with cream cheese" captures toasted, scooped, and spread
-        self.capture_attributes_from_input(user_input, item)
+        # Skip the current attribute to prevent double-interpretation
+        self.capture_attributes_from_input(user_input, item, skip_attribute=attr_slug)
 
         return self._advance_to_next_question(item, order, attr)
 
@@ -786,8 +787,30 @@ class MenuItemConfigHandler(BaseHandler):
         """Handle single/multi select input - delegates to SelectInputHandler."""
         # Wrapper to capture additional attributes from user input before advancing
         # e.g., "plain bagel toasted scooped with cream cheese" when answering bread
+        #
+        # IMPORTANT: Only capture when user provides EXTRA info beyond just answering
+        # the current question. For simple answers like "onion" for bread type, we
+        # should NOT scan other attributes because:
+        # - "onion" might match "onions" in toppings via alias
+        # - The user is clearly just answering the bread question, not adding toppings
+        #
+        # We detect "simple answer" by checking if the user input is essentially just
+        # the matched option name (e.g., "onion" -> matched "Onion Bagel")
         def advance_with_capture(item, order, attr, ack_text=None):
-            self.capture_attributes_from_input(user_input, item)
+            should_capture = True
+            if ack_text:
+                # Check if user input is essentially just the matched option
+                # e.g., "onion" matches "Onion Bagel" -> simple answer, skip capture
+                # e.g., "plain toasted with cream cheese" does NOT match "Plain Bagel" -> capture
+                user_lower = user_input.lower().strip()
+                ack_lower = ack_text.lower().strip()
+                # User input is a simple answer if it's contained in the matched option
+                # or if it exactly matches (allowing for minor variations)
+                if user_lower in ack_lower or ack_lower.startswith(user_lower):
+                    should_capture = False
+
+            if should_capture:
+                self.capture_attributes_from_input(user_input, item, skip_attribute=attr['slug'])
             return self._advance_to_next_question(item, order, attr, ack_text)
 
         return self._select_input_handler.handle_select_input(
@@ -1085,13 +1108,21 @@ class MenuItemConfigHandler(BaseHandler):
     # =========================================================================
 
     def capture_attributes_from_input(
-        self, user_input: str, item: MenuItemTask
+        self, user_input: str, item: MenuItemTask, skip_attribute: str | None = None
     ) -> None:
         """
         Capture any attributes mentioned in the initial order input.
 
         Called when item is first created to pre-fill attributes.
         e.g., "deli sandwich with scrambled egg on a plain bagel toasted"
+
+        Args:
+            user_input: The user's raw input text
+            item: The menu item to capture attributes for
+            skip_attribute: Optional attribute slug to skip (used when answering
+                a direct question to prevent double-interpretation, e.g., when
+                answering "What kind of bagel?" with "onion", we skip bread
+                so we don't also capture toppings=onions)
 
         Delegates to the extracted capture_attributes_from_input function.
         """
@@ -1100,4 +1131,6 @@ class MenuItemConfigHandler(BaseHandler):
             return
 
         attrs = self._get_item_type_attributes(item_type)
-        capture_attributes_from_input(user_input, item, attrs, self._option_matcher)
+        capture_attributes_from_input(
+            user_input, item, attrs, self._option_matcher, skip_attribute=skip_attribute
+        )

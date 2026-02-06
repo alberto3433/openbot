@@ -27,6 +27,7 @@ def capture_attributes_from_input(
     item: "MenuItemTask",
     item_type_attributes: dict[str, dict],
     option_matcher: "OptionMatcher",
+    skip_attribute: str | None = None,
 ) -> None:
     """
     Capture any attributes mentioned in the initial order input.
@@ -54,6 +55,12 @@ def capture_attributes_from_input(
     for attr_slug, attr in item_type_attributes.items():
         # Skip if already answered
         if attr_slug in item:
+            continue
+
+        # Skip the attribute being directly answered (prevents double-interpretation)
+        # e.g., when answering "What kind of bagel?" with "onion", we don't want
+        # to also capture toppings=onions from "onion" containing "onion"
+        if skip_attribute and attr_slug == skip_attribute:
             continue
 
         options = attr.get("options", [])

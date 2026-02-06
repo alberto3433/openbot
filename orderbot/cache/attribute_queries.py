@@ -6,7 +6,7 @@ Contains methods for querying item type attributes and their configurations.
 
 import logging
 
-from .base import ensure_cache_loaded
+from .base import ensure_cache_loaded, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +313,7 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        return self._option_alias_to_item_type.get(alias.lower().strip())
+        return self._option_alias_to_item_type.get(normalize_text(alias))
 
     @ensure_cache_loaded
     def get_all_option_aliases(self) -> set[str]:

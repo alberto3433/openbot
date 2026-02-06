@@ -422,6 +422,7 @@ class ConfigSelectionHandler:
                 category=selected["category"],
                 display_name=selected["name"],
                 quantity=quantity,
+                price=selected.get("base_price", 0.0),
             )
 
             # Recalculate price

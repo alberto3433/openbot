@@ -43,6 +43,28 @@ def ensure_cache_loaded(func: F) -> F:
         return func(self, *args, **kwargs)
     return wrapper  # type: ignore[return-value]
 
+
+def normalize_text(text: str) -> str:
+    """Normalize text for comparison by lowercasing and stripping whitespace.
+
+    This is the canonical way to normalize user input or database values
+    for case-insensitive matching throughout the codebase.
+
+    Args:
+        text: The text to normalize.
+
+    Returns:
+        Lowercased and whitespace-stripped text.
+
+    Examples:
+        >>> normalize_text("  Bacon  ")
+        'bacon'
+        >>> normalize_text("CREAM CHEESE")
+        'cream cheese'
+    """
+    return text.lower().strip()
+
+
 # =============================================================================
 # Skip Words for Text Processing
 # =============================================================================
@@ -78,7 +100,7 @@ def singularize(word: str) -> str:
         >>> singularize("children")
         'child'
     """
-    word = word.lower().strip()
+    word = normalize_text(word)
     if not word:
         return word
 
@@ -114,7 +136,7 @@ def pluralize(word: str) -> str:
         >>> pluralize("glass")
         'glasses'
     """
-    word = word.lower().strip()
+    word = normalize_text(word)
     if not word:
         return word
 
@@ -215,7 +237,7 @@ def build_alias_mapping(
         # Add all aliases
         aliases = getattr(item, aliases_attr, None) or []
         for alias in aliases:
-            alias_lower = alias.strip().lower()
+            alias_lower = normalize_text(alias)
             if alias_lower:
                 known_names.add(alias_lower)
                 alias_to_canonical[alias_lower] = canonical_name
@@ -237,7 +259,7 @@ def get_singular_plural_variants(word: str) -> list[str]:
         >>> get_singular_plural_variants("glass")
         ['glass', 'glasses']
     """
-    word = word.lower().strip()
+    word = normalize_text(word)
     if not word:
         return [word]
 

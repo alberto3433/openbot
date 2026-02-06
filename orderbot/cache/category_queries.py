@@ -7,7 +7,7 @@ Contains methods for querying categories and category keywords.
 import re
 import logging
 
-from .base import singularize, pluralize
+from .base import normalize_text, singularize, pluralize
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ class CategoryQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        return self._modifier_category_alias_to_slug.get(alias.lower().strip())
+        return self._modifier_category_alias_to_slug.get(normalize_text(alias))
 
     def get_category_keyword_mapping(self, keyword: str) -> dict | None:
         """Look up category info for a user keyword.
@@ -92,7 +92,7 @@ class CategoryQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        keyword_lower = keyword.lower().strip()
+        keyword_lower = normalize_text(keyword)
         return self._category_keywords.get(keyword_lower)
 
     def is_category_reference(self, term: str) -> str | None:
@@ -112,7 +112,7 @@ class CategoryQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        term_lower = term.lower().strip()
+        term_lower = normalize_text(term)
 
         # Check category keywords first
         mapping = self._category_keywords.get(term_lower)
@@ -159,7 +159,7 @@ class CategoryQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        text_lower = text.lower().strip()
+        text_lower = normalize_text(text)
 
         for keyword, mapping in self._category_keywords.items():
             pattern = rf'\b{re.escape(keyword)}\b'
@@ -203,7 +203,7 @@ class CategoryQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         self._ensure_loaded()
-        query_lower = slug.lower().strip()
+        query_lower = normalize_text(slug)
 
         # Try exact slug match first
         for group in self._menu_display_groups_ordered:

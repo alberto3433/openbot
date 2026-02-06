@@ -423,16 +423,8 @@ class ModifierChangeHandler:
             # If a specific target was mentioned, also try to remove by slug match
             # (This handles cases like "change the vanilla syrup to caramel" where
             # the target might have a different category than attr_slug)
-            if target and item.selections:
-                target_slug = target.replace(" ", "_").lower()
-                original_count = len(item.selections)
-                item.selections = [
-                    m for m in item.selections
-                    if target_slug not in m.get("slug", "").replace("_", " ").lower()
-                    and target_slug not in m.get("display_name", "").lower()
-                ]
-                if len(item.selections) < original_count:
-                    logger.info("Removed modifier matching target: %s", target)
+            if target and item.remove_selections_by_term(target):
+                logger.info("Removed modifier matching target: %s", target)
 
             # Normalize the slug: "vanilla syrups" -> "vanilla_syrup"
             modifier_slug = normalized_value.replace(" ", "_")

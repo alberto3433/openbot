@@ -472,7 +472,7 @@ class ConfigModificationHandler:
         category = match["category"]
 
         # Remove existing modifier of same category (if any)
-        item.selections = [m for m in item.selections if m.get("category") != category]
+        item.remove_selection(category)
 
         # Add new one
         item.add_selection(

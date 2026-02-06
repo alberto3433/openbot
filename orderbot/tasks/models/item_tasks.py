@@ -386,6 +386,39 @@ class MenuItemTask(ItemTask):
             i += 1
         return removed_any
 
+    def remove_selections_by_term(self, target: str) -> bool:
+        """Remove selection(s) that contain the target term in slug or display name.
+
+        Used for modifier change operations like "change vanilla syrup to caramel"
+        where we need to find and remove any selection containing "vanilla".
+
+        Args:
+            target: The search term (e.g., "vanilla", "bacon")
+
+        Returns:
+            True if any selections were removed, False otherwise
+        """
+        if not target or not self.selections:
+            return False
+
+        target_slug = target.replace(" ", "_").lower()
+        removed_any = False
+        i = 0
+        while i < len(self.selections):
+            sel = self.selections[i]
+            slug_match = target_slug in sel.get("slug", "").replace("_", " ").lower()
+            display_match = target_slug in sel.get("display_name", "").lower()
+            if slug_match or display_match:
+                removed = self.selections.pop(i)
+                # Subtract price from unit_price
+                price = removed.get("price", 0)
+                if price > 0:
+                    self.unit_price -= price * removed.get("quantity", 1)
+                removed_any = True
+                continue  # Don't increment i since we removed an element
+            i += 1
+        return removed_any
+
     def find_modifier_by_slug(self, slug: str) -> dict | None:
         """Find a modifier by its slug.
 

@@ -56,7 +56,6 @@ from ..db import get_db
 from ..db.models import (
     MenuItem,
     MenuItemAlias,
-    MenuItemCategory,  # Still needed for delete cleanup until table is dropped
     MenuItemIngredient,
     MenuItemSizePrice,
     MenuItemSize,
@@ -445,7 +444,6 @@ def delete_menu_item(
         # These must be deleted before the menu item due to FK constraints
         db.query(MenuItemSizePrice).filter(MenuItemSizePrice.menu_item_id == item_id).delete()
         db.query(MenuItemAlias).filter(MenuItemAlias.menu_item_id == item_id).delete()
-        db.query(MenuItemCategory).filter(MenuItemCategory.menu_item_id == item_id).delete()
         db.query(MenuItemIngredient).filter(MenuItemIngredient.menu_item_id == item_id).delete()
 
         # Now delete the menu item itself

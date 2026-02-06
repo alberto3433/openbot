@@ -35,10 +35,8 @@ from .attributes import (
 
 # Menu models
 from .menu import (
-    Category,
     MenuItem,
     MenuItemAlias,
-    MenuItemCategory,
     MenuItemIngredient,
     MenuItemStoreAvailability,
 )
@@ -99,8 +97,6 @@ __all__ = [
     # Menu
     "MenuItem",
     "MenuItemAlias",
-    "Category",
-    "MenuItemCategory",
     "MenuItemIngredient",
     "MenuItemStoreAvailability",
     # Ingredients

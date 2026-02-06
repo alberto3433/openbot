@@ -91,8 +91,8 @@ class LoaderMixin(
                 self._load_generic_ingredients_for_item_types_from_bulk(bulk_data)
                 self._load_ingredient_category_metadata_from_bulk(bulk_data)
 
-                # Load menu item categories (drink, food, etc.)
-                self._load_menu_item_categories_from_bulk(bulk_data)
+                # Note: Old menu_item_categories removed - categories now derived
+                # from item_type -> display_group -> overall_category
 
                 # Load modifier categories (toppings, proteins, milks, etc.)
                 self._load_modifier_categories_from_bulk(bulk_data)
@@ -165,7 +165,7 @@ class LoaderMixin(
         from ...db.models import (
             GlobalAttribute, GlobalAttributeOption, GlobalAttributeOptionSkip, Ingredient,
             ItemType, ItemTypeGlobalAttribute, MenuItem, ItemTypeIngredient,
-            Category, MenuItemCategory, ResponsePattern, ModifierQualifier,
+            ResponsePattern, ModifierQualifier,
             ModifierCategory, IngredientCategory, GlobalAttributeAlias,
             MenuItemIngredient, ItemTypeComponentSlot, ComponentSlotOption,
             UnrecognizedOptionSuggestion, MenuDisplayGroup,
@@ -239,20 +239,7 @@ class LoaderMixin(
         # 6. Load all GlobalAttributeOption for price lookups
         global_attr_options = db.query(GlobalAttributeOption).all()
 
-        # 7. Load Categories
-        categories = db.query(Category).all()
-
-        # 8. Load MenuItemCategory with relationships
-        menu_item_categories = (
-            db.query(MenuItemCategory)
-            .options(
-                joinedload(MenuItemCategory.menu_item).selectinload(MenuItem.alias_records),
-                joinedload(MenuItemCategory.category),
-            )
-            .all()
-        )
-
-        # 9. Load response patterns
+        # 7. Load response patterns
         response_patterns = db.query(ResponsePattern).all()
 
         # 10. Load modifier qualifiers
@@ -345,14 +332,13 @@ class LoaderMixin(
         elapsed = time.time() - start_time
         logger.info(
             "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
-            "%d menu_items, %d ingredients, %d type_ingredients, %d categories",
+            "%d menu_items, %d ingredients, %d type_ingredients",
             elapsed,
             len(global_attrs),
             len(item_types),
             len(menu_items),
             len(ingredients),
             len(type_ingredients),
-            len(categories),
         )
 
         return {
@@ -362,8 +348,8 @@ class LoaderMixin(
             "ingredients": ingredients,
             "type_ingredients": type_ingredients,
             "global_attr_options": global_attr_options,
-            "categories": categories,
-            "menu_item_categories": menu_item_categories,
+            "categories": [],  # Removed - now using display groups
+            "menu_item_categories": [],  # Removed - now using display groups
             "response_patterns": response_patterns,
             "modifier_qualifiers": modifier_qualifiers,
             "modifier_categories": modifier_categories_list,

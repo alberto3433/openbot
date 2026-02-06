@@ -1,7 +1,9 @@
 """Menu item models.
 
-Contains: MenuItem, MenuItemAlias, Category, MenuItemCategory,
-MenuItemIngredient, MenuItemStoreAvailability.
+Contains: MenuItem, MenuItemAlias, MenuItemIngredient, MenuItemStoreAvailability.
+
+Note: Category and MenuItemCategory have been removed - categories are now
+derived from: menu_item -> item_type -> display_group -> overall_category
 """
 
 import logging
@@ -32,8 +34,7 @@ class MenuItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
     description = Column(Text, nullable=True)  # Item description (e.g., "Two Eggs, Bacon, and Cheddar")
-    # Note: category column removed - use category_records relationship (MenuItemCategory join table)
-    # or item_type.display_name for display purposes
+    # Note: categories derived from item_type -> display_group -> overall_category
     is_signature = Column(Boolean, default=False, nullable=False)
     # Note: base_price column removed - use menu_item_size_prices instead
     available_qty = Column(Integer, default=0, nullable=False)
@@ -81,7 +82,6 @@ class MenuItem(Base):
     )
     store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item")
     alias_records = relationship("MenuItemAlias", back_populates="menu_item")
-    category_records = relationship("MenuItemCategory", back_populates="menu_item")
     ingredient_links = relationship("MenuItemIngredient", back_populates="menu_item")
 
     # Size-based pricing (variant pricing)
@@ -93,16 +93,6 @@ class MenuItem(Base):
     def aliases(self) -> list[str]:
         """Get list of aliases from child table."""
         return [a.alias for a in self.alias_records]
-
-    @property
-    def categories(self) -> list[str]:
-        """Get list of category slugs from child table."""
-        return [c.category.slug for c in self.category_records]
-
-    @property
-    def category_names(self) -> list[str]:
-        """Get list of category display names from child table."""
-        return [c.category.name for c in self.category_records]
 
     @property
     def base_price(self) -> float:
@@ -127,43 +117,6 @@ class MenuItemAlias(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     menu_item = relationship("MenuItem", back_populates="alias_records")
-
-
-class Category(Base):
-    """Predefined categories for menu items (e.g., 'drink', 'food')."""
-    __tablename__ = "categories"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(50), nullable=False, unique=True)  # Display name: "Drink", "Food"
-    slug = Column(String(50), nullable=False, unique=True, index=True)  # Lowercase identifier: "drink", "food"
-    description = Column(String(200), nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-
-    # Relationship to menu items via join table
-    menu_item_categories = relationship("MenuItemCategory", back_populates="category")
-
-    @property
-    def menu_items(self) -> list:
-        """Get all menu items in this category."""
-        return [mic.menu_item for mic in self.menu_item_categories]
-
-
-class MenuItemCategory(Base):
-    """Join table linking menu items to categories (many-to-many)."""
-    __tablename__ = "menu_item_categories"
-
-    id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id", ondelete="RESTRICT"), nullable=False, index=True)
-    category_id = Column(Integer, ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False, index=True)
-    created_at = Column(DateTime, server_default=func.now())
-
-    # Unique constraint: a menu item can only be in a category once
-    __table_args__ = (
-        UniqueConstraint("menu_item_id", "category_id", name="uix_menu_item_category"),
-    )
-
-    menu_item = relationship("MenuItem", back_populates="category_records")
-    category = relationship("Category", back_populates="menu_item_categories")
 
 
 class MenuItemIngredient(Base):

@@ -78,6 +78,9 @@ class LoaderMixin(
                 self._load_item_type_metadata_from_bulk(bulk_data)
                 self._load_menu_index(db)  # Uses build_menu_index which queries DB
 
+                # Build prefix index for queries like "what iced drinks do you have?"
+                self._build_prefix_index_from_menu_index()
+
                 # Data-driven parsing support loaders
                 self._load_compound_phrases_from_bulk(bulk_data)
                 self._load_item_type_triggers_from_bulk(bulk_data)

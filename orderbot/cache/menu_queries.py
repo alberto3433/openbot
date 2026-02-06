@@ -8,7 +8,7 @@ import re
 import logging
 from typing import Any
 
-from .base import singularize
+from .base import ensure_cache_loaded, singularize
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ class MenuQueryMixin:
         """Check if cache has been loaded from database."""
         return self._is_loaded
 
+    @ensure_cache_loaded
     def get_known_menu_items(self) -> set[str]:
         """Get the set of all known menu item names and aliases (lowercase).
 
@@ -30,9 +31,9 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._known_menu_items.copy()
 
+    @ensure_cache_loaded
     def get_item_names(self, item_type_slug: str) -> set[str]:
         """Get all MenuItem names and aliases for a given ItemType.
 
@@ -45,7 +46,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         if item_type_slug not in self._item_names_by_type:
             return set()
         return self._item_names_by_type[item_type_slug].copy()
@@ -54,6 +54,7 @@ class MenuQueryMixin:
         """Alias for get_item_names() - get all item names for a given item type."""
         return self.get_item_names(item_type_slug)
 
+    @ensure_cache_loaded
     def get_item_alias_to_canonical_by_type(self, item_type_slug: str) -> dict[str, str]:
         """Get alias-to-canonical name mapping for a given item type.
 
@@ -66,11 +67,11 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         if item_type_slug not in self._item_alias_to_canonical_by_type:
             return {}
         return self._item_alias_to_canonical_by_type[item_type_slug].copy()
 
+    @ensure_cache_loaded
     def get_items_by_category(self, category_slug: str) -> list[dict]:
         """Get all menu items in a given high-level category (drink, food, etc.).
 
@@ -83,9 +84,9 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         return self._menu_items_by_category_slug.get(category_slug, []).copy()
 
+    @ensure_cache_loaded
     def get_items_by_item_type(self, item_type_slug: str) -> list[dict]:
         """Get all menu items of a given item type.
 
@@ -98,8 +99,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
-
         result = []
         for item_name, item_data in self._menu_items.items():
             if item_data.get("item_type") == item_type_slug:
@@ -111,6 +110,7 @@ class MenuQueryMixin:
                 })
         return result
 
+    @ensure_cache_loaded
     def resolve_item_alias(
         self, alias: str, item_type_slug: str | None = None
     ) -> str | None:
@@ -126,7 +126,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         alias_lower = alias.lower().strip()
 
         if item_type_slug:
@@ -138,6 +137,7 @@ class MenuQueryMixin:
                     return type_aliases[alias_lower]
             return None
 
+    @ensure_cache_loaded
     def get_items_with_defaults_aliases(self) -> dict[str, str]:
         """Get alias mapping for items that have default ingredients.
 
@@ -150,9 +150,9 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._items_with_defaults_aliases.copy()
 
+    @ensure_cache_loaded
     def item_has_default_ingredients(self, menu_item_name: str) -> bool:
         """Check if a menu item has default ingredients defined.
 
@@ -165,12 +165,12 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return (
             menu_item_name in self._items_with_defaults_types
             or menu_item_name in self._items_with_defaults_aliases.values()
         )
 
+    @ensure_cache_loaded
     def get_item_type_for_menu_item(self, menu_item_name: str) -> str | None:
         """Get the item type slug for a menu item.
 
@@ -183,8 +183,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
-
         result = self._items_with_defaults_types.get(menu_item_name)
         if result:
             return result
@@ -192,6 +190,7 @@ class MenuQueryMixin:
         item_info = self._menu_index.get(menu_item_name, {})
         return item_info.get("item_type")
 
+    @ensure_cache_loaded
     def resolve_menu_item_alias(self, name: str) -> str | None:
         """Resolve a menu item name or alias to its canonical menu item name.
 
@@ -204,10 +203,10 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         name_lower = name.lower().strip()
         return self._menu_item_alias_to_canonical.get(name_lower)
 
+    @ensure_cache_loaded
     def resolve_alias(self, term: str) -> tuple[str | None, str | None]:
         """Unified alias resolution across all sources (data-driven).
 
@@ -222,7 +221,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         term_lower = term.lower().strip()
 
         # 1. Try menu item aliases first
@@ -247,6 +245,7 @@ class MenuQueryMixin:
 
         return (None, None)
 
+    @ensure_cache_loaded
     def resolve_side_alias(self, name: str) -> str | None:
         """Resolve a side item name or alias to its canonical menu item name.
 
@@ -259,10 +258,10 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         name_lower = name.lower().strip()
         return self._side_alias_to_canonical.get(name_lower)
 
+    @ensure_cache_loaded
     def search_menu_items_by_name(self, term: str) -> list[dict]:
         """Find menu items where the name contains the search term.
 
@@ -272,7 +271,6 @@ class MenuQueryMixin:
         Returns:
             List of matching menu item dicts.
         """
-        self._ensure_loaded()
         term_lower = term.lower().strip()
         term_singular = singularize(term_lower)
 
@@ -290,6 +288,7 @@ class MenuQueryMixin:
 
         return matches
 
+    @ensure_cache_loaded
     def find_items_by_word_match(
         self,
         word: str,
@@ -307,7 +306,6 @@ class MenuQueryMixin:
         Returns:
             List of matching menu item dicts with name, item_type, base_price.
         """
-        self._ensure_loaded()
         word_lower = word.lower().strip()
 
         if not word_lower:
@@ -341,6 +339,7 @@ class MenuQueryMixin:
 
         return matches
 
+    @ensure_cache_loaded
     def search_menu_items_by_term(self, term: str) -> list[dict]:
         """Search menu items by term in both names AND aliases using word-boundary matching.
 
@@ -356,7 +355,6 @@ class MenuQueryMixin:
         Returns:
             List of matching menu item dicts from items_by_type, deduplicated by name.
         """
-        self._ensure_loaded()
         term_lower = term.lower().strip()
         term_singular = singularize(term_lower)
 
@@ -453,6 +451,7 @@ class MenuQueryMixin:
 
         return sorted(matches)
 
+    @ensure_cache_loaded
     def get_menu_index(self, store_id: str | None = None) -> dict[str, Any]:
         """Get the cached menu index.
 
@@ -465,9 +464,9 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._menu_index
 
+    @ensure_cache_loaded
     def get_question_for_field(self, item_type_slug: str, field_name: str) -> str | None:
         """Get the question text for a specific field of an item type.
 
@@ -481,13 +480,13 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         fields = self._item_type_fields.get(item_type_slug, [])
         for field in fields:
             if field["field_name"] == field_name:
                 return field.get("question_text")
         return None
 
+    @ensure_cache_loaded
     def search_menu_items_for_recommendation(self, term: str) -> list[dict]:
         """Search menu items by partial name/alias match for recommendations.
 
@@ -497,7 +496,6 @@ class MenuQueryMixin:
         Returns:
             List of matching items.
         """
-        self._ensure_loaded()
         term_lower = term.lower().strip()
 
         if not term_lower:
@@ -517,6 +515,7 @@ class MenuQueryMixin:
 
         return list(matches.values())
 
+    @ensure_cache_loaded
     def search_item_type_for_recommendation(self, term: str) -> str | None:
         """Search for an item type that matches the term for recommendations.
 
@@ -526,7 +525,6 @@ class MenuQueryMixin:
         Returns:
             Item type slug if match found, None otherwise.
         """
-        self._ensure_loaded()
         term_lower = term.lower().strip()
 
         if term_lower in self._category_keywords:
@@ -538,6 +536,7 @@ class MenuQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def get_menu_items_by_unit_type(self, unit_type: str) -> set[str]:
         """Get menu item names by unit type.
 
@@ -550,9 +549,9 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._by_unit_type_items.get(unit_type, set()).copy()
 
+    @ensure_cache_loaded
     def find_item_by_unit_type(self, item_name: str, unit_type: str) -> tuple[str, str] | None:
         """Find an item by name/alias within a specific unit type.
 
@@ -566,11 +565,11 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         name_lower = item_name.lower().strip()
         unit_aliases = self._unit_type_aliases.get(unit_type, {})
         return unit_aliases.get(name_lower)
 
+    @ensure_cache_loaded
     def find_items_by_unit_type_partial(
         self, search_term: str, unit_type: str
     ) -> list[tuple[str, str]]:
@@ -590,7 +589,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         term_lower = search_term.lower().strip()
         unit_aliases = self._unit_type_aliases.get(unit_type, {})
 
@@ -608,6 +606,7 @@ class MenuQueryMixin:
 
         return matches
 
+    @ensure_cache_loaded
     def is_compound_phrase(self, text: str) -> bool:
         """Check if text is a known compound phrase that shouldn't be split on 'and'.
 
@@ -623,9 +622,9 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return text.lower().strip() in self._compound_phrases
 
+    @ensure_cache_loaded
     def find_compound_phrase_in(self, text: str) -> str | None:
         """Find a compound phrase that appears at the start of text.
 
@@ -641,7 +640,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         text_lower = text.lower().strip()
 
         # Sort by length (longest first) to match most specific phrase
@@ -674,6 +672,7 @@ class MenuQueryMixin:
             },
         }
 
+    @ensure_cache_loaded
     def get_all_menu_item_names(self) -> list[str]:
         """Get all menu item display names for fuzzy matching.
 
@@ -683,7 +682,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         # Extract unique display names from _menu_items
         names = set()
         for item_data in self._menu_items.values():
@@ -692,6 +690,7 @@ class MenuQueryMixin:
                 names.add(name)
         return sorted(names)
 
+    @ensure_cache_loaded
     def get_categories_for_inference(self) -> list[dict]:
         """Get menu categories in a format suitable for LLM inference.
 
@@ -702,8 +701,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
-
         categories = []
 
         # Add high-level menu categories (Category table)
@@ -725,6 +722,7 @@ class MenuQueryMixin:
 
         return categories
 
+    @ensure_cache_loaded
     def get_menu_item_default_ingredients(self, menu_item_id: int) -> list[dict]:
         """Get default ingredients for a signature menu item.
 
@@ -747,9 +745,9 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._menu_item_default_ingredients.get(menu_item_id, [])
 
+    @ensure_cache_loaded
     def get_menu_item_by_id(self, menu_item_id: int) -> dict | None:
         """Get menu item information by database ID.
 
@@ -768,8 +766,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
-
         # Search through _menu_items (keyed by name) to find by ID
         for item_data in self._menu_items.values():
             if item_data.get("id") == menu_item_id:
@@ -785,6 +781,7 @@ class MenuQueryMixin:
     # Dietary and Allergen Query Methods
     # =========================================================================
 
+    @ensure_cache_loaded
     def get_items_by_dietary_property(self, property_name: str) -> list[dict]:
         """Get all menu items that have a specific dietary property.
 
@@ -799,9 +796,9 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._items_by_dietary_property.get(property_name, []).copy()
 
+    @ensure_cache_loaded
     def get_items_by_dietary_property_filtered(
         self,
         property_name: str,
@@ -823,7 +820,6 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         all_items = self._items_by_dietary_property.get(property_name, [])
 
         if not item_type_slugs:
@@ -832,6 +828,7 @@ class MenuQueryMixin:
         item_type_set = set(item_type_slugs)
         return [item for item in all_items if item.get("item_type_slug") in item_type_set]
 
+    @ensure_cache_loaded
     def get_item_dietary_info(self, item_name: str) -> dict | None:
         """Get dietary and allergen information for a specific menu item.
 
@@ -859,10 +856,10 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         name_lower = item_name.lower().strip()
         return self._item_dietary_info.get(name_lower)
 
+    @ensure_cache_loaded
     def get_item_allergens(self, item_name: str) -> list[str]:
         """Get list of allergens contained in a menu item.
 
@@ -876,25 +873,19 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         info = self.get_item_dietary_info(item_name)
         if not info:
             return []
 
+        # Build allergen list dynamically from properties with "contains_" prefix
         allergens = []
-        allergen_map = {
-            "contains_eggs": "eggs",
-            "contains_fish": "fish",
-            "contains_sesame": "sesame",
-            "contains_nuts": "nuts",
-        }
-
-        for prop, name in allergen_map.items():
-            if info.get(prop) is True:
-                allergens.append(name)
+        for prop, value in info.items():
+            if prop.startswith("contains_") and value is True:
+                allergens.append(prop.replace("contains_", ""))
 
         return allergens
 
+    @ensure_cache_loaded
     def has_dietary_data(self) -> bool:
         """Check if any dietary data is available in the cache.
 
@@ -904,8 +895,110 @@ class MenuQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         # Check if any dietary property has items
         return any(
             items for items in self._items_by_dietary_property.values()
         )
+
+    @ensure_cache_loaded
+    def get_allergen_column_names(self) -> list[str]:
+        """Get list of allergen column names from cached dietary data.
+
+        Returns column names in the "contains_X" format, derived from the
+        _item_dietary_info cache which stores all dietary/allergen properties.
+
+        Returns:
+            List of allergen column names (e.g., ["contains_eggs", "contains_fish", ...]).
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+        """
+        # Get columns from the first item's dietary info that has allergen data
+        # This is schema knowledge (column names), not domain data
+        allergen_columns = []
+        for info in self._item_dietary_info.values():
+            for key in info.keys():
+                if key.startswith("contains_") and key not in allergen_columns:
+                    allergen_columns.append(key)
+            # Once we've found an item with dietary info, we have the schema
+            if allergen_columns:
+                break
+
+        return sorted(allergen_columns)
+
+    # =========================================================================
+    # Prefix-Based Query Methods (for "what iced drinks?" type queries)
+    # =========================================================================
+
+    @ensure_cache_loaded
+    def get_menu_items_by_name_prefix(self, prefix: str) -> list[dict]:
+        """Get all menu items whose name starts with a given word.
+
+        Used for queries like "what iced drinks do you have?" where "iced"
+        is the prefix and items like "Iced Coffee", "Iced Tea" are returned.
+
+        Args:
+            prefix: The prefix word to search for (e.g., "iced", "hot")
+
+        Returns:
+            List of menu item dicts matching the prefix.
+            Each dict has: name, item_type, base_price, etc.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return self._menu_items_by_prefix.get(prefix.lower().strip(), []).copy()
+
+    @ensure_cache_loaded
+    def get_known_name_prefixes(self) -> set[str]:
+        """Get all known menu item name prefixes.
+
+        Returns the set of first words from multi-word menu item names.
+        Useful for checking if a word like "iced" is a known prefix.
+
+        Returns:
+            Set of lowercase prefix strings.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return set(self._menu_items_by_prefix.keys())
+
+    @ensure_cache_loaded
+    def get_menu_item_unit_info(self, item_name: str) -> tuple[str, int | None]:
+        """Get unit type and quantity per unit for a menu item.
+
+        Args:
+            item_name: The menu item name (case-insensitive)
+
+        Returns:
+            Tuple of (unit_type, quantity_per_unit).
+            Defaults to ("each", None) if item not found.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        item_data = self._menu_items.get(item_name.lower())
+        if item_data:
+            return (
+                item_data.get("unit_type", "each"),
+                item_data.get("quantity_per_unit"),
+            )
+        return ("each", None)
+
+    @staticmethod
+    def format_unit_display(unit_type: str, quantity_per_unit: int | None) -> str:
+        """Format unit info for display to users.
+
+        Args:
+            unit_type: The unit type (each, pack, dozen, by_weight)
+            quantity_per_unit: Number of items per unit (for packs)
+
+        Returns:
+            Display string like "(3 pack)" or "" for single items.
+        """
+        if unit_type == "pack" and quantity_per_unit and quantity_per_unit > 1:
+            return f"({quantity_per_unit} pack)"
+        if unit_type == "dozen":
+            return "(dozen)"
+        return ""

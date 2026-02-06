@@ -12,13 +12,36 @@ import logging
 import threading
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Pattern
+from functools import wraps
+from typing import Any, Callable, Pattern, TypeVar
 
 import inflect
 
 from ..exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)
+
+# Type variable for generic method return type
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def ensure_cache_loaded(func: F) -> F:
+    """Decorator to ensure cache is loaded before method execution.
+
+    Use on methods that require the cache to be populated before they can
+    return meaningful results. Calls self._ensure_loaded() which raises
+    MenuDataNotLoadedError if the cache hasn't been loaded.
+
+    Example:
+        @ensure_cache_loaded
+        def get_known_menu_items(self) -> set[str]:
+            return self._known_menu_items.copy()
+    """
+    @wraps(func)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        self._ensure_loaded()
+        return func(self, *args, **kwargs)
+    return wrapper  # type: ignore[return-value]
 
 # =============================================================================
 # Skip Words for Text Processing
@@ -464,6 +487,11 @@ class BaseCacheMixin:
         # Menu display groups for "what's on your menu?" responses
         # Ordered list of dicts: [{slug, display_name, display_order}, ...]
         self._menu_display_groups_ordered: list[dict] = []
+
+        # Menu items indexed by name prefix (first word of multi-word names)
+        # e.g., "iced" -> [{"name": "Iced Coffee", ...}, {"name": "Iced Tea", ...}]
+        # Used for queries like "what iced drinks do you have?"
+        self._menu_items_by_prefix: dict[str, list[dict]] = {}
 
         # Item types grouped by display group slug
         # Maps display_group_slug -> list of item_type_slugs

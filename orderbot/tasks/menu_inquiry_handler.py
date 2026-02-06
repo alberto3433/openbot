@@ -155,9 +155,49 @@ class MenuInquiryHandler(MenuDataMixin):
             )
             return filtered, menu_query_type
 
-        # FALLBACK 2: Handle "adjective + category" patterns like "iced drinks"
-        # Try splitting into prefix word(s) + base category, then filter by prefix
+        # FALLBACK 2: Check if first word is a known name prefix (e.g., "iced", "hot")
+        # This handles "what iced drinks do you have?" by finding items like "Iced Coffee"
         words = menu_query_type.split()
+        if words:
+            first_word = words[0].lower()
+            prefix_items = menu_cache.get_menu_items_by_name_prefix(first_word)
+            if prefix_items:
+                # If there's a category filter (remaining words), apply it
+                if len(words) >= 2:
+                    category_filter = " ".join(words[1:])
+                    # Try to look up the category to filter by item types
+                    display_group = menu_cache.get_display_group_by_slug(category_filter)
+                    if display_group:
+                        # Filter prefix_items to only those in the display group's item types
+                        allowed_types = set(
+                            menu_cache.get_item_types_in_display_group(display_group["slug"])
+                        )
+                        prefix_items = [
+                            item for item in prefix_items
+                            if item.get("item_type") in allowed_types
+                        ]
+                    else:
+                        # Try category keyword mapping
+                        category_info = menu_cache.get_category_keyword_mapping(category_filter)
+                        if category_info:
+                            slug = category_info["slug"]
+                            lookup_type = category_info.get("lookup_type", "item_type")
+                            if lookup_type == "item_type":
+                                prefix_items = [
+                                    item for item in prefix_items
+                                    if item.get("item_type") == slug
+                                ]
+
+                if prefix_items:
+                    logger.info(
+                        "Menu query prefix: '%s' -> prefix='%s' matched %d items",
+                        menu_query_type, first_word, len(prefix_items)
+                    )
+                    return prefix_items, menu_query_type
+
+        # FALLBACK 3: Handle "adjective + category" patterns (legacy approach)
+        # Try splitting into prefix word(s) + base category, then filter by name containing prefix
+        # This is less precise than prefix index but catches items where prefix isn't the first word
         if len(words) >= 2:
             # Try the last word as category (e.g., "drinks" from "iced drinks")
             base_category = words[-1]
@@ -226,7 +266,10 @@ class MenuInquiryHandler(MenuDataMixin):
             item_list = [item.get("name", "Unknown") for item in batch]
 
         if has_more:
-            item_list.append(f"...and {remaining} more")
+            # Don't use format_english_list when there's a "more" indicator
+            # to avoid "X, and ...and N more" redundancy
+            formatted = ", ".join(item_list) + f", and {remaining} more"
+            return formatted, has_more
 
         return format_english_list(item_list), has_more
 

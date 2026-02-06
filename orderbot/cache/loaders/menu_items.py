@@ -46,6 +46,8 @@ class MenuItemLoaderMixin:
                 "name": item.name,
                 "item_type": item_type_slug,
                 "base_price": float(item.base_price) if item.base_price else 0.0,
+                "unit_type": item.unit_type,
+                "quantity_per_unit": item.quantity_per_unit,
             }
 
             # Skip items that have their own configuration flows
@@ -379,6 +381,45 @@ class MenuItemLoaderMixin:
         logger.debug(
             "Loaded default ingredients for %d menu items (from bulk)",
             len(defaults_by_item),
+        )
+
+    def _build_prefix_index_from_menu_index(self) -> None:
+        """Build index of menu items by first word of name.
+
+        This enables queries like "what iced drinks do you have?" by indexing
+        items under their name prefix (e.g., "iced" -> [Iced Coffee, Iced Tea]).
+
+        Must be called after _load_menu_index() since it uses _menu_index.
+        """
+        prefix_index: dict[str, list[dict]] = {}
+
+        items_by_type = self._menu_index.get("items_by_type", {})
+        seen_names: set[str] = set()  # Avoid duplicates across item types
+
+        for items in items_by_type.values():
+            for item in items:
+                name = item.get("name", "")
+                name_lower = name.lower()
+
+                # Skip if we've already indexed this item
+                if name_lower in seen_names:
+                    continue
+                seen_names.add(name_lower)
+
+                # Only index multi-word names (e.g., "Iced Coffee", not "Latte")
+                words = name.split()
+                if len(words) >= 2:
+                    prefix = words[0].lower()
+                    if prefix not in prefix_index:
+                        prefix_index[prefix] = []
+                    prefix_index[prefix].append(item)
+
+        self._menu_items_by_prefix = prefix_index
+
+        logger.debug(
+            "Built prefix index: %d prefixes, %d total items",
+            len(prefix_index),
+            sum(len(items) for items in prefix_index.values()),
         )
 
     def _load_dietary_data_from_bulk(self, bulk_data: dict) -> None:

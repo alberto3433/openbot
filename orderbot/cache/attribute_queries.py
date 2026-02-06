@@ -6,12 +6,15 @@ Contains methods for querying item type attributes and their configurations.
 
 import logging
 
+from .base import ensure_cache_loaded
+
 logger = logging.getLogger(__name__)
 
 
 class AttributeQueryMixin:
     """Mixin containing attribute-related query methods."""
 
+    @ensure_cache_loaded
     def get_item_type_attributes(self, item_type_slug: str) -> dict:
         """Get all attribute configurations for an item type.
 
@@ -27,9 +30,9 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._item_type_attributes.get(item_type_slug, {})
 
+    @ensure_cache_loaded
     def has_conversation_attributes(self, item_type_slug: str) -> bool:
         """Check if an item type has any ask_in_conversation attributes.
 
@@ -42,13 +45,13 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         attrs = self.get_item_type_attributes(item_type_slug)
         for attr_config in attrs.values():
             if attr_config.get("ask_in_conversation", False):
                 return True
         return False
 
+    @ensure_cache_loaded
     def get_attribute_input_type(self, item_type_slug: str, attribute_slug: str) -> str | None:
         """Get the input type for a specific attribute.
 
@@ -62,11 +65,11 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         attrs = self.get_item_type_attributes(item_type_slug)
         attr = attrs.get(attribute_slug, {})
         return attr.get("input_type")
 
+    @ensure_cache_loaded
     def get_attribute_for_category(self, item_type_slug: str, category_slug: str) -> str | None:
         """Get the attribute slug that handles a given ingredient category.
 
@@ -80,13 +83,13 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         attrs = self.get_item_type_attributes(item_type_slug)
         for attr_slug, attr_config in attrs.items():
             if attr_config.get("ingredient_group") == category_slug:
                 return attr_slug
         return None
 
+    @ensure_cache_loaded
     def get_field_to_slug_map(self, item_type_slug: str) -> dict[str, str]:
         """Get the field name to attribute slug mapping for an item type.
 
@@ -99,11 +102,11 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         # Ensure attributes are loaded first
         self.get_item_type_attributes(item_type_slug)
         return self._field_to_slug_map.get(item_type_slug, {}).copy()
 
+    @ensure_cache_loaded
     def resolve_field_to_slug(self, item_type_slug: str, field_name: str) -> str:
         """Resolve a field name to its canonical attribute slug.
 
@@ -117,10 +120,10 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         field_map = self.get_field_to_slug_map(item_type_slug)
         return field_map.get(field_name, field_name)
 
+    @ensure_cache_loaded
     def get_field_config(self, item_type_slug: str, field_slug: str) -> dict | None:
         """Get configuration for a specific attribute field.
 
@@ -134,10 +137,10 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         attrs = self.get_item_type_attributes(item_type_slug)
         return attrs.get(field_slug)
 
+    @ensure_cache_loaded
     def get_all_field_configs(self, item_type_slug: str) -> dict:
         """Get all field configurations for an item type.
 
@@ -150,9 +153,9 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self.get_item_type_attributes(item_type_slug)
 
+    @ensure_cache_loaded
     def get_modifier_fields_for_item_type(self, item_type_slug: str) -> list[dict]:
         """Get modifier field definitions for an item type.
 
@@ -167,7 +170,6 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         attrs = self.get_item_type_attributes(item_type_slug)
         result = []
         for attr_slug, attr_config in attrs.items():
@@ -175,6 +177,7 @@ class AttributeQueryMixin:
                 result.append(attr_config)
         return sorted(result, key=lambda x: x.get("display_order", 999))
 
+    @ensure_cache_loaded
     def is_multi_select_attribute(self, attr_slug: str) -> bool:
         """Check if an attribute is a multi-select type.
 
@@ -187,10 +190,10 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         metadata = self._global_attribute_metadata.get(attr_slug, {})
         return metadata.get("input_type") == "multi_select"
 
+    @ensure_cache_loaded
     def attribute_contains_modifier_category(self, attr_slug: str, modifier_category: str) -> bool:
         """Check if an attribute contains options with a given modifier category.
 
@@ -204,10 +207,10 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         attr_set = self._modifier_category_to_attrs.get(modifier_category, set())
         return attr_slug in attr_set
 
+    @ensure_cache_loaded
     def get_attribute_display_name(self, attr_slug: str) -> str:
         """Get the display name for a global attribute.
 
@@ -220,10 +223,10 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         metadata = self._global_attribute_metadata.get(attr_slug, {})
         return metadata.get("display_name", attr_slug)
 
+    @ensure_cache_loaded
     def get_property_name_for_attribute(self, attr_slug: str) -> str:
         """Get the Python property name for an attribute slug.
 
@@ -236,9 +239,9 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._global_attribute_property_names.get(attr_slug, attr_slug)
 
+    @ensure_cache_loaded
     def get_all_global_attribute_aliases(self) -> dict[str, str]:
         """Get all global attribute aliases.
 
@@ -248,9 +251,9 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._global_attribute_aliases.copy()
 
+    @ensure_cache_loaded
     def get_attribute_for_ingredient_category(
         self, item_type_slug: str, ingredient_category: str
     ) -> str | None:
@@ -274,7 +277,6 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         attrs = self.get_item_type_attributes(item_type_slug)
 
         # First try: match ingredient_group
@@ -295,6 +297,7 @@ class AttributeQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def get_item_type_from_option_alias(self, alias: str) -> tuple[str, str, str] | None:
         """Look up item type from an attribute option alias.
 
@@ -310,9 +313,9 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._option_alias_to_item_type.get(alias.lower().strip())
 
+    @ensure_cache_loaded
     def get_all_option_aliases(self) -> set[str]:
         """Get all attribute option aliases.
 
@@ -325,9 +328,9 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return set(self._option_alias_to_item_type.keys())
 
+    @ensure_cache_loaded
     def get_skipped_attributes_for_option(self, option_slug: str) -> set[str]:
         """Get attributes that should be skipped when an option is selected.
 
@@ -343,9 +346,9 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._option_skip_rules.get(option_slug, set()).copy()
 
+    @ensure_cache_loaded
     def check_skip_conflict(self, option_slug: str, modifier_category: str) -> bool:
         """Check if selecting an option conflicts with a modifier category.
 
@@ -362,7 +365,6 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         skipped_attrs = self._option_skip_rules.get(option_slug, set())
 
         # Check if any skipped attribute contains options with this modifier category
@@ -371,6 +373,7 @@ class AttributeQueryMixin:
                 return True
         return False
 
+    @ensure_cache_loaded
     def get_skipped_attributes_for_selections(self, selections: list[dict]) -> set[str]:
         """Get all attributes to skip based on current selections.
 
@@ -385,7 +388,6 @@ class AttributeQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         skipped: set[str] = set()
         for sel in selections:
             slug = sel.get("slug") if isinstance(sel, dict) else getattr(sel, "slug", None)

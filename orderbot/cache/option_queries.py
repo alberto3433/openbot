@@ -6,12 +6,15 @@ Contains methods for querying and resolving attribute options.
 
 import logging
 
+from .base import ensure_cache_loaded
+
 logger = logging.getLogger(__name__)
 
 
 class OptionQueryMixin:
     """Mixin containing option resolution query methods."""
 
+    @ensure_cache_loaded
     def get_global_attribute_options(self, attr_slug: str) -> list[dict]:
         """Get options for a global attribute.
 
@@ -24,9 +27,9 @@ class OptionQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._global_attribute_options.get(attr_slug, []).copy()
 
+    @ensure_cache_loaded
     def get_global_option_display_name(self, attr_slug: str, option_slug: str) -> str | None:
         """Get the display name for a specific option within a global attribute.
 
@@ -40,7 +43,6 @@ class OptionQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         options = self._global_attribute_options.get(attr_slug, [])
         option_slug_lower = option_slug.lower()
         for opt in options:
@@ -48,6 +50,7 @@ class OptionQueryMixin:
                 return opt.get("display_name")
         return None
 
+    @ensure_cache_loaded
     def resolve_option_by_alias(self, attr_slug: str, input_value: str) -> dict | None:
         """Resolve an option by value or alias within a global attribute.
 
@@ -61,7 +64,6 @@ class OptionQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         options = self._global_attribute_options.get(attr_slug, [])
         input_lower = input_value.lower().strip()
 
@@ -78,6 +80,7 @@ class OptionQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def is_known_attribute_option(self, word: str) -> tuple[bool, str | None]:
         """Check if a word is a known attribute option value.
 
@@ -90,7 +93,6 @@ class OptionQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         word_lower = word.lower().strip()
 
         for attr_slug, options in self._global_attribute_options.items():
@@ -101,6 +103,7 @@ class OptionQueryMixin:
                     return True, attr_slug
         return False, None
 
+    @ensure_cache_loaded
     def get_all_attribute_option_words(self) -> dict[str, str]:
         """Get all known attribute option words mapped to their attribute slug.
 
@@ -113,7 +116,6 @@ class OptionQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         result: dict[str, str] = {}
 
         # Global attribute options
@@ -171,6 +173,7 @@ class OptionQueryMixin:
 
         return result
 
+    @ensure_cache_loaded
     def get_all_config_answer_words(self) -> set[str]:
         """Get all valid configuration answer words from the database.
 
@@ -180,7 +183,6 @@ class OptionQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         answers: set[str] = set()
 
         for attr_slug, options in self._global_attribute_options.items():
@@ -216,6 +218,7 @@ class OptionQueryMixin:
 
         return answers
 
+    @ensure_cache_loaded
     def get_unavailable_size_terms(self) -> dict[str, str]:
         """Get unavailable size terms mapped to their display names.
 
@@ -232,7 +235,6 @@ class OptionQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         result: dict[str, str] = {}
 
         # Legacy: GlobalAttributeOption with is_available=False

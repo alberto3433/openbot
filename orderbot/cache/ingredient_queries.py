@@ -7,12 +7,15 @@ Contains methods for querying ingredients, modifiers, and aliases.
 import re
 import logging
 
+from .base import ensure_cache_loaded
+
 logger = logging.getLogger(__name__)
 
 
 class IngredientQueryMixin:
     """Mixin containing ingredient and modifier query methods."""
 
+    @ensure_cache_loaded
     def get_ingredients(self, category: str) -> set[str]:
         """Get all ingredient names and aliases for a given category.
 
@@ -25,11 +28,11 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         if category not in self._ingredients_by_category:
             return set()
         return self._ingredients_by_category[category].copy()
 
+    @ensure_cache_loaded
     def get_ingredient_details(self, category: str) -> list[dict]:
         """Get full ingredient details for a category (slug, name, patterns).
 
@@ -42,11 +45,11 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         if category not in self._ingredient_details_by_category:
             return []
         return [detail.copy() for detail in self._ingredient_details_by_category[category]]
 
+    @ensure_cache_loaded
     def get_ingredient_display_name(self, slug: str) -> str | None:
         """Get the display name for an ingredient by its slug.
 
@@ -59,7 +62,6 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         slug_lower = slug.lower()
         for details_list in self._ingredient_details_by_category.values():
             for detail in details_list:
@@ -67,6 +69,7 @@ class IngredientQueryMixin:
                     return detail.get("name")
         return None
 
+    @ensure_cache_loaded
     def get_ingredients_by_category_for_item_type(
         self, item_type_slug: str
     ) -> dict[str, set[str]]:
@@ -81,10 +84,10 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         type_ingredients = self._ingredients_for_item_type.get(item_type_slug, {})
         return {cat: names.copy() for cat, names in type_ingredients.items()}
 
+    @ensure_cache_loaded
     def get_all_ingredient_categories(self) -> set[str]:
         """Get all available ingredient categories.
 
@@ -94,9 +97,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return set(self._ingredients_by_category.keys())
 
+    @ensure_cache_loaded
     def get_modifier_to_category_map(self) -> dict[str, str]:
         """Get pre-built mapping of modifier names to their categories.
 
@@ -110,9 +113,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._modifier_to_category.copy()
 
+    @ensure_cache_loaded
     def get_ingredient_category(self, ingredient_name: str) -> str | None:
         """Get the category of an ingredient by name.
 
@@ -125,7 +128,6 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         name_lower = ingredient_name.lower().strip()
 
         for category, names in self._ingredients_by_category.items():
@@ -134,6 +136,7 @@ class IngredientQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def find_all_categories_for_ingredient(self, ingredient_name: str) -> list[str]:
         """Find all categories that contain an ingredient by name.
 
@@ -148,7 +151,6 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         name_lower = ingredient_name.lower().strip()
 
         categories = []
@@ -158,6 +160,7 @@ class IngredientQueryMixin:
 
         return categories
 
+    @ensure_cache_loaded
     def get_category_attribute_slug(self, category_slug: str) -> str:
         """Get the attribute slug for an ingredient category.
 
@@ -173,10 +176,10 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         config = self._ingredient_category_field_config.get(category_slug, {})
         return config.get("code_field_name", category_slug)
 
+    @ensure_cache_loaded
     def get_ingredient_categories_by_modifier_type(self, modifier_type: str) -> set[str]:
         """Get ingredient categories that belong to a modifier type.
 
@@ -189,9 +192,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._ingredient_categories_by_modifier_type.get(modifier_type, set()).copy()
 
+    @ensure_cache_loaded
     def get_ordered_ingredient_categories(self, modifier_type: str) -> list[str]:
         """Get ingredient categories for a modifier type, ordered by display_order.
 
@@ -204,7 +207,6 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         categories = self._ingredient_categories_by_modifier_type.get(modifier_type, set())
 
         return sorted(
@@ -212,6 +214,7 @@ class IngredientQueryMixin:
             key=lambda c: self._ingredient_category_order.get(c, 999)
         )
 
+    @ensure_cache_loaded
     def is_name_forming_category(self, category_slug: str) -> bool:
         """Check if a category is name-forming.
 
@@ -224,9 +227,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return category_slug in self._name_forming_categories
 
+    @ensure_cache_loaded
     def get_ingredient_category_field_config(self, category_slug: str) -> dict | None:
         """Get field configuration for an ingredient category.
 
@@ -239,9 +242,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._ingredient_category_field_config.get(category_slug)
 
+    @ensure_cache_loaded
     def get_ingredient_category_display_name(self, category_slug: str) -> str:
         """Get the display name for an ingredient category.
 
@@ -254,10 +257,10 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         config = self._ingredient_category_field_config.get(category_slug, {})
         return config.get("display_name", category_slug)
 
+    @ensure_cache_loaded
     def get_ingredient_category_quantity_unit(self, category_slug: str) -> str | None:
         """Get the quantity unit for an ingredient category.
 
@@ -271,10 +274,10 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         config = self._ingredient_category_field_config.get(category_slug, {})
         return config.get("quantity_unit")
 
+    @ensure_cache_loaded
     def normalize_modifier(self, modifier: str) -> str:
         """Normalize a modifier name or alias to its canonical Ingredient name.
 
@@ -287,10 +290,10 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         modifier_lower = modifier.lower().strip()
         return self._modifier_aliases.get(modifier_lower, modifier)
 
+    @ensure_cache_loaded
     def is_known_modifier(self, word: str) -> bool:
         """Check if a word is a known modifier (ingredient or alias).
 
@@ -303,9 +306,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return word.lower().strip() in self._modifier_aliases
 
+    @ensure_cache_loaded
     def get_ingredient_aliases(self) -> dict[str, str]:
         """Get the mapping of ingredient aliases to canonical names.
 
@@ -315,9 +318,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._modifier_aliases.copy()
 
+    @ensure_cache_loaded
     def get_all_modifier_words(self) -> set[str]:
         """Get all known modifier words (ingredients and their aliases).
 
@@ -327,9 +330,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return set(self._modifier_aliases.keys())
 
+    @ensure_cache_loaded
     def get_item_types_for_ingredient(self, ingredient_name: str) -> list[dict]:
         """Get item types that can have this ingredient as a modifier.
 
@@ -346,8 +349,6 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
-
         contexts = self._ingredient_price_contexts.get(ingredient_name.lower().strip(), [])
         item_types = []
         seen = set()
@@ -364,6 +365,7 @@ class IngredientQueryMixin:
 
         return item_types
 
+    @ensure_cache_loaded
     def get_qualifier_patterns(self) -> list[str]:
         """Get all qualifier patterns sorted by length (longest first).
 
@@ -373,9 +375,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return sorted(self._modifier_qualifiers.keys(), key=len, reverse=True)
 
+    @ensure_cache_loaded
     def get_qualifier_info(self, pattern: str) -> dict | None:
         """Get info for a qualifier pattern.
 
@@ -388,9 +390,9 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._modifier_qualifiers.get(pattern.lower())
 
+    @ensure_cache_loaded
     def expand_abbreviations(self, text: str) -> str:
         """Expand abbreviations in the input text.
 
@@ -403,7 +405,6 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         if not self._abbreviations:
             return text
 
@@ -427,6 +428,7 @@ class IngredientQueryMixin:
         term_lower = term.lower()
         return any(phrase.lower() in term_lower for phrase in must_match)
 
+    @ensure_cache_loaded
     def find_matching_ingredients(self, term: str) -> list[dict]:
         """Find all ingredients whose name or aliases contain the search term.
 
@@ -444,7 +446,6 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         term_lower = term.lower().strip()
         exact_matches = []
         partial_matches = []

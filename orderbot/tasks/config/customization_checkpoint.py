@@ -17,6 +17,7 @@ from ..schemas import StateMachineResult, OrderPhase
 from ..pending_fields import PendingField
 from ..checkout_messages import got_it_anything_else
 from ..parsers.constants import extract_quantity_for_pattern
+from .attribute_resolver import get_mandatory_attributes
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
@@ -135,6 +136,13 @@ class CustomizationCheckpointHandler:
         if user_lower.startswith("make it "):
             user_input = user_input[8:]  # len("make it ") == 8
             user_lower = user_lower[8:]
+        # Also strip leading articles (a/an) - "make it an onion bagel" → "onion bagel"
+        if user_lower.startswith("an "):
+            user_input = user_input[3:]
+            user_lower = user_lower[3:]
+        elif user_lower.startswith("a "):
+            user_input = user_input[2:]
+            user_lower = user_lower[2:]
         item_type = item.menu_item_type
 
         # Check for "no" or "done" - user doesn't want to customize further
@@ -191,7 +199,18 @@ class CustomizationCheckpointHandler:
         # This allows users to specify options without naming the attribute
         # Use ALL optional attributes, not just unanswered - user may want to add to
         # an attribute they previously declined (e.g., said "no" to shots, now says "extra shot")
+        #
+        # IMPORTANT: Search optional attributes FIRST since users at customization checkpoint
+        # are typically adding toppings/extras, not changing bread type. This prevents
+        # "onions" from matching "onion_bagel" (bread) instead of "Onions" (topping).
         result = self._try_direct_option_match(user_input, all_optional, item, order)
+        if result:
+            return result
+
+        # If no optional match, try mandatory attributes for "make it X" style changes
+        # e.g., "make it an onion bagel" to change bread type
+        all_mandatory = get_mandatory_attributes(item_type)
+        result = self._try_direct_option_match(user_input, all_mandatory, item, order)
         if result:
             return result
 

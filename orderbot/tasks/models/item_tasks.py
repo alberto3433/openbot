@@ -618,8 +618,22 @@ class MenuItemTask(ItemTask):
         """
         # Items with default ingredients keep their fixed name
         # (e.g., "The Classic BEC", "The Leo Omelette")
+        # Check both selections AND database - defaults may exist in DB
+        # even if they weren't successfully mapped to selections
         if self.has_default_ingredients():
             return self.menu_item_name
+
+        # Also check database for defaults (e.g., Maple Raisin Walnut Cream
+        # Cheese Sandwich has defaults but they may not map to attributes)
+        if self.menu_item_id:
+            try:
+                db_defaults = menu_cache.get_menu_item_default_ingredients(
+                    self.menu_item_id
+                )
+                if db_defaults:
+                    return self.menu_item_name
+            except MenuDataNotLoadedError:
+                pass  # Fall through to name-forming logic
 
         # Check for name-forming category modifiers (e.g., bread type)
         for sel in self.selections:

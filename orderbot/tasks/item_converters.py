@@ -342,9 +342,21 @@ class UnifiedItemConverter:
             # Skip name-forming categories (e.g., bread) - already in display name
             # Exception: items with default ingredients keep their fixed name,
             # so show bread as a sub-line (e.g., "The Classic BEC" shows "Bialy" as sub-line)
+            # Also check database for defaults (e.g., Maple Raisin Walnut Cream Cheese
+            # Sandwich has defaults in DB but they may not map to selections)
             mod_category = mod.get("category", "")
-            if menu_cache.is_name_forming_category(mod_category) and not item.has_default_ingredients():
-                continue
+            if menu_cache.is_name_forming_category(mod_category):
+                has_defaults = item.has_default_ingredients()
+                if not has_defaults and item.menu_item_id:
+                    try:
+                        db_defaults = menu_cache.get_menu_item_default_ingredients(
+                            item.menu_item_id
+                        )
+                        has_defaults = bool(db_defaults)
+                    except Exception:
+                        pass
+                if not has_defaults:
+                    continue
 
             # Skip attribute selections that modify ingredients (shown via the updated modifier)
             # e.g., skip "egg_quantity=3_eggs" since the egg modifier already shows "3 Eggs"

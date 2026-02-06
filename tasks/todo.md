@@ -1,3 +1,146 @@
+# Plan: Add quantity_per_unit Column for Pack Sizes
+
+## Goal
+
+Allow menu items like "Chocolate Dipped Macaroons" to convey they come in a pack of 3, without using parentheses in the display name (which breaks parsing).
+
+## Current State
+
+- `MenuItem.unit_type` column exists with values: `each`, `by_weight`, `dozen`
+- NOT exposed in admin API schemas or UI
+- No way to specify "this item comes as a 3 pack"
+
+## Solution
+
+1. Add `quantity_per_unit` column (integer, nullable)
+2. Add `pack` as valid `unit_type` value
+3. Display "(X pack)" when `unit_type='pack'` and `quantity_per_unit > 1`
+
+## Implementation Plan
+
+### Phase 1: Database Migration
+- [ ] Create migration to add `quantity_per_unit` column to `menu_items` table
+- [ ] Column: `INTEGER`, nullable, default NULL
+- [ ] Update model docstring to document "pack" as valid unit_type
+
+**File:** `alembic/versions/xxx_add_quantity_per_unit.py`
+
+### Phase 2: Update API Schemas
+- [ ] Add `unit_type` and `quantity_per_unit` to `MenuItemOut`
+- [ ] Add `unit_type` and `quantity_per_unit` to `MenuItemCreate`
+- [ ] Add `unit_type` and `quantity_per_unit` to `MenuItemUpdate`
+
+**File:** `orderbot/schemas/menu.py`
+
+### Phase 3: Update Admin API Serialization
+- [ ] Include `unit_type` and `quantity_per_unit` in `serialize_menu_item()`
+- [ ] Handle these fields in create/update endpoints
+
+**File:** `orderbot/routes/admin_menu.py`
+
+### Phase 4: Update Admin UI
+- [ ] Add "Unit Type" dropdown (each, by_weight, dozen, pack)
+- [ ] Add "Quantity per Unit" number input (shown when unit_type is 'pack' or 'dozen')
+- [ ] Position near the price field (contextually related)
+
+**File:** `static/admin_menu.html`
+
+### Phase 5: Update Display Logic
+- [ ] Add helper method to format unit display: `get_unit_display()` → "(3 pack)" or ""
+- [ ] Update `get_display_name()` to optionally include unit suffix
+- [ ] Update confirmation messages to show pack info
+
+**Files:**
+- `orderbot/tasks/models/item_tasks.py` - Add display helper
+- `orderbot/cache/menu_queries.py` - Add cache lookup for unit info
+- `orderbot/tasks/config_selection_handler.py` - Update "Added X" message
+
+### Phase 6: Update Cache
+- [ ] Include `unit_type` and `quantity_per_unit` in menu item cache entries
+- [ ] Add lookup method: `get_menu_item_unit_info(item_name) -> (unit_type, quantity)`
+
+**Files:**
+- `orderbot/cache/loaders/menu_items.py`
+- `orderbot/cache/menu_queries.py`
+
+## Display Logic
+
+```python
+def get_unit_display(unit_type: str, quantity_per_unit: int | None) -> str:
+    """Return display string like '(3 pack)' or '' for single items."""
+    if unit_type == 'pack' and quantity_per_unit and quantity_per_unit > 1:
+        return f"({quantity_per_unit} pack)"
+    if unit_type == 'dozen':
+        return "(dozen)"
+    return ""
+```
+
+**Example confirmations:**
+- "Added Chocolate Dipped Macaroons (3 pack). Anything else?"
+- "Added Plain Bagel. Anything else?" (no suffix for unit_type='each')
+
+## Data Migration
+
+After schema is ready, update existing items:
+```sql
+UPDATE menu_items
+SET unit_type = 'pack', quantity_per_unit = 3
+WHERE name = 'Chocolate Dipped Macaroons';
+```
+
+## Files to Modify
+
+| File | Changes |
+|------|---------|
+| `alembic/versions/xxx_add_quantity_per_unit.py` | New migration |
+| `orderbot/db/models/menu.py` | Add column, update docstring |
+| `orderbot/schemas/menu.py` | Add fields to all schemas |
+| `orderbot/routes/admin_menu.py` | Serialize and handle fields |
+| `static/admin_menu.html` | Add UI controls |
+| `orderbot/cache/loaders/menu_items.py` | Include in cache |
+| `orderbot/cache/menu_queries.py` | Add lookup method |
+| `orderbot/tasks/models/item_tasks.py` | Display helper |
+| `orderbot/tasks/config_selection_handler.py` | Update confirmation |
+
+---
+
+# COMPLETED: Data-Driven Prefix-Based Menu Inquiries
+
+## Problem (Solved)
+
+When user asked "what iced drinks do you have?", the system returned generic "We have breakfasts, desserts..." instead of listing iced items.
+
+## Solution Implemented
+
+Built a **prefix index** at cache load time that maps first words of item names to items:
+- `"iced"` → [Iced Coffee, Iced Latte, Iced Tea, ...]
+- `"hot"` → [Hot Coffee, Hot Latte, Hot Tea, ...]
+
+### Files Modified
+
+1. **`orderbot/cache/base.py`** - Added `_menu_items_by_prefix` cache dict
+2. **`orderbot/cache/loaders/menu_items.py`** - Added `_build_prefix_index_from_menu_index()` method
+3. **`orderbot/cache/loaders/core.py`** - Call prefix index builder after menu index load
+4. **`orderbot/cache/menu_queries.py`** - Added `get_menu_items_by_name_prefix()` and `get_known_name_prefixes()`
+5. **`orderbot/tasks/menu_inquiry_handler.py`** - Added FALLBACK 2 to use prefix index
+
+### Results
+
+```
+User: "what iced drinks do you have?"
+Bot: "Our iced drinks include: Iced Coffee, Iced Latte, Iced Cappucino, Iced Americano, Iced Tea, and ...and 1 more. Would you like any of these?"
+
+User: "what hot drinks do you have?"
+Bot: "Our hot drinks include: Hot Coffee, Hot Chocolate, Hot Latte, Hot Cappuccino, and Hot Tea. Would you like any of these?"
+```
+
+### Data-Driven
+
+- No hardcoded "iced", "hot" checks - works for any prefix derived from menu item names
+- Adding new items like "Frozen Lemonade" automatically enables "what frozen drinks do you have?"
+
+---
+
 # COMPLETED: Skip Rules Admin UI
 
 ## Summary

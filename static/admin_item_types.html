@@ -1389,13 +1389,13 @@
     }
 
     // Load item types from API (lightweight endpoint for fast loading)
-    async function loadItemTypes() {
+    async function loadItemTypes(skipAutoSelect = false) {
       try {
         const response = await authFetch(`${API_BASE}/list`);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         allItemTypes = await response.json();
         applyFilter();
-        if (filteredItemTypes.length > 0 && currentIndex === -1) {
+        if (!skipAutoSelect && filteredItemTypes.length > 0 && currentIndex === -1) {
           selectItemTypeByIndex(0);
         }
       } catch (error) {
@@ -1675,6 +1675,16 @@
         return;
       }
 
+      // Validate display_name contains only allowed characters
+      // Allowed: letters, numbers, spaces, hyphens, apostrophes, ampersands, periods
+      const allowedCharsPattern = /^[a-zA-Z0-9 \-'&.]+$/;
+      if (!allowedCharsPattern.test(displayName)) {
+        const invalidChars = displayName.replace(/[a-zA-Z0-9 \-'&.]/g, '');
+        const uniqueInvalid = [...new Set(invalidChars)].join(' ');
+        showToast(`Display name can only contain letters, numbers, spaces, hyphens, apostrophes, ampersands, and periods. Found: ${uniqueInvalid}`, "error");
+        return;
+      }
+
       const payload = {
         display_name: displayName,
         slug: slug,
@@ -1708,12 +1718,12 @@
         setSaveButtonState(saveBtn, "saved", "Save");
         showToast(`Item type "${displayName}" saved successfully!`, "success");
 
-        await loadItemTypes();
+        await loadItemTypes(true);  // Skip auto-select, we'll re-select the saved item
 
         // Re-select the saved item
-        const newIdx = filteredItemTypes.findIndex(it => it.id === saved.id);
+        const newIdx = filteredItemTypes.findIndex(it => it.id == saved.id);  // == for type coercion
         if (newIdx !== -1) {
-          selectItemTypeByIndex(newIdx);
+          await selectItemTypeByIndex(newIdx);
         }
       } catch (error) {
         console.error("Failed to save item type:", error);

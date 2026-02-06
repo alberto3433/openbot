@@ -1075,7 +1075,7 @@
     }
 
     // Load ingredients (lightweight list)
-    async function loadIngredients() {
+    async function loadIngredients(skipAutoSelect = false) {
       const storeId = getCurrentStoreId();
       try {
         const response = await authFetch(`${API_BASE}/list?store_id=${storeId}`);
@@ -1084,7 +1084,7 @@
         buildCategoryFilter();
         applyFilter();
         updateSummaryBar();
-        if (filteredIngredients.length > 0 && currentIndex === -1) {
+        if (!skipAutoSelect && filteredIngredients.length > 0 && currentIndex === -1) {
           selectIngredientByIndex(0);
         }
       } catch (error) {
@@ -1338,6 +1338,16 @@
         return;
       }
 
+      // Validate name contains only allowed characters
+      // Allowed: letters, numbers, spaces, hyphens, apostrophes, ampersands, periods
+      const allowedCharsPattern = /^[a-zA-Z0-9 \-'&.]+$/;
+      if (!allowedCharsPattern.test(name)) {
+        const invalidChars = name.replace(/[a-zA-Z0-9 \-'&.]/g, '');
+        const uniqueInvalid = [...new Set(invalidChars)].join(' ');
+        showToast(`Name can only contain letters, numbers, spaces, hyphens, apostrophes, ampersands, and periods. Found: ${uniqueInvalid}`, "error");
+        return;
+      }
+
       const aliasValues = getTagValues(aliasesContainer);
       const mustMatchValues = getTagValues(mustMatchContainer);
 
@@ -1376,12 +1386,12 @@
         setSaveButtonState(saveBtn, "saved", "Save");
         showToast(`Ingredient "${name}" saved successfully!`, "success");
 
-        await loadIngredients();
+        await loadIngredients(true);  // Skip auto-select, we'll re-select the saved item
 
         // Re-select the saved item
-        const newIdx = filteredIngredients.findIndex(i => i.id === saved.id);
+        const newIdx = filteredIngredients.findIndex(i => i.id == saved.id);  // == for type coercion
         if (newIdx !== -1) {
-          selectIngredientByIndex(newIdx);
+          await selectIngredientByIndex(newIdx);
         }
       } catch (error) {
         console.error("Failed to save ingredient:", error);

@@ -1059,7 +1059,7 @@
       statusTextEl.style.color = isError ? "#d32f2f" : "#666";
     }
 
-    async function loadMenuItems() {
+    async function loadMenuItems(skipAutoSelect = false) {
       setStatus("Loading menu...");
       try {
         const resp = await fetch(`${API_BASE}/admin/menu`, { credentials: 'include' });
@@ -1068,10 +1068,12 @@
         allItems = data;
         // Category filter is now built from item types in loadItemTypes()
         applyFilters();
-        if (filteredItems.length > 0) {
-          selectItemByIndex(0);
-        } else {
-          selectItemByIndex(-1);
+        if (!skipAutoSelect) {
+          if (filteredItems.length > 0) {
+            selectItemByIndex(0);
+          } else {
+            selectItemByIndex(-1);
+          }
         }
         setStatus("Menu loaded.");
       } catch (err) {
@@ -1348,6 +1350,17 @@
         return;
       }
 
+      // Validate name contains only allowed characters
+      // Allowed: letters, numbers, spaces, hyphens, apostrophes, ampersands, periods
+      const allowedCharsPattern = /^[a-zA-Z0-9 \-'&.]+$/;
+      if (!allowedCharsPattern.test(payload.name)) {
+        const invalidChars = payload.name.replace(/[a-zA-Z0-9 \-'&.]/g, '');
+        const uniqueInvalid = [...new Set(invalidChars)].join(' ');
+        setStatus(`Invalid character(s) in name: ${uniqueInvalid}`, true);
+        showToast(`Name can only contain letters, numbers, spaces, hyphens, apostrophes, ampersands, and periods. Found: ${uniqueInvalid}`, "error");
+        return;
+      }
+
       const method = id ? "PUT" : "POST";
       const url = id ? `${API_BASE}/admin/menu/${id}` : `${API_BASE}/admin/menu`;
 
@@ -1377,10 +1390,10 @@
         setSaveButtonState(saveBtn, "saved", "Save");
         showToast("Menu item saved successfully!", "success");
         setStatus("Saved.");
-        await loadMenuItems();
-        const idx = filteredItems.findIndex(i => i.id === saved.id);
+        await loadMenuItems(true);  // Skip auto-select, we'll re-select the saved item
+        const idx = filteredItems.findIndex(i => i.id == saved.id);  // == for type coercion
         if (idx !== -1) {
-          selectItemByIndex(idx);
+          await selectItemByIndex(idx);
         }
       } catch (err) {
         console.error("Error saving item:", err);

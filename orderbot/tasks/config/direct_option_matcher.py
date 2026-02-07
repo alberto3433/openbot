@@ -163,24 +163,28 @@ class DirectOptionMatcher:
             if opt_quantity == 1:
                 opt_quantity = extract_quantity_for_pattern(user_lower, opt["slug"].replace("_", " "))
 
+            # Build display name with qualifier if present
             if qualifier:
-                display = f"{opt_name} ({qualifier})"
+                display_name_with_qualifier = f"{opt_name} ({qualifier})"
             else:
-                display = opt_name
+                display_name_with_qualifier = opt_name
 
+            # Build display for ack message (may include quantity prefix)
             if opt_quantity > 1:
-                display = f"{opt_quantity} {display}"
+                display = f"{opt_quantity} {display_name_with_qualifier}"
+            else:
+                display = display_name_with_qualifier
 
             display_parts.append(display)
 
-            # Add selection using unified API
+            # Add selection using unified API (with qualifier in display_name)
             opt_price = OptionMatcher.get_option_price(opt)
             item.add_selection(
                 opt["slug"],
                 attr_slug,
                 quantity=opt_quantity,
                 price=opt_price,
-                display_name=opt_name,
+                display_name=display_name_with_qualifier,
             )
 
         if display_parts:
@@ -282,18 +286,19 @@ class DirectOptionMatcher:
                     return self._ask_more_customizations(item, order, f"{display}")
 
             # Default behavior for non-ingredient-modifying attributes
+            # Build display name with qualifier if present
             if qualifier:
-                display = f"{opt_name} ({qualifier})"
+                display_name = f"{opt_name} ({qualifier})"
             else:
-                display = opt_name
+                display_name = opt_name
 
-            # Add selection using unified API
+            # Add selection using unified API (with qualifier in display_name)
             item.add_selection(
                 matched_opt["slug"],
                 attr_slug,
                 quantity=1,
                 price=opt_price,
-                display_name=opt_name,
+                display_name=display_name,
             )
             logger.info(
                 "Direct option match: set %s = %s (item %s)",
@@ -301,7 +306,7 @@ class DirectOptionMatcher:
             )
 
             # Check for remaining options and re-offer or complete
-            return self._ask_more_customizations(item, order, f"{display} added")
+            return self._ask_more_customizations(item, order, f"{display_name} added")
 
         # Try numeric matching for options with numeric slugs (e.g., shots: "1", "2", "3")
         numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}

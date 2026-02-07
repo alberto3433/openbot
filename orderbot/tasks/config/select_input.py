@@ -298,18 +298,23 @@ class SelectInputHandler:
                             opt["slug"], item.menu_item_type
                         ) or 0.0
 
+                    # Build display name with qualifier if present
+                    display_name = opt["display_name"]
+                    if qualifier:
+                        display_name = f"{display_name} ({qualifier})"
+
                     # Add selection using unified API
                     item.add_selection(
                         opt["slug"],
                         attr_slug,
                         quantity=opt_quantity,
                         price=opt_price,
-                        display_name=opt["display_name"],
+                        display_name=display_name,
                         ingredient_category=opt.get("ingredient_category"),
                     )
                     added_selections.append({
                         "slug": opt["slug"],
-                        "display_name": opt["display_name"],
+                        "display_name": display_name,
                         "price": opt_price,
                         "quantity": opt_quantity,
                         "qualifier": qualifier,
@@ -496,6 +501,11 @@ class SelectInputHandler:
         if input_type != "multi_select":
             item.remove_selection(attr_slug)
 
+        # Build display name with qualifier if present (e.g., "Scrambled (well done)")
+        display_name = matched["display_name"]
+        if qualifier:
+            display_name = f"{display_name} ({qualifier})"
+
         # Add selection using unified API
         if variant_price_applied:
             # Variant pricing already set unit_price to the full variant price.
@@ -505,7 +515,7 @@ class SelectInputHandler:
                 attr_slug,
                 quantity=quantity,
                 price=0,  # No price since variant pricing handles it
-                display_name=matched["display_name"],
+                display_name=display_name,
             )
         else:
             item.add_selection(
@@ -513,7 +523,7 @@ class SelectInputHandler:
                 attr_slug,
                 quantity=quantity,
                 price=option_price,
-                display_name=matched["display_name"],
+                display_name=display_name,
             )
             if option_price > 0:
                 logger.info(
@@ -522,9 +532,7 @@ class SelectInputHandler:
                 )
 
         # Acknowledgment with quantity and qualifier
-        ack_name = matched["display_name"]
-        if qualifier:
-            ack_name = f"{ack_name} ({qualifier})"
+        ack_name = display_name
         ack_text = f"{quantity} {ack_name}" if quantity > 1 else ack_name
         return advance_callback(item, order, attr, ack_text)
 

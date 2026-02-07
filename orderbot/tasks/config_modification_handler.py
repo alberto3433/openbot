@@ -461,7 +461,7 @@ class ConfigModificationHandler:
                     )
                     from .checkout_messages import modifier_not_available_for_item
                     return StateMachineResult(
-                        message=modifier_not_available_for_item(match["name"], item.display_name),
+                        message=modifier_not_available_for_item(match["name"], item.get_display_name()),
                         phase=order.phase,
                         pending_field=order.pending_field,
                     )

@@ -34,44 +34,62 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
     """
     text_lower = text.lower()
 
-    # Strip ordering phrases and articles
+    # Strip ordering phrases and articles (but preserve numbers - they may be part of item names)
     text_lower = re.sub(
-        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)',
+        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|i\'?ll\s+have\s+|i\s+will\s+have\s+|'
+        r'can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)',
         '', text_lower
     )
     text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
 
-    # Extract quantity EARLY - before matching
-    # This ensures "two cookies" -> qty=2, text_lower="cookie" (singularized)
-    # Uses extract_leading_quantity to handle all quantity phrases (a few, couple, dozen, etc.)
-    extracted_qty, remaining = extract_leading_quantity(text_lower)
-    if extracted_qty is not None:
-        quantity = extracted_qty
-        text_lower = remaining
-        # Singularize after extracting quantity: "two cookies" -> "cookie"
-        text_lower = singularize(text_lower)
-    else:
-        quantity = 1
-
     # Get all simple (non-configurable) item types from database
     simple_item_types = menu_cache.get_simple_item_types()
 
+    # FIRST: Try exact match with FULL text (including any leading numbers)
+    # This handles menu items like "3 Bagel Package" where the number is part of the name
+    text_for_exact_match = text_lower.strip()
     matched_item = None
     matched_item_type = None
 
-    # Try each simple item type
     for item_type_slug in simple_item_types:
         item_names = menu_cache.get_item_names(item_type_slug)
-
         # Try to match against item names (longest first for specificity)
         for item_name in sorted(item_names, key=len, reverse=True):
-            if re.search(rf'\b{re.escape(item_name)}\b', text_lower):
+            if re.search(rf'\b{re.escape(item_name)}\b', text_for_exact_match):
                 matched_item = item_name
                 matched_item_type = item_type_slug
                 break
-
         if matched_item:
             break
+
+    # If exact match found with full text, quantity = 1 (the number is part of the name)
+    if matched_item:
+        quantity = 1
+    else:
+        # No exact match - try extracting quantity and matching again
+        # This handles "two cookies" -> qty=2, "cookie"
+        extracted_qty, remaining = extract_leading_quantity(text_lower)
+        if extracted_qty is not None:
+            quantity = extracted_qty
+            text_lower = remaining
+            # Singularize after extracting quantity: "two cookies" -> "cookie"
+            text_lower = singularize(text_lower)
+        else:
+            quantity = 1
+
+        # Try each simple item type with the quantity-stripped text
+        for item_type_slug in simple_item_types:
+            item_names = menu_cache.get_item_names(item_type_slug)
+
+            # Try to match against item names (longest first for specificity)
+            for item_name in sorted(item_names, key=len, reverse=True):
+                if re.search(rf'\b{re.escape(item_name)}\b', text_lower):
+                    matched_item = item_name
+                    matched_item_type = item_type_slug
+                    break
+
+            if matched_item:
+                break
 
     if not matched_item:
         # Check if this is a generic category term (like just "soda" or "pastry")
@@ -84,25 +102,38 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
             return OpenInputResponse(needs_category_clarification=category_slug)
 
         # Try word-boundary matching for partial matches
-        # Also try singularized form for plurals like "cookies" -> "cookie"
-        word_matches = menu_cache.find_items_by_word_match(text_lower)
-        if not word_matches:
-            singularized = singularize(text_lower)
-            if singularized != text_lower:
-                word_matches = menu_cache.find_items_by_word_match(singularized)
-                if word_matches:
-                    text_lower = singularized  # Use singularized form going forward
-        if word_matches:
+        # FIRST: Try with FULL original text (including numbers) to match items like "3 Bagel Package"
+        # If that gives a single match, use it (the number is part of the name, not a quantity)
+        full_text_matches = menu_cache.find_items_by_word_match(text_for_exact_match)
+        if len(full_text_matches) == 1:
+            # Exact single match with full text - the number is part of the item name
+            matched_item = full_text_matches[0].get("name")
+            matched_item_type = full_text_matches[0].get("item_type")
+            quantity = 1  # Override any extracted quantity
             logger.debug(
-                "Deterministic parse: '%s' word-matches %d items, using for disambiguation",
-                text_lower, len(word_matches)
+                "Deterministic parse: '%s' single word-match to '%s', treating as exact item",
+                text_for_exact_match, matched_item
             )
-            matched_item = text_lower
-            # Determine item type from first match
-            first_match = word_matches[0]
-            matched_item_type = first_match.get("item_type")
         else:
-            return None
+            # Multiple matches or no matches - try with quantity-stripped text
+            word_matches = menu_cache.find_items_by_word_match(text_lower)
+            if not word_matches:
+                singularized = singularize(text_lower)
+                if singularized != text_lower:
+                    word_matches = menu_cache.find_items_by_word_match(singularized)
+                    if word_matches:
+                        text_lower = singularized  # Use singularized form going forward
+            if word_matches:
+                logger.debug(
+                    "Deterministic parse: '%s' word-matches %d items, using for disambiguation",
+                    text_lower, len(word_matches)
+                )
+                matched_item = text_lower
+                # Determine item type from first match
+                first_match = word_matches[0]
+                matched_item_type = first_match.get("item_type")
+            else:
+                return None
 
     # Resolve alias to canonical menu item name
     word_match_count = len(menu_cache.find_items_by_word_match(matched_item))

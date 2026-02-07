@@ -407,6 +407,7 @@ class ItemTypeLoaderMixin:
         categories = bulk_data["categories"]
 
         category_keywords: dict[str, dict] = {}
+        item_type_displays: dict[str, dict] = {}  # For get_categories_for_inference()
 
         # 1. Load ItemTypes
         for item_type in item_types:
@@ -422,6 +423,12 @@ class ItemTypeLoaderMixin:
             }
 
             category_keywords[slug] = category_info
+
+            # Also populate item_type_displays for LLM category inference
+            item_type_displays[slug] = {
+                "display_name": display_name,
+                "display_name_plural": display_name_plural,
+            }
 
             for alias in item_type.aliases:
                 alias = alias.strip().lower()
@@ -458,10 +465,12 @@ class ItemTypeLoaderMixin:
             )
 
         self._category_keywords = category_keywords
+        self._item_type_displays = item_type_displays
 
         logger.debug(
-            "Loaded %d category keywords (from bulk)",
+            "Loaded %d category keywords, %d item type displays (from bulk)",
             len(category_keywords),
+            len(item_type_displays),
         )
 
     def _load_item_type_fields_from_bulk(self, bulk_data: dict) -> None:

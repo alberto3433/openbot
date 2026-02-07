@@ -429,6 +429,10 @@ class BaseCacheMixin:
         # Configurable item types (those with attributes defined)
         self._configurable_item_types: set[str] = set()
 
+        # Item type display names - maps item_type_slug -> {display_name, display_name_plural}
+        # Used by get_categories_for_inference() for LLM category inference
+        self._item_type_displays: dict[str, dict[str, str]] = {}
+
         # Item type side choice configuration
         # Maps item_type_slug -> {"has_side_choice": bool, "side_choice_attribute_id": int|None}
         self._item_type_side_choice: dict[str, dict] = {}

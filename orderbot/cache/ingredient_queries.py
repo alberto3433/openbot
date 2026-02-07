@@ -463,8 +463,9 @@ class IngredientQueryMixin:
                     continue
 
                 name = detail.get("name", "").lower()
-                aliases = [a.lower() for a in detail.get("aliases", [])]
-                all_terms = [name] + aliases
+                # Use "patterns" which includes name + aliases (see loaders/ingredients.py)
+                patterns = detail.get("patterns", [])
+                all_terms = patterns if patterns else [name]
 
                 match_entry = {
                     "slug": slug,

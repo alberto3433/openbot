@@ -777,6 +777,77 @@ class TestOptionsInquiryAtCheckpoint:
             f"Bot did not list spread options: {result.message}"
         )
 
+    def test_space_separated_modifiers_salt_pepper_ketchup(self):
+        """
+        Test that 'salt pepper ketchup' at customization checkpoint adds all three.
+
+        Scenario:
+        - User orders: plain bagel toasted not scooped no spread
+        - Bot asks: Any more changes? You can add Egg, Cheese, Meat, Toppings, or Condiments.
+        - User says: salt pepper ketchup (space-separated, no "and" or commas)
+
+        Expected: Bot adds Salt, Black Pepper, and Ketchup
+        Bug (before fix): "Sorry, we don't have salt pepper ketchup"
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # Order a plain bagel with some specifications
+        result = sm.process("plain bagel toasted not scooped no spread", order)
+        assert len(result.order.items.items) == 1
+        item = result.order.items.items[0]
+        assert item.menu_item_type == "bagel"
+
+        # Navigate to customization_checkpoint
+        max_iterations = 10
+        for _ in range(max_iterations):
+            pending = result.order.pending_field
+            if pending == "customization_checkpoint":
+                break
+            # Answer common questions to advance
+            if pending and pending.endswith(":scooped"):
+                result = sm.process("no", result.order)
+            elif pending and pending.endswith(":spread_type"):
+                result = sm.process("none", result.order)
+            elif result.message and "any more changes" in result.message.lower():
+                break
+            else:
+                result = sm.process("no", result.order)
+
+        # Say "salt pepper ketchup" - all space-separated
+        result = sm.process("salt pepper ketchup", result.order)
+
+        # Should NOT contain the error message
+        assert "sorry" not in result.message.lower(), (
+            f"Bot incorrectly rejected input: {result.message}"
+        )
+        assert "we don't have salt pepper ketchup" not in result.message.lower(), (
+            f"Bot incorrectly rejected input: {result.message}"
+        )
+
+        # Verify all three were added
+        item = result.order.items.items[0]
+        modifiers = item.modifiers or []
+        modifier_slugs = [m.get("slug", "").lower() for m in modifiers]
+
+        assert any("salt" in slug for slug in modifier_slugs), (
+            f"Salt not found in modifiers: {modifiers}"
+        )
+        assert any("pepper" in slug for slug in modifier_slugs), (
+            f"Pepper not found in modifiers: {modifiers}"
+        )
+        assert any("ketchup" in slug for slug in modifier_slugs), (
+            f"Ketchup not found in modifiers: {modifiers}"
+        )
+
+        # Message should confirm what was added
+        message_lower = result.message.lower()
+        assert "added" in message_lower, (
+            f"Expected 'added' in message: {result.message}"
+        )
+
 
 class TestChangeRequestWithQuantity:
     """Test change requests with quantity prefixes like 'can you make it with 2 vanilla syrups'."""

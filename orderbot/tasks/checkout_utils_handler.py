@@ -14,7 +14,7 @@ from typing import Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending_field
 from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
-from .utils.text import format_english_list
+from .utils.text import format_english_list, format_numbered_list
 from .checkout_messages import got_it_anything_else, CheckoutMessages
 from ..cache import menu_cache
 
@@ -143,11 +143,7 @@ class CheckoutUtilsHandler:
                 order.pending_field = PendingField.ITEM_SELECTION
                 order.set_phase(OrderPhase.CONFIGURING_ITEM)
                 # Build the clarification message
-                option_list = []
-                for i, option_item in enumerate(order.pending_item_options, 1):
-                    name = option_item.get("name", "Unknown")
-                    option_list.append(f"{i}. {name}")
-                options_str = "\n".join(option_list)
+                options_str = format_numbered_list(order.pending_item_options)
                 return StateMachineResult(
                     message=f"We have a few options:\n{options_str}\nWhich would you like?",
                     order=order,

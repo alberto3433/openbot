@@ -17,8 +17,13 @@ from orderbot.cache import menu_cache
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse
 from .pending_fields import PendingField
-from .parsers.quantity_utils import extract_quantity_for_pattern, extract_leading_quantity
-from .checkout_messages import sure_updated_anything_else, item_not_found_would_you_like_to_add
+from .parsers.quantity_utils import extract_leading_quantity, extract_modifier_quantity
+from .checkout_messages import (
+    sure_updated_anything_else,
+    item_not_found_would_you_like_to_add,
+    item_not_customizable,
+    modifier_not_available_for_item,
+)
 from .handler_utils import get_last_item, recalculate_and_summarize
 
 if TYPE_CHECKING:
@@ -165,6 +170,17 @@ class ItemModificationHandler:
         if not parsed.modify_add_modifiers:
             return None
 
+        # Check if item type is configurable (has linked ingredients)
+        if not menu_cache.is_item_type_configurable(target_item.menu_item_type):
+            logger.info(
+                "Rejected modification for non-configurable item type '%s'",
+                target_item.menu_item_type
+            )
+            return StateMachineResult(
+                message=item_not_customizable(target_item.menu_item_name or target_item.get_display_name()),
+                order=order,
+            )
+
         # Use pre-built modifier→category lookup from cache
         modifier_to_category = menu_cache.get_modifier_to_category_map()
 
@@ -226,7 +242,7 @@ class ItemModificationHandler:
                 return None
 
             # Extract quantity - prefer quantity from modifier prefix
-            quantity = self._extract_modifier_quantity(
+            quantity = extract_modifier_quantity(
                 quantity_from_modifier, raw_user_input, base_modifier, modifier_lower
             )
 
@@ -242,7 +258,23 @@ class ItemModificationHandler:
         elif len(matches) == 1:
             # Single match - add it directly
             match = matches[0]
-            quantity = self._extract_modifier_quantity(
+
+            # Validate modifier is allowed for this item type
+            if not menu_cache.is_valid_modifier_for_item_type(
+                match["slug"], target_item.menu_item_type
+            ):
+                logger.info(
+                    "Rejected modifier '%s' for item type '%s'",
+                    match["name"], target_item.menu_item_type
+                )
+                return StateMachineResult(
+                    message=modifier_not_available_for_item(
+                        match["name"], target_item.get_display_name()
+                    ),
+                    order=order,
+                )
+
+            quantity = extract_modifier_quantity(
                 quantity_from_modifier, raw_user_input, base_modifier, modifier_lower
             )
 
@@ -264,7 +296,7 @@ class ItemModificationHandler:
             # Store context for when disambiguation resolves
             target_item_index = order.items.items.index(target_item)
             order.pending_modifier_target_item_index = target_item_index
-            quantity = self._extract_modifier_quantity(
+            quantity = extract_modifier_quantity(
                 quantity_from_modifier, raw_user_input, base_modifier, modifier_lower
             )
             order.pending_modifier_quantity = quantity
@@ -280,21 +312,6 @@ class ItemModificationHandler:
                 )
 
         return None
-
-    def _extract_modifier_quantity(
-        self,
-        quantity_from_modifier: int | None,
-        raw_user_input: str | None,
-        base_modifier: str,
-        modifier_lower: str,
-    ) -> int:
-        """Extract quantity for a modifier."""
-        quantity = quantity_from_modifier if quantity_from_modifier else 1
-        if quantity == 1 and raw_user_input:
-            quantity = extract_quantity_for_pattern(raw_user_input, base_modifier)
-            if quantity == 1 and "(extra)" in modifier_lower:
-                quantity = 2
-        return quantity
 
     def _handle_no_target_found(
         self,

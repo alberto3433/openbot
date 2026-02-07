@@ -333,3 +333,52 @@ def parse_numeric_input(user_input: str) -> int | None:
             return num
 
     return None
+
+
+def extract_modifier_quantity(
+    prefix_quantity: int | None,
+    raw_user_input: str | None,
+    modifier_pattern: str,
+    modifier_text: str | None = None,
+) -> int:
+    """Extract quantity for a modifier using 3-level fallback.
+
+    This is the standard approach for determining modifier quantity:
+    1. Use quantity from modifier prefix (e.g., "2 vanilla" -> 2)
+    2. Search full user input for pattern match (e.g., "add two vanilla syrups" -> 2)
+    3. Check for "(extra)" qualifier in modifier text (e.g., "bacon (extra)" -> 2)
+
+    Args:
+        prefix_quantity: Quantity extracted from modifier prefix, or None
+        raw_user_input: The full user input string for pattern matching
+        modifier_pattern: The modifier pattern to search for (e.g., "vanilla")
+        modifier_text: Optional modifier text to check for "(extra)" qualifier
+
+    Returns:
+        The extracted quantity, defaulting to 1 if not found.
+
+    Examples:
+        >>> extract_modifier_quantity(2, "add 2 vanilla", "vanilla")
+        2
+        >>> extract_modifier_quantity(None, "add two vanilla syrups", "vanilla")
+        2
+        >>> extract_modifier_quantity(None, "add bacon", "bacon", "bacon (extra)")
+        2
+        >>> extract_modifier_quantity(None, "add bacon", "bacon")
+        1
+    """
+    # Level 1: Use prefix quantity if provided
+    if prefix_quantity and prefix_quantity > 0:
+        return prefix_quantity
+
+    # Level 2: Search full user input for pattern
+    if raw_user_input:
+        pattern_qty = extract_quantity_for_pattern(raw_user_input, modifier_pattern)
+        if pattern_qty > 1:
+            return pattern_qty
+
+    # Level 3: Check for "(extra)" qualifier
+    if modifier_text and "(extra)" in modifier_text.lower():
+        return 2
+
+    return 1

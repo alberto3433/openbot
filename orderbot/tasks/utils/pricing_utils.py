@@ -24,6 +24,7 @@ def safe_recalculate_price(
     Unlike the direct call to pricing.recalculate_item_price() which assumes
     pricing is always available, this helper:
     - Returns the current price if pricing engine is None
+    - Catches ValueError if price lookup fails (item may not have pricing data)
     - Logs a warning (not an error) for debugging
     - Never raises an exception
 
@@ -37,7 +38,7 @@ def safe_recalculate_price(
             (e.g., "during modifier change" or "at checkout")
 
     Returns:
-        The recalculated price, or current unit_price if pricing unavailable
+        The recalculated price, or current unit_price if pricing unavailable/fails
     """
     if pricing is None:
         context_str = f" {log_context}" if log_context else ""
@@ -50,7 +51,18 @@ def safe_recalculate_price(
         )
         return item.unit_price
 
-    return pricing.recalculate_item_price(item)
+    try:
+        return pricing.recalculate_item_price(item)
+    except ValueError as e:
+        context_str = f" {log_context}" if log_context else ""
+        logger.warning(
+            "Price recalculation failed for '%s'%s: %s. Using current unit_price: %.2f",
+            item.menu_item_name or item.id,
+            context_str,
+            e,
+            item.unit_price,
+        )
+        return item.unit_price
 
 
 def safe_lookup_modifier_price(

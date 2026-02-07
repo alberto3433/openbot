@@ -26,6 +26,8 @@ from .checkout_messages import (
     sure_added_to_anything_else,
     sure_removed_anything_else,
     sure_changed_anything_else,
+    item_not_customizable,
+    modifier_not_available_for_item,
 )
 from .modifier_removal import (
     REMOVAL_TEMPLATES,
@@ -235,6 +237,10 @@ def add_modifiers_from_input(
     # Get scannable categories from database (data-driven)
     item_type = item.menu_item_type
     if not item_type:
+        return False
+
+    # Skip non-configurable items (handled at handler level with proper message)
+    if not menu_cache.is_item_type_configurable(item_type):
         return False
 
     categories = menu_cache.get_scannable_modifier_categories(item_type)
@@ -455,6 +461,21 @@ class ModifierInputHandler:
         # If it's an "add modifier" pattern OR pure modifier input, modify the last item
         if (is_add_modifier_request or is_pure_modifier_input) and has_item_modifier and active_items:
             last_item = get_last_item(active_items)
+
+            # First check if item type is configurable at all
+            if is_configurable_menu_item(last_item):
+                if not menu_cache.is_item_type_configurable(last_item.menu_item_type):
+                    logger.info(
+                        "Rejected modification for non-configurable item type '%s'",
+                        last_item.menu_item_type
+                    )
+                    return StateMachineResult(
+                        message=item_not_customizable(
+                            last_item.menu_item_name or last_item.get_display_name()
+                        ),
+                        order=order,
+                    )
+
             # Check if item accepts input modifiers (data-driven)
             accepts_modifiers = (
                 is_configurable_menu_item(last_item) and

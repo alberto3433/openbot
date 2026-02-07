@@ -24,6 +24,7 @@ from .normalization import format_slug_for_display
 from .checkout_messages import changed_to_anything_else
 from .handler_utils import get_last_item, recalculate_and_summarize
 from .utils.text import find_first_word_boundary_match
+from .utils.pricing_utils import safe_recalculate_price
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -164,8 +165,7 @@ class ItemReplacementHandler:
                         display_name=opt.get("display_name", opt["slug"]),
                     )
 
-                    if self.pricing:
-                        self.pricing.recalculate_item_price(last_item)
+                    safe_recalculate_price(self.pricing, last_item, "after replacement")
 
                     return StateMachineResult(
                         message=changed_to_anything_else(opt.get('display_name', opt['slug'])),

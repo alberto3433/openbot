@@ -11,11 +11,12 @@ from typing import TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
 from .parsers.selection_patterns import SELECTION_PATTERNS
-from .handler_utils import format_numbered_options
+from .utils.text import format_numbered_list
 from .checkout_messages import got_it_anything_else, ErrorMessages
 from .pending_fields import PendingField
 from orderbot.cache import menu_cache
 from orderbot.cache.base import pluralize
+from .utils.pricing_utils import safe_recalculate_price
 
 if TYPE_CHECKING:
     from .item_adder_handler import ItemAdderHandler
@@ -188,7 +189,7 @@ class ConfigSelectionHandler:
 
         # Reject negative numbers or other invalid input early
         if user_lower.startswith('-') or user_lower.startswith('\u2212'):
-            options_str = format_numbered_options(options)
+            options_str = format_numbered_list(options)
             return StateMachineResult(
                 message=f"Please choose a number from 1 to {min(len(options), 6)}:\n{options_str}",
                 order=order,
@@ -207,7 +208,7 @@ class ConfigSelectionHandler:
                 else:
                     # User selected a number that's out of range - ask again
                     logger.info("ITEM SELECTION: User selected %s but only %d options available", key, len(options))
-                    options_str = format_numbered_options(options)
+                    options_str = format_numbered_list(options)
                     return StateMachineResult(
                         message=f"I only have {min(len(options), 6)} options. Please choose:\n{options_str}",
                         order=order,
@@ -230,7 +231,7 @@ class ConfigSelectionHandler:
 
         if not selected_item:
             # Couldn't determine which one - ask again
-            options_str = format_numbered_options(options)
+            options_str = format_numbered_list(options)
             return StateMachineResult(
                 message=f"I didn't catch which one. Please choose:\n{options_str}",
                 order=order,
@@ -426,8 +427,8 @@ class ConfigSelectionHandler:
             )
 
             # Recalculate price
-            if self._taking_items_handler and self._taking_items_handler.pricing:
-                self._taking_items_handler.pricing.recalculate_item_price(target_item)
+            pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+            safe_recalculate_price(pricing, target_item, "after modifier selection")
 
         # Clear disambiguation state
         disambiguation.clear_disambiguation_state(order)

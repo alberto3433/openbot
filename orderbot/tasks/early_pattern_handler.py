@@ -36,6 +36,7 @@ from .modifier_input_handler import (
     match_category_removal_pattern,
     remove_modifiers_by_category,
 )
+from .utils.pricing_utils import safe_recalculate_price
 from .checkout_messages import (
     item_added_anything_else,
     sure_added_to_anything_else,
@@ -440,8 +441,7 @@ class EarlyPatternHandler:
             order.items.items.append(new_item)
 
             # Recalculate pricing for the new item
-            if self.pricing:
-                self.pricing.recalculate_item_price(new_item)
+            safe_recalculate_price(self.pricing, new_item, "for duplicated item")
 
         item_name = template_item.get_display_name()
         return StateMachineResult(

@@ -554,9 +554,19 @@ def parse_open_input_deterministic(
         # Get item_type for data-driven attribute and modification extraction
         item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
         # Extract attributes using the item's actual item_type (fully data-driven)
+        # Find the span where the menu item name appears in the text to exclude from
+        # attribute matching. This prevents words within the menu item name (e.g., "butter"
+        # in "Cinnamon Sugar Butter Sandwich") from matching as attributes.
+        menu_item_span = None
+        text_lower = text.lower()
+        menu_item_lower = menu_item.lower()
+        pos = text_lower.find(menu_item_lower)
+        if pos != -1:
+            menu_item_span = (pos, pos + len(menu_item_lower))
         attr_values = {}
         if item_type_for_mods:
-            attr_values, _ = extract_attribute_values(text, item_type_for_mods)
+            exclude_spans = [menu_item_span] if menu_item_span else None
+            attr_values, _ = extract_attribute_values(text, item_type_for_mods, exclude_spans)
         modifications = _extract_menu_item_modifications(text, item_type_for_mods)
         # Look up is_signature from database (data-driven, no special handling)
         is_sig = menu_cache.item_has_default_ingredients(menu_item)

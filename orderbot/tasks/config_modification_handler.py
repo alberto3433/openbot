@@ -18,6 +18,7 @@ from .pending_fields import PendingField
 from .modifier_change_handler import ChangeRequest
 from .parsers.quantity_utils import extract_leading_quantity
 from orderbot.cache import menu_cache
+from .utils.pricing_utils import safe_recalculate_price
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -27,6 +28,35 @@ if TYPE_CHECKING:
     from .taking_items_handler import TakingItemsHandler
 
 logger = logging.getLogger(__name__)
+
+
+def _get_weight_variations(value: str) -> list[str]:
+    """Generate normalized variations of a weight specification.
+
+    Converts weight input like "pound" to multiple formats for alias matching:
+    - "pound" -> ["pound", "1 lb", "1 pound", "one pound", "a pound"]
+    - "quarter" -> ["quarter", "1/4 lb", "quarter pound", "quarter lb"]
+
+    Args:
+        value: The weight term (lowercase, stripped)
+
+    Returns:
+        List of variations to try for alias matching.
+    """
+    value = value.strip().lower()
+    variations = [value]
+
+    # Handle "pound" -> various "1 lb" formats
+    if value in ("pound", "lb"):
+        variations.extend(["1 lb", "1 pound", "one pound", "a pound", "one_pound"])
+    elif value in ("pounds", "lbs"):
+        variations.extend(["1 lb", "1 pound", "one pound", "one_pound"])
+    elif value == "quarter":
+        variations.extend(["1/4 lb", "quarter pound", "quarter lb", "quarter_pound"])
+    elif value == "half":
+        variations.extend(["1/2 lb", "half pound", "half lb", "half_pound"])
+
+    return variations
 
 
 class ConfigModificationHandler:
@@ -111,13 +141,16 @@ class ConfigModificationHandler:
                     for opt in options:
                         opt_slug = opt.get("slug", "").lower()
                         opt_display = opt.get("display_name", "").lower()
-                        if modifier_lower == opt_slug or modifier_lower == opt_display:
+                        # Also check aliases (e.g., "pound" -> "one_pound")
+                        aliases = opt.get("aliases") or []
+                        alias_list = [a.strip().lower() for a in aliases] if aliases else []
+                        if modifier_lower == opt_slug or modifier_lower == opt_display or modifier_lower in alias_list:
                             # Found matching attribute option - apply it
                             logger.info("CAN_YOU_MAKE_IT: Found matching attr %s=%s", attr_slug, opt_slug)
                             item[attr_slug] = opt.get("slug")
                             # Recalculate price after attribute change
-                            if self._taking_items_handler and self._taking_items_handler.pricing:
-                                self._taking_items_handler.pricing.recalculate_item_price(item)
+                            pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+                            safe_recalculate_price(pricing, item, "after attribute change")
                             # Re-ask current question (the one we were on)
                             current_question = self.config_helper_handler.get_current_config_question(order, item)
                             if current_question:
@@ -132,6 +165,41 @@ class ConfigModificationHandler:
                             )
             except Exception as e:
                 logger.debug("Error checking attributes for 'can you make it': %s", e)
+
+        # 1b. Special handling for weight/quantity modifiers - try normalized variations
+        # e.g., "pound" should match "1 lb" or "one_pound"
+        if item_type:
+            # Get priced attribute, fallback to "weight" for by-weight items
+            priced_attr = menu_cache.get_first_priced_attribute(item_type)
+            if not priced_attr:
+                # Check if this item type has a weight attribute
+                attrs = menu_cache.get_item_type_attributes(item_type)
+                if "weight" in attrs:
+                    priced_attr = "weight"
+            if priced_attr:
+                # Try weight-related variations
+                weight_variations = _get_weight_variations(modifier_lower)
+                for variation in weight_variations:
+                    option = menu_cache.resolve_option_by_alias(priced_attr, variation)
+                    if option:
+                        opt_slug = option.get("slug")
+                        logger.info(
+                            "CAN_YOU_MAKE_IT: Weight variation '%s' resolved to %s=%s",
+                            modifier_lower, priced_attr, opt_slug
+                        )
+                        item[priced_attr] = opt_slug
+                        pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+                        safe_recalculate_price(pricing, item, "after weight change")
+                        opt_name = option.get("display_name") or opt_slug.replace("_", " ").title()
+                        # If this answers the current pending question, clear it so we move to next
+                        pending = order.pending_field
+                        if pending and ":" in pending:
+                            _, pending_attr = pending.split(":", 1)
+                            if pending_attr == priced_attr:
+                                order.pending_field = None
+                        return self._continue_config_with_message(
+                            f"Okay, {opt_name}.", item, order
+                        )
 
         # 2. Check if it's an ingredient/modifier (spread, topping, syrup, etc.)
         matches = menu_cache.find_matching_ingredients(modifier_lower)
@@ -365,6 +433,8 @@ class ConfigModificationHandler:
 
         # Apply each modifier to the current item
         added_names = []
+        # Pre-fetch modifier→category map once for all terms (avoids repeated lookups in loop)
+        modifier_to_category = menu_cache.get_modifier_to_category_map()
         for term in modifier_terms:
             # Extract quantity from the term (e.g., "two eggs" -> qty=2, term="eggs")
             extracted_qty, search_term = extract_leading_quantity(term)
@@ -426,34 +496,34 @@ class ConfigModificationHandler:
                 )
                 return self._start_modifier_disambiguation(term, matches, item, order)
             else:
-                # No match found - try category lookup
-                modifier_to_category = menu_cache.get_modifier_to_category_map()
-                category = modifier_to_category.get(term)
+                # No match found - try category lookup (using pre-fetched map)
+                # Use search_term (with quantity stripped) for lookup, not the raw term
+                category = modifier_to_category.get(search_term)
                 if category:
-                    modifier_slug = term.replace(" ", "_")
+                    modifier_slug = search_term.replace(" ", "_")
                     item.add_selection(
                         slug=modifier_slug,
                         category=category,
-                        display_name=term.title(),
-                        quantity=1,
+                        display_name=search_term.title(),
+                        quantity=quantity,  # Preserve extracted quantity (was hardcoded to 1)
                     )
-                    added_names.append(term.title())
+                    added_names.append(search_term.title())
                     logger.info(
-                        "ADD_DURING_CONFIG: Added '%s' (category=%s) via category lookup",
-                        term, category
+                        "ADD_DURING_CONFIG: Added '%s' (category=%s, qty=%d) via category lookup",
+                        search_term, category, quantity
                     )
                 else:
                     logger.warning(
                         "ADD_DURING_CONFIG: Could not find modifier '%s' in database",
-                        term
+                        search_term
                     )
 
         if not added_names:
             return None
 
         # Recalculate price
-        if self.modifier_change_handler and self.modifier_change_handler.pricing:
-            self.modifier_change_handler.pricing.recalculate_item_price(item)
+        pricing = self.modifier_change_handler.pricing if self.modifier_change_handler else None
+        safe_recalculate_price(pricing, item, "after adding modifiers")
 
         # Build acknowledgment message
         from .utils.text import format_english_list
@@ -607,8 +677,8 @@ class ConfigModificationHandler:
         )
 
         # Recalculate price
-        if self.modifier_change_handler and self.modifier_change_handler.pricing:
-            self.modifier_change_handler.pricing.recalculate_item_price(item)
+        pricing = self.modifier_change_handler.pricing if self.modifier_change_handler else None
+        safe_recalculate_price(pricing, item, "after ingredient match")
 
     def _continue_config_with_message(
         self, message: str, item: MenuItemTask, order: OrderTask

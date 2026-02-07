@@ -29,6 +29,7 @@ from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from .handler_utils import is_configurable_menu_item, get_last_item
 from .modifier_resolver import normalize_modifier_input
+from .utils.pricing_utils import safe_recalculate_price
 
 logger = logging.getLogger(__name__)
 
@@ -453,8 +454,7 @@ class ModifierChangeHandler:
                 logger.info("Added %s x%d to %s", modifier_slug, quantity, attr_slug)
 
             # Recalculate price
-            if self.pricing:
-                self.pricing.recalculate_item_price(item)
+            safe_recalculate_price(self.pricing, item, "after adding modifier")
 
             return ChangeResult(
                 success=True,
@@ -477,8 +477,7 @@ class ModifierChangeHandler:
 
         # Recalculate price - any attribute change could affect pricing
         # (size, bread type, temperature, spread type, milk, etc.)
-        if self.pricing:
-            self.pricing.recalculate_item_price(item)
+        safe_recalculate_price(self.pricing, item, "after attribute change")
 
         # Build response message
         message = self._build_change_message(item, attr_slug, old_value, normalized_value)

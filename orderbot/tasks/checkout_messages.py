@@ -199,3 +199,32 @@ def item_not_found_would_you_like_to_add(item_desc: str) -> str:
         Formatted message offering to add the item
     """
     return f"I couldn't find a {item_desc} in your order. Would you like to add one?"
+
+
+# =============================================================================
+# Modifier Validation Messages
+# =============================================================================
+
+def item_not_customizable(item_name: str) -> str:
+    """Message when user tries to customize a non-configurable item.
+
+    Args:
+        item_name: Name of the item that can't be customized
+
+    Returns:
+        Formatted rejection message
+    """
+    return f"Sorry, the {item_name} can't be customized. Anything else?"
+
+
+def modifier_not_available_for_item(modifier_name: str, item_name: str) -> str:
+    """Message when modifier isn't valid for an item type.
+
+    Args:
+        modifier_name: Name of the modifier that isn't available
+        item_name: Name of the item
+
+    Returns:
+        Formatted rejection message
+    """
+    return f"Sorry, {modifier_name} isn't available for the {item_name}. Anything else?"

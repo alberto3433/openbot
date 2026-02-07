@@ -216,7 +216,7 @@ class OptionsInquiryHandler:
 
         # Patterns to extract attribute name from inquiry questions
         inquiry_patterns = [
-            r"what\s+(?:kind\s+of\s+)?(\w+)\s+(?:do\s+you\s+have|options|are\s+there)",
+            r"what\s+(?:kind\s+of\s+)?(\w+)\s+(?:do\s+you\s+have|options|are\s+there|are\s+available|available)",
             r"(?:show|list)\s+(?:me\s+)?(?:the\s+)?(\w+)(?:\s+options)?",
             r"what\s+(\w+)\s+can\s+i\s+(?:add|get|have)",
             r"what\s+(?:types?|kinds?)\s+of\s+(\w+)",

@@ -966,23 +966,6 @@
       }
       html += '</div>';
 
-      // Item Types section
-      html += '<div class="ref-section">';
-      html += `<div class="ref-section-header">Item Types <span class="count">${data.item_types.length}</span></div>`;
-      if (data.item_types.length === 0) {
-        html += '<div class="ref-empty">No item types use this ingredient as a modifier</div>';
-      } else {
-        data.item_types.forEach(itemType => {
-          html += `
-            <div class="ref-item">
-              <a class="ref-item-name" href="/static/admin_modifiers.html#type-${itemType.id}" target="_blank">${escapeHtml(itemType.display_name)}</a>
-              <span class="ref-item-detail">group: ${escapeHtml(itemType.ingredient_group)}</span>
-            </div>
-          `;
-        });
-      }
-      html += '</div>';
-
       // Attribute Options section
       html += '<div class="ref-section">';
       html += `<div class="ref-section-header">Attribute Options <span class="count">${data.attribute_options.length}</span></div>`;

@@ -72,7 +72,6 @@ from ..db.models import (
     IngredientMustMatch,
     IngredientStoreAvailability,
     IngredientUnit,
-    ItemTypeGlobalAttribute,
     MenuItem,
     MenuItemIngredient,
     MenuItemStoreAvailability,
@@ -456,28 +455,8 @@ def get_ingredient_references(
         for opt in attr_options
     ]
 
-    # Derive item types from global attributes:
-    # GlobalAttributeOption -> GlobalAttribute -> ItemTypeGlobalAttribute -> ItemType
-    global_attr_ids = {opt.attribute.id for opt in attr_options if opt.attribute}
-    item_type_links = db.query(ItemTypeGlobalAttribute).options(
-        joinedload(ItemTypeGlobalAttribute.item_type)
-    ).filter(ItemTypeGlobalAttribute.global_attribute_id.in_(global_attr_ids)).all() if global_attr_ids else []
-
-    # Deduplicate by item_type_id
-    seen_item_types = set()
-    item_types = []
-    for link in item_type_links:
-        if link.item_type and link.item_type.id not in seen_item_types:
-            seen_item_types.add(link.item_type.id)
-            item_types.append({
-                "id": link.item_type.id,
-                "display_name": link.item_type.display_name,
-                "slug": link.item_type.slug,
-            })
-
     return {
         "menu_items": menu_items,
-        "item_types": item_types,
         "attribute_options": attribute_options,
     }
 

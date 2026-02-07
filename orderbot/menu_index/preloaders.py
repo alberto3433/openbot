@@ -12,7 +12,6 @@ from orderbot.db.models import (
     GlobalAttributeOption,
     ItemType,
     ItemTypeGlobalAttribute,
-    ItemTypeIngredient,
     MenuItemIngredient,
     MenuItemSize,
     MenuItemSizePrice,
@@ -120,31 +119,6 @@ def preload_global_attribute_options(db: Session) -> dict[int, list]:
         by_attr[opt.global_attribute_id].append(opt)
 
     return by_attr
-
-
-def preload_item_type_ingredients(db: Session) -> dict[tuple, list]:
-    """
-    Pre-load all item type ingredient links in a single query.
-
-    Returns:
-        Dict mapping (item_type_id, ingredient_group) -> List[ItemTypeIngredient]
-    """
-    all_links = (
-        db.query(ItemTypeIngredient)
-        .options(joinedload(ItemTypeIngredient.ingredient))
-        .filter(ItemTypeIngredient.is_available == True)  # noqa: E712
-        .order_by(ItemTypeIngredient.item_type_id, ItemTypeIngredient.display_order)
-        .all()
-    )
-
-    by_type_group: dict[tuple, list] = defaultdict(list)
-    for link in all_links:
-        # Only include if ingredient is also available
-        if link.ingredient and link.ingredient.is_available:
-            key = (link.item_type_id, link.ingredient_group)
-            by_type_group[key].append(link)
-
-    return by_type_group
 
 
 def preload_size_prices(db: Session) -> dict[int, dict[str, Any]]:

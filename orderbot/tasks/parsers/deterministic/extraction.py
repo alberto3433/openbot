@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 def extract_attribute_values(
     user_input: str,
     item_type: str,
+    exclude_spans: list[tuple[int, int]] | None = None,
 ) -> tuple[dict[str, Any], list[tuple[int, int]]]:
     """
     Extract attribute values from user input for a specific item type.
@@ -49,6 +50,9 @@ def extract_attribute_values(
     Args:
         user_input: The raw user input string
         item_type: The item type slug
+        exclude_spans: Optional list of (start, end) tuples to exclude from matching.
+            Used to prevent matching words within menu item names (e.g., "butter" in
+            "Cinnamon Sugar Butter Sandwich" should not match as a spread attribute).
 
     Returns:
         Tuple of (attribute_values, matched_spans):
@@ -262,8 +266,14 @@ def extract_attribute_values(
     matched_options_per_attr: dict[str, set[str]] = {}  # Track matched option slugs per attribute
 
     def spans_overlap(start: int, end: int) -> bool:
-        """Check if position overlaps with any matched span."""
-        return any(not (end <= s or start >= e) for s, e in matched_spans)
+        """Check if position overlaps with any matched span or excluded span."""
+        # Check against previously matched spans
+        if any(not (end <= s or start >= e) for s, e in matched_spans):
+            return True
+        # Check against excluded spans (e.g., menu item name span)
+        if exclude_spans and any(not (end <= s or start >= e) for s, e in exclude_spans):
+            return True
+        return False
 
     for cand in candidates:
         slug = cand.option.get("slug", "")
@@ -507,7 +517,7 @@ def _extract_modifiers_generic(
     # (e.g., "bread" category for bagels is the "bread" attribute)
     attr_slugs = set(item_type_attrs.keys())
 
-    # Get ingredients that are valid for this specific item type (from item_type_ingredients)
+    # Get ingredients that are valid for this specific item type (from global attributes)
     # This ensures we only extract modifiers that make sense for this item type
     valid_ingredients_by_category = menu_cache.get_ingredients_by_category_for_item_type(item_type)
 

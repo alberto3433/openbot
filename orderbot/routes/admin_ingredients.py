@@ -72,7 +72,7 @@ from ..db.models import (
     IngredientMustMatch,
     IngredientStoreAvailability,
     IngredientUnit,
-    ItemTypeIngredient,
+    ItemTypeGlobalAttribute,
     MenuItem,
     MenuItemIngredient,
     MenuItemStoreAvailability,
@@ -440,21 +440,6 @@ def get_ingredient_references(
         for ref in menu_item_refs
     ]
 
-    # Query ItemTypeIngredient - item types that can use this ingredient as a modifier
-    item_type_refs = db.query(ItemTypeIngredient).options(
-        joinedload(ItemTypeIngredient.item_type)
-    ).filter(ItemTypeIngredient.ingredient_id == ingredient_id).all()
-
-    item_types = [
-        {
-            "id": ref.item_type.id,
-            "display_name": ref.item_type.display_name,
-            "slug": ref.item_type.slug,
-            "ingredient_group": ref.ingredient_group,
-        }
-        for ref in item_type_refs
-    ]
-
     # Query GlobalAttributeOption - options linked to this ingredient
     attr_options = db.query(GlobalAttributeOption).options(
         joinedload(GlobalAttributeOption.attribute)
@@ -470,6 +455,25 @@ def get_ingredient_references(
         }
         for opt in attr_options
     ]
+
+    # Derive item types from global attributes:
+    # GlobalAttributeOption -> GlobalAttribute -> ItemTypeGlobalAttribute -> ItemType
+    global_attr_ids = {opt.attribute.id for opt in attr_options if opt.attribute}
+    item_type_links = db.query(ItemTypeGlobalAttribute).options(
+        joinedload(ItemTypeGlobalAttribute.item_type)
+    ).filter(ItemTypeGlobalAttribute.global_attribute_id.in_(global_attr_ids)).all() if global_attr_ids else []
+
+    # Deduplicate by item_type_id
+    seen_item_types = set()
+    item_types = []
+    for link in item_type_links:
+        if link.item_type and link.item_type.id not in seen_item_types:
+            seen_item_types.add(link.item_type.id)
+            item_types.append({
+                "id": link.item_type.id,
+                "display_name": link.item_type.display_name,
+                "slug": link.item_type.slug,
+            })
 
     return {
         "menu_items": menu_items,
@@ -587,11 +591,12 @@ def delete_ingredient(
     if menu_item_count:
         dependents.append(f"{menu_item_count} menu item default(s)")
 
-    item_type_count = db.query(ItemTypeIngredient).filter(
-        ItemTypeIngredient.ingredient_id == ingredient_id
+    # Check for GlobalAttributeOption links
+    attr_option_count = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.ingredient_id == ingredient_id
     ).count()
-    if item_type_count:
-        dependents.append(f"{item_type_count} item type association(s)")
+    if attr_option_count:
+        dependents.append(f"{attr_option_count} attribute option(s)")
 
     if dependents:
         raise HTTPException(

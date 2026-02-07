@@ -1,7 +1,7 @@
 """Ingredient models.
 
 Contains: IngredientUnit, Ingredient, IngredientAlias, IngredientMustMatch,
-IngredientCategory, IngredientStoreAvailability, ItemTypeIngredient.
+IngredientCategory, IngredientStoreAvailability.
 """
 
 from sqlalchemy import (
@@ -62,7 +62,6 @@ class Ingredient(Base):
 
     # relationships
     store_availability = relationship("IngredientStoreAvailability", back_populates="ingredient", cascade="all, delete-orphan")
-    item_type_links = relationship("ItemTypeIngredient", back_populates="ingredient")
     # Alias and must_match child tables
     alias_records = relationship("IngredientAlias", back_populates="ingredient", cascade="all, delete-orphan")
     must_match_records = relationship("IngredientMustMatch", back_populates="ingredient", cascade="all, delete-orphan")
@@ -172,56 +171,3 @@ class IngredientStoreAvailability(Base):
     ingredient = relationship("Ingredient", back_populates="store_availability")
 
 
-class ItemTypeIngredient(Base):
-    """
-    Links ingredients to item types with per-type configuration.
-
-    This enables a unified ingredient system where physical items like milk,
-    sweeteners, and syrups can be managed alongside proteins, toppings, and spreads
-    in a single ingredients table, with per-item-type configuration.
-
-    When an attribute has loads_from_ingredients=True, its options come from
-    this table filtered by ingredient_group, instead of from attribute_options.
-
-    NOTE: Pricing comes from GlobalAttributeOption.price_modifier (where ingredient_id matches),
-    NOT from this table. This table only handles linking and display configuration.
-
-    Examples:
-    - Oat Milk linked to 'sized_beverage' with ingredient_group='milk'
-    - Bacon linked to 'bagel' with ingredient_group='protein'
-    - Vanilla Syrup linked to 'sized_beverage' with ingredient_group='syrup'
-    """
-    __tablename__ = "item_type_ingredients"
-
-    id = Column(Integer, primary_key=True, index=True)
-    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="RESTRICT"), nullable=False)
-    ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="RESTRICT"), nullable=False)
-
-    # Grouping - which selector/category this appears in
-    # e.g., 'milk', 'sweetener', 'syrup', 'spread', 'protein', 'topping', 'cheese'
-    ingredient_group = Column(String(50), nullable=False)
-
-    # Display configuration
-    display_order = Column(Integer, nullable=False, default=0)
-    display_name_override = Column(String(100), nullable=True)  # e.g., "Oat" instead of "Oat Milk"
-
-    # Selection behavior
-    is_default = Column(Boolean, nullable=False, default=False)
-    is_available = Column(Boolean, nullable=False, default=True)  # Per-item-type override
-
-    # Timestamps
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    # Unique constraint: one entry per item_type + ingredient + group combination
-    __table_args__ = (
-        UniqueConstraint('item_type_id', 'ingredient_id', 'ingredient_group', name='uq_item_type_ingredient_group'),
-        Index('idx_item_type_ingredients_item_type', 'item_type_id'),
-        Index('idx_item_type_ingredients_ingredient', 'ingredient_id'),
-        Index('idx_item_type_ingredients_group', 'ingredient_group'),
-        Index('idx_item_type_ingredients_item_type_group', 'item_type_id', 'ingredient_group'),
-    )
-
-    # Relationships
-    item_type = relationship("ItemType", back_populates="type_ingredients")
-    ingredient = relationship("Ingredient", back_populates="item_type_links")

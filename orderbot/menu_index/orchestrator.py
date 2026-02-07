@@ -28,7 +28,6 @@ from .preloaders import (
     preload_all_ingredients,
     preload_global_attribute_options,
     preload_item_type_config_status,
-    preload_item_type_ingredients,
     preload_menu_item_ingredients,
     preload_size_prices,
 )
@@ -224,7 +223,6 @@ def build_menu_index(db: Session, store_id: str | None = None) -> dict[str, Any]
 
     # Pre-load attribute and option data for build_item_types_data
     preloaded_global_options = preload_global_attribute_options(db)
-    preloaded_type_ingredients = preload_item_type_ingredients(db)
 
     # Add generic item type data for configurable items
     index["item_types"] = build_item_types_data(
@@ -232,7 +230,6 @@ def build_menu_index(db: Session, store_id: str | None = None) -> dict[str, Any]
         store_id,
         preloaded_config_status,
         preloaded_global_options,
-        preloaded_type_ingredients,
     )
 
     # Build modifier categories for answering questions like "what sweeteners do you have?"

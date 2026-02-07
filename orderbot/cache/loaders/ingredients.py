@@ -31,10 +31,11 @@ class IngredientLoaderMixin:
     def _load_ingredient_price_contexts_from_bulk(self, bulk_data: dict) -> None:
         """Load ingredient price contexts from bulk data (no N+1 queries).
 
-        Uses bulk_data for ingredients, type_ingredients, menu_items, and global_attr_options.
+        Uses bulk_data for ingredients, item_types, menu_items, and global_attr_options.
+        Derives item type links from GlobalAttributeOption -> ItemTypeGlobalAttribute.
         """
         ingredients = bulk_data["ingredients"]
-        type_ingredients = bulk_data["type_ingredients"]
+        item_types = bulk_data["item_types"]
         menu_items = bulk_data["menu_items"]
         global_attr_options = bulk_data["global_attr_options"]
 
@@ -47,14 +48,21 @@ class IngredientLoaderMixin:
                 ingredient_prices[opt.ingredient_id] = float(opt.price_modifier or 0)
 
         # Build ingredient_id -> list of (item_type_slug, item_type_display_name)
+        # by traversing ItemType -> ItemTypeGlobalAttribute -> GlobalAttribute -> GlobalAttributeOption
         type_ingredient_index: dict[int, list[tuple]] = {}
-        for ti in type_ingredients:
-            if ti.ingredient and ti.item_type:
-                if ti.ingredient_id not in type_ingredient_index:
-                    type_ingredient_index[ti.ingredient_id] = []
-                type_ingredient_index[ti.ingredient_id].append(
-                    (ti.item_type.slug, ti.item_type.display_name)
-                )
+        for item_type in item_types:
+            for ga_link in item_type.global_attribute_links:
+                global_attr = ga_link.global_attribute
+                if not global_attr:
+                    continue
+                for option in global_attr.options:
+                    if option.ingredient_id:
+                        if option.ingredient_id not in type_ingredient_index:
+                            type_ingredient_index[option.ingredient_id] = []
+                        # Avoid duplicates
+                        entry = (item_type.slug, item_type.display_name)
+                        if entry not in type_ingredient_index[option.ingredient_id]:
+                            type_ingredient_index[option.ingredient_id].append(entry)
 
         # Build list of by_weight menu items with their names (lowercase)
         by_weight_items = [
@@ -179,34 +187,54 @@ class IngredientLoaderMixin:
         )
 
     def _load_generic_ingredients_for_item_types_from_bulk(self, bulk_data: dict) -> None:
-        """Load ingredients valid for each ItemType (from bulk)."""
-        type_ingredients = bulk_data["type_ingredients"]
+        """Load ingredients valid for each ItemType (from bulk).
+
+        Derives the mapping from GlobalAttributeOption -> ItemTypeGlobalAttribute -> ItemType.
+        An ingredient is valid for an item type if:
+        1. A GlobalAttributeOption links to that ingredient
+        2. That option's GlobalAttribute is linked to the ItemType via ItemTypeGlobalAttribute
+        """
+        item_types = bulk_data["item_types"]
 
         ingredients_for_item_type: dict[str, dict[str, set[str]]] = {}
 
-        for ti in type_ingredients:
-            if not ti.item_type or not ti.ingredient:
-                continue
+        for item_type in item_types:
+            item_type_slug = item_type.slug
 
-            item_type_slug = ti.item_type.slug
-            category = ti.ingredient.category or "uncategorized"
+            # Iterate through the item type's global attribute links
+            for ga_link in item_type.global_attribute_links:
+                global_attr = ga_link.global_attribute
+                if not global_attr:
+                    continue
 
-            if item_type_slug not in ingredients_for_item_type:
-                ingredients_for_item_type[item_type_slug] = {}
-            if category not in ingredients_for_item_type[item_type_slug]:
-                ingredients_for_item_type[item_type_slug][category] = set()
+                # Check each option in this global attribute
+                for option in global_attr.options:
+                    ingredient = option.ingredient
+                    if not ingredient:
+                        continue
 
-            ingredients_for_item_type[item_type_slug][category].add(ti.ingredient.name.lower())
+                    category = ingredient.category or "uncategorized"
 
-            for alias in ti.ingredient.aliases:
-                alias_lower = alias.strip().lower()
-                if alias_lower:
-                    ingredients_for_item_type[item_type_slug][category].add(alias_lower)
+                    if item_type_slug not in ingredients_for_item_type:
+                        ingredients_for_item_type[item_type_slug] = {}
+                    if category not in ingredients_for_item_type[item_type_slug]:
+                        ingredients_for_item_type[item_type_slug][category] = set()
+
+                    # Add ingredient name
+                    ingredients_for_item_type[item_type_slug][category].add(
+                        ingredient.name.lower()
+                    )
+
+                    # Add ingredient aliases
+                    for alias in ingredient.aliases:
+                        alias_lower = alias.strip().lower()
+                        if alias_lower:
+                            ingredients_for_item_type[item_type_slug][category].add(alias_lower)
 
         self._ingredients_for_item_type = ingredients_for_item_type
 
         logger.debug(
-            "Loaded ingredients for %d item types (from bulk)",
+            "Loaded ingredients for %d item types (from bulk via global attributes)",
             len(ingredients_for_item_type)
         )
 

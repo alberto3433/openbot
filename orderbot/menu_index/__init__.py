@@ -26,7 +26,6 @@ from .preloaders import (
     preload_all_ingredients,
     preload_global_attribute_options,
     preload_item_type_config_status,
-    preload_item_type_ingredients,
     preload_menu_item_ingredients,
     preload_size_prices,
 )
@@ -47,7 +46,6 @@ __all__ = [
     "preload_all_ingredients",
     "preload_global_attribute_options",
     "preload_item_type_config_status",
-    "preload_item_type_ingredients",
     "preload_menu_item_ingredients",
     "preload_size_prices",
 ]

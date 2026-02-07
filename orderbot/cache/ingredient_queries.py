@@ -429,6 +429,47 @@ class IngredientQueryMixin:
         return any(phrase.lower() in term_lower for phrase in must_match)
 
     @ensure_cache_loaded
+    def is_item_type_configurable(self, item_type_slug: str) -> bool:
+        """Check if item type has any linked ingredients (accepts modifiers).
+
+        Non-configurable items (like Bagel Chips) have no global attribute
+        options with ingredients and should reject all modifier additions.
+
+        Args:
+            item_type_slug: The ItemType slug (e.g., "bagel", "bagel_chips")
+
+        Returns:
+            True if the item type accepts modifiers, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+        """
+        return bool(self._ingredients_for_item_type.get(item_type_slug))
+
+    @ensure_cache_loaded
+    def is_valid_modifier_for_item_type(
+        self, modifier_slug: str, item_type_slug: str
+    ) -> bool:
+        """Check if modifier is valid for this item type.
+
+        Args:
+            modifier_slug: The modifier slug or name to validate
+            item_type_slug: The ItemType slug (e.g., "bagel", "sized_beverage")
+
+        Returns:
+            True if modifier is allowed for this item type, False otherwise.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded.
+        """
+        type_ingredients = self._ingredients_for_item_type.get(item_type_slug, {})
+        modifier_lower = normalize_text(modifier_slug)
+        for cat_ingredients in type_ingredients.values():
+            if modifier_lower in cat_ingredients:
+                return True
+        return False
+
+    @ensure_cache_loaded
     def find_matching_ingredients(self, term: str) -> list[dict]:
         """Find all ingredients whose name or aliases contain the search term.
 

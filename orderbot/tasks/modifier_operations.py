@@ -61,7 +61,7 @@ def _load_modifier_fields_from_db(item_type_slug: str) -> list[ModifierField]:
 
     Returns a list of ModifierField objects. Returns empty list if no modifier
     fields are defined for this item type (this is valid - not all item types
-    have modifier fields via item_type_ingredients).
+    have modifier fields via global attributes).
     """
     field_configs = menu_cache.get_modifier_fields_for_item_type(item_type_slug)
     if not field_configs:

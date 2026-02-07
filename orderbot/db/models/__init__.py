@@ -49,7 +49,6 @@ from .ingredients import (
     IngredientMustMatch,
     IngredientStoreAvailability,
     IngredientUnit,
-    ItemTypeIngredient,
 )
 
 # Order models
@@ -106,7 +105,6 @@ __all__ = [
     "IngredientMustMatch",
     "IngredientCategory",
     "IngredientStoreAvailability",
-    "ItemTypeIngredient",
     # Orders
     "Order",
     "OrderItem",

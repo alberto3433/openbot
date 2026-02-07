@@ -59,7 +59,7 @@ class MenuItemConfigHandler(BaseHandler):
     Reads item type attributes from the database to determine:
     - Which questions to ask (ask_in_conversation=True for mandatory)
     - What the question text should be (question_text field)
-    - What options are valid (attribute_options or item_type_ingredients)
+    - What options are valid (from global attribute options)
     """
 
     def __init__(self, config: "HandlerConfig"):

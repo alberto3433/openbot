@@ -140,7 +140,6 @@ class ItemType(Base):
 
     # Relationships
     menu_items = relationship("MenuItem", back_populates="item_type")
-    type_ingredients = relationship("ItemTypeIngredient", back_populates="item_type")
     global_attribute_links = relationship("ItemTypeGlobalAttribute", back_populates="item_type")
     alias_records = relationship("ItemTypeAlias", back_populates="item_type", cascade="all, delete-orphan")
     component_slots = relationship("ItemTypeComponentSlot", back_populates="parent_item_type", cascade="all, delete-orphan")

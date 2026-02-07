@@ -1,3 +1,61 @@
+# COMPLETED: Remove ItemTypeIngredient Table
+
+## Summary
+
+Removed the `ItemTypeIngredient` junction table and now derive modifier validity from global attributes instead.
+
+## What Was Changed
+
+### Phase 1: Update Cache Loading ✓
+
+- [x] Modified `_load_generic_ingredients_for_item_types_from_bulk()` to derive from GlobalAttributeOption + ItemTypeGlobalAttribute
+- [x] `is_item_type_configurable()` now checks via `_ingredients_for_item_type` which is populated from global attributes
+
+### Phase 2: Update Price Context ✓
+
+- [x] Modified `_load_ingredient_price_contexts_from_bulk()` to derive item type links from global attributes
+
+### Phase 3: Remove ItemTypeIngredient References ✓
+
+- [x] Removed loading from `orderbot/cache/loaders/core.py`
+- [x] Removed `preload_item_type_ingredients()` from `orderbot/menu_index/preloaders.py`
+- [x] Removed from `orderbot/menu_index/builders.py` and `orchestrator.py`
+- [x] Updated admin ingredients references endpoint to derive item types from global attributes
+
+### Phase 4: Database Cleanup ✓
+
+- [x] Created migration `drop_item_type_ingredients_table.py` to drop table
+- [x] Removed `ItemTypeIngredient` model from `orderbot/db/models/ingredients.py`
+- [x] Removed from `orderbot/db/models/__init__.py` exports
+- [x] Removed relationship from `ItemType` in `config.py`
+- [x] Removed relationship from `Ingredient` in `ingredients.py`
+
+## Files Modified
+
+| File | Changes |
+|------|---------|
+| `orderbot/cache/loaders/ingredients.py` | Derive from global attributes |
+| `orderbot/cache/loaders/core.py` | Remove ITI loading |
+| `orderbot/cache/ingredient_queries.py` | Updated docstring |
+| `orderbot/menu_index/preloaders.py` | Removed function |
+| `orderbot/menu_index/__init__.py` | Removed export |
+| `orderbot/menu_index/builders.py` | Removed ITI usage |
+| `orderbot/menu_index/orchestrator.py` | Removed ITI usage |
+| `orderbot/routes/admin_ingredients.py` | Derive item types from global attrs |
+| `orderbot/db/models/ingredients.py` | Removed model + relationship |
+| `orderbot/db/models/config.py` | Removed relationship |
+| `orderbot/db/models/__init__.py` | Removed export |
+| `orderbot/tasks/config/handler.py` | Updated docstring |
+| `orderbot/tasks/modifier_operations.py` | Updated docstring |
+| `orderbot/tasks/parsers/deterministic/extraction.py` | Updated comment |
+| `alembic/versions/drop_item_type_ingredients_table.py` | New migration |
+
+## Remaining Step
+
+Run `alembic upgrade head` to apply the migration and drop the table.
+
+---
+
 # Plan: Add quantity_per_unit Column for Pack Sizes
 
 ## Goal

@@ -167,7 +167,7 @@ class LoaderMixin(
         """
         from ...db.models import (
             GlobalAttribute, GlobalAttributeOption, GlobalAttributeOptionSkip, Ingredient,
-            ItemType, ItemTypeGlobalAttribute, MenuItem, ItemTypeIngredient,
+            ItemType, ItemTypeGlobalAttribute, MenuItem,
             ResponsePattern, ModifierQualifier,
             ModifierCategory, IngredientCategory, GlobalAttributeAlias,
             MenuItemIngredient, ItemTypeComponentSlot, ComponentSlotOption,
@@ -228,18 +228,7 @@ class LoaderMixin(
             .all()
         )
 
-        # 5. Load ItemTypeIngredient links
-        type_ingredients = (
-            db.query(ItemTypeIngredient)
-            .options(
-                joinedload(ItemTypeIngredient.item_type),
-                joinedload(ItemTypeIngredient.ingredient)
-                    .selectinload(Ingredient.alias_records),
-            )
-            .all()
-        )
-
-        # 6. Load all GlobalAttributeOption for price lookups
+        # 5. Load all GlobalAttributeOption for price lookups
         global_attr_options = db.query(GlobalAttributeOption).all()
 
         # 7. Load response patterns
@@ -335,13 +324,12 @@ class LoaderMixin(
         elapsed = time.time() - start_time
         logger.info(
             "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
-            "%d menu_items, %d ingredients, %d type_ingredients",
+            "%d menu_items, %d ingredients",
             elapsed,
             len(global_attrs),
             len(item_types),
             len(menu_items),
             len(ingredients),
-            len(type_ingredients),
         )
 
         return {
@@ -349,7 +337,6 @@ class LoaderMixin(
             "item_types": item_types,
             "menu_items": menu_items,
             "ingredients": ingredients,
-            "type_ingredients": type_ingredients,
             "global_attr_options": global_attr_options,
             "categories": [],  # Removed - now using display groups
             "menu_item_categories": [],  # Removed - now using display groups

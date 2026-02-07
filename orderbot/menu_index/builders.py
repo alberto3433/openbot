@@ -18,7 +18,6 @@ from orderbot.db.models import (
 from .preloaders import (
     preload_global_attribute_options,
     preload_item_type_config_status,
-    preload_item_type_ingredients,
 )
 
 
@@ -156,7 +155,6 @@ def build_item_types_data(
     store_id: str | None = None,
     preloaded_config_status: dict[int, dict[str, Any]] | None = None,
     preloaded_global_options: dict[int, list] | None = None,
-    preloaded_type_ingredients: dict[tuple, list] | None = None,
 ) -> dict[str, Any]:
     """
     Build generic item type data including all attributes and options.
@@ -172,7 +170,6 @@ def build_item_types_data(
         store_id: Optional store ID for availability filtering
         preloaded_config_status: Pre-loaded config status from preload_item_type_config_status()
         preloaded_global_options: Pre-loaded global options from preload_global_attribute_options()
-        preloaded_type_ingredients: Pre-loaded type ingredients from preload_item_type_ingredients()
 
     Returns:
         Dict mapping item type slugs to their attribute configurations
@@ -184,8 +181,6 @@ def build_item_types_data(
         preloaded_config_status = preload_item_type_config_status(db)
     if preloaded_global_options is None:
         preloaded_global_options = preload_global_attribute_options(db)
-    if preloaded_type_ingredients is None:
-        preloaded_type_ingredients = preload_item_type_ingredients(db)
 
     item_types = db.query(ItemType).all()
     for it in item_types:

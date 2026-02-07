@@ -34,60 +34,6 @@ WEIGHT_QUANTITY_PATTERN = re.compile(
 )
 
 
-def _normalize_weight_variations(value: str) -> list[str]:
-    """Generate normalized variations of a weight specification.
-
-    Converts weight input to multiple formats for alias matching:
-    - "2 pounds" -> ["2 pounds", "2 pound", "2 lb", "2 lbs"]
-    - "half pound" -> ["half pound", "half lb", "1/2 lb", "1/2 pound"]
-
-    Args:
-        value: The weight specification (lowercase, stripped)
-
-    Returns:
-        List of normalized variations to try for alias matching.
-    """
-    variations = [value]
-
-    # Add singular/plural variations
-    if value.endswith("pounds"):
-        variations.append(value[:-1])  # pounds -> pound
-    elif value.endswith("pound"):
-        variations.append(value + "s")  # pound -> pounds
-
-    # Add lb/lbs variations
-    for base in list(variations):
-        if "pound" in base:
-            variations.append(base.replace("pounds", "lb").replace("pound", "lb"))
-            variations.append(base.replace("pounds", "lbs").replace("pound", "lbs"))
-
-    # Handle "half" -> "1/2" conversion
-    if "half" in value:
-        for base in list(variations):
-            variations.append(base.replace("half a ", "1/2 ").replace("half ", "1/2 "))
-
-    # Handle "quarter" -> "1/4" conversion
-    if "quarter" in value:
-        for base in list(variations):
-            variations.append(base.replace("quarter ", "1/4 "))
-
-    # Handle "a pound" -> "1 lb" etc.
-    if value.startswith("a "):
-        for base in list(variations):
-            if base.startswith("a "):
-                variations.append("1 " + base[2:])
-
-    # Dedupe while preserving order
-    seen = set()
-    result = []
-    for v in variations:
-        if v not in seen:
-            seen.add(v)
-            result.append(v)
-
-    return result
-
-
 class ConfigChangeHandler:
     """
     Handles modifier change requests and clarifications.
@@ -242,20 +188,15 @@ class ConfigChangeHandler:
                     if last_item and isinstance(last_item, MenuItemTask) and last_item.menu_item_type:
                         priced_attr = menu_cache.get_first_priced_attribute(last_item.menu_item_type)
                         if priced_attr:
-                            # Try multiple normalized variations to resolve the weight value
-                            variations = _normalize_weight_variations(new_value_lower)
-                            option = None
-                            for variation in variations:
-                                option = menu_cache.resolve_option_by_alias(priced_attr, variation)
-                                if option:
-                                    break
+                            # Direct lookup - aliases in DB handle variations like "pound" -> "1 lb"
+                            option = menu_cache.resolve_option_by_alias(priced_attr, new_value_lower)
                             if option:
                                 # This is a valid weight update - use the priced attribute
                                 # and the resolved option slug for proper normalization
                                 attr_slug = priced_attr
                                 resolved_new_value = option.get("slug", change_request.new_value)
                                 logger.info(
-                                    "CHANGE REQUEST: '%s' resolved to %s=%s for item type %s",
+                                    "CHANGE REQUEST: '%s' resolved to %s=%s via alias for item type %s",
                                     change_request.new_value, priced_attr,
                                     resolved_new_value, last_item.menu_item_type
                                 )

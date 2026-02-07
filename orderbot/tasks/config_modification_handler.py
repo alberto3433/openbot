@@ -30,35 +30,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _get_weight_variations(value: str) -> list[str]:
-    """Generate normalized variations of a weight specification.
-
-    Converts weight input like "pound" to multiple formats for alias matching:
-    - "pound" -> ["pound", "1 lb", "1 pound", "one pound", "a pound"]
-    - "quarter" -> ["quarter", "1/4 lb", "quarter pound", "quarter lb"]
-
-    Args:
-        value: The weight term (lowercase, stripped)
-
-    Returns:
-        List of variations to try for alias matching.
-    """
-    value = value.strip().lower()
-    variations = [value]
-
-    # Handle "pound" -> various "1 lb" formats
-    if value in ("pound", "lb"):
-        variations.extend(["1 lb", "1 pound", "one pound", "a pound", "one_pound"])
-    elif value in ("pounds", "lbs"):
-        variations.extend(["1 lb", "1 pound", "one pound", "one_pound"])
-    elif value == "quarter":
-        variations.extend(["1/4 lb", "quarter pound", "quarter lb", "quarter_pound"])
-    elif value == "half":
-        variations.extend(["1/2 lb", "half pound", "half lb", "half_pound"])
-
-    return variations
-
-
 class ConfigModificationHandler:
     """
     Handles modifications to items during configuration.
@@ -166,8 +137,8 @@ class ConfigModificationHandler:
             except Exception as e:
                 logger.debug("Error checking attributes for 'can you make it': %s", e)
 
-        # 1b. Special handling for weight/quantity modifiers - try normalized variations
-        # e.g., "pound" should match "1 lb" or "one_pound"
+        # 1b. Try to match weight/priced attribute options via database aliases
+        # Aliases like "pound" -> "1 lb" are stored in global_attribute_option_aliases
         if item_type:
             # Get priced attribute, fallback to "weight" for by-weight items
             priced_attr = menu_cache.get_first_priced_attribute(item_type)
@@ -177,29 +148,27 @@ class ConfigModificationHandler:
                 if "weight" in attrs:
                     priced_attr = "weight"
             if priced_attr:
-                # Try weight-related variations
-                weight_variations = _get_weight_variations(modifier_lower)
-                for variation in weight_variations:
-                    option = menu_cache.resolve_option_by_alias(priced_attr, variation)
-                    if option:
-                        opt_slug = option.get("slug")
-                        logger.info(
-                            "CAN_YOU_MAKE_IT: Weight variation '%s' resolved to %s=%s",
-                            modifier_lower, priced_attr, opt_slug
-                        )
-                        item[priced_attr] = opt_slug
-                        pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
-                        safe_recalculate_price(pricing, item, "after weight change")
-                        opt_name = option.get("display_name") or opt_slug.replace("_", " ").title()
-                        # If this answers the current pending question, clear it so we move to next
-                        pending = order.pending_field
-                        if pending and ":" in pending:
-                            _, pending_attr = pending.split(":", 1)
-                            if pending_attr == priced_attr:
-                                order.pending_field = None
-                        return self._continue_config_with_message(
-                            f"Okay, {opt_name}.", item, order
-                        )
+                # Direct lookup - aliases in DB handle variations like "pound" -> "1 lb"
+                option = menu_cache.resolve_option_by_alias(priced_attr, modifier_lower)
+                if option:
+                    opt_slug = option.get("slug")
+                    logger.info(
+                        "CAN_YOU_MAKE_IT: Resolved '%s' to %s=%s via alias",
+                        modifier_lower, priced_attr, opt_slug
+                    )
+                    item[priced_attr] = opt_slug
+                    pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+                    safe_recalculate_price(pricing, item, "after weight change")
+                    opt_name = option.get("display_name") or opt_slug.replace("_", " ").title()
+                    # If this answers the current pending question, clear it so we move to next
+                    pending = order.pending_field
+                    if pending and ":" in pending:
+                        _, pending_attr = pending.split(":", 1)
+                        if pending_attr == priced_attr:
+                            order.pending_field = None
+                    return self._continue_config_with_message(
+                        f"Okay, {opt_name}.", item, order
+                    )
 
         # 2. Check if it's an ingredient/modifier (spread, topping, syrup, etc.)
         matches = menu_cache.find_matching_ingredients(modifier_lower)

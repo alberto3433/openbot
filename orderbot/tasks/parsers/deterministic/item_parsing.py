@@ -367,7 +367,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # Note: "i like" is NOT stripped - it's a statement, not an ordering phrase
     text_cleaned = re.sub(
         r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|'
-        r'can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)',
+        r'can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+|add\s+)',
         '', text_lower
     )
     text_cleaned = re.sub(r'^(a|an|the)\s+', '', text_cleaned)

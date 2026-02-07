@@ -29,6 +29,7 @@ from .modifier_operations import (
     find_default_ingredient_on_any_item,
     remove_default_ingredient_from_item,
 )
+from .utils.pricing_utils import safe_recalculate_price
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -309,10 +310,7 @@ class ItemCancellationHandler:
                 if isinstance(item, MenuItemTask) and item.get(attr_category):
                     removed_value = item.get(attr_category)
                     item.remove_selection(attr_category)
-                    try:
-                        self.pricing.recalculate_item_price(item)
-                    except ValueError:
-                        pass  # Price lookup failed - item may not have pricing data
+                    safe_recalculate_price(self.pricing, item, "after removing category")
 
                     # Format display name from slug
                     from .normalization import format_slug_for_display
@@ -333,10 +331,7 @@ class ItemCancellationHandler:
         if modifier_match:
             result = remove_modifier_from_item(modifier_match.item, modifier_match)
             if result.success:
-                try:
-                    self.pricing.recalculate_item_price(modifier_match.item)
-                except ValueError:
-                    pass  # Price lookup failed - item may not have pricing data
+                safe_recalculate_price(self.pricing, modifier_match.item, "after removing modifier")
 
                 updated_summary = modifier_match.item.get_summary()
                 return StateMachineResult(
@@ -614,10 +609,19 @@ class ItemCancellationHandler:
                 matches = True
             elif mapped_item_type and menu_item_type == mapped_item_type:
                 matches = True
-            elif any(word in item_summary for word in cancel_item_desc.split() if word):
-                matches = True
             elif canonical_name_lower and canonical_name_lower == item_name_lower:
                 matches = True
+            else:
+                # Fallback: check if ALL significant words from cancel description
+                # appear in item summary. This is more restrictive than "any word"
+                # to prevent "cinnamon babka" from matching "Chocolate Babka" (shares "babka").
+                filler_words = {"the", "a", "an", "my", "that", "this"}
+                significant_words = [
+                    w for w in cancel_item_desc.split()
+                    if w and w not in filler_words
+                ]
+                if significant_words and all(word in item_summary for word in significant_words):
+                    matches = True
 
             if matches:
                 items_to_remove.append(item)

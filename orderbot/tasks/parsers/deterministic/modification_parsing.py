@@ -484,7 +484,11 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
     """Try to extract a known menu item from text."""
     text_lower = text.lower().strip()
 
-    text_lower = re.sub(r'^(i\s+want\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)', '', text_lower)
+    # Strip ordering phrases like "I want", "add", "can I get", etc.
+    text_lower = re.sub(
+        r'^(i\s+want\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|'
+        r'let\s+me\s+(get|have)\s+|add\s+)', '', text_lower
+    )
     text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
 
     # Extract quantity using extract_leading_quantity which handles all quantity phrases
@@ -493,6 +497,14 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
     if extracted_qty is not None:
         quantity = extracted_qty
         text_lower = remaining
+        # Strip trailing filler words before singularizing to handle cases like
+        # "chocolate babkas please" -> "chocolate babkas" -> "chocolate babka"
+        # Without this, "please" at the end confuses the singularization
+        trailing_fillers = {"please", "thanks", "thank", "you"}
+        words = text_lower.split()
+        while words and words[-1] in trailing_fillers:
+            words.pop()
+        text_lower = " ".join(words)
         # Singularize after extracting quantity: "two cookies" -> "cookie"
         text_lower = singularize(text_lower)
     else:

@@ -453,6 +453,19 @@ class ConfigModificationHandler:
             if len(matches) == 1:
                 match = matches[0]
 
+                # Validate modifier is allowed for this item type
+                if not menu_cache.is_valid_modifier_for_item_type(match["slug"], item.menu_item_type):
+                    logger.info(
+                        "ADD_DURING_CONFIG: Modifier '%s' is not valid for item type '%s', rejecting",
+                        match["name"], item.menu_item_type
+                    )
+                    from .checkout_messages import modifier_not_available_for_item
+                    return StateMachineResult(
+                        message=modifier_not_available_for_item(match["name"], item.display_name),
+                        phase=order.phase,
+                        pending_field=order.pending_field,
+                    )
+
                 # Check if ingredient slug matches an attribute with multiple options
                 # This handles generic ingredients like "egg" that map to style choices
                 # (scrambled, fried, etc.), but NOT specific ingredients like "bacon"

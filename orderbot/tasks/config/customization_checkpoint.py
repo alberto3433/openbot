@@ -563,6 +563,69 @@ class CustomizationCheckpointHandler:
             added_text = format_english_list(added_names)
             return self._ask_customization_checkpoint(item, order, f"{added_text} added")
 
+        # Phase 1b: Check if term matches an attribute category
+        # Handles "more cheese" when user has already selected provolone (cheese is attribute category)
+        item_type_attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
+
+        for word in words:
+            if word in QUANTITY_MODIFIER_WORDS:
+                continue
+
+            # Check if word matches an attribute category slug
+            if word in item_type_attrs:
+                existing = item.get_selection(word)  # e.g., get_selection("cheese")
+                attr_config = item_type_attrs[word]
+
+                if existing:
+                    # Case A: Attribute already has a selection - increment quantity
+                    quantity, is_additive = extract_additive_quantity(user_clean, word)
+                    is_extra = user_clean.startswith(f"extra {word}")
+
+                    if is_additive or is_extra:
+                        existing["quantity"] = existing.get("quantity", 1) + quantity
+                    else:
+                        existing["quantity"] = quantity
+
+                    display_name = existing.get("display_name", word.title())
+                    display_qty = existing["quantity"]
+                    added_names.append(f"{display_name} x{display_qty}")
+                    matched_slugs.add(word)
+                    logger.info("ATTRIBUTE_QUANTITY: Set '%s' to qty=%d", word, display_qty)
+
+                else:
+                    # Case B: No existing selection - check options count
+                    options = attr_config.get("options", [])
+                    if len(options) == 1:
+                        # Single option: add it directly
+                        opt = options[0]
+                        quantity, _ = extract_additive_quantity(user_clean, word)
+                        opt_price = opt.get("price") or opt.get("price_modifier") or 0
+                        item.add_selection(
+                            slug=opt["slug"],
+                            category=word,
+                            quantity=quantity,
+                            display_name=opt.get("display_name", opt["slug"]),
+                            price=opt_price,
+                        )
+                        display_name = opt.get("display_name", opt["slug"])
+                        added_names.append(display_name)
+                        matched_slugs.add(word)
+                        logger.info(
+                            "ATTRIBUTE_SINGLE_OPTION: Added '%s' for category '%s'",
+                            opt["slug"], word
+                        )
+                    elif len(options) > 1:
+                        # Multiple options: ask which one
+                        order.pending_field = f"{item.menu_item_type}:{word}"
+                        question = attr_config.get("question_text", f"What kind of {word}?")
+                        return StateMachineResult(message=question, order=order)
+
+        # If we matched via attribute category patterns, we're done
+        if matched_slugs:
+            self._recalculate_item_price(item)
+            added_text = format_english_list(added_names)
+            return self._ask_customization_checkpoint(item, order, f"{added_text} added")
+
         # Phase 2: Word-by-word matching for multi-ingredient input
         # Handles "salt pepper ketchup"
         for word in words:

@@ -173,6 +173,7 @@ class SelectInputHandler:
         match_result = self._option_matcher.match_multiple_with_unmatched(user_input, options)
         matched_options = match_result.matched
         unmatched_tokens = match_result.unmatched
+
         logger.info(
             "MULTI_SELECT MATCH for %s: input='%s', found %d matches: %s, unmatched: %s",
             attr_slug, user_input, len(matched_options),
@@ -216,6 +217,32 @@ class SelectInputHandler:
             for token in tokens:
                 token_matches = self._option_matcher.match_multiple(token, options)
                 if len(token_matches) > 1:
+                    # Check if each word in the token matches exactly one distinct option
+                    # e.g., "milk sugar" → "milk" matches whole_milk, "sugar" matches domino_sugar
+                    # This avoids disambiguation when user clearly specified multiple modifiers
+                    token_words = [w for w in token.lower().split() if w.strip() and len(w) >= 2]
+                    if len(token_words) >= 2:
+                        word_match_counts = []
+                        matched_by_word: set[str] = set()
+                        each_word_single_match = True
+                        for word in token_words:
+                            word_matches = self._option_matcher.match_multiple(word, options)
+                            word_match_counts.append((word, len(word_matches)))
+                            if len(word_matches) == 1:
+                                matched_by_word.add(word_matches[0]["slug"])
+                            elif len(word_matches) > 1:
+                                each_word_single_match = False
+
+                        # Skip disambiguation only if:
+                        # 1. Each word matches exactly one option (or zero)
+                        # 2. The number of distinct options matched equals the total matches
+                        if each_word_single_match and len(matched_by_word) == len(token_matches):
+                            logger.debug(
+                                "MULTI_SELECT: token '%s' words each match distinct option, skipping disambiguation",
+                                token
+                            )
+                            continue
+
                     # This single token matched multiple options - need disambiguation
                     # Extract quantity from token (e.g., "2 syrups" -> 2)
                     token_qty, _ = self._input_normalizer.extract_leading_quantity(token)
@@ -232,26 +259,46 @@ class SelectInputHandler:
                         if other_token == token:
                             continue
                         other_matches = self._option_matcher.match_multiple(other_token, options)
+
+                        # Find the best match for this token
+                        best_match = None
                         if len(other_matches) == 1:
-                            opt = other_matches[0]
+                            best_match = other_matches[0]
+                        elif len(other_matches) > 1:
+                            # Multiple matches - check if one has a must_match that matches the token
+                            # e.g., "oat milk" matches oat_milk (must_match=["oat milk"]) and whole_milk (no must_match)
+                            # Prefer oat_milk because it has a specific must_match
+                            other_token_lower = other_token.lower()
+                            for opt in other_matches:
+                                must_match = opt.get("must_match", [])
+                                if must_match:
+                                    # Check if any must_match phrase is in the token
+                                    for phrase in must_match:
+                                        if phrase.lower() in other_token_lower:
+                                            best_match = opt
+                                            break
+                                    if best_match:
+                                        break
+
+                        if best_match:
                             existing_slugs = {sel.get("slug") for sel in item.get_selections(attr_slug)}
-                            if opt["slug"] not in existing_slugs:
-                                opt_price = OptionMatcher.get_option_price(opt)
+                            if best_match["slug"] not in existing_slugs:
+                                opt_price = OptionMatcher.get_option_price(best_match)
                                 if opt_price == 0 and self.pricing:
                                     opt_price = self.pricing.lookup_generic_modifier_price(
-                                        opt["slug"], item.menu_item_type
+                                        best_match["slug"], item.menu_item_type
                                     ) or 0.0
                                 item.add_selection(
-                                    opt["slug"],
+                                    best_match["slug"],
                                     attr_slug,
                                     quantity=1,
                                     price=opt_price,
-                                    display_name=opt["display_name"],
-                                    ingredient_category=opt.get("ingredient_category"),
+                                    display_name=best_match["display_name"],
+                                    ingredient_category=best_match.get("ingredient_category"),
                                 )
                                 logger.info(
                                     "MULTI_SELECT: added unambiguous match '%s' before disambiguation",
-                                    opt["display_name"]
+                                    best_match["display_name"]
                                 )
 
                     # Store disambiguation state for the ambiguous token

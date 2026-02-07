@@ -118,7 +118,7 @@ class InputNormalizer:
         """
         Get all variants of user input for comprehensive matching.
 
-        Returns raw, normalized, and tokenized variants.
+        Returns raw, normalized, tokenized, and space-split word variants.
 
         Args:
             user_input: Raw user input
@@ -134,8 +134,23 @@ class InputNormalizer:
         raw_tokens = [t.lower().strip() for t in tokens]
         normalized_tokens = [self.normalize_for_matching(t) for t in tokens]
 
+        # Also include individual space-separated words from each token
+        # This enables "milk sugar" to match "Whole Milk" via "milk" word
+        individual_words = []
+        for token in raw_tokens:
+            words = token.split()
+            if len(words) > 1:  # Only add individual words if multi-word token
+                for word in words:
+                    if len(word) >= 2:  # Skip very short words
+                        individual_words.append(word)
+
         # Combine all variants
-        all_inputs = [user_raw_lower, user_normalized] + raw_tokens + normalized_tokens
+        all_inputs = (
+            [user_raw_lower, user_normalized] +
+            raw_tokens +
+            normalized_tokens +
+            individual_words
+        )
 
         # Remove duplicates while preserving order
         seen = set()

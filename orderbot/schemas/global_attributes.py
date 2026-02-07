@@ -132,6 +132,7 @@ class GlobalAttributeOut(BaseModel):
     display_name: str
     input_type: str  # 'single_select', 'multi_select', 'boolean'
     description: Optional[str] = None
+    question_text: Optional[str] = None  # Question to ask user for this attribute
     options: List[GlobalAttributeOptionOut] = []
     # Count of item types using this attribute
     item_type_count: int = 0
@@ -150,6 +151,7 @@ class GlobalAttributeListOut(BaseModel):
     display_name: str
     input_type: str
     description: Optional[str] = None
+    question_text: Optional[str] = None
     option_count: int = 0
     item_type_count: int = 0
     created_at: Optional[datetime] = None
@@ -162,6 +164,7 @@ class GlobalAttributeCreate(BaseModel):
     display_name: str
     input_type: str = "single_select"
     description: Optional[str] = None
+    question_text: Optional[str] = None
 
 
 class GlobalAttributeUpdate(BaseModel):
@@ -170,6 +173,7 @@ class GlobalAttributeUpdate(BaseModel):
     display_name: Optional[str] = None
     input_type: Optional[str] = None
     description: Optional[str] = None
+    question_text: Optional[str] = None
 
 
 # =============================================================================
@@ -180,7 +184,7 @@ class ItemTypeGlobalAttributeOut(BaseModel):
     """
     Response model for an item type's link to a global attribute.
 
-    Contains item-type-specific settings (question_text, is_required, etc.)
+    Contains item-type-specific settings (is_required, etc.)
     as well as the global attribute and its options.
     """
     model_config = ConfigDict(from_attributes=True)
@@ -199,9 +203,11 @@ class ItemTypeGlobalAttributeOut(BaseModel):
     allow_none: bool = True
     ask_in_conversation: bool = True
     listen_only: bool = False
-    question_text: Optional[str] = None
     min_selections: Optional[int] = None
     max_selections: Optional[int] = None
+
+    # Question text from the global attribute (for convenience)
+    question_text: Optional[str] = None
 
     # Options from the global attribute
     options: List[GlobalAttributeOptionOut] = []
@@ -218,7 +224,6 @@ class ItemTypeGlobalAttributeLinkCreate(BaseModel):
     allow_none: bool = True
     ask_in_conversation: bool = True
     listen_only: bool = False
-    question_text: Optional[str] = None
     min_selections: Optional[int] = None
     max_selections: Optional[int] = None
 
@@ -230,7 +235,6 @@ class ItemTypeGlobalAttributeLinkUpdate(BaseModel):
     allow_none: Optional[bool] = None
     ask_in_conversation: Optional[bool] = None
     listen_only: Optional[bool] = None
-    question_text: Optional[str] = None
     min_selections: Optional[int] = None
     max_selections: Optional[int] = None
 
@@ -245,6 +249,7 @@ class GlobalAttributeWithOptionsCreate(BaseModel):
     display_name: str
     input_type: str = "single_select"
     description: Optional[str] = None
+    question_text: Optional[str] = None
     options: List[GlobalAttributeOptionCreate] = []
 
 

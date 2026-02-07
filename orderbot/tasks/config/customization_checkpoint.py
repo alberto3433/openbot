@@ -17,6 +17,7 @@ from ..schemas import StateMachineResult, OrderPhase
 from ..pending_fields import PendingField
 from ..checkout_messages import got_it_anything_else
 from ..parsers.constants import extract_quantity_for_pattern
+from ..parsers.quantity_utils import extract_leading_quantity
 from .attribute_resolver import get_mandatory_attributes
 
 if TYPE_CHECKING:
@@ -211,6 +212,12 @@ class CustomizationCheckpointHandler:
         # e.g., "make it an onion bagel" to change bread type
         all_mandatory = get_mandatory_attributes(item_type)
         result = self._try_direct_option_match(user_input, all_mandatory, item, order)
+        if result:
+            return result
+
+        # Fallback: Try matching space-separated words against ingredients
+        # This handles input like "salt pepper ketchup" by splitting on spaces
+        result = self._try_ingredient_fallback(user_input, item, order)
         if result:
             return result
 
@@ -448,6 +455,84 @@ class CustomizationCheckpointHandler:
                 return self._ask_customization_checkpoint(item, order, f"{display} added")
 
         return None
+
+    def _try_ingredient_fallback(
+        self, user_input: str, item: "MenuItemTask", order: "OrderTask"
+    ) -> StateMachineResult | None:
+        """Try matching space-separated words against ingredients as fallback.
+
+        This handles input like "salt pepper ketchup" by splitting on spaces
+        and matching each word individually against the ingredients table.
+        Only called after attribute/option matching has failed.
+
+        Args:
+            user_input: User's input text
+            item: Menu item being configured
+            order: Current order
+
+        Returns:
+            StateMachineResult if any ingredients matched, None otherwise
+        """
+        from ..utils.text import format_english_list
+
+        user_clean = user_input.lower().strip()
+
+        # Only try splitting if there are multiple words
+        words = user_clean.split()
+        if len(words) <= 1:
+            return None  # Single word already tried via other matching
+
+        added_names: list[str] = []
+        unmatched: list[str] = []
+
+        for word in words:
+            quantity, search_term = extract_leading_quantity(word)
+            quantity = quantity or 1
+            if not search_term:
+                search_term = word
+
+            matches = menu_cache.find_matching_ingredients(search_term)
+
+            if len(matches) == 1:
+                match = matches[0]
+                item.add_selection(
+                    slug=match["slug"],
+                    category=match["category"],
+                    display_name=match["name"],
+                    quantity=quantity,
+                    price=match.get("base_price", 0.0),
+                )
+                added_names.append(match["name"])
+                logger.info(
+                    "INGREDIENT_FALLBACK: Added '%s' (category=%s) from word '%s'",
+                    match["name"], match["category"], word
+                )
+            elif len(matches) > 1:
+                # Multiple matches - ambiguous, skip for now
+                logger.debug(
+                    "INGREDIENT_FALLBACK: Multiple matches for '%s', skipping", word
+                )
+                unmatched.append(word)
+            else:
+                # No match
+                unmatched.append(word)
+
+        if not added_names:
+            return None  # No matches at all, let caller show "Sorry" message
+
+        # Recalculate price
+        self._recalculate_item_price(item)
+
+        # Build message
+        added_text = format_english_list(added_names)
+
+        if unmatched:
+            unmatched_text = format_english_list(unmatched)
+            msg = f"{added_text} added. Couldn't find: {unmatched_text}."
+        else:
+            msg = f"{added_text} added."
+
+        return self._ask_customization_checkpoint(item, order, msg)
 
     def handle_customization_selection(
         self, user_input: str, item: "MenuItemTask", order: "OrderTask"

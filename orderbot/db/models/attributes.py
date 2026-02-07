@@ -46,6 +46,9 @@ class GlobalAttribute(Base):
     # Description for admin UI
     description = Column(Text, nullable=True)  # e.g., "Cream cheese and other spread options"
 
+    # Question text to ask the user for this attribute (shared across all item types)
+    question_text = Column(Text, nullable=True)
+
     # Property name mapping for Python model access
     # When different from slug (e.g., slug="milk_sweetener_syrup" but property_name="milk")
     # If null, uses slug as property name
@@ -247,7 +250,6 @@ class ItemTypeGlobalAttribute(Base):
     allow_none = Column(Boolean, nullable=False, default=True)  # Can select "none" option
     ask_in_conversation = Column(Boolean, nullable=False, default=True)  # Should prompt user
     listen_only = Column(Boolean, nullable=False, default=False)  # Never ask, only capture if volunteered
-    question_text = Column(Text, nullable=True)  # Question to ask user for this field
 
     # For multi_select types
     min_selections = Column(Integer, nullable=True)

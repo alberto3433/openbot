@@ -175,6 +175,7 @@ def _serialize_attribute(attr: GlobalAttribute, db: Session) -> GlobalAttributeO
         display_name=attr.display_name,
         input_type=attr.input_type,
         description=attr.description,
+        question_text=attr.question_text,
         options=options_out,
         item_type_count=len(linked_item_types),
         linked_item_types=linked_item_types,
@@ -195,6 +196,7 @@ def _serialize_attribute_list(attr: GlobalAttribute, db: Session) -> GlobalAttri
         display_name=attr.display_name,
         input_type=attr.input_type,
         description=attr.description,
+        question_text=attr.question_text,
         option_count=len(attr.options),
         item_type_count=len(attr.item_type_links),
         created_at=attr.created_at,
@@ -223,7 +225,7 @@ def _serialize_item_type_link(
         allow_none=link.allow_none,
         ask_in_conversation=link.ask_in_conversation,
         listen_only=link.listen_only,
-        question_text=link.question_text,
+        question_text=global_attr.question_text,
         min_selections=link.min_selections,
         max_selections=link.max_selections,
         options=options_out,
@@ -307,6 +309,7 @@ def create_global_attribute(
         display_name=payload.display_name,
         input_type=payload.input_type,
         description=payload.description,
+        question_text=payload.question_text,
     )
     db.add(attr)
     db.commit()
@@ -343,6 +346,7 @@ def create_global_attribute_with_options(
         display_name=payload.display_name,
         input_type=payload.input_type,
         description=payload.description,
+        question_text=payload.question_text,
     )
     db.add(attr)
     db.flush()  # Get the ID
@@ -426,6 +430,8 @@ def update_global_attribute(
         attr.input_type = payload.input_type
     if "description" in payload.model_fields_set:
         attr.description = payload.description
+    if "question_text" in payload.model_fields_set:
+        attr.question_text = payload.question_text
 
     db.commit()
     db.refresh(attr)
@@ -1222,7 +1228,6 @@ def link_global_attribute_to_item_type(
         allow_none=payload.allow_none,
         ask_in_conversation=payload.ask_in_conversation,
         listen_only=payload.listen_only,
-        question_text=payload.question_text,
         min_selections=payload.min_selections,
         max_selections=payload.max_selections,
     )
@@ -1274,8 +1279,6 @@ def update_item_type_global_attribute_link(
         link.ask_in_conversation = payload.ask_in_conversation
     if payload.listen_only is not None:
         link.listen_only = payload.listen_only
-    if "question_text" in payload.model_fields_set:
-        link.question_text = payload.question_text
     if payload.min_selections is not None:
         link.min_selections = payload.min_selections
     if payload.max_selections is not None:

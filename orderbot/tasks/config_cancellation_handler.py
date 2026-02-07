@@ -277,25 +277,20 @@ class ConfigCancellationHandler:
                 )
                 break
 
-        # Check if cancel_desc matches an item's name or summary in the order
+        # Check if cancel_desc matches an item's BASE NAME in the order
         # If so, skip modifier removal - user wants to remove the item, not a modifier
+        # IMPORTANT: Do NOT check against item_summary because it includes modifiers.
+        # If we checked "avocado" against "BEC, Cheese, Bacon, Avocado", it would
+        # incorrectly match and remove the item instead of just the avocado modifier.
         active_items = order.items.get_active_items()
         matches_item_in_order = False
         for item in active_items:
             if not isinstance(item, MenuItemTask):
                 continue
             item_name = (item.menu_item_name or "").lower()
-            item_summary = item.get_summary().lower()
             cancel_desc_lower = cancel_desc.lower()
-            # Match if cancel_desc appears in item summary or if item name is in cancel_desc
-            if cancel_desc_lower in item_summary or item_summary in cancel_desc_lower:
-                matches_item_in_order = True
-                logger.info(
-                    "Cancel during config: '%s' matches item '%s' - skipping modifier removal",
-                    cancel_desc, item.get_summary()
-                )
-                break
-            elif item_name and (cancel_desc_lower in item_name or item_name in cancel_desc_lower):
+            # Only match against the item's base name, NOT the full summary
+            if item_name and (cancel_desc_lower in item_name or item_name in cancel_desc_lower):
                 matches_item_in_order = True
                 logger.info(
                     "Cancel during config: '%s' matches item name '%s' - skipping modifier removal",

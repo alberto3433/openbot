@@ -688,6 +688,10 @@
                 <div class="info-label">Description</div>
                 <div class="info-value" id="detailDescription">--</div>
               </div>
+              <div class="info-item" style="margin-top: 12px;" id="questionTextRow">
+                <div class="info-label">Question Text</div>
+                <div class="info-value" id="detailQuestionText">--</div>
+              </div>
             </div>
 
             <div class="detail-section">
@@ -747,6 +751,11 @@
           <div class="form-group">
             <label for="attrDescription">Description</label>
             <textarea id="attrDescription" rows="2" placeholder="Optional description of this attribute"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="attrQuestionText">Question Text</label>
+            <input type="text" id="attrQuestionText" placeholder="e.g., What type of spread would you like?" />
+            <div class="hint">Question asked during conversation when configuring this attribute</div>
           </div>
         </form>
       </div>
@@ -1107,6 +1116,13 @@
         document.getElementById("descriptionRow").style.display = "none";
       }
 
+      if (attr.question_text) {
+        document.getElementById("questionTextRow").style.display = "block";
+        document.getElementById("detailQuestionText").textContent = attr.question_text;
+      } else {
+        document.getElementById("questionTextRow").style.display = "none";
+      }
+
       // Render options
       const optionsList = document.getElementById("optionsList");
       if (!attr.options || attr.options.length === 0) {
@@ -1193,9 +1209,11 @@
         document.getElementById("attrDisplayName").value = attr.display_name;
         document.getElementById("attrInputType").value = attr.input_type;
         document.getElementById("attrDescription").value = attr.description || "";
+        document.getElementById("attrQuestionText").value = attr.question_text || "";
       } else {
         document.getElementById("attrModalTitle").textContent = "Add Global Attribute";
         document.getElementById("attrId").value = "";
+        document.getElementById("attrQuestionText").value = "";
       }
 
       modal.classList.add("active");
@@ -1211,6 +1229,7 @@
       const displayName = document.getElementById("attrDisplayName").value.trim();
       const inputType = document.getElementById("attrInputType").value;
       const description = document.getElementById("attrDescription").value.trim();
+      const questionText = document.getElementById("attrQuestionText").value.trim();
 
       if (!slug || !displayName) {
         showToast("Slug and display name are required", "error");
@@ -1222,7 +1241,13 @@
         return;
       }
 
-      const payload = { slug, display_name: displayName, input_type: inputType, description: description || null };
+      const payload = {
+        slug,
+        display_name: displayName,
+        input_type: inputType,
+        description: description || null,
+        question_text: questionText || null
+      };
       const saveBtn = document.getElementById("attrSaveBtn");
       saveBtn.classList.add("saving");
       saveBtn.disabled = true;

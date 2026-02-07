@@ -1039,8 +1039,8 @@
 
           <div class="form-group">
             <label for="attrQuestionText">Question Text</label>
-            <input type="text" id="attrQuestionText" placeholder="e.g., What type of spread would you like?" />
-            <div class="hint">Custom question text for this item type (leave blank to use default)</div>
+            <input type="text" id="attrQuestionText" readonly disabled placeholder="(Set on Global Attribute)" />
+            <div class="hint">Edit on the Global Attributes page (shared across all item types)</div>
           </div>
 
           <div class="attr-form-row" id="multiSelectOptions" style="display: none;">
@@ -1890,7 +1890,6 @@
         allow_none: document.getElementById("attrAllowNone").checked,
         ask_in_conversation: document.getElementById("attrAskInConversation").checked,
         listen_only: document.getElementById("attrListenOnly").checked,
-        question_text: document.getElementById("attrQuestionText").value.trim() || null,
         min_selections: parseInt(document.getElementById("attrMinSelections").value) || null,
         max_selections: parseInt(document.getElementById("attrMaxSelections").value) || null
       };

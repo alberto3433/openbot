@@ -577,13 +577,18 @@ class CustomizationCheckpointHandler:
                 attr_config = item_type_attrs[word]
 
                 if existing:
-                    # Case A: Attribute already has a selection - increment quantity
+                    # Case A: Attribute already has a selection - modify quantity
                     quantity, is_additive = extract_additive_quantity(user_clean, word)
                     is_extra = user_clean.startswith(f"extra {word}")
 
-                    if is_additive or is_extra:
+                    if is_additive:
+                        # "more cheese" - add the extracted quantity
                         existing["quantity"] = existing.get("quantity", 1) + quantity
+                    elif is_extra:
+                        # "extra cheese" - add 1 more
+                        existing["quantity"] = existing.get("quantity", 1) + 1
                     else:
+                        # "double cheese", "triple cheese" - set absolute quantity
                         existing["quantity"] = quantity
 
                     display_name = existing.get("display_name", word.title())

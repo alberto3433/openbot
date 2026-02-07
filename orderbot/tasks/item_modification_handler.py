@@ -212,6 +212,8 @@ class ItemModificationHandler:
 
         Returns StateMachineResult only if disambiguation is needed.
         """
+        from .parsers.quantity_utils import extract_additive_quantity
+
         # Handle qualified modifiers: "mayo (extra)" -> base="mayo"
         modifier_lower = modifier.lower()
         base_modifier = modifier_lower.split(" (")[0].strip()
@@ -227,6 +229,37 @@ class ItemModificationHandler:
             # Check if singular form is recognized
             if menu_cache.find_matching_ingredients(singular):
                 base_modifier = singular
+
+        # Check if modifier matches an existing attribute selection on the item
+        # This handles "more cheese" when user already selected American Cheese
+        # (cheese is an attribute category, not just an ingredient)
+        item_type_attrs = menu_cache.get_item_type_attributes(target_item.menu_item_type)
+        if base_modifier in item_type_attrs:
+            existing = target_item.get_selection(base_modifier)
+            if existing:
+                # User already has a selection for this attribute - increment quantity
+                user_input_lower = (raw_user_input or "").lower()
+                quantity, is_additive = extract_additive_quantity(user_input_lower, base_modifier)
+                is_extra = user_input_lower.startswith(f"extra {base_modifier}")
+
+                if is_additive:
+                    # "more cheese" - add the extracted quantity
+                    existing["quantity"] = existing.get("quantity", 1) + quantity
+                elif is_extra:
+                    # "extra cheese" - add 1 more
+                    existing["quantity"] = existing.get("quantity", 1) + 1
+                else:
+                    # "double cheese", "triple cheese" - set absolute quantity
+                    existing["quantity"] = quantity
+
+                display_name = existing.get("display_name", base_modifier.title())
+                display_qty = existing["quantity"]
+                logger.info(
+                    "MODIFY ADD: Incremented '%s' to qty=%d (attribute category match)",
+                    base_modifier, display_qty
+                )
+                # Return None to continue processing (caller will recalculate and respond)
+                return None
 
         # Check for multiple matching ingredients (disambiguation)
         matches = menu_cache.find_matching_ingredients(base_modifier)

@@ -414,10 +414,14 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     # Import here to avoid circular imports
     from .item_parsing import _detect_item_type
     detected_item_type, detected_trigger = _detect_item_type(modifier_text)
+    # Get all ingredient categories (used below and later for category name matching)
+    all_categories = menu_cache.get_all_ingredient_categories()
     if detected_item_type and detected_trigger:
         # Only treat as new item if the trigger word is NOT a known modifier
+        # AND is NOT an ingredient category name (e.g., "cheese" is both an item type
+        # and a modifier category - should be treated as modifier request)
         trigger_lower = detected_trigger.lower()
-        if trigger_lower not in all_modifiers:
+        if trigger_lower not in all_modifiers and trigger_lower not in all_categories:
             logger.debug(
                 "ADD MODIFIER: '%s' contains item type '%s' (trigger='%s'), treating as new item order",
                 modifier_text, detected_item_type, detected_trigger
@@ -435,8 +439,7 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
 
     # Also check for category names (e.g., "cheese" in "add bacon and cheese")
     # This handles cases where "cheese" is a category name, not a specific ingredient
-    # Include all categories (food + beverage) since "milk" is a beverage category
-    all_categories = menu_cache.get_all_ingredient_categories()
+    # (all_categories was loaded earlier, includes food + beverage categories like "milk")
     modifier_words = modifier_text.lower().split()
     for word in modifier_words:
         word_clean = word.strip(",;").strip()

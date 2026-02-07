@@ -4237,8 +4237,10 @@ class TestCategoryClarification:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        # Mock empty category result
-        with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=[]):
+        # Mock empty category result - must also disable display group lookup
+        # so the code falls through to the (mocked) category lookup
+        with patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_display_group_by_slug", return_value=None), \
+             patch("orderbot.tasks.menu_inquiry_handler.menu_cache.get_items_by_category", return_value=[]):
             result = sm.menu_inquiry_handler.handle_category_clarification("soda", order)
 
         # Should gracefully handle empty category - either say not available or ask what else

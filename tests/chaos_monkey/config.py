@@ -22,7 +22,8 @@ class ChaosMonkeyConfig:
     llm_phrasing_ratio: float = 0.1  # 10% of tests use LLM phrasings
 
     # Mutation settings
-    mutation_probability: float = 0.5  # 50% of inputs get mutated
+    mutation_probability: float = 0.2  # 20% of inputs get mutated
+    gentle_mutations: bool = True  # Use gentle mutations (no typos, no word doubling)
 
     # Scenario weights (must sum to 1.0)
     scenario_weights: dict[str, float] = field(default_factory=lambda: {

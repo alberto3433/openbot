@@ -772,6 +772,11 @@ orderbot/tasks/checkout_utils_handler.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/tasks/config_cancellation_handler.py:
+  - term: everything
+    context: all
+    reason: "Generic word meaning 'all items' in cancellation scope, not a food term"
+
 orderbot/tasks/config_helper_handler.py:
   - term: bagel
     context: all

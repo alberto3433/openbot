@@ -14,6 +14,7 @@ class ActionType(Enum):
     UPDATE_QUANTITY = "update_quantity"
     ADD_MODIFIER = "add_modifier"
     REMOVE_MODIFIER = "remove_modifier"
+    MODIFY_ITEM = "modify_item"  # General item modification (add/remove/change modifiers)
     ASK_QUESTION = "ask_question"
     CONFIRM_ORDER = "confirm_order"
     CANCEL_ORDER = "cancel_order"

@@ -89,8 +89,22 @@ Examples:
     parser.add_argument(
         "--mutation-prob",
         type=float,
-        default=0.5,
-        help="Probability of applying mutations (default: 0.5)",
+        default=0.2,
+        help="Probability of applying mutations (default: 0.2)",
+    )
+
+    parser.add_argument(
+        "--aggressive",
+        action="store_true",
+        help="Use aggressive mutations (typos, word doubling). Default is gentle mode.",
+    )
+
+    parser.add_argument(
+        "--scenario-type",
+        type=str,
+        default=None,
+        choices=["single_item", "multi_item", "modifier", "cart_ops", "modifier_flow"],
+        help="Focus on a specific scenario type (default: mixed)",
     )
 
     parser.add_argument(
@@ -135,6 +149,7 @@ Examples:
         use_llm=args.use_llm,
         llm_phrasing_ratio=args.llm_ratio,
         mutation_probability=args.mutation_prob,
+        gentle_mutations=not args.aggressive,
         api_base_url=args.api_url,
     )
 
@@ -143,6 +158,10 @@ Examples:
 
     if args.report_path:
         config.report_path = Path(args.report_path)
+
+    # Override scenario weights if focusing on a specific type
+    if args.scenario_type:
+        config.scenario_weights = {args.scenario_type: 1.0}
 
     # Log configuration
     logger.info("=" * 60)
@@ -155,6 +174,8 @@ Examples:
     logger.info("  Request delay: %.1f seconds", args.request_delay)
     logger.info("  Use LLM: %s", args.use_llm)
     logger.info("  Mutation probability: %.1f%%", args.mutation_prob * 100)
+    logger.info("  Gentle mutations: %s", config.gentle_mutations)
+    logger.info("  Scenario type: %s", args.scenario_type or "mixed")
     logger.info("  API URL: %s", args.api_url)
     logger.info("  Output dir: %s", config.generated_tests_dir)
     logger.info("  Report path: %s", config.report_path)

@@ -65,12 +65,15 @@ class TextMutator:
         """Initialize the mutator with optional random seed."""
         self.rng = random.Random(seed)
 
-    def mutate(self, text: str, mutation_count: int = 1) -> MutationResult:
+    def mutate(
+        self, text: str, mutation_count: int = 1, gentle: bool = False
+    ) -> MutationResult:
         """Apply random mutations to the text.
 
         Args:
             text: The original text to mutate.
             mutation_count: Number of mutations to attempt.
+            gentle: If True, only use safe mutations (no typos, no word doubling).
 
         Returns:
             MutationResult with original and mutated text.
@@ -78,16 +81,26 @@ class TextMutator:
         mutated = text
         mutations_applied = []
 
-        mutation_methods = [
-            self._apply_typo,
-            self._apply_synonym,
-            self._apply_word_order_swap,
-            self._add_filler_word,
-            self._apply_abbreviation,
-            self._apply_case_change,
-            self._remove_article,
-            self._double_word,
-        ]
+        if gentle:
+            # Gentle mode: only safe mutations that don't break recognition
+            mutation_methods = [
+                self._apply_synonym,
+                self._add_filler_word,
+                self._apply_case_change,
+                self._remove_article,
+            ]
+        else:
+            # Full mode: all mutations including typos
+            mutation_methods = [
+                self._apply_typo,
+                self._apply_synonym,
+                self._apply_word_order_swap,
+                self._add_filler_word,
+                self._apply_abbreviation,
+                self._apply_case_change,
+                self._remove_article,
+                self._double_word,
+            ]
 
         for _ in range(mutation_count):
             method = self.rng.choice(mutation_methods)

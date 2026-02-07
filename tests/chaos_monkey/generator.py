@@ -118,6 +118,8 @@ class ScenarioGenerator:
             return self._generate_modifier_scenario()
         elif scenario_type == "cart_ops":
             return self._generate_cart_ops_scenario()
+        elif scenario_type == "modifier_flow":
+            return self._generate_modifier_flow_scenario()
         else:
             logger.warning("Unknown scenario type: %s", scenario_type)
             return None
@@ -190,11 +192,33 @@ class ScenarioGenerator:
             seed=self.rng.randint(0, 2**31),
         )
 
+    def _generate_modifier_flow_scenario(self) -> BaseScenario | None:
+        """Generate a modifier flow scenario (order then add/remove/change modifiers)."""
+        from tests.chaos_monkey.scenarios.modifier_flow import ModifierFlowScenario
+
+        if not self._menu_items or not self._modifier_words:
+            return None
+
+        # Pick 1 or 2 items
+        num_items = self.rng.choice([1, 2])
+        items = self.rng.sample(self._menu_items, min(num_items, len(self._menu_items)))
+
+        # Pick 3-5 modifiers to use in the flow
+        num_modifiers = min(5, len(self._modifier_words))
+        modifiers = self.rng.sample(list(self._modifier_words), num_modifiers)
+
+        return ModifierFlowScenario(
+            items=items,
+            modifiers=modifiers,
+            seed=self.rng.randint(0, 2**31),
+        )
+
     def _apply_mutations(self, scenario: BaseScenario) -> None:
         """Apply text mutations to scenario turns."""
+        gentle = self.config.gentle_mutations
         for turn in scenario.get_turns():
-            mutation_count = self.rng.randint(1, 3)
-            result = self.mutator.mutate(turn.user_input, mutation_count)
+            # Apply just 1 mutation to keep inputs recognizable
+            result = self.mutator.mutate(turn.user_input, mutation_count=1, gentle=gentle)
             turn.user_input = result.mutated
 
     def get_stats(self) -> dict[str, Any]:

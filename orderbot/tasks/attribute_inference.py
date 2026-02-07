@@ -55,6 +55,13 @@ def infer_attributes_from_item_name(item: "MenuItemTask") -> None:
     logger.info("INFER_ATTRIBUTES: Found %d attributes for '%s'", len(attrs), item.menu_item_type)
     item_name_lower = item.menu_item_name.lower()
 
+    # Collect all existing selection slugs to avoid duplicate inference
+    existing_slugs = set()
+    for sel in item.selections:
+        slug = sel.get("slug")
+        if slug:
+            existing_slugs.add(slug)
+
     for attr_slug, attr_data in attrs.items():
         # Skip if attribute is already set
         if attr_slug in item:
@@ -84,6 +91,13 @@ def infer_attributes_from_item_name(item: "MenuItemTask") -> None:
             if (opt_slug_readable in item_name_lower or
                     opt_display in item_name_lower or
                     opt_slug.lower() in item_name_lower):
+                # Skip if this value is already set in another attribute
+                if opt_slug in existing_slugs:
+                    logger.debug(
+                        "Skipping inferred %s='%s' - already set in another attribute",
+                        attr_slug, opt_slug
+                    )
+                    continue
                 # Set the attribute value
                 item[attr_slug] = opt_slug
                 logger.info(

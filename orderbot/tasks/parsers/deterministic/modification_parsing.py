@@ -396,7 +396,7 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     # Only skip if the menu item match covers most of the modifier_text - we don't want
     # to skip "add bacon and cheese" just because "bacon" is also a menu item.
     if len(modifier_text.split()) > 1:
-        menu_item, _ = _extract_menu_item_from_text(modifier_text)
+        menu_item, _, _ = _extract_menu_item_from_text(modifier_text)
         if menu_item:
             # Only skip if the menu item name covers most of the modifier text
             # This prevents "bacon and cheese" from being skipped because "bacon" matches
@@ -480,8 +480,17 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
 # Menu Item Extraction from Text
 # =============================================================================
 
-def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
-    """Try to extract a known menu item from text."""
+def _extract_menu_item_from_text(text: str) -> tuple[str | None, int, str | None]:
+    """Try to extract a known menu item from text.
+
+    Returns:
+        Tuple of (canonical_name, quantity, matched_alias) where:
+        - canonical_name: The canonical menu item name or None if not found
+        - quantity: Number of items (default 1)
+        - matched_alias: The alias text that was found in the input, or None.
+            This is useful for finding the span of the match in the original text
+            to exclude from attribute/modifier extraction.
+    """
     text_lower = text.lower().strip()
 
     # Strip ordering phrases like "I want", "add", "can I get", etc.
@@ -536,9 +545,9 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int]:
             if canonical is None:
                 # Item not found in database - skip this match and try next
                 continue
-            return canonical, quantity
+            return canonical, quantity, item
 
-    return None, 0
+    return None, 0, None
 
 
 # =============================================================================
@@ -604,7 +613,7 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         return configurable_result
 
     # Try menu item (includes signature items)
-    menu_item, _ = _extract_menu_item_from_text(item_text)
+    menu_item, _, _ = _extract_menu_item_from_text(item_text)
     if menu_item:
         logger.info("ADD MORE: parsed as menu item '%s' (qty=1)", menu_item)
         return OpenInputResponse(

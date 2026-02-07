@@ -729,16 +729,50 @@ class MenuItemConfigHandler(BaseHandler):
         yes_patterns = menu_cache.get_response_patterns("affirmative")
         no_patterns = menu_cache.get_response_patterns("negative")
 
+        # Build alias lists from options (like "toast" -> True, "no toast" -> False)
+        options = attr.get("options", [])
+        true_aliases: list[str] = []
+        false_aliases: list[str] = []
+
+        for opt in options:
+            opt_aliases = opt.get("aliases") or []
+            if isinstance(opt_aliases, str):
+                opt_aliases = [a.strip().lower() for a in opt_aliases.split(",")]
+            else:
+                opt_aliases = [a.lower() for a in opt_aliases]
+
+            opt_slug = opt.get("slug", "")
+            if opt_slug == "true" or opt_slug.endswith("_option_true"):
+                true_aliases = opt_aliases
+            elif opt_slug == "false" or opt_slug.endswith("_option_false"):
+                false_aliases = opt_aliases
+
         # Also check for the attribute name with/without "not"
         attr_name = attr["display_name"].lower()
         bool_value: bool | None = None
-        if f"not {attr_name}" in user_lower or f"un{attr_name}" in user_lower:
-            bool_value = False
-        elif any(p in user_lower for p in yes_patterns) or attr_name in user_lower:
-            bool_value = True
-        elif any(p in user_lower for p in no_patterns):
-            bool_value = False
-        else:
+
+        # Check aliases first (more specific)
+        # Check false aliases first since "not toasted" contains "toasted"
+        for alias in false_aliases:
+            if alias in user_lower:
+                bool_value = False
+                break
+        if bool_value is None:
+            for alias in true_aliases:
+                if alias in user_lower:
+                    bool_value = True
+                    break
+
+        # Fall back to display name and yes/no patterns
+        if bool_value is None:
+            if f"not {attr_name}" in user_lower or f"un{attr_name}" in user_lower:
+                bool_value = False
+            elif any(p in user_lower for p in yes_patterns) or attr_name in user_lower:
+                bool_value = True
+            elif any(p in user_lower for p in no_patterns):
+                bool_value = False
+
+        if bool_value is None:
             # Couldn't parse, ask again
             question = attr.get("question_text") or f"{attr['display_name']}?"
             return StateMachineResult(

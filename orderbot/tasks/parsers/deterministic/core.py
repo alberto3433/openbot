@@ -549,7 +549,7 @@ def parse_open_input_deterministic(
     # Data-driven menu item lookup - runs AFTER configurable item parsing
     # This matches direct menu items from the database (known_menu_items already excludes
     # configurable items, so no additional filtering needed)
-    menu_item, qty = _extract_menu_item_from_text(text)
+    menu_item, qty, matched_alias = _extract_menu_item_from_text(text)
     if menu_item:
         # Get item_type for data-driven attribute and modification extraction
         item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
@@ -557,12 +557,19 @@ def parse_open_input_deterministic(
         # Find the span where the menu item name appears in the text to exclude from
         # attribute matching. This prevents words within the menu item name (e.g., "butter"
         # in "Cinnamon Sugar Butter Sandwich") from matching as attributes.
+        # Use the matched_alias (the text that actually matched) instead of the canonical
+        # name, since the user may have typed an alias like "cinnamon butter sandwich"
+        # instead of "Cinnamon Sugar Butter Sandwich".
         menu_item_span = None
         text_lower = text.lower()
-        menu_item_lower = menu_item.lower()
-        pos = text_lower.find(menu_item_lower)
-        if pos != -1:
-            menu_item_span = (pos, pos + len(menu_item_lower))
+        # Try the matched alias first, then fall back to canonical name
+        search_terms = [matched_alias, menu_item.lower()] if matched_alias else [menu_item.lower()]
+        for search_term in search_terms:
+            if search_term:
+                pos = text_lower.find(search_term.lower())
+                if pos != -1:
+                    menu_item_span = (pos, pos + len(search_term))
+                    break
         attr_values = {}
         if item_type_for_mods:
             exclude_spans = [menu_item_span] if menu_item_span else None

@@ -254,16 +254,21 @@ class ItemTypeLoaderMixin:
                 # Build options list from eagerly loaded options
                 options = []
                 for opt in sorted(attr.options, key=lambda o: o.display_order):
-                    aliases = None
                     must_match = None
                     ingredient_category = None
+                    # Start with option's own aliases (from global_attribute_option_aliases)
+                    aliases = list(opt.aliases) if opt.aliases else []
                     # Derive slug/display_name from ingredient when linked
                     slug = opt.slug
                     display_name = opt.display_name
                     if opt.ingredient:
                         slug = opt.ingredient.slug
                         display_name = opt.ingredient.name
-                        aliases = opt.ingredient.aliases
+                        # Add linked ingredient aliases (if any)
+                        if opt.ingredient.aliases:
+                            for ing_alias in opt.ingredient.aliases:
+                                if ing_alias not in aliases:
+                                    aliases.append(ing_alias)
                         must_match = opt.ingredient.must_match
                         ingredient_category = opt.ingredient.category
 

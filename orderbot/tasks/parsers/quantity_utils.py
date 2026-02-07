@@ -46,6 +46,12 @@ BASIC_WORD_TO_NUM: dict[str, int] = {
     "double": 2, "triple": 3, "quad": 4, "quadruple": 4,
 }
 
+# Words that modify quantity but aren't ingredients themselves.
+# Used to filter these from "unmatched" lists in fallback parsing.
+QUANTITY_MODIFIER_WORDS: frozenset[str] = frozenset({
+    "more", "extra", "double", "triple", "another", "additional", "few", "couple"
+})
+
 # Reverse mapping: number to word (for display purposes)
 NUM_TO_WORD: dict[int, str] = {
     1: "one", 2: "two", 3: "three", 4: "four", 5: "five",

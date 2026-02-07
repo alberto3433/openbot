@@ -377,18 +377,44 @@ class OptionMatcher:
                         if self._is_whole_word_match(check_val, identifier):
                             token_consumed = True
                             break
-                        if self._is_whole_word_match(identifier, check_val):
-                            token_consumed = True
-                            break
                     if token_consumed:
                         break
 
             if not token_consumed:
-                # Report the token without quantity
-                if token_without_qty and token_without_qty_lower not in stopwords:
-                    unmatched.append(token_without_qty)
-                elif token_lower not in stopwords:
-                    unmatched.append(token)
+                # Token wasn't directly consumed - check if it has multiple words
+                # where some matched but others didn't (e.g., "milk sugar" where
+                # "sugar" matched "Domino Sugar" but "milk" didn't match anything)
+                words = token_without_qty_lower.split()
+                if len(words) > 1:
+                    # Check each word individually
+                    for word in words:
+                        if len(word) < 2 or word in stopwords:
+                            continue
+                        word_singular = self.normalizer.singularize(word)
+                        word_consumed = (
+                            word in matched_identifiers or
+                            word_singular in matched_identifiers
+                        )
+                        if not word_consumed:
+                            for identifier in matched_identifiers:
+                                if (self._is_whole_word_match(word, identifier) or
+                                        self._is_whole_word_match(identifier, word)):
+                                    word_consumed = True
+                                    break
+                                if word_singular and (
+                                        self._is_whole_word_match(word_singular, identifier) or
+                                        self._is_whole_word_match(identifier, word_singular)):
+                                    word_consumed = True
+                                    break
+                        if not word_consumed:
+                            unmatched.append(word)
+                    token_consumed = True  # Processed at word level
+                else:
+                    # Single word token - report as unmatched
+                    if token_without_qty and token_without_qty_lower not in stopwords:
+                        unmatched.append(token_without_qty)
+                    elif token_lower not in stopwords:
+                        unmatched.append(token)
 
         return MultiMatchResult(matched=matched, unmatched=unmatched)
 

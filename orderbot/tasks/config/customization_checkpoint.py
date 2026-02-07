@@ -17,7 +17,11 @@ from ..schemas import StateMachineResult, OrderPhase
 from ..pending_fields import PendingField
 from ..checkout_messages import got_it_anything_else
 from ..parsers.constants import extract_quantity_for_pattern
-from ..parsers.quantity_utils import extract_leading_quantity
+from ..parsers.quantity_utils import (
+    extract_leading_quantity,
+    extract_additive_quantity,
+    QUANTITY_MODIFIER_WORDS,
+)
 from .attribute_resolver import get_mandatory_attributes
 
 if TYPE_CHECKING:
@@ -463,6 +467,7 @@ class CustomizationCheckpointHandler:
 
         This handles input like "salt pepper ketchup" by splitting on spaces
         and matching each word individually against the ingredients table.
+        Also handles quantity modifier patterns like "more bacon", "extra cheese".
         Only called after attribute/option matching has failed.
 
         Args:
@@ -484,8 +489,87 @@ class CustomizationCheckpointHandler:
 
         added_names: list[str] = []
         unmatched: list[str] = []
+        matched_slugs: set[str] = set()  # Track already matched ingredients
 
+        # Phase 1: Try to match full phrases with quantity modifiers
+        # Handles "more bacon", "extra cheese", "double egg", etc.
+        for match in menu_cache.find_matching_ingredients(user_clean):
+            pattern = match["name"].lower()
+            if pattern not in user_clean:
+                continue
+
+            quantity, is_additive = extract_additive_quantity(user_clean, pattern)
+            slug = match["slug"]
+
+            # Also check for "extra X" which should be additive
+            # extract_additive_quantity treats "extra" as absolute (qty=2),
+            # but we want it to be additive when ingredient already exists
+            is_extra_prefix = user_clean.startswith(f"extra {pattern}")
+
+            existing = item.find_modifier_by_slug(slug)
+
+            if is_additive or (is_extra_prefix and existing):
+                # Additive pattern: increment existing quantity or add new
+                if existing:
+                    existing["quantity"] = existing.get("quantity", 1) + quantity
+                    display_qty = existing["quantity"]
+                    display_name = f"{match['name']} x{display_qty}"
+                    added_names.append(display_name)
+                    logger.info(
+                        "QUANTITY_MODIFIER: Incremented '%s' by %d to qty=%d",
+                        slug, quantity, display_qty
+                    )
+                else:
+                    # Additive but doesn't exist yet - add normally
+                    item.add_selection(
+                        slug=slug,
+                        category=match["category"],
+                        display_name=match["name"],
+                        quantity=quantity,
+                        price=match.get("base_price", 0.0),
+                    )
+                    added_names.append(match["name"])
+                    logger.info(
+                        "QUANTITY_MODIFIER: Added new '%s' with qty=%d (additive pattern)",
+                        slug, quantity
+                    )
+            else:
+                # Absolute pattern (e.g., "double bacon" = 2)
+                if existing:
+                    # Update existing quantity to absolute value
+                    existing["quantity"] = quantity
+                    display_name = f"{match['name']} x{quantity}" if quantity > 1 else match["name"]
+                    added_names.append(display_name)
+                else:
+                    item.add_selection(
+                        slug=slug,
+                        category=match["category"],
+                        display_name=match["name"],
+                        quantity=quantity,
+                        price=match.get("base_price", 0.0),
+                    )
+                    display_name = f"{quantity} {match['name']}" if quantity > 1 else match["name"]
+                    added_names.append(display_name)
+                logger.info(
+                    "QUANTITY_MODIFIER: Set '%s' to qty=%d (absolute)",
+                    slug, quantity
+                )
+
+            matched_slugs.add(slug)
+
+        # If we matched via quantity modifier patterns, we're done
+        if matched_slugs:
+            self._recalculate_item_price(item)
+            added_text = format_english_list(added_names)
+            return self._ask_customization_checkpoint(item, order, f"{added_text} added")
+
+        # Phase 2: Word-by-word matching for multi-ingredient input
+        # Handles "salt pepper ketchup"
         for word in words:
+            # Skip quantity modifier words - don't report them as "not found"
+            if word in QUANTITY_MODIFIER_WORDS:
+                continue
+
             quantity, search_term = extract_leading_quantity(word)
             quantity = quantity or 1
             if not search_term:

@@ -187,22 +187,29 @@ class SelectInputHandler:
             # Case 1: Single token input matched multiple options
             is_single_token = len(tokens) <= 1
             if is_single_token:
-                logger.info(
-                    "MULTI_SELECT DISAMBIGUATION: single token '%s' matched %d options: %s",
-                    user_input, len(matched_options), [o["display_name"] for o in matched_options]
-                )
-                # Store disambiguation state and ask user to clarify
-                order.pending_attr_disambiguation = {
-                    "options": matched_options,
-                    "attr_slug": attr_slug,
-                    "modifiers": {"_quantity": quantity},
-                    "item_id": item.id,
-                }
-                options_text = format_display_list_callback(matched_options)
-                return StateMachineResult(
-                    message=f"Did you mean {options_text}?",
-                    order=order,
-                )
+                # Check if space-separated words could each match a distinct option
+                # "salt pepper ketchup" = 3 words, 3 matches → no disambiguation needed
+                # "syrups" = 1 word, 3 matches → needs disambiguation
+                space_words = [w for w in user_input.lower().split() if w.strip()]
+                if len(space_words) < len(matched_options):
+                    # Fewer words than matches - a single word matched multiple options
+                    logger.info(
+                        "MULTI_SELECT DISAMBIGUATION: single token '%s' matched %d options: %s",
+                        user_input, len(matched_options), [o["display_name"] for o in matched_options]
+                    )
+                    # Store disambiguation state and ask user to clarify
+                    order.pending_attr_disambiguation = {
+                        "options": matched_options,
+                        "attr_slug": attr_slug,
+                        "modifiers": {"_quantity": quantity},
+                        "item_id": item.id,
+                    }
+                    options_text = format_display_list_callback(matched_options)
+                    return StateMachineResult(
+                        message=f"Did you mean {options_text}?",
+                        order=order,
+                    )
+                # else: Each word likely matched a distinct option - fall through to add all
 
             # Case 2: Multi-token input but ONE token matched multiple options
             # Check each token individually to see if any single token caused multiple matches

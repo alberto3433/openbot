@@ -240,7 +240,7 @@ class PytestFileGenerator:
             user_input = self._escape_string(turn.user_input)
             lines.append(f"        # Turn {i + 1}")
             lines.append(f'        user_input_{i} = "{user_input}"')
-            lines.append(f"        result_{i} = sm.process_message(order, user_input_{i})")
+            lines.append(f"        result_{i} = sm.process(user_input_{i}, order)")
             lines.append("")
 
             if turn.passed is False and first_failure is None:

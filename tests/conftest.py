@@ -6,6 +6,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+# Register conversation capture plugin (activate with --capture-convos)
+pytest_plugins = ["tests.pytest_conversation_capture"]
+
 # Load environment variables from .env file
 load_dotenv()
 

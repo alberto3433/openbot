@@ -161,12 +161,36 @@ class ScenarioGenerator:
         """Generate a modifier addition/removal scenario."""
         from tests.chaos_monkey.scenarios.modifier import ModifierScenario
 
-        if not self._menu_items or not self._modifier_words:
+        if not self._menu_items:
             return None
 
-        # Pick an item and a modifier
-        item = self.rng.choice(self._menu_items)
-        modifier = self.rng.choice(list(self._modifier_words))
+        # Filter to only configurable items
+        configurable_items = [
+            item for item in self._menu_items
+            if self.menu_cache.is_item_type_configurable(item.get("item_type", ""))
+        ]
+
+        if not configurable_items:
+            return None
+
+        # Pick a configurable item
+        item = self.rng.choice(configurable_items)
+        item_type = item.get("item_type", "")
+
+        # Get modifiers valid for this item type
+        valid_ingredients = self.menu_cache.get_ingredients_by_category_for_item_type(
+            item_type
+        )
+
+        # Flatten all valid ingredient names
+        valid_modifiers: list[str] = []
+        for category_ingredients in valid_ingredients.values():
+            valid_modifiers.extend(category_ingredients)
+
+        if not valid_modifiers:
+            return None
+
+        modifier = self.rng.choice(valid_modifiers)
 
         return ModifierScenario(
             item=item,
@@ -196,16 +220,41 @@ class ScenarioGenerator:
         """Generate a modifier flow scenario (order then add/remove/change modifiers)."""
         from tests.chaos_monkey.scenarios.modifier_flow import ModifierFlowScenario
 
-        if not self._menu_items or not self._modifier_words:
+        if not self._menu_items:
             return None
 
-        # Pick 1 or 2 items
-        num_items = self.rng.choice([1, 2])
-        items = self.rng.sample(self._menu_items, min(num_items, len(self._menu_items)))
+        # Filter to only configurable items (those that accept modifiers)
+        configurable_items = [
+            item for item in self._menu_items
+            if self.menu_cache.is_item_type_configurable(item.get("item_type", ""))
+        ]
 
-        # Pick 3-5 modifiers to use in the flow
-        num_modifiers = min(5, len(self._modifier_words))
-        modifiers = self.rng.sample(list(self._modifier_words), num_modifiers)
+        if not configurable_items:
+            return None
+
+        # Pick 1 or 2 configurable items
+        num_items = self.rng.choice([1, 2])
+        items = self.rng.sample(
+            configurable_items, min(num_items, len(configurable_items))
+        )
+
+        # Get modifiers that are valid for the first item's type
+        first_item_type = items[0].get("item_type", "")
+        valid_ingredients = self.menu_cache.get_ingredients_by_category_for_item_type(
+            first_item_type
+        )
+
+        # Flatten all valid ingredient names
+        valid_modifiers: list[str] = []
+        for category_ingredients in valid_ingredients.values():
+            valid_modifiers.extend(category_ingredients)
+
+        if not valid_modifiers:
+            return None
+
+        # Pick 3-5 modifiers from the valid list for this item type
+        num_modifiers = min(5, len(valid_modifiers))
+        modifiers = self.rng.sample(valid_modifiers, num_modifiers)
 
         return ModifierFlowScenario(
             items=items,

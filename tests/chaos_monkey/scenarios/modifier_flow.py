@@ -12,7 +12,16 @@ from tests.chaos_monkey.scenarios.base import (
 
 
 class ModifierFlowScenario(BaseScenario):
-    """Multi-turn scenario: order items, then add/remove/change modifiers."""
+    """Multi-turn scenario: order items, then add/remove/change modifiers.
+
+    This scenario tests realistic modifier operations:
+    1. Order one or two items
+    2. Add a modifier
+    3. Remove the SAME modifier that was added (realistic flow)
+    4. Add a different modifier
+
+    All modifiers used must be valid for the item type being ordered.
+    """
 
     scenario_type = "modifier_flow"
 
@@ -25,8 +34,8 @@ class ModifierFlowScenario(BaseScenario):
         """Initialize modifier flow scenario.
 
         Args:
-            items: 1-2 items to order.
-            modifiers: Available modifiers to use.
+            items: 1-2 items to order (must be configurable items).
+            modifiers: Available modifiers to use (must be valid for items).
             seed: Random seed.
         """
         item_names = [item.get("name", "Unknown") for item in items]
@@ -36,19 +45,33 @@ class ModifierFlowScenario(BaseScenario):
         self.modifiers = modifiers
         self.rng = random.Random(seed)
 
+        # Track state for realistic flow
+        self._added_modifier: str | None = None
+
     def generate(self) -> None:
         """Generate the multi-turn conversation."""
         # Turn 1: Order the items (1 or 2)
         self._generate_order_turn()
 
-        # Turn 2: Add a modifier to first item
-        self._generate_add_modifier_turn()
+        # Pick modifiers for subsequent turns
+        if len(self.modifiers) >= 2:
+            mod1, mod2 = self.rng.sample(self.modifiers, 2)
+        elif len(self.modifiers) == 1:
+            mod1 = self.modifiers[0]
+            mod2 = None
+        else:
+            return  # No modifiers to test
 
-        # Turn 3: Remove a modifier from first item
-        self._generate_remove_modifier_turn()
+        # Turn 2: Add first modifier
+        self._generate_add_modifier_turn(mod1)
+        self._added_modifier = mod1
 
-        # Turn 4: Change/substitute a modifier
-        self._generate_change_modifier_turn()
+        # Turn 3: Remove the SAME modifier that was added (realistic)
+        self._generate_remove_modifier_turn(mod1)
+
+        # Turn 4: Add a different modifier
+        if mod2:
+            self._generate_add_modifier_turn(mod2)
 
     def _generate_order_turn(self) -> None:
         """Generate the initial order turn."""
@@ -90,12 +113,8 @@ class ModifierFlowScenario(BaseScenario):
             )
         )
 
-    def _generate_add_modifier_turn(self) -> None:
-        """Generate turn to add a modifier."""
-        if not self.modifiers:
-            return
-
-        modifier = self.rng.choice(self.modifiers)
+    def _generate_add_modifier_turn(self, modifier: str) -> None:
+        """Generate turn to add a specific modifier."""
         item_name = self.items[0].get("name", "Unknown")
 
         templates = [
@@ -128,12 +147,8 @@ class ModifierFlowScenario(BaseScenario):
             )
         )
 
-    def _generate_remove_modifier_turn(self) -> None:
-        """Generate turn to remove a modifier."""
-        if not self.modifiers:
-            return
-
-        modifier = self.rng.choice(self.modifiers)
+    def _generate_remove_modifier_turn(self, modifier: str) -> None:
+        """Generate turn to remove a specific modifier."""
         item_name = self.items[0].get("name", "Unknown")
 
         templates = [
@@ -148,43 +163,6 @@ class ModifierFlowScenario(BaseScenario):
 
         template = self.rng.choice(templates)
         user_input = template.format(modifier=modifier)
-
-        expected_items = [item.get("name", "Unknown") for item in self.items]
-
-        self.turns.append(
-            ConversationTurn(
-                user_input=user_input,
-                expected_actions=[
-                    ExpectedAction(
-                        action_type=ActionType.MODIFY_ITEM,
-                        item_name=item_name,
-                    ),
-                ],
-                expected_items_in_cart=expected_items,
-                allow_disambiguation=True,
-            )
-        )
-
-    def _generate_change_modifier_turn(self) -> None:
-        """Generate turn to change/substitute a modifier."""
-        if len(self.modifiers) < 2:
-            return
-
-        # Pick two different modifiers
-        mod1, mod2 = self.rng.sample(self.modifiers, 2)
-        item_name = self.items[0].get("name", "Unknown")
-
-        templates = [
-            "Change the {old} to {new}",
-            "Switch {old} for {new}",
-            "Instead of {old}, make it {new}",
-            "Replace {old} with {new}",
-            "Actually {new} instead of {old}",
-            "Swap {old} for {new}",
-        ]
-
-        template = self.rng.choice(templates)
-        user_input = template.format(old=mod1, new=mod2)
 
         expected_items = [item.get("name", "Unknown") for item in self.items]
 

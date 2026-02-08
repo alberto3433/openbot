@@ -178,15 +178,20 @@ def _parse_split_quantity_items(
     # 3. Extract base properties from initial part
     initial_part = _get_initial_part(text_lower)
 
-    # Extract total quantity
-    total_quantity = 2  # Default
+    # Extract total quantity - only from leading quantity > 1
+    # "1 everything bagel 1 plain bagel" should NOT extract 1 as total
+    # "2 bagels one iced one hot" SHOULD extract 2 as total
+    total_quantity = None  # Will be computed from parts if not found
     qty_match = re.match(r"^(\d+|two|three|four|five|six)\s+", text_lower)
     if qty_match:
         qty_str = qty_match.group(1)
         if qty_str.isdigit():
-            total_quantity = int(qty_str)
+            extracted_qty = int(qty_str)
         else:
-            total_quantity = WORD_TO_NUM.get(qty_str, 2)
+            extracted_qty = WORD_TO_NUM.get(qty_str, 1)
+        # Only use as total if > 1 (to distinguish from per-item quantities)
+        if extracted_qty > 1:
+            total_quantity = extracted_qty
 
     # Extract base attributes using data-driven extractor
     base_attrs, _ = extract_attribute_values(initial_part, item_type)
@@ -206,13 +211,20 @@ def _parse_split_quantity_items(
 
     logger.info("SPLIT-QUANTITY ITEMS: found %d parts: %s", len(parts), parts)
 
+    # Compute total_quantity from parts if not extracted from leading text
+    # For "1 everything bagel 1 plain bagel", sum = 1 + 1 = 2
+    parts_sum = sum(qty for qty, _ in parts)
+    if total_quantity is None:
+        total_quantity = parts_sum
+
     # 5. Process each part
     parsed_items: list[ParsedItemEntry] = []
     item_count = 0
 
     # Filter out the base part if it's captured (first part with qty == total_quantity)
     # The base part describes ALL items, not a differentiated specification
-    if parts and parts[0][0] == total_quantity:
+    # Only applies when there's an explicit total at the start (e.g., "2 bagels one iced one hot")
+    if parts and total_quantity != parts_sum and parts[0][0] == total_quantity:
         # First part is the base description, skip it
         # We already extracted base_attrs from initial_part
         parts = parts[1:]

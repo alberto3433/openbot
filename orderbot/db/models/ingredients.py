@@ -15,7 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign
 
 from .base import Base
 
@@ -69,6 +69,15 @@ class Ingredient(Base):
     menu_item_links = relationship("MenuItemIngredient", back_populates="ingredient")
     # Unit relationship
     unit_rel = relationship("IngredientUnit", back_populates="ingredients")
+
+    # Relationship to ModifierCategory via ingredient_category field
+    # This enables deriving modifier_category from ingredient at runtime
+    modifier_category = relationship(
+        "ModifierCategory",
+        primaryjoin="Ingredient.category == foreign(ModifierCategory.ingredient_category)",
+        uselist=False,
+        viewonly=True,
+    )
 
     @property
     def aliases(self) -> list[str]:

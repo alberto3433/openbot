@@ -46,7 +46,6 @@ from ..db.models import (
     Ingredient,
     ItemType,
     ItemTypeGlobalAttribute,
-    ModifierCategory,
 )
 from ..services.helpers import sync_entity_aliases
 from ..schemas.global_attributes import (
@@ -143,6 +142,11 @@ def _serialize_option(opt: GlobalAttributeOption, db: Optional[Session] = None) 
         if forward_attr:
             forward_to_attr_slug = forward_attr.slug
 
+    # Derive modifier_category from ingredient at runtime
+    modifier_category_name = None
+    if ingredient and ingredient.modifier_category:
+        modifier_category_name = ingredient.modifier_category.display_name
+
     return GlobalAttributeOptionOut(
         id=opt.id,
         slug=slug,
@@ -153,8 +157,7 @@ def _serialize_option(opt: GlobalAttributeOption, db: Optional[Session] = None) 
         display_order=opt.display_order,
         ingredient_id=opt.ingredient_id,
         ingredient_name=ingredient_name,
-        modifier_category_id=opt.modifier_category_id,
-        modifier_category_name=opt.modifier_category.display_name if opt.modifier_category else None,
+        modifier_category_name=modifier_category_name,
         aliases=aliases_str,
         skip_rules=skip_rules_out,
         forward_to_attribute_id=opt.forward_to_attribute_id,
@@ -286,9 +289,8 @@ def get_global_attribute(
         db.query(GlobalAttribute)
         .options(
             selectinload(GlobalAttribute.options)
-            .joinedload(GlobalAttributeOption.ingredient),
-            selectinload(GlobalAttribute.options)
-            .joinedload(GlobalAttributeOption.modifier_category),
+            .joinedload(GlobalAttributeOption.ingredient)
+            .joinedload(Ingredient.modifier_category),
             selectinload(GlobalAttribute.options)
             .selectinload(GlobalAttributeOption.skip_rules)
             .joinedload(GlobalAttributeOptionSkip.skipped_attribute),
@@ -603,18 +605,6 @@ def create_global_attribute_option(
                 detail=f"Ingredient '{ingredient.name}' is already linked to an option for this attribute"
             )
 
-    # Validate modifier_category_id if provided
-    modifier_category_id = payload.modifier_category_id
-    if modifier_category_id is not None:
-        category = db.query(ModifierCategory).filter(
-            ModifierCategory.id == modifier_category_id
-        ).first()
-        if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Modifier category with id {modifier_category_id} not found"
-            )
-
     # Validate forward_to_attribute_id if provided
     forward_to_attribute_id = payload.forward_to_attribute_id
     if forward_to_attribute_id is not None:
@@ -636,7 +626,6 @@ def create_global_attribute_option(
         is_available=payload.is_available,
         display_order=payload.display_order,
         ingredient_id=ingredient_id,
-        modifier_category_id=modifier_category_id,
         forward_to_attribute_id=forward_to_attribute_id,
     )
     db.add(option)
@@ -752,20 +741,6 @@ def update_global_attribute_option(
                     )
         option.ingredient_id = payload.ingredient_id
 
-    # Handle modifier_category_id - check model_fields_set to distinguish None from not provided
-    if "modifier_category_id" in payload.model_fields_set:
-        if payload.modifier_category_id is not None:
-            # Validate modifier category exists
-            category = db.query(ModifierCategory).filter(
-                ModifierCategory.id == payload.modifier_category_id
-            ).first()
-            if not category:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Modifier category with id {payload.modifier_category_id} not found"
-                )
-        option.modifier_category_id = payload.modifier_category_id
-
     # Handle forward_to_attribute_id - check model_fields_set to distinguish None from not provided
     if "forward_to_attribute_id" in payload.model_fields_set:
         if payload.forward_to_attribute_id is not None:
@@ -792,11 +767,10 @@ def update_global_attribute_option(
     db.refresh(option)
 
     logger.info(
-        "Updated global attribute option: %s (id=%d, ingredient_id=%s, modifier_category_id=%s)",
+        "Updated global attribute option: %s (id=%d, ingredient_id=%s)",
         option.slug,
         option.id,
         option.ingredient_id,
-        option.modifier_category_id,
     )
     return _serialize_option(option, db)
 
@@ -954,18 +928,8 @@ def create_option_from_ingredient(
             detail=f"Option with slug '{ingredient.slug}' already exists for this attribute"
         )
 
-    # Validate modifier_category_id if provided
-    if payload.modifier_category_id is not None:
-        category = db.query(ModifierCategory).filter(
-            ModifierCategory.id == payload.modifier_category_id
-        ).first()
-        if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Modifier category with id {payload.modifier_category_id} not found"
-            )
-
     # Create the option - slug/display_name are NULL (derived from ingredient at read time)
+    # modifier_category is also derived from ingredient.category at runtime
     option = GlobalAttributeOption(
         global_attribute_id=attr_id,
         slug=None,
@@ -975,7 +939,6 @@ def create_option_from_ingredient(
         is_available=payload.is_available,
         display_order=payload.display_order,
         ingredient_id=ingredient_id,
-        modifier_category_id=payload.modifier_category_id,
     )
     db.add(option)
     db.commit()
@@ -1216,16 +1179,15 @@ def list_item_type_global_attributes(
         raise HTTPException(status_code=404, detail="Item type not found")
 
     # Eager load all relationships to avoid N+1 queries
+    # modifier_category is derived from ingredient at runtime
     links = (
         db.query(ItemTypeGlobalAttribute)
         .options(
             joinedload(ItemTypeGlobalAttribute.item_type),
             joinedload(ItemTypeGlobalAttribute.global_attribute)
             .selectinload(GlobalAttribute.options)
-            .joinedload(GlobalAttributeOption.ingredient),
-            joinedload(ItemTypeGlobalAttribute.global_attribute)
-            .selectinload(GlobalAttribute.options)
-            .joinedload(GlobalAttributeOption.modifier_category),
+            .joinedload(GlobalAttributeOption.ingredient)
+            .joinedload(Ingredient.modifier_category),
         )
         .filter(ItemTypeGlobalAttribute.item_type_id == item_type_id)
         .order_by(ItemTypeGlobalAttribute.display_order)

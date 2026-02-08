@@ -52,9 +52,8 @@ class GlobalAttributeOptionOut(BaseModel):
     # Link to ingredient for normalized must_match/aliases lookup
     ingredient_id: Optional[int] = None
     ingredient_name: Optional[str] = None  # Display name from linked ingredient
-    # Link to modifier category for sub-categorization within an attribute
-    modifier_category_id: Optional[int] = None
-    modifier_category_name: Optional[str] = None  # Display name from linked category
+    # Modifier category is derived from ingredient.category at runtime
+    modifier_category_name: Optional[str] = None  # Display name from linked ingredient's category
     # Option aliases (comma-separated for display, stored in global_attribute_option_aliases table)
     aliases: Optional[str] = None
     # Skip rules - attributes to skip when this option is selected
@@ -81,9 +80,8 @@ class GlobalAttributeOptionCreate(BaseModel):
     is_available: bool = True
     display_order: int = 0
     # Link to ingredient (optional) - when set, slug/display_name derived from ingredient
+    # modifier_category is also derived from ingredient.category at runtime
     ingredient_id: Optional[int] = None
-    # Link to modifier category for sub-categorization (e.g., milks within coffee_additions)
-    modifier_category_id: Optional[int] = None
     # Option aliases (comma-separated string) - stored in global_attribute_option_aliases table
     aliases: Optional[str] = None
     # Forward delegation - target attribute to forward to when input matches its options
@@ -99,11 +97,9 @@ class GlobalAttributeOptionUpdate(BaseModel):
     is_available: Optional[bool] = None
     display_order: Optional[int] = None
     # Link to ingredient - when set, must_match/aliases are read from ingredient
+    # modifier_category is also derived from ingredient.category at runtime
     # Set to null to unlink
     ingredient_id: Optional[int] = None
-    # Link to modifier category for sub-categorization
-    # Set to null to unlink
-    modifier_category_id: Optional[int] = None
     # Option aliases (comma-separated string) - replaces existing aliases
     aliases: Optional[str] = None
     # Forward delegation - target attribute to forward to when input matches its options
@@ -277,15 +273,14 @@ class GlobalAttributeOptionFromIngredientCreate(BaseModel):
     """
     Request model for creating an option from an existing ingredient.
 
-    This reduces duplicate data entry - slug and display_name are auto-populated
-    from the ingredient, and the ingredient_id link is set automatically.
-    User only needs to specify price and display order.
+    This reduces duplicate data entry - slug, display_name, and modifier_category
+    are auto-populated from the ingredient, and the ingredient_id link is set
+    automatically. User only needs to specify price and display order.
     """
     price_modifier: float = 0.0
     display_order: int = 0
     is_default: bool = False
     is_available: bool = True
-    modifier_category_id: Optional[int] = None
 
 
 # =============================================================================

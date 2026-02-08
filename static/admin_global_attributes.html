@@ -821,13 +821,6 @@
             <label for="optionIsAvailable">Available</label>
           </div>
           <div class="form-group">
-            <label for="optionModifierCategory">Modifier Category</label>
-            <select id="optionModifierCategory">
-              <option value="">(None)</option>
-            </select>
-            <div class="hint">Sub-categorize options within this attribute (e.g., "Milk" for milks in coffee_additions)</div>
-          </div>
-          <div class="form-group">
             <label for="optionAliases">Aliases</label>
             <input type="text" id="optionAliases" placeholder="e.g., 2 shots, two shots, double" />
             <div class="hint">Comma-separated alternative names for matching user input</div>
@@ -932,13 +925,6 @@
               </div>
             </div>
           </div>
-          <div class="form-group">
-            <label for="fromIngModifierCategory">Modifier Category</label>
-            <select id="fromIngModifierCategory">
-              <option value="">(None)</option>
-            </select>
-            <div class="hint">Sub-categorize within this attribute</div>
-          </div>
         </form>
       </div>
       <div class="modal-footer">
@@ -973,14 +959,12 @@
 
   <script>
     const API_BASE = "/api/v1/admin/global-attributes";
-    const MODIFIER_CATEGORIES_API = "/api/v1/admin/modifier-categories";
     let authCredentials = null;
 
     // State
     let attributes = [];
     let selectedAttrId = null;
     let editingOptionId = null;
-    let modifierCategories = [];
     let unlinkedIngredients = [];
     let ingredientsCache = [];  // All ingredients for option edit dropdown
     let currentOptionSkipRules = [];  // Skip rules for currently editing option
@@ -1408,13 +1392,6 @@
       form.reset();
       editingOptionId = null;
 
-      // Load categories if not loaded yet
-      if (modifierCategories.length === 0) {
-        await loadModifierCategories();
-      }
-      // Ensure dropdown is populated
-      populateModifierCategoryDropdown();
-
       // Load ingredients for linking if not loaded yet
       if (ingredientsCache.length === 0) {
         await loadIngredientsForOptionEdit();
@@ -1431,7 +1408,6 @@
         document.getElementById("optionOrder").value = opt.display_order || 0;
         document.getElementById("optionIsDefault").checked = opt.is_default || false;
         document.getElementById("optionIsAvailable").checked = opt.is_available !== false;
-        document.getElementById("optionModifierCategory").value = opt.modifier_category_id || "";
         document.getElementById("optionAliases").value = opt.aliases || "";
         document.getElementById("optionDeleteBtn").style.display = "inline-block";
         editingOptionId = opt.id;
@@ -1445,7 +1421,6 @@
         document.getElementById("optionModalTitle").textContent = "Add Option";
         document.getElementById("optionId").value = "";
         document.getElementById("optionIsAvailable").checked = true;
-        document.getElementById("optionModifierCategory").value = "";
         document.getElementById("optionAliases").value = "";
         document.getElementById("optionDeleteBtn").style.display = "none";
         // Reset ingredient dropdown and enable fields
@@ -1473,8 +1448,6 @@
       const displayOrder = parseInt(document.getElementById("optionOrder").value) || 0;
       const isDefault = document.getElementById("optionIsDefault").checked;
       const isAvailable = document.getElementById("optionIsAvailable").checked;
-      const modifierCategoryValue = document.getElementById("optionModifierCategory").value;
-      const modifierCategoryId = modifierCategoryValue ? parseInt(modifierCategoryValue) : null;
 
       // Get ingredient_id
       const ingredientVal = document.getElementById("optionIngredient").value;
@@ -1485,13 +1458,12 @@
       // Get display name for toast message (always visible in the form)
       const displayName = document.getElementById("optionDisplayName").value.trim();
 
-      // Build payload - backend derives slug/display_name from ingredient when linked
+      // Build payload - backend derives slug/display_name and modifier_category from ingredient when linked
       const payload = {
         price_modifier: priceModifier,
         display_order: displayOrder,
         is_default: isDefault,
         is_available: isAvailable,
-        modifier_category_id: modifierCategoryId,
         ingredient_id: ingredientId,
         aliases: aliases || null
       };
@@ -1635,14 +1607,6 @@
       filterAndPopulateIngredients();
     }
 
-    function populateFromIngModifierCategoryDropdown() {
-      const select = document.getElementById("fromIngModifierCategory");
-      select.innerHTML = '<option value="">(None)</option>' +
-        modifierCategories.map(cat =>
-          `<option value="${cat.id}">${escapeHtml(cat.display_name)}</option>`
-        ).join("");
-    }
-
     async function openFromIngredientModal() {
       if (!selectedAttrId) {
         showToast("Please select an attribute first", "error");
@@ -1661,12 +1625,6 @@
 
       // Load unlinked ingredients
       await loadUnlinkedIngredients();
-
-      // Load modifier categories if needed
-      if (modifierCategories.length === 0) {
-        await loadModifierCategories();
-      }
-      populateFromIngModifierCategoryDropdown();
 
       if (unlinkedIngredients.length === 0) {
         showToast("All ingredients are already linked to this attribute", "info");
@@ -1709,15 +1667,13 @@
       const displayOrder = parseInt(document.getElementById("fromIngOrder").value) || 0;
       const isDefault = document.getElementById("fromIngIsDefault").checked;
       const isAvailable = document.getElementById("fromIngIsAvailable").checked;
-      const modifierCategoryValue = document.getElementById("fromIngModifierCategory").value;
-      const modifierCategoryId = modifierCategoryValue ? parseInt(modifierCategoryValue) : null;
 
+      // modifier_category is derived from ingredient.category at runtime
       const payload = {
         price_modifier: priceModifier,
         display_order: displayOrder,
         is_default: isDefault,
-        is_available: isAvailable,
-        modifier_category_id: modifierCategoryId
+        is_available: isAvailable
       };
 
       const saveBtn = document.getElementById("fromIngredientSaveBtn");
@@ -1969,30 +1925,8 @@
       e.target.dataset.edited = "true";
     });
 
-    // Load modifier categories for dropdown
-    async function loadModifierCategories() {
-      try {
-        const response = await authFetch(MODIFIER_CATEGORIES_API);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        modifierCategories = await response.json();
-        populateModifierCategoryDropdown();
-      } catch (error) {
-        console.error("Failed to load modifier categories:", error);
-        // Non-critical, continue without categories
-      }
-    }
-
-    // Populate the modifier category dropdown
-    function populateModifierCategoryDropdown() {
-      const select = document.getElementById("optionModifierCategory");
-      select.innerHTML = '<option value="">(None)</option>' +
-        modifierCategories.map(cat =>
-          `<option value="${cat.id}">${escapeHtml(cat.display_name)}</option>`
-        ).join("");
-    }
-
-    // Initial load - call sequentially to ensure auth is set up first
-    loadAttributes().then(() => loadModifierCategories());
+    // Initial load
+    loadAttributes();
   </script>
   <script src="/static/admin_common.js"></script>
 </body>

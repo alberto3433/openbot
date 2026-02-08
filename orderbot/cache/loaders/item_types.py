@@ -38,9 +38,10 @@ class ItemTypeLoaderMixin:
             must_match = opt.ingredient.must_match
             ingredient_category = opt.ingredient.category
 
+        # Derive modifier_category from ingredient at runtime
         modifier_category_slug = None
-        if opt.modifier_category:
-            modifier_category_slug = opt.modifier_category.slug
+        if opt.ingredient and opt.ingredient.modifier_category:
+            modifier_category_slug = opt.ingredient.modifier_category.slug
 
         # Derive slug/display_name from ingredient when linked
         slug = opt.ingredient.slug if opt.ingredient else opt.slug

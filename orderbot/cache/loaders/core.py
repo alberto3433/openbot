@@ -188,8 +188,10 @@ class LoaderMixin(
                 selectinload(GlobalAttribute.options)
                     .selectinload(GlobalAttributeOption.ingredient)
                     .selectinload(Ingredient.must_match_records),
+                # Load modifier_category via ingredient (derived at runtime)
                 selectinload(GlobalAttribute.options)
-                    .selectinload(GlobalAttributeOption.modifier_category),
+                    .selectinload(GlobalAttributeOption.ingredient)
+                    .joinedload(Ingredient.modifier_category),
                 selectinload(GlobalAttribute.options)
                     .joinedload(GlobalAttributeOption.forward_to_attribute),
             )

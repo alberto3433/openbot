@@ -128,9 +128,8 @@ class GlobalAttributeOption(Base):
     # Options that need special parsing MUST link to an Ingredient
     ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="SET NULL"), nullable=True, index=True)
 
-    # Link to modifier category for sub-categorization within an attribute
-    # Used to answer "what milks do you have?" when milks/sweeteners/syrups are in same attribute
-    modifier_category_id = Column(Integer, ForeignKey("modifier_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Note: modifier_category is now derived at runtime from ingredient.category
+    # via the Ingredient.modifier_category relationship
 
     price_modifier = Column(Float, nullable=False, default=0.0)  # +/- to base price
     is_default = Column(Boolean, nullable=False, default=False)  # Pre-selected by default
@@ -162,7 +161,6 @@ class GlobalAttributeOption(Base):
     # Relationships
     attribute = relationship("GlobalAttribute", back_populates="options", foreign_keys=[global_attribute_id])
     ingredient = relationship("Ingredient", backref="global_attribute_options")
-    modifier_category = relationship("ModifierCategory", backref="global_attribute_options")
     alias_records = relationship(
         "GlobalAttributeOptionAlias",
         back_populates="option",

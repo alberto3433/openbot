@@ -12,20 +12,10 @@ import re
 from dataclasses import dataclass, field
 
 from .input_normalizer import InputNormalizer
+from .text import ORDINAL_PATTERNS
 from ..normalization import strip_filler_words
 
 logger = logging.getLogger(__name__)
-
-# Ordinal patterns for numbered list selection
-# Format: (pattern, 0-based index)
-ORDINAL_PATTERNS: list[tuple[str, int]] = [
-    ("first", 0), ("1", 0), ("one", 0),
-    ("second", 1), ("2", 1), ("two", 1),
-    ("third", 2), ("3", 2), ("three", 2),
-    ("fourth", 3), ("4", 3), ("four", 3),
-    ("fifth", 4), ("5", 4), ("five", 4),
-    ("sixth", 5), ("6", 5), ("six", 5),
-]
 
 
 @dataclass
@@ -297,7 +287,66 @@ class OptionMatcher:
                     matched_slugs.add(opt["slug"])
                     matched.append(opt)
 
+        # Deduplicate within same category: if specific must_match options matched
+        # alongside generic (no must_match) options, prefer the specific ones.
+        # e.g., "oat milk" matches oat_milk (must_match=["oat milk"]) AND whole_milk
+        # (no must_match). Since oat_milk has a specific must_match for this input,
+        # whole_milk should be dropped.
+        if len(matched) > 1:
+            matched = self._prefer_specific_must_match(user_input, matched)
+
         return matched
+
+    def _prefer_specific_must_match(
+        self, user_input: str, matched: list[dict]
+    ) -> list[dict]:
+        """Remove generic matches when a specific must_match winner exists in the same category.
+
+        Groups matched options by ingredient_category. Within each group, if some options
+        have a must_match that passes for the input and others have no must_match (generic),
+        keep only the specific must_match winners.
+
+        Options without a category or in categories with no must_match competition
+        are always kept.
+        """
+        from collections import defaultdict
+        by_category: dict[str | None, list[dict]] = defaultdict(list)
+        for opt in matched:
+            cat = opt.get("ingredient_category") or opt.get("category")
+            by_category[cat].append(opt)
+
+        result = []
+        for cat, opts in by_category.items():
+            if cat is None or len(opts) <= 1:
+                result.extend(opts)
+                continue
+
+            # Split into specific (has must_match that passes) and generic (no must_match)
+            specific = []
+            generic = []
+            for opt in opts:
+                mm = opt.get("must_match")
+                if mm and self._passes_must_match(user_input, opt):
+                    specific.append(opt)
+                elif not mm:
+                    generic.append(opt)
+                else:
+                    # Has must_match but didn't pass - shouldn't be here, keep it
+                    result.append(opt)
+
+            if specific and generic:
+                # Specific winners found - drop generic matches in this category
+                logger.debug(
+                    "MUST_MATCH DEDUP: keeping specific %s, dropping generic %s for input '%s'",
+                    [o["slug"] for o in specific], [o["slug"] for o in generic], user_input
+                )
+                result.extend(specific)
+            else:
+                # No competition - keep all
+                result.extend(specific)
+                result.extend(generic)
+
+        return result
 
     def match_multiple_with_unmatched(
         self, user_input: str, options: list[dict]
@@ -641,12 +690,8 @@ class OptionMatcher:
 
     def _get_aliases(self, opt: dict) -> list[str]:
         """Get aliases from option, handling both pipe and comma separated formats."""
-        aliases_raw = opt.get("aliases", [])
-        if isinstance(aliases_raw, str):
-            if "|" in aliases_raw:
-                return [a.strip() for a in aliases_raw.split("|") if a.strip()]
-            return [a.strip() for a in aliases_raw.split(",") if a.strip()]
-        return aliases_raw or []
+        from .disambiguation_utils import get_aliases
+        return get_aliases(opt)
 
     def _is_whole_word_match(self, needle: str, haystack: str) -> bool:
         """Check if needle appears as a whole word/phrase in haystack."""

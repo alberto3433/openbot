@@ -356,15 +356,12 @@ class ConfigSelectionHandler:
         # Check if there are other items queued for configuration
         # This handles the case where disambiguation was triggered after other items
         # were already added (e.g., "an everything bagel and a latte")
-        if order.has_queued_config_items() and self.menu_item_handler:
-            next_config = order.pop_next_config_item()
-            next_item = order.items.get_item_by_id(next_config["item_id"])
-            if next_item and isinstance(next_item, MenuItemTask):
-                logger.info(
-                    "Processing queued item after disambiguation: %s (%s)",
-                    next_config.get("item_name"), next_config["item_id"][:8]
-                )
-                return self.menu_item_handler.get_first_question(next_item, order)
+        from .handler_utils import process_next_queued_item
+        queued_result = process_next_queued_item(
+            order, self.menu_item_handler, "after disambiguation"
+        )
+        if queued_result:
+            return queued_result
 
         # Return to taking items phase for items not requiring side choice
         order.set_phase(OrderPhase.TAKING_ITEMS)

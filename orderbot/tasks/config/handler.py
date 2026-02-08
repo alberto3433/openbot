@@ -34,6 +34,7 @@ from .selection_extractor import SelectionExtractor
 from .direct_option_matcher import DirectOptionMatcher
 from ..response_utils import is_negative, is_affirmative
 from .quantity_input import QuantityInputHandler
+from .package_input import PackageInputHandler
 from .attribute_capture import capture_attributes_from_input
 from .customization_checkpoint import CustomizationCheckpointHandler
 from .attribute_resolver import (
@@ -123,6 +124,10 @@ class MenuItemConfigHandler(BaseHandler):
             ctx=self._ctx,
         )
         self._quantity_input_handler = QuantityInputHandler(ctx=self._ctx)
+        self._package_input_handler = PackageInputHandler(
+            option_matcher=self._option_matcher,
+            input_normalizer=self._input_normalizer,
+        )
         self._customization_checkpoint_handler = CustomizationCheckpointHandler(
             options_inquiry_handler=self._options_inquiry_handler,
             ctx=self._ctx,
@@ -417,15 +422,12 @@ class MenuItemConfigHandler(BaseHandler):
             # Check if there are other items queued for configuration
             # This handles the case where disambiguation was triggered after other items
             # were already added (e.g., "an everything bagel and a latte")
-            if order.has_queued_config_items():
-                next_config = order.pop_next_config_item()
-                next_item = order.items.get_item_by_id(next_config["item_id"])
-                if next_item and isinstance(next_item, MenuItemTask):
-                    logger.info(
-                        "Processing queued item after completing %s: %s (%s)",
-                        item.get_display_name(), next_config.get("item_name"), next_config["item_id"][:8]
-                    )
-                    return self.get_first_question(next_item, order)
+            from ..handler_utils import process_next_queued_item
+            queued_result = process_next_queued_item(
+                order, self, f"after completing {item.get_display_name()}"
+            )
+            if queued_result:
+                return queued_result
 
             # Check for other incomplete items that need configuration
             # This handles duplicated items (e.g., "make it two hot teas")
@@ -710,13 +712,105 @@ class MenuItemConfigHandler(BaseHandler):
         if input_type == "quantity":
             return self._handle_quantity_input(user_input, item, order, attr, options)
 
+        # Handle package_multi_select (bagel packages - specify types like "3 plain, 2 everything")
+        if input_type == "package_multi_select":
+            return self._handle_package_input(user_input, item, order, attr)
+
         # Handle single/multi select
         if input_type in ("single_select", "multi_select"):
+            # Check for forward delegation: if any option has forward_to_attribute set,
+            # check if user input matches the target attribute's options
+            forward_result = self._check_forward_delegation(
+                user_input, item, order, attr, options, attrs
+            )
+            if forward_result:
+                return forward_result
+
             return self._handle_select_input(user_input, item, order, attr, options)
 
         # Default: store raw input
         item[attr_slug] = user_input.strip()
         return self._advance_to_next_question(item, order, attr)
+
+    def _check_forward_delegation(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+        attr: dict,
+        options: list[dict],
+        attrs: dict,
+    ) -> StateMachineResult | None:
+        """Check if user input matches a forward-to attribute's options.
+
+        This implements data-driven forward delegation: when an option has
+        forward_to_attribute set, and user input matches the target attribute's
+        options, we auto-select this option and forward to the target attribute.
+
+        Example: package_variety has a "custom" option with forward_to_attribute="package_contents".
+        If user says "2 plain 2 everything" instead of "custom", we:
+        1. Auto-select "custom" for package_variety
+        2. Forward input to package_contents handler
+
+        Args:
+            user_input: The user's input string
+            item: The menu item being configured
+            order: Current order state
+            attr: Current attribute configuration
+            options: Options for the current attribute
+            attrs: All attributes for this item type
+
+        Returns:
+            StateMachineResult if forwarding occurred, None otherwise
+        """
+        attr_slug = attr["slug"]
+
+        # Find options with forward delegation configured
+        for opt in options:
+            forward_to_attr_slug = opt.get("forward_to_attribute")
+            if not forward_to_attr_slug:
+                continue
+
+            # Get the target attribute
+            target_attr = attrs.get(forward_to_attr_slug)
+            if not target_attr:
+                logger.debug(
+                    "FORWARD_DELEGATION: Target attribute '%s' not found for option '%s'",
+                    forward_to_attr_slug,
+                    opt.get("slug"),
+                )
+                continue
+
+            # Check if user input matches target attribute's options
+            # For package_multi_select, use looks_like_package_contents
+            target_input_type = target_attr.get("input_type")
+            if target_input_type == "package_multi_select":
+                # Get the options_source_category from the target attribute (data-driven)
+                target_attr_slug = target_attr.get("slug")
+                options_source_category = menu_cache.get_options_source_category(target_attr_slug)
+
+                if self._package_input_handler.looks_like_package_contents(
+                    user_input, item, options_source_category
+                ):
+                    logger.info(
+                        "FORWARD_DELEGATION: User provided '%s' matching %s options, "
+                        "auto-selecting '%s' and forwarding",
+                        user_input,
+                        forward_to_attr_slug,
+                        opt.get("slug"),
+                    )
+                    # Auto-select this option
+                    item.add_selection(
+                        slug=opt["slug"],
+                        category=attr_slug,
+                        quantity=1,
+                        price=opt.get("price_modifier", 0),
+                        display_name=opt.get("display_name"),
+                    )
+                    # Forward to target attribute handler
+                    return self._handle_package_input(user_input, item, order, target_attr)
+
+        return None
 
     def _handle_boolean_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask, attr: dict
@@ -767,10 +861,31 @@ class MenuItemConfigHandler(BaseHandler):
         if bool_value is None:
             if f"not {attr_name}" in user_lower or f"un{attr_name}" in user_lower:
                 bool_value = False
-            elif any(p in user_lower for p in yes_patterns) or attr_name in user_lower:
-                bool_value = True
-            elif any(p in user_lower for p in no_patterns):
-                bool_value = False
+            else:
+                # Find first occurrence of yes/no patterns - first one wins
+                first_yes_pos = float('inf')
+                first_no_pos = float('inf')
+
+                for p in no_patterns:
+                    pos = user_lower.find(p)
+                    if pos != -1 and pos < first_no_pos:
+                        first_no_pos = pos
+
+                for p in yes_patterns:
+                    pos = user_lower.find(p)
+                    if pos != -1 and pos < first_yes_pos:
+                        first_yes_pos = pos
+
+                # Also check for attr_name
+                attr_pos = user_lower.find(attr_name)
+                if attr_pos != -1 and attr_pos < first_yes_pos:
+                    first_yes_pos = attr_pos
+
+                # First occurrence wins
+                if first_no_pos < first_yes_pos:
+                    bool_value = False
+                elif first_yes_pos < first_no_pos:
+                    bool_value = True
 
         if bool_value is None:
             # Couldn't parse, ask again
@@ -808,6 +923,56 @@ class MenuItemConfigHandler(BaseHandler):
         """
         return self._quantity_input_handler.handle_quantity_input(
             user_input, item, order, attr, options
+        )
+
+    def _handle_package_input(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+        attr: dict,
+    ) -> StateMachineResult:
+        """Handle package_multi_select input (bagel packages).
+
+        Parses input like "3 plain, 2 everything, 1 sesame" and validates
+        against the pack size. Delegates to PackageInputHandler.
+        """
+        # Get options from the ingredient category specified in the attribute
+        # This is data-driven: options_source_category tells us which ingredient category to use
+        attr_slug = attr.get("slug")
+        options_source_category = menu_cache.get_options_source_category(attr_slug)
+        if not options_source_category:
+            logger.warning(
+                "No options_source_category configured for attribute '%s', defaulting to 'bread'",
+                attr_slug,
+            )
+            options_source_category = "bread"
+
+        raw_options = menu_cache.get_ingredient_details(options_source_category)
+        if not raw_options:
+            logger.warning(
+                "No options found for category '%s' in package input",
+                options_source_category,
+            )
+            package_options = []
+        else:
+            # Transform ingredient details to matcher-compatible format
+            package_options = [
+                {
+                    "slug": opt["slug"],
+                    "display_name": opt["name"],
+                    "aliases": opt.get("patterns", []),
+                }
+                for opt in raw_options
+            ]
+
+        return self._package_input_handler.handle_package_input(
+            user_input=user_input,
+            item=item,
+            order=order,
+            attr=attr,
+            options=package_options,
+            advance_callback=self._advance_to_next_question,
         )
 
     def _handle_select_input(

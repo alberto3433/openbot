@@ -237,3 +237,44 @@ def remove_item_from_order(order: "OrderTask", item: "MenuItemTask") -> bool:
         return True
     except ValueError:
         return False
+
+
+def process_next_queued_item(
+    order: "OrderTask",
+    menu_item_handler,
+    log_context: str = "",
+) -> "StateMachineResult | None":
+    """Process the next queued item for configuration.
+
+    Common pattern used across handlers when completing one item's configuration
+    and needing to check if there are more items waiting in the queue.
+
+    Args:
+        order: The current order with potential queued config items
+        menu_item_handler: Handler with get_first_question() method
+        log_context: Optional context string for logging (e.g., "after disambiguation")
+
+    Returns:
+        StateMachineResult if a queued item was processed, None otherwise
+    """
+    from .models import MenuItemTask
+
+    if not order.has_queued_config_items() or not menu_item_handler:
+        return None
+
+    next_config = order.pop_next_config_item()
+    if not next_config:
+        return None
+
+    next_item = order.items.get_item_by_id(next_config["item_id"])
+    if not isinstance(next_item, MenuItemTask):
+        return None
+
+    context_str = f"{log_context}: " if log_context else ""
+    logger.info(
+        "%sProcessing queued item %s (%s)",
+        context_str,
+        next_config.get("item_name"),
+        next_config["item_id"][:8]
+    )
+    return menu_item_handler.get_first_question(next_item, order)

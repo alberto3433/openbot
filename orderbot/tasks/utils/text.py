@@ -2,15 +2,40 @@
 Text formatting utilities for human-readable output.
 """
 
+# =============================================================================
+# Unified Ordinal Definitions
+# =============================================================================
+# Single source of truth for ordinal mappings used across the codebase.
 
-# Ordinal word mapping for selection parsing
-ORDINAL_MAP = {
-    "first": 0, "1st": 0, "the first": 0, "the first one": 0,
-    "second": 1, "2nd": 1, "the second": 1, "the second one": 1,
-    "third": 2, "3rd": 2, "the third": 2, "the third one": 2,
-    "fourth": 3, "4th": 3, "the fourth": 3, "the fourth one": 3,
-    "fifth": 4, "5th": 4, "the fifth": 4, "the fifth one": 4,
+# Base ordinal words
+_BASE_ORDINALS = {
+    "first": 0, "second": 1, "third": 2, "fourth": 3, "fifth": 4, "sixth": 5,
 }
+
+# Numeric representations
+_NUMERIC = {"1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5}
+
+# Suffixed ordinals (1st, 2nd, etc.)
+_SUFFIXED = {"1st": 0, "2nd": 1, "3rd": 2, "4th": 3, "5th": 4}
+
+# Number words
+_WORDS = {"one": 0, "two": 1, "three": 2, "four": 3, "five": 4, "six": 5}
+
+# For dict lookups (selection parsing) - includes "the first", "the first one", etc.
+ORDINAL_MAP = {
+    **_BASE_ORDINALS,
+    **_SUFFIXED,
+    **_NUMERIC,
+    **{f"the {k}": v for k, v in _BASE_ORDINALS.items()},
+    **{f"the {k} one": v for k, v in _BASE_ORDINALS.items()},
+}
+
+# For pattern matching (list selection) - tuples sorted longest first
+# Used by OptionMatcher._match_by_ordinal()
+ORDINAL_PATTERNS: list[tuple[str, int]] = sorted(
+    [(k, v) for d in [_BASE_ORDINALS, _NUMERIC, _WORDS] for k, v in d.items()],
+    key=lambda x: -len(x[0])  # Longest first to match "second" before "one"
+)
 
 
 def parse_selection(text: str, max_options: int) -> int | None:

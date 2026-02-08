@@ -864,6 +864,7 @@ class ItemAdderHandler(MenuDataMixin):
             # Check if there are other items queued for configuration
             # If so, configure them first (they were ordered earlier in the conversation)
             if order.has_queued_config_items():
+                from .handler_utils import process_next_queued_item
                 # Queue this item for later
                 order.queue_item_for_config(first_item.id, item_type, item_name=canonical_name)
                 logger.info(
@@ -871,14 +872,11 @@ class ItemAdderHandler(MenuDataMixin):
                     canonical_name, first_item.id[:8]
                 )
                 # Start config for the first queued item
-                next_config = order.pop_next_config_item()
-                next_item = order.items.get_item_by_id(next_config["item_id"])
-                if next_item and isinstance(next_item, MenuItemTask):
-                    logger.info(
-                        "Processing queued item before new: %s (%s)",
-                        next_config.get("item_name"), next_config["item_id"][:8]
-                    )
-                    return self.menu_item_handler.get_first_question(next_item, order)
+                queued_result = process_next_queued_item(
+                    order, self.menu_item_handler, "before new item"
+                )
+                if queued_result:
+                    return queued_result
 
             # Start configuration flow for this item
             return self.menu_item_handler.get_first_question(first_item, order)
@@ -898,15 +896,12 @@ class ItemAdderHandler(MenuDataMixin):
             # Check if there are other items queued for configuration
             # This handles the case where disambiguation was triggered after other items
             # were already added (e.g., "an everything bagel and a latte")
-            if order.has_queued_config_items() and self.menu_item_handler:
-                next_config = order.pop_next_config_item()
-                next_item = order.items.get_item_by_id(next_config["item_id"])
-                if next_item and isinstance(next_item, MenuItemTask):
-                    logger.info(
-                        "Processing queued item after non-configurable: %s (%s)",
-                        next_config.get("item_name"), next_config["item_id"][:8]
-                    )
-                    return self.menu_item_handler.get_first_question(next_item, order)
+            from .handler_utils import process_next_queued_item
+            queued_result = process_next_queued_item(
+                order, self.menu_item_handler, "after non-configurable"
+            )
+            if queued_result:
+                return queued_result
 
             # No queued items - return confirmation
             # Use get_display_name() to include unit suffix (e.g., "(3 pack)")

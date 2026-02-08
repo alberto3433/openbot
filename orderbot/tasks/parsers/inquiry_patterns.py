@@ -411,6 +411,9 @@ AVAILABILITY_PATTERNS = [
     re.compile(r"is\s+(?:the\s+)?(.+?)\s+still\s+(?:available|in\s+stock)\s*\??$", re.IGNORECASE),
     # "any X left?" / "any everything bagels left?"
     re.compile(r"any\s+(.+?)\s+left\s*\??$", re.IGNORECASE),
+    # "do you have X" (simple availability question, "any" and "?" are optional)
+    # This is the broadest pattern - must be last so more specific patterns match first
+    re.compile(r"do\s+you\s+have\s+(?:any\s+)?(.+?)\s*\??$", re.IGNORECASE),
 ]
 
 

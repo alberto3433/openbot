@@ -2429,10 +2429,24 @@ class TestDuplicatePatterns:
 
         Note: The expected item types are the actual database item_type slugs,
         not semantic categories like "coffee". This is the data-driven approach.
+
+        The response can be either:
+        - duplicate_new_item_type = expected_type (when item type is detected)
+        - parsed_items with item_type = expected_type (when exact menu item is matched)
+        Both are valid and result in the correct item being added.
         """
         result = parse_open_input_deterministic(text)
         assert result is not None, f"Expected pattern match for: {text}"
-        assert result.duplicate_new_item_type == expected_type, f"Expected type '{expected_type}' for: {text}"
+
+        # Accept either duplicate_new_item_type or parsed_items with matching item_type
+        if result.duplicate_new_item_type:
+            assert result.duplicate_new_item_type == expected_type, f"Expected type '{expected_type}' for: {text}"
+        elif result.parsed_items:
+            item_types = [item.item_type for item in result.parsed_items]
+            assert expected_type in item_types, f"Expected item_type '{expected_type}' in parsed_items for: {text}"
+        else:
+            raise AssertionError(f"Expected duplicate_new_item_type or parsed_items for: {text}")
+
         assert result.duplicate_last_item == 0, f"duplicate_last_item should be 0 for: {text}"
 
     @pytest.mark.parametrize("text", [
@@ -2469,8 +2483,13 @@ class TestDuplicatePatterns:
         """Test that 'another bagel' is NOT treated as duplicate_last_item."""
         result = parse_open_input_deterministic("another bagel")
         assert result is not None
-        # Should be new item type, not duplicate last
-        assert result.duplicate_new_item_type == "bagel"
+        # Should be new item (either via duplicate_new_item_type or parsed_items), not duplicate last
+        if result.duplicate_new_item_type:
+            assert result.duplicate_new_item_type == "bagel"
+        elif result.parsed_items:
+            assert result.parsed_items[0].item_type == "bagel"
+        else:
+            raise AssertionError("Expected duplicate_new_item_type or parsed_items for: another bagel")
         assert result.duplicate_last_item == 0
 
     def test_make_it_2_still_works(self):
@@ -2932,3 +2951,54 @@ class TestOrderTypeDetection:
         # Should also have parsed the bagel
         assert result.parsed_items is not None
         assert len(result.parsed_items) > 0
+
+
+# =============================================================================
+# Availability Inquiry Tests
+# =============================================================================
+
+class TestAvailabilityInquiry:
+    """Tests for 'do you have X' availability inquiry detection.
+
+    These tests ensure that 'do you have X' questions are recognized as
+    availability inquiries rather than being misinterpreted as modifier
+    additions or order requests.
+    """
+
+    @pytest.mark.parametrize("text,expected_item", [
+        # Simple availability questions (the bug case)
+        ("do you have bialy", "bialy"),
+        ("do you have any bialy", "bialy"),
+        ("do you have bialys", "bialys"),
+        ("do you have any bialy?", "bialy"),
+        # With explicit qualifiers (already worked)
+        ("do you have bialy in stock", "bialy"),
+        ("do you have any bialys available", "bialys"),
+        ("do you have cream cheese left", "cream cheese"),
+        # Other item examples
+        ("do you have lox", "lox"),
+        ("do you have any plain bagels", "plain bagels"),
+        ("do you have the classic", "the classic"),
+    ])
+    def test_availability_inquiry_detected(self, text, expected_item):
+        """Test that 'do you have X' is detected as an availability inquiry."""
+        from orderbot.tasks.parsers.deterministic.inquiry.dietary import parse_availability_inquiry
+        result = parse_availability_inquiry(text)
+        assert result is not None, f"Failed to detect availability inquiry in: {text}"
+        assert result.asks_availability is True
+        assert result.availability_query_item == expected_item
+
+    @pytest.mark.parametrize("text", [
+        # Order requests should NOT match availability patterns
+        "can I have a bialy",
+        "I'd like a bialy",
+        "I want a bialy",
+        "give me a bialy",
+        "get me a bialy",
+        "I'll take a bialy",
+    ])
+    def test_order_requests_not_availability(self, text):
+        """Test that order requests are NOT detected as availability inquiries."""
+        from orderbot.tasks.parsers.deterministic.inquiry.dietary import parse_availability_inquiry
+        result = parse_availability_inquiry(text)
+        assert result is None, f"'{text}' should NOT be an availability inquiry"

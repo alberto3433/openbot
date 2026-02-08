@@ -289,8 +289,8 @@ class TakingItemsHandler(MenuDataMixin):
         if result:
             return result
 
-        # Handle "add [modifier]" patterns that modify the last item
-        result = self._handle_add_modifier_to_last_item(raw_user_input, order)
+        # Fallback: handle single_select attribute modifications not caught by EarlyPatternHandler
+        result = self._handle_single_select_attribute_fallback(raw_user_input, order)
         if result:
             return result
 
@@ -467,13 +467,13 @@ class TakingItemsHandler(MenuDataMixin):
         """Handle modification to existing item - delegates to ItemModificationHandler."""
         return self.item_modification_handler.handle_modify_existing_item(parsed, order, raw_user_input)
 
-    def _handle_add_modifier_to_last_item(
+    def _handle_single_select_attribute_fallback(
         self,
         raw_user_input: str | None,
         order: OrderTask,
     ) -> StateMachineResult | None:
-        """Handle 'add [modifier]' patterns - delegates to ModifierInputHandler."""
-        return self._modifier_input_handler.handle_add_modifier_to_last_item(raw_user_input, order)
+        """Fallback for single_select attribute modifications not caught by EarlyPatternHandler."""
+        return self._modifier_input_handler.handle_single_select_attribute_fallback(raw_user_input, order)
 
     def _handle_ingredient_search(
         self,

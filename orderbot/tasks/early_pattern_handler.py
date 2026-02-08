@@ -224,6 +224,12 @@ class EarlyPatternHandler:
             StateMachineResult if modifier added, None otherwise.
         """
         input_lower = user_input.lower().strip()
+
+        # Don't treat "do you have X" questions as modifier inputs
+        # These are availability inquiries, not order requests
+        if re.search(r'\bdo\s+you\s+have\b', input_lower):
+            return None
+
         active_items = order.items.get_active_items()
 
         is_add_modifier_request = any(

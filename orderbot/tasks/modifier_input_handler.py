@@ -391,18 +391,23 @@ class ModifierInputHandler:
         """
         self.pricing = pricing
 
-    def handle_add_modifier_to_last_item(
+    def handle_single_select_attribute_fallback(
         self,
         raw_user_input: str | None,
         order: "OrderTask",
     ) -> StateMachineResult | None:
-        """Handle 'add [modifier]' patterns that modify the last item.
+        """Fallback handler for single_select attribute modifications.
 
-        Handles patterns like:
-        - "add vanilla syrup", "add oat milk", "with caramel"
-        - Pure modifier input (just "vanilla" when there's a coffee in cart)
-        - Category-level modifier removal ("no milk", "without syrup")
-        - Single_select attribute modifier updates
+        This is a FALLBACK that runs after EarlyPatternHandler. It handles cases
+        where an ingredient maps to a single_select attribute on an item, but
+        wasn't caught by add_modifiers_from_input().
+
+        Example: "add butter" where "butter" is an ingredient in the "spread"
+        category, and the item has a single_select "spread" attribute.
+
+        NOTE: The main modifier handling (ADD_MODIFIER_PATTERNS, pure modifier
+        detection, category removal) is done by EarlyPatternHandler. This method
+        only handles the single_select attribute edge case.
 
         Args:
             raw_user_input: The raw user input string.
@@ -417,156 +422,77 @@ class ModifierInputHandler:
         input_lower = raw_user_input.lower().strip()
         active_items = order.items.get_active_items()
 
-        # Check if this looks like a modifier addition for the last item
-        # Patterns: "add X", "with X", "can I get X", "I'd like X added"
+        if not active_items:
+            return None
+
+        # Only run this fallback for "add X" style patterns
+        # Other patterns are fully handled by EarlyPatternHandler
         is_add_modifier_request = any(
             re.search(pattern, input_lower) for pattern in ADD_MODIFIER_PATTERNS
         )
 
-        # Check if this is a pure modifier input for the last item (data-driven)
-        # Get modifier patterns based on the last item's type
-        is_pure_modifier_input = False
-        has_item_modifier = False
-        item_modifier_patterns: set[str] = set()
+        if not is_add_modifier_request:
+            return None
 
-        if active_items:
-            last_item_check = get_last_item(active_items)
-            if is_configurable_menu_item(last_item_check):
-                # Get modifier patterns for this specific item type (data-driven)
-                item_modifier_patterns = get_all_modifier_patterns_for_item(last_item_check.menu_item_type)
-                # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
-                has_item_modifier = any(
-                    match_pattern_in_input(mod, input_lower)
-                    for mod in item_modifier_patterns
-                )
+        # Check if input contains a modifier from a single_select attribute category
+        # Data-driven: loop through ingredient categories and find single_select attributes
+        from .models import MenuItemTask
 
-        if has_item_modifier and active_items:
-            last_item_check = get_last_item(active_items)
-            # Check if item accepts input modifiers (data-driven)
-            accepts_modifiers = (
-                is_configurable_menu_item(last_item_check) and
-                menu_cache.item_accepts_input_modifiers(last_item_check.menu_item_type)
+        for category in menu_cache.get_all_ingredient_categories():
+            # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
+            detected_modifier = find_first_word_boundary_match(
+                input_lower,
+                menu_cache.get_ingredients(category),
             )
-            if accepts_modifiers:
-                # Check if input is ONLY a modifier (no other item keywords)
-                # Use item keywords from database (menu item names + item type slugs)
-                # Exclude modifier patterns from the check since "vanilla" is both
-                # a modifier pattern AND might be an item keyword (e.g., "Vanilla Latte")
-                item_keywords = menu_cache.get_item_keywords()
-                non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
-                has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
-                if not has_other_item:
-                    is_pure_modifier_input = True
 
-        # If it's an "add modifier" pattern OR pure modifier input, modify the last item
-        if (is_add_modifier_request or is_pure_modifier_input) and has_item_modifier and active_items:
-            last_item = get_last_item(active_items)
+            if detected_modifier:
+                # Find items that have a single_select attribute for this category
+                items_accepting_modifier = []
+                for item in active_items:
+                    if not isinstance(item, MenuItemTask):
+                        continue
+                    attr_slug = menu_cache.get_attribute_for_category(item.menu_item_type, category)
+                    if attr_slug:
+                        input_type = menu_cache.get_attribute_input_type(item.menu_item_type, attr_slug)
+                        if input_type == "single_select":
+                            items_accepting_modifier.append((item, attr_slug))
 
-            # First check if item type is configurable at all
-            if is_configurable_menu_item(last_item):
-                if not menu_cache.is_item_type_configurable(last_item.menu_item_type):
-                    logger.info(
-                        "Rejected modification for non-configurable item type '%s'",
-                        last_item.menu_item_type
-                    )
-                    return StateMachineResult(
-                        message=item_not_customizable(
-                            last_item.menu_item_name or last_item.get_display_name()
-                        ),
-                        order=order,
-                    )
+                if items_accepting_modifier:
+                    target_item = None
+                    target_attr = None
 
-            # Check if item accepts input modifiers (data-driven)
-            accepts_modifiers = (
-                is_configurable_menu_item(last_item) and
-                menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
-            )
-            if accepts_modifiers:
-                made_change = add_modifiers_from_input(last_item, input_lower)
+                    # Prefer item without value set
+                    for item, attr_slug in reversed(items_accepting_modifier):
+                        if item.get(attr_slug) is None:
+                            target_item = item
+                            target_attr = attr_slug
+                            break
 
-                if made_change:
-                    updated_summary = recalculate_and_summarize(last_item, self.pricing)
-                    return StateMachineResult(
-                        message=sure_added_to_anything_else(updated_summary),
-                        order=order,
-                    )
+                    # If all items have values, use the most recent one
+                    if target_item is None:
+                        target_item, target_attr = items_accepting_modifier[-1]
 
-        # Check for category-level modifier removal using templatized patterns
-        # e.g., "no milk", "without syrup", "remove the sweetener"
-        # This is data-driven: patterns generated from database category names
-        if active_items:
-            last_item = get_last_item(active_items)
-            if is_configurable_menu_item(last_item):
-                removed_category = match_category_removal_pattern(input_lower, last_item.menu_item_type)
-                if removed_category:
-                    if remove_modifiers_by_category(last_item, removed_category):
-                        updated_summary = recalculate_and_summarize(last_item, self.pricing)
-                        category_display = menu_cache.get_ingredient_category_display_name(removed_category)
+                    # Normalize and set the value (REPLACE behavior for single_select)
+                    normalized_modifier = menu_cache.normalize_modifier(detected_modifier)
+                    old_value = target_item.get(target_attr)
+                    target_item[target_attr] = normalized_modifier
+
+                    # Recalculate price
+                    updated_summary = recalculate_and_summarize(target_item, self.pricing)
+                    category_display = menu_cache.get_ingredient_category_display_name(category)
+
+                    if old_value:
+                        logger.info("Add %s: changed from '%s' to '%s' on item", category, old_value, normalized_modifier)
                         return StateMachineResult(
-                            message=sure_removed_anything_else(category_display.lower(), updated_summary),
+                            message=sure_changed_anything_else(category_display.lower(), normalized_modifier, updated_summary),
                             order=order,
                         )
-
-        if is_add_modifier_request and active_items:
-            # Check if input contains a modifier from a single_select attribute category
-            # Data-driven: loop through ingredient categories and find single_select attributes
-            from .models import MenuItemTask
-
-            for category in menu_cache.get_all_ingredient_categories():
-                # Use word-boundary matching to avoid false positives (e.g., "egg" in "veggie")
-                detected_modifier = find_first_word_boundary_match(
-                    input_lower,
-                    menu_cache.get_ingredients(category),
-                )
-
-                if detected_modifier:
-                    # Find items that have a single_select attribute for this category
-                    items_accepting_modifier = []
-                    for item in active_items:
-                        if not isinstance(item, MenuItemTask):
-                            continue
-                        attr_slug = menu_cache.get_attribute_for_category(item.menu_item_type, category)
-                        if attr_slug:
-                            input_type = menu_cache.get_attribute_input_type(item.menu_item_type, attr_slug)
-                            if input_type == "single_select":
-                                items_accepting_modifier.append((item, attr_slug))
-
-                    if items_accepting_modifier:
-                        target_item = None
-                        target_attr = None
-
-                        # Prefer item without value set
-                        for item, attr_slug in reversed(items_accepting_modifier):
-                            if item.get(attr_slug) is None:
-                                target_item = item
-                                target_attr = attr_slug
-                                break
-
-                        # If all items have values, use the most recent one
-                        if target_item is None:
-                            target_item, target_attr = items_accepting_modifier[-1]
-
-                        # Normalize and set the value (REPLACE behavior for single_select)
-                        normalized_modifier = menu_cache.normalize_modifier(detected_modifier)
-                        old_value = target_item.get(target_attr)
-                        target_item[target_attr] = normalized_modifier
-
-                        # Recalculate price
-                        updated_summary = recalculate_and_summarize(target_item, self.pricing)
-                        category_display = menu_cache.get_ingredient_category_display_name(category)
-
-                        if old_value:
-                            logger.info("Add %s: changed from '%s' to '%s' on item", category, old_value, normalized_modifier)
-                            return StateMachineResult(
-                                message=sure_changed_anything_else(category_display.lower(), normalized_modifier, updated_summary),
-                                order=order,
-                            )
-                        else:
-                            logger.info("Add %s: added '%s' to item", category, normalized_modifier)
-                            return StateMachineResult(
-                                message=sure_added_to_anything_else(updated_summary),
-                                order=order,
-                            )
+                    else:
+                        logger.info("Add %s: added '%s' to item", category, normalized_modifier)
+                        return StateMachineResult(
+                            message=sure_added_to_anything_else(updated_summary),
+                            order=order,
+                        )
 
         return None
 
@@ -606,7 +532,11 @@ class ModifierInputHandler:
             if accepts_modifiers:
                 item_keywords = menu_cache.get_item_keywords()
                 non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
-                has_other_item = any(kw in input_lower for kw in non_modifier_keywords)
+                # Use word-boundary matching to avoid false positives
+                has_other_item = any(
+                    re.search(rf'\b{re.escape(kw)}\b', input_lower)
+                    for kw in non_modifier_keywords
+                )
                 if not has_other_item:
                     return True, item_modifier_patterns
 

@@ -599,3 +599,143 @@ class TestFieldConfigHelpers:
         # Size with no value SHOULD be asked (ask_if_empty=True)
         # Note: The database item type is "sized_beverage" (not "coffee")
         assert should_ask_field("sized_beverage", "size", None) is True
+
+
+# =============================================================================
+# Quantity-Aware Modifier Removal Tests
+# =============================================================================
+
+class TestQuantityAwareRemoval:
+    """Tests for quantity-aware modifier removal (decrement_by parameter)."""
+
+    def test_decrement_selection_reduces_quantity(self):
+        """Test that decrement_by reduces quantity instead of removing."""
+        from orderbot.tasks.models import MenuItemTask
+
+        item = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="espresso_based",
+        )
+        # Add 5 shots
+        item.add_selection("shot", "espresso_shots", quantity=5)
+
+        # Verify initial state
+        sel = item.get_selection("espresso_shots")
+        assert sel is not None
+        assert sel["quantity"] == 5
+
+        # Decrement by 1
+        removed = item.remove_selection("espresso_shots", "shot", decrement_by=1)
+        assert removed is True
+
+        # Verify quantity was decremented
+        sel = item.get_selection("espresso_shots")
+        assert sel is not None
+        assert sel["quantity"] == 4
+
+    def test_decrement_to_zero_removes_selection(self):
+        """Test that decrement_by that reaches 0 removes the selection entirely."""
+        from orderbot.tasks.models import MenuItemTask
+
+        item = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="espresso_based",
+        )
+        # Add 2 shots
+        item.add_selection("shot", "espresso_shots", quantity=2)
+
+        # Decrement by 2 (exact removal)
+        removed = item.remove_selection("espresso_shots", "shot", decrement_by=2)
+        assert removed is True
+
+        # Verify selection was removed
+        sel = item.get_selection("espresso_shots")
+        assert sel is None
+
+    def test_over_decrement_removes_selection(self):
+        """Test that decrement_by larger than quantity removes the selection."""
+        from orderbot.tasks.models import MenuItemTask
+
+        item = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="espresso_based",
+        )
+        # Add 3 shots
+        item.add_selection("shot", "espresso_shots", quantity=3)
+
+        # Decrement by 10 (more than available)
+        removed = item.remove_selection("espresso_shots", "shot", decrement_by=10)
+        assert removed is True
+
+        # Verify selection was removed entirely
+        sel = item.get_selection("espresso_shots")
+        assert sel is None
+
+    def test_no_decrement_by_removes_all(self):
+        """Test that None decrement_by removes entire selection (existing behavior)."""
+        from orderbot.tasks.models import MenuItemTask
+
+        item = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="espresso_based",
+        )
+        # Add 5 shots
+        item.add_selection("shot", "espresso_shots", quantity=5)
+
+        # Remove without decrement_by
+        removed = item.remove_selection("espresso_shots", "shot", decrement_by=None)
+        assert removed is True
+
+        # Verify selection was fully removed
+        sel = item.get_selection("espresso_shots")
+        assert sel is None
+
+    def test_decrement_without_slug_removes_all(self):
+        """Test that decrement_by is ignored when slug is None (removes all in category)."""
+        from orderbot.tasks.models import MenuItemTask
+
+        item = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="espresso_based",
+        )
+        # Add multiple selections in same category
+        item.add_selection("shot", "espresso_shots", quantity=3)
+        item.add_selection("decaf_shot", "espresso_shots", quantity=2)
+
+        # Remove all in category (slug=None)
+        removed = item.remove_selection("espresso_shots", slug=None, decrement_by=1)
+        assert removed is True
+
+        # Both selections should be removed (decrement_by ignored when slug=None)
+        assert item.get_selection("espresso_shots") is None
+        assert len(item.get_selections("espresso_shots")) == 0
+
+    def test_decrement_preserves_other_selections(self):
+        """Test that decrement only affects the matched selection."""
+        from orderbot.tasks.models import MenuItemTask
+
+        item = MenuItemTask(
+            menu_item_name="Latte",
+            menu_item_type="espresso_based",
+        )
+        # Add different types of modifiers
+        item.add_selection("shot", "espresso_shots", quantity=5)
+        item.add_selection("oat_milk", "milk_sweetener_syrup", quantity=1)
+        item.add_selection("vanilla_syrup", "milk_sweetener_syrup", quantity=2)
+
+        # Decrement shots by 2
+        removed = item.remove_selection("espresso_shots", "shot", decrement_by=2)
+        assert removed is True
+
+        # Verify shots decremented
+        shot_sel = item.get_selection("espresso_shots")
+        assert shot_sel is not None
+        assert shot_sel["quantity"] == 3
+
+        # Verify other selections unchanged
+        milk_sels = item.get_selections("milk_sweetener_syrup")
+        assert len(milk_sels) == 2
+        oat_milk = next((s for s in milk_sels if s["slug"] == "oat_milk"), None)
+        vanilla = next((s for s in milk_sels if s["slug"] == "vanilla_syrup"), None)
+        assert oat_milk is not None and oat_milk["quantity"] == 1
+        assert vanilla is not None and vanilla["quantity"] == 2

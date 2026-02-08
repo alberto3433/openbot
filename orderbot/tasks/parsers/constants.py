@@ -41,7 +41,55 @@ from .selection_patterns import (
 
 
 # =============================================================================
-# Skip Words for Parsing
+# Filler Words and Skip Words - SINGLE SOURCE OF TRUTH
+# =============================================================================
+# All filler/skip word definitions are consolidated here to avoid duplication
+# and inconsistency across the codebase.
+#
+# Note: Basic skip words (SKIP_WORDS_BASIC, etc.) are defined in cache/base.py
+# to avoid circular imports, and re-exported here.
+
+# Category 1: HESITATION_FILLERS - Strip from START of input only
+# Conversational hesitation/thinking sounds that add no ordering meaning.
+# These are single words or short phrases that when followed by comma/space
+# don't contribute to the order meaning.
+#
+# Note: Multi-word phrases like "let me", "i mean", "you know" are NOT included
+# here because they're often part of meaningful phrases ("let me think",
+# "I mean a latte"). Those are handled by ORDERING_PREFIXES or context-specific
+# patterns in intent_patterns.py.
+HESITATION_FILLERS = frozenset({
+    # Existing fillers
+    "actually", "never mind", "nevermind", "oh", "wait", "um", "uh", "hmm",
+    "well", "so", "ok", "okay", "hey", "like", "sorry",
+    # Informal affirmative/negative
+    "yeah", "yep", "yup", "nah", "nope", "sure", "alright", "right",
+    # Hesitation sounds
+    "er", "err", "hm", "mm", "mmm", "ah", "aha",
+    # Topic changers
+    "anyway", "anyways",
+})
+
+# Category 2: ORDERING_PREFIXES - Strip from START of input only
+# Phrases that begin orders but don't add meaning
+ORDERING_PREFIXES = frozenset({
+    "i want", "i'd like", "i need", "i'll have", "i'll take",
+    "can i get", "can i have", "could i get", "could i have",
+    "give me", "get me", "make it", "let's go with", "let's do",
+    "just", "some",
+})
+
+# Category 3: ARTICLES_AND_CONNECTORS - Context-dependent
+# Sometimes stripped, sometimes needed for item name matching
+ARTICLES = frozenset({'the', 'a', 'an', 'some'})
+CONNECTORS = frozenset({'and', 'or', 'with', 'plus'})
+PREPOSITIONS = frozenset({'on', 'in', 'to', 'of', 'for'})
+
+# Category 4: POLITENESS_WORDS - Strip anywhere in input
+POLITENESS_WORDS = frozenset({'please', 'thanks', 'thank you', 'thx'})
+
+# =============================================================================
+# Combined Skip Word Sets for Different Contexts
 # =============================================================================
 # Import base skip words from cache.base to avoid circular imports
 # (cache.base cannot import from here, so the canonical definitions live there)
@@ -51,11 +99,16 @@ from orderbot.cache.base import (
     SKIP_WORDS_PREPOSITIONS,
 )
 
-# Additional filler words for parsing (not needed in cache/base.py)
-SKIP_WORDS_FILLER = {'please', 'thanks', 'it', 'that', 'yes', 'no'}
+# Additional filler words for parsing
+SKIP_WORDS_FILLER = frozenset({'please', 'thanks', 'it', 'that', 'yes', 'no'})
 
-# Combined set for general-purpose parsing
+# Combined set for general-purpose parsing (tokenization, keyword indexing)
 SKIP_WORDS = SKIP_WORDS_BASIC | SKIP_WORDS_CONJUNCTIONS | SKIP_WORDS_PREPOSITIONS | SKIP_WORDS_FILLER
+
+# For tokenization: skip words when classifying tokens
+TOKENIZATION_SKIP_WORDS = frozenset({
+    "please", "thanks", "thank", "you", "with", "the", "some", "of"
+})
 
 # =============================================================================
 # Add Modifier Request Patterns

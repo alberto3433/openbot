@@ -305,7 +305,7 @@ class TestSideItems:
         pytest.param("home fries", "Home Fries", marks=pytest.mark.xfail(
             reason="'home fries' not being parsed - may need alias in DB"
         )),
-        ("fruit cup", "Fruit Cup"),
+        ("fruit salad", "Fruit Salad"),
     ])
     def test_side_item_parser_output(self, user_input, expected_canonical):
         """Side items should be parsed and added to order."""

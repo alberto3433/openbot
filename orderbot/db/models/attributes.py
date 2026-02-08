@@ -59,12 +59,22 @@ class GlobalAttribute(Base):
     # ingredient modifier's quantity instead of creating a duplicate entry
     modifies_ingredient_slug = Column(String(100), nullable=True)
 
+    # Options source category (for package_multi_select input types)
+    # Specifies which ingredient category provides the options for this attribute.
+    # Example: package_contents uses options_source_category='bread' to get bagel types.
+    options_source_category = Column(String(50), nullable=True)
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    options = relationship("GlobalAttributeOption", back_populates="attribute", order_by="GlobalAttributeOption.display_order")
+    options = relationship(
+        "GlobalAttributeOption",
+        back_populates="attribute",
+        order_by="GlobalAttributeOption.display_order",
+        foreign_keys="GlobalAttributeOption.global_attribute_id",
+    )
     item_type_links = relationship("ItemTypeGlobalAttribute", back_populates="global_attribute")
     alias_records = relationship("GlobalAttributeAlias", back_populates="global_attribute", cascade="all, delete-orphan")
 
@@ -129,6 +139,17 @@ class GlobalAttributeOption(Base):
     # Display order (lower = shown first)
     display_order = Column(Integer, nullable=False, default=0)
 
+    # Forward delegation: When user input matches the target attribute's options,
+    # auto-select this option and forward to the target attribute handler.
+    # Example: "custom" option forwards to "package_contents" attribute when user
+    # provides package contents directly (e.g., "2 plain 2 everything").
+    forward_to_attribute_id = Column(
+        Integer,
+        ForeignKey("global_attributes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -139,7 +160,7 @@ class GlobalAttributeOption(Base):
     )
 
     # Relationships
-    attribute = relationship("GlobalAttribute", back_populates="options")
+    attribute = relationship("GlobalAttribute", back_populates="options", foreign_keys=[global_attribute_id])
     ingredient = relationship("Ingredient", backref="global_attribute_options")
     modifier_category = relationship("ModifierCategory", backref="global_attribute_options")
     alias_records = relationship(
@@ -147,6 +168,12 @@ class GlobalAttributeOption(Base):
         back_populates="option",
         cascade="all, delete-orphan",
         lazy="selectin",
+    )
+    # Forward delegation target attribute
+    forward_to_attribute = relationship(
+        "GlobalAttribute",
+        foreign_keys=[forward_to_attribute_id],
+        backref="forwarded_from_options",
     )
 
     @property

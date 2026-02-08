@@ -131,6 +131,18 @@ def _serialize_option(opt: GlobalAttributeOption, db: Optional[Session] = None) 
                 skipped_attribute_name=rule.skipped_attribute.display_name if rule.skipped_attribute else "",
             ))
 
+    # Get forward_to_attribute info if present
+    forward_to_attr_slug = None
+    if hasattr(opt, 'forward_to_attribute') and opt.forward_to_attribute:
+        forward_to_attr_slug = opt.forward_to_attribute.slug
+    elif opt.forward_to_attribute_id and db:
+        # Fallback: load if relationship wasn't eager loaded
+        forward_attr = db.query(GlobalAttribute).filter(
+            GlobalAttribute.id == opt.forward_to_attribute_id
+        ).first()
+        if forward_attr:
+            forward_to_attr_slug = forward_attr.slug
+
     return GlobalAttributeOptionOut(
         id=opt.id,
         slug=slug,
@@ -145,6 +157,8 @@ def _serialize_option(opt: GlobalAttributeOption, db: Optional[Session] = None) 
         modifier_category_name=opt.modifier_category.display_name if opt.modifier_category else None,
         aliases=aliases_str,
         skip_rules=skip_rules_out,
+        forward_to_attribute_id=opt.forward_to_attribute_id,
+        forward_to_attribute_slug=forward_to_attr_slug,
         created_at=opt.created_at,
         updated_at=opt.updated_at,
     )
@@ -176,6 +190,7 @@ def _serialize_attribute(attr: GlobalAttribute, db: Session) -> GlobalAttributeO
         input_type=attr.input_type,
         description=attr.description,
         question_text=attr.question_text,
+        options_source_category=attr.options_source_category,
         options=options_out,
         item_type_count=len(linked_item_types),
         linked_item_types=linked_item_types,
@@ -197,6 +212,7 @@ def _serialize_attribute_list(attr: GlobalAttribute, db: Session) -> GlobalAttri
         input_type=attr.input_type,
         description=attr.description,
         question_text=attr.question_text,
+        options_source_category=attr.options_source_category,
         option_count=len(attr.options),
         item_type_count=len(attr.item_type_links),
         created_at=attr.created_at,
@@ -276,6 +292,8 @@ def get_global_attribute(
             selectinload(GlobalAttribute.options)
             .selectinload(GlobalAttributeOption.skip_rules)
             .joinedload(GlobalAttributeOptionSkip.skipped_attribute),
+            selectinload(GlobalAttribute.options)
+            .joinedload(GlobalAttributeOption.forward_to_attribute),
             selectinload(GlobalAttribute.item_type_links)
             .joinedload(ItemTypeGlobalAttribute.item_type),
         )
@@ -310,6 +328,7 @@ def create_global_attribute(
         input_type=payload.input_type,
         description=payload.description,
         question_text=payload.question_text,
+        options_source_category=payload.options_source_category,
     )
     db.add(attr)
     db.commit()
@@ -347,6 +366,7 @@ def create_global_attribute_with_options(
         input_type=payload.input_type,
         description=payload.description,
         question_text=payload.question_text,
+        options_source_category=payload.options_source_category,
     )
     db.add(attr)
     db.flush()  # Get the ID
@@ -432,6 +452,8 @@ def update_global_attribute(
         attr.description = payload.description
     if "question_text" in payload.model_fields_set:
         attr.question_text = payload.question_text
+    if "options_source_category" in payload.model_fields_set:
+        attr.options_source_category = payload.options_source_category
 
     db.commit()
     db.refresh(attr)
@@ -593,6 +615,18 @@ def create_global_attribute_option(
                 detail=f"Modifier category with id {modifier_category_id} not found"
             )
 
+    # Validate forward_to_attribute_id if provided
+    forward_to_attribute_id = payload.forward_to_attribute_id
+    if forward_to_attribute_id is not None:
+        forward_attr = db.query(GlobalAttribute).filter(
+            GlobalAttribute.id == forward_to_attribute_id
+        ).first()
+        if not forward_attr:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Forward-to attribute with id {forward_to_attribute_id} not found"
+            )
+
     option = GlobalAttributeOption(
         global_attribute_id=attr_id,
         slug=db_slug,
@@ -603,6 +637,7 @@ def create_global_attribute_option(
         display_order=payload.display_order,
         ingredient_id=ingredient_id,
         modifier_category_id=modifier_category_id,
+        forward_to_attribute_id=forward_to_attribute_id,
     )
     db.add(option)
     db.flush()  # Get the ID before syncing aliases
@@ -730,6 +765,20 @@ def update_global_attribute_option(
                     detail=f"Modifier category with id {payload.modifier_category_id} not found"
                 )
         option.modifier_category_id = payload.modifier_category_id
+
+    # Handle forward_to_attribute_id - check model_fields_set to distinguish None from not provided
+    if "forward_to_attribute_id" in payload.model_fields_set:
+        if payload.forward_to_attribute_id is not None:
+            # Validate forward-to attribute exists
+            forward_attr = db.query(GlobalAttribute).filter(
+                GlobalAttribute.id == payload.forward_to_attribute_id
+            ).first()
+            if not forward_attr:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Forward-to attribute with id {payload.forward_to_attribute_id} not found"
+                )
+        option.forward_to_attribute_id = payload.forward_to_attribute_id
 
     # Handle aliases - check model_fields_set to distinguish None from not provided
     if "aliases" in payload.model_fields_set:

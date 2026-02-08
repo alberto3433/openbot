@@ -190,6 +190,8 @@ class LoaderMixin(
                     .selectinload(Ingredient.must_match_records),
                 selectinload(GlobalAttribute.options)
                     .selectinload(GlobalAttributeOption.modifier_category),
+                selectinload(GlobalAttribute.options)
+                    .joinedload(GlobalAttributeOption.forward_to_attribute),
             )
             .all()
         )
@@ -202,7 +204,8 @@ class LoaderMixin(
                 joinedload(ItemType.menu_display_group).joinedload(MenuDisplayGroup.overall_category),
                 selectinload(ItemType.global_attribute_links)
                     .selectinload(ItemTypeGlobalAttribute.global_attribute)
-                    .selectinload(GlobalAttribute.options),
+                    .selectinload(GlobalAttribute.options)
+                    .joinedload(GlobalAttributeOption.forward_to_attribute),
             )
             .all()
         )

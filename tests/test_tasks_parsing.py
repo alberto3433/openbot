@@ -1412,8 +1412,10 @@ class TestSpecialInstructionsExtraction:
     def test_multi_item_bagel_and_signature_item(self):
         """Test that multi-item parser recognizes speed menu items like The Classic BEC."""
         from orderbot.tasks.parsers import _parse_multi_item_order
-        # Multi-item order: "one bagel and one classic BEC"
-        result = _parse_multi_item_order("one bagel and one classic BEC")
+        # Multi-item order: "one plain bagel and one classic BEC"
+        # Note: bare "bagel" (no variety) is resolved at the state machine level
+        # via disambiguation, not at the parser level.
+        result = _parse_multi_item_order("one plain bagel and one classic BEC")
         assert result is not None
         # Should detect both items
         assert has_bagel(result)

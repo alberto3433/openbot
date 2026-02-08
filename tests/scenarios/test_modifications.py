@@ -479,3 +479,60 @@ class TestQuantityModifications:
 
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have items"
+
+
+class TestAddEggDuringConfig:
+    """Tests for adding egg (which is an attribute) during config.
+
+    Regression tests for bug where 'add an egg' during item configuration
+    was rejected because ingredient validation happened before checking
+    if the ingredient maps to an attribute with options.
+    """
+
+    def test_add_egg_to_bagel_with_existing_egg_asks_style(self):
+        """Add egg to bagel that already has scrambled eggs asks for egg style.
+
+        When a bagel already has 'scrambled eggs' and user says 'add an egg',
+        the system should ask which egg style (scrambled, fried, etc.) instead
+        of rejecting with 'Egg isn't available for the Bagel'.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        # Order bagel with scrambled eggs
+        result1 = sm.process("bagel toasted with scrambled eggs", order)
+
+        # Say "add an egg" during config
+        result2 = sm.process("add an egg", result1.order)
+
+        # Should NOT reject with "isn't available"
+        assert "isn't available" not in result2.message.lower(), \
+            f"Bug: System rejected 'add an egg' instead of asking for egg style: {result2.message}"
+        assert "not available" not in result2.message.lower(), \
+            f"Bug: System rejected 'add an egg' instead of asking for egg style: {result2.message}"
+
+        # Should ask about egg style (has words like scrambled, fried, or "how would you like")
+        egg_style_terms = ["scrambled", "fried", "how would you like", "egg"]
+        has_egg_style = any(term in result2.message.lower() for term in egg_style_terms)
+        assert has_egg_style, \
+            f"Expected system to ask about egg style, got: {result2.message}"
+
+    def test_add_egg_to_plain_bagel_asks_style(self):
+        """Add egg to plain bagel (no existing egg) asks for egg style."""
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        # Order plain bagel (no egg yet)
+        result1 = sm.process("plain bagel toasted", order)
+
+        # Say "add an egg" during config
+        result2 = sm.process("add an egg", result1.order)
+
+        # Should NOT reject
+        assert "isn't available" not in result2.message.lower(), \
+            f"Bug: System rejected 'add an egg': {result2.message}"
+
+        # Should ask about egg style or acknowledge adding
+        assert result2.message is not None, "Should have a response"

@@ -111,9 +111,17 @@ def strip_ordering_prefix(user_input: str) -> str:
     return stripped.strip()
 
 
-# Common filler words to remove for matching
-# These are words that don't affect the meaning for option matching
-_FILLER_WORDS = frozenset(["the", "please", "i want", "i'll take", "just", "a", "an"])
+# Filler word definitions for strip_filler_words and strip_leading_filler_words
+# These are duplicated here from parsers/constants.py to avoid circular imports.
+# The canonical definitions live in parsers/constants.py.
+_ARTICLES = frozenset({'the', 'a', 'an', 'some'})
+_ORDERING_PREFIXES = frozenset({
+    "i want", "i'd like", "i need", "i'll have", "i'll take",
+    "can i get", "can i have", "could i get", "could i have",
+    "give me", "get me", "make it", "let's go with", "let's do",
+    "just", "some",
+})
+_POLITENESS_WORDS = frozenset({'please', 'thanks', 'thank you', 'thx'})
 
 
 def strip_filler_words(user_input: str) -> str:
@@ -122,6 +130,9 @@ def strip_filler_words(user_input: str) -> str:
     Removes articles, politeness words, and ordering phrases that don't
     affect the core meaning. Simpler than strip_ordering_prefix() - use
     this for disambiguation matching where you just need clean tokens.
+
+    Uses consolidated filler word definitions from parsers/constants.py
+    (local copies to avoid circular imports).
 
     Handles patterns like:
     - "the bacon" -> "bacon"
@@ -142,9 +153,26 @@ def strip_filler_words(user_input: str) -> str:
         "first one"
     """
     input_lower = user_input.lower().strip()
-    # Remove filler phrases (order matters - longer phrases first)
-    for filler in ["i want ", "i'll take ", "just ", "the ", "please", "a ", "an "]:
-        input_lower = input_lower.replace(filler, "").strip()
+
+    # Remove ordering prefixes (longer phrases first)
+    for prefix in sorted(_ORDERING_PREFIXES, key=len, reverse=True):
+        # Only remove if it's at the start or followed by space
+        if input_lower.startswith(prefix + " "):
+            input_lower = input_lower[len(prefix):].strip()
+        elif input_lower == prefix:
+            input_lower = ""
+
+    # Remove articles (with trailing space to avoid partial matches)
+    for article in _ARTICLES:
+        input_lower = input_lower.replace(article + " ", " ").strip()
+
+    # Remove politeness words
+    for word in _POLITENESS_WORDS:
+        input_lower = input_lower.replace(word, "").strip()
+
+    # Collapse multiple spaces
+    input_lower = re.sub(r'\s+', ' ', input_lower).strip()
+
     return input_lower
 
 
@@ -154,6 +182,8 @@ def strip_leading_filler_words(text: str) -> str:
     Removes leading articles (some, a, an, the) for cleaner display names.
     Unlike strip_filler_words(), this only removes words at the beginning,
     preserving words like "the" that may appear in item names.
+
+    Uses _ARTICLES (local copy from parsers/constants.py).
 
     Handles patterns like:
     - "some hash browns" -> "hash browns"
@@ -173,9 +203,10 @@ def strip_leading_filler_words(text: str) -> str:
         >>> strip_leading_filler_words("The Classic BEC")
         "Classic BEC"
     """
-    import re
-    # Strip leading filler words (case-insensitive)
-    cleaned = re.sub(r'^(some|a|an|the)\s+', '', text.strip(), flags=re.IGNORECASE)
+    # Build pattern from _ARTICLES set
+    articles_pattern = "|".join(re.escape(a) for a in _ARTICLES)
+    pattern = rf'^({articles_pattern})\s+'
+    cleaned = re.sub(pattern, '', text.strip(), flags=re.IGNORECASE)
     return cleaned or text
 
 

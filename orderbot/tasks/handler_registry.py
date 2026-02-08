@@ -158,6 +158,7 @@ class HandlerRegistry:
         self._handlers["modifier_change"] = ModifierChangeHandler(config=self._config)
         self._handlers["config_cancellation"] = ConfigCancellationHandler(
             configure_next_incomplete_item=self._configure_next_incomplete_item,
+            pricing=self._config.pricing,
         )
         self._handlers["config_helper"] = ConfigHelperHandler(
             config=self._config,

@@ -132,9 +132,17 @@ class DirectOptionMatcher:
         order: "OrderTask",
     ) -> StateMachineResult | None:
         """Handle multi-select option matching with disambiguation."""
-        # Use disambiguation-aware matching
+        # Strip quantity prefixes for matching (preserve original for quantity extraction later)
+        match_input = user_clean
+        quantity_prefixes = ["extra ", "additional ", "more ", "double ", "triple "]
+        for prefix in quantity_prefixes:
+            if match_input.startswith(prefix):
+                match_input = match_input[len(prefix):].strip()
+                break
+
+        # Use disambiguation-aware matching with cleaned input
         matched, disambiguation = self._option_matcher.match_multiple_with_disambiguation(
-            user_clean, options
+            match_input, options
         )
 
         if disambiguation:
@@ -149,6 +157,17 @@ class DirectOptionMatcher:
         # Get existing selections for this category
         existing_selections = item.get_selections(attr_slug)
         existing_slugs = {sel.get("slug") for sel in existing_selections}
+
+        # When a SINGLE option matches and there are existing selections,
+        # treat it as a REPLACEMENT rather than addition.
+        # This handles "make it blueberry cream cheese" when plain cream cheese exists.
+        # The "make it X" phrase implies transformation/change, not addition.
+        # If user wanted to add, they would say "add X" or list multiple items.
+        is_replacement = len(matched) == 1 and existing_selections
+        if is_replacement:
+            # Clear existing selections before adding the new one
+            item.remove_selection(attr_slug)
+            existing_slugs = set()  # Reset so we don't skip the new option
 
         display_parts = []
         user_lower = user_input.lower()
@@ -188,14 +207,20 @@ class DirectOptionMatcher:
             )
 
         if display_parts:
-            logger.info(
-                "Direct option match: added %s to %s (item %s)",
-                [opt["slug"] for opt in matched], attr_slug, item.id
-            )
-
-            # Check for remaining options and re-offer or complete
-            display_text = ", ".join(display_parts)
-            return self._ask_more_customizations(item, order, f"{display_text} added")
+            if is_replacement:
+                logger.info(
+                    "Direct option match: replaced %s with %s (item %s)",
+                    attr_slug, matched[0]["slug"], item.id
+                )
+                display_text = ", ".join(display_parts)
+                return self._ask_more_customizations(item, order, f"Changed to {display_text}")
+            else:
+                logger.info(
+                    "Direct option match: added %s to %s (item %s)",
+                    [opt["slug"] for opt in matched], attr_slug, item.id
+                )
+                display_text = ", ".join(display_parts)
+                return self._ask_more_customizations(item, order, f"{display_text} added")
 
         return None
 
@@ -291,6 +316,10 @@ class DirectOptionMatcher:
                 display_name = f"{opt_name} ({qualifier})"
             else:
                 display_name = opt_name
+
+            # For single_select attributes, REPLACE existing selection (not add)
+            # This handles "make it blueberry cream cheese" when plain cream cheese exists
+            item.remove_selection(attr_slug)
 
             # Add selection using unified API (with qualifier in display_name)
             item.add_selection(

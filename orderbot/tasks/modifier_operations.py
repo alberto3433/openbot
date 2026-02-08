@@ -256,6 +256,7 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
 def remove_modifier_from_item(
     item: ItemTask,
     match: ModifierMatch,
+    quantity: int | None = None,
 ) -> ModifierRemovalResult:
     """
     Remove a modifier from an item.
@@ -263,6 +264,8 @@ def remove_modifier_from_item(
     Args:
         item: The item to modify
         match: The modifier match result from find_modifier_match
+        quantity: If provided, decrement by this amount instead of removing entirely.
+                  If None, removes all of the matched modifier (existing behavior).
 
     Returns:
         ModifierRemovalResult with success status and message
@@ -293,18 +296,44 @@ def remove_modifier_from_item(
             if match.matched_value:
                 # Use remove_selection to properly update the underlying modifiers list
                 # (attribute_values is a computed property - modifying the returned dict doesn't persist)
-                removed = item.remove_selection(match.attribute_key, match.matched_value)
+                removed = item.remove_selection(
+                    match.attribute_key,
+                    match.matched_value,
+                    decrement_by=quantity,
+                )
                 if removed:
-                    logger.info(
-                        "Removed '%s' from attribute_values['%s'] for %s",
-                        match.matched_value, match.attribute_key, type(item).__name__
-                    )
+                    # Check if we decremented or fully removed
+                    remaining_qty = None
+                    if quantity is not None:
+                        # Look up the selection to see current quantity
+                        for sel in item.selections:
+                            if (sel.get("category") == match.attribute_key and
+                                sel.get("slug") == match.matched_value):
+                                remaining_qty = sel.get("quantity", 1)
+                                break
+
                     display_name = format_slug_for_display(match.matched_value)
-                    return ModifierRemovalResult(
-                        success=True,
-                        removed_value=match.matched_value,
-                        message=f"OK, I've removed the {display_name}."
-                    )
+                    if remaining_qty is not None and remaining_qty > 0:
+                        logger.info(
+                            "Decremented '%s' by %d in attribute_values['%s'] for %s (now %d)",
+                            match.matched_value, quantity, match.attribute_key,
+                            type(item).__name__, remaining_qty
+                        )
+                        return ModifierRemovalResult(
+                            success=True,
+                            removed_value=match.matched_value,
+                            message=f"OK, I've removed {quantity} {display_name} ({remaining_qty} remaining)."
+                        )
+                    else:
+                        logger.info(
+                            "Removed '%s' from attribute_values['%s'] for %s",
+                            match.matched_value, match.attribute_key, type(item).__name__
+                        )
+                        return ModifierRemovalResult(
+                            success=True,
+                            removed_value=match.matched_value,
+                            message=f"OK, I've removed the {display_name}."
+                        )
                 else:
                     return ModifierRemovalResult(
                         success=False,
@@ -357,9 +386,10 @@ def remove_modifier_from_item(
             )
 
         if match.matched_value:
-            # Remove specific item from list
+            # Remove specific item from list (or decrement quantity)
             new_list = []
             removed = None
+            remaining_qty = None
             for list_item in current_value:
                 if isinstance(list_item, dict):
                     item_value = list_item.get("slug", "") or ""
@@ -368,18 +398,40 @@ def remove_modifier_from_item(
 
                 if item_value.lower() == match.matched_value.lower():
                     removed = item_value
+                    # Handle quantity-aware removal for dict items
+                    if quantity is not None and isinstance(list_item, dict):
+                        current_qty = list_item.get("quantity", 1)
+                        new_qty = current_qty - quantity
+                        if new_qty > 0:
+                            # Decrement instead of removing
+                            list_item["quantity"] = new_qty
+                            remaining_qty = new_qty
+                            new_list.append(list_item)
+                            continue
+                    # Else: remove entirely (don't add to new_list)
                 else:
                     new_list.append(list_item)
 
             if removed:
                 setattr(item, field.field_name, new_list)
-                logger.info("Removed %s '%s' from %s", field.display_name, removed, type(item).__name__)
                 display_name = format_slug_for_display(removed)
-                return ModifierRemovalResult(
-                    success=True,
-                    removed_value=removed,
-                    message=f"OK, I've removed the {display_name}."
-                )
+                if remaining_qty is not None and remaining_qty > 0:
+                    logger.info(
+                        "Decremented %s '%s' by %d from %s (now %d)",
+                        field.display_name, removed, quantity, type(item).__name__, remaining_qty
+                    )
+                    return ModifierRemovalResult(
+                        success=True,
+                        removed_value=removed,
+                        message=f"OK, I've removed {quantity} {display_name} ({remaining_qty} remaining)."
+                    )
+                else:
+                    logger.info("Removed %s '%s' from %s", field.display_name, removed, type(item).__name__)
+                    return ModifierRemovalResult(
+                        success=True,
+                        removed_value=removed,
+                        message=f"OK, I've removed the {display_name}."
+                    )
             else:
                 return ModifierRemovalResult(
                     success=False,

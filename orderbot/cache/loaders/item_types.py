@@ -54,6 +54,11 @@ class ItemTypeLoaderMixin:
             )
             return None
 
+        # Get forward_to_attribute slug if set
+        forward_to_attribute = None
+        if hasattr(opt, 'forward_to_attribute') and opt.forward_to_attribute:
+            forward_to_attribute = opt.forward_to_attribute.slug
+
         return {
             "slug": slug,
             "display_name": display_name or slug,
@@ -64,6 +69,7 @@ class ItemTypeLoaderMixin:
             "must_match": must_match,
             "modifier_category": modifier_category_slug,
             "ingredient_category": ingredient_category,
+            "forward_to_attribute": forward_to_attribute,
         }
 
     def _load_global_attribute_options_from_bulk(self, bulk_data: dict) -> None:
@@ -92,6 +98,7 @@ class ItemTypeLoaderMixin:
             global_attribute_metadata[attr.slug] = {
                 "display_name": attr.display_name,
                 "input_type": attr.input_type,
+                "options_source_category": attr.options_source_category,
             }
 
         # Build modifier_category -> attrs index
@@ -280,6 +287,11 @@ class ItemTypeLoaderMixin:
                         )
                         continue
 
+                    # Get forward_to_attribute slug if set
+                    forward_to_attribute = None
+                    if hasattr(opt, 'forward_to_attribute') and opt.forward_to_attribute:
+                        forward_to_attribute = opt.forward_to_attribute.slug
+
                     options.append({
                         "slug": slug,
                         "display_name": display_name or slug,
@@ -289,6 +301,7 @@ class ItemTypeLoaderMixin:
                         "aliases": aliases,
                         "must_match": must_match,
                         "ingredient_category": ingredient_category,
+                        "forward_to_attribute": forward_to_attribute,
                     })
 
                 result[attr.slug] = {

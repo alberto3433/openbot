@@ -102,26 +102,48 @@ CANCEL_ITEM_PATTERN = re.compile(
 # Filler Words Pattern
 # =============================================================================
 
+# Import consolidated hesitation fillers from constants
+from .constants import HESITATION_FILLERS
+
+
+def _build_filler_pattern() -> re.Pattern:
+    """Build regex pattern from HESITATION_FILLERS set.
+
+    Special handling:
+    - "actually" only matches with comma OR before cancel/remove words
+    - "never mind" / "nevermind" only matches with comma
+    - Single words match with comma or whitespace after
+    - Multi-word phrases match with optional comma/whitespace after
+    """
+    # Special cases that need context-aware matching
+    special_patterns = [
+        r"actually,\s*",  # "actually," with comma is filler
+        r"actually\s+(?=cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)",
+        r"never\s*mind,\s*",  # "never mind," when followed by another command
+    ]
+
+    # Words to exclude from generic pattern (handled specially above)
+    special_words = {"actually", "never mind", "nevermind"}
+
+    # Build patterns for remaining fillers
+    generic_patterns = []
+    for filler in sorted(HESITATION_FILLERS, key=len, reverse=True):
+        if filler in special_words:
+            continue
+        # Escape regex special chars
+        escaped = re.escape(filler)
+        # Match with comma or whitespace after
+        generic_patterns.append(rf"{escaped}[,\s]+")
+
+    # Combine all patterns
+    all_patterns = special_patterns + generic_patterns
+    pattern_str = r"^(?:" + "|".join(all_patterns) + r")"
+
+    return re.compile(pattern_str, re.IGNORECASE)
+
+
 # Filler words pattern - words that add no meaning and should be stripped before parsing
-FILLER_WORDS_PATTERN = re.compile(
-    r"^(?:"
-    r"actually,\s*"  # "actually," with comma is filler
-    r"|actually\s+(?=cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)"
-    r"|never\s*mind,\s*"  # "never mind," when followed by another command is a redirect
-    r"|oh[,\s]+"
-    r"|wait,\s*"
-    r"|um+[,\s]+"
-    r"|uh+[,\s]+"
-    r"|hmm+[,\s]+"
-    r"|well[,\s]+"
-    r"|so[,\s]+"
-    r"|ok(?:ay)?[,\s]+"
-    r"|hey[,\s]+"
-    r"|like[,\s]+"
-    r"|sorry[,\s]+"
-    r")",
-    re.IGNORECASE
-)
+FILLER_WORDS_PATTERN = _build_filler_pattern()
 
 
 def strip_conversational_fillers(text: str) -> str:
@@ -260,10 +282,10 @@ ONE_MORE_PATTERN = re.compile(
 )
 
 # Generic pattern for "another X" / "one more X"
+# Captures multi-word item names (e.g., "another 6 bagel package")
 ANOTHER_ITEM_PATTERN = re.compile(
     r"^(?:and\s+)?(?:one\s+more|another)\s+"
-    r"(\w+)"
-    r"s?"
+    r"(.+?)"  # Capture multi-word item names including numbers
     r"[\s!.,?]*$",
     re.IGNORECASE
 )

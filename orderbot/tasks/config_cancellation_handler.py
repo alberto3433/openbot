@@ -12,6 +12,7 @@ from typing import Optional, Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import CANCEL_ITEM_PATTERN, strip_conversational_fillers
+from .parsers.quantity_utils import extract_leading_quantity
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
 from .handler_utils import remove_item_from_order
 from .modifier_operations import (
@@ -25,9 +26,11 @@ from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants, singularize
 from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
+from .utils.pricing_utils import safe_recalculate_price
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
+    from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +135,7 @@ class ConfigCancellationHandler:
         self,
         config_helper_handler: "ConfigHelperHandler | None" = None,
         configure_next_incomplete_item: Callable[[OrderTask], StateMachineResult] | None = None,
+        pricing: "PricingEngine | None" = None,
     ) -> None:
         """
         Initialize the config cancellation handler.
@@ -139,9 +143,11 @@ class ConfigCancellationHandler:
         Args:
             config_helper_handler: Parent handler for getting current config question.
             configure_next_incomplete_item: Callback to get config question for incomplete items.
+            pricing: PricingEngine for recalculating prices after modifier removal.
         """
         self.config_helper_handler = config_helper_handler
         self._configure_next_incomplete_item = configure_next_incomplete_item
+        self.pricing = pricing
 
     def check_cancellation_during_config(
         self,
@@ -329,6 +335,10 @@ class ConfigCancellationHandler:
                     if modifier_match:
                         removal_result = remove_modifier_from_item(target_item, modifier_match)
                         if removal_result.success:
+                            # Recalculate price after modifier removal
+                            safe_recalculate_price(
+                                self.pricing, target_item, "after modifier removal via X on Y pattern"
+                            )
                             removed_name = format_slug_for_display(removal_result.removed_value or modifier_part)
                             logger.info(
                                 "Removed '%s' from '%s' via 'X on Y' pattern",
@@ -354,6 +364,7 @@ class ConfigCancellationHandler:
                 if default_match:
                     removal_result = remove_default_ingredient_from_item(target_item, default_match)
                     if removal_result.success:
+                        # Note: Default ingredient removal doesn't affect price (already included)
                         removed_name = format_slug_for_display(removal_result.removed_value or modifier_part)
                         logger.info(
                             "Removed default ingredient '%s' from '%s' via 'X on Y' pattern",
@@ -376,28 +387,42 @@ class ConfigCancellationHandler:
         # Use unified modifier_operations for consistent handling
         # But SKIP if cancel_desc matches an item type or item in order (user wants to remove items, not modifiers)
         if isinstance(current_item, MenuItemTask) and not matches_item_type and not matches_item_in_order:
+            # Extract leading quantity from cancel_desc (e.g., "1 shot" -> (1, "shot"))
+            # This enables quantity-aware removal: "remove 1 shot" decrements by 1
+            removal_qty, modifier_term = extract_leading_quantity(cancel_desc)
+            # If no quantity found, use the full cancel_desc for matching
+            if removal_qty is None:
+                modifier_term = cancel_desc
+
             try:
-                modifier_match = find_modifier_match(current_item, cancel_desc)
+                modifier_match = find_modifier_match(current_item, modifier_term)
                 if modifier_match:
-                    removal_result = remove_modifier_from_item(current_item, modifier_match)
+                    removal_result = remove_modifier_from_item(
+                        current_item, modifier_match, quantity=removal_qty
+                    )
                     if removal_result.success:
-                        removed_modifier_name = format_slug_for_display(removal_result.removed_value or cancel_desc)
+                        # Recalculate price after modifier removal/decrement
+                        safe_recalculate_price(
+                            self.pricing, current_item, "after modifier removal during config"
+                        )
+
+                        removed_modifier_name = format_slug_for_display(removal_result.removed_value or modifier_term)
                         logger.info(
-                            "Modifier removal during config: removed '%s' from %s",
-                            removed_modifier_name, current_item.menu_item_name
+                            "Modifier removal during config: removed '%s' (qty=%s) from %s",
+                            removed_modifier_name, removal_qty, current_item.menu_item_name
                         )
 
                         # Return to customization checkpoint or continue
                         question = self._get_current_config_question(order, current_item)
                         if question:
                             return StateMachineResult(
-                                message=f"OK, I've removed the {removed_modifier_name}. {question}",
+                                message=f"{removal_result.message} {question}",
                                 order=order,
                             )
                         else:
                             updated_summary = current_item.get_summary()
                             return StateMachineResult(
-                                message=f"OK, I've removed the {removed_modifier_name}. Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
+                                message=f"{removal_result.message} Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
                                 order=order,
                             )
             except MenuDataNotLoadedError:
@@ -424,6 +449,10 @@ class ConfigCancellationHandler:
                         current_item.remove_selection(category, slug)
 
                     if selections_to_remove:
+                        # Recalculate price after modifier removal
+                        safe_recalculate_price(
+                            self.pricing, current_item, "after modifier removal during config (fallback)"
+                        )
                         logger.info(
                             "Modifier removal during config (fallback): removed '%s' from %s",
                             removed_modifier_name, current_item.menu_item_name

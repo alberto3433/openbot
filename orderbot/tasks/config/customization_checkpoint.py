@@ -192,22 +192,14 @@ class CustomizationCheckpointHandler:
                     order=order,
                 )
 
-        # Try to match specific attribute(s) from input
-        matched_attrs = self._match_attribute_from_input(user_input, unanswered)
-
-        if matched_attrs:
-            return self._handle_matched_attribute(
-                user_input, user_lower, item, order, item_type, matched_attrs[0]
-            )
-
-        # Try to match option values directly (e.g., "add a little mayo" -> mayo in condiments)
-        # This allows users to specify options without naming the attribute
+        # Try to match option values directly FIRST (e.g., "blueberry cream cheese" -> spread option)
+        # This allows users to specify options without naming the attribute.
         # Use ALL optional attributes, not just unanswered - user may want to add to
         # an attribute they previously declined (e.g., said "no" to shots, now says "extra shot")
         #
-        # IMPORTANT: Search optional attributes FIRST since users at customization checkpoint
-        # are typically adding toppings/extras, not changing bread type. This prevents
-        # "onions" from matching "onion_bagel" (bread) instead of "Onions" (topping).
+        # IMPORTANT: Direct option matching MUST happen BEFORE attribute name matching!
+        # Otherwise "blueberry cream cheese" matches "cheese" (attribute category) as a substring
+        # and asks "What kind of cheese?" instead of setting the spread.
         result = self._try_direct_option_match(user_input, all_optional, item, order)
         if result:
             return result
@@ -218,6 +210,15 @@ class CustomizationCheckpointHandler:
         result = self._try_direct_option_match(user_input, all_mandatory, item, order)
         if result:
             return result
+
+        # Try to match specific attribute(s) from input (e.g., "cheese" -> ask "What kind of cheese?")
+        # This comes AFTER direct option matching to avoid substring matches on attribute names
+        matched_attrs = self._match_attribute_from_input(user_input, unanswered)
+
+        if matched_attrs:
+            return self._handle_matched_attribute(
+                user_input, user_lower, item, order, item_type, matched_attrs[0]
+            )
 
         # Fallback: Try matching space-separated words against ingredients
         # This handles input like "salt pepper ketchup" by splitting on spaces

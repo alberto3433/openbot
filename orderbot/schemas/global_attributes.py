@@ -59,6 +59,10 @@ class GlobalAttributeOptionOut(BaseModel):
     aliases: Optional[str] = None
     # Skip rules - attributes to skip when this option is selected
     skip_rules: List[SkipRuleOutBasic] = []
+    # Forward delegation - when user input matches target attribute's options,
+    # auto-select this option and forward to target attribute
+    forward_to_attribute_id: Optional[int] = None
+    forward_to_attribute_slug: Optional[str] = None  # Slug for display
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -82,6 +86,8 @@ class GlobalAttributeOptionCreate(BaseModel):
     modifier_category_id: Optional[int] = None
     # Option aliases (comma-separated string) - stored in global_attribute_option_aliases table
     aliases: Optional[str] = None
+    # Forward delegation - target attribute to forward to when input matches its options
+    forward_to_attribute_id: Optional[int] = None
 
 
 class GlobalAttributeOptionUpdate(BaseModel):
@@ -100,6 +106,9 @@ class GlobalAttributeOptionUpdate(BaseModel):
     modifier_category_id: Optional[int] = None
     # Option aliases (comma-separated string) - replaces existing aliases
     aliases: Optional[str] = None
+    # Forward delegation - target attribute to forward to when input matches its options
+    # Set to null to unlink
+    forward_to_attribute_id: Optional[int] = None
 
 
 # =============================================================================
@@ -133,6 +142,9 @@ class GlobalAttributeOut(BaseModel):
     input_type: str  # 'single_select', 'multi_select', 'boolean'
     description: Optional[str] = None
     question_text: Optional[str] = None  # Question to ask user for this attribute
+    # Options source category (for package_multi_select input types)
+    # Specifies which ingredient category provides the options for this attribute.
+    options_source_category: Optional[str] = None
     options: List[GlobalAttributeOptionOut] = []
     # Count of item types using this attribute
     item_type_count: int = 0
@@ -152,6 +164,7 @@ class GlobalAttributeListOut(BaseModel):
     input_type: str
     description: Optional[str] = None
     question_text: Optional[str] = None
+    options_source_category: Optional[str] = None
     option_count: int = 0
     item_type_count: int = 0
     created_at: Optional[datetime] = None
@@ -165,6 +178,7 @@ class GlobalAttributeCreate(BaseModel):
     input_type: str = "single_select"
     description: Optional[str] = None
     question_text: Optional[str] = None
+    options_source_category: Optional[str] = None
 
 
 class GlobalAttributeUpdate(BaseModel):
@@ -174,6 +188,7 @@ class GlobalAttributeUpdate(BaseModel):
     input_type: Optional[str] = None
     description: Optional[str] = None
     question_text: Optional[str] = None
+    options_source_category: Optional[str] = None
 
 
 # =============================================================================
@@ -250,6 +265,7 @@ class GlobalAttributeWithOptionsCreate(BaseModel):
     input_type: str = "single_select"
     description: Optional[str] = None
     question_text: Optional[str] = None
+    options_source_category: Optional[str] = None
     options: List[GlobalAttributeOptionCreate] = []
 
 

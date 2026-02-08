@@ -61,6 +61,23 @@ class TextMutator:
         "oh",
     ]
 
+    # Polite phrases to add at start or end
+    POLITE_PHRASES_START: list[str] = [
+        "hi",
+        "hello",
+        "hey",
+        "hi there",
+        "excuse me",
+    ]
+
+    POLITE_PHRASES_END: list[str] = [
+        "please",
+        "thanks",
+        "thank you",
+        "please and thank you",
+        "if you don't mind",
+    ]
+
     def __init__(self, seed: int | None = None) -> None:
         """Initialize the mutator with optional random seed."""
         self.rng = random.Random(seed)
@@ -82,12 +99,10 @@ class TextMutator:
         mutations_applied = []
 
         if gentle:
-            # Gentle mode: only safe mutations that don't break recognition
+            # Gentle mode: only safe mutations that don't touch item names
             mutation_methods = [
-                self._apply_synonym,
                 self._add_filler_word,
-                self._apply_case_change,
-                self._remove_article,
+                self._add_polite_phrase,
             ]
         else:
             # Full mode: all mutations including typos
@@ -221,6 +236,19 @@ class TextMutator:
             insert_pos = self.rng.randint(0, len(words))
             words.insert(insert_pos, filler)
             return " ".join(words)
+
+    def _add_polite_phrase(self, text: str) -> str:
+        """Add a polite phrase at the start or end."""
+        position = self.rng.choice(["start", "end"])
+
+        if position == "start":
+            phrase = self.rng.choice(self.POLITE_PHRASES_START)
+            # Add comma or just space
+            separator = self.rng.choice([", ", " "])
+            return f"{phrase}{separator}{text}"
+        else:
+            phrase = self.rng.choice(self.POLITE_PHRASES_END)
+            return f"{text} {phrase}"
 
     def _apply_abbreviation(self, text: str) -> str:
         """Replace common phrases with abbreviations."""

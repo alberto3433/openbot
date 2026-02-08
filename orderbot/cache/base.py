@@ -129,11 +129,12 @@ def normalize_for_matching(text: str) -> str:
 # =============================================================================
 # Skip Words for Text Processing
 # =============================================================================
-# These are defined here to avoid circular imports with tasks/parsers/constants.py
-# English stop words / union words (language-specific, not domain-specific)
-SKIP_WORDS_BASIC = {'the', 'a', 'an'}
-SKIP_WORDS_CONJUNCTIONS = {'and', 'or', 'with'}
-SKIP_WORDS_PREPOSITIONS = {'on', 'in', 'to', 'of'}
+# These are the canonical definitions for basic skip words.
+# They are defined here (not in parsers/constants.py) to avoid circular imports.
+# parsers/constants.py imports these and adds more comprehensive filler word sets.
+SKIP_WORDS_BASIC = frozenset({'the', 'a', 'an'})
+SKIP_WORDS_CONJUNCTIONS = frozenset({'and', 'or', 'with'})
+SKIP_WORDS_PREPOSITIONS = frozenset({'on', 'in', 'to', 'of'})
 
 # Shared inflect engine instance (thread-safe for reading)
 _inflect_engine = inflect.engine()

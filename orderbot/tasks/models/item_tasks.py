@@ -359,16 +359,25 @@ class MenuItemTask(ItemTask):
         self.selections.append(selection)
         # Note: unit_price is NOT updated here - it's calculated in recalculate_item_price()
 
-    def remove_selection(self, category: str, slug: str | None = None) -> bool:
+    def remove_selection(
+        self,
+        category: str,
+        slug: str | None = None,
+        decrement_by: int | None = None,
+    ) -> bool:
         """Remove selection(s) by category and optionally slug.
 
         Args:
             category: The category to remove from
             slug: If provided, only remove selection with this slug.
                   If None, removes ALL selections for this category.
+            decrement_by: If provided, decrement quantity by this amount instead
+                  of removing entirely. Only applies when slug is specified.
+                  If resulting quantity <= 0, the selection is removed.
+                  If None, removes the entire selection (existing behavior).
 
         Returns:
-            True if any selections were removed, False otherwise
+            True if any selections were removed or decremented, False otherwise
         """
         removed_any = False
         i = 0
@@ -376,6 +385,22 @@ class MenuItemTask(ItemTask):
             sel = self.selections[i]
             if sel.get("category") == category:
                 if slug is None or sel.get("slug") == slug:
+                    # Check if we should decrement instead of remove
+                    if decrement_by is not None and slug is not None:
+                        current_qty = sel.get("quantity", 1)
+                        new_qty = current_qty - decrement_by
+                        if new_qty > 0:
+                            # Decrement quantity instead of removing
+                            sel["quantity"] = new_qty
+                            # Subtract price for removed quantity
+                            price = sel.get("price", 0)
+                            if price > 0:
+                                self.unit_price -= price * decrement_by
+                            removed_any = True
+                            i += 1  # Move to next, we didn't remove this one
+                            continue
+                        # new_qty <= 0: fall through to remove the entire selection
+
                     removed = self.selections.pop(i)
                     # Subtract price from unit_price
                     price = removed.get("price", 0)

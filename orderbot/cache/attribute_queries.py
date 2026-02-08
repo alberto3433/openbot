@@ -394,3 +394,63 @@ class AttributeQueryMixin:
             if slug:
                 skipped.update(self._option_skip_rules.get(slug, set()))
         return skipped
+
+    @ensure_cache_loaded
+    def get_options_source_category(self, attr_slug: str) -> str | None:
+        """Get the options source category for a global attribute.
+
+        Used for package_multi_select input types to specify which ingredient
+        category provides the options (e.g., 'bread' for package_contents).
+
+        Args:
+            attr_slug: The attribute slug
+
+        Returns:
+            The ingredient category slug, or None if not set.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        metadata = self._global_attribute_metadata.get(attr_slug, {})
+        return metadata.get("options_source_category")
+
+    @ensure_cache_loaded
+    def get_forward_to_attribute(self, attr_slug: str, option_slug: str) -> str | None:
+        """Get the forward-to attribute slug for an option.
+
+        Used for data-driven forward delegation: when user input matches the
+        target attribute's options, auto-select this option and forward.
+
+        Args:
+            attr_slug: The attribute slug
+            option_slug: The option slug
+
+        Returns:
+            The target attribute slug, or None if no forwarding configured.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        options = self._global_attribute_options.get(attr_slug, [])
+        for opt in options:
+            if opt.get("slug") == option_slug:
+                return opt.get("forward_to_attribute")
+        return None
+
+    @ensure_cache_loaded
+    def get_options_with_forward_delegation(self, attr_slug: str) -> list[dict]:
+        """Get all options for an attribute that have forward delegation configured.
+
+        Returns list of options with forward_to_attribute set.
+
+        Args:
+            attr_slug: The attribute slug
+
+        Returns:
+            List of option dicts with forward_to_attribute
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        options = self._global_attribute_options.get(attr_slug, [])
+        return [opt for opt in options if opt.get("forward_to_attribute")]

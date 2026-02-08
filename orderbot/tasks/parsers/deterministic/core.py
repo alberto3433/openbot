@@ -374,37 +374,115 @@ def parse_open_input_deterministic(
     # Uses data-driven validation against menu_cache triggers
     another_item_match = ANOTHER_ITEM_PATTERN.match(text)
     if another_item_match:
-        item_keyword = another_item_match.group(1).lower()
+        item_keyword = another_item_match.group(1).strip()
+        item_keyword_lower = item_keyword.lower()
         # Get singular form for matching
-        item_keyword_singular = singularize(item_keyword)
+        item_keyword_singular = singularize(item_keyword_lower)
+
+        # 0. First try to parse the captured text as a complete item order
+        # This handles cases like "another 6 bagel package" where the full item name is captured
+        # Re-use the same parsing logic as for regular orders
+        parsed_as_item = _parse_configurable_item(item_keyword)
+        if parsed_as_item:
+            logger.info("Deterministic parse: 'another %s' parsed as new item", item_keyword)
+            return parsed_as_item
+
+        # Try direct menu item match (for non-configurable items)
+        menu_item, qty, _ = _extract_menu_item_from_text(item_keyword)
+        if menu_item:
+            item_type_for_item = menu_cache.get_item_type_for_menu_item(menu_item)
+            is_sig = menu_cache.item_has_default_ingredients(menu_item)
+            logger.info("Deterministic parse: 'another %s' matched menu item '%s'", item_keyword, menu_item)
+            parsed_items = [
+                build_parsed_item(
+                    item_type=item_type_for_item or "menu_item",
+                    item_name=menu_item,
+                    quantity=1,
+                    is_signature=is_sig,
+                )
+                for _ in range(qty)
+            ]
+            return OpenInputResponse(parsed_items=parsed_items)
 
         # Validate against data-driven category keywords or item type triggers
         # This replaces the hardcoded ANOTHER_ITEM_TYPE_KEYWORDS mapping
         resolved_item_type: str | None = None
 
         # 1. Check category keyword mapping - returns the item type slug
-        category_info = menu_cache.get_category_keyword_mapping(item_keyword)
+        category_info = menu_cache.get_category_keyword_mapping(item_keyword_lower)
         if not category_info:
             category_info = menu_cache.get_category_keyword_mapping(item_keyword_singular)
         if category_info:
             resolved_item_type = category_info.get("slug")
 
         # 2. Check if keyword is a trigger for any item type (reverse lookup)
+        # BUT first check if it's an exact menu item name - if so, return the specific item
         if not resolved_item_type:
             all_triggers = menu_cache.get_item_type_triggers()  # Returns dict[str, set[str]]
             for item_type_slug, triggers in all_triggers.items():
-                if item_keyword in triggers or item_keyword_singular in triggers:
+                if item_keyword_lower in triggers or item_keyword_singular in triggers:
+                    # Found trigger match - but check if this is also an exact menu item name
+                    # e.g., "6 bagel package" is both a trigger AND a menu item name
+                    word_matches = menu_cache.find_items_by_word_match(item_keyword_lower)
+                    exact_match = None
+                    for m in word_matches:
+                        match_name = m.get("name", "")
+                        if match_name.lower() == item_keyword_lower:
+                            exact_match = m
+                            break
+                    if exact_match:
+                        # Found exact menu item match - return it as a parsed item
+                        item_name = exact_match.get("name")
+                        item_type_for_item = exact_match.get("item_type")
+                        is_sig = menu_cache.item_has_default_ingredients(item_name)
+                        logger.info("Deterministic parse: 'another %s' exact match menu item '%s'", item_keyword, item_name)
+                        parsed_items = [
+                            build_parsed_item(
+                                item_type=item_type_for_item or "menu_item",
+                                item_name=item_name,
+                                quantity=1,
+                                is_signature=is_sig,
+                            )
+                        ]
+                        return OpenInputResponse(parsed_items=parsed_items)
+                    # No exact match - use item type
                     resolved_item_type = item_type_slug
                     break
 
         # 3. Fallback: Try word-boundary matching to find items containing the keyword
         # This handles cases like "tea" matching "Hot Tea", "Iced Tea", etc.
+        # Also handles specific menu items with numbers like "6 Bagel Package"
         if not resolved_item_type:
-            word_matches = menu_cache.find_items_by_word_match(item_keyword)
+            word_matches = menu_cache.find_items_by_word_match(item_keyword_lower)
             if not word_matches:
                 word_matches = menu_cache.find_items_by_word_match(item_keyword_singular)
             if word_matches:
-                # Find the most common item type among matches
+                # Check if any match is an EXACT match to the search term (case-insensitive)
+                # This handles "6 bagel package" -> "6 Bagel Package" where the full item name is specified
+                exact_match = None
+                for m in word_matches:
+                    match_name = m.get("name", "")
+                    if match_name.lower() == item_keyword_lower:
+                        exact_match = m
+                        break
+
+                if exact_match:
+                    # Found exact match - return it as a parsed item
+                    item_name = exact_match.get("name")
+                    item_type_for_item = exact_match.get("item_type")
+                    is_sig = menu_cache.item_has_default_ingredients(item_name)
+                    logger.info("Deterministic parse: 'another %s' exact match menu item '%s'", item_keyword, item_name)
+                    parsed_items = [
+                        build_parsed_item(
+                            item_type=item_type_for_item or "menu_item",
+                            item_name=item_name,
+                            quantity=1,
+                            is_signature=is_sig,
+                        )
+                    ]
+                    return OpenInputResponse(parsed_items=parsed_items)
+
+                # No exact match - find the most common item type among matches
                 item_types = [m.get("item_type") for m in word_matches if m.get("item_type")]
                 if item_types:
                     # Use the most frequent item type
@@ -412,12 +490,12 @@ def parse_open_input_deterministic(
                     resolved_item_type = Counter(item_types).most_common(1)[0][0]
                     logger.debug(
                         "Deterministic parse: 'another %s' word-matches %d items, item_type '%s'",
-                        item_keyword, len(word_matches), resolved_item_type
+                        item_keyword_lower, len(word_matches), resolved_item_type
                     )
 
         if resolved_item_type:
             # Valid item type keyword - pass the canonical item type to downstream handler
-            logger.info("Deterministic parse: 'another %s' detected -> item_type '%s'", item_keyword, resolved_item_type)
+            logger.info("Deterministic parse: 'another %s' detected -> item_type '%s'", item_keyword_lower, resolved_item_type)
             return OpenInputResponse(duplicate_new_item_type=resolved_item_type)
 
     # Check for "one more" / "another" patterns (without item type - needs clarification if multiple items)

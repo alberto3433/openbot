@@ -1,10 +1,10 @@
 # Chaos Monkey Test Failures
 
-**Generated:** 2026-02-07T12:37:40.959424
-**Session Start:** 2026-02-07T11:49:27.169905
-**Total Tests:** 225
-**Passed:** 90
-**Failed:** 135
+**Generated:** 2026-02-07T19:07:50.249131
+**Session Start:** 2026-02-07T18:56:41.391543
+**Total Tests:** 50
+**Passed:** 28
+**Failed:** 22
 
 ---
 
@@ -12,397 +12,215 @@
 
 | Category | Count |
 |----------|-------|
-| Menu Item Not Found | 118 |
-| Item Recognition | 17 |
+| Menu Item Not Found | 21 |
+| Item Recognition | 1 |
 
 ## Menu Item Not Found
 
-### Order Side of Tomato, Espresso then modify
+### Order Tuna Salad Sandwich, Cinnamon Sugar Butter Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `0f52180c-dd16-45bb-adab-f5d7be4ae04f`
+**Session:** `e8a0791d-f490-4c44-bcb4-95b43371534c`
 
-**Failure:** Item not found: Sorry, we don't have Hold regular sugar. We have Shot.
+**Failure:** Item not found: Sorry, we don't have No nova scotia salmon. We have Gluten Free Everything Bagel, Sesame Bagel, Fren
 
 **Conversation:**
 ```
-User: I'll have well a Side of Tomato and a Espresso
-Bot: Got it, for the Espresso. Any extra shots?
-User: add onions
-Bot: Sure, I've added Onion. Any extra shots?
-User: Hold regular sugar
-Bot: Sorry, we don't have Hold regular sugar. We have Shot.
-[FAILED: Item not found: Sorry, we don't have Hold regular sugar. We have Shot.]
-User: Instead of croissant, make it wild pacific salmon
+User: Tuna Salad Sandwich and Cinnamon Sugar Butter Sandwich please
+Bot: Got it, Tuna Salad Sandwich and Cinnamon Sugar Butter Sandwich. For the tuna salad sandwich, what kind of bagel would you like?
+User: I'd like nova scotia salmon on that
+Bot: Let's finish with your Tuna Salad Sandwich, Lettuce, Beefsteak Tomatoes, Tuna Salad first. What kind of bagel would you like?
+User: No nova scotia salmon please
+Bot: Sorry, we don't have No nova scotia salmon. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast Bagel, Bialy, and Poppy Bagel, and more. Do you want one of these or do you want to hear mo...
+[FAILED: Item not found: Sorry, we don't have No nova scotia salmon. We have Gluten Free Everything Bagel, Sesame Bagel, Fren]
+User: Can you add blueberry cream cheese
 ```
 
-### Order Joyva Marble Halva, Olipop Classic Grape then modify
+### Order Truffle Cream Cheese Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `79923a7b-eb22-42f6-951f-94c8669014f9`
+**Session:** `5ca6c8ff-1319-4993-93f2-084582ee0b07`
 
-**Failure:** Item not found: I'm sorry, we don't have honevarti cheese on that. Is there something else I can help you with?
+**Failure:** Item not found: Sorry, we don't have Also add pepper jack cheese. We have Gluten Free Everything Bagel, Sesame Bagel
 
 **Conversation:**
 ```
-User: CAn I gEt a JoYVa MARBle hAlVA AnD A oliPop claSsic gRApe
-Bot: Got it, Joyva Marble Halva and Olipop Classic Grape. Anything else?
-User: I'd like honevarti cheese on that
-Bot: I'm sorry, we don't have honevarti cheese on that. Is there something else I can help you with?
-[FAILED: Item not found: I'm sorry, we don't have honevarti cheese on that. Is there something else I can help you with?]
-User: No jalapeno cc pls
-User: INSTEAD OF CREAM CHEESE, MAKE IT EVERYTHING WHEAT BAGEL
+User: One Truffle Cream Cheese Sandwich please
+Bot: Got it, for the Truffle Cream Cheese Sandwich. What kind of bagel would you like?
+User: Also add pepper jack cheese
+Bot: Sorry, we don't have Also add pepper jack cheese. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast Bagel, Bialy, and Poppy Bagel, and more. Do you want one of these or do you want to h...
+[FAILED: Item not found: Sorry, we don't have Also add pepper jack cheese. We have Gluten Free Everything Bagel, Sesame Bagel]
+User: Hold the pepper jack cheese
+User: Add sour cream to that
 ```
 
-### Order Grape Jelly Sandwich, Provolone Cheese Sandwich then modify
+### Order The BLT, Hot Cappuccino then modify
 
 **Type:** modifier_flow
-**Session:** `3de66cd5-8c16-46a9-bc17-720ae144842f`
+**Session:** `9efed28f-3657-4913-b27a-24d9cf658c1e`
 
-**Failure:** Item not found: I couldn't find pepperoni in your order. What would you like to do?
+**Failure:** Item not found: Sorry, we don't have Can you add honey walnut cream cheese. We have Gluten Free Everything Bagel, Se
 
 **Conversation:**
 ```
-User: Grape Jelly Sandwich and Provolone Cheese Sandwich please
-Bot: Got it, Grape Jelly Sandwich and Provolone Cheese. For the grape jelly sandwich, what kind of bagel would you like?
-User: With almond please
-Bot: Let's finish with your Grape Jelly Sandwich, Grape Jelly, Grape Jelly first. What kind of bagel would you like?
-User: Take off the pepperoni
-Bot: I couldn't find pepperoni in your order. What would you like to do?
-[FAILED: Item not found: I couldn't find pepperoni in your order. What would you like to do?]
-User: Actually avocado instead of cherry tomatoes
+User: The BLT and Hot Cappuccino please
+Bot: Got it, The BLT and Hot Cappuccino. For the the blt, what kind of bagel would you like?
+User: Can you add honey walnut cream cheese
+Bot: Sorry, we don't have Can you add honey walnut cream cheese. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast Bagel, Bialy, and Poppy Bagel, and more. Do you want one of these or do you...
+[FAILED: Item not found: Sorry, we don't have Can you add honey walnut cream cheese. We have Gluten Free Everything Bagel, Se]
+User: Actually no honey walnut cream cheese
+User: I'd like everything sourdough bagel on that
 ```
 
-### Order Dr. Brown's Cream Soda, Chocolate Chip Muffin then modify
+### Order Smoked Trout Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `ef769c4c-b72b-4532-a645-fb05dbc3cf39`
+**Session:** `c7de0c1f-ed97-4086-b7a2-16279fb88727`
 
-**Failure:** Item not found: Sorry, we don't have Replace swiss with hash browns. We have 1/4 lb or 1 lb.
+**Failure:** Item not found: Sorry, we don't have Skip the muenster cheese. We have Gluten Free Everything Bagel, Sesame Bagel, F
 
 **Conversation:**
 ```
-User: I'll have a Dr. Brown's Cream Soda and a Chocolate Chip Muffin
-Bot: Got it, Dr. Brown's Cream Soda and Chocolate Chip Muffin. Anything else?
-User: Add muenster cheese to that
-Bot: Sure, I've added that to your Chocolate Chip Muffin, Muenster Cheese. Anything else?
-User: Hold the muenster cheese
-Bot: Got it, for the Muenster Cheese with no muenster cheese. How much?
-User: Replace swiss with hash browns
-Bot: Sorry, we don't have Replace swiss with hash browns. We have 1/4 lb or 1 lb.
-[FAILED: Item not found: Sorry, we don't have Replace swiss with hash browns. We have 1/4 lb or 1 lb.]
+User: Can I get a Smoked Trout Sandwich
+Bot: Got it, for the Smoked Trout Sandwich. What kind of bagel would you like?
+User: With muenster cheese please
+Bot: Let's finish with your Smoked Trout Sandwich, Smoked Trout, Plain Cream Cheese first. What kind of bagel would you like?
+User: Skip the muenster cheese
+Bot: Sorry, we don't have Skip the muenster cheese. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast Bagel, Bialy, and Poppy Bagel, and more. Do you want one of these or do you want to hear...
+[FAILED: Item not found: Sorry, we don't have Skip the muenster cheese. We have Gluten Free Everything Bagel, Sesame Bagel, F]
+User: Also add sun dried tomato bagel
 ```
 
-### Order Lentil Soup then modify
+### Order Hot Cappuccino, Scottish Salmon Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `7e0f80f7-1a71-42de-afd3-ef8c95a8835b`
+**Session:** `23ad2c95-d6d0-4ab5-aa0e-f71a2f11f84c`
 
-**Failure:** Item not found: I'm sorry, we don't have raisin walnut on that. Is there something else I can help you with?
+**Failure:** Item not found: Sorry, we don't have Without um regular sugar. We have Small or Large.
 
 **Conversation:**
 ```
-User: Can I get a Lentil Soup
-Bot: Got it, Lentil Soup. Anything else?
-User: I'd like raisin walnut on that
-Bot: I'm sorry, we don't have raisin walnut on that. Is there something else I can help you with?
-[FAILED: Item not found: I'm sorry, we don't have raisin walnut on that. Is there something else I can help you with?]
-User: Hold the raisin walnut
-User: Switch raisin walnut for eggs
+User: hi there Can I get a Hot Cappuccino and a Scottish Salmon Sandwich
+Bot: Got it, Hot Cappuccino and Scottish Salmon Sandwich. For the hot cappuccino, what size?
+User: With regular sugar please thank you
+Bot: Let's finish with your Hot Cappuccino first. What size?
+User: Without um regular sugar
+Bot: Sorry, we don't have Without um regular sugar. We have Small or Large.
+[FAILED: Item not found: Sorry, we don't have Without um regular sugar. We have Small or Large.]
+User: Also add sugar in the um raw
 ```
 
-### Order Maple Raisin Walnut Cream Cheese Sandwich, Cheddar Cheese then modify
+### Order Tofu Vegetable Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `a51fb7b6-dbf4-486f-abef-30a072f66043`
+**Session:** `4679f1b3-5ce2-487e-93de-58f9e1240261`
 
-**Failure:** Item not found: I couldn't find sugar raw in your order. What would you like to do?
+**Failure:** Item not found: I couldn't find plain sourdough if you don't mind in your order. What would you like to do?
 
 **Conversation:**
 ```
-User: Maple Raisin Walnut Cream Cheese Sandwich and Cheddar Cheese please
-Bot: Got it, for the Maple Raisin Walnut Cream Cheese Sandwich. What kind of bagel would you like?
-User: Put whole milk on it
-Bot: We have Whole Wheat Bagel, Whole Wheat Everything Bagel, Whole Wheat Flatz, Whole Wheat Everything Flatz, Whole Wheat Bread, or Whole Wheat Wrap. Which would you like?
-User: Remove the sugar raw
-Bot: I couldn't find sugar raw in your order. What would you like to do?
-[FAILED: Item not found: I couldn't find sugar raw in your order. What would you like to do?]
-User: Change the sugar raw to red peppers
+User: Can I get a like Tofu Vegetable Sandwich
+Bot: Got it, for the Tofu Vegetable Sandwich. What kind of bagel would you like?
+User: With plain sourdough please thanks
+Bot: Got it, Plain Sourdough Bagel. Would you like it toasted?
+User: Take off the plain sourdough if you don't mind
+Bot: I couldn't find plain sourdough if you don't mind in your order. What would you like to do?
+[FAILED: Item not found: I couldn't find plain sourdough if you don't mind in your order. What would you like to do?]
+User: hi With salt bagel please
 ```
 
-### Order Roast Beef then modify
+### Order Vegetable Cream Cheese Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `7acabd8c-77fa-4ebd-a236-b2b76e5b55b2`
+**Session:** `074d9b17-38ef-4f9d-bcc9-26863b40b47f`
 
-**Failure:** Item not found: I couldn't find peppermint syrup in your order. What would you like to do?
+**Failure:** Item not found: Sorry, we don't have No belly lox. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast 
 
 **Conversation:**
 ```
-User: I'd like Roast Beef
-Bot: Got it, for the Roast Beef. How much?
-User: Add gouda cheese to that
-Bot: Sure, I've added Gouda Cheese. How much?
-User: um Take off the peppermint syrup
-Bot: I couldn't find peppermint syrup in your order. What would you like to do?
-[FAILED: Item not found: I couldn't find peppermint syrup in your order. What would you like to do?]
-User: Replace um tofu cc with gouda cheese
+User: I'll have a Vegetable Cream Cheese Sandwich
+Bot: Got it, for the Vegetable Cream Cheese Sandwich. What kind of bagel would you like?
+User: Also add belly lox
+Bot: Got it, I've added Belly Lox. Now, for your Vegetable Cream Cheese Sandwich, what kind of bagel would you like?
+User: No belly lox please
+Bot: Sorry, we don't have No belly lox. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast Bagel, Bialy, and Poppy Bagel, and more. Do you want one of these or do you want to hear more option...
+[FAILED: Item not found: Sorry, we don't have No belly lox. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast ]
+User: Add mayo to that
 ```
 
-### Order Scallion Cream Cheese Sandwich, Sun-Dried Tomato Cream Cheese Sandwich then modify
+### Order Sun-Dried Tomato Cream Cheese Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `439e07db-0de1-4d1a-af74-b8edfe5564fb`
+**Session:** `614108f0-5dfe-462a-8481-d2638db4e948`
 
-**Failure:** Item not found: Sorry, we don't have Instead of jalapeno, make it cucumbers. We have 1/4 lb or 1 lb.
+**Failure:** Item not found: Sorry, we don't have Without turkey bacon. We have Gluten Free Everything Bagel, Sesame Bagel, Frenc
 
 **Conversation:**
 ```
-User: I'd like a Scallion Cream Cheese Sandwich and also a Sun-Dried Tomato Cream Cheese Sandwich
-Bot: Got it, two swiss cheeses. For the first swiss cheese, how much?
-User: With corned beef please
-Bot: Let's finish with your Swiss Cheese, 1/4 lb first. How much?
-User: Actually no half and half
-Bot: Sure, I've changed the milk to Half N Half. How much?
-User: Instead of jalapeno, make it cucumbers
-Bot: Sorry, we don't have Instead of jalapeno, make it cucumbers. We have 1/4 lb or 1 lb.
-[FAILED: Item not found: Sorry, we don't have Instead of jalapeno, make it cucumbers. We have 1/4 lb or 1 lb.]
+User: Can I get a Sun-Dried Tomato Cream Cheese Sandwich
+Bot: Got it, for the Sun-Dried Tomato Cream Cheese Sandwich. What kind of bagel would you like?
+User: Add turkey bacon
+Bot: Sure, I've added Turkey Bacon. What kind of bagel would you like?
+User: Without turkey bacon
+Bot: Sorry, we don't have Without turkey bacon. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast Bagel, Bialy, and Poppy Bagel, and more. Do you want one of these or do you want to hear mor...
+[FAILED: Item not found: Sorry, we don't have Without turkey bacon. We have Gluten Free Everything Bagel, Sesame Bagel, Frenc]
+User: Add seeded salmon to that
 ```
 
-### Order Whitefish Salad Sandwich, Nova Scotia Salmon on Bagel then modify
+### Order Baked Salmon Salad Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `70304252-21cc-4c6e-9f65-9c684750a837`
+**Session:** `7258646d-79be-46c7-bacc-786f2d8e1bad`
 
-**Failure:** Item not found: Sorry, we don't have Hold the grilled chicken. We have 1/4 lb or 1 lb.
+**Failure:** Item not found: Sorry, we don't have excuse me, Can you add breakfast potato latke. We have Gluten Free Everything B
 
 **Conversation:**
 ```
-User: I'll have a Whitefish Salad Sandwich and a Nova Scotia Salmon on Bagel
-Bot: Got it, Tuna Salad and Nova Scotia Salmon on Bagel. For the tuna salad, how much?
-User: Add tofu cc to that
-Bot: Sure, I've added Tofu Cream Cheese. How much?
-User: Hold the grilled chicken
-Bot: Sorry, we don't have Hold the grilled chicken. We have 1/4 lb or 1 lb.
-[FAILED: Item not found: Sorry, we don't have Hold the grilled chicken. We have 1/4 lb or 1 lb.]
-User: Actually sweet n low instead of grilled chicken
+User: I'll have hmm a Baked Salmon Salad Sandwich
+Bot: Got it, for the Baked Salmon Salad Sandwich. What kind of bagel would you like?
+User: excuse me, Can you add breakfast potato latke
+Bot: Sorry, we don't have excuse me, Can you add breakfast potato latke. We have Gluten Free Everything Bagel, Sesame Bagel, French Toast Bagel, Bialy, and Poppy Bagel, and more. Do you want one of these o...
+[FAILED: Item not found: Sorry, we don't have excuse me, Can you add breakfast potato latke. We have Gluten Free Everything B]
+User: so No breakfast potato latke please
+User: Can you add pickle please and thank you
 ```
 
-### Order Strawberry Cream Cheese then modify
+### Order Iced Cappucino then modify
 
 **Type:** modifier_flow
-**Session:** `c436b9cf-2956-4186-b0a7-3a627ddcd814`
+**Session:** `8a6337c9-de62-4e6f-bf53-256d63000dfb`
 
-**Failure:** Item not found: Sorry, we don't have Also add sauteed peppers. We have 1/4 lb or 1 lb.
+**Failure:** Item not found: Sorry, we don't have Actually no skim. We have Small or Large.
 
 **Conversation:**
 ```
-User: Can I get a Strawberry Cream Cheese
-Bot: Got it, for the Strawberry Cream Cheese. How much?
-User: Also add sauteed peppers
-Bot: Sorry, we don't have Also add sauteed peppers. We have 1/4 lb or 1 lb.
-[FAILED: Item not found: Sorry, we don't have Also add sauteed peppers. We have 1/4 lb or 1 lb.]
-User: Remove the breakfast potato latke
-User: Instead of breakfast potato latke, make it lactose free milk
+User: I'd like a Iced Cappucino
+Bot: Got it, for the Iced Cappucino. What size?
+User: Add skim to that
+Bot: Let's finish with your Iced Cappucino first. What size?
+User: Actually no skim
+Bot: Sorry, we don't have Actually no skim. We have Small or Large.
+[FAILED: Item not found: Sorry, we don't have Actually no skim. We have Small or Large.]
+User: Add regular sugar
 ```
 
-*... and 108 more failures in this category*
+*... and 11 more failures in this category*
 
 ## Item Recognition
 
-### Order Side of Turkey Bacon, The Reuben then modify
+### Order Havarti Cheese Sandwich then modify
 
 **Type:** modifier_flow
-**Session:** `d8c61115-0943-4651-a834-78f3bcafd781`
+**Session:** `4f4d70d3-f7c4-4cc1-a934-b2d9858819f6`
 
-**Failure:** Expected item 'Side of Turkey Bacon' not in cart. Cart contains: []
+**Failure:** Expected item 'Havarti Cheese Sandwich' not in cart. Cart contains: []
 
 **Conversation:**
 ```
-User: I'll have a Side of Turkey Bacon and a The Reuben
-Bot: Got it, for the The Reuben. What kind of bagel would you like?
-User: With jalapeño spread please
-Bot: Let's finish with your The Reuben, Corned Beef, Pastrami, Swiss Cheese, Turkey, Sauerkraut first. What kind of bagel would you like?
-User: Take off the kalamata olive feta cream cheese
-Bot: OK, I've removed the The Reuben, Corned Beef, Pastrami, Swiss Cheese, Turkey, Sauerkraut. Anything else?
-User: Replace wheat flatz with jalapeño spread
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Side of Turkey Bacon' not in cart. Cart contains: []]
-```
-
-### Order Bagel Package - Dozen Bagels & 2 Cream Cheese then modify
-
-**Type:** modifier_flow
-**Session:** `532aa1c0-7fcb-4c07-8f2c-983fdffc51aa`
-
-**Failure:** Expected item 'Bagel Package - Dozen Bagels & 2 Cream Cheese' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: One Bagel Package - Dozen Bagels & 2 Cream Cheese please
+User: One Havarti um Cheese Sandwich please
 Bot: What can I get for you?
-[FAILED: Expected item 'Bagel Package - Dozen Bagels & 2 Cream Cheese' not in cart. Cart contains: []]
-User: I'd like vanilla on that
-User: No vegetable cream cheese please
-User: Replace vanilla with gluten-free everything
+[FAILED: Expected item 'Havarti Cheese Sandwich' not in cart. Cart contains: []]
+User: hello, Can you add poppy seed bagel
+User: Take just off the poppy seed bagel
+User: oh I'd like gf plain on that
 ```
-
-### Order Two Hard Boiled Eggs then modify
-
-**Type:** modifier_flow
-**Session:** `726bc178-b9be-46c1-a3be-5d48eb9bdc2f`
-
-**Failure:** Expected item 'Two Hard Boiled Eggs' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: One Two Hard Boiled Eggs please
-Bot: Got it, Two Hard Boiled Eggs. Anything else?
-User: Add pepper to that
-Bot: Sure, I've added that to your Two Hard Boiled Eggs, Black Pepper. Anything else?
-User: Skip the pepper
-Bot: What can I get for you?
-User: Switch pepper for black pepper
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Two Hard Boiled Eggs' not in cart. Cart contains: []]
-```
-
-### Order Poppy Hamantaschen, Fruit Salad then modify
-
-**Type:** modifier_flow
-**Session:** `87845448-df9e-4290-8c1a-686f71584961`
-
-**Failure:** Expected item 'Poppy Hamantaschen' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: Poppy Hamantaschen and Fruit Salad please
-Bot: Got it, Poppy Hamantaschen. Anything else?
-User: Can you add pico de gallo
-Bot: Sure, I've added that to your Poppy Hamantaschen, Pico de Gallo. Anything else?
-User: Actually no pico de gallo
-Bot: This item doesn't have a Unknown to change.
-User: Switch whole wheat flatz for dill
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Poppy Hamantaschen' not in cart. Cart contains: []]
-```
-
-### Order Diet Sprite then modify
-
-**Type:** modifier_flow
-**Session:** `01f4f5f2-6be8-498f-833c-60d3f43c4000`
-
-**Failure:** Expected item 'Diet Sprite' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: I'll have a Diet Sprite
-Bot: Got it, Diet Sprite. Anything else?
-User: Add caramel
-Bot: Sure, I've added that to your Diet Sprite, Caramel Syrup. Anything else?
-User: No persian cucumber please
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Diet Sprite' not in cart. Cart contains: []]
-User: Switch salt bagel for oat milk
-```
-
-### Order Rugelach then modify
-
-**Type:** modifier_flow
-**Session:** `b985a904-b828-4bc7-bf29-81d0401c03f2`
-
-**Failure:** Expected item 'Rugelach' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: One Rugelach please
-Bot: Got it, Rugelach. Anything else?
-User: Add broccoli to that
-Bot: Sure, I've added that to your Rugelach (3 pack), Broccoli. Anything else?
-User: Hold the lactose free
-Bot: What can I get for you?
-User: Replace egg salad with lactose free
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Rugelach' not in cart. Cart contains: []]
-```
-
-### Order Rice Krispy Treat, Scallion Tofu Spread Sandwich then modify
-
-**Type:** modifier_flow
-**Session:** `58f34455-c0c7-443c-9e8a-6c2e99fb7119`
-
-**Failure:** Expected item 'Rice Krispy Treat' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: I'll have a Rice Krispy Treat and a Scallion Tofu Spread Sandwich
-Bot: Got it, for the Scallion Tofu Spread Sandwich. What kind of bagel would you like?
-User: With walnut raisin please
-Bot: We have Cinnamon Raisin Bagel or Gluten Free Cinnamon Raisin Bagel. Which would you like?
-User: Take off the scallion cc
-Bot: OK, I've removed the Scallion Tofu Spread Sandwich, Tofu Scallion Cream Cheese, Scallion Tofu Spread. Anything else?
-User: Switch sauerkraut for walnut raisin
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Rice Krispy Treat' not in cart. Cart contains: []]
-```
-
-### Order Cole Slaw then modify
-
-**Type:** modifier_flow
-**Session:** `eb495a51-f074-415b-b384-23c959f4ebda`
-
-**Failure:** Expected item 'Cole Slaw' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: I'd like a Cole Slaw
-Bot: Got it, Cole Slaw. Anything else?
-User: Put tofu vegetable cream cheese on it
-Bot: Sure, I've added that to your Cole Slaw, Vegetable Cream Cheese. Anything else?
-User: Skip the strawberry jam
-Bot: What can I get for you?
-User: Replace everything seeded salmon with soy
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Cole Slaw' not in cart. Cart contains: []]
-```
-
-### Order Danish then modify
-
-**Type:** modifier_flow
-**Session:** `cfd81f1a-59a5-4479-8099-6df23a34066d`
-
-**Failure:** Expected item 'Danish' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: I'll have a Danish
-Bot: Got it, Danish. Anything else?
-User: I'd like eggs on that
-Bot: Sure, I've added that to your Danish, Egg. Anything else?
-User: Actually no persian cucumber
-Bot: This item doesn't have a Unknown to change.
-User: Swap honey walnut cc for eggs
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Danish' not in cart. Cart contains: []]
-```
-
-### Order Dr. Brown's Cream Soda then modify
-
-**Type:** modifier_flow
-**Session:** `a79cb2d0-7293-4c6d-babd-4998ddd08d49`
-
-**Failure:** Expected item 'Dr. Brown's Cream Soda' not in cart. Cart contains: []
-
-**Conversation:**
-```
-User: I'll have a Dr. Brown's Cream Soda
-Bot: Got it, Dr. Brown's Cream Soda. Anything else?
-User: Put cinnamon sugar butter on it
-Bot: Sure, I've added that to your Dr. Brown's Cream Soda, Domino Sugar. Anything else?
-User: Actually no cinnamon sugar butter
-Bot: I didn't catch that. What would you like to order?
-[FAILED: Expected item 'Dr. Brown's Cream Soda' not in cart. Cart contains: []]
-User: Instead of persian cucumber, make it avocado spread
-```
-
-*... and 7 more failures in this category*

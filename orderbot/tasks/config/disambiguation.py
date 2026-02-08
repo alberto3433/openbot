@@ -189,6 +189,12 @@ class ConfigDisambiguationHandler:
         if qualifier:
             selection["qualifier"] = qualifier
 
+        # For single-select attributes, remove existing selection before adding new one
+        # This ensures the user's answer replaces any default value (e.g., plain_bagel)
+        input_type = attr.get("input_type", "single_select")
+        if input_type != "multi_select":
+            item.remove_selection(attr_slug)
+
         # Add selection using the unified API
         item.add_selection(
             selected["slug"],

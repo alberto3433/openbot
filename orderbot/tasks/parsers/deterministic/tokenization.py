@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 # Constants for Tokenization
 # =============================================================================
 
-# Words to skip during tokenization (not meaningful for classification)
-_SKIP_WORDS = {"please", "thanks", "thank", "you", "with", "the", "some", "of"}
+# Import consolidated skip words from constants
+from orderbot.tasks.parsers.constants import TOKENIZATION_SKIP_WORDS as _SKIP_WORDS
 
 
 # =============================================================================

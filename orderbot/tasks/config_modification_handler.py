@@ -29,6 +29,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Pattern to detect "add modifier" requests during config
+# Matches: "add X", "also add X", "can you add X", "could you add X", "please add X"
+ADD_MODIFIER_PREFIXES = [
+    r"(?:also\s+)?add\s+",
+    r"(?:can|could)\s+you\s+add\s+",
+    r"please\s+add\s+",
+]
+ADD_MODIFIER_PATTERN = re.compile(
+    r"^(?:" + "|".join(ADD_MODIFIER_PREFIXES) + r")",
+    re.IGNORECASE
+)
+
 
 class ConfigModificationHandler:
     """
@@ -375,13 +387,14 @@ class ConfigModificationHandler:
 
         logger.info("ADD_DURING_CONFIG: Checking input '%s'", user_input[:50])
 
-        # Quick check: only handle inputs starting with "add "
-        if not user_lower.startswith("add "):
-            logger.debug("ADD_DURING_CONFIG: Input doesn't start with 'add ', skipping")
+        # Check for add modifier patterns: "add X", "also add X", "can you add X", etc.
+        match = ADD_MODIFIER_PATTERN.match(user_lower)
+        if not match:
+            logger.debug("ADD_DURING_CONFIG: Input doesn't match add pattern, skipping")
             return None
 
-        # Extract the modifier text after "add "
-        modifier_text = user_lower[4:].strip()
+        # Extract the modifier text after the matched prefix
+        modifier_text = user_lower[match.end():].strip()
         # Remove trailing "please", "thanks"
         modifier_text = re.sub(r"\s*(please|thanks|thank you)$", "", modifier_text).strip()
 
@@ -421,24 +434,13 @@ class ConfigModificationHandler:
 
             if len(matches) == 1:
                 match = matches[0]
-
-                # Validate modifier is allowed for this item type
-                if not menu_cache.is_valid_modifier_for_item_type(match["slug"], item.menu_item_type):
-                    logger.info(
-                        "ADD_DURING_CONFIG: Modifier '%s' is not valid for item type '%s', rejecting",
-                        match["name"], item.menu_item_type
-                    )
-                    from .checkout_messages import modifier_not_available_for_item
-                    return StateMachineResult(
-                        message=modifier_not_available_for_item(match["name"], item.get_display_name()),
-                        order=order,
-                    )
-
-                # Check if ingredient slug matches an attribute with multiple options
-                # This handles generic ingredients like "egg" that map to style choices
-                # (scrambled, fried, etc.), but NOT specific ingredients like "bacon"
-                # which should be added directly
                 ingredient_slug = match["slug"]
+
+                # FIRST: Check if ingredient slug matches an attribute with multiple options
+                # This handles generic ingredients like "egg" that map to style choices
+                # (scrambled, fried, etc.). We check this BEFORE ingredient validation
+                # because "egg" may not be a valid ingredient for bagels, but "egg" IS
+                # a valid attribute with options (scrambled, fried, etc.)
                 attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
                 attr_config = attrs.get(ingredient_slug, {})
                 options = attr_config.get("options", [])
@@ -456,7 +458,10 @@ class ConfigModificationHandler:
                         ingredient_slug, attr_config, options, item, order
                     )
 
-                # No matching attribute or single option - add directly
+                # SECOND: Add directly as modifier
+                # For explicit "add X" requests, we trust the user's intent.
+                # The ingredient exists in our database, so we allow adding it
+                # even if it's not pre-configured for this item type.
                 item.add_selection(
                     slug=match["slug"],
                     category=match["category"],

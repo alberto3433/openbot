@@ -652,6 +652,68 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         else:
             quantity = WORD_TO_NUM.get(qty_str, 1)
 
+    # 3b. Check for inline attribute specifications (e.g., "2 bagels 1 everything 1 plain")
+    # This handles cases where user specifies attribute values inline with quantities.
+    # Must be checked BEFORE attribute extraction to split into multiple items.
+    # SKIP if matched_item_name is set - user is ordering a specific menu item (e.g., "The Classic BEC")
+    # and any modifiers like "on wheat" are for the item, not inline specs.
+    if quantity > 1 and matched_item_name is None:
+        from .inline_spec_parsing import (
+            parse_inline_attribute_specs,
+            extract_text_after_item_match,
+            get_primary_configurable_attribute,
+        )
+
+        # Check if this item type has a primary configurable attribute
+        primary_attr = get_primary_configurable_attribute(detected_item_type)
+        if primary_attr:
+            # Get triggers for this item type to find text after item mention
+            triggers = menu_cache.get_item_type_triggers(detected_item_type)
+            text_after_item = extract_text_after_item_match(text_lower, list(triggers))
+
+            if text_after_item:
+                # Try to parse inline specs
+                inline_specs = parse_inline_attribute_specs(
+                    text_after_item,
+                    quantity,
+                    detected_item_type,
+                )
+
+                if inline_specs:
+                    # Create separate ParsedItemEntry for each specification
+                    parsed_items = []
+                    specified_total = sum(s["quantity"] for s in inline_specs)
+
+                    for spec in inline_specs:
+                        item_entry = build_parsed_item(
+                            item_type=detected_item_type,
+                            item_name=matched_item_name,
+                            quantity=spec["quantity"],
+                            attribute_values={spec["attr_slug"]: spec["attr_value"]},
+                            original_text=text,
+                            is_signature=False,
+                        )
+                        parsed_items.append(item_entry)
+
+                    # If partial spec (specified_total < quantity), add remaining unspecified items
+                    if specified_total < quantity:
+                        remaining_qty = quantity - specified_total
+                        unspecified_entry = build_parsed_item(
+                            item_type=detected_item_type,
+                            item_name=matched_item_name,
+                            quantity=remaining_qty,
+                            original_text=text,
+                            is_signature=False,
+                        )
+                        parsed_items.append(unspecified_entry)
+
+                    logger.info(
+                        "INLINE_SPEC: Created %d items from inline specs: %s",
+                        len(parsed_items),
+                        [(p.quantity, list(s.slug for s in p.selections)) for p in parsed_items]
+                    )
+                    return OpenInputResponse(parsed_items=parsed_items)
+
     # 4. Extract attribute values using data-driven extraction
     # This returns all attributes as {slug: value} where value can be:
     # - string for single_select

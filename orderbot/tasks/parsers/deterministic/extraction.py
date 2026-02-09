@@ -18,6 +18,7 @@ from orderbot.cache import menu_cache
 
 from ..quantity_utils import WORD_TO_NUM, BASIC_WORD_TO_NUM, extract_quantity_word
 from .result_types import (
+    AmbiguousSelection,
     AttributeExtractionResult,
     TextSpan,
     UnavailableSelection,
@@ -72,6 +73,7 @@ def _extract_attribute_values(
     """
     result: dict[str, any] = {}
     unavailable_selections: list[UnavailableSelection] = []
+    ambiguous_selections: list[AmbiguousSelection] = []
     input_lower = user_input.lower()
 
     # Get all attributes for this item type from database
@@ -367,6 +369,10 @@ def _extract_attribute_values(
     # Important: Filter out tokens that fall within spans already matched in Phase 4.
     # This prevents "cream" from matching "Veggie Cream Cheese" when "plain cream cheese"
     # was already matched by Phase 4.
+    #
+    # AMBIGUITY HANDLING: If a token matches multiple options, skip ALL matches for
+    # that token - it's ambiguous. E.g., "syrup" matches "Vanilla Syrup", "Hazelnut Syrup",
+    # "Caramel Syrup", "Peppermint Syrup" - skip all, let user specify which one.
     input_token_matches = [(m.group(), m.start(), m.end())
                            for m in re.finditer(r'\b\w+\b', input_lower)
                            if len(m.group()) >= 3]
@@ -388,6 +394,9 @@ def _extract_attribute_values(
         if not options:
             continue
 
+        # First pass: count how many options each token would match
+        # Skip ambiguous tokens (matching multiple options)
+        token_match_counts: dict[str, list[dict]] = {}  # token -> list of matching options
         for opt in options:
             slug = opt.get("slug", "")
             if slug in matched_options_per_attr.get(attr_slug, set()):
@@ -408,20 +417,54 @@ def _extract_attribute_values(
                     matched = True
 
                 if matched:
-                    quantity = extract_quantity_before(input_lower, token_start)
-                    result.setdefault(attr_slug, []).append({
+                    token_match_counts.setdefault(token, []).append({
+                        "opt": opt,
                         "slug": slug,
-                        "display_name": opt.get("display_name", slug),
-                        "quantity": quantity,
-                        "price": opt.get("price_modifier", 0),
-                        "category": opt.get("category"),
+                        "token_start": token_start,
                     })
-                    matched_options_per_attr.setdefault(attr_slug, set()).add(slug)
-                    logger.debug(
-                        "Phase 5 reverse match: token '%s' in option '%s' for attr '%s'",
-                        token, display_lower or slug_readable, attr_slug
-                    )
-                    break
+
+        # Second pass: only apply matches for tokens that matched exactly ONE option
+        for token, matches in token_match_counts.items():
+            if len(matches) > 1:
+                # Ambiguous - track for disambiguation, skip all matches for this token
+                logger.debug(
+                    "Phase 5 skipping ambiguous token '%s' - matches %d options: %s",
+                    token, len(matches), [m["slug"] for m in matches]
+                )
+                # Track the ambiguous selection so handler can ask for clarification
+                ambiguous_selections.append(AmbiguousSelection(
+                    attr_slug=attr_slug,
+                    token=token,
+                    matching_options=[
+                        {
+                            "slug": m["slug"],
+                            "display_name": m["opt"].get("display_name", m["slug"]),
+                            "price": m["opt"].get("price_modifier", 0),
+                        }
+                        for m in matches
+                    ],
+                ))
+                continue
+
+            # Single match - apply it
+            match_info = matches[0]
+            opt = match_info["opt"]
+            slug = match_info["slug"]
+            token_start = match_info["token_start"]
+
+            quantity = extract_quantity_before(input_lower, token_start)
+            result.setdefault(attr_slug, []).append({
+                "slug": slug,
+                "display_name": opt.get("display_name", slug),
+                "quantity": quantity,
+                "price": opt.get("price_modifier", 0),
+                "category": opt.get("category"),
+            })
+            matched_options_per_attr.setdefault(attr_slug, set()).add(slug)
+            logger.debug(
+                "Phase 5 reverse match: token '%s' -> option '%s' for attr '%s'",
+                token, opt.get("display_name", slug), attr_slug
+            )
 
     # Phase 6: Detect unrecognized size terms
     # If user mentions a common size term (medium, regular, tall, etc.) that isn't
@@ -464,6 +507,7 @@ def _extract_attribute_values(
         matched_spans=result_spans,
         unavailable=unavailable_selections,
         unmatched=[],  # No unmatched tracking currently implemented
+        ambiguous=ambiguous_selections,
     )
 
 
@@ -618,61 +662,3 @@ def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:
                 return weight_unit, after_match
 
     return None, None
-
-
-def _extract_boolean_global_attribute(text: str, attr_slug: str) -> bool | None:
-    """Extract a boolean attribute value using global attribute options (data-driven).
-
-    This function looks up boolean options (true/false) for the given attribute
-    from global_attribute_options and matches the user input against aliases
-    defined for those options using substring matching.
-
-    Args:
-        text: User input text
-        attr_slug: The attribute slug
-
-    Returns:
-        True if matched to true option, False if matched to false option, None if no match.
-    """
-    text_lower = text.lower()
-
-    # Try to resolve via global attribute options with aliases (substring matching)
-    try:
-        options = menu_cache.get_global_attribute_options(attr_slug)
-        if options:
-            # Build list of (alias, is_true) tuples sorted by length descending
-            # so we match longer aliases first (e.g., "not toasted" before "toasted")
-            alias_matches: list[tuple[str, bool]] = []
-            for opt in options:
-                is_true_option = opt["slug"] == "true"
-                # Check the option's aliases from the linked ingredient
-                aliases = opt.get("aliases", [])
-                for alias in aliases:
-                    alias_matches.append((alias.lower(), is_true_option))
-
-            # Sort by length descending to match longer aliases first
-            alias_matches.sort(key=lambda x: len(x[0]), reverse=True)
-
-            # Check if any alias appears in the text
-            for alias, is_true_option in alias_matches:
-                if alias in text_lower:
-                    return is_true_option
-    except Exception:
-        # No options configured for this attribute, fall through to fallback
-        pass
-
-    # Fallback: Use regex pattern matching based on the attribute slug itself
-    # This handles cases where database options aren't configured
-    slug_lower = attr_slug.lower()
-
-    # Check for negative patterns first ("not {slug}", "un{slug}")
-    if re.search(rf"\b(?:not\s+{re.escape(slug_lower)}(?:ed)?|un{re.escape(slug_lower)}(?:ed)?)\b", text_lower):
-        return False
-
-    # Check for positive pattern ("{slug}" or "{slug}ed")
-    if re.search(rf"\b{re.escape(slug_lower)}(?:ed)?\b", text_lower):
-        return True
-
-    return None
-
-

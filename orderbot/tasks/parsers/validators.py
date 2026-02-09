@@ -139,8 +139,7 @@ def extract_zip_code(address: str) -> str | None:
 
 
 # Note: parse_toasted_deterministic was removed - toasted preference is now
-# parsed via data-driven boolean attribute lookup using global_attribute_options
-# with aliases. See _extract_boolean_global_attribute() in deterministic.py.
+# parsed via data-driven boolean attribute extraction in _extract_attribute_values().
 
 # Note: parse_hot_iced_deterministic removed - temperature (hot/iced) is now
 # part of the menu item name (e.g., "Iced Latte" vs "Hot Latte"), not a

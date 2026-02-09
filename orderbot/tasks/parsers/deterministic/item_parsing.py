@@ -745,6 +745,16 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # If we already found an item with defaults, use that name; otherwise try to match
     item_name = matched_item_name or _match_menu_item_name_for_type(text, detected_item_type)
 
+    # 5a. If no specific menu item matched, try to pick a default for the item type
+    # This handles cases like "earl gray tea" where we want to default to "Hot Tea"
+    if not item_name:
+        item_name = _get_default_menu_item_for_type(detected_item_type)
+        if item_name:
+            logger.debug(
+                "Using default menu item '%s' for type '%s'",
+                item_name, detected_item_type
+            )
+
     # Check if this item has default ingredients (used for populating defaults)
     has_defaults = False
     if item_name:
@@ -973,6 +983,8 @@ def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
         "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
         # Generic quantity/intensity words (not food-specific)
         "extra", "half", "double", "triple", "regular",
+        "little", "bit", "touch", "splash", "dash", "drop",
+        "just", "only", "light", "lightly",
         # Generic negation/exclusion words
         "no", "without", "hold",
     }
@@ -1000,6 +1012,14 @@ def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
         # Check if word is a known modifier or attribute option
         if word in all_modifiers or word in all_attr_options:
             continue
+        # Check if word is part of a multi-word attribute option
+        # (e.g., "milk" appears in "whole milk", "oat milk", etc.)
+        if any(' ' in opt and re.search(rf'\b{re.escape(word)}\b', opt) for opt in all_attr_options):
+            continue
+        # Check if word is part of a multi-word modifier
+        # (e.g., "cheese" in "cream cheese")
+        if any(' ' in mod and re.search(rf'\b{re.escape(word)}\b', mod) for mod in all_modifiers):
+            continue
         # Check if word is part of a multi-word option alias found in the text
         if word in words_in_option_aliases:
             continue
@@ -1011,6 +1031,45 @@ def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
         return True
 
     return False
+
+
+def _get_default_menu_item_for_type(item_type_slug: str) -> str | None:
+    """Get a default menu item name for an item type when no specific match is found.
+
+    Used when a user orders generically (e.g., "tea with milk") without specifying
+    which specific menu item they want (e.g., "Hot Tea" vs "Green Tea").
+
+    The default is selected by:
+    1. Looking for "Hot X" variant (common default for beverages)
+    2. Looking for item name ending with the type (e.g., "Chai Tea" for "tea")
+    3. Falling back to the first item in the list
+
+    Args:
+        item_type_slug: The item type slug
+
+    Returns:
+        The default menu item name, or None if no items exist for this type
+    """
+    item_names = list(menu_cache.get_item_names_by_type(item_type_slug))
+    if not item_names:
+        return None
+
+    if len(item_names) == 1:
+        return item_names[0].title()
+
+    # Look for "Hot X" variant (common default for beverages)
+    type_display = item_type_slug.replace('_', ' ')
+    for name in item_names:
+        if name.lower().startswith('hot '):
+            return name.title()
+
+    # Look for item name ending with the type slug word
+    for name in item_names:
+        if name.lower().endswith(type_display):
+            return name.title()
+
+    # Fallback: return first item (sorted alphabetically for consistency)
+    return sorted(item_names)[0].title()
 
 
 def _match_menu_item_name_for_type(text: str, item_type_slug: str) -> str | None:

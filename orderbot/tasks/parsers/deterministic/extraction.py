@@ -417,11 +417,15 @@ def _extract_attribute_values(
                     matched = True
 
                 if matched:
-                    token_match_counts.setdefault(token, []).append({
-                        "opt": opt,
-                        "slug": slug,
-                        "token_start": token_start,
-                    })
+                    # Deduplicate: skip if this slug already added for this token
+                    # This handles repeated tokens like "with milk. light on the milk"
+                    existing_slugs = {m["slug"] for m in token_match_counts.get(token, [])}
+                    if slug not in existing_slugs:
+                        token_match_counts.setdefault(token, []).append({
+                            "opt": opt,
+                            "slug": slug,
+                            "token_start": token_start,
+                        })
 
         # Second pass: only apply matches for tokens that matched exactly ONE option
         for token, matches in token_match_counts.items():

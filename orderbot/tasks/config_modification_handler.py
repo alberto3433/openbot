@@ -182,6 +182,43 @@ class ConfigModificationHandler:
                         f"Okay, {opt_name}.", item, order
                     )
 
+        # 1c. Check for same-type menu items matching this modifier
+        # e.g., "make it blueberry" while configuring "Truffle Cream Cheese" (type: spread)
+        # should find "Blueberry Cream Cheese" and "Lemon Blueberry Cream Cheese"
+        if self.item_adder_handler and self.item_adder_handler.menu_lookup:
+            same_type_matches = self._find_same_type_menu_items(
+                modifier, item
+            )
+            if len(same_type_matches) == 1:
+                # Single match - remove current item and add the new one
+                match_item = same_type_matches[0]
+                logger.info(
+                    "CAN_YOU_MAKE_IT: Found same-type item '%s', replacing '%s'",
+                    match_item.get("name"), item.menu_item_name
+                )
+                from .handler_utils import remove_item_from_order
+                remove_item_from_order(order, item)
+                order.clear_pending()
+                return self.item_adder_handler.add_menu_item(
+                    match_item.get("name", "item"),
+                    order=order,
+                    quantity=item.quantity,
+                )
+            elif len(same_type_matches) > 1:
+                # Multiple matches - start disambiguation
+                logger.info(
+                    "CAN_YOU_MAKE_IT: Found %d same-type items for '%s', starting disambiguation",
+                    len(same_type_matches), modifier
+                )
+                order.pending_replace_item_id = item.id
+                return self.item_adder_handler.disambiguation_handler.start_disambiguation(
+                    item_name=modifier,
+                    matching_items=same_type_matches,
+                    order=order,
+                    quantity=item.quantity,
+                    pending_field=PendingField.ITEM_SELECTION,
+                )
+
         # 2. Check if it's an ingredient/modifier (spread, topping, syrup, etc.)
         matches = menu_cache.find_matching_ingredients(modifier_lower)
         if len(matches) == 1:
@@ -782,3 +819,42 @@ class ConfigModificationHandler:
             message=f"We have {options_text}. {question}",
             order=order,
         )
+
+    def _find_same_type_menu_items(
+        self,
+        modifier: str,
+        current_item: MenuItemTask,
+    ) -> list[dict]:
+        """Find menu items matching the modifier that share the same item type.
+
+        Used by handle_can_you_make_it() to detect when "make it blueberry"
+        should switch to a different menu item of the same type rather than
+        adding an ingredient modifier.
+
+        Args:
+            modifier: The modifier text from the user (e.g., "blueberry")
+            current_item: The item currently being configured
+
+        Returns:
+            List of matching menu item dicts (same type, excluding current item)
+        """
+        lookup = self.item_adder_handler.menu_lookup
+        all_matches = lookup.lookup_menu_items(modifier)
+        if not all_matches:
+            return []
+
+        current_type = current_item.menu_item_type
+        current_name = (current_item.menu_item_name or "").lower()
+
+        same_type = [
+            m for m in all_matches
+            if m.get("item_type") == current_type
+            and m.get("name", "").lower() != current_name
+        ]
+        if same_type:
+            logger.debug(
+                "CAN_YOU_MAKE_IT: Same-type matches for '%s' (type=%s): %s",
+                modifier, current_type,
+                [m.get("name") for m in same_type]
+            )
+        return same_type

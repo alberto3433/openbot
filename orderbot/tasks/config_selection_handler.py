@@ -258,10 +258,25 @@ class ConfigSelectionHandler:
                 for s in stored_selections
             ]
 
+        # Capture replace_item_id before clear_pending() wipes it
+        replace_item_id = order.pending_replace_item_id
+
         order.pending_item_options = []
         order.pending_item_quantity = 1
         order.pending_item_modifiers = None
         order.clear_pending()
+
+        # If this selection is replacing an existing item (from "make it blueberry"),
+        # remove the old item from the order
+        if replace_item_id:
+            old_item = order.items.get_item_by_id(replace_item_id)
+            if old_item and isinstance(old_item, MenuItemTask):
+                from .handler_utils import remove_item_from_order
+                remove_item_from_order(order, old_item)
+                logger.info(
+                    "ITEM SELECTION: Removed replaced item '%s' (%s)",
+                    old_item.menu_item_name, replace_item_id[:8]
+                )
 
         logger.info("ITEM SELECTION: User chose '%s' (type=%s), adding %d item(s)",
                     selected_name, selected_item_type, quantity)

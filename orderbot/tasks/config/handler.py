@@ -16,6 +16,7 @@ import re
 from typing import Callable
 
 from orderbot.cache import menu_cache
+from orderbot.constants import QUALIFIER_PROXIMITY_THRESHOLD
 from ..models import OrderTask, MenuItemTask
 from ..pending_fields import PendingField
 from ..normalization import strip_ordering_prefix
@@ -36,6 +37,7 @@ from ..response_utils import is_negative, is_affirmative
 from .quantity_input import QuantityInputHandler
 from .package_input import PackageInputHandler
 from .attribute_capture import capture_attributes_from_input
+from .parsers import BooleanParser
 from .customization_checkpoint import CustomizationCheckpointHandler
 from .attribute_resolver import (
     get_item_type_attributes,
@@ -47,10 +49,6 @@ from .attribute_resolver import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Maximum character distance between a qualifier (e.g., "extra", "on the side") and
-# an option name for them to be considered associated. Used in _extract_qualifier_for_option.
-QUALIFIER_PROXIMITY_THRESHOLD = 15
 
 
 class MenuItemConfigHandler(BaseHandler):
@@ -132,6 +130,7 @@ class MenuItemConfigHandler(BaseHandler):
             options_inquiry_handler=self._options_inquiry_handler,
             ctx=self._ctx,
         )
+        self._boolean_parser = BooleanParser()
 
     def _apply_selections(self, item: "MenuItemTask", selections: list) -> str | None:
         """
@@ -815,79 +814,17 @@ class MenuItemConfigHandler(BaseHandler):
     def _handle_boolean_input(
         self, user_input: str, item: MenuItemTask, order: OrderTask, attr: dict
     ) -> StateMachineResult:
-        """Handle yes/no input for boolean attributes."""
-        user_lower = user_input.lower().strip()
+        """Handle yes/no input for boolean attributes.
+
+        Uses BooleanParser to determine the boolean value from user input,
+        then applies any additional selections and advances to the next question.
+        """
         attr_slug = attr["slug"]
 
-        # Check for explicit yes/no using patterns from database
-        yes_patterns = menu_cache.get_response_patterns("affirmative")
-        no_patterns = menu_cache.get_response_patterns("negative")
+        # Use the boolean parser to parse the input
+        result = self._boolean_parser.parse(user_input, attr)
 
-        # Build alias lists from options (like "toast" -> True, "no toast" -> False)
-        options = attr.get("options", [])
-        true_aliases: list[str] = []
-        false_aliases: list[str] = []
-
-        for opt in options:
-            opt_aliases = opt.get("aliases") or []
-            if isinstance(opt_aliases, str):
-                opt_aliases = [a.strip().lower() for a in opt_aliases.split(",")]
-            else:
-                opt_aliases = [a.lower() for a in opt_aliases]
-
-            opt_slug = opt.get("slug", "")
-            if opt_slug == "true" or opt_slug.endswith("_option_true"):
-                true_aliases = opt_aliases
-            elif opt_slug == "false" or opt_slug.endswith("_option_false"):
-                false_aliases = opt_aliases
-
-        # Also check for the attribute name with/without "not"
-        attr_name = attr["display_name"].lower()
-        bool_value: bool | None = None
-
-        # Check aliases first (more specific)
-        # Check false aliases first since "not toasted" contains "toasted"
-        for alias in false_aliases:
-            if alias in user_lower:
-                bool_value = False
-                break
-        if bool_value is None:
-            for alias in true_aliases:
-                if alias in user_lower:
-                    bool_value = True
-                    break
-
-        # Fall back to display name and yes/no patterns
-        if bool_value is None:
-            if f"not {attr_name}" in user_lower or f"un{attr_name}" in user_lower:
-                bool_value = False
-            else:
-                # Find first occurrence of yes/no patterns - first one wins
-                first_yes_pos = float('inf')
-                first_no_pos = float('inf')
-
-                for p in no_patterns:
-                    pos = user_lower.find(p)
-                    if pos != -1 and pos < first_no_pos:
-                        first_no_pos = pos
-
-                for p in yes_patterns:
-                    pos = user_lower.find(p)
-                    if pos != -1 and pos < first_yes_pos:
-                        first_yes_pos = pos
-
-                # Also check for attr_name
-                attr_pos = user_lower.find(attr_name)
-                if attr_pos != -1 and attr_pos < first_yes_pos:
-                    first_yes_pos = attr_pos
-
-                # First occurrence wins
-                if first_no_pos < first_yes_pos:
-                    bool_value = False
-                elif first_yes_pos < first_no_pos:
-                    bool_value = True
-
-        if bool_value is None:
+        if result.value is None:
             # Couldn't parse, ask again
             question = attr.get("question_text") or f"{attr['display_name']}?"
             return StateMachineResult(
@@ -896,7 +833,7 @@ class MenuItemConfigHandler(BaseHandler):
             )
 
         # Store in selections
-        item[attr_slug] = bool_value
+        item[attr_slug] = result.value
 
         # Extract and apply any additional selections from the input
         # (e.g., "yes with bacon" -> captures the boolean AND the bacon selection)

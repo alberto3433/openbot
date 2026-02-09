@@ -17,6 +17,7 @@ This replaces the ad-hoc disambiguation code in:
 import logging
 from typing import Any
 
+from orderbot.constants import MAX_DISAMBIGUATION_OPTIONS
 from .models import OrderTask
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
@@ -49,7 +50,7 @@ def _names_match(name1: str, name2: str) -> bool:
 class DisambiguationHandler:
     """Handles disambiguation when multiple menu items match user input."""
 
-    MAX_OPTIONS = 6
+    MAX_OPTIONS = MAX_DISAMBIGUATION_OPTIONS
 
     def check_exact_match(
         self,

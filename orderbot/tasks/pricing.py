@@ -15,7 +15,7 @@ from typing import Callable
 
 from .mixins import MenuDataMixin
 from .normalization import normalize_to_slug
-from .modifier_utils import extract_modifier_slug_and_quantity, extract_modifier_price
+from .modifier_utils import extract_modifier_slug_and_quantity
 from .utils.cache_helpers import get_item_type_attributes
 from .utils import OptionMatcher
 from orderbot.cache import menu_cache

@@ -13,6 +13,7 @@ This module is order-state aware, adjusting responses based on cart contents.
 import logging
 
 from orderbot.cache import menu_cache
+from orderbot.constants import FUZZY_MATCH_THRESHOLD, MAX_FUZZY_MATCHES
 
 from .menu_lookup import MenuLookup
 from .normalization import strip_leading_filler_words
@@ -33,10 +34,10 @@ class UnrecognizedItemHandler:
     """
 
     # Fuzzy matching threshold (0-100)
-    FUZZY_THRESHOLD = 75
+    FUZZY_THRESHOLD = FUZZY_MATCH_THRESHOLD
 
     # Maximum fuzzy matches to show
-    MAX_FUZZY_MATCHES = 3
+    MAX_FUZZY_MATCHES = MAX_FUZZY_MATCHES
 
     def __init__(
         self,

@@ -49,6 +49,7 @@ from ..schemas.modifiers import (
     ItemTypeUpdate,
     OverallCategoryOut,
 )
+from ..schemas.serializers import serialize_item_type
 from .crud_factory import CRUDRouterFactory
 
 
@@ -58,61 +59,6 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Helper Functions
 # =============================================================================
-
-def build_item_type_response(item_type: ItemType, db: Session) -> ItemTypeOut:
-    """Build full ItemTypeOut response."""
-    menu_item_count = db.query(MenuItem).filter(
-        MenuItem.item_type_id == item_type.id
-    ).count()
-
-    # Query linked global attributes with their link details in a single query
-    linked_data = (
-        db.query(GlobalAttribute, ItemTypeGlobalAttribute)
-        .join(ItemTypeGlobalAttribute, ItemTypeGlobalAttribute.global_attribute_id == GlobalAttribute.id)
-        .filter(ItemTypeGlobalAttribute.item_type_id == item_type.id)
-        .order_by(ItemTypeGlobalAttribute.display_order)
-        .all()
-    )
-
-    global_attribute_count = len(linked_data)
-    global_attributes = [
-        GlobalAttributeRef(
-            id=attr.id,
-            slug=attr.slug,
-            display_name=attr.display_name,
-        )
-        for attr, link in linked_data
-    ]
-
-    # Derive configurability from query results (no extra queries needed)
-    is_configurable = global_attribute_count > 0
-    has_askable = any(link.ask_in_conversation for attr, link in linked_data)
-    skip_config = not has_askable if is_configurable else True
-
-    # Get display group info (required)
-    display_group = item_type.menu_display_group
-    display_group_name = display_group.display_name if display_group else "Unknown"
-
-    # Get category name from display group
-    category_name = None
-    if display_group and display_group.overall_category:
-        category_name = display_group.overall_category.display_name
-
-    return ItemTypeOut(
-        id=item_type.id,
-        slug=item_type.slug,
-        display_name=item_type.display_name,
-        is_configurable=is_configurable,
-        skip_config=skip_config,
-        menu_display_group_id=item_type.menu_display_group_id,
-        menu_display_group_name=display_group_name,
-        overall_category_name=category_name,
-        menu_item_count=menu_item_count,
-        global_attribute_count=global_attribute_count,
-        global_attributes=global_attributes,
-        aliases=item_type.aliases,
-    )
-
 
 def _build_create_kwargs(payload: ItemTypeCreate, db: Session) -> dict[str, Any]:
     """Build model kwargs from create payload."""
@@ -202,7 +148,7 @@ _item_type_crud = CRUDRouterFactory(
     not_found_message="Item type not found",
     unique_fields=["slug"],
     order_by=["display_name"],
-    to_response=build_item_type_response,
+    to_response=serialize_item_type,
     on_before_create=_build_create_kwargs,
     on_create_pre_commit=_handle_create_pre_commit,
     on_before_update=_handle_before_update,

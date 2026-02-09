@@ -7,7 +7,7 @@ Extracted from pricing.py for better separation of concerns.
 
 import logging
 
-from .modifier_utils import extract_modifier_slug_and_quantity, extract_modifier_price
+from .modifier_utils import extract_modifier_slug_and_quantity
 from .normalization import normalize_to_slug
 from .utils.constants import ATTR_METADATA_SUFFIXES, ATTR_PENDING_PREFIX
 

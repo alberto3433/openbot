@@ -30,10 +30,12 @@ from .unrecognized_item_handler import UnrecognizedItemHandler
 from .order_item_builder import OrderItemBuilder
 from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
+from orderbot.constants import MULTI_CONFIG_THRESHOLD
 from .default_ingredients import (
     populate_default_ingredients,
     filter_redundant_default_selections,
 )
+from .builders import ItemBuilder, ItemBuildContext
 
 if TYPE_CHECKING:
     from .context import OrderContext
@@ -694,147 +696,61 @@ class ItemAdderHandler(MenuDataMixin):
         Returns:
             StateMachineResult with next question or confirmation
         """
-        # Extract item details
-        canonical_name = menu_item.get("name", "item")
-        price = menu_item.get("base_price", 0.0)
-        menu_item_id = menu_item.get("id")
-        item_type = menu_item.get("item_type")  # e.g., "bagel", "sized_beverage", "deli_sandwich"
-        is_signature = menu_item.get("is_signature", False)
-        skip_config = menu_item.get("skip_config", False)
-
-        # Check if this item type is configurable (has attributes in DB)
-        # But also respect skip_config flag (item type has no ask_in_conversation attributes)
-        configurable_types = menu_cache.get_configurable_item_types()
-        is_configurable = item_type in configurable_types if item_type else False
-
-        # If skip_config is set (from DB - e.g., soda/bottled items), don't configure
-        needs_configuration = is_configurable and not skip_config
-
-        logger.info(
-            "Creating item: name='%s', type='%s', price=$%.2f, qty=%d, configurable=%s, skip_config=%s, needs_config=%s",
-            canonical_name, item_type, price, quantity, is_configurable, skip_config, needs_configuration
+        # Create build context with all parameters
+        ctx = ItemBuildContext(
+            menu_item=menu_item,
+            order=order,
+            quantity=quantity,
+            user_input=user_input,
+            pre_filled_attributes=pre_filled_attributes,
+            extracted_selections=extracted_selections,
+            unavailable_selections=unavailable_selections,
+            unmatched_selections=unmatched_selections,
+            special_instructions=special_instructions,
+            skip_first_question=skip_first_question,
         )
 
-        # Quantity threshold logic:
-        # - Non-configurable items: always single item with quantity (no config needed)
-        # - Configurable items with qty > 5: single item with quantity (configure once)
-        # - Configurable items with ALL mandatory attrs filled: single item with quantity
-        # - Otherwise: N separate items (configure each individually)
-        MULTI_CONFIG_THRESHOLD = 5
+        # Create builder with callbacks
+        builder = ItemBuilder(
+            pricing=self.pricing,
+            config_handler=self.menu_item_handler,
+            infer_attributes_callback=self._infer_attributes_from_item_name,
+            apply_pending_ingredient_callback=self._apply_pending_ingredient,
+        )
 
-        # Check if all mandatory attributes are already filled (e.g., weight for by-weight items)
-        config_already_complete = self._check_config_complete(item_type, pre_filled_attributes)
+        # Prepare context (determine configuration requirements)
+        builder.prepare_context(ctx)
 
-        if not needs_configuration or quantity > MULTI_CONFIG_THRESHOLD or config_already_complete:
-            # Create single item with quantity=N
-            item_count = 1
-            item_quantity = quantity
-        else:
-            # Create N separate items (configure each individually)
-            item_count = quantity
-            item_quantity = 1
+        # Calculate how many items to create and with what quantity
+        item_count, item_quantity = builder.calculate_item_count(
+            ctx, self._check_config_complete
+        )
 
-        # Create the items
+        # Build the items
         first_item = None
-        for _ in range(item_count):
-            item = MenuItemTask(
-                menu_item_name=canonical_name,
-                menu_item_id=menu_item_id,
-                unit_price=price,
-                menu_item_type=item_type,
-                is_signature=is_signature,
-                quantity=item_quantity,
-            )
+        for i in range(item_count):
+            is_first = (first_item is None)
+            item = builder.build_single_item(ctx, item_quantity, is_first)
 
-            # Populate default ingredients for items that have them defined
-            # This must happen before applying user selections so user selections
-            # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
-            # Check if item has default ingredients (more reliable than is_signature flag)
-            if menu_item_id:
-                populate_default_ingredients(item)
-
-            # Auto-populate variant selection for items with weight-based pricing
-            # This ensures cart displays which weight the price is for (e.g., "1/4 lb")
-            # Only auto-populate for "weight" category (spreads, fish), NOT for:
-            # - "size" (coffee drinks - user should choose small/medium/large)
-            # - "quantity" (bagel packages - user should choose 6/dozen)
-            size_category_slug = menu_item.get("size_category_slug")
-            if size_category_slug == "weight" and self.pricing:
-                default_variant = self.pricing.get_default_variant_for_item(canonical_name)
-                if default_variant:
-                    item.add_selection(
-                        slug=default_variant["slug"],
-                        category=size_category_slug,
-                        display_name=default_variant["display_name"],
-                        is_default=True,  # Mark as auto-populated default
-                    )
-
-            # Apply pre-filled attributes
-            if pre_filled_attributes:
-                for attr_name, attr_value in pre_filled_attributes.items():
-                    item[attr_name] = attr_value
-
-            # Apply extracted selections if provided (these replace/add to defaults)
-            if extracted_selections and self.menu_item_handler:
-                # Filter out selections that are redundant with default ingredients
-                # e.g., "egg sandwich with eggs over easy" shouldn't add extra eggs
-                # because The Classic already has eggs as a default
-                filtered_selections = filter_redundant_default_selections(
-                    item, extracted_selections
+            # Check for pricing failure
+            if item.unit_price == 0.0 and ctx.price > 0.0:
+                logger.warning("Price lookup failed for '%s'", item.menu_item_name)
+                return StateMachineResult(
+                    message="What can I get for you?",
+                    order=order
                 )
-                self.menu_item_handler._apply_selections(item, filtered_selections)
-
-            # Apply pending ingredient from ingredient suggestion flow
-            # (e.g., "I want caramel syrup" -> "yes" -> "iced coffee" -> apply caramel)
-            # Only apply to the first item (first_item is None means this is the first)
-            if first_item is None:
-                self._apply_pending_ingredient(item, order, item_type, canonical_name)
-
-            # Set unavailable_selections (for "We don't have X" messaging)
-            # Must be set BEFORE get_first_question() is called
-            if unavailable_selections:
-                item.unavailable_selections = unavailable_selections.copy()
-
-            # Set unmatched_selections (for unrecognized tokens messaging)
-            # Must be set BEFORE get_first_question() is called
-            if unmatched_selections:
-                item.unmatched_selections = unmatched_selections.copy()
-
-            # Set special_instructions (e.g., "room for cream", "extra hot")
-            if special_instructions:
-                item.special_instructions = list(special_instructions)
-
-            # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
-            # This prevents asking questions already answered by the item name
-            self._infer_attributes_from_item_name(item)
-
-            # Recalculate price with modifiers
-            if self.pricing:
-                try:
-                    self.pricing.recalculate_item_price(item)
-                except ValueError as e:
-                    logger.warning("Price lookup failed for '%s': %s", item.menu_item_name, str(e))
-                    return StateMachineResult(
-                        message="What can I get for you?",
-                        order=order
-                    )
-
-            # Mark status based on whether item needs configuration
-            if needs_configuration:
-                item.mark_in_progress()
-            else:
-                item.mark_complete()
 
             order.items.add_item(item)
             if first_item is None:
                 first_item = item
 
         # If item needs configuration, start the configuration flow
+        needs_configuration = ctx.needs_configuration
         if needs_configuration and self.menu_item_handler:
             # Capture any attributes from original user input
             # Skip if extracted_selections provided - parser already extracted attributes
-            if user_input and not extracted_selections:
-                self.menu_item_handler.capture_attributes_from_input(user_input, first_item)
+            if ctx.user_input and not ctx.extracted_selections:
+                self.menu_item_handler.capture_attributes_from_input(ctx.user_input, first_item)
 
             # If skip_first_question=True, return without asking config question.
             # This is used when adding multiple items - all items are added first,
@@ -842,7 +758,7 @@ class ItemAdderHandler(MenuDataMixin):
             if skip_first_question:
                 logger.info(
                     "skip_first_question=True: added %s (%s), deferring config question",
-                    canonical_name, first_item.id[:8]
+                    ctx.canonical_name, first_item.id[:8]
                 )
                 # Return a result without a message - just the updated order
                 # The caller (process_items) will handle asking questions
@@ -854,10 +770,10 @@ class ItemAdderHandler(MenuDataMixin):
                 pending_result = self.menu_item_handler._process_pending_parsed_items_callback(order)
                 if pending_result:
                     # Queue this item for later and return the pending result
-                    order.queue_item_for_config(first_item.id, item_type, item_name=canonical_name)
+                    order.queue_item_for_config(first_item.id, ctx.item_type, item_name=ctx.canonical_name)
                     logger.info(
                         "Queued newly selected item %s (%s) - processing pending parsed items first",
-                        canonical_name, first_item.id[:8]
+                        ctx.canonical_name, first_item.id[:8]
                     )
                     return pending_result
 
@@ -866,10 +782,10 @@ class ItemAdderHandler(MenuDataMixin):
             if order.has_queued_config_items():
                 from .handler_utils import process_next_queued_item
                 # Queue this item for later
-                order.queue_item_for_config(first_item.id, item_type, item_name=canonical_name)
+                order.queue_item_for_config(first_item.id, ctx.item_type, item_name=ctx.canonical_name)
                 logger.info(
                     "Queued newly selected item %s (%s) - processing queued item first",
-                    canonical_name, first_item.id[:8]
+                    ctx.canonical_name, first_item.id[:8]
                 )
                 # Start config for the first queued item
                 queued_result = process_next_queued_item(
@@ -889,7 +805,7 @@ class ItemAdderHandler(MenuDataMixin):
             if skip_first_question:
                 logger.info(
                     "skip_first_question=True: added non-configurable %s (%s)",
-                    canonical_name, first_item.id[:8]
+                    ctx.canonical_name, first_item.id[:8]
                 )
                 return StateMachineResult(message="", order=order)
 
@@ -906,9 +822,9 @@ class ItemAdderHandler(MenuDataMixin):
             # No queued items - return confirmation
             # Use get_display_name() to include unit suffix (e.g., "(3 pack)")
             display_name = first_item.get_display_name()
-            if quantity > 1:
+            if ctx.quantity > 1:
                 return StateMachineResult(
-                    message=got_it_anything_else(f"{quantity} {display_name}"),
+                    message=got_it_anything_else(f"{ctx.quantity} {display_name}"),
                     order=order,
                 )
             else:

@@ -296,6 +296,11 @@ class OrderTask(BaseTask):
     # Used to offer switching from current item to a similar one with requested modifier
     pending_switch_item: dict | None = None
 
+    # Pending item replacement during disambiguation
+    # When user says "make it blueberry" and multiple same-type items match,
+    # stores the current item's ID so it can be removed after disambiguation resolves
+    pending_replace_item_id: str | None = None
+
     # Menu query pagination state for "show more" functionality
     # Dict with: category (str), offset (int), total_items (int)
     # Used when user asks "what other X do you have?" or "more X"
@@ -426,6 +431,7 @@ class OrderTask(BaseTask):
         self.config_options_page = 0
         self.pending_suggested_item = None
         self.pending_switch_item = None
+        self.pending_replace_item_id = None
         self.pending_item_modifiers = {}
         self.pending_attr_disambiguation = None
         self.pending_unmatched_pagination = None

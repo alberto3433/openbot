@@ -66,6 +66,12 @@ from ..schemas.global_attributes import (
     SkipRuleCreate,
     SkipRuleOutBasic,
 )
+from ..schemas.serializers import (
+    serialize_global_attribute_option,
+    serialize_global_attribute,
+    serialize_global_attribute_list,
+    serialize_item_type_link,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,177 +86,6 @@ admin_item_type_global_attrs_router = APIRouter(
     prefix="/admin/item-types",
     tags=["Admin - Item Type Global Attributes"]
 )
-
-
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
-def _serialize_option(opt: GlobalAttributeOption, db: Optional[Session] = None) -> GlobalAttributeOptionOut:
-    """Convert GlobalAttributeOption model to response schema.
-
-    Args:
-        opt: The GlobalAttributeOption to serialize
-        db: Optional database session for fallback ingredient lookup
-    """
-    # Get aliases from the option's alias_records
-    aliases_str = ", ".join(opt.aliases) if opt.aliases else None
-
-    # Derive slug/display_name from ingredient when linked (normalized)
-    # Handle case where ingredient relationship isn't loaded but ingredient_id exists
-    ingredient = opt.ingredient
-    ingredient_name = None
-
-    if ingredient:
-        slug = ingredient.slug
-        display_name = ingredient.name
-        ingredient_name = ingredient.name
-    elif opt.ingredient_id and db:
-        # Fallback: load ingredient if relationship wasn't eager loaded
-        ingredient = db.query(Ingredient).filter(Ingredient.id == opt.ingredient_id).first()
-        if ingredient:
-            slug = ingredient.slug
-            display_name = ingredient.name
-            ingredient_name = ingredient.name
-        else:
-            slug = opt.slug or f"option_{opt.id}"
-            display_name = opt.display_name or f"Option {opt.id}"
-    else:
-        slug = opt.slug or f"option_{opt.id}"
-        display_name = opt.display_name or f"Option {opt.id}"
-
-    # Serialize skip rules
-    skip_rules_out = []
-    if hasattr(opt, 'skip_rules') and opt.skip_rules:
-        for rule in opt.skip_rules:
-            skip_rules_out.append(SkipRuleOutBasic(
-                id=rule.id,
-                skipped_attribute_id=rule.skipped_attribute_id,
-                skipped_attribute_slug=rule.skipped_attribute.slug if rule.skipped_attribute else "",
-                skipped_attribute_name=rule.skipped_attribute.display_name if rule.skipped_attribute else "",
-            ))
-
-    # Get forward_to_attribute info if present
-    forward_to_attr_slug = None
-    if hasattr(opt, 'forward_to_attribute') and opt.forward_to_attribute:
-        forward_to_attr_slug = opt.forward_to_attribute.slug
-    elif opt.forward_to_attribute_id and db:
-        # Fallback: load if relationship wasn't eager loaded
-        forward_attr = db.query(GlobalAttribute).filter(
-            GlobalAttribute.id == opt.forward_to_attribute_id
-        ).first()
-        if forward_attr:
-            forward_to_attr_slug = forward_attr.slug
-
-    # Derive modifier_category from ingredient at runtime
-    modifier_category_name = None
-    if ingredient and ingredient.modifier_category:
-        modifier_category_name = ingredient.modifier_category.display_name
-
-    return GlobalAttributeOptionOut(
-        id=opt.id,
-        slug=slug,
-        display_name=display_name,
-        price_modifier=float(opt.price_modifier or 0),
-        is_default=opt.is_default,
-        is_available=opt.is_available,
-        display_order=opt.display_order,
-        ingredient_id=opt.ingredient_id,
-        ingredient_name=ingredient_name,
-        modifier_category_name=modifier_category_name,
-        aliases=aliases_str,
-        skip_rules=skip_rules_out,
-        forward_to_attribute_id=opt.forward_to_attribute_id,
-        forward_to_attribute_slug=forward_to_attr_slug,
-        created_at=opt.created_at,
-        updated_at=opt.updated_at,
-    )
-
-
-def _serialize_attribute(attr: GlobalAttribute, db: Session) -> GlobalAttributeOut:
-    """Convert GlobalAttribute model to response schema with options.
-
-    Note: Requires attr.options and attr.item_type_links (with item_type)
-    to be eager-loaded to avoid N+1 queries.
-    """
-    options_out = [_serialize_option(opt, db) for opt in attr.options]
-
-    # Use eager-loaded relationship instead of separate queries
-    linked_item_types = []
-    for link in attr.item_type_links:
-        item_type = link.item_type
-        if item_type:
-            linked_item_types.append(LinkedItemTypeInfo(
-                id=item_type.id,
-                slug=item_type.slug,
-                display_name=item_type.display_name or item_type.slug.replace('_', ' ').title(),
-            ))
-
-    return GlobalAttributeOut(
-        id=attr.id,
-        slug=attr.slug,
-        display_name=attr.display_name,
-        input_type=attr.input_type,
-        description=attr.description,
-        question_text=attr.question_text,
-        options_source_category=attr.options_source_category,
-        options=options_out,
-        item_type_count=len(linked_item_types),
-        linked_item_types=linked_item_types,
-        created_at=attr.created_at,
-        updated_at=attr.updated_at,
-    )
-
-
-def _serialize_attribute_list(attr: GlobalAttribute, db: Session) -> GlobalAttributeListOut:
-    """Convert GlobalAttribute model to list response schema (no options).
-
-    Note: Requires attr.options and attr.item_type_links to be eager-loaded
-    to avoid N+1 queries.
-    """
-    return GlobalAttributeListOut(
-        id=attr.id,
-        slug=attr.slug,
-        display_name=attr.display_name,
-        input_type=attr.input_type,
-        description=attr.description,
-        question_text=attr.question_text,
-        options_source_category=attr.options_source_category,
-        option_count=len(attr.options),
-        item_type_count=len(attr.item_type_links),
-        created_at=attr.created_at,
-        updated_at=attr.updated_at,
-    )
-
-
-def _serialize_item_type_link(
-    link: ItemTypeGlobalAttribute,
-    db: Session
-) -> ItemTypeGlobalAttributeOut:
-    """Convert ItemTypeGlobalAttribute link to response schema."""
-    global_attr = link.global_attribute
-    options_out = [_serialize_option(opt, db) for opt in global_attr.options]
-
-    return ItemTypeGlobalAttributeOut(
-        id=link.id,
-        item_type_id=link.item_type_id,
-        item_type_slug=link.item_type.slug if link.item_type else None,
-        global_attribute_id=link.global_attribute_id,
-        global_attribute_slug=global_attr.slug,
-        global_attribute_display_name=global_attr.display_name,
-        input_type=global_attr.input_type,
-        display_order=link.display_order,
-        is_required=link.is_required,
-        allow_none=link.allow_none,
-        ask_in_conversation=link.ask_in_conversation,
-        listen_only=link.listen_only,
-        question_text=global_attr.question_text,
-        min_selections=link.min_selections,
-        max_selections=link.max_selections,
-        options=options_out,
-        created_at=link.created_at,
-        updated_at=link.updated_at,
-    )
 
 
 # =============================================================================
@@ -274,7 +109,7 @@ def list_global_attributes(
         query = query.filter(GlobalAttribute.input_type == input_type)
 
     attrs = query.order_by(GlobalAttribute.display_name).all()
-    return [_serialize_attribute_list(attr, db) for attr in attrs]
+    return [serialize_global_attribute_list(attr, db) for attr in attrs]
 
 
 @admin_global_attributes_router.get("/{attr_id}", response_model=GlobalAttributeOut)
@@ -304,7 +139,7 @@ def get_global_attribute(
     )
     if not attr:
         raise HTTPException(status_code=404, detail="Global attribute not found")
-    return _serialize_attribute(attr, db)
+    return serialize_global_attribute(attr, db)
 
 
 @admin_global_attributes_router.post("", response_model=GlobalAttributeOut, status_code=201)
@@ -337,7 +172,7 @@ def create_global_attribute(
     db.refresh(attr)
 
     logger.info("Created global attribute: %s (id=%d)", attr.slug, attr.id)
-    return _serialize_attribute(attr, db)
+    return serialize_global_attribute(attr, db)
 
 
 @admin_global_attributes_router.post(
@@ -416,7 +251,7 @@ def create_global_attribute_with_options(
         len(payload.options),
         attr.id
     )
-    return _serialize_attribute(attr, db)
+    return serialize_global_attribute(attr, db)
 
 
 @admin_global_attributes_router.put("/{attr_id}", response_model=GlobalAttributeOut)
@@ -461,7 +296,7 @@ def update_global_attribute(
     db.refresh(attr)
 
     logger.info("Updated global attribute: %s (id=%d)", attr.slug, attr.id)
-    return _serialize_attribute(attr, db)
+    return serialize_global_attribute(attr, db)
 
 
 @admin_global_attributes_router.delete("/{attr_id}", status_code=204)
@@ -522,7 +357,7 @@ def list_global_attribute_options(
     if not attr:
         raise HTTPException(status_code=404, detail="Global attribute not found")
 
-    return [_serialize_option(opt, db) for opt in attr.options]
+    return [serialize_global_attribute_option(opt, db) for opt in attr.options]
 
 
 @admin_global_attributes_router.post(
@@ -649,7 +484,7 @@ def create_global_attribute_option(
         option.id,
         option.ingredient_id,
     )
-    return _serialize_option(option, db)
+    return serialize_global_attribute_option(option, db)
 
 
 @admin_global_attributes_router.put(
@@ -772,7 +607,7 @@ def update_global_attribute_option(
         option.id,
         option.ingredient_id,
     )
-    return _serialize_option(option, db)
+    return serialize_global_attribute_option(option, db)
 
 
 @admin_global_attributes_router.delete(
@@ -951,7 +786,7 @@ def create_option_from_ingredient(
         attr.slug,
         option.id,
     )
-    return _serialize_option(option, db)
+    return serialize_global_attribute_option(option, db)
 
 
 @admin_global_attributes_router.get(
@@ -1194,7 +1029,7 @@ def list_item_type_global_attributes(
         .all()
     )
 
-    return [_serialize_item_type_link(link, db) for link in links]
+    return [serialize_item_type_link(link, db) for link in links]
 
 
 @admin_item_type_global_attrs_router.post(
@@ -1252,7 +1087,7 @@ def link_global_attribute_to_item_type(
         item_type.slug,
         link.id
     )
-    return _serialize_item_type_link(link, db)
+    return serialize_item_type_link(link, db)
 
 
 @admin_item_type_global_attrs_router.put(
@@ -1304,7 +1139,7 @@ def update_item_type_global_attribute_link(
         item_type.slug,
         link.id
     )
-    return _serialize_item_type_link(link, db)
+    return serialize_item_type_link(link, db)
 
 
 @admin_item_type_global_attrs_router.delete(

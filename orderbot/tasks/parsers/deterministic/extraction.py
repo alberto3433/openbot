@@ -34,13 +34,15 @@ logger = logging.getLogger(__name__)
 # Generic Attribute Value Extraction (Data-Driven)
 # =============================================================================
 
-def extract_attribute_values(
+def _extract_attribute_values(
     user_input: str,
     item_type: str,
     exclude_spans: list[tuple[int, int]] | None = None,
 ) -> AttributeExtractionResult:
     """
     Extract attribute values from user input for a specific item type.
+
+    Internal function - use ExtractionPipeline.extract_attributes() instead.
 
     This is the generic, data-driven function. It queries the database for what
     attributes the item type has and matches input against those options.
@@ -480,13 +482,13 @@ def _extract_modifiers_generic(
     modifier groups to search. All logic is data-driven from the database.
 
     Skips categories that are handled via item type attributes (e.g., milk,
-    sweetener for beverages) since those are extracted by extract_attribute_values.
+    sweetener for beverages) since those are extracted by pipeline.extract_attributes().
 
     Args:
         text: User input text (lowercase)
         item_type: Item type slug
         exclude_spans: List of (start, end) tuples to exclude from matching.
-            These are typically spans already consumed by extract_attribute_values()
+            These are typically spans already consumed by pipeline.extract_attributes()
             to prevent double-extraction (e.g., "scrambled eggs" matched as egg_style
             should not also match "eggs" as a protein modifier).
 

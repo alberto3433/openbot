@@ -18,7 +18,7 @@ from .result_types import (
     ItemTypeMatch,
 )
 from .extraction import (
-    extract_attribute_values as _extract_attribute_values,
+    _extract_attribute_values,
     _extract_modifiers_generic,
 )
 from .instructions_extraction import extract_special_instructions_from_input

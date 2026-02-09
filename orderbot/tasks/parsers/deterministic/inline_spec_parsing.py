@@ -252,7 +252,7 @@ def _parse_specs(
 
     # If no specs had explicit quantities, this is not an inline spec pattern.
     # E.g., "on wheat" is a uniform attribute, not "1 wheat".
-    # Return empty so the caller falls through to extract_attribute_values().
+    # Return empty so the caller falls through to pipeline.extract_attributes().
     if specs and not any_explicit_quantity:
         logger.debug(
             "INLINE_SPEC_PARSE: rejecting specs - no explicit quantities found "

@@ -362,7 +362,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     3. If no configurable item type detected, return None
     4. Extract quantity
     5. Match specific menu item name within that type
-    6. Extract attributes using extract_attribute_values()
+    6. Extract attributes using pipeline.extract_attributes()
     7. Build and return ParsedItemEntry via build_parsed_item()
 
     Returns:

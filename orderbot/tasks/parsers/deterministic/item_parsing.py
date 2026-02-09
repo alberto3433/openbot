@@ -234,7 +234,7 @@ def _parse_item_generic(
     Example:
         >>> _parse_item_generic("large iced latte", "sized_beverage", "latte")
         ParsedItemEntry(item_type="sized_beverage", item_name="latte",
-                       attribute_values={"size": "large", "temperature": "iced"})
+                       selections=[Selection(slug="large", category="size"), ...])
         >>> _parse_item_generic("quarter pound of plain cream cheese")
         ParsedItemEntry(item_type="by_pound", item_name="plain cream cheese",
                        weight_unit="1/4 lb")

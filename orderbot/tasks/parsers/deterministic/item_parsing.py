@@ -303,10 +303,10 @@ def _parse_item_generic(
     # This handles all attribute types (single_select, multi_select, boolean)
     # including combined attributes like milk_sweetener_syrup
     attr_result = _get_pipeline().extract_attributes(text, item_type)
-    attribute_values, attr_matched_spans = attr_result.to_legacy_format()
+    attr_matched_spans = [(s.start, s.end) for s in attr_result.matched_spans]
 
     # Extract food modifiers (proteins, spreads, toppings, etc.)
-    # Beverage modifiers (sweeteners, syrups, milk) are handled via attribute_values
+    # Beverage modifiers (sweeteners, syrups, milk) are handled via attr_result
     # Pass exclude_spans to avoid double-extraction of text already matched as attributes
     food_modifiers = _get_pipeline().extract_modifiers_raw(text_lower, item_type, exclude_spans=attr_matched_spans)
 
@@ -336,7 +336,7 @@ def _parse_item_generic(
         item_type=item_type,
         item_name=item_name,
         quantity=quantity,
-        attribute_values=attribute_values,
+        attr_result=attr_result,
         modifiers=modifier_selections,
         is_signature=has_defaults,  # Items with defaults need default ingredient population
         original_text=text,
@@ -731,13 +731,21 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # - bool for boolean
     # Also returns matched_spans to pass to modifier extraction to avoid double-extraction
     attr_result = _get_pipeline().extract_attributes(text, detected_item_type)
-    attr_values, attr_matched_spans = attr_result.to_legacy_format()
+    attr_matched_spans = [(s.start, s.end) for s in attr_result.matched_spans]
 
     # Merge inferred attribute values from option alias fallback
     # Only add inferred values if not already extracted from text
-    for k, v in inferred_attr_values.items():
-        if k not in attr_values:
-            attr_values[k] = v
+    # Create a new result with merged values to preserve typed data
+    if inferred_attr_values:
+        from .result_types import AttributeExtractionResult
+        merged_values = {**inferred_attr_values}
+        merged_values.update(attr_result.values)  # Extracted values override inferred
+        attr_result = AttributeExtractionResult(
+            values=merged_values,
+            matched_spans=attr_result.matched_spans,
+            unavailable=attr_result.unavailable,
+            unmatched=attr_result.unmatched,
+        )
 
     # 5. Try to match a specific menu item name within this type
     # If we already found an item with defaults, use that name; otherwise try to match
@@ -785,11 +793,10 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 # e.g., "4 large hot coffees 2 with milk" -> base text is "4 large hot coffees"
                 text_before_split = text_lower[:item_name_match.end()]
                 base_attr_result = _get_pipeline().extract_attributes(text_before_split, detected_item_type)
-                base_attr_values = base_attr_result.values
 
                 # Also extract any attribute values from modifier text
                 split_attr_result = _get_pipeline().extract_attributes(modifier_text, detected_item_type)
-                split_attr_values, split_matched_spans = split_attr_result.to_legacy_format()
+                split_matched_spans = [(s.start, s.end) for s in split_attr_result.matched_spans]
 
                 # Extract modifiers from "with X" portion only
                 # Pass exclude_spans to avoid double-extraction of attributes
@@ -801,17 +808,16 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     modifier_selections_split.append(Selection(
                         slug=mod, category=category, quantity=mod_qty
                     ))
-                modified_attrs = {**base_attr_values}  # Start with base (size, etc.)
-                for k, v in split_attr_values.items():
-                    if v:
-                        modified_attrs[k] = v
+
+                # Merge base + split attributes: split overrides base
+                merged_attr_result = base_attr_result.merge_with(split_attr_result)
 
                 # Build items WITH modifiers
                 items_with_mods = build_parsed_item(
                     item_type=detected_item_type,
                     item_name=item_name,
                     quantity=split_qty,
-                    attribute_values=modified_attrs.copy(),
+                    attr_result=merged_attr_result,
                     modifiers=modifier_selections_split,
                     original_text=text,
                     is_signature=has_defaults,
@@ -823,7 +829,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     item_type=detected_item_type,
                     item_name=item_name,
                     quantity=remaining_qty,
-                    attribute_values=base_attr_values.copy(),
+                    attr_result=base_attr_result,
                     modifiers=[],
                     original_text=text,
                     is_signature=has_defaults,
@@ -846,10 +852,10 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         ))
 
     # 5d. Filter out special instructions that are already captured as selections
-    # e.g., if "shot" is in attr_values, don't keep "extra shot" as an instruction
-    # Build set of all selection slugs from attribute_values and modifiers
+    # e.g., if "shot" is in attr_result.values, don't keep "extra shot" as an instruction
+    # Build set of all selection slugs from attr_result.values and modifiers
     captured_slugs: set[str] = set()
-    for attr_key, attr_val in attr_values.items():
+    for attr_key, attr_val in attr_result.values.items():
         if isinstance(attr_val, list):
             # Multi-select: extract slugs from list items
             for item in attr_val:
@@ -891,7 +897,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
 
     logger.info(
         "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s",
-        detected_item_type, quantity, item_name, list(attr_values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions
+        detected_item_type, quantity, item_name, list(attr_result.values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions
     )
 
     # 5e. Guard against creating generic items from partial trigger matches
@@ -911,13 +917,13 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             )
             return None
 
-    # 6. Build ParsedItemEntry using build_parsed_item (converts attr_values to selections)
+    # 6. Build ParsedItemEntry using build_parsed_item (converts attr_result to selections)
     # Create single entry with full quantity - ItemAdderHandler handles threshold logic
     parsed_item = build_parsed_item(
         item_type=detected_item_type,
         item_name=item_name,
         quantity=quantity,
-        attribute_values=attr_values.copy(),
+        attr_result=attr_result,
         modifiers=modifier_selections,
         original_text=text,
         is_signature=has_defaults,  # Items with defaults need default ingredient population

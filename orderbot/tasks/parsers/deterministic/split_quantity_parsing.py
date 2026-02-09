@@ -205,8 +205,7 @@ def _parse_split_quantity_items(
             total_quantity = extracted_qty
 
     # Extract base attributes using data-driven extractor
-    result = _get_pipeline().extract_attributes(initial_part, item_type)
-    base_attrs = result.values
+    base_attr_result = _get_pipeline().extract_attributes(initial_part, item_type)
 
     # Try to match a specific menu item name within the type
     base_item_name = match_menu_item_name_for_type_func(initial_part, item_type)
@@ -246,13 +245,10 @@ def _parse_split_quantity_items(
             break
 
         # Extract part-specific attributes (item-type-specific)
-        result = _get_pipeline().extract_attributes(part_text, item_type)
-        part_attrs = result.values
+        part_attr_result = _get_pipeline().extract_attributes(part_text, item_type)
 
         # Merge: part overrides base (None means "explicitly declined" and should override)
-        merged_attrs = {**base_attrs}
-        for k, v in part_attrs.items():
-            merged_attrs[k] = v
+        merged_attr_result = base_attr_result.merge_with(part_attr_result)
 
         # Create items for this part (build_parsed_item converts attrs to selections)
         items_to_create = min(part_qty, total_quantity - item_count)
@@ -261,13 +257,13 @@ def _parse_split_quantity_items(
                 item_type=item_type,
                 item_name=base_item_name,
                 quantity=1,
-                attribute_values=merged_attrs,  # Keep None values (explicit decline)
+                attr_result=merged_attr_result,
                 original_text=text,
             ))
             item_count += 1
             logger.info(
                 "SPLIT-QUANTITY ITEMS: item %d: type=%s, attrs=%s",
-                item_count, item_type, merged_attrs
+                item_count, item_type, merged_attr_result.values
             )
 
     # 6. Fill remaining slots with base config
@@ -276,7 +272,7 @@ def _parse_split_quantity_items(
             item_type=item_type,
             item_name=base_item_name,
             quantity=1,
-            attribute_values=base_attrs,  # Keep None values (explicit decline)
+            attr_result=base_attr_result,
             original_text=text,
         ))
 

@@ -652,15 +652,15 @@ def parse_open_input_deterministic(
                 if pos != -1:
                     menu_item_span = (pos, pos + len(search_term))
                     break
-        attr_values = {}
+        attr_result = None
         if item_type_for_mods:
             exclude_spans = [TextSpan(start=menu_item_span[0], end=menu_item_span[1])] if menu_item_span else None
-            result = _pipeline.extract_attributes(text, item_type_for_mods, exclude_spans)
-            attr_values = result.values
+            attr_result = _pipeline.extract_attributes(text, item_type_for_mods, exclude_spans)
         modifications = _extract_menu_item_modifications(text, item_type_for_mods)
         # Look up is_signature from database (data-driven, no special handling)
         is_sig = menu_cache.item_has_default_ingredients(menu_item)
-        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s, is_signature=%s)", text[:50], menu_item, qty, list(attr_values.keys()), modifications, is_sig)
+        attr_keys = list(attr_result.values.keys()) if attr_result else []
+        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s, is_signature=%s)", text[:50], menu_item, qty, attr_keys, modifications, is_sig)
         # Convert structured modifications to Selection objects
         mod_list = []
         for add in modifications.get("additions", []):
@@ -672,7 +672,7 @@ def parse_open_input_deterministic(
                 item_type=item_type_for_mods or "menu_item",
                 item_name=menu_item,
                 quantity=1,
-                attribute_values=attr_values,
+                attr_result=attr_result,
                 modifiers=mod_list,
                 is_signature=is_sig,
             )

@@ -632,13 +632,12 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     detected_type, _ = _detect_configurable_item_type(item_text)
     if detected_type:
         # Extract attributes using data-driven extraction
-        result = _pipeline.extract_attributes(item_text, detected_type)
-        attr_values = result.values
-        logger.info("ADD MORE: parsed as %s (qty=1), attrs=%s", detected_type, list(attr_values.keys()))
+        attr_result = _pipeline.extract_attributes(item_text, detected_type)
+        logger.info("ADD MORE: parsed as %s (qty=1), attrs=%s", detected_type, list(attr_result.values.keys()))
         return OpenInputResponse(
             parsed_items=[build_parsed_item(
                 item_type=detected_type,
-                attribute_values=attr_values,
+                attr_result=attr_result,
             )],
         )
 

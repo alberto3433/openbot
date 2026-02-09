@@ -5,7 +5,14 @@ This module provides the core function for building ParsedItemEntry objects
 from parsed data. Used by all item parsing modules.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from ...schemas import Selection, ParsedItemEntry
+
+if TYPE_CHECKING:
+    from .result_types import AttributeExtractionResult
 
 
 def build_parsed_item(
@@ -19,6 +26,7 @@ def build_parsed_item(
     weight_unit: str | None = None,
     special_instructions: list[str] | None = None,
     attribute_values: dict | None = None,
+    attr_result: AttributeExtractionResult | None = None,
     modifiers: list[Selection] | None = None,
 ) -> ParsedItemEntry:
     """
@@ -39,7 +47,10 @@ def build_parsed_item(
         is_signature: Whether this is a signature/speed menu item
         weight_unit: For by-pound items (e.g., "1/4 lb")
         special_instructions: List of special instruction strings (e.g., "room for cream")
-        attribute_values: Dict of attribute slug -> value (converted to selections)
+        attribute_values: Dict of attribute slug -> value (converted to selections).
+            Supports legacy format with _unavailable_* and _unmatched_* prefixed keys.
+        attr_result: Typed AttributeExtractionResult (preferred over attribute_values).
+            When provided, extracts values, unavailable, and unmatched directly.
         modifiers: List of Selection objects to add
 
     Returns:
@@ -48,14 +59,25 @@ def build_parsed_item(
     # Build the selections list
     final_selections: list[Selection] = []
 
-    # Extract unavailable selections from attribute_values (keys like "_unavailable_size")
-    # These are stored separately for helpful "We don't have X" messaging
+    # Extract unavailable selections - stored separately for "We don't have X" messaging
     unavailable_selections: dict[str, dict] = {}
-    # Extract unmatched selections from attribute_values (keys like "_unmatched_sweetener")
-    # These are stored separately for "We don't have X. We have A, B, C..." messaging
+    # Extract unmatched selections - stored for "We don't have X. We have A, B, C..." messaging
     unmatched_selections: dict[str, dict] = {}
     clean_attribute_values: dict = {}
-    if attribute_values:
+
+    # NEW: Handle typed AttributeExtractionResult (preferred path)
+    if attr_result is not None:
+        clean_attribute_values = attr_result.values
+        unavailable_selections = {
+            u.attr_slug: {"attempted_slug": u.attempted_slug, "attempted_display": u.attempted_display}
+            for u in attr_result.unavailable
+        }
+        unmatched_selections = {
+            u.attr_slug: {"tokens": u.tokens}
+            for u in attr_result.unmatched
+        }
+    # LEGACY: Handle dict with string-prefixed keys (backward compat)
+    elif attribute_values:
         for key, value in attribute_values.items():
             if key.startswith("_unavailable_"):
                 # Extract attr_slug from key (e.g., "_unavailable_size" -> "size")
@@ -67,8 +89,6 @@ def build_parsed_item(
                 unmatched_selections[attr_slug] = value
             else:
                 clean_attribute_values[key] = value
-    else:
-        clean_attribute_values = {}
 
     # If selections provided directly, use them
     if selections:

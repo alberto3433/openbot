@@ -107,25 +107,25 @@ class AttributeExtractionResult:
         """Get an attribute value by slug."""
         return self.values.get(attr_slug, default)
 
-    def to_legacy_format(self) -> tuple[dict[str, Any], list[tuple[int, int]]]:
-        """Convert to legacy format for backward compatibility.
+    def merge_with(self, other: "AttributeExtractionResult") -> "AttributeExtractionResult":
+        """Merge another result into this one (other values override self).
+
+        Used for combining base + part attributes in split-quantity orders,
+        or merging inferred attributes with extracted attributes.
+
+        Args:
+            other: The result to merge in (takes precedence for overlapping keys)
 
         Returns:
-            Tuple of (attribute_values dict, matched_spans list of tuples)
+            New AttributeExtractionResult with merged data
         """
-        # Merge unavailable selections back into values with _unavailable_ prefix
-        result = dict(self.values)
-        for unavail in self.unavailable:
-            result[f"_unavailable_{unavail.attr_slug}"] = {
-                "attempted_slug": unavail.attempted_slug,
-                "attempted_display": unavail.attempted_display,
-            }
-        for unmatched in self.unmatched:
-            result[f"_unmatched_{unmatched.attr_slug}"] = {
-                "tokens": unmatched.tokens,
-            }
-        spans = [(s.start, s.end) for s in self.matched_spans]
-        return result, spans
+        merged_values = {**self.values, **other.values}
+        return AttributeExtractionResult(
+            values=merged_values,
+            matched_spans=self.matched_spans + other.matched_spans,
+            unavailable=self.unavailable + other.unavailable,
+            unmatched=self.unmatched + other.unmatched,
+        )
 
 
 @dataclass

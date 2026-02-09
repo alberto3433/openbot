@@ -17,6 +17,12 @@ from typing import Any
 from orderbot.cache import menu_cache
 
 from ..quantity_utils import WORD_TO_NUM, BASIC_WORD_TO_NUM, extract_quantity_word
+from .result_types import (
+    AttributeExtractionResult,
+    TextSpan,
+    UnavailableSelection,
+    UnmatchedToken,
+)
 
 # Re-export from sub-modules for backward compatibility
 from .qualifier_extraction import extract_modifiers_with_qualifiers
@@ -32,7 +38,7 @@ def extract_attribute_values(
     user_input: str,
     item_type: str,
     exclude_spans: list[tuple[int, int]] | None = None,
-) -> tuple[dict[str, Any], list[tuple[int, int]]]:
+) -> AttributeExtractionResult:
     """
     Extract attribute values from user input for a specific item type.
 
@@ -55,24 +61,22 @@ def extract_attribute_values(
             "Cinnamon Sugar Butter Sandwich" should not match as a spread attribute).
 
     Returns:
-        Tuple of (attribute_values, matched_spans):
-        - attribute_values: Dict mapping attribute slugs to extracted values:
-          - For single_select: {attr_slug: option_slug}
-          - For multi_select: {attr_slug: [{slug, quantity, display_name}, ...]}
-          - For boolean: {attr_slug: True/False}
-        - matched_spans: List of (start, end) tuples indicating text spans consumed
-          by attribute matching. Pass to _extract_modifiers_generic() to avoid
-          double-extraction.
+        AttributeExtractionResult containing:
+        - values: Dict mapping attribute slugs to extracted values
+        - matched_spans: List of TextSpan indicating consumed text spans
+        - unavailable: List of UnavailableSelection for unavailable options user tried
+        - unmatched: List of UnmatchedToken for unrecognized tokens
 
     """
     result: dict[str, any] = {}
+    unavailable_selections: list[UnavailableSelection] = []
     input_lower = user_input.lower()
 
     # Get all attributes for this item type from database
     attributes = menu_cache.get_item_type_attributes(item_type)
     if not attributes:
         logger.debug("No attributes found for item type '%s'", item_type)
-        return result, []
+        return AttributeExtractionResult(values={}, matched_spans=[])
 
     # ==========================================================================
     # Pre-Phase: Detect "no {attribute}" negation patterns for ALL attributes
@@ -311,13 +315,12 @@ def extract_attribute_values(
             matched_spans.append((cand.start, cand.end))
             matched_options_per_attr.setdefault(cand.attr_slug, set()).add(slug)
 
-            # Store unavailable selection info using special key pattern
-            # The config handler will use this to show "We don't have X - we have Y or Z"
-            unavail_key = f"_unavailable_{cand.attr_slug}"
-            result[unavail_key] = {
-                "attempted_slug": slug,
-                "attempted_display": cand.option.get("display_name", slug),
-            }
+            # Track unavailable selection for "We don't have X - we have Y or Z" messaging
+            unavailable_selections.append(UnavailableSelection(
+                attr_slug=cand.attr_slug,
+                attempted_slug=slug,
+                attempted_display=cand.option.get("display_name", slug),
+            ))
             logger.debug(
                 "Unavailable option detected: '%s' for attr '%s' (user said '%s')",
                 slug, cand.attr_slug, cand.pattern
@@ -421,7 +424,8 @@ def extract_attribute_values(
     # Phase 6: Detect unrecognized size terms
     # If user mentions a common size term (medium, regular, tall, etc.) that isn't
     # in our menu options, store it so the handler can say "We don't have medium"
-    if "size" in attributes and "size" not in result and "_unavailable_size" not in result:
+    has_size_unavailable = any(u.attr_slug == "size" for u in unavailable_selections)
+    if "size" in attributes and "size" not in result and not has_size_unavailable:
         # Get unavailable size terms from database
         unavailable_size_terms = menu_cache.get_unavailable_size_terms()
 
@@ -434,10 +438,11 @@ def extract_attribute_values(
                 known_displays = {opt.get("display_name", "").lower() for opt in attributes["size"].get("options", [])}
 
                 if term.lower() not in known_slugs and term.lower() not in known_displays:
-                    result["_unavailable_size"] = {
-                        "attempted_slug": term,
-                        "attempted_display": display,
-                    }
+                    unavailable_selections.append(UnavailableSelection(
+                        attr_slug="size",
+                        attempted_slug=term,
+                        attempted_display=display,
+                    ))
                     logger.info(
                         "Unrecognized size term detected: '%s' (not in menu options)",
                         term
@@ -448,7 +453,16 @@ def extract_attribute_values(
         "Extracted attribute values for %s: %s",
         item_type, result
     )
-    return result, matched_spans
+
+    # Convert matched_spans to typed TextSpan
+    result_spans = [TextSpan(start=s, end=e) for s, e in matched_spans]
+
+    return AttributeExtractionResult(
+        values=result,
+        matched_spans=result_spans,
+        unavailable=unavailable_selections,
+        unmatched=[],  # No unmatched tracking currently implemented
+    )
 
 
 # =============================================================================

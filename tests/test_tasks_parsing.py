@@ -64,13 +64,16 @@ def _is_bagel_item(item) -> bool:
 from orderbot.tasks.parsers import (
     parse_open_input_deterministic,
     _extract_quantity,
-    extract_attribute_values,
     WORD_TO_NUM,
     extract_zip_code,
     validate_delivery_zip_code,
     TAX_QUESTION_PATTERN,
     ORDER_STATUS_PATTERN,
 )
+from orderbot.tasks.parsers.deterministic import ExtractionPipeline
+
+# Create a module-level pipeline for attribute extraction tests
+_test_pipeline = ExtractionPipeline()
 
 
 class TestDeterministicParserHelpers:
@@ -100,15 +103,15 @@ class TestDeterministicParserHelpers:
         assert _extract_quantity("couple of") == 2
 
     def test_extract_toasted(self):
-        """Test extracting toasted preference via generic extract_attribute_values."""
-        attrs, _ = extract_attribute_values("yes, toasted please", "bagel")
-        assert attrs.get("toasted") is True
+        """Test extracting toasted preference via generic extract_attributes."""
+        result = _test_pipeline.extract_attributes("yes, toasted please", "bagel")
+        assert result.values.get("toasted") is True
 
-        attrs, _ = extract_attribute_values("not toasted", "bagel")
-        assert attrs.get("toasted") is False
+        result = _test_pipeline.extract_attributes("not toasted", "bagel")
+        assert result.values.get("toasted") is False
 
-        attrs, _ = extract_attribute_values("plain bagel", "bagel")
-        assert "toasted" not in attrs  # No explicit toasted preference
+        result = _test_pipeline.extract_attributes("plain bagel", "bagel")
+        assert "toasted" not in result.values  # No explicit toasted preference
 
     def test_extract_spread(self):
         """Test extracting spread via generic extract_attribute_values.
@@ -117,79 +120,80 @@ class TestDeterministicParserHelpers:
         Matching is done via display_name and aliases, not slug literals.
         Note: Spread is a multi-select attribute, so it returns a list of dicts.
         """
-        def _get_spread_slug(attrs: dict) -> str | None:
+        def _get_spread_slug(values: dict) -> str | None:
             """Helper to extract spread slug from multi-select format."""
-            spread = attrs.get("spread")
+            spread = values.get("spread")
             if spread and isinstance(spread, list) and len(spread) > 0:
                 return spread[0].get("slug")
             return None
 
         # "scallion cream cheese" matches scallion_cream_cheese slug
-        attrs, _ = extract_attribute_values("with scallion cream cheese", "bagel")
-        assert _get_spread_slug(attrs) == "scallion_cream_cheese"
+        attrs = _test_pipeline.extract_attributes("with scallion cream cheese", "bagel")
+        assert _get_spread_slug(attrs.values) == "scallion_cream_cheese"
 
         # "regular cream cheese" matches plain_cream_cheese slug
-        attrs, _ = extract_attribute_values("with regular cream cheese", "bagel")
-        assert _get_spread_slug(attrs) == "plain_cream_cheese"
+        attrs = _test_pipeline.extract_attributes("with regular cream cheese", "bagel")
+        assert _get_spread_slug(attrs.values) == "plain_cream_cheese"
 
-        attrs, _ = extract_attribute_values("everything bagel toasted", "bagel")
-        assert "spread" not in attrs  # No spread mentioned
+        attrs = _test_pipeline.extract_attributes("everything bagel toasted", "bagel")
+        assert "spread" not in attrs.values  # No spread mentioned
 
     def test_extract_spread_cc_alias(self):
         """Test that 'cc' alias variants are normalized to correct slug."""
-        def _get_spread_slug(attrs: dict) -> str | None:
+        def _get_spread_slug(values: dict) -> str | None:
             """Helper to extract spread slug from multi-select format."""
-            spread = attrs.get("spread")
+            spread = values.get("spread")
             if spread and isinstance(spread, list) and len(spread) > 0:
                 return spread[0].get("slug")
             return None
 
         # "scallion cc" alias resolves to scallion_cream_cheese slug
-        attrs, _ = extract_attribute_values("scallion cc", "bagel")
-        spread = _get_spread_slug(attrs)
+        attrs = _test_pipeline.extract_attributes("scallion cc", "bagel")
+        spread = _get_spread_slug(attrs.values)
         assert spread == "scallion_cream_cheese", f"Expected 'scallion_cream_cheese' but got '{spread}'"
 
         # "blueberry cc" alias resolves to blueberry_cream_cheese slug
-        attrs, _ = extract_attribute_values("blueberry cc", "bagel")
-        spread = _get_spread_slug(attrs)
+        attrs = _test_pipeline.extract_attributes("blueberry cc", "bagel")
+        spread = _get_spread_slug(attrs.values)
         assert spread == "blueberry_cream_cheese", f"Expected 'blueberry_cream_cheese' but got '{spread}'"
 
     def test_extract_unavailable_size_option(self):
         """Test that extraction detects unavailable 'medium' size for sized_beverage.
 
         Database has medium size with is_available=False. The extraction should
-        detect this and store it in _unavailable_size key for helpful user messaging.
+        detect this and store it in .unavailable list for helpful user messaging.
         """
         # "medium hot coffee" should detect that medium is unavailable
-        result, _ = extract_attribute_values("medium hot coffee", "sized_beverage")
+        result = _test_pipeline.extract_attributes("medium hot coffee", "sized_beverage")
 
-        # Should have _unavailable_size key with the attempted medium option
-        assert "_unavailable_size" in result, (
-            f"Expected '_unavailable_size' in result, got keys: {list(result.keys())}"
+        # Should have unavailable entry for size attribute
+        size_unavail = [u for u in result.unavailable if u.attr_slug == "size"]
+        assert len(size_unavail) == 1, (
+            f"Expected 1 unavailable entry for 'size', got: {result.unavailable}"
         )
-        unavail = result["_unavailable_size"]
-        assert unavail["attempted_slug"] == "medium", (
-            f"Expected attempted_slug='medium', got: {unavail}"
+        assert size_unavail[0].attempted_slug == "medium", (
+            f"Expected attempted_slug='medium', got: {size_unavail[0]}"
         )
 
         # Should NOT have size set to medium (since it's unavailable)
-        assert result.get("size") != "medium", (
-            f"Size should NOT be 'medium' since it's unavailable, got: {result.get('size')}"
+        assert result.values.get("size") != "medium", (
+            f"Size should NOT be 'medium' since it's unavailable, got: {result.values.get('size')}"
         )
 
     def test_extract_available_size_option(self):
         """Test that available size options are extracted normally."""
         # "large hot coffee" should extract size=large (available)
-        result, _ = extract_attribute_values("large hot coffee", "sized_beverage")
+        result = _test_pipeline.extract_attributes("large hot coffee", "sized_beverage")
 
         # Should have size=large (single_select returns slug directly)
-        assert result.get("size") == "large", (
-            f"Expected size='large', got: {result.get('size')}"
+        assert result.values.get("size") == "large", (
+            f"Expected size='large', got: {result.values.get('size')}"
         )
 
-        # Should NOT have _unavailable_size
-        assert "_unavailable_size" not in result, (
-            f"Should not have _unavailable_size for available option, got: {result}"
+        # Should NOT have any unavailable entries for size
+        size_unavail = [u for u in result.unavailable if u.attr_slug == "size"]
+        assert len(size_unavail) == 0, (
+            f"Should not have unavailable size for available option, got: {size_unavail}"
         )
 
     def test_oat_milk_not_duplicated(self):
@@ -204,8 +208,8 @@ class TestDeterministicParserHelpers:
         The fix adds option aliases to attr_option_slugs so they're properly
         skipped by _extract_modifiers_generic.
         """
-        result, _ = extract_attribute_values("small coffee with oat milk", "sized_beverage")
-        milk_entries = result.get("milk_sweetener_syrup", [])
+        result = _test_pipeline.extract_attributes("small coffee with oat milk", "sized_beverage")
+        milk_entries = result.values.get("milk_sweetener_syrup", [])
         assert len(milk_entries) == 1, (
             f"Expected 1 milk entry, got {len(milk_entries)}: {milk_entries}"
         )
@@ -1955,7 +1959,6 @@ class TestSplitQuantityBagelParsing:
     def test_split_with_scallion_and_veggie(self):
         """Test parsing with specific cream cheese variants."""
         from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items, _split_into_parts
-        from orderbot.tasks.parsers.deterministic.extraction import extract_attribute_values
 
         text = "2 bagels, one with scallion cream cheese, one with veggie cream cheese"
 
@@ -1965,8 +1968,8 @@ class TestSplitQuantityBagelParsing:
 
         # Debug: Check extraction for each part
         for i, (qty, part_text) in enumerate(parts):
-            attrs, _ = extract_attribute_values(part_text, "bagel")
-            print(f"DEBUG: Part {i} ({qty}x): '{part_text}' -> spread={attrs.get('spread')}")
+            attrs = _test_pipeline.extract_attributes(part_text, "bagel")
+            print(f"DEBUG: Part {i} ({qty}x): '{part_text}' -> spread={attrs.values.get('spread')}")
 
         result = _parse_split_quantity_items(text)
         assert result is not None

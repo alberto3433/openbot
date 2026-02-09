@@ -48,7 +48,7 @@ def build_parsed_item(
         weight_unit: For by-pound items (e.g., "1/4 lb")
         special_instructions: List of special instruction strings (e.g., "room for cream")
         attribute_values: Dict of attribute slug -> value (converted to selections).
-            Supports legacy format with _unavailable_* and _unmatched_* prefixed keys.
+            Only for simple dicts; use attr_result for full extraction results.
         attr_result: Typed AttributeExtractionResult (preferred over attribute_values).
             When provided, extracts values, unavailable, and unmatched directly.
         modifiers: List of Selection objects to add
@@ -65,7 +65,7 @@ def build_parsed_item(
     unmatched_selections: dict[str, dict] = {}
     clean_attribute_values: dict = {}
 
-    # NEW: Handle typed AttributeExtractionResult (preferred path)
+    # Handle typed AttributeExtractionResult (preferred path)
     if attr_result is not None:
         clean_attribute_values = attr_result.values
         unavailable_selections = {
@@ -76,19 +76,9 @@ def build_parsed_item(
             u.attr_slug: {"tokens": u.tokens}
             for u in attr_result.unmatched
         }
-    # LEGACY: Handle dict with string-prefixed keys (backward compat)
+    # Simple dict (for manual attribute assignment without extraction)
     elif attribute_values:
-        for key, value in attribute_values.items():
-            if key.startswith("_unavailable_"):
-                # Extract attr_slug from key (e.g., "_unavailable_size" -> "size")
-                attr_slug = key[len("_unavailable_"):]
-                unavailable_selections[attr_slug] = value
-            elif key.startswith("_unmatched_"):
-                # Extract attr_slug from key (e.g., "_unmatched_sweetener" -> "sweetener")
-                attr_slug = key[len("_unmatched_"):]
-                unmatched_selections[attr_slug] = value
-            else:
-                clean_attribute_values[key] = value
+        clean_attribute_values = attribute_values
 
     # If selections provided directly, use them
     if selections:

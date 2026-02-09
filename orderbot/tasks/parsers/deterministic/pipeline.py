@@ -16,8 +16,6 @@ from .result_types import (
     AttributeExtractionResult,
     SpecialInstructionsResult,
     ItemTypeMatch,
-    UnavailableSelection,
-    UnmatchedToken,
 )
 from .extraction import (
     extract_attribute_values as _extract_attribute_values,
@@ -180,45 +178,13 @@ class ExtractionPipeline:
         Returns:
             AttributeExtractionResult with values, spans, and unavailable/unmatched info
         """
-        # Convert TextSpan to legacy tuple format
+        # Convert TextSpan to tuple format for extraction function
         legacy_spans = None
         if exclude_spans:
             legacy_spans = [(s.start, s.end) for s in exclude_spans]
 
-        # Call existing extraction function
-        values, matched_spans = _extract_attribute_values(text, item_type, legacy_spans)
-
-        # Convert results to typed format
-        result_spans = [TextSpan(start=s, end=e) for s, e in matched_spans]
-
-        # Extract unavailable and unmatched from values
-        unavailable = []
-        unmatched = []
-        clean_values = {}
-
-        for key, value in values.items():
-            if key.startswith("_unavailable_"):
-                attr_slug = key[len("_unavailable_"):]
-                unavailable.append(UnavailableSelection(
-                    attr_slug=attr_slug,
-                    attempted_slug=value.get("attempted_slug", ""),
-                    attempted_display=value.get("attempted_display", ""),
-                ))
-            elif key.startswith("_unmatched_"):
-                attr_slug = key[len("_unmatched_"):]
-                unmatched.append(UnmatchedToken(
-                    attr_slug=attr_slug,
-                    tokens=value.get("tokens", []),
-                ))
-            else:
-                clean_values[key] = value
-
-        return AttributeExtractionResult(
-            values=clean_values,
-            matched_spans=result_spans,
-            unavailable=unavailable,
-            unmatched=unmatched,
-        )
+        # Call extraction function - returns typed result directly
+        return _extract_attribute_values(text, item_type, legacy_spans)
 
     def extract_modifiers_raw(
         self,

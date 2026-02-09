@@ -5764,9 +5764,6 @@ class TestShotQuantityExtraction:
 
     def test_extract_quantity_from_two_shots(self):
         """Test that '2 shots' extracts quantity=2."""
-        from orderbot.tasks.parsers.deterministic.extraction import extract_attribute_values
-
-        # The extraction function handles numeric quantities
         from orderbot.tasks.parsers.quantity_utils import extract_leading_quantity
 
         qty, remaining = extract_leading_quantity("2 shots")
@@ -5783,11 +5780,6 @@ class TestShotQuantityExtraction:
 
     def test_extract_quantity_from_double_prefix(self):
         """Test that extraction code handles 'double' as quantity=2."""
-        from orderbot.tasks.parsers.deterministic.extraction import extract_attribute_values
-
-        # The extract_quantity_before function converts "double" to 2
-        # This is tested via the extraction flow
-        import re
         from orderbot.tasks.parsers.deterministic.extraction import WORD_TO_NUM
 
         qty_str = "double"

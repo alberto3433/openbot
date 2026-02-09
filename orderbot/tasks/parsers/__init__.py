@@ -42,7 +42,6 @@ from .deterministic import (
     ORDER_STATUS_PATTERN,
     _get_configurable_item_pattern,
     ORDERING_LANGUAGE_PATTERN,
-    extract_attribute_values,
     extract_special_instructions_from_input,
     _parse_configurable_item,
     _parse_simple_item_deterministic,
@@ -89,7 +88,6 @@ __all__ = [
     "_get_configurable_item_pattern",  # Dynamic pattern builder
 
     # === Extractors ===
-    "extract_attribute_values",
     "extract_special_instructions_from_input",
     "_extract_quantity",
 

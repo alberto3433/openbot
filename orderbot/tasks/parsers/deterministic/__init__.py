@@ -56,8 +56,7 @@ from .result_types import (
 # Extraction Module Exports
 # =============================================================================
 from .extraction import (
-    # Main extraction functions
-    extract_attribute_values,
+    # Main extraction function
     extract_modifiers_with_qualifiers,
     # Internal helpers (used by tests)
     _extract_quantity,
@@ -174,7 +173,6 @@ __all__ = [
     "strip_conversational_fillers",
     "_get_configurable_item_pattern",
     # Extraction
-    "extract_attribute_values",
     "extract_special_instructions_from_input",
     "extract_modifiers_with_qualifiers",
     "_extract_quantity",

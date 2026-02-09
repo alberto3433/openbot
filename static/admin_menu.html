@@ -1249,7 +1249,8 @@
       document.getElementById("containsNuts").checked = !!item.contains_nuts;
 
       // Disable dietary checkboxes when values are computed from ingredients
-      const hasIngredients = item.has_ingredients || false;
+      // Use itemIngredients.length as the source of truth (consistent with what we show)
+      const hasIngredients = itemIngredients.length > 0;
       setDietaryCheckboxesEnabled(!hasIngredients);
       updateDietaryIndicator(hasIngredients, itemIngredients.length);
 

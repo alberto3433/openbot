@@ -12,13 +12,17 @@ from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
 from .schemas import OrderPhase, StateMachineResult
-from .parsers import parse_side_choice, extract_attribute_values
+from .parsers import parse_side_choice
+from .parsers.deterministic import ExtractionPipeline
 from orderbot.cache import menu_cache
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
 
 logger = logging.getLogger(__name__)
+
+# Module-level pipeline instance for reuse
+_pipeline = ExtractionPipeline()
 
 
 class ConfigSideChoiceHandler:
@@ -189,7 +193,8 @@ class ConfigSideChoiceHandler:
 
             # Extract attributes from the side choice input (e.g., "plain bagel" -> bread=plain)
             # This prevents re-asking about attributes the user already specified
-            pre_filled_attrs, _ = extract_attribute_values(user_input, opt_item_type)
+            result = _pipeline.extract_attributes(user_input, opt_item_type)
+            pre_filled_attrs = result.values
             logger.info(
                 "SIDE_CHOICE: Extracted attributes from '%s' for type '%s': %s",
                 user_input, opt_item_type, pre_filled_attrs

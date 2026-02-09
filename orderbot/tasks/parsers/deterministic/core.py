@@ -28,7 +28,8 @@ from ..intent_patterns import (
     REPLACE_ITEM_PATTERN,
     CANCEL_ITEM_PATTERN,
 )
-from .extraction import extract_attribute_values
+from .pipeline import ExtractionPipeline
+from .result_types import TextSpan
 from .item_parsing import (
     build_parsed_item,
     _parse_configurable_item,
@@ -59,6 +60,9 @@ from .modification_parsing import (
 from .tokenization import _parse_multi_item_order
 
 logger = logging.getLogger(__name__)
+
+# Module-level pipeline instance for extraction operations
+_pipeline = ExtractionPipeline()
 
 
 # =============================================================================
@@ -650,8 +654,9 @@ def parse_open_input_deterministic(
                     break
         attr_values = {}
         if item_type_for_mods:
-            exclude_spans = [menu_item_span] if menu_item_span else None
-            attr_values, _ = extract_attribute_values(text, item_type_for_mods, exclude_spans)
+            exclude_spans = [TextSpan(start=menu_item_span[0], end=menu_item_span[1])] if menu_item_span else None
+            result = _pipeline.extract_attributes(text, item_type_for_mods, exclude_spans)
+            attr_values = result.values
         modifications = _extract_menu_item_modifications(text, item_type_for_mods)
         # Look up is_signature from database (data-driven, no special handling)
         is_sig = menu_cache.item_has_default_ingredients(menu_item)

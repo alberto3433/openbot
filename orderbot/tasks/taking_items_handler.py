@@ -26,7 +26,8 @@ from .schemas import (
     ParsedItem,
     ParsedItemEntry,
 )
-from .parsers import parse_open_input, extract_special_instructions_from_input
+from .parsers import parse_open_input
+from .parsers.deterministic import ExtractionPipeline
 from .item_cancellation_handler import ItemCancellationHandler
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
@@ -53,6 +54,9 @@ if TYPE_CHECKING:
     from .context import OrderContext
 
 logger = logging.getLogger(__name__)
+
+# Module-level pipeline instance for reuse
+_pipeline = ExtractionPipeline()
 
 
 class TakingItemsHandler(MenuDataMixin):
@@ -251,9 +255,9 @@ class TakingItemsHandler(MenuDataMixin):
                 logger.info("Selections from input: %s", extracted_selections)
 
         # Extract order-level special instructions from user input
-        instructions_list = extract_special_instructions_from_input(user_input)
-        if instructions_list:
-            new_instructions = "; ".join(instructions_list)
+        instructions_result = _pipeline.extract_special_instructions(user_input)
+        if instructions_result:
+            new_instructions = "; ".join(instructions_result.instructions)
             if order.special_instructions:
                 order.special_instructions += f"; {new_instructions}"
             else:

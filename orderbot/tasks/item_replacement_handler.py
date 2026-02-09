@@ -18,7 +18,7 @@ from orderbot.cache import menu_cache
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OpenInputResponse, Selection
-from .parsers import extract_attribute_values
+from .parsers.deterministic import ExtractionPipeline
 from .parsers.intent_patterns import REPLACE_ITEM_PATTERN
 from .normalization import format_slug_for_display
 from .checkout_messages import changed_to_anything_else
@@ -30,6 +30,9 @@ if TYPE_CHECKING:
     from .pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
+
+# Module-level pipeline instance for reuse
+_pipeline = ExtractionPipeline()
 
 
 class ItemReplacementHandler:
@@ -258,11 +261,11 @@ class ItemReplacementHandler:
         order: OrderTask,
     ) -> StateMachineResult | None:
         """Apply selections extracted from user input to the last item."""
-        # Extract attribute values and convert to selections
-        attr_values, _ = extract_attribute_values(raw_user_input, item_type)
+        # Extract attribute values using ExtractionPipeline
+        result = _pipeline.extract_attributes(raw_user_input, item_type)
         selections: list[Selection] = []
-        if attr_values:
-            for attr_slug, value in attr_values.items():
+        if result.values:
+            for attr_slug, value in result.values.items():
                 if isinstance(value, list):
                     for item in value:
                         if isinstance(item, dict) and item.get("slug"):

@@ -15,10 +15,21 @@ from orderbot.cache import menu_cache
 
 from ...schemas import OpenInputResponse, ParsedItemEntry
 from ..constants import WORD_TO_NUM
-from .extraction import extract_attribute_values
 from .item_building import build_parsed_item
 
 logger = logging.getLogger(__name__)
+
+# Lazy-initialized pipeline instance to avoid circular import
+_pipeline = None
+
+
+def _get_pipeline():
+    """Get or create the extraction pipeline instance (lazy initialization)."""
+    global _pipeline
+    if _pipeline is None:
+        from .pipeline import ExtractionPipeline
+        _pipeline = ExtractionPipeline()
+    return _pipeline
 
 # Module-level cache for split-indicator patterns built from database
 _SPLIT_INDICATOR_PATTERNS_CACHE: list[str] | None = None
@@ -194,7 +205,8 @@ def _parse_split_quantity_items(
             total_quantity = extracted_qty
 
     # Extract base attributes using data-driven extractor
-    base_attrs, _ = extract_attribute_values(initial_part, item_type)
+    result = _get_pipeline().extract_attributes(initial_part, item_type)
+    base_attrs = result.values
 
     # Try to match a specific menu item name within the type
     base_item_name = match_menu_item_name_for_type_func(initial_part, item_type)
@@ -234,7 +246,8 @@ def _parse_split_quantity_items(
             break
 
         # Extract part-specific attributes (item-type-specific)
-        part_attrs, _ = extract_attribute_values(part_text, item_type)
+        result = _get_pipeline().extract_attributes(part_text, item_type)
+        part_attrs = result.values
 
         # Merge: part overrides base (None means "explicitly declined" and should override)
         merged_attrs = {**base_attrs}

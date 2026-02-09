@@ -26,9 +26,13 @@ from ..constants import (
 from ..intent_patterns import ADD_MORE_PATTERN
 from ..quantity_utils import extract_leading_quantity
 
-from .extraction import extract_modifiers_with_qualifiers, extract_attribute_values
+from .extraction import extract_modifiers_with_qualifiers
+from .pipeline import ExtractionPipeline
 
 logger = logging.getLogger(__name__)
+
+# Module-level pipeline instance for extraction operations
+_pipeline = ExtractionPipeline()
 
 
 # Cache for dynamic terminator pattern
@@ -628,7 +632,8 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     detected_type, _ = _detect_configurable_item_type(item_text)
     if detected_type:
         # Extract attributes using data-driven extraction
-        attr_values, _ = extract_attribute_values(item_text, detected_type)
+        result = _pipeline.extract_attributes(item_text, detected_type)
+        attr_values = result.values
         logger.info("ADD MORE: parsed as %s (qty=1), attrs=%s", detected_type, list(attr_values.keys()))
         return OpenInputResponse(
             parsed_items=[build_parsed_item(

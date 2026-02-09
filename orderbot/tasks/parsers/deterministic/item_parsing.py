@@ -23,12 +23,10 @@ from ..constants import (
     get_items_with_defaults_aliases,
 )
 from .extraction import (
-    extract_attribute_values,
     _extract_modifiers_generic,
     _extract_quantity,
     _extract_by_pound_info,
 )
-from .instructions_extraction import extract_special_instructions_from_input
 from ..quantity_utils import extract_quantity_for_pattern
 
 # Import from specialized modules
@@ -36,6 +34,18 @@ from .item_building import build_parsed_item
 from .split_quantity_parsing import _parse_split_quantity_items as _parse_split_quantity_items_impl
 
 logger = logging.getLogger(__name__)
+
+# Lazy-initialized pipeline instance to avoid circular import
+_pipeline = None
+
+
+def _get_pipeline():
+    """Get or create the extraction pipeline instance (lazy initialization)."""
+    global _pipeline
+    if _pipeline is None:
+        from .pipeline import ExtractionPipeline
+        _pipeline = ExtractionPipeline()
+    return _pipeline
 
 
 # =============================================================================
@@ -293,7 +303,8 @@ def _parse_item_generic(
     # Extract all attributes for this item type using database config
     # This handles all attribute types (single_select, multi_select, boolean)
     # including combined attributes like milk_sweetener_syrup
-    attribute_values, attr_matched_spans = extract_attribute_values(text, item_type)
+    attr_result = _get_pipeline().extract_attributes(text, item_type)
+    attribute_values, attr_matched_spans = attr_result.to_legacy_format()
 
     # Extract food modifiers (proteins, spreads, toppings, etc.)
     # Beverage modifiers (sweeteners, syrups, milk) are handled via attribute_values
@@ -320,7 +331,7 @@ def _parse_item_generic(
         ))
 
     # Extract item-level special instructions (e.g., "room for cream", "extra hot")
-    special_instructions = extract_special_instructions_from_input(text)
+    special_instructions = _get_pipeline().extract_special_instructions(text).instructions
 
     return build_parsed_item(
         item_type=item_type,
@@ -720,7 +731,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # - list[{slug, quantity, ...}] for multi_select
     # - bool for boolean
     # Also returns matched_spans to pass to modifier extraction to avoid double-extraction
-    attr_values, attr_matched_spans = extract_attribute_values(text, detected_item_type)
+    attr_result = _get_pipeline().extract_attributes(text, detected_item_type)
+    attr_values, attr_matched_spans = attr_result.to_legacy_format()
 
     # Merge inferred attribute values from option alias fallback
     # Only add inferred values if not already extracted from text
@@ -741,7 +753,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             has_defaults = True
 
     # 5b. Extract item-level special instructions (e.g., "room for cream", "extra hot")
-    special_instructions = extract_special_instructions_from_input(text)
+    special_instructions = _get_pipeline().extract_special_instructions(text).instructions
 
     # 5b-split. Check for partial-modifier split (e.g., "4 coffees 2 with milk")
     # This handles cases like "4 large hot coffees 2 with milk and sugar" -> 2 with modifiers, 2 plain
@@ -773,10 +785,12 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 # Extract BASE attributes from text BEFORE the split point
                 # e.g., "4 large hot coffees 2 with milk" -> base text is "4 large hot coffees"
                 text_before_split = text_lower[:item_name_match.end()]
-                base_attr_values, _ = extract_attribute_values(text_before_split, detected_item_type)
+                base_attr_result = _get_pipeline().extract_attributes(text_before_split, detected_item_type)
+                base_attr_values = base_attr_result.values
 
                 # Also extract any attribute values from modifier text
-                split_attr_values, split_matched_spans = extract_attribute_values(modifier_text, detected_item_type)
+                split_attr_result = _get_pipeline().extract_attributes(modifier_text, detected_item_type)
+                split_attr_values, split_matched_spans = split_attr_result.to_legacy_format()
 
                 # Extract modifiers from "with X" portion only
                 # Pass exclude_spans to avoid double-extraction of attributes

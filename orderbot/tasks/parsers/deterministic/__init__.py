@@ -38,6 +38,23 @@ from ..intent_patterns import (
 )
 
 # =============================================================================
+# Pipeline Module Exports (new unified API)
+# =============================================================================
+from .pipeline import ExtractionPipeline
+from .result_types import (
+    TextSpan,
+    QuantityResult,
+    AttributeExtractionResult,
+    AttributeMatch,
+    ModifierExtractionResult,
+    ModifierMatch,
+    SpecialInstructionsResult,
+    ItemTypeMatch,
+    UnavailableSelection,
+    UnmatchedToken,
+)
+
+# =============================================================================
 # Extraction Module Exports
 # =============================================================================
 from .extraction import (
@@ -133,6 +150,18 @@ from .core import parse_open_input_deterministic
 __all__ = [
     # Main entry point
     "parse_open_input_deterministic",
+    # Pipeline (new unified API)
+    "ExtractionPipeline",
+    "TextSpan",
+    "QuantityResult",
+    "AttributeExtractionResult",
+    "AttributeMatch",
+    "ModifierExtractionResult",
+    "ModifierMatch",
+    "SpecialInstructionsResult",
+    "ItemTypeMatch",
+    "UnavailableSelection",
+    "UnmatchedToken",
     # Patterns
     "REPLACE_ITEM_PATTERN",
     "CANCEL_ITEM_PATTERN",

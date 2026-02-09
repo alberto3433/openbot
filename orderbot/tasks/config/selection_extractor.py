@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from ..schemas import Selection
-from ..parsers import extract_attribute_values
+from ..parsers.deterministic import ExtractionPipeline
 from ..normalization import format_slug_for_display
 from ..utils.text import format_english_list
 
@@ -21,6 +21,9 @@ if TYPE_CHECKING:
     from ..pricing import PricingEngine
 
 logger = logging.getLogger(__name__)
+
+# Module-level pipeline instance for reuse
+_pipeline = ExtractionPipeline()
 
 __all__ = ["SelectionExtractor"]
 
@@ -49,8 +52,8 @@ class SelectionExtractor:
         """
         Extract selections from user input based on item type.
 
-        Uses the generic data-driven extract_attribute_values() function which
-        queries the database for what attributes the item type accepts and
+        Uses the ExtractionPipeline with typed results for cleaner extraction.
+        Queries the database for what attributes the item type accepts and
         extracts matching values from the input.
 
         Args:
@@ -60,15 +63,15 @@ class SelectionExtractor:
         Returns:
             List of Selection objects, empty if no selections found
         """
-        # Use generic data-driven extraction
-        attr_values, _ = extract_attribute_values(user_input, item_type)
+        # Use ExtractionPipeline for typed results
+        result = _pipeline.extract_attributes(user_input, item_type)
 
-        if not attr_values:
+        if not result.values:
             return []
 
         selections: list[Selection] = []
 
-        for attr_slug, value in attr_values.items():
+        for attr_slug, value in result.values.items():
             if isinstance(value, list):
                 # Multi-select attribute: list of {slug, quantity, display_name, ...}
                 for item in value:

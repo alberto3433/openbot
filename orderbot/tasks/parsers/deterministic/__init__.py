@@ -45,11 +45,11 @@ from .result_types import (
     TextSpan,
     QuantityResult,
     AttributeExtractionResult,
-    AttributeMatch,
     SpecialInstructionsResult,
     ItemTypeMatch,
     UnavailableSelection,
     UnmatchedToken,
+    AmbiguousSelection,
 )
 
 # =============================================================================
@@ -151,11 +151,11 @@ __all__ = [
     "TextSpan",
     "QuantityResult",
     "AttributeExtractionResult",
-    "AttributeMatch",
     "SpecialInstructionsResult",
     "ItemTypeMatch",
     "UnavailableSelection",
     "UnmatchedToken",
+    "AmbiguousSelection",
     # Patterns
     "REPLACE_ITEM_PATTERN",
     "CANCEL_ITEM_PATTERN",

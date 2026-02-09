@@ -44,25 +44,6 @@ class QuantityResult:
 
 
 @dataclass
-class AttributeMatch:
-    """A single matched attribute value."""
-
-    attr_slug: str
-    """Attribute slug from database."""
-
-    value: Any
-    """Matched value - can be:
-    - str: option slug for single_select
-    - bool: True/False for boolean
-    - list[dict]: list of selections for multi_select
-    - None: explicitly declined/negated
-    """
-
-    span: TextSpan | None = None
-    """Span in original text where this was matched."""
-
-
-@dataclass
 class UnavailableSelection:
     """Tracks a user's attempt to select an unavailable option."""
 
@@ -88,6 +69,24 @@ class UnmatchedToken:
 
 
 @dataclass
+class AmbiguousSelection:
+    """Tracks a user's attempt to select an ambiguous option.
+
+    Occurs when a generic term (like "syrup") matches multiple specific options
+    (like "Vanilla Syrup", "Hazelnut Syrup", etc.).
+    """
+
+    attr_slug: str
+    """Attribute the ambiguous token belongs to."""
+
+    token: str
+    """The ambiguous token/word from user input (e.g., "syrup")."""
+
+    matching_options: list[dict]
+    """List of options that the token matched. Each dict has 'slug' and 'display_name'."""
+
+
+@dataclass
 class AttributeExtractionResult:
     """Complete result of attribute extraction."""
 
@@ -102,6 +101,9 @@ class AttributeExtractionResult:
 
     unmatched: list[UnmatchedToken] = field(default_factory=list)
     """Tokens that didn't match any option."""
+
+    ambiguous: list[AmbiguousSelection] = field(default_factory=list)
+    """Tokens that matched multiple options (need disambiguation)."""
 
     def get(self, attr_slug: str, default: Any = None) -> Any:
         """Get an attribute value by slug."""
@@ -125,6 +127,7 @@ class AttributeExtractionResult:
             matched_spans=self.matched_spans + other.matched_spans,
             unavailable=self.unavailable + other.unavailable,
             unmatched=self.unmatched + other.unmatched,
+            ambiguous=self.ambiguous + other.ambiguous,
         )
 
 

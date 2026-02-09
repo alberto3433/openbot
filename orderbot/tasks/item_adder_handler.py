@@ -264,6 +264,9 @@ class ItemAdderHandler(MenuDataMixin):
         # Get unmatched_selections from kwargs (for unrecognized tokens messaging)
         unmatched_selections = kwargs.get("unmatched_selections")
 
+        # Get ambiguous_selections from kwargs (for "Which syrup?" disambiguation)
+        ambiguous_selections = kwargs.get("ambiguous_selections")
+
         # Get special_instructions from kwargs (e.g., "room for cream", "extra hot")
         special_instructions = kwargs.get("special_instructions")
 
@@ -283,6 +286,7 @@ class ItemAdderHandler(MenuDataMixin):
             extracted_selections=extracted_selections,
             unavailable_selections=unavailable_selections,
             unmatched_selections=unmatched_selections,
+            ambiguous_selections=ambiguous_selections,
             special_instructions=special_instructions,
             skip_first_question=skip_first_question,
         )
@@ -671,6 +675,7 @@ class ItemAdderHandler(MenuDataMixin):
         extracted_selections: list[Selection] | None = None,
         unavailable_selections: dict | None = None,
         unmatched_selections: dict | None = None,
+        ambiguous_selections: list[dict] | None = None,
         special_instructions: list[str] | None = None,
         skip_first_question: bool = False,
     ) -> StateMachineResult:
@@ -706,6 +711,7 @@ class ItemAdderHandler(MenuDataMixin):
             extracted_selections=extracted_selections,
             unavailable_selections=unavailable_selections,
             unmatched_selections=unmatched_selections,
+            ambiguous_selections=ambiguous_selections,
             special_instructions=special_instructions,
             skip_first_question=skip_first_question,
         )

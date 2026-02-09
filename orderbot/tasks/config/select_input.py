@@ -423,19 +423,32 @@ class SelectInputHandler:
                 attr_slug, all_slugs, len(item.selections)
             )
 
-            # Build acknowledgment text with quantity and qualifier
+            # Build acknowledgment text with quantity
+            # Note: qualifier is already included in display_name (set in line 394)
             display_names = []
             for sel in all_selections:
                 name = sel["display_name"]
-                qual = sel.get("qualifier")
                 qty = sel.get("quantity", 1)
-                if qual:
-                    name = f"{name} ({qual})"
                 if qty > 1:
                     name = f"{qty} {name}"
                 display_names.append(name)
 
             ack_text = format_english_list(display_names)
+
+            # Filter out qualifier pattern words from unmatched tokens
+            # e.g., "a little bit of milk" -> "little", "bit", "of" shouldn't be "not found"
+            if unmatched_tokens:
+                qualifier_patterns = menu_cache.get_qualifier_patterns()
+                # Build set of all words that appear in qualifier patterns
+                qualifier_words = set()
+                for pattern in qualifier_patterns:
+                    for word in pattern.lower().split():
+                        if len(word) >= 2:  # Skip single-char words
+                            qualifier_words.add(word)
+                # Also filter common prepositions/articles that appear in qualifiers
+                qualifier_words.update({'a', 'of', 'the', 'on', 'with', 'bit', 'little', 'lots', 'some'})
+                # Filter out qualifier words from unmatched tokens
+                unmatched_tokens = [t for t in unmatched_tokens if t.lower() not in qualifier_words]
 
             # If there are unmatched tokens, stay on current question and show options
             if unmatched_tokens:

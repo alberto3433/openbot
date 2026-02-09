@@ -288,6 +288,12 @@ class TakingItemsHandler(MenuDataMixin):
         if parsed.done_ordering:
             return self.checkout_utils_handler.transition_to_checkout(order)
 
+        # Handle cart item reference duplication ("more chips", "another bag of chips")
+        # This must run BEFORE wants_more_menu_items to catch cart references first
+        result = self._duplicate_handler.handle_duplicate_by_reference(parsed, order)
+        if result:
+            return result
+
         # Handle ingredient-based menu search
         result = self._handle_ingredient_search(parsed, order)
         if result:

@@ -234,6 +234,16 @@ class ItemBuilder:
         if ctx.unmatched_selections:
             item.unmatched_selections = ctx.unmatched_selections.copy()
 
+    def set_ambiguous_selections(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
+        """Set ambiguous selections for disambiguation.
+
+        Args:
+            item: The menu item to configure.
+            ctx: The build context.
+        """
+        if ctx.ambiguous_selections:
+            item.ambiguous_selections = list(ctx.ambiguous_selections)
+
     def set_special_instructions(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
         """Set special instructions for the item.
 
@@ -329,16 +339,19 @@ class ItemBuilder:
         # Step 8: Set unmatched selections
         self.set_unmatched_selections(item, ctx)
 
-        # Step 9: Set special instructions
+        # Step 9: Set ambiguous selections
+        self.set_ambiguous_selections(item, ctx)
+
+        # Step 10: Set special instructions
         self.set_special_instructions(item, ctx)
 
-        # Step 10: Infer attributes from item name
+        # Step 11: Infer attributes from item name
         self.infer_attributes(item)
 
-        # Step 11: Recalculate price
+        # Step 12: Recalculate price
         self.recalculate_price(item)
 
-        # Step 12: Set status
+        # Step 13: Set status
         self.set_status(item, ctx.needs_configuration)
 
         return item

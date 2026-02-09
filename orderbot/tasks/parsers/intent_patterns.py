@@ -308,6 +308,23 @@ DUPLICATE_ALL_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# "more X" pattern where X references a cart item (e.g., "more chips", "more of those chips")
+# This should be checked BEFORE MORE_MENU_ITEMS_PATTERNS to catch cart item references
+MORE_OF_SAME_PATTERN = re.compile(
+    r"^more\s+(?:of\s+(?:the|those|them|that)\s+)?(.+?)[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+# "make it/that N [item]" pattern - quantity change with trailing item reference
+# e.g., "make that two bags of chips", "make it 3 coffees"
+# This is more specific than MAKE_IT_N_PATTERN and captures the item reference
+MAKE_IT_N_WITH_ITEM_PATTERN = re.compile(
+    r"^make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"\s+(.+?)"  # Capture the item reference
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
 
 # =============================================================================
 # Configuration Request Patterns

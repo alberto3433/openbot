@@ -7,11 +7,13 @@ Handles duplicate/repeat item logic including:
 - "same thing" clarification
 - Duplicate all items
 - Repeat order requests
+- Cart item reference duplication ("more chips")
 
 Extracted from taking_items_handler.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
@@ -414,6 +416,69 @@ class DuplicateHandler:
                 message=question,
                 order=order,
             )
+
+    def handle_duplicate_by_reference(
+        self,
+        parsed: "OpenInputResponse",
+        order: "OrderTask",
+    ) -> StateMachineResult | None:
+        """Handle 'more chips' style requests by looking up cart item.
+
+        When user says "more chips", "another bag of chips", or "make that two bags
+        of chips", we try to find a matching item in the cart and duplicate it.
+
+        Args:
+            parsed: The parsed open input response.
+            order: The current order task.
+
+        Returns:
+            StateMachineResult if a cart item matched, None to fall through to other handlers.
+        """
+        if not parsed.duplicate_by_reference:
+            return None
+
+        item_ref = parsed.duplicate_by_reference.lower()
+        active_items = order.items.get_active_items()
+
+        if not active_items:
+            # No items in cart - fall through to other handlers
+            # (might be a menu query after all)
+            return None
+
+        # Find cart item matching the reference (most recent first)
+        matched_item = None
+        for item in reversed(active_items):
+            item_name = item.get_display_name().lower()
+            # Use word-boundary matching to find the reference in item name
+            # e.g., "chips" matches "Kettle Chips", "bag of chips" matches "Bag of Chips"
+            if re.search(rf'\b{re.escape(item_ref)}\b', item_name):
+                matched_item = item
+                break
+            # Also check if item_ref is a subset of words in item_name
+            # e.g., "chips" in "Bag of Kettle Chips"
+            item_words = set(item_name.split())
+            ref_words = set(item_ref.split())
+            if ref_words and ref_words.issubset(item_words):
+                matched_item = item
+                break
+
+        if not matched_item:
+            # No cart item matched - fall through to other handlers
+            # This allows "more options" to still trigger menu inquiry
+            return None
+
+        # Duplicate count: use duplicate_last_item if set, else 1
+        count = max(parsed.duplicate_last_item, 1)
+        item_name = matched_item.get_summary()
+
+        for _ in range(count):
+            order.items.add_item(matched_item.duplicate())
+
+        logger.info("Duplicated cart item '%s' (count=%d) by reference '%s'", item_name, count, item_ref)
+        return StateMachineResult(
+            message=item_added_anything_else(count, item_name),
+            order=order,
+        )
 
     def handle_repeat_order_request(
         self,

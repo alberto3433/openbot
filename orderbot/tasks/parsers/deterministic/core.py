@@ -27,6 +27,8 @@ from ..intent_patterns import (
     ANOTHER_ITEM_PATTERN,
     REPLACE_ITEM_PATTERN,
     CANCEL_ITEM_PATTERN,
+    MORE_OF_SAME_PATTERN,
+    MAKE_IT_N_WITH_ITEM_PATTERN,
 )
 from .pipeline import get_pipeline
 from .result_types import TextSpan
@@ -255,6 +257,21 @@ def parse_open_input_deterministic(
     add_modifier_result = _parse_add_modifier_to_item(text)
     if add_modifier_result:
         return add_modifier_result
+
+    # Check for "more [item reference]" BEFORE parse_more_menu_items()
+    # This catches "more chips" style requests that should duplicate cart items
+    # rather than being treated as menu inquiry ("show me more options")
+    more_of_same_match = MORE_OF_SAME_PATTERN.match(text)
+    if more_of_same_match:
+        item_ref = more_of_same_match.group(1).strip().lower()
+        # Exclude menu inquiry words - these should fall through to parse_more_menu_items
+        menu_inquiry_words = {
+            "options", "items", "please", "of those", "of them", "of that",
+            "choices", "things", "stuff", "menu", "food",
+        }
+        if item_ref not in menu_inquiry_words:
+            logger.info("Deterministic parse: 'more %s' -> duplicate_by_reference", item_ref)
+            return OpenInputResponse(duplicate_by_reference=item_ref)
 
     # Check for "show more" menu requests BEFORE menu queries
     # "what other pastries do you have?" should be pagination, not a new query
@@ -502,10 +519,54 @@ def parse_open_input_deterministic(
             logger.info("Deterministic parse: 'another %s' detected -> item_type '%s'", item_keyword_lower, resolved_item_type)
             return OpenInputResponse(duplicate_new_item_type=resolved_item_type)
 
+        # 4. No item type match - check if it's a generic pronoun/reference
+        # "another one", "one more of those", "another of them" should fall through to ONE_MORE_PATTERN
+        generic_refs = {
+            "one", "of those", "of them", "of that", "one of those", "one of them",
+            "of these", "one of these", "please",
+        }
+        if item_keyword_lower not in generic_refs:
+            # Return for cart lookup
+            # e.g., "another bag of chips" -> duplicate_by_reference="bag of chips"
+            # The handler will try to match against cart items
+            logger.info("Deterministic parse: 'another %s' -> duplicate_by_reference for cart lookup", item_keyword)
+            return OpenInputResponse(duplicate_by_reference=item_keyword)
+        # else: fall through to ONE_MORE_PATTERN
+
     # Check for "one more" / "another" patterns (without item type - needs clarification if multiple items)
     if ONE_MORE_PATTERN.match(text):
         logger.info("Deterministic parse: 'one more' / 'another' detected, adding 1 more")
         return OpenInputResponse(duplicate_last_item=1)
+
+    # Check for "make it/that N [item]" BEFORE modification and replacement patterns
+    # e.g., "make that two bags of chips" -> change quantity of chips to 2
+    # This is more specific than REPLACE_ITEM_PATTERN which would incorrectly match
+    make_n_with_item_match = MAKE_IT_N_WITH_ITEM_PATTERN.match(text)
+    if make_n_with_item_match:
+        num_str = make_n_with_item_match.group(1).lower()
+        item_ref = make_n_with_item_match.group(2).strip()
+        # Convert to number
+        word_to_num = {
+            "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
+        }
+        if num_str.isdigit():
+            target_qty = int(num_str)
+        else:
+            target_qty = word_to_num.get(num_str, 0)
+
+        if target_qty >= 2:
+            # User says "make that 2 bags of chips" means they want 2 total
+            # Return duplicate_by_reference with the additional count needed
+            additional = target_qty - 1
+            logger.info(
+                "Deterministic parse: 'make it N [item]' detected, target=%d, item_ref='%s', adding %d more",
+                target_qty, item_ref, additional
+            )
+            return OpenInputResponse(
+                duplicate_last_item=additional,
+                duplicate_by_reference=item_ref,
+            )
 
     # Check for modification to existing item BEFORE replacement patterns
     # This catches patterns like "make the bagel with scallion cream cheese"

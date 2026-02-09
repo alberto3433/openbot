@@ -229,7 +229,20 @@ class MenuItemConfigHandler(BaseHandler):
         option_lower = option_name.lower()
 
         # Find position of the option in user input
-        opt_match = re.search(rf'\b{re.escape(option_lower)}\b', user_lower)
+        # Try multiple variations: full name, individual words, slug-based patterns
+        opt_match = None
+        search_terms = [option_lower]
+
+        # Also try individual words from the display name (e.g., "milk" from "Whole Milk")
+        for word in option_lower.split():
+            if len(word) >= 3:  # Skip short words like "a", "of", etc.
+                search_terms.append(word)
+
+        for term in search_terms:
+            opt_match = re.search(rf'\b{re.escape(term)}\b', user_lower)
+            if opt_match:
+                break
+
         if not opt_match:
             return None
 
@@ -319,6 +332,12 @@ class MenuItemConfigHandler(BaseHandler):
             item.mark_complete()
             return self._get_next_question(order)
 
+        # Check for ambiguous selections first (e.g., "syrup" matching multiple options)
+        # These need to be resolved before continuing with normal config
+        ambig_result = self._handle_ambiguous_selection(item, order)
+        if ambig_result:
+            return ambig_result
+
         # Find first unanswered mandatory attribute
         unanswered = self._get_unanswered_mandatory(item, item_type)
         if not unanswered:
@@ -329,6 +348,53 @@ class MenuItemConfigHandler(BaseHandler):
         # Reset options page for first question
         order.config_options_page = 0
         return self._ask_attribute_question(item, order, first_attr, is_first_question=True)
+
+    def _handle_ambiguous_selection(
+        self, item: MenuItemTask, order: OrderTask
+    ) -> StateMachineResult | None:
+        """
+        Handle ambiguous selections that need user disambiguation.
+
+        When user says something like "syrup" without specifying which one,
+        we need to ask "Which syrup? Vanilla, Hazelnut, Caramel, or Peppermint?"
+
+        Returns StateMachineResult if disambiguation is needed, None otherwise.
+        """
+        if not item.ambiguous_selections:
+            return None
+
+        # Get the first ambiguous selection to resolve
+        ambig = item.ambiguous_selections[0]
+        attr_slug = ambig.get("attr_slug", "")
+        token = ambig.get("token", "")
+        matching_options = ambig.get("matching_options", [])
+
+        if not matching_options:
+            # No options to disambiguate - shouldn't happen, but clear and continue
+            item.ambiguous_selections.pop(0)
+            return None
+
+        # Build list of option display names
+        from ..utils.text import format_english_list
+        option_names = [opt.get("display_name", opt.get("slug", "")) for opt in matching_options]
+
+        # Format options as "Vanilla Syrup, Hazelnut Syrup, Caramel Syrup, or Peppermint Syrup"
+        options_str = format_english_list(option_names, conjunction="or")
+
+        # Build the disambiguation question
+        # Use the token (e.g., "syrup") in the question
+        item_name = item.get_display_name()
+        question = f"Got it, for the {item_name}. Which {token}? {options_str}?"
+
+        # Store state for handling the user's response
+        # pending_field format: "item_type:attr_slug" so the router knows what attribute this is for
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
+        order.pending_item_id = item.id
+        order.pending_field = PendingField.AMBIGUOUS_SELECTION
+        # Store the ambiguous selection info so we can process the response
+        order.pending_config_queue = [ambig]  # Store as list for compatibility
+
+        return StateMachineResult(message=question, order=order)
 
     def _ask_attribute_question(
         self, item: MenuItemTask, order: OrderTask, attr: dict,

@@ -135,6 +135,11 @@ class ParsedItemEntry(BaseModel):
     # Used to show "We don't have X. We have A, B, C..." with pagination
     unmatched_selections: dict[str, dict] = Field(default_factory=dict)
 
+    # Track ambiguous selections that need disambiguation
+    # List of {attr_slug, token, matching_options: [{slug, display_name}]}
+    # Used to ask "Which syrup? Vanilla, Hazelnut, Caramel, or Peppermint?"
+    ambiguous_selections: list[dict] = Field(default_factory=list)
+
     # Item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions: list[str] = Field(default_factory=list)
 
@@ -489,6 +494,10 @@ class OpenInputResponse(BaseModel):
     duplicate_new_item_type: str | None = Field(
         default=None,
         description="User wants another item of a specific type (e.g., 'another bagel' -> 'bagel', 'one more coffee' -> 'coffee'). Treat as new item and run config flow."
+    )
+    duplicate_by_reference: str | None = Field(
+        default=None,
+        description="User wants more of an item by reference (e.g., 'more chips' -> 'chips'). Handler resolves against cart items."
     )
     wants_duplicate_all: bool = Field(
         default=False,

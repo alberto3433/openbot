@@ -86,6 +86,11 @@ class MenuItemTask(ItemTask):
     # Used to show "We don't have X. We have A, B, C..." with pagination
     unmatched_selections: dict[str, dict] = Field(default_factory=dict)
 
+    # Track ambiguous selections that need disambiguation
+    # List of {attr_slug, token, matching_options: [{slug, display_name}]}
+    # Used to ask "Which syrup? Vanilla, Hazelnut, Caramel, or Peppermint?"
+    ambiguous_selections: list[dict] = Field(default_factory=list)
+
     # Unified selections list - all customizations (attribute choices and add-ons)
     # Renamed from "modifiers" to "selections" for clarity - everything is a selection
     selections: list[dict] = Field(default_factory=list)  # Stored as dict for serialization

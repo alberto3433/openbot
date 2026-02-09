@@ -48,6 +48,10 @@ class ItemBuildContext:
     """Dict of attr_slug -> {tokens: list[str]}
     for tokens user mentioned that don't match any option."""
 
+    ambiguous_selections: list[dict] | None = None
+    """List of {attr_slug, token, matching_options} for ambiguous tokens
+    that need disambiguation (e.g., 'syrup' matching multiple syrup options)."""
+
     special_instructions: list[str] | None = None
     """List of special instruction strings."""
 

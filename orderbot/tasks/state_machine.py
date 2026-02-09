@@ -384,6 +384,15 @@ class OrderStateMachine:
                 order.add_message("assistant", result.message)
                 return result
 
+        # Check for pending reorder offer confirmation (yes/no to "Want to reorder it?")
+        if getattr(order, "pending_reorder_offer_items", None):
+            result = self.order_history_handler.handle_reorder_offer_response(
+                user_input, order
+            )
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
         # Check for pending change clarification response
         if order.pending_change_clarification:
             result = self.config_helper_handler.handle_change_clarification_response(user_input, order)

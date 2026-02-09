@@ -166,6 +166,10 @@ class ConfiguringItemHandler:
         if order.pending_field == PendingField.QUANTITY_ADDITION_SELECTION:
             return self._taking_items_handler.handle_quantity_addition_selection(user_input, order)
 
+        # Handle ambiguous selection ("Which syrup?" -> "vanilla")
+        if order.pending_field == PendingField.AMBIGUOUS_SELECTION:
+            return self._handle_ambiguous_selection_response(user_input, order)
+
         # Handle item switch confirmation ("can you make it X?" -> similar item found)
         if order.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
             return self.config_modification_handler.handle_confirm_item_switch(user_input, order)
@@ -227,6 +231,98 @@ class ConfiguringItemHandler:
         # Default: unknown pending_field, advance to next question
         order.clear_pending()
         return self.checkout_utils_handler.get_next_question(order)
+
+    def _handle_ambiguous_selection_response(
+        self, user_input: str, order: OrderTask
+    ) -> StateMachineResult:
+        """Handle user's response to ambiguous selection disambiguation.
+
+        When user said "syrup" and we asked "Which syrup?", this handles their response.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        item = order.items.get_item_by_id(order.pending_item_id)
+        if not item:
+            order.clear_pending()
+            return StateMachineResult(
+                message="What can I get for you?",
+                order=order,
+            )
+
+        # Get the pending ambiguous selection info
+        if not order.pending_config_queue:
+            # No pending info - shouldn't happen, continue with normal config
+            order.clear_pending()
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                return self.menu_item_handler.get_first_question(item, order)
+            return self.checkout_utils_handler.get_next_question(order)
+
+        ambig_info = order.pending_config_queue[0]
+        attr_slug = ambig_info.get("attr_slug", "")
+        matching_options = ambig_info.get("matching_options", [])
+
+        # Try to match user input against the options
+        user_lower = user_input.lower().strip()
+        matched_option = None
+
+        for opt in matching_options:
+            opt_slug = opt.get("slug", "").lower()
+            opt_display = opt.get("display_name", "").lower()
+
+            # Check for exact match or partial match
+            if (opt_slug == user_lower or
+                opt_display == user_lower or
+                opt_slug in user_lower or
+                opt_display in user_lower or
+                user_lower in opt_slug or
+                user_lower in opt_display):
+                matched_option = opt
+                break
+
+        if matched_option:
+            # Apply the selected option to the item
+            from .schemas import Selection
+
+            # Create a selection and apply it
+            selection = Selection(
+                slug=matched_option.get("slug", ""),
+                category=attr_slug,
+                display_name=matched_option.get("display_name", ""),
+                price=matched_option.get("price", 0.0),
+            )
+
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                self.menu_item_handler._apply_selections(item, [selection])
+                # Recalculate price to include the upcharge for the selected option
+                self.menu_item_handler._recalculate_item_price(item)
+
+            # Clear the ambiguous selection from the item
+            if item.ambiguous_selections:
+                item.ambiguous_selections.pop(0)
+
+            logger.info(
+                "Resolved ambiguous selection: %s -> %s for %s",
+                ambig_info.get("token"), matched_option.get("slug"), item.menu_item_name
+            )
+
+            # Clear pending state and continue with normal config
+            order.pending_config_queue = []
+
+            # Continue with get_first_question to check for more ambiguous selections
+            # or proceed to normal config questions
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                return self.menu_item_handler.get_first_question(item, order)
+
+        # No match found - ask again or give an error
+        from ..utils.text import format_english_list
+        option_names = [opt.get("display_name", opt.get("slug", "")) for opt in matching_options]
+        options_str = format_english_list(option_names, conjunction="or")
+
+        return StateMachineResult(
+            message=f"I didn't catch that. Which would you like? {options_str}?",
+            order=order,
+        )
 
     def _check_config_interceptors(
         self, user_input: str, item, order: OrderTask

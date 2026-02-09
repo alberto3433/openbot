@@ -363,6 +363,11 @@ class OrderTask(BaseTask):
     # List of item dicts from order history matching the user's reference
     pending_reorder_items: list[dict] | None = None
 
+    # Reorder offer confirmation state
+    # Used when we show last order details and ask "Want to reorder it?"
+    # List of item dicts from the last order that user can confirm to reorder
+    pending_reorder_offer_items: list[dict] | None = None
+
     # Pending dietary follow-up state
     # Used when user asks "is X vegan?" and we offer to show vegan options instead
     # Dict with: dietary_type (str), category (str | None)
@@ -437,6 +442,7 @@ class OrderTask(BaseTask):
         self.pending_unmatched_pagination = None
         self.pending_order_history = None
         self.pending_reorder_items = None
+        self.pending_reorder_offer_items = None
         self.pending_dietary_followup = None
         self.pending_quantity_addition = None
 

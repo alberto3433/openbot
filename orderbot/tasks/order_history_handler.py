@@ -253,6 +253,10 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
                 for item in items
             )
 
+            # Store items for potential reorder and set pending field
+            order.pending_reorder_offer_items = items
+            order.pending_field = PendingField.REORDER_OFFER_CONFIRMATION
+
             return StateMachineResult(
                 message=RESPONSES["order_details"].format(
                     date=date_str,
@@ -273,6 +277,10 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         order_data = history["orders"][0]
         date_str = self._format_order_date(order_data["order_date"])
         items_desc = self._format_items_for_display(order_data["items"])
+
+        # Store items for potential reorder and set pending field
+        order.pending_reorder_offer_items = order_data.get("items", [])
+        order.pending_field = PendingField.REORDER_OFFER_CONFIRMATION
 
         return StateMachineResult(
             message=RESPONSES["order_details"].format(
@@ -519,6 +527,69 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             message=f"I didn't catch that. Which one would you like: {', '.join(item_names)}?",
             order=order,
         )
+
+    def handle_reorder_offer_response(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle user's yes/no response to 'Want to reorder it?' offer.
+
+        Args:
+            user_input: The user's response (e.g., "yes", "no", "sure").
+            order: The current order task.
+
+        Returns:
+            StateMachineResult with appropriate action.
+        """
+        from .response_utils import is_affirmative, is_negative
+
+        pending_items = getattr(order, "pending_reorder_offer_items", None)
+        if not pending_items:
+            order.pending_field = None
+            return None
+
+        text_lower = user_input.strip().lower()
+
+        # Check for affirmative response
+        if is_affirmative(text_lower):
+            order.pending_reorder_offer_items = None
+            order.pending_field = None
+
+            # Add all items from pending offer
+            items_added = []
+            for item_data in pending_items:
+                self._add_item_from_history(item_data, order, silent=True)
+                qty = item_data.get("quantity", 1)
+                name = item_data.get("menu_item_name", "item")
+                if qty > 1:
+                    items_added.append(f"{qty} {name}s")
+                else:
+                    items_added.append(name)
+
+            items_str = ", ".join(items_added)
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+
+            return StateMachineResult(
+                message=RESPONSES["reorder_success"].format(summary=items_str),
+                order=order,
+            )
+
+        # Check for negative response
+        if is_negative(text_lower):
+            order.pending_reorder_offer_items = None
+            order.pending_field = None
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+
+            return StateMachineResult(
+                message="No problem! What can I get for you today?",
+                order=order,
+            )
+
+        # Didn't understand - clear pending state and fall through to normal processing
+        order.pending_reorder_offer_items = None
+        order.pending_field = None
+        return None
 
     # =========================================================================
     # Helper Methods

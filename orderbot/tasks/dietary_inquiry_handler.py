@@ -439,7 +439,9 @@ class DietaryInquiryHandler(MenuDataMixin):
         canonical_name = menu_cache.resolve_menu_item_alias(item_name)
 
         if canonical_name:
-            # Exact match found - confirm availability
+            # Exact match found - set up pending state for "yes" confirmation
+            order.pending_suggested_item = canonical_name
+            order.pending_field = PendingField.CONFIRM_SUGGESTED_ITEM
             return StateMachineResult(
                 message=(
                     f"Yes, {canonical_name} is available! Would you like to add it to your order?"
@@ -452,8 +454,10 @@ class DietaryInquiryHandler(MenuDataMixin):
 
         if matching_items:
             if len(matching_items) == 1:
-                # Single match
+                # Single match - set up pending state for "yes" confirmation
                 item_display = matching_items[0].get("name", item_name)
+                order.pending_suggested_item = item_display
+                order.pending_field = PendingField.CONFIRM_SUGGESTED_ITEM
                 return StateMachineResult(
                     message=(
                         f"Yes, we have {item_display}! Would you like to add it to your order?"
@@ -461,7 +465,7 @@ class DietaryInquiryHandler(MenuDataMixin):
                     order=order,
                 )
             else:
-                # Multiple matches - list them
+                # Multiple matches - list them (user needs to pick one, no pending state)
                 item_names = [item.get("name", "") for item in matching_items]
                 items_list = ", ".join(item_names[:-1]) + f" and {item_names[-1]}"
                 return StateMachineResult(

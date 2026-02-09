@@ -26,3 +26,5 @@ class PendingField:
     REORDER_ITEM_SELECTION = "reorder_item_selection"
     CONFIRM_DIETARY_FOLLOWUP = "confirm_dietary_followup"
     QUANTITY_ADDITION_SELECTION = "quantity_addition_selection"
+    AMBIGUOUS_SELECTION = "ambiguous_selection"
+    REORDER_OFFER_CONFIRMATION = "reorder_offer_confirmation"

@@ -293,3 +293,76 @@ class TestOrderHistoryHelpers:
 
         result = handler._format_items_for_display([])
         assert "no items" in result.lower()
+
+
+class TestReorderOfferConfirmation:
+    """Test the reorder offer confirmation flow ('Want to reorder it?' -> 'yes')."""
+
+    def test_handle_reorder_offer_affirmative(self):
+        """Test that 'yes' to 'Want to reorder it?' adds items to order."""
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.schemas import OrderPhase
+        from orderbot.tasks.pending_fields import PendingField
+
+        handler = OrderHistoryHandler()
+        order = OrderTask()
+
+        # Simulate pending reorder offer (state after showing last order details)
+        order.pending_reorder_offer_items = [
+            {"menu_item_name": "The BLT", "menu_item_type": "signature_sandwich", "quantity": 2, "price": 11.25},
+        ]
+        order.pending_field = PendingField.REORDER_OFFER_CONFIRMATION
+
+        # User says yes
+        result = handler.handle_reorder_offer_response("yes", order)
+
+        assert result is not None
+        assert "added" in result.message.lower() or "The BLT" in result.message
+        assert order.items.get_item_count() == 2  # quantity=2 means 2 items
+        assert order.pending_field is None
+        assert order.pending_reorder_offer_items is None
+
+    def test_handle_reorder_offer_negative(self):
+        """Test that 'no' to 'Want to reorder it?' clears pending state."""
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.pending_fields import PendingField
+
+        handler = OrderHistoryHandler()
+        order = OrderTask()
+
+        # Simulate pending reorder offer
+        order.pending_reorder_offer_items = [
+            {"menu_item_name": "The BLT", "menu_item_type": "signature_sandwich", "quantity": 1, "price": 11.25},
+        ]
+        order.pending_field = PendingField.REORDER_OFFER_CONFIRMATION
+
+        # User says no
+        result = handler.handle_reorder_offer_response("no", order)
+
+        assert result is not None
+        assert "what can i get" in result.message.lower()
+        assert order.items.get_item_count() == 0
+        assert order.pending_field is None
+        assert order.pending_reorder_offer_items is None
+
+    def test_handle_reorder_offer_unclear(self):
+        """Test that unclear response clears pending state and returns None for fallthrough."""
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.pending_fields import PendingField
+
+        handler = OrderHistoryHandler()
+        order = OrderTask()
+
+        # Simulate pending reorder offer
+        order.pending_reorder_offer_items = [
+            {"menu_item_name": "The BLT", "menu_item_type": "signature_sandwich", "quantity": 1, "price": 11.25},
+        ]
+        order.pending_field = PendingField.REORDER_OFFER_CONFIRMATION
+
+        # User says something unclear
+        result = handler.handle_reorder_offer_response("I'd like a coffee instead", order)
+
+        # Should return None to allow fallthrough to normal processing
+        assert result is None
+        assert order.pending_field is None
+        assert order.pending_reorder_offer_items is None

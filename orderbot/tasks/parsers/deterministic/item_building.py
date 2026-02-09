@@ -63,6 +63,8 @@ def build_parsed_item(
     unavailable_selections: dict[str, dict] = {}
     # Extract unmatched selections - stored for "We don't have X. We have A, B, C..." messaging
     unmatched_selections: dict[str, dict] = {}
+    # Extract ambiguous selections - for "Which syrup?" disambiguation
+    ambiguous_selections: list[dict] = []
     clean_attribute_values: dict = {}
 
     # Handle typed AttributeExtractionResult (preferred path)
@@ -76,6 +78,14 @@ def build_parsed_item(
             u.attr_slug: {"tokens": u.tokens}
             for u in attr_result.unmatched
         }
+        ambiguous_selections = [
+            {
+                "attr_slug": a.attr_slug,
+                "token": a.token,
+                "matching_options": a.matching_options,
+            }
+            for a in attr_result.ambiguous
+        ]
     # Simple dict (for manual attribute assignment without extraction)
     elif attribute_values:
         clean_attribute_values = attribute_values
@@ -134,5 +144,6 @@ def build_parsed_item(
         weight_unit=weight_unit,
         unavailable_selections=unavailable_selections,
         unmatched_selections=unmatched_selections,
+        ambiguous_selections=ambiguous_selections,
         special_instructions=special_instructions or [],
     )

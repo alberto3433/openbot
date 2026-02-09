@@ -220,6 +220,10 @@ class OptionsInquiryHandler:
             r"(?:show|list)\s+(?:me\s+)?(?:the\s+)?(\w+)(?:\s+options)?",
             r"what\s+(\w+)\s+can\s+i\s+(?:add|get|have)",
             r"what\s+(?:types?|kinds?)\s+of\s+(\w+)",
+            # "what X choices do you have"
+            r"what\s+(\w+)\s+choices?\s+(?:do\s+you\s+have|are\s+there|are\s+available)",
+            # "what are the/my X options/choices"
+            r"what\s+are\s+(?:the|my)\s+(\w+)\s+(?:options?|choices?)",
         ]
 
         for pattern in inquiry_patterns:

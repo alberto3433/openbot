@@ -83,6 +83,54 @@ class TestMilkAliasInMultiSelect:
         assert 'whole_milk' in slugs, f"'milk' was not added, got: {slugs}"
         assert 'domino_sugar' in slugs, f"'sugar' was not added, got: {slugs}"
 
+    def test_little_bit_of_milk_no_unmatched_error(self, menu_cache_loaded):
+        """Test 'a little bit of milk' doesn't show 'we don't have little, bit, of' error.
+
+        The qualifier words like 'little', 'bit', 'of' should be filtered from
+        unmatched tokens since they're part of a qualifier pattern.
+        """
+        order = OrderTask()
+        sm = OrderStateMachine()
+
+        # Add espresso
+        result = sm.process('espresso', order)
+        order = result.order
+
+        # Skip shots
+        result = sm.process('no', order)
+        order = result.order
+        assert 'milk' in result.message.lower() or 'sweetener' in result.message.lower()
+
+        # Test the 'a little bit of milk' input
+        result = sm.process('a little bit of milk', order)
+        order = result.order
+
+        # Should NOT say "we don't have little, bit, of"
+        msg_lower = result.message.lower()
+        assert "don't have little" not in msg_lower, \
+            f"System incorrectly said 'we don't have little': {result.message}"
+        assert "don't have bit" not in msg_lower, \
+            f"System incorrectly said 'we don't have bit': {result.message}"
+        assert "don't have of" not in msg_lower, \
+            f"System incorrectly said 'we don't have of': {result.message}"
+
+        # Should have added whole milk with a qualifier
+        item = order.items.items[0]
+        selections = item.get_selections('milk_sweetener_syrup')
+        slugs = [s.get('slug') for s in selections]
+
+        assert 'whole_milk' in slugs, f"'milk' was not added, got: {slugs}"
+
+        # Check that the qualifier was captured
+        # "a little" gets normalized to "light" by the qualifier system
+        milk_selection = next((s for s in selections if s.get('slug') == 'whole_milk'), None)
+        assert milk_selection is not None, "whole_milk selection not found"
+        display_name = milk_selection.get('display_name', '')
+        # Accept either "light" (normalized form) or "a little" (raw form)
+        has_qualifier = any(q in display_name.lower() for q in ['light', 'little', 'a little'])
+        assert has_qualifier, \
+            f"Qualifier not captured in display_name: {display_name}"
+
 
 class TestMoreCheeseForAttributeSelection:
     """Test 'more cheese' increments quantity when cheese is an attribute category."""

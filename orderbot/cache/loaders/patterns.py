@@ -131,10 +131,13 @@ class PatternLoaderMixin:
         """
         from sqlalchemy import text
 
-        # Query all keywords from the database
-        result = db.execute(text(
-            "SELECT keyword, item_type_slug, attribute_slug FROM attribute_inquiry_keywords"
-        ))
+        # Query all keywords from the database, joining to get slugs from FK relationships
+        result = db.execute(text("""
+            SELECT aik.keyword, it.slug as item_type_slug, ga.slug as attribute_slug
+            FROM attribute_inquiry_keywords aik
+            LEFT JOIN item_types it ON aik.item_type_id = it.id
+            JOIN global_attributes ga ON aik.global_attribute_id = ga.id
+        """))
 
         keywords: dict[tuple[str, str | None], str] = {}
         for row in result:

@@ -425,6 +425,9 @@ class MenuItemLoaderMixin:
     def _load_dietary_data_from_bulk(self, bulk_data: dict) -> None:
         """Load dietary and allergen data for menu items (from bulk).
 
+        Computes dietary properties from ingredients when available, falls back
+        to stored column values when no ingredients are defined.
+
         Populates:
         - _items_by_dietary_property: maps dietary property to list of matching items
         - _item_dietary_info: maps item name to its dietary/allergen info dict
@@ -451,18 +454,30 @@ class MenuItemLoaderMixin:
             name_lower = item.name.lower()
             item_type_slug = item.item_type.slug if item.item_type else None
 
+            # Get ingredients from eagerly loaded relationship
+            ingredients = [link.ingredient for link in item.ingredient_links if link.ingredient]
+            has_ingredients = len(ingredients) > 0
+
+            # Compute dietary values from ingredients if available
+            computed_values = self._compute_dietary_from_ingredients(
+                ingredients, dietary_properties, allergen_properties
+            ) if has_ingredients else {}
+
             # Build dietary info dict for this item
             dietary_info = {
                 "id": item.id,
                 "name": item.name,
                 "item_type_slug": item_type_slug,
                 "base_price": float(item.base_price) if item.base_price else 0.0,
+                "has_ingredients": has_ingredients,
             }
 
-            # Add all dietary/allergen properties
+            # Add all dietary/allergen properties: computed takes precedence, then fallback to stored
             for prop in all_properties:
-                value = getattr(item, prop, None)
-                dietary_info[prop] = value
+                if prop in computed_values:
+                    dietary_info[prop] = computed_values[prop]
+                else:
+                    dietary_info[prop] = getattr(item, prop, None)
 
             # Store per-item info
             item_dietary_info[name_lower] = dietary_info
@@ -475,7 +490,7 @@ class MenuItemLoaderMixin:
 
             # Index items by dietary property (True values only)
             for prop in dietary_properties:
-                if getattr(item, prop, None) is True:
+                if dietary_info.get(prop) is True:
                     items_by_property[prop].append({
                         "id": item.id,
                         "name": item.name,
@@ -487,7 +502,7 @@ class MenuItemLoaderMixin:
             # (useful for "nut-free options" queries)
             for prop in allergen_properties:
                 # Items where contains_X is explicitly False are allergen-free
-                if getattr(item, prop, None) is False:
+                if dietary_info.get(prop) is False:
                     free_prop = prop.replace("contains_", "") + "_free"
                     if free_prop not in items_by_property:
                         items_by_property[free_prop] = []
@@ -508,3 +523,45 @@ class MenuItemLoaderMixin:
             len(item_dietary_info),
             counts,
         )
+
+    def _compute_dietary_from_ingredients(
+        self,
+        ingredients: list,
+        dietary_properties: list[str],
+        allergen_properties: list[str],
+    ) -> dict[str, bool | None]:
+        """Compute dietary/allergen values from a list of ingredients.
+
+        Args:
+            ingredients: List of Ingredient model objects
+            dietary_properties: List of dietary property names (is_vegan, etc.)
+            allergen_properties: List of allergen property names (contains_eggs, etc.)
+
+        Returns:
+            Dict mapping property names to computed boolean values.
+            Empty dict if no ingredients provided.
+        """
+        if not ingredients:
+            return {}
+
+        result: dict[str, bool | None] = {}
+
+        # Dietary properties: ALL ingredients must have property=True for item to be True
+        # (e.g., item is vegan only if all ingredients are vegan)
+        for prop in dietary_properties:
+            values = [getattr(ing, prop, None) for ing in ingredients]
+            # Only compute if at least one ingredient has a defined value
+            if not all(v is None for v in values):
+                # Item has property only if ALL non-None values are True
+                result[prop] = all(v is True for v in values if v is not None)
+
+        # Allergen properties: ANY ingredient having property=True means item has it
+        # (e.g., item contains eggs if any ingredient contains eggs)
+        for prop in allergen_properties:
+            values = [getattr(ing, prop, None) for ing in ingredients]
+            # Only compute if at least one ingredient has a defined value
+            if not all(v is None for v in values):
+                # Item has allergen if ANY non-None value is True
+                result[prop] = any(v is True for v in values)
+
+        return result

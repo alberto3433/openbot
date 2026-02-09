@@ -317,7 +317,7 @@ class ItemTypeLoaderMixin:
                     "question_text": attr.question_text,
                     "options": options,
                     "source": "global",
-                    "modifies_ingredient_slug": getattr(attr, 'modifies_ingredient_slug', None),
+                    "modifies_ingredient_slug": attr.modifies_ingredient.slug if attr.modifies_ingredient else None,
                 }
                 field_to_slug_map[attr.slug] = attr.slug
 

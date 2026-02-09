@@ -221,6 +221,9 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
     # Derive category from item_type for backward compatibility
     category = item.item_type.display_name if item.item_type else None
 
+    # Check if item has ingredients (dietary values will be computed)
+    has_ingredients = bool(item.ingredient_links) if include_ingredients else False
+
     return MenuItemOut(
         id=item.id,
         name=item.name,
@@ -236,7 +239,7 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
         size_category_id=item.size_category_id,
         size_prices=size_prices,
         ingredients=ingredients,
-        # Dietary attributes
+        # Dietary attributes (fallback values, computed from ingredients at runtime)
         is_vegan=item.is_vegan,
         is_vegetarian=item.is_vegetarian,
         is_gluten_free=item.is_gluten_free,
@@ -247,6 +250,8 @@ def serialize_menu_item(item: MenuItem, db: Session, include_ingredients: bool =
         contains_fish=item.contains_fish,
         contains_sesame=item.contains_sesame,
         contains_nuts=item.contains_nuts,
+        # Indicates if dietary values are computed (not editable)
+        has_ingredients=has_ingredients,
         # Unit of sale
         unit_type=item.unit_type,
         quantity_per_unit=item.quantity_per_unit,
@@ -293,7 +298,7 @@ def create_menu_item(
         abbreviation=payload.abbreviation,
         required_match_phrases=payload.required_match_phrases,
         size_category_id=payload.size_category_id,
-        # Dietary attributes
+        # Dietary attributes (fallback when no ingredients defined)
         is_vegan=payload.is_vegan,
         is_vegetarian=payload.is_vegetarian,
         is_gluten_free=payload.is_gluten_free,
@@ -402,7 +407,7 @@ def update_menu_item(
     if payload.ingredients is not None:
         _set_menu_item_ingredients(db, item, [ing.model_dump() for ing in payload.ingredients])
 
-    # Update dietary attributes
+    # Update dietary attributes (fallback values when no ingredients defined)
     if "is_vegan" in payload.model_fields_set:
         item.is_vegan = payload.is_vegan
     if "is_vegetarian" in payload.model_fields_set:

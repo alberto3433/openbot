@@ -194,6 +194,8 @@ class LoaderMixin(
                     .joinedload(Ingredient.modifier_category),
                 selectinload(GlobalAttribute.options)
                     .joinedload(GlobalAttributeOption.forward_to_attribute),
+                # Load modifies_ingredient for deriving the slug
+                joinedload(GlobalAttribute.modifies_ingredient),
             )
             .all()
         )
@@ -212,13 +214,15 @@ class LoaderMixin(
             .all()
         )
 
-        # 3. Load MenuItem with aliases, item_type, and size_prices
+        # 3. Load MenuItem with aliases, item_type, size_prices, and ingredient_links
         menu_items = (
             db.query(MenuItem)
             .options(
                 selectinload(MenuItem.alias_records),
                 joinedload(MenuItem.item_type),
                 selectinload(MenuItem.size_prices),
+                selectinload(MenuItem.ingredient_links)
+                    .joinedload(MenuItemIngredient.ingredient),
             )
             .all()
         )

@@ -101,6 +101,39 @@ Reordered the logic in `handle_add_modifiers_during_config()` to check if the in
 
 ---
 
+# Bug Fix: "add 2 eggs" Should Add to Existing Quantity
+
+## Problem
+When a bagel already had 1 scrambled egg and user said "add 2 eggs", the system would set egg quantity to 2 instead of 3 (1 existing + 2 new).
+
+## Root Cause
+The `pending_modifier_quantity` was correctly stored when user said "add 2 eggs", but when applying the selection (user selects "scrambled"), the code replaced the existing quantity instead of adding to it.
+
+## Fix Applied
+Added an `is_additive` flag to track when an attribute question came from an "add X" command:
+
+1. **Model**: Added `pending_modifier_is_additive: bool` field to `OrderTask`
+2. **Config Modification Handler**: Set flag to `True` when item already has the attribute
+3. **Select Input Handler**: When `is_additive=True`, get existing quantity before removing selection and add new quantity to it
+
+### Code Flow
+1. User orders "bagel with scrambled eggs" → egg quantity = 1
+2. User says "add 2 eggs" → `pending_modifier_quantity=2`, `pending_modifier_is_additive=True`
+3. User selects "scrambled" → existing quantity (1) + new quantity (2) = 3
+
+## Files Modified
+1. `orderbot/tasks/models/container_tasks.py` - Added `pending_modifier_is_additive` field
+2. `orderbot/tasks/adapter.py` - Serialize/deserialize the new field
+3. `orderbot/tasks/config_modification_handler.py` - Set flag when item has existing attribute
+4. `orderbot/tasks/config/select_input.py` - Add to existing quantity when flag is set
+5. `tests/scenarios/test_modifications.py` - Added `test_add_2_eggs_to_existing_egg_gives_3_total`
+
+## Test Results
+- 3 new "add egg during config" tests: PASS
+- All 1744 tests: PASS
+
+---
+
 # Feature: Inline Attribute Specifications
 
 ## Problem
@@ -139,3 +172,51 @@ Added inline attribute specification parsing that reuses the parsing logic from 
 - 20 new inline spec tests: PASS
 - 561 existing parsing tests: PASS
 - 31 bagel integration tests: PASS
+
+---
+
+# Feature: Dietary Properties with Fallback
+
+## Problem
+Menu item dietary columns (is_vegan, contains_eggs, etc.) were removed with intent to compute from ingredients. However, some items (e.g., "Bagel Chips") have no ingredients defined, so dietary properties couldn't be computed.
+
+## Solution
+Hybrid approach with fallback:
+1. **Restore** dietary columns on `menu_items` table
+2. **Compute from ingredients** when a menu item has ingredients defined
+3. **Use stored values** as fallback when no ingredients exist
+4. **UI shows disabled checkboxes** when values are computed (read-only)
+
+### Data Flow
+```
+MenuItem with ingredients (e.g., "The Classic BEC"):
+├── Has ingredient_links → compute from ingredients
+├── UI checkboxes: DISABLED (computed, not editable)
+└── Shows "(Computed from X ingredients)" indicator
+
+MenuItem without ingredients (e.g., "Bagel Chips"):
+├── No ingredient_links → use stored column values
+├── UI checkboxes: ENABLED (can be edited)
+└── Shows no indicator (direct edit mode)
+```
+
+### Dietary Computation Logic
+- **Dietary properties** (is_vegan, is_vegetarian, etc.): Item is True only if ALL ingredients are True
+- **Allergen properties** (contains_eggs, contains_fish, etc.): Item is True if ANY ingredient is True
+
+## Files Created
+1. `alembic/versions/schema_cleanup_02_restore_dietary_columns.py` - Migration to restore columns
+
+## Files Modified
+1. `orderbot/db/models/menu.py` - Added dietary/allergen columns back to MenuItem model
+2. `orderbot/cache/loaders/core.py` - Added ingredient_links eager loading for dietary computation
+3. `orderbot/cache/loaders/menu_items.py` - Added `_compute_dietary_from_ingredients()` and updated `_load_dietary_data_from_bulk()` to compute with fallback
+4. `orderbot/schemas/menu.py` - Restored dietary fields + added `has_ingredients` flag
+5. `orderbot/routes/admin_menu.py` - Restored dietary field handling in serialize/create/update
+6. `static/admin_menu.html` - Added disabled state and computed indicator for dietary checkboxes
+
+## Test Results
+- 563 parsing tests: PASS
+- 34 adapter tests: PASS
+- 39 modification scenario tests: PASS
+- Cache loads successfully with 238 items computing from ingredients, 309 using fallback

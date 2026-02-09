@@ -66,16 +66,16 @@ class MenuItem(Base):
     # Example: quantity_per_unit=3 with unit_type='pack' displays as "(3 pack)"
     quantity_per_unit = Column(Integer, nullable=True)
 
-    # Dietary attributes (computed/cached from ingredients - NULL = not computed)
-    # For "is_X" flags: True only if ALL ingredients qualify
-    # For "contains_X" flags: True if ANY ingredient contains the allergen
+    # Dietary attributes (fallback values when no ingredients are defined)
+    # When ingredients exist, these are computed at runtime from ingredients.
+    # When no ingredients exist, these stored values are used as fallback.
     is_vegan = Column(Boolean, nullable=True)
     is_vegetarian = Column(Boolean, nullable=True)
     is_gluten_free = Column(Boolean, nullable=True)
     is_dairy_free = Column(Boolean, nullable=True)
     is_kosher = Column(Boolean, nullable=True)
 
-    # Allergen attributes
+    # Allergen attributes (fallback values when no ingredients are defined)
     contains_eggs = Column(Boolean, nullable=True)
     contains_fish = Column(Boolean, nullable=True)
     contains_sesame = Column(Boolean, nullable=True)

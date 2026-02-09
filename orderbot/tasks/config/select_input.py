@@ -99,8 +99,11 @@ class SelectInputHandler:
         quantity, _ = self._input_normalizer.extract_leading_quantity(user_input)
         if quantity == 1 and order.pending_modifier_quantity:
             quantity = order.pending_modifier_quantity
-        # Clear pending quantity after extracting it
+        # Check if this is an additive request (e.g., "add 2 eggs" to item with 1 egg)
+        is_additive = order.pending_modifier_is_additive
+        # Clear pending quantity/additive flags after extracting them
         order.pending_modifier_quantity = None
+        order.pending_modifier_is_additive = False
 
         # Filter to only available options for matching
         # Keep unavailable options separate for "we don't have X" messaging
@@ -151,7 +154,7 @@ class SelectInputHandler:
         # For single_select (or if multi_select found nothing), use single-match logic
         return self._handle_single_select(
             user_input, user_lower, item, order, attr, attr_slug, available_options,
-            quantity, input_type, advance_callback, format_display_list_callback,
+            quantity, input_type, is_additive, advance_callback, format_display_list_callback,
             extract_selections_callback, extract_qualifier_callback,
         )
 
@@ -466,6 +469,7 @@ class SelectInputHandler:
         options: list[dict],
         quantity: int,
         input_type: str,
+        is_additive: bool,
         advance_callback,
         format_display_list_callback,
         extract_selections_callback,
@@ -477,7 +481,7 @@ class SelectInputHandler:
         if matched:
             return self._apply_single_match(
                 user_input, item, order, attr, attr_slug, matched, quantity,
-                input_type, advance_callback, extract_qualifier_callback,
+                input_type, is_additive, advance_callback, extract_qualifier_callback,
             )
 
         # Multiple partial matches - store disambiguation state and ask
@@ -503,6 +507,7 @@ class SelectInputHandler:
         matched: dict,
         quantity: int,
         input_type: str,
+        is_additive: bool,
         advance_callback,
         extract_qualifier_callback,
     ) -> StateMachineResult:
@@ -548,6 +553,19 @@ class SelectInputHandler:
                 logger.info(
                     "Upcharge lookup: menu_item=%s, item_type=%s, attr=%s, option=%s -> price=%.2f",
                     item.menu_item_name, item.menu_item_type, attr_slug, matched["slug"], option_price
+                )
+
+        # For additive requests (e.g., "add 2 eggs" to item with 1 egg), get existing quantity
+        # BEFORE removing the selection so we can add to it
+        if is_additive and input_type != "multi_select":
+            existing_sel = item.get_selection(attr_slug)
+            if existing_sel:
+                existing_quantity = existing_sel.get("quantity", 1)
+                original_quantity = quantity
+                quantity = existing_quantity + quantity
+                logger.info(
+                    "ADDITIVE: Adding to existing quantity %d + %d = %d for attr=%s",
+                    existing_quantity, original_quantity, quantity, attr_slug
                 )
 
         # For single-select attributes, remove any existing selection before adding new one

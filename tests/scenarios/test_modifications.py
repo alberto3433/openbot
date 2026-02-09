@@ -536,3 +536,38 @@ class TestAddEggDuringConfig:
 
         # Should ask about egg style or acknowledge adding
         assert result2.message is not None, "Should have a response"
+
+    def test_add_2_eggs_to_existing_egg_gives_3_total(self):
+        """Add 2 eggs to bagel with 1 egg should result in 3 eggs total.
+
+        When a bagel has 1 scrambled egg and user says 'add 2 eggs', the
+        system should end up with 3 eggs total, not replace with 2.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        # Order bagel with scrambled eggs (1 egg)
+        result1 = sm.process("plain bagel toasted with scrambled eggs", order)
+
+        # Say "add 2 eggs" during config
+        result2 = sm.process("add 2 eggs", result1.order)
+
+        # Should ask about egg style
+        assert "scrambled" in result2.message.lower() or "fried" in result2.message.lower(), \
+            f"Expected egg style question, got: {result2.message}"
+
+        # Answer scrambled
+        result3 = sm.process("scrambled", result2.order)
+
+        # Check the item has 3 eggs (1 existing + 2 added)
+        items = result3.order.items.get_active_items()
+        assert len(items) >= 1, "Should have at least 1 item"
+
+        bagel = items[0]
+        egg_selection = bagel.get_selection("egg")
+        assert egg_selection is not None, "Bagel should have egg selection"
+
+        egg_quantity = egg_selection.get("quantity", 1)
+        assert egg_quantity == 3, \
+            f"Expected 3 eggs (1 + 2), got {egg_quantity}. Selection: {egg_selection}"

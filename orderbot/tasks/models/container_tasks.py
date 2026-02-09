@@ -343,6 +343,10 @@ class OrderTask(BaseTask):
     # Used when "cream cheese" matches multiple options (Plain, Scallion, etc.)
     pending_modifier_target_item_index: int | None = None
     pending_modifier_quantity: int | None = None
+    # Flag to indicate that pending_modifier_quantity should be ADDED to existing
+    # quantity rather than replacing it. Set when user says "add X" to an item
+    # that already has that attribute.
+    pending_modifier_is_additive: bool = False
 
     # Order history selection state
     # Used when user asks "what did I order before?" and we show a list

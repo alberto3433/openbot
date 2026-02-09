@@ -54,10 +54,10 @@ class GlobalAttribute(Base):
     # If null, uses slug as property name
     property_name = Column(String(50), nullable=True)
 
-    # Link to ingredient slug that this attribute modifies
+    # Link to ingredient that this attribute modifies
     # When set, selecting an option (e.g., "3_eggs") updates the existing
     # ingredient modifier's quantity instead of creating a duplicate entry
-    modifies_ingredient_slug = Column(String(100), nullable=True)
+    modifies_ingredient_id = Column(Integer, ForeignKey("ingredients.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Options source category (for package_multi_select input types)
     # Specifies which ingredient category provides the options for this attribute.
@@ -77,6 +77,7 @@ class GlobalAttribute(Base):
     )
     item_type_links = relationship("ItemTypeGlobalAttribute", back_populates="global_attribute")
     alias_records = relationship("GlobalAttributeAlias", back_populates="global_attribute", cascade="all, delete-orphan")
+    modifies_ingredient = relationship("Ingredient", foreign_keys=[modifies_ingredient_id])
 
     @property
     def aliases(self) -> str:

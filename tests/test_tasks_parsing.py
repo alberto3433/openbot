@@ -1787,6 +1787,35 @@ class TestSpeedMenuBagelParsing:
         # Should NOT be a signature item
         assert not has_signature_item(result)
 
+    def test_multiple_generic_items_with_shared_attribute(self):
+        """'2 bagels on wheat' -> both should get wheat bread (not inline spec).
+
+        The 'on wheat' is a uniform attribute, not an inline spec like '1 wheat 1 plain'.
+        Without this fix, inline spec parsing treats 'wheat' as qty=1 spec, leaving
+        the second bagel with no bread attribute.
+        """
+        result = parse_open_input_deterministic("2 bagels on wheat")
+        assert result is not None
+        bagel_items = get_parsed_items(result, item_type="bagel")
+        # Should be 1 entry with quantity=2 (uniform attribute), not 2 separate entries
+        assert len(bagel_items) == 1, (
+            f"Expected 1 bagel entry with qty=2, got {len(bagel_items)} entries"
+        )
+        assert bagel_items[0].quantity == 2
+        assert bagel_items[0].attribute_values.get("bread") == "whole_wheat_bagel"
+
+    def test_multiple_generic_items_with_shared_attributes(self):
+        """'2 bagels on wheat toasted' -> both get wheat + toasted."""
+        result = parse_open_input_deterministic("2 bagels on wheat toasted")
+        assert result is not None
+        bagel_items = get_parsed_items(result, item_type="bagel")
+        assert len(bagel_items) == 1, (
+            f"Expected 1 bagel entry with qty=2, got {len(bagel_items)} entries"
+        )
+        assert bagel_items[0].quantity == 2
+        assert bagel_items[0].attribute_values.get("bread") == "whole_wheat_bagel"
+        assert bagel_items[0].attribute_values.get("toasted") is True
+
 
 class TestSplitQuantityBagelParsing:
     """Tests for split-quantity bagel parsing (e.g., 'two bagels one with lox one with cream cheese')."""

@@ -172,6 +172,10 @@ def _parse_specs(
 
     Reuses the parsing algorithm from PackageInputHandler._parse_package_contents().
 
+    Only returns specs when at least one has an explicit quantity (digit or number
+    word prefix). This distinguishes true inline specs like "1 everything 1 plain"
+    from uniform attributes like "on wheat" which should apply to all items.
+
     Args:
         text: Lowercase text to parse
         options: List of option dicts for matching
@@ -180,9 +184,14 @@ def _parse_specs(
         input_normalizer: InputNormalizer instance
 
     Returns:
-        List of parsed specs with attr_slug, attr_value, quantity, display_name
+        List of parsed specs with attr_slug, attr_value, quantity, display_name.
+        Returns empty list if no specs have explicit quantities (not an inline
+        spec pattern).
     """
+    from ..quantity_utils import extract_leading_quantity as extract_qty_raw
+
     specs = []
+    any_explicit_quantity = False
 
     # Split by common delimiters:
     # - " and " for "1 everything and 1 plain"
@@ -195,7 +204,12 @@ def _parse_specs(
         if not part:
             continue
 
-        # Extract quantity and option text
+        # Use raw extract to detect whether quantity was explicitly stated.
+        # Returns (None, text) when no leading quantity found vs (int, remaining).
+        raw_qty, _ = extract_qty_raw(part)
+        has_explicit_qty = raw_qty is not None
+
+        # Extract quantity and option text (defaults None to 1)
         quantity, option_text = input_normalizer.extract_leading_quantity(part)
 
         if not option_text.strip():
@@ -217,6 +231,8 @@ def _parse_specs(
             )
 
         if matched:
+            if has_explicit_qty:
+                any_explicit_quantity = True
             specs.append({
                 "attr_slug": attr_slug,
                 "attr_value": matched["slug"],
@@ -233,6 +249,17 @@ def _parse_specs(
                     "quantity": 1,
                     "display_name": matched2.get("display_name", matched2["slug"]),
                 })
+
+    # If no specs had explicit quantities, this is not an inline spec pattern.
+    # E.g., "on wheat" is a uniform attribute, not "1 wheat".
+    # Return empty so the caller falls through to extract_attribute_values().
+    if specs and not any_explicit_quantity:
+        logger.debug(
+            "INLINE_SPEC_PARSE: rejecting specs - no explicit quantities found "
+            "(uniform attribute pattern, not inline spec): %s",
+            [(s["attr_value"], s["quantity"]) for s in specs]
+        )
+        return []
 
     return specs
 

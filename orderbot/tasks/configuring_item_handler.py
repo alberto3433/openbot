@@ -11,9 +11,11 @@ This handler acts as an orchestrator, delegating to specialized handlers:
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, parse_pending_field
+from .normalization import singularize
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.intent_patterns import ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN, MAKE_IT_N_CONFIG_PATTERN
@@ -361,20 +363,45 @@ class ConfiguringItemHandler:
         if not isinstance(item, MenuItemTask):
             return None
 
-        match = MAKE_IT_N_CONFIG_PATTERN.match(user_input.strip())
+        input_stripped = user_input.strip()
+        match = MAKE_IT_N_CONFIG_PATTERN.match(input_stripped)
         if not match:
             return None
 
         # Extract the quantity from capture groups
         num_str = None
-        for i in range(1, 10):
+        matched_group_idx = None
+        for i in range(1, (match.lastindex or 0) + 1):
             group = match.group(i)
             if group:
                 num_str = group.lower()
+                matched_group_idx = i
                 break
 
-        if not num_str:
+        if not num_str or matched_group_idx is None:
             return None
+
+        # Check for trailing text after the number (e.g., "pounds" in "make it 2 pounds").
+        # If the trailing text doesn't reference the current item name, this is likely
+        # an attribute answer (e.g., weight=2lb), not a quantity change request.
+        trailing = input_stripped[match.end(matched_group_idx):].strip().rstrip("!.,? ")
+        # Strip quantity-reference words that indicate "more of this item"
+        trailing_cleaned = re.sub(
+            r'^(?:of\s+(?:those|them|that)|more)\b\s*', '', trailing, flags=re.IGNORECASE
+        ).strip()
+        if trailing_cleaned:
+            item_name_lower = item.get_display_name().lower()
+            trailing_words = set(trailing_cleaned.lower().split())
+            item_words = set(item_name_lower.split())
+            # Add singularized forms to handle plurals (e.g., "bagels" matches "bagel")
+            trailing_words_singular = trailing_words | {singularize(w) for w in trailing_words}
+            if not (trailing_words_singular & item_words):
+                logger.debug(
+                    "QUANTITY CHANGE skipped: trailing '%s' doesn't reference item '%s', "
+                    "likely an attribute answer for %s",
+                    trailing_cleaned, item_name_lower, order.pending_field
+                )
+                return None
 
         target_qty = parse_make_it_n_quantity(num_str)
         if not target_qty:

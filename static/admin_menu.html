@@ -603,52 +603,53 @@
 
         <div class="field">
           <label>Dietary Options</label>
+          <div id="dietaryComputedIndicator" style="display: none; color: #1976d2; font-size: 0.85em; margin-bottom: 4px; font-style: italic;"></div>
           <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 4px;">
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="isVegan" type="checkbox" />
+              <input id="isVegan" type="checkbox" class="dietary-checkbox" />
               <label for="isVegan">Vegan</label>
             </div>
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="isVegetarian" type="checkbox" />
+              <input id="isVegetarian" type="checkbox" class="dietary-checkbox" />
               <label for="isVegetarian">Vegetarian</label>
             </div>
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="isGlutenFree" type="checkbox" />
+              <input id="isGlutenFree" type="checkbox" class="dietary-checkbox" />
               <label for="isGlutenFree">Gluten-Free</label>
             </div>
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="isDairyFree" type="checkbox" />
+              <input id="isDairyFree" type="checkbox" class="dietary-checkbox" />
               <label for="isDairyFree">Dairy-Free</label>
             </div>
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="isKosher" type="checkbox" />
+              <input id="isKosher" type="checkbox" class="dietary-checkbox" />
               <label for="isKosher">Kosher</label>
             </div>
           </div>
-          <small style="color: #666; font-size: 0.8em;">Check if this item qualifies for these dietary restrictions</small>
+          <small id="dietaryHelpText" style="color: #666; font-size: 0.8em;">Check if this item qualifies for these dietary restrictions</small>
         </div>
 
         <div class="field">
           <label>Contains Allergens</label>
           <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 4px;">
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="containsEggs" type="checkbox" />
+              <input id="containsEggs" type="checkbox" class="dietary-checkbox" />
               <label for="containsEggs">Eggs</label>
             </div>
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="containsFish" type="checkbox" />
+              <input id="containsFish" type="checkbox" class="dietary-checkbox" />
               <label for="containsFish">Fish</label>
             </div>
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="containsSesame" type="checkbox" />
+              <input id="containsSesame" type="checkbox" class="dietary-checkbox" />
               <label for="containsSesame">Sesame</label>
             </div>
             <div class="field-checkbox" style="margin-top: 0;">
-              <input id="containsNuts" type="checkbox" />
+              <input id="containsNuts" type="checkbox" class="dietary-checkbox" />
               <label for="containsNuts">Nuts</label>
             </div>
           </div>
-          <small style="color: #666; font-size: 0.8em;">Check if this item contains these allergens</small>
+          <small id="allergenHelpText" style="color: #666; font-size: 0.8em;">Check if this item contains these allergens</small>
         </div>
 
         <div class="field">
@@ -1167,7 +1168,7 @@
       clearTags(aliasesContainerEl, aliasInputEl);
       clearTags(requiredPhrasesContainerEl, requiredPhraseInputEl);
 
-      // Reset dietary/allergen checkboxes
+      // Reset dietary/allergen checkboxes and enable them
       document.getElementById("isVegan").checked = false;
       document.getElementById("isVegetarian").checked = false;
       document.getElementById("isGlutenFree").checked = false;
@@ -1177,6 +1178,7 @@
       document.getElementById("containsFish").checked = false;
       document.getElementById("containsSesame").checked = false;
       document.getElementById("containsNuts").checked = false;
+      setDietaryCheckboxesEnabled(true);
 
       // Reset size pricing to single price
       sizeCategorySelectEl.value = "";
@@ -1245,6 +1247,11 @@
       document.getElementById("containsFish").checked = !!item.contains_fish;
       document.getElementById("containsSesame").checked = !!item.contains_sesame;
       document.getElementById("containsNuts").checked = !!item.contains_nuts;
+
+      // Disable dietary checkboxes when values are computed from ingredients
+      const hasIngredients = item.has_ingredients || false;
+      setDietaryCheckboxesEnabled(!hasIngredients);
+      updateDietaryIndicator(hasIngredients, itemIngredients.length);
 
       // Set size category and render prices
       sizeCategorySelectEl.value = item.size_category_id || "";
@@ -1424,6 +1431,33 @@
       } catch (err) {
         console.error("Error deleting item:", err);
         setStatus("Error deleting item. See console.", true);
+      }
+    }
+
+    // Enable/disable dietary checkboxes based on whether values are computed
+    function setDietaryCheckboxesEnabled(enabled) {
+      document.querySelectorAll('.dietary-checkbox').forEach(cb => {
+        cb.disabled = !enabled;
+        // Add visual indication for disabled state
+        cb.parentElement.style.opacity = enabled ? '1' : '0.6';
+      });
+    }
+
+    // Update the computed indicator message
+    function updateDietaryIndicator(hasIngredients, ingredientCount) {
+      const indicator = document.getElementById('dietaryComputedIndicator');
+      const dietaryHelp = document.getElementById('dietaryHelpText');
+      const allergenHelp = document.getElementById('allergenHelpText');
+
+      if (hasIngredients) {
+        indicator.textContent = `(Computed from ${ingredientCount} ingredient${ingredientCount !== 1 ? 's' : ''} - not editable)`;
+        indicator.style.display = 'block';
+        dietaryHelp.textContent = 'Values computed from ingredients. Edit ingredients to change dietary properties.';
+        allergenHelp.textContent = 'Values computed from ingredients. Edit ingredients to change allergen info.';
+      } else {
+        indicator.style.display = 'none';
+        dietaryHelp.textContent = 'Check if this item qualifies for these dietary restrictions';
+        allergenHelp.textContent = 'Check if this item contains these allergens';
       }
     }
 

@@ -124,6 +124,15 @@ class ItemType(Base):
     # Side choice: some items (e.g., omelettes) prompt for a side dish
     has_side_choice = Column(Boolean, nullable=False, default=False)
 
+    # Variant pricing: which global attribute determines variant pricing
+    # Example: "size" attribute for beverages (small, medium, large)
+    variant_pricing_attribute_id = Column(
+        Integer,
+        ForeignKey("global_attributes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     @property
     def overall_category(self):
         """Get overall category from the display group."""
@@ -143,6 +152,7 @@ class ItemType(Base):
     global_attribute_links = relationship("ItemTypeGlobalAttribute", back_populates="item_type")
     alias_records = relationship("ItemTypeAlias", back_populates="item_type", cascade="all, delete-orphan")
     component_slots = relationship("ItemTypeComponentSlot", back_populates="parent_item_type", cascade="all, delete-orphan")
+    variant_pricing_attribute = relationship("GlobalAttribute", foreign_keys=[variant_pricing_attribute_id])
 
     @property
     def aliases(self) -> list[str]:
@@ -191,16 +201,16 @@ class ResponsePattern(Base):
 
 class AttributeInquiryKeyword(Base):
     """
-    Maps inquiry keywords to attribute slugs for data-driven attribute inquiry parsing.
+    Maps inquiry keywords to global attributes for data-driven attribute inquiry parsing.
 
     When user asks "what bagel types do you have?", the word "types" (keyword)
     combined with the item type "bagel" is matched against this table to determine
     which attribute's options to show (e.g., "bread" attribute).
 
     Examples:
-    - ("types", "bagel") -> "bread"
-    - ("sizes", None) -> "size" (None means any/no item type)
-    - ("flavors", "bagel") -> "bread"
+    - ("types", bagel_item_type_id) -> bread_global_attribute_id
+    - ("sizes", None) -> size_global_attribute_id (None means any/no item type)
+    - ("flavors", bagel_item_type_id) -> bread_global_attribute_id
 
     This replaces the hardcoded common_mappings dict in menu_options_inquiry_handler.py.
     """
@@ -208,13 +218,17 @@ class AttributeInquiryKeyword(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     keyword = Column(String(50), nullable=False, index=True)  # e.g., "types", "sizes", "flavors"
-    item_type_slug = Column(String(50), nullable=True)  # e.g., "bagel", or NULL for any
-    attribute_slug = Column(String(50), nullable=False)  # e.g., "bread", "size"
+    item_type_id = Column(Integer, ForeignKey("item_types.id", ondelete="CASCADE"), nullable=True, index=True)
+    global_attribute_id = Column(Integer, ForeignKey("global_attributes.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
 
+    # Relationships
+    item_type = relationship("ItemType")
+    global_attribute = relationship("GlobalAttribute")
+
     __table_args__ = (
-        UniqueConstraint('keyword', 'item_type_slug', name='uq_attr_inquiry_keyword_item_type'),
-        Index('idx_attr_inquiry_keyword_lookup', 'keyword', 'item_type_slug'),
+        UniqueConstraint('keyword', 'item_type_id', name='uq_attr_inquiry_keyword_item_type'),
+        Index('idx_attr_inquiry_keyword_lookup', 'keyword', 'item_type_id'),
     )
 
 

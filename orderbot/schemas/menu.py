@@ -113,7 +113,7 @@ class MenuItemOut(BaseModel):
     size_prices: List[SizePriceOut] = []
     ingredients: List[MenuItemIngredientOut] = []
 
-    # Dietary attributes
+    # Dietary attributes (computed from ingredients when available, else stored values)
     is_vegan: Optional[bool] = None
     is_vegetarian: Optional[bool] = None
     is_gluten_free: Optional[bool] = None
@@ -125,6 +125,9 @@ class MenuItemOut(BaseModel):
     contains_fish: Optional[bool] = None
     contains_sesame: Optional[bool] = None
     contains_nuts: Optional[bool] = None
+
+    # True when item has ingredients defined (dietary values are computed, not editable)
+    has_ingredients: bool = False
 
     # Unit of sale
     unit_type: str = "each"  # each, by_weight, dozen, pack
@@ -173,7 +176,7 @@ class MenuItemCreate(BaseModel):
     size_category_id: Optional[int] = None
     size_prices: Optional[List[SizePriceInput]] = None
 
-    # Dietary attributes
+    # Dietary attributes (used as fallback when no ingredients defined)
     is_vegan: Optional[bool] = None
     is_vegetarian: Optional[bool] = None
     is_gluten_free: Optional[bool] = None
@@ -228,7 +231,7 @@ class MenuItemUpdate(BaseModel):
     size_prices: Optional[List[SizePriceInput]] = None
     ingredients: Optional[List[MenuItemIngredientInput]] = None
 
-    # Dietary attributes
+    # Dietary attributes (used as fallback when no ingredients defined)
     is_vegan: Optional[bool] = None
     is_vegetarian: Optional[bool] = None
     is_gluten_free: Optional[bool] = None

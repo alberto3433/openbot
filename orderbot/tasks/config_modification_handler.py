@@ -220,8 +220,20 @@ class ConfigModificationHandler:
                     order=order,
                 )
 
-        # 4. Not found - report and re-ask
+        # 4. Not found
         logger.info("CAN_YOU_MAKE_IT: No matching attribute, ingredient, or similar item found for '%s'", modifier)
+
+        # If we're in an attribute config context (pending_field is item_type:attr_slug),
+        # return None to let the attribute handler process it. The attribute handler can do
+        # more sophisticated matching (normalization, partial matching) and will show
+        # available options if no match is found — a better UX than "Sorry, we don't have that option".
+        if order.pending_field and ":" in order.pending_field:
+            logger.debug(
+                "CAN_YOU_MAKE_IT: Deferring to attribute handler for pending_field=%s",
+                order.pending_field,
+            )
+            return None
+
         current_question = self.config_helper_handler.get_current_config_question(order, item)
         if current_question:
             return StateMachineResult(
@@ -448,12 +460,17 @@ class ConfigModificationHandler:
                 # Only trigger selection if ingredient slug matches attribute slug
                 # AND that attribute has multiple options
                 if options and len(options) > 1:
+                    # Check if item already has a value for this attribute
+                    existing_value = item.attribute_values.get(ingredient_slug)
+                    is_additive = existing_value is not None
                     logger.info(
-                        "ADD_DURING_CONFIG: Ingredient '%s' matches attribute '%s' with %d options (qty=%d), starting selection",
-                        match["name"], ingredient_slug, len(options), quantity
+                        "ADD_DURING_CONFIG: Ingredient '%s' matches attribute '%s' with %d options (qty=%d, additive=%s), starting selection",
+                        match["name"], ingredient_slug, len(options), quantity, is_additive
                     )
                     # Store quantity for when user selects an option
                     order.pending_modifier_quantity = quantity
+                    # Mark as additive if item already has this attribute set
+                    order.pending_modifier_is_additive = is_additive
                     return self._start_attribute_option_selection(
                         ingredient_slug, attr_config, options, item, order
                     )

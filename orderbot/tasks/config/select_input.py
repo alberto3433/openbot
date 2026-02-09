@@ -12,6 +12,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
@@ -104,6 +105,38 @@ class SelectInputHandler:
         # Clear pending quantity/additive flags after extracting them
         order.pending_modifier_quantity = None
         order.pending_modifier_is_additive = False
+
+        # Special handling for "half a pound" / "half pound" / "1/2 lb" weight inputs
+        # These map to 2x quarter pound (1/4 lb) - same logic as by_pound_parsing.py
+        # Must check BEFORE generic option matching to prevent "pound" matching "one_pound"
+        if attr_slug == "weight":
+            half_pound_pattern = re.compile(
+                r"^(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?$|^1\s*/\s*2\s*(?:pound|lb)s?$",
+                re.IGNORECASE
+            )
+            if half_pound_pattern.match(user_lower.strip()):
+                # Look up the quarter pound option
+                quarter_option = menu_cache.resolve_option_by_alias(attr_slug, "1/4 lb")
+                if quarter_option:
+                    opt_slug = quarter_option.get("slug")
+                    logger.info(
+                        "HALF_POUND_HANDLER: Resolved 'half a pound' to %s=%s with qty=2",
+                        attr_slug, opt_slug
+                    )
+                    item[attr_slug] = opt_slug
+                    item.quantity = 2  # Two quarter-pound portions = half pound
+                    # Apply variant pricing for the quarter pound option
+                    if self.pricing:
+                        variant_price, _ = self.pricing.lookup_size_price(
+                            item.menu_item_name, opt_slug
+                        )
+                        if variant_price is not None:
+                            item.unit_price = variant_price
+                            logger.info(
+                                "Set unit_price for %s from variant pricing: %s=%s, price=%.2f",
+                                item.id, attr_slug, opt_slug, variant_price
+                            )
+                    return advance_callback(item, order, attr, "1/2 lb")
 
         # Filter to only available options for matching
         # Keep unavailable options separate for "we don't have X" messaging

@@ -734,6 +734,53 @@ class TestPriceRecalculationInvariants:
             f"Cart should show weight (1/4 lb) in modifiers. Got modifiers: {modifier_names}"
         )
 
+    def test_half_pound_pattern_matches_correctly(self):
+        """Test that the half-pound regex pattern matches expected inputs.
+
+        This tests the regex pattern used to detect "half a pound" variations
+        and ensures they don't incorrectly match "one pound" or "quarter pound".
+
+        The actual half-pound handling sets weight to quarter_pound with qty=2.
+        """
+        import re
+
+        # The pattern from config_modification_handler.py and select_input.py
+        half_pound_pattern = re.compile(
+            r"^(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?$|^1\s*/\s*2\s*(?:pound|lb)s?$",
+            re.IGNORECASE
+        )
+
+        # These should all match as "half a pound"
+        should_match = [
+            "half a pound",
+            "half pound",
+            "a half pound",
+            "half a lb",
+            "half lb",
+            "1/2 lb",
+            "1/2 pound",
+        ]
+
+        # These should NOT match (would be handled differently)
+        should_not_match = [
+            "one pound",
+            "a pound",
+            "quarter pound",
+            "1/4 lb",
+            "2 pounds",
+            "pound",  # Just "pound" alone should not match
+        ]
+
+        for phrase in should_match:
+            assert half_pound_pattern.match(phrase.lower().strip()), (
+                f"'{phrase}' should match the half-pound pattern"
+            )
+
+        for phrase in should_not_match:
+            assert not half_pound_pattern.match(phrase.lower().strip()), (
+                f"'{phrase}' should NOT match the half-pound pattern"
+            )
+
 
 # =============================================================================
 # Additional Items After Completed Bagel

@@ -160,6 +160,35 @@ class ConfigModificationHandler:
                 if "weight" in attrs:
                     priced_attr = "weight"
             if priced_attr:
+                # Special handling for "half a pound" / "half pound" / "1/2 lb"
+                # These map to 2x quarter pound (1/4 lb) - same logic as by_pound_parsing.py
+                half_pound_pattern = re.compile(
+                    r"^(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?$|^1\s*/\s*2\s*(?:pound|lb)s?$",
+                    re.IGNORECASE
+                )
+                if half_pound_pattern.match(modifier_lower.strip()):
+                    # Look up the quarter pound option
+                    quarter_option = menu_cache.resolve_option_by_alias(priced_attr, "1/4 lb")
+                    if quarter_option:
+                        opt_slug = quarter_option.get("slug")
+                        logger.info(
+                            "CAN_YOU_MAKE_IT: Resolved 'half a pound' to %s=%s with qty=2",
+                            priced_attr, opt_slug
+                        )
+                        item[priced_attr] = opt_slug
+                        item.quantity = 2  # Two quarter-pound portions = half pound
+                        pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+                        safe_recalculate_price(pricing, item, "after half pound")
+                        # If this answers the current pending question, clear it
+                        pending = order.pending_field
+                        if pending and ":" in pending:
+                            _, pending_attr = pending.split(":", 1)
+                            if pending_attr == priced_attr:
+                                order.pending_field = None
+                        return self._continue_config_with_message(
+                            "Okay, 1/2 lb.", item, order
+                        )
+
                 # Direct lookup - aliases in DB handle variations like "pound" -> "1 lb"
                 option = menu_cache.resolve_option_by_alias(priced_attr, modifier_lower)
                 if option:

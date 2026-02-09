@@ -435,24 +435,47 @@ class DietaryInquiryHandler(MenuDataMixin):
         Returns:
             StateMachineResult with availability information
         """
-        # Try to resolve the item name
+        # Try exact alias resolution first
         canonical_name = menu_cache.resolve_menu_item_alias(item_name)
 
-        if not canonical_name:
-            # Item not found
+        if canonical_name:
+            # Exact match found - confirm availability
             return StateMachineResult(
                 message=(
-                    f"I couldn't find \"{item_name}\" on our menu. "
-                    f"Would you like me to show you what we have?"
+                    f"Yes, {canonical_name} is available! Would you like to add it to your order?"
                 ),
                 order=order,
             )
 
-        # For now, we assume items are available if they're on the menu
-        # Future enhancement: check MenuItem.available_qty or store-specific availability
+        # Fallback: word-boundary search (handles "tea" -> "Hot Tea", "Iced Tea")
+        matching_items = menu_cache.search_menu_items_by_term(item_name)
+
+        if matching_items:
+            if len(matching_items) == 1:
+                # Single match
+                item_display = matching_items[0].get("name", item_name)
+                return StateMachineResult(
+                    message=(
+                        f"Yes, we have {item_display}! Would you like to add it to your order?"
+                    ),
+                    order=order,
+                )
+            else:
+                # Multiple matches - list them
+                item_names = [item.get("name", "") for item in matching_items]
+                items_list = ", ".join(item_names[:-1]) + f" and {item_names[-1]}"
+                return StateMachineResult(
+                    message=(
+                        f"Yes! We have {items_list}. Would you like any of these?"
+                    ),
+                    order=order,
+                )
+
+        # Nothing found
         return StateMachineResult(
             message=(
-                f"Yes, {canonical_name} is available! Would you like to add it to your order?"
+                f"I couldn't find \"{item_name}\" on our menu. "
+                f"Would you like me to show you what we have?"
             ),
             order=order,
         )

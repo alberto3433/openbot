@@ -28,7 +28,22 @@ from ..intent_patterns import strip_conversational_fillers
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ExtractionPipeline"]
+__all__ = ["ExtractionPipeline", "get_pipeline"]
+
+# Module-level singleton for shared access
+_shared_pipeline: "ExtractionPipeline | None" = None
+
+
+def get_pipeline() -> "ExtractionPipeline":
+    """Get the shared ExtractionPipeline instance.
+
+    Returns a singleton instance to avoid creating multiple pipeline objects.
+    Thread-safe for read operations (pipeline methods are stateless).
+    """
+    global _shared_pipeline
+    if _shared_pipeline is None:
+        _shared_pipeline = ExtractionPipeline()
+    return _shared_pipeline
 
 
 class ExtractionPipeline:

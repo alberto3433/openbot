@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from ..schemas import Selection
-from ..parsers.deterministic import ExtractionPipeline
+from ..parsers.deterministic import get_pipeline
 from ..normalization import format_slug_for_display
 from ..utils.text import format_english_list
 
@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Module-level pipeline instance for reuse
-_pipeline = ExtractionPipeline()
+# Get shared pipeline instance
+_pipeline = get_pipeline()
 
 __all__ = ["SelectionExtractor"]
 

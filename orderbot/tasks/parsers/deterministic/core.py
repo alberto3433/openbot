@@ -28,7 +28,7 @@ from ..intent_patterns import (
     REPLACE_ITEM_PATTERN,
     CANCEL_ITEM_PATTERN,
 )
-from .pipeline import ExtractionPipeline
+from .pipeline import get_pipeline
 from .result_types import TextSpan
 from .item_parsing import (
     build_parsed_item,
@@ -61,8 +61,8 @@ from .tokenization import _parse_multi_item_order
 
 logger = logging.getLogger(__name__)
 
-# Module-level pipeline instance for extraction operations
-_pipeline = ExtractionPipeline()
+# Get shared pipeline instance for extraction operations
+_pipeline = get_pipeline()
 
 
 # =============================================================================

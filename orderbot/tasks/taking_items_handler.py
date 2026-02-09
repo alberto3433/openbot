@@ -27,7 +27,7 @@ from .schemas import (
     ParsedItemEntry,
 )
 from .parsers import parse_open_input
-from .parsers.deterministic import ExtractionPipeline
+from .parsers.deterministic import get_pipeline
 from .item_cancellation_handler import ItemCancellationHandler
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
@@ -55,8 +55,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Module-level pipeline instance for reuse
-_pipeline = ExtractionPipeline()
+# Get shared pipeline instance
+_pipeline = get_pipeline()
 
 
 class TakingItemsHandler(MenuDataMixin):

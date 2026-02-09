@@ -40,7 +40,7 @@ from ..intent_patterns import (
 # =============================================================================
 # Pipeline Module Exports (new unified API)
 # =============================================================================
-from .pipeline import ExtractionPipeline
+from .pipeline import ExtractionPipeline, get_pipeline
 from .result_types import (
     TextSpan,
     QuantityResult,
@@ -146,8 +146,9 @@ from .core import parse_open_input_deterministic
 __all__ = [
     # Main entry point
     "parse_open_input_deterministic",
-    # Pipeline (new unified API)
+    # Pipeline (unified API)
     "ExtractionPipeline",
+    "get_pipeline",
     "TextSpan",
     "QuantityResult",
     "AttributeExtractionResult",

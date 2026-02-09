@@ -27,12 +27,12 @@ from ..intent_patterns import ADD_MORE_PATTERN
 from ..quantity_utils import extract_leading_quantity
 
 from .extraction import extract_modifiers_with_qualifiers
-from .pipeline import ExtractionPipeline
+from .pipeline import get_pipeline
 
 logger = logging.getLogger(__name__)
 
-# Module-level pipeline instance for extraction operations
-_pipeline = ExtractionPipeline()
+# Get shared pipeline instance for extraction operations
+_pipeline = get_pipeline()
 
 
 # Cache for dynamic terminator pattern

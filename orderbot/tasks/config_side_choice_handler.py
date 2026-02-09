@@ -13,7 +13,7 @@ from typing import Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import parse_side_choice
-from .parsers.deterministic import ExtractionPipeline
+from .parsers.deterministic import get_pipeline
 from orderbot.cache import menu_cache
 
 if TYPE_CHECKING:
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Module-level pipeline instance for reuse
-_pipeline = ExtractionPipeline()
+# Get shared pipeline instance
+_pipeline = get_pipeline()
 
 
 class ConfigSideChoiceHandler:

@@ -19,17 +19,11 @@ from .item_building import build_parsed_item
 
 logger = logging.getLogger(__name__)
 
-# Lazy-initialized pipeline instance to avoid circular import
-_pipeline = None
-
 
 def _get_pipeline():
-    """Get or create the extraction pipeline instance (lazy initialization)."""
-    global _pipeline
-    if _pipeline is None:
-        from .pipeline import ExtractionPipeline
-        _pipeline = ExtractionPipeline()
-    return _pipeline
+    """Get the shared extraction pipeline (lazy import to avoid circular dependency)."""
+    from .pipeline import get_pipeline
+    return get_pipeline()
 
 # Module-level cache for split-indicator patterns built from database
 _SPLIT_INDICATOR_PATTERNS_CACHE: list[str] | None = None

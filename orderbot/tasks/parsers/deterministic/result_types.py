@@ -44,32 +44,6 @@ class QuantityResult:
 
 
 @dataclass
-class ModifierMatch:
-    """A single matched modifier with metadata."""
-
-    slug: str
-    """Canonical slug of the modifier."""
-
-    display_name: str
-    """Human-readable name."""
-
-    category: str
-    """Modifier category."""
-
-    quantity: int = 1
-    """Quantity of this modifier."""
-
-    price: float = 0.0
-    """Price modifier amount."""
-
-    qualifiers: list[str] = field(default_factory=list)
-    """Applied qualifiers from database (amount, preparation, etc.)."""
-
-    span: TextSpan | None = None
-    """Span in original text where this was matched."""
-
-
-@dataclass
 class AttributeMatch:
     """A single matched attribute value."""
 
@@ -152,27 +126,6 @@ class AttributeExtractionResult:
             }
         spans = [(s.start, s.end) for s in self.matched_spans]
         return result, spans
-
-
-@dataclass
-class ModifierExtractionResult:
-    """Complete result of modifier extraction."""
-
-    modifiers: list[ModifierMatch]
-    """List of matched modifiers."""
-
-    conflicts: list[tuple[str, str, str]] | None = None
-    """Qualifier conflicts, if any (modifier, qual1, qual2)."""
-
-    def get_formatted_list(self) -> list[str]:
-        """Get list of formatted modifier strings with qualifiers."""
-        result = []
-        for mod in self.modifiers:
-            if mod.qualifiers:
-                result.append(f"{mod.display_name} ({', '.join(mod.qualifiers)})")
-            else:
-                result.append(mod.display_name)
-        return result
 
 
 @dataclass

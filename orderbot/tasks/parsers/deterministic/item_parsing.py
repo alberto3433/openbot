@@ -23,7 +23,6 @@ from ..constants import (
     get_items_with_defaults_aliases,
 )
 from .extraction import (
-    _extract_modifiers_generic,
     _extract_quantity,
     _extract_by_pound_info,
 )
@@ -309,7 +308,7 @@ def _parse_item_generic(
     # Extract food modifiers (proteins, spreads, toppings, etc.)
     # Beverage modifiers (sweeteners, syrups, milk) are handled via attribute_values
     # Pass exclude_spans to avoid double-extraction of text already matched as attributes
-    food_modifiers = _extract_modifiers_generic(text_lower, item_type, exclude_spans=attr_matched_spans)
+    food_modifiers = _get_pipeline().extract_modifiers_raw(text_lower, item_type, exclude_spans=attr_matched_spans)
 
     # Check if this item has default ingredients (used for populating defaults)
     has_defaults = False
@@ -794,7 +793,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
 
                 # Extract modifiers from "with X" portion only
                 # Pass exclude_spans to avoid double-extraction of attributes
-                split_modifiers = _extract_modifiers_generic(modifier_text, detected_item_type, exclude_spans=split_matched_spans)
+                split_modifiers = _get_pipeline().extract_modifiers_raw(modifier_text, detected_item_type, exclude_spans=split_matched_spans)
                 modifier_selections_split: list[Selection] = []
                 for mod in split_modifiers:
                     category = menu_cache.get_ingredient_category(mod)
@@ -837,7 +836,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # These are ingredients not handled via attribute_values (which handles items that
     # overlap with attribute options like bread types, egg styles, etc.)
     # Pass exclude_spans to avoid double-extraction of text already matched as attributes
-    food_modifiers = _extract_modifiers_generic(text_lower, detected_item_type, exclude_spans=attr_matched_spans)
+    food_modifiers = _get_pipeline().extract_modifiers_raw(text_lower, detected_item_type, exclude_spans=attr_matched_spans)
     modifier_selections: list[Selection] = []
     for mod in food_modifiers:
         category = menu_cache.get_ingredient_category(mod)

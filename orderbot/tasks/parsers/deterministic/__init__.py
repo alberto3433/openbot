@@ -46,8 +46,6 @@ from .result_types import (
     QuantityResult,
     AttributeExtractionResult,
     AttributeMatch,
-    ModifierExtractionResult,
-    ModifierMatch,
     SpecialInstructionsResult,
     ItemTypeMatch,
     UnavailableSelection,
@@ -64,7 +62,6 @@ from .extraction import (
     # Internal helpers (used by tests)
     _extract_quantity,
     _extract_by_pound_info,
-    _extract_modifiers_generic,
     _extract_boolean_global_attribute,
 )
 from .instructions_extraction import extract_special_instructions_from_input
@@ -156,8 +153,6 @@ __all__ = [
     "QuantityResult",
     "AttributeExtractionResult",
     "AttributeMatch",
-    "ModifierExtractionResult",
-    "ModifierMatch",
     "SpecialInstructionsResult",
     "ItemTypeMatch",
     "UnavailableSelection",
@@ -184,7 +179,6 @@ __all__ = [
     "extract_modifiers_with_qualifiers",
     "_extract_quantity",
     "_extract_by_pound_info",
-    "_extract_modifiers_generic",
     "_extract_boolean_global_attribute",
     # Item parsing
     "build_parsed_item",

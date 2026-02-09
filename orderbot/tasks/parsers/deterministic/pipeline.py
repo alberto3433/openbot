@@ -7,7 +7,6 @@ Wraps the existing extraction functions with typed results.
 
 import logging
 import re
-from typing import Any
 
 from orderbot.cache import menu_cache
 
@@ -15,9 +14,6 @@ from .result_types import (
     TextSpan,
     QuantityResult,
     AttributeExtractionResult,
-    AttributeMatch,
-    ModifierExtractionResult,
-    ModifierMatch,
     SpecialInstructionsResult,
     ItemTypeMatch,
     UnavailableSelection,
@@ -27,7 +23,6 @@ from .extraction import (
     extract_attribute_values as _extract_attribute_values,
     _extract_modifiers_generic,
 )
-from .qualifier_extraction import extract_modifiers_with_qualifiers
 from .instructions_extraction import extract_special_instructions_from_input
 from .item_parsing import _detect_item_type, _detect_configurable_item_type
 from ..quantity_utils import extract_leading_quantity
@@ -61,8 +56,8 @@ class ExtractionPipeline:
         attrs = pipeline.extract_attributes(text, item_type.item_type)
         # AttributeExtractionResult(values={...}, matched_spans=[...])
 
-        modifiers = pipeline.extract_modifiers(text, item_type.item_type, attrs.matched_spans)
-        # ModifierExtractionResult(modifiers=[...])
+        modifiers = pipeline.extract_modifiers_raw(text, item_type.item_type, attrs.matched_spans)
+        # ["modifier_slug_1", "modifier_slug_2", ...]
     """
 
     def __init__(self):
@@ -225,64 +220,35 @@ class ExtractionPipeline:
             unmatched=unmatched,
         )
 
-    def extract_modifiers(
+    def extract_modifiers_raw(
         self,
         text: str,
         item_type: str,
-        exclude_spans: list[TextSpan] | None = None,
-    ) -> ModifierExtractionResult:
-        """Extract modifiers from text for an item type.
+        exclude_spans: list[TextSpan] | list[tuple[int, int]] | None = None,
+    ) -> list[str]:
+        """Extract modifier slugs from text (lightweight, no metadata lookup).
 
-        Finds modifiers (ingredients, add-ons) that are valid for the item type.
-        Excludes spans already matched by attribute extraction.
+        Returns just the slug strings without building full objects or
+        looking up additional metadata.
 
         Args:
             text: Input text
             item_type: Item type slug
-            exclude_spans: Spans to exclude from matching
+            exclude_spans: Spans to exclude from matching (TextSpan or tuple format)
 
         Returns:
-            ModifierExtractionResult with matched modifiers
+            List of modifier slug strings
         """
-        # Convert TextSpan to legacy tuple format
         legacy_spans = None
         if exclude_spans:
-            legacy_spans = [(s.start, s.end) for s in exclude_spans]
+            legacy_spans = []
+            for span in exclude_spans:
+                if isinstance(span, TextSpan):
+                    legacy_spans.append((span.start, span.end))
+                else:
+                    legacy_spans.append(span)  # Already a tuple
 
-        # Get basic modifier matches
-        modifier_names = _extract_modifiers_generic(text, item_type, legacy_spans)
-
-        # Get qualifiers for matched modifiers
-        known_modifiers = set(modifier_names)
-        formatted, conflicts = extract_modifiers_with_qualifiers(text, known_modifiers)
-
-        # Build typed result
-        modifiers = []
-        for name in modifier_names:
-            # Look up modifier info from cache
-            match_info = menu_cache.find_modifier_match(name)
-
-            qualifiers = []
-            # Check if this modifier has qualifiers in formatted output
-            for fmt in formatted:
-                if fmt.startswith(name) and "(" in fmt:
-                    qual_part = fmt[fmt.index("(") + 1:fmt.rindex(")")]
-                    qualifiers = [q.strip() for q in qual_part.split(",")]
-                    break
-
-            modifiers.append(ModifierMatch(
-                slug=match_info.get("slug", name) if match_info else name,
-                display_name=match_info.get("name", name) if match_info else name,
-                category=match_info.get("category", "") if match_info else "",
-                quantity=1,
-                price=match_info.get("base_price", 0.0) if match_info else 0.0,
-                qualifiers=qualifiers,
-            ))
-
-        return ModifierExtractionResult(
-            modifiers=modifiers,
-            conflicts=conflicts,
-        )
+        return _extract_modifiers_generic(text, item_type, legacy_spans)
 
     def extract_special_instructions(self, text: str) -> SpecialInstructionsResult:
         """Extract special instructions from text.
@@ -298,57 +264,3 @@ class ExtractionPipeline:
         """
         instructions = extract_special_instructions_from_input(text)
         return SpecialInstructionsResult(instructions=instructions)
-
-    def extract_all(
-        self,
-        text: str,
-        item_type: str | None = None,
-    ) -> dict[str, Any]:
-        """Extract all structured data from text in one call.
-
-        Convenience method that runs the full extraction pipeline.
-
-        Args:
-            text: Input text
-            item_type: Item type slug (auto-detected if not provided)
-
-        Returns:
-            Dict with keys: quantity, item_type, attributes, modifiers, instructions
-        """
-        # Normalize text
-        normalized = self.normalize(text)
-
-        # Extract quantity
-        qty_result = self.extract_quantity(normalized)
-
-        # Detect item type if not provided
-        if item_type is None:
-            type_result = self.detect_item_type(qty_result.remaining_text)
-            item_type = type_result.item_type
-
-        result = {
-            "quantity": qty_result.quantity,
-            "item_type": item_type,
-            "attributes": None,
-            "modifiers": None,
-            "instructions": None,
-        }
-
-        if item_type:
-            # Extract attributes
-            attrs = self.extract_attributes(qty_result.remaining_text, item_type)
-            result["attributes"] = attrs
-
-            # Extract modifiers (excluding attribute spans)
-            modifiers = self.extract_modifiers(
-                qty_result.remaining_text,
-                item_type,
-                attrs.matched_spans,
-            )
-            result["modifiers"] = modifiers
-
-        # Extract special instructions
-        instructions = self.extract_special_instructions(normalized)
-        result["instructions"] = instructions
-
-        return result

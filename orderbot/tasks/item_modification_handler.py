@@ -285,6 +285,7 @@ class ItemModificationHandler:
                 category=category,
                 display_name=modifier.title(),
                 quantity=quantity,
+                increment_if_exists=True,
             )
             logger.info("MODIFY ADD: Added '%s' (category=%s, qty=%d) to item", modifier, category, quantity)
 
@@ -316,6 +317,7 @@ class ItemModificationHandler:
                 category=match["category"],
                 display_name=match["name"],
                 quantity=quantity,
+                increment_if_exists=True,
             )
             logger.info("MODIFY ADD: Added '%s' (category=%s, qty=%d)", match["name"], match["category"], quantity)
 

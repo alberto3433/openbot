@@ -220,3 +220,48 @@ MenuItem without ingredients (e.g., "Bagel Chips"):
 - 34 adapter tests: PASS
 - 39 modification scenario tests: PASS
 - Cache loads successfully with 238 items computing from ingredients, 309 using fallback
+
+---
+
+# Fix: Allow modifier quantity accumulation on repeated "add X" commands
+
+## Problem
+When user says "add sausage" multiple times during item configuration:
+- Each call logs "Added 'Sausage' (category=meat, qty=1)"
+- But quantity never accumulates (stays at 1 sausage, $2.75)
+- Response at customization_checkpoint doesn't acknowledge the addition
+
+## Root Cause
+`MenuItemTask.add_selection()` in `item_tasks.py` (lines 317-326):
+```python
+for existing in self.selections:
+    if existing.get("slug") == slug and existing.get("category") == category:
+        if quantity > 1 and existing.get("quantity", 1) == 1:
+            existing["quantity"] = quantity
+        return  # <-- EARLY EXIT, no increment
+```
+
+When "add sausage" is called with `quantity=1`, it finds existing sausage and returns immediately without incrementing.
+
+## Solution
+Add `increment_if_exists` parameter to `add_selection()`:
+- Default: `False` (current behavior - for pre-filled defaults)
+- Pass `True` when handling user "add X" commands
+
+## Implementation Plan
+
+- [ ] 1. Modify `add_selection()` in `item_tasks.py` to add `increment_if_exists` parameter
+- [ ] 2. Update `config_modification_handler.py` to pass `increment_if_exists=True`
+- [ ] 3. Update `item_modification_handler.py` to pass `increment_if_exists=True`
+- [ ] 4. Update `ingredient_fallback.py` to pass `increment_if_exists=True`
+- [ ] 5. Test: Multiple "add sausage" should accumulate quantity
+- [ ] 6. Test: Pre-filled defaults from signature items should NOT double-up
+
+## Complexity Assessment
+**Low** - Single method change with new parameter. Clear pattern for callers.
+
+## Files to Modify
+1. `orderbot/tasks/models/item_tasks.py` - add parameter
+2. `orderbot/tasks/config_modification_handler.py` - pass flag
+3. `orderbot/tasks/item_modification_handler.py` - pass flag
+4. `orderbot/tasks/config/flows/ingredient_fallback.py` - pass flag

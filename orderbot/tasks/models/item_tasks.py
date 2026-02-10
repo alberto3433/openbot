@@ -293,6 +293,7 @@ class MenuItemTask(ItemTask):
         ingredient_category: str | None = None,
         is_default: bool = False,
         _skip_display: bool = False,
+        increment_if_exists: bool = False,
     ) -> None:
         """Add a selection to the item.
 
@@ -313,10 +314,16 @@ class MenuItemTask(ItemTask):
                 Used for "already comes with X" messaging when user mentions a default.
             _skip_display: If True, this selection won't appear in get_summary().
                 Used for tracking entries where display is handled elsewhere.
+            increment_if_exists: If True and selection already exists, increment quantity
+                instead of silently returning. Use for user "add X" commands.
         """
         # Check if already present (same slug and category)
         for existing in self.selections:
             if existing.get("slug") == slug and existing.get("category") == category:
+                if increment_if_exists:
+                    # User is explicitly adding more - increment quantity
+                    existing["quantity"] = existing.get("quantity", 1) + quantity
+                    return
                 # Update quantity if new quantity is explicitly set (> 1)
                 # This handles the case where pre_filled adds with qty=1, then
                 # extracted_selections tries to add with the actual qty

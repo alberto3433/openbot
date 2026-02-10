@@ -346,6 +346,7 @@ class IngredientFallbackHandler:
                     display_name=match["name"],
                     quantity=quantity,
                     price=match.get("base_price", 0.0),
+                    increment_if_exists=True,
                 )
                 added_names.append(match["name"])
                 logger.info(

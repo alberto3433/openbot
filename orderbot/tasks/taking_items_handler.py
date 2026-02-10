@@ -517,11 +517,15 @@ class TakingItemsHandler(MenuDataMixin):
         logger.info("CATEGORY_INQUIRY_RESPONSE: Matched CATEGORY_INQUIRY pending field")
 
         if not is_affirmative(user_input):
-            # Not an affirmative response - clear pending state and continue
+            # Not an affirmative response - clear pending state and continue ordering
             logger.info("CATEGORY_INQUIRY_RESPONSE: Not affirmative, clearing state")
             order.pending_field = None
             order.pending_config_queue = []
-            return None
+            order.menu_query_pagination = None
+            return StateMachineResult(
+                message="Sure! What can I get for you?",
+                order=order,
+            )
 
         logger.info("CATEGORY_INQUIRY_RESPONSE: Affirmative response detected")
 

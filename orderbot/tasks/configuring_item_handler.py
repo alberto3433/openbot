@@ -170,6 +170,10 @@ class ConfiguringItemHandler:
         if order.pending_field == PendingField.AMBIGUOUS_SELECTION:
             return self._handle_ambiguous_selection_response(user_input, order)
 
+        # Handle category inquiry follow-up ("Would you like to hear more?" -> "yes")
+        if order.pending_field == PendingField.CATEGORY_INQUIRY:
+            return self._taking_items_handler._handle_category_inquiry_response(user_input, order)
+
         # Handle item switch confirmation ("can you make it X?" -> similar item found)
         if order.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
             return self.config_modification_handler.handle_confirm_item_switch(user_input, order)

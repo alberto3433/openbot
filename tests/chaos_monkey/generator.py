@@ -120,6 +120,8 @@ class ScenarioGenerator:
             return self._generate_cart_ops_scenario()
         elif scenario_type == "modifier_flow":
             return self._generate_modifier_flow_scenario()
+        elif scenario_type == "menu_inquiry":
+            return self._generate_menu_inquiry_scenario()
         else:
             logger.warning("Unknown scenario type: %s", scenario_type)
             return None
@@ -261,6 +263,44 @@ class ScenarioGenerator:
             modifiers=modifiers,
             seed=self.rng.randint(0, 2**31),
         )
+
+    def _generate_menu_inquiry_scenario(self) -> BaseScenario | None:
+        """Generate a menu inquiry scenario (ask about menu, categories, dietary options)."""
+        from tests.chaos_monkey.scenarios.menu_inquiry import MenuInquiryScenario
+
+        # Weighted random selection of inquiry type
+        inquiry_types = ["general", "category", "dietary", "recommendation", "specific"]
+        weights = [0.2, 0.35, 0.2, 0.15, 0.1]
+
+        inquiry_type = self.rng.choices(inquiry_types, weights=weights, k=1)[0]
+
+        if inquiry_type == "category":
+            # Pick a category to ask about
+            categories = [
+                "bagels", "sandwiches", "coffee", "drinks", "spreads",
+                "cream cheese", "breakfast", "salads", "soups", "sides",
+                "omelettes", "pastries", "beverages",
+            ]
+            category = self.rng.choice(categories)
+            return MenuInquiryScenario(
+                inquiry_type="category",
+                category=category,
+                seed=self.rng.randint(0, 2**31),
+            )
+        elif inquiry_type == "specific" and self._menu_items:
+            # Ask about a specific menu item
+            item = self.rng.choice(self._menu_items)
+            item_name = item.get("name", "Unknown")
+            return MenuInquiryScenario(
+                inquiry_type="specific",
+                item_name=item_name,
+                seed=self.rng.randint(0, 2**31),
+            )
+        else:
+            return MenuInquiryScenario(
+                inquiry_type=inquiry_type,
+                seed=self.rng.randint(0, 2**31),
+            )
 
     def _apply_mutations(self, scenario: BaseScenario) -> None:
         """Apply text mutations to scenario turns."""

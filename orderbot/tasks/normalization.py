@@ -118,7 +118,7 @@ _ARTICLES = frozenset({'the', 'a', 'an', 'some'})
 _ORDERING_PREFIXES = frozenset({
     "i want", "i'd like", "i need", "i'll have", "i'll take",
     "can i get", "can i have", "could i get", "could i have",
-    "give me", "get me", "make it", "let's go with", "let's do",
+    "give me", "gimme", "get me", "make it", "let's go with", "let's do",
     "just", "some",
 })
 _POLITENESS_WORDS = frozenset({'please', 'thanks', 'thank you', 'thx'})

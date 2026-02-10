@@ -18,7 +18,7 @@ import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import pluralize
+from orderbot.cache.base import pluralize, singularize
 
 from .models import OrderTask
 from .pending_fields import PendingField
@@ -94,21 +94,77 @@ class MenuInquiryHandler(MenuDataMixin):
         # Fallback message
         return "our menu items"
 
+    def _find_matching_item_types(self, query: str, items_by_type: dict) -> list[str]:
+        """Find item types that match a query term.
+
+        Checks for:
+        1. Exact slug match (query == item_type_slug)
+        2. Singular form match (singularize(query) == item_type_slug)
+        3. Slug contains singular query as a word (e.g., "tea" matches "iced_tea")
+
+        Returns:
+            List of matching item type slugs, empty if none found.
+        """
+        query_lower = query.lower().strip()
+        singular = singularize(query_lower)
+
+        matching = []
+        for item_type_slug in items_by_type.keys():
+            # Exact match
+            if item_type_slug == query_lower or item_type_slug == singular:
+                matching.append(item_type_slug)
+            # Partial match: item type contains the query as a word
+            # e.g., "tea" matches "iced_tea" (tea is a word in iced_tea)
+            elif singular in item_type_slug.split('_'):
+                matching.append(item_type_slug)
+
+        return matching
+
     def _get_items_for_category(self, menu_query_type: str) -> tuple[list, str]:
         """Get items and display name for a menu category.
 
         Uses DB-driven approach with lookup_type:
-        1. Check if query matches a display group slug (e.g., "breads")
-        2. Look up category in menu_cache.get_category_keyword_mapping()
-        3. If lookup_type=="category", query via MenuItemCategory join table
-        4. If lookup_type=="item_type", query by item_type_id
-        5. Fall back to direct slug in items_by_type (for pagination state)
-        6. Fall back to partial string matching on all items
+        1. Check if query matches item type slugs (more specific than display groups)
+        2. Check if query matches a display group slug (e.g., "breads")
+        3. Look up category in menu_cache.get_category_keyword_mapping()
+        4. If lookup_type=="category", query via MenuItemCategory join table
+        5. If lookup_type=="item_type", query by item_type_id
+        6. Fall back to direct slug in items_by_type (for pagination state)
+        7. Fall back to partial string matching on all items
 
         Returns:
             Tuple of (items list, category_key for pagination)
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
+
+        # Check for item type matches first (more specific than display groups)
+        # This ensures "teas" matches tea/iced_tea item types before falling back to broader groups
+        matching_item_types = self._find_matching_item_types(menu_query_type, items_by_type)
+        if matching_item_types:
+            items = []
+            for item_type_slug in matching_item_types:
+                items.extend(items_by_type.get(item_type_slug, []))
+
+            # Also search by name to catch items like "Snapple Iced Tea" when searching for "tea"
+            # This finds items with the search term in their name, regardless of item type
+            name_matched_items = menu_cache.search_menu_items_by_term(menu_query_type)
+            if name_matched_items:
+                # Add name-matched items that aren't already included (avoid duplicates)
+                # Use lowercase names for deduplication since items may not have IDs
+                existing_names = {item.get("name", "").lower() for item in items}
+                for item in name_matched_items:
+                    item_name = item.get("name", "").lower()
+                    if item_name and item_name not in existing_names:
+                        items.append(item)
+                        existing_names.add(item_name)
+
+            if items:
+                logger.info(
+                    "Menu query: '%s' matched %d item type(s): %s with %d items (including name matches)",
+                    menu_query_type, len(matching_item_types), matching_item_types, len(items)
+                )
+                # Use first matching type as the category key for pagination
+                return items, matching_item_types[0]
 
         # Check if query matches a display group (e.g., "breads", "sandwiches", "drinks")
         # Display groups aggregate multiple item types
@@ -371,7 +427,9 @@ class MenuInquiryHandler(MenuDataMixin):
             )
 
         # Format the items list using helper method
-        type_name = menu_query_type.replace("_", " ")
+        # Use lookup_type (canonical item type slug) for display, not menu_query_type (user input)
+        # This avoids double-pluralization (e.g., "teas" -> "teass")
+        type_name = lookup_type.replace("_", " ")
         # Use proper pluralization via inflect library
         type_display = pluralize(type_name)
 

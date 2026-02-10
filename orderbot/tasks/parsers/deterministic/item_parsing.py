@@ -1101,9 +1101,10 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     Detect configurable item type from text using database-driven keywords.
 
     Uses smart matching to prefer:
-    1. Triggers that match the item type slug
-    2. Triggers that appear at the start of the text
-    3. Longer triggers
+    1. Triggers that are menu item names/aliases (more specific matches)
+    2. Triggers that match the item type slug
+    3. Triggers that appear at the start of the text
+    4. Longer triggers (as tiebreaker)
 
     Args:
         text: User input text (lowercase)
@@ -1113,7 +1114,6 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     """
     configurable_slugs = menu_cache.get_configurable_item_type_slugs()
     text_lower = text.lower()
-    text_len = len(text_lower)
 
     # Common words that should not be treated as item triggers
     # - Quantity words (e.g., "two" from "Two Egg Sandwich" shouldn't match "two coffees")
@@ -1124,8 +1124,8 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     }
 
     # Collect all matches with position info for smarter selection
-    # Format: (item_type, trigger, length, start_pos, slug_matches)
-    matches: list[tuple[str, str, int, int, bool]] = []
+    # Format: (item_type, trigger, length, start_pos, slug_matches, is_menu_item)
+    matches: list[tuple[str, str, int, int, bool, bool]] = []
 
     for item_type_slug in configurable_slugs:
         triggers = menu_cache.get_item_type_triggers(item_type_slug)
@@ -1140,13 +1140,20 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
                 start_pos = match.start()
                 # Prefer item types where slug matches trigger
                 slug_matches = trigger.lower() == item_type_slug or trigger.lower().rstrip("s") == item_type_slug
-                matches.append((item_type_slug, trigger, len(trigger), start_pos, slug_matches))
+                # Check if trigger is a menu item name/alias (not just a modifier name)
+                # This ensures "Chai Tea" beats "tea" type, but "cream cheese" doesn't beat "bagel"
+                is_menu_item = menu_cache.resolve_menu_item_alias(trigger) is not None
+                matches.append((item_type_slug, trigger, len(trigger), start_pos, slug_matches, is_menu_item))
 
     if not matches:
         return None, None
 
-    # Sort by: (1) slug_matches (True first), (2) start_pos (earlier first), (3) length (longer first)
-    matches.sort(key=lambda x: (not x[4], x[3], -x[2]))
+    # Sort by: (1) is_menu_item (menu item names first - most specific),
+    # (2) slug_matches (type slug matches next), (3) start_pos (earlier first),
+    # (4) length (longer first - as tiebreaker)
+    # This ensures "Chai Tea" (menu item) beats "tea" (slug), but "cream cheese" (modifier)
+    # doesn't beat "bagel" (slug) in "bagel with cream cheese"
+    matches.sort(key=lambda x: (not x[5], not x[4], x[3], -x[2]))
     return matches[0][0], matches[0][1]
 
 

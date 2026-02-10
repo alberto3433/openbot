@@ -88,8 +88,8 @@ class ResponseVerifier:
             turn.passed = True
             return
 
-        # Check for item not found
-        if self._is_not_found(response):
+        # Check for item not found (skip for menu inquiry turns)
+        if self._is_not_found(response) and not turn.is_menu_inquiry:
             turn.passed = False
             turn.failure_category = FailureCategory.MENU_ITEM_NOT_FOUND
             turn.failure_reason = f"Item not found: {response[:100]}"

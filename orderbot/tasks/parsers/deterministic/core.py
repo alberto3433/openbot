@@ -599,7 +599,8 @@ def parse_open_input_deterministic(
     cancel_match = CANCEL_ITEM_PATTERN.match(text)
     if cancel_match:
         cancel_item = None
-        for i in range(1, 11):  # 10 capture groups in pattern
+        # Check all capture groups dynamically (pattern may have varying number of groups)
+        for i in range(1, CANCEL_ITEM_PATTERN.groups + 1):
             if cancel_match.group(i):
                 cancel_item = cancel_match.group(i)
                 break

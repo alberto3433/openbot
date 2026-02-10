@@ -19,6 +19,7 @@ class ActionType(Enum):
     CONFIRM_ORDER = "confirm_order"
     CANCEL_ORDER = "cancel_order"
     SHOW_CART = "show_cart"
+    MENU_INQUIRY = "menu_inquiry"  # Menu information response
     NO_ACTION = "no_action"  # For error responses
 
 
@@ -56,6 +57,7 @@ class ConversationTurn:
     expected_items_in_cart: list[str] = field(default_factory=list)
     expected_question_about: str | None = None  # Attribute being asked about
     allow_disambiguation: bool = False  # Whether disambiguation is acceptable
+    is_menu_inquiry: bool = False  # If True, "not found" responses are acceptable
 
     # Filled in after execution
     actual_response: str | None = None

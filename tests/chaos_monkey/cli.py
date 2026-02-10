@@ -103,7 +103,7 @@ Examples:
         "--scenario-type",
         type=str,
         default=None,
-        choices=["single_item", "multi_item", "modifier", "cart_ops", "modifier_flow"],
+        choices=["single_item", "multi_item", "modifier", "cart_ops", "modifier_flow", "menu_inquiry"],
         help="Focus on a specific scenario type (default: mixed)",
     )
 

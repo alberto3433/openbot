@@ -251,8 +251,8 @@ class TestCoffeeItemTask:
         """Test default values for coffee task."""
         coffee = create_coffee_task()
         assert coffee.item_type == "menu_item"
-        # Default "Coffee" is not an espresso drink, so it's sized_beverage
-        assert coffee.menu_item_type == "sized_beverage"
+        # Default "Coffee" is not an espresso drink, so it's coffee_based_beverage
+        assert coffee.menu_item_type == "coffee_based_beverage"
         assert coffee["size"] is None
         # Note: temperature (iced/hot) is now part of menu_item_name, not a separate attribute
         # Milk is stored in selections, not attribute_values
@@ -291,7 +291,7 @@ class TestCoffeeItemTask:
 
     def test_coffee_fields_with_size_config(self):
         """Test that size field is configured to always ask."""
-        coffee_fields = MenuFieldConfig().get_fields_for_item_type("sized_beverage")
+        coffee_fields = MenuFieldConfig().get_fields_for_item_type("coffee_based_beverage")
         # Size must be explicitly asked (no default, always ask)
         assert coffee_fields["size"].default is None
         assert coffee_fields["size"].ask_if_empty is True
@@ -519,7 +519,7 @@ class TestMenuFieldConfig:
         bagel_fields = config.get_fields_for_item_type("bagel")
         assert "bread" in bagel_fields
         # Coffee fields include size (from database)
-        coffee_fields = config.get_fields_for_item_type("sized_beverage")
+        coffee_fields = config.get_fields_for_item_type("coffee_based_beverage")
         assert "size" in coffee_fields
         # Database config: toasted is optional (required=False)
         assert bagel_fields["toasted"].required is False
@@ -553,8 +553,8 @@ class TestMenuFieldConfig:
         bagel_fields = config.get_fields_for_item_type("bagel")
         assert "bread" in bagel_fields
 
-        # The database item type is "sized_beverage" (not "coffee")
-        beverage_fields = config.get_fields_for_item_type("sized_beverage")
+        # The database item type is "coffee_based_beverage" (not "coffee")
+        beverage_fields = config.get_fields_for_item_type("coffee_based_beverage")
         assert "size" in beverage_fields
 
     def test_get_fields_for_unknown_item_type_raises(self):
@@ -577,8 +577,8 @@ class TestFieldConfigHelpers:
 
     def test_get_default_value(self):
         """Test getting default values from database."""
-        # Database config: sized_beverage size has no default
-        size_default = get_default_value("sized_beverage", "size")
+        # Database config: coffee_based_beverage size has no default
+        size_default = get_default_value("coffee_based_beverage", "size")
         assert size_default is None
 
         # Database config: bread has no default
@@ -597,8 +597,8 @@ class TestFieldConfigHelpers:
         assert should_ask_field("bagel", "toasted", True) is False
 
         # Size with no value SHOULD be asked (ask_if_empty=True)
-        # Note: The database item type is "sized_beverage" (not "coffee")
-        assert should_ask_field("sized_beverage", "size", None) is True
+        # Note: The database item type is "coffee_based_beverage" (not "coffee")
+        assert should_ask_field("coffee_based_beverage", "size", None) is True
 
 
 # =============================================================================

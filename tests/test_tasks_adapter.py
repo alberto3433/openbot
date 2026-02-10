@@ -163,7 +163,7 @@ class TestDictToOrderTask:
         order_dict = {
             "items": [
                 {"item_type": "bagel", "menu_item_name": "plain bagel", "toasted": False},
-                {"item_type": "sized_beverage", "menu_item_name": "coffee", "size": "medium"},
+                {"item_type": "coffee_based_beverage", "menu_item_name": "coffee", "size": "medium"},
             ]
         }
         order = dict_to_order_task(order_dict)
@@ -174,7 +174,7 @@ class TestDictToOrderTask:
         assert order.items.items[0].menu_item_type == "bagel"
         # Coffee item
         assert isinstance(order.items.items[1], MenuItemTask)
-        assert order.items.items[1].menu_item_type == "sized_beverage"
+        assert order.items.items[1].menu_item_type == "coffee_based_beverage"
 
     def test_confirmed_order(self):
         """Test converting confirmed order."""

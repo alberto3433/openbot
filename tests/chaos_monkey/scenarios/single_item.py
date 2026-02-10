@@ -28,7 +28,7 @@ class SingleItemScenario(BaseScenario):
 
         Args:
             item_name: The canonical menu item name.
-            item_type: The item type slug (e.g., "bagel", "sized_beverage").
+            item_type: The item type slug (e.g., "bagel", "coffee_based_beverage").
             item_data: Full item data from menu cache.
             ordering_phrases: Optional custom ordering phrases.
             seed: Random seed for reproducibility.

@@ -74,7 +74,7 @@ def get_mock_bagel_attributes():
 
 
 def get_mock_coffee_attributes():
-    """Return mock attribute data for sized_beverage and espresso item types.
+    """Return mock attribute data for coffee_based_beverage and espresso item types.
 
     NOTE: Temperature (hot/iced) is NO LONGER a separate attribute.
     It's now baked into the menu item name (e.g., "Hot Latte", "Iced Coffee").
@@ -186,7 +186,7 @@ def mock_get_item_type_attributes(item_type_slug):
     """Mock menu_cache.get_item_type_attributes for tests."""
     if item_type_slug == "bagel":
         return get_mock_bagel_attributes()
-    elif item_type_slug in ("sized_beverage", "coffee", "espresso", "espresso_based"):
+    elif item_type_slug in ("coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based"):
         return get_mock_coffee_attributes()
     elif item_type_slug == "spread_sandwich":
         return get_mock_spread_sandwich_attributes()
@@ -211,13 +211,13 @@ def mock_get_category_keyword_mapping(keyword: str):
         # Bagel keywords
         "bagel": {"slug": "bagel", "lookup_type": "item_type"},
         "bagels": {"slug": "bagel", "lookup_type": "item_type"},
-        # Coffee/beverage keywords (sized_beverage = coffee, tea, cold brew, etc.)
-        "coffee": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "coffees": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "drink": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "drinks": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "beverage": {"slug": "sized_beverage", "lookup_type": "item_type"},
-        "beverages": {"slug": "sized_beverage", "lookup_type": "item_type"},
+        # Coffee/beverage keywords (coffee_based_beverage = coffee, tea, cold brew, etc.)
+        "coffee": {"slug": "coffee_based_beverage", "lookup_type": "item_type"},
+        "coffees": {"slug": "coffee_based_beverage", "lookup_type": "item_type"},
+        "drink": {"slug": "coffee_based_beverage", "lookup_type": "item_type"},
+        "drinks": {"slug": "coffee_based_beverage", "lookup_type": "item_type"},
+        "beverage": {"slug": "coffee_based_beverage", "lookup_type": "item_type"},
+        "beverages": {"slug": "coffee_based_beverage", "lookup_type": "item_type"},
         # Espresso-based drinks (latte, cappuccino, americano) have their own item type
         "latte": {"slug": "espresso_based", "lookup_type": "item_type"},
         "lattes": {"slug": "espresso_based", "lookup_type": "item_type"},
@@ -318,12 +318,12 @@ def mock_get_known_menu_items():
 
 def mock_get_configurable_item_type_slugs():
     """Return mock set of configurable item type slugs."""
-    return {"bagel", "sized_beverage", "coffee", "espresso", "espresso_based", "spread_sandwich", "egg_bagel", "fruit_salad"}
+    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based", "spread_sandwich", "egg_bagel", "fruit_salad"}
 
 
 def mock_get_configurable_item_types():
     """Return mock set of configurable item types (same as slugs for tests)."""
-    return {"bagel", "sized_beverage", "coffee", "espresso", "espresso_based", "spread_sandwich", "egg_bagel", "fruit_salad"}
+    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based", "spread_sandwich", "egg_bagel", "fruit_salad"}
 
 
 def mock_get_item_type_triggers(item_type_slug: str | None = None):
@@ -334,13 +334,14 @@ def mock_get_item_type_triggers(item_type_slug: str | None = None):
                        If None, returns all triggers as a dict.
 
     Note: These must match the actual database item types. In the DB:
-    - sized_beverage: coffee, chai, cold brew, etc.
+    - coffee_based_beverage: coffee, chai, cold brew, etc.
     - espresso: standalone espresso drink
     - espresso_based: latte, cappuccino, americano, etc. (drinks based on espresso)
     """
     triggers = {
         "bagel": {"bagel", "bagels"},
-        "sized_beverage": {"coffee", "coffees", "chai", "cold brew", "hot chocolate"},
+        "coffee_based_beverage": {"coffee", "coffees", "chai", "cold brew"},
+        "cocoa_based_beverage": {"hot chocolate"},
         "coffee": {"coffee", "coffees"},
         "espresso": {"espresso", "espressos"},
         "espresso_based": {
@@ -370,7 +371,7 @@ def mock_menu_cache_attributes(monkeypatch):
     monkeypatch.setattr(menu_cache, "_is_loaded", True)
     monkeypatch.setattr(menu_cache, "get_item_type_attributes", mock_get_item_type_attributes)
     monkeypatch.setattr(menu_cache, "get_category_keyword_mapping", mock_get_category_keyword_mapping)
-    # Mock configurable item type detection - required for parser to detect "coffee" as sized_beverage
+    # Mock configurable item type detection - required for parser to detect "coffee" as coffee_based_beverage
     monkeypatch.setattr(menu_cache, "get_configurable_item_type_slugs", mock_get_configurable_item_type_slugs)
     monkeypatch.setattr(menu_cache, "get_configurable_item_types", mock_get_configurable_item_types)
     monkeypatch.setattr(menu_cache, "get_item_type_triggers", mock_get_item_type_triggers)
@@ -2046,7 +2047,7 @@ class TestBagelWithCoffeeConfig:
 
         # Now should ask coffee questions - size
         assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
-        assert order.pending_field in ("coffee_size", "menu_item_attr_size", "sized_beverage:size", "espresso:size", "espresso_based:size")
+        assert order.pending_field in ("coffee_size", "menu_item_attr_size", "coffee_based_beverage:size", "espresso:size", "espresso_based:size")
 
     def test_bagel_and_latte_complete_with_coffee_config(self):
         """Test that coffee configuration completes properly after bagel."""
@@ -2682,7 +2683,7 @@ class TestMenuQuery:
     def test_beverage_query_uses_database_mapping(self):
         """Test that 'beverage' query uses database-driven category mapping.
 
-        The database maps "beverage" keyword to the "sized_beverage" item type,
+        The database maps "beverage" keyword to the "coffee_based_beverage" item type,
         so items from that type should be returned.
         """
         from orderbot.tasks.state_machine import OrderStateMachine
@@ -2691,7 +2692,7 @@ class TestMenuQuery:
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
                 "espresso_based": [{"name": "Latte", "base_price": 4.50}],
-                "sized_beverage": [{"name": "Hot Coffee", "base_price": 3.00}],
+                "coffee_based_beverage": [{"name": "Hot Coffee", "base_price": 3.00}],
                 "beverage": [{"name": "Coke", "base_price": 2.00}],
             }
         })
@@ -2751,14 +2752,14 @@ class TestMenuQuery:
         # Should list categories or ask what they want
         assert "we have" in result.message.lower() or "what would you like" in result.message.lower()
 
-    def test_coffee_alias_maps_to_sized_beverage(self):
-        """Test that 'coffee' query maps to sized_beverage type."""
+    def test_coffee_alias_maps_to_coffee_based_beverage(self):
+        """Test that 'coffee' query maps to coffee_based_beverage type."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "sized_beverage": [
+                "coffee_based_beverage": [
                     {"name": "Drip Coffee", "base_price": 2.50},
                     {"name": "Latte", "base_price": 4.50},
                 ],
@@ -3048,7 +3049,7 @@ class TestRecommendationInquiry:
         result = sm.store_info_handler.handle_recommendation_inquiry(
             match_type="item_type",
             order=order,
-            item_type_slug="sized_beverage",
+            item_type_slug="coffee_based_beverage",
         )
 
         # Should return some recommendation (either items or generic)
@@ -3116,11 +3117,11 @@ class TestCoffeeSize:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "coffee_based_beverage:size"
 
         coffee = MenuItemTask(
             menu_item_name="Hot Latte",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
             quantity=1,
             unit_price=0.0,
         )
@@ -3132,7 +3133,7 @@ class TestCoffeeSize:
 
         assert coffee["size"] == "small"
         # Mock data: espresso_shots has display_order=2, milk_sweetener_syrup=3
-        assert order.pending_field == "sized_beverage:espresso_shots"
+        assert order.pending_field == "coffee_based_beverage:espresso_shots"
         assert "shot" in result.message.lower() or "extra" in result.message.lower()
 
     def test_large_size_selected(self):
@@ -3148,11 +3149,11 @@ class TestCoffeeSize:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "coffee_based_beverage:size"
 
         coffee = MenuItemTask(
             menu_item_name="Hot Coffee",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
             quantity=1,
             unit_price=0.0,
         )
@@ -3179,7 +3180,7 @@ class TestCoffeeSize:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "coffee_based_beverage:size"
 
         coffee = CoffeeItemTask(drink_type="latte")
         coffee.mark_in_progress()
@@ -3207,7 +3208,7 @@ class TestCoffeeSize:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "coffee_based_beverage:size"
 
         coffee = CoffeeItemTask(drink_type="espresso")
         coffee.mark_in_progress()
@@ -3329,7 +3330,7 @@ class TestAnotherItemDuringConfig:
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "coffee_based_beverage:size"
 
         coffee = CoffeeItemTask(drink_type="latte")
         coffee.mark_in_progress()
@@ -3381,7 +3382,7 @@ class TestAnotherItemDuringConfig:
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "coffee_based_beverage:size"
 
         coffee = CoffeeItemTask(drink_type="espresso")
         coffee.mark_in_progress()
@@ -3406,7 +3407,7 @@ class TestAnotherItemDuringConfig:
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_field = "sized_beverage:size"
+        order.pending_field = "coffee_based_beverage:size"
 
         coffee = CoffeeItemTask(drink_type="latte")
         coffee.mark_in_progress()
@@ -3446,7 +3447,7 @@ class TestCoffeeStyle:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
+        order.pending_field = "coffee_based_beverage:temperature"
 
         # Pre-fill a modifier so modifiers question is skipped
         coffee = CoffeeItemTask(drink_type="latte", size="medium", milk="whole")
@@ -3468,7 +3469,7 @@ class TestCoffeeStyle:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
+        order.pending_field = "coffee_based_beverage:temperature"
 
         # Pre-fill a modifier so modifiers question is skipped
         coffee = CoffeeItemTask(drink_type="latte", size="large", sweeteners=[{"slug": "sugar", "quantity": 1}])
@@ -3490,7 +3491,7 @@ class TestCoffeeStyle:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
+        order.pending_field = "coffee_based_beverage:temperature"
 
         coffee = CoffeeItemTask(drink_type="coffee", size="small")
         coffee.mark_in_progress()
@@ -3509,7 +3510,7 @@ class TestCoffeeStyle:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
+        order.pending_field = "coffee_based_beverage:temperature"
 
         # Pre-fill a modifier so modifiers question is skipped
         coffee = CoffeeItemTask(drink_type="latte", size="medium", flavor_syrups=[{"slug": "vanilla", "quantity": 1}])
@@ -3521,7 +3522,7 @@ class TestCoffeeStyle:
 
         # Should not be set - temperature should be None with invalid input
         # Note: The handler may store "lukewarm" as special_instructions but shouldn't set temperature
-        assert coffee["temperature"] is None or order.pending_field in ("coffee_style", "menu_item_attr_temperature", "sized_beverage:temperature", "sized_beverage:iced")
+        assert coffee["temperature"] is None or order.pending_field in ("coffee_style", "menu_item_attr_temperature", "coffee_based_beverage:temperature", "coffee_based_beverage:iced")
         # Should re-prompt
         assert "hot or iced" in result.message.lower()
 
@@ -3533,7 +3534,7 @@ class TestCoffeeStyle:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
+        order.pending_field = "coffee_based_beverage:temperature"
 
         coffee = CoffeeItemTask(drink_type="coffee", size="medium")
         coffee.mark_in_progress()
@@ -3556,7 +3557,7 @@ class TestCoffeeStyle:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
+        order.pending_field = "coffee_based_beverage:temperature"
 
         coffee = CoffeeItemTask(drink_type="latte", size="large")
         coffee.mark_in_progress()
@@ -3578,7 +3579,7 @@ class TestCoffeeStyle:
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.pending_field = "sized_beverage:temperature"
+        order.pending_field = "coffee_based_beverage:temperature"
 
         # Pre-fill a modifier so modifiers question is skipped and coffee completes
         coffee = CoffeeItemTask(drink_type="latte", size="medium", milk="oat")
@@ -5393,7 +5394,7 @@ class TestGreetingHandler:
                 is_greeting=False, unclear=False,
                 parsed_items=[
                     ParsedItemEntry(
-                        item_type="sized_beverage",
+                        item_type="coffee_based_beverage",
                         item_name="Coffee",
                         selections=[
                             Selection(slug="large", category="size"),
@@ -5410,7 +5411,7 @@ class TestGreetingHandler:
             # If coffee config is in progress, the coffee should still be added
             # "drink_type" is also valid if disambiguation is needed between Coffee/Iced Coffee
             # "item_selection" is valid when multiple menu items match (e.g., Coffee vs Iced Coffee)
-            assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers", "sized_beverage:size", "sized_beverage:temperature", "sized_beverage:iced", "sized_beverage:milk_sweetener_syrup", "drink_type", "item_selection")
+            assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers", "coffee_based_beverage:size", "coffee_based_beverage:temperature", "coffee_based_beverage:iced", "coffee_based_beverage:milk_sweetener_syrup", "drink_type", "item_selection")
 
 
 # =============================================================================
@@ -5472,7 +5473,7 @@ class TestTakingItemsHandler:
             mock_parse.return_value = OpenInputResponse(
                 parsed_items=[
                     ParsedItemEntry(
-                        item_type="sized_beverage",
+                        item_type="coffee_based_beverage",
                         item_name="Coffee",
                         selections=[
                             Selection(slug="medium", category="size"),
@@ -5488,7 +5489,7 @@ class TestTakingItemsHandler:
             # Coffee should be added (or be configuring it, or asking for clarification)
             # "drink_type" is also valid if disambiguation is needed between Coffee/Iced Coffee
             # "item_selection" is valid when multiple menu items match (e.g., Coffee vs Iced Coffee)
-            assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers", "sized_beverage:size", "sized_beverage:temperature", "sized_beverage:iced", "sized_beverage:milk_sweetener_syrup", "drink_type", "item_selection")
+            assert len(coffees) >= 1 or order.pending_field in ("coffee_size", "coffee_style", "coffee_modifiers", "coffee_based_beverage:size", "coffee_based_beverage:temperature", "coffee_based_beverage:iced", "coffee_based_beverage:milk_sweetener_syrup", "drink_type", "item_selection")
 
     def test_done_ordering_transitions_to_checkout(self):
         """Test that 'done ordering' transitions to checkout."""
@@ -5721,9 +5722,9 @@ class TestTakingItemsHandler:
             result = sm._handle_taking_items("another espresso", order)
 
             # Should have espressos as MenuItemTask with menu_item_type='espresso'
-            # NOT sized_beverage or espresso_based (those are coffee/latte types)
+            # NOT coffee_based_beverage or espresso_based (those are coffee/latte types)
             espressos = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type == "espresso"]
-            wrong_type_items = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type in ("sized_beverage", "espresso_based")]
+            wrong_type_items = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type in ("coffee_based_beverage", "espresso_based")]
 
             # Accept either: 2 espressos added, OR disambiguation triggered (options provided)
             # Both are valid data-driven behaviors depending on menu configuration
@@ -5737,8 +5738,8 @@ class TestTakingItemsHandler:
                 # At minimum, the first espresso should still be there
                 assert len(espressos) >= 1, f"Expected at least 1 espresso, got {len(espressos)}"
 
-            # Verify espresso didn't get wrong item type (sized_beverage is for regular coffee)
-            assert len(wrong_type_items) == 0, f"Espresso should not create sized_beverage/espresso_based, got {[i.menu_item_type for i in wrong_type_items]}"
+            # Verify espresso didn't get wrong item type (coffee_based_beverage is for regular coffee)
+            assert len(wrong_type_items) == 0, f"Espresso should not create coffee_based_beverage/espresso_based, got {[i.menu_item_type for i in wrong_type_items]}"
 
 
 class TestEspressoItemTypeConsistency:
@@ -6800,7 +6801,7 @@ class TestUnavailableAttributeOptions:
 
         task = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
             unavailable_selections={"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
         )
 
@@ -6824,7 +6825,7 @@ class TestUnavailableAttributeOptions:
         # Create item with unavailable "medium" size selection
         item = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
             unavailable_selections={"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
         )
         order.items.add_item(item)
@@ -6860,8 +6861,8 @@ class TestUnavailableAttributeOptions:
 
         entry = ParsedItemEntry(
             menu_item_name="Latte",
-            menu_item_type="sized_beverage",
-            item_type="sized_beverage",  # Required field
+            menu_item_type="coffee_based_beverage",
+            item_type="coffee_based_beverage",  # Required field
             quantity=1,
             unavailable_selections={"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
         )
@@ -6969,7 +6970,7 @@ class TestMenuInquiryWordBoundarySearch:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        # "lattes" is mapped to sized_beverage category in mock, so it returns all beverages
+        # "lattes" is mapped to coffee_based_beverage category in mock, so it returns all beverages
         # The key test is that it does NOT add to cart
         result = sm.process("what lattes do you have", order)
 

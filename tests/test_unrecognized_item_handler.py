@@ -392,8 +392,8 @@ class TestMenuCacheHelpers:
             # Mock the internal data
             menu_cache._is_loaded = True
             menu_cache._menu_items = {
-                "hot coffee": {"name": "Hot Coffee", "item_type": "sized_beverage"},
-                "iced coffee": {"name": "Iced Coffee", "item_type": "sized_beverage"},
+                "hot coffee": {"name": "Hot Coffee", "item_type": "coffee_based_beverage"},
+                "iced coffee": {"name": "Iced Coffee", "item_type": "coffee_based_beverage"},
                 "plain bagel": {"name": "Plain Bagel", "item_type": "bagel"},
             }
 
@@ -426,7 +426,7 @@ class TestMenuCacheHelpers:
             }
             menu_cache._item_type_displays = {
                 "bagel": {"display_name": "Bagels"},
-                "sized_beverage": {"display_name": "Coffees and Teas"},
+                "coffee_based_beverage": {"display_name": "Coffees and Teas"},
             }
 
             categories = menu_cache.get_categories_for_inference()
@@ -437,7 +437,7 @@ class TestMenuCacheHelpers:
             assert "drink" in slugs
             assert "food" in slugs
             assert "bagel" in slugs
-            assert "sized_beverage" in slugs
+            assert "coffee_based_beverage" in slugs
         finally:
             # Restore original state
             menu_cache._is_loaded = original_is_loaded

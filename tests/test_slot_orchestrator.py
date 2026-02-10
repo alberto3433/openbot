@@ -100,10 +100,10 @@ def mock_get_item_type_attributes(item_type):
     """Mock function for menu_cache.get_item_type_attributes."""
     if item_type == "bagel":
         return MOCK_BAGEL_ATTRIBUTES
-    elif item_type == "sized_beverage":
+    elif item_type == "coffee_based_beverage":
         return MOCK_COFFEE_ATTRIBUTES
     elif item_type == "espresso":
-        return MOCK_COFFEE_ATTRIBUTES  # Espresso drinks use same attributes as sized_beverage
+        return MOCK_COFFEE_ATTRIBUTES  # Espresso drinks use same attributes as coffee_based_beverage
     elif item_type == "espresso_based":
         return MOCK_COFFEE_ATTRIBUTES  # Espresso-based drinks (latte, cappuccino) use same attributes
     elif item_type == "omelette":

@@ -24,7 +24,7 @@ def test_coffee_filtering_excludes_boxed_coffee():
 
     # Get coffee items (simulating coffee_config_handler.py behavior)
     items_by_type = lookup.menu_data.get("items_by_type", {})
-    sized_items = items_by_type.get("sized_beverage", [])
+    sized_items = items_by_type.get("coffee_based_beverage", [])
     cold_items = items_by_type.get("beverage", [])
     all_drinks = sized_items + cold_items
 
@@ -71,7 +71,7 @@ def test_boxed_coffee_matches_when_user_says_boxed():
     lookup = MenuLookup(menu_data)
 
     items_by_type = lookup.menu_data.get("items_by_type", {})
-    sized_items = items_by_type.get("sized_beverage", [])
+    sized_items = items_by_type.get("coffee_based_beverage", [])
     cold_items = items_by_type.get("beverage", [])
     all_drinks = sized_items + cold_items
 

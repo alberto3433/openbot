@@ -117,7 +117,7 @@ python -m pytest --tb=short -q 2>&1
 
 Categorize failures into these common root causes:
 
-1. **Item Type Detection** - Wrong item type detected (e.g., espresso vs sized_beverage)
+1. **Item Type Detection** - Wrong item type detected (e.g., espresso vs coffee_based_beverage)
 2. **Pricing Errors** - Missing prices, wrong calculations
 3. **Modifier Handling** - Add/remove modifier failures
 4. **Question Ordering** - Wrong attribute question asked
@@ -157,6 +157,6 @@ E   assert 'true' is True
 
 | Test | Input | Expected | Actual |
 |------|-------|----------|--------|
-| test_another_espresso_creates_menu_item_task | "another espresso" | item_type='espresso' | item_type='sized_beverage' |
-| test_parse_open_input_detects_another_espresso | "another espresso" | item_type='espresso' | item_type='sized_beverage' |
+| test_another_espresso_creates_menu_item_task | "another espresso" | item_type='espresso' | item_type='coffee_based_beverage' |
+| test_parse_open_input_detects_another_espresso | "another espresso" | item_type='espresso' | item_type='coffee_based_beverage' |
 ```

@@ -100,7 +100,7 @@ class TestIsSodaDrink:
     def test_is_soda_drink_with_coffee_beverage(self):
         """test_is_soda_drink should return False for coffee beverages."""
         from tests.helpers.menu_helpers import test_is_soda_drink
-        # Coffee beverages are sized_beverage, not beverage
+        # Coffee beverages are coffee_based_beverage, not beverage
         assert test_is_soda_drink("latte") is False
         assert test_is_soda_drink("cappuccino") is False
         assert test_is_soda_drink("espresso") is False

@@ -745,8 +745,22 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # If we already found an item with defaults, use that name; otherwise try to match
     item_name = matched_item_name or _match_menu_item_name_for_type(text, detected_item_type)
 
-    # 5a. If no specific menu item matched, try to pick a default for the item type
-    # This handles cases like "earl gray tea" where we want to default to "Hot Tea"
+    # 5a. Guard against creating generic items from partial trigger matches
+    # If we detected an item type but no specific menu item matched,
+    # check if there's unrecognized text that could be a missing menu item.
+    # E.g., "iced mocha" - "iced" triggers coffee_based_beverage but "mocha" is unrecognized.
+    # E.g., "large iced mocha" - "large" extracts size, "iced" triggers, but "mocha" is unrecognized.
+    # We check this BEFORE assigning a default, so unrecognized items get proper error handling.
+    if not item_name:
+        if _has_unrecognized_item_text(text, detected_item_type):
+            logger.info(
+                "CONFIGURABLE_ITEM: rejecting generic parse - unrecognized text in '%s' for type '%s'",
+                text[:50], detected_item_type
+            )
+            return None
+
+    # 5b. If no specific menu item matched (and no unrecognized text), try to pick a default
+    # This handles cases like "hot tea" or just "coffee" where we use the type's default item
     if not item_name:
         item_name = _get_default_menu_item_for_type(detected_item_type)
         if item_name:
@@ -903,23 +917,6 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s",
         detected_item_type, quantity, item_name, list(attr_result.values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions
     )
-
-    # 5e. Guard against creating generic items from partial trigger matches
-    # If we detected an item type but:
-    # - No specific menu item matched (item_name=None)
-    # - There's unrecognized text beyond ordering verbs/triggers
-    # Then return None to let the unrecognized item handler provide better suggestions.
-    # E.g., "iced mocha" - "iced" triggers espresso_based but "mocha" is unrecognized.
-    # E.g., "large iced mocha" - "large" extracts size, "iced" triggers, but "mocha" is unrecognized.
-    # Having size/temperature attributes extracted doesn't mean we understand WHAT they want.
-    if item_name is None:
-        # Check if there's unrecognized text that could be a missing menu item
-        if _has_unrecognized_item_text(text, detected_item_type):
-            logger.info(
-                "CONFIGURABLE_ITEM: rejecting generic parse - unrecognized text in '%s' for type '%s'",
-                text[:50], detected_item_type
-            )
-            return None
 
     # 6. Build ParsedItemEntry using build_parsed_item (converts attr_result to selections)
     # Create single entry with full quantity - ItemAdderHandler handles threshold logic

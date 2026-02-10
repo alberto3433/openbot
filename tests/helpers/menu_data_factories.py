@@ -141,7 +141,7 @@ def create_beverage_menu_data() -> dict:
             {"id": 104, "name": "Cappuccino", "base_price": 4.50},
         ],
         "item_types": {
-            "sized_beverage": {
+            "coffee_based_beverage": {
                 "attributes": [
                     {
                         "slug": "size",
@@ -265,7 +265,7 @@ def create_test_menu_data() -> dict:
                     },
                 ]
             },
-            "sized_beverage": {
+            "coffee_based_beverage": {
                 "attributes": [
                     {
                         "slug": "size",
@@ -407,7 +407,7 @@ def create_full_menu_data() -> dict:
                     },
                 ]
             },
-            "sized_beverage": {
+            "coffee_based_beverage": {
                 "attributes": [
                     {
                         "slug": "size",

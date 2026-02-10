@@ -147,7 +147,7 @@ class TestAddQuantityWithOneItemType:
 
         item = MenuItemTask(
             menu_item_name="Coffee",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
             menu_item_id=101,
             unit_price=2.00,
         )

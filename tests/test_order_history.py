@@ -197,11 +197,11 @@ class TestOrderHistoryHandler:
     def test_apply_modifications_iced(self):
         """Test applying 'iced' modification to items.
 
-        The 'iced' keyword now maps to '_variant_sized_beverage' attribute per the cache.
+        The 'iced' keyword now maps to '_variant_coffee_based_beverage' attribute per the cache.
         """
         handler = OrderHistoryHandler()
         items = [
-            {"menu_item_name": "Latte", "item_type": "sized_beverage", "attribute_values": {"size": "large"}}
+            {"menu_item_name": "Latte", "item_type": "coffee_based_beverage", "attribute_values": {"size": "large"}}
         ]
 
         modified, desc = handler.apply_modifications(items, "iced")
@@ -216,7 +216,7 @@ class TestOrderHistoryHandler:
         handler = OrderHistoryHandler()
         items = [
             {"menu_item_name": "Everything Bagel", "item_type": "bagel"},
-            {"menu_item_name": "Latte", "item_type": "sized_beverage"},
+            {"menu_item_name": "Latte", "item_type": "coffee_based_beverage"},
         ]
 
         modified, desc = handler.apply_modifications(items, "without the bagel")
@@ -229,7 +229,7 @@ class TestOrderHistoryHandler:
         """Test applying size modification."""
         handler = OrderHistoryHandler()
         items = [
-            {"menu_item_name": "Latte", "item_type": "sized_beverage", "attribute_values": {"size": "small"}}
+            {"menu_item_name": "Latte", "item_type": "coffee_based_beverage", "attribute_values": {"size": "small"}}
         ]
 
         modified, desc = handler.apply_modifications(items, "large")

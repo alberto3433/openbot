@@ -411,10 +411,15 @@ class TestQuantityChangeDuringConfig:
         assert non_complete_count == 2, \
             f"Expected 2 non-complete items after 'make it two', got {non_complete_count}"
 
-        # Configure the first tea with flavor (note: "camomile" not "chamomile")
+        # Answer size question for first tea (hot tea asks size first)
+        result = sm.process("large", order=order)
+        order = result.order
+        print(f"After 'large' (first tea size): {result.message}")
+
+        # Configure the first tea with flavor
         result = sm.process("earl grey", order=order)
         order = result.order
-        print(f"After 'earl grey' (first tea): {result.message}")
+        print(f"After 'earl grey' (first tea flavor): {result.message}")
 
         # Answer the milk/sweetener question for first tea
         result = sm.process("nothing", order=order)
@@ -432,13 +437,17 @@ class TestQuantityChangeDuringConfig:
         msg_lower = result.message.lower()
 
         # Continue configuring until we're done
-        max_steps = 5
+        max_steps = 10  # Increased to handle size + flavor + milk for both teas
         for step in range(max_steps):
-            if "anything else" in msg_lower and "flavor" not in msg_lower and "milk" not in msg_lower:
+            if "anything else" in msg_lower and "flavor" not in msg_lower and "milk" not in msg_lower and "size" not in msg_lower:
                 break
 
             # Check what the current question is asking for
-            if "flavor" in msg_lower:
+            if "size" in msg_lower:
+                result = sm.process("large", order=order)
+                order = result.order
+                print(f"Step {step + 1} - After 'large': {result.message}")
+            elif "flavor" in msg_lower:
                 result = sm.process("green tea", order=order)
                 order = result.order
                 print(f"Step {step + 1} - After 'green tea': {result.message}")

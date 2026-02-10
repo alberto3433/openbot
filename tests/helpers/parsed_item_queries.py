@@ -15,7 +15,7 @@ def get_parsed_items(result, item_type: str = None, is_signature: bool = None,
 
     Args:
         result: OpenInputResponse object
-        item_type: Filter by item_type (e.g., "bagel", "sized_beverage", "menu_item", "side")
+        item_type: Filter by item_type (e.g., "bagel", "coffee_based_beverage", "menu_item", "side")
         is_signature: Filter by is_signature flag
         item_name: Filter by item_name (case-insensitive substring match)
 
@@ -142,11 +142,11 @@ def get_coffee_item(result):
 
     Replaces: result.new_coffee is True / result.new_coffee_type
 
-    Checks for "sized_beverage", "espresso", "espresso_based", and "coffee" item types
+    Checks for "coffee_based_beverage", "espresso", "espresso_based", and "coffee" item types
     since parsers may use any of these depending on context.
     """
-    # Try sized_beverage first (new convention)
-    item = get_parsed_item(result, item_type="sized_beverage")
+    # Try coffee_based_beverage first (new convention)
+    item = get_parsed_item(result, item_type="coffee_based_beverage")
     if item is not None:
         return item
     # Try espresso
@@ -166,10 +166,10 @@ def has_coffee(result) -> bool:
 
     Replaces: result.new_coffee is True
 
-    Checks for "sized_beverage", "espresso", "espresso_based", and "coffee" item types.
+    Checks for "coffee_based_beverage", "espresso", "espresso_based", and "coffee" item types.
     """
     return (
-        has_parsed_item(result, item_type="sized_beverage") or
+        has_parsed_item(result, item_type="coffee_based_beverage") or
         has_parsed_item(result, item_type="espresso") or
         has_parsed_item(result, item_type="espresso_based") or
         has_parsed_item(result, item_type="coffee")

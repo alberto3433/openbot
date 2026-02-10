@@ -162,7 +162,8 @@ menu_categories:
 
 # Item type slugs that shouldn't be hardcoded
 item_type_slugs:
-  - sized_beverage
+  - coffee_based_beverage
+  - cocoa_based_beverage
   - sized_hot_beverage
   - spread_container
   - bagel_sandwich

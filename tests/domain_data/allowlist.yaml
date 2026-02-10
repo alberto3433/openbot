@@ -39,7 +39,7 @@ orderbot/cache/base.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
@@ -133,7 +133,7 @@ orderbot/cache/item_type_queries.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
@@ -185,7 +185,7 @@ orderbot/cache/menu_queries.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: snack
@@ -281,7 +281,7 @@ orderbot/menu_index_builder.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: sugar
@@ -357,7 +357,7 @@ orderbot/models.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: small
@@ -660,7 +660,7 @@ orderbot/schemas/orders.py:
   - term: no ice
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
@@ -741,7 +741,7 @@ orderbot/services/item_type_helpers.py:
   - term: bagel
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
@@ -796,7 +796,7 @@ orderbot/tasks/config_helper_handler.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: toasted
@@ -837,7 +837,7 @@ orderbot/tasks/configuring_item_handler.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: small
@@ -868,7 +868,7 @@ orderbot/tasks/field_config.py:
   - term: coffee
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
@@ -924,7 +924,7 @@ orderbot/tasks/item_adder_handler.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: soda
@@ -953,7 +953,7 @@ orderbot/tasks/item_converters.py:
   - term: sides
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
@@ -1106,7 +1106,7 @@ orderbot/tasks/menu_lookup.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
@@ -1408,7 +1408,7 @@ orderbot/tasks/parsers/deterministic.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: small
@@ -1578,7 +1578,7 @@ orderbot/tasks/pricing.py:
   - term: sides
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: small
@@ -1699,7 +1699,7 @@ orderbot/tasks/taking_items_handler.py:
   - term: pumpernickel
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
-  - term: sized_beverage
+  - term: coffee_based_beverage
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
   - term: sugar

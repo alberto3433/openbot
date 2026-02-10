@@ -39,7 +39,7 @@ def _get_parsed_item_type(item) -> str:
     item_type = getattr(item, 'item_type', None)
     if item_type:
         # Map item_type to legacy type names for test compatibility
-        if item_type in ("sized_beverage", "espresso_based"):
+        if item_type in ("coffee_based_beverage", "espresso_based"):
             return "coffee"
         return item_type
     return 'unknown'
@@ -48,7 +48,7 @@ def _get_parsed_item_type(item) -> str:
 def _is_coffee_item(item) -> bool:
     """Check if a ParsedItem is a coffee/beverage."""
     item_type = getattr(item, 'item_type', None)
-    return item_type in ("sized_beverage", "espresso_based")
+    return item_type in ("coffee_based_beverage", "espresso_based")
 
 
 def _is_bagel_item(item) -> bool:
@@ -158,13 +158,13 @@ class TestDeterministicParserHelpers:
         assert spread == "blueberry_cream_cheese", f"Expected 'blueberry_cream_cheese' but got '{spread}'"
 
     def test_extract_unavailable_size_option(self):
-        """Test that extraction detects unavailable 'medium' size for sized_beverage.
+        """Test that extraction detects unavailable 'medium' size for coffee_based_beverage.
 
         Database has medium size with is_available=False. The extraction should
         detect this and store it in .unavailable list for helpful user messaging.
         """
         # "medium hot coffee" should detect that medium is unavailable
-        result = _test_pipeline.extract_attributes("medium hot coffee", "sized_beverage")
+        result = _test_pipeline.extract_attributes("medium hot coffee", "coffee_based_beverage")
 
         # Should have unavailable entry for size attribute
         size_unavail = [u for u in result.unavailable if u.attr_slug == "size"]
@@ -183,7 +183,7 @@ class TestDeterministicParserHelpers:
     def test_extract_available_size_option(self):
         """Test that available size options are extracted normally."""
         # "large hot coffee" should extract size=large (available)
-        result = _test_pipeline.extract_attributes("large hot coffee", "sized_beverage")
+        result = _test_pipeline.extract_attributes("large hot coffee", "coffee_based_beverage")
 
         # Should have size=large (single_select returns slug directly)
         assert result.values.get("size") == "large", (
@@ -208,7 +208,7 @@ class TestDeterministicParserHelpers:
         The fix adds option aliases to attr_option_slugs so they're properly
         skipped by _extract_modifiers_generic.
         """
-        result = _test_pipeline.extract_attributes("small coffee with oat milk", "sized_beverage")
+        result = _test_pipeline.extract_attributes("small coffee with oat milk", "coffee_based_beverage")
         milk_entries = result.values.get("milk_sweetener_syrup", [])
         assert len(milk_entries) == 1, (
             f"Expected 1 milk entry, got {len(milk_entries)}: {milk_entries}"
@@ -1990,14 +1990,14 @@ class TestSplitQuantityDrinksParsing:
         """Test parsing 'two coffees one with milk one black'.
 
         Tests split-quantity parsing for drinks. Note: attribute extraction
-        depends on database configuration for sized_beverage type.
+        depends on database configuration for coffee_based_beverage type.
         """
         from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
         result = _parse_split_quantity_items("two coffees one with milk one black")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="sized_beverage")
-        assert len(drinks) == 2, f"Expected 2 sized_beverage, got {len(drinks)}. All: {[(i.item_type, i.item_name) for i in result.parsed_items]}"
+        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
+        assert len(drinks) == 2, f"Expected 2 coffee_based_beverage, got {len(drinks)}. All: {[(i.item_type, i.item_name) for i in result.parsed_items]}"
         # Both coffees should be detected
         assert "coffee" in drinks[0].item_name.lower()
         assert "coffee" in drinks[1].item_name.lower()
@@ -2011,7 +2011,7 @@ class TestSplitQuantityDrinksParsing:
 
         result = _parse_split_quantity_items("two lattes one iced one hot")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="sized_beverage")
+        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
         assert len(drinks) == 2
         assert drinks[0].attribute_values.get("temperature") == "iced"
         assert drinks[1].attribute_values.get("temperature") == "hot"
@@ -2023,7 +2023,7 @@ class TestSplitQuantityDrinksParsing:
 
         result = _parse_split_quantity_items("two teas one with oat milk one plain")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="sized_beverage")
+        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
         assert len(drinks) == 2
         # "tea" alias resolves to canonical name like "Iced Tea" or "Hot Tea"
         assert "tea" in drinks[0].item_name.lower()
@@ -2039,7 +2039,7 @@ class TestSplitQuantityDrinksParsing:
 
         result = _parse_split_quantity_items("three coffees one iced one hot one decaf")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="sized_beverage")
+        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
         assert len(drinks) == 3
         # All three should be coffees
         for drink in drinks:
@@ -2051,7 +2051,7 @@ class TestSplitQuantityDrinksParsing:
 
         result = _parse_split_quantity_items("2 coffees one with almond milk one black")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="sized_beverage")
+        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
         assert len(drinks) == 2
         # Both should be coffees
         assert "coffee" in drinks[0].item_name.lower()
@@ -2080,7 +2080,7 @@ class TestSplitQuantityDrinksParsing:
 
         result = _parse_split_quantity_items("two large lattes one iced one hot")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="sized_beverage")
+        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
         assert len(drinks) == 2
         # Both should have the large size
         assert drinks[0].attribute_values.get("size") == "large"
@@ -2099,7 +2099,7 @@ class TestSplitQuantityDrinksParsing:
 
         result = _parse_split_quantity_items("3 coffees, one iced, two hot")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="sized_beverage")
+        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
         assert len(drinks) == 3
         # First coffee: iced
         assert "iced" in drinks[0].item_name.lower()
@@ -2117,7 +2117,7 @@ class TestSplitQuantityDrinksParsing:
 
         result = _parse_split_quantity_items("2 coffees, one hot, one iced")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="sized_beverage")
+        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
         assert len(drinks) == 2
         # First coffee: hot
         assert "hot" in drinks[0].item_name.lower()
@@ -2278,7 +2278,7 @@ class TestParsedItemsMultiItem:
         assert len(result.parsed_items) == 2
 
         types = [_get_parsed_item_type(item) for item in result.parsed_items]
-        assert "coffee" in types or "sized_beverage" in types, f"Expected coffee in parsed_items, got: {types}"
+        assert "coffee" in types or "coffee_based_beverage" in types, f"Expected coffee in parsed_items, got: {types}"
         assert "bagel" in types or "menu_item" in types, f"Expected bagel/menu_item in parsed_items, got: {types}"
 
         # Verify coffee details
@@ -2385,8 +2385,8 @@ class TestParsedItemsMultiItem:
         # Check item types
         types = [_get_parsed_item_type(item) for item in result.parsed_items]
         assert "egg_sandwich" in types, f"Expected egg_sandwich, got: {types}"
-        # Latte can be espresso_based, sized_beverage, or coffee depending on parsing path
-        coffee_types = {"espresso_based", "sized_beverage", "coffee"}
+        # Latte can be espresso_based, coffee_based_beverage, or coffee depending on parsing path
+        coffee_types = {"espresso_based", "coffee_based_beverage", "coffee"}
         assert any(t in coffee_types for t in types), f"Expected a coffee-type item, got: {types}"
 
     def test_egg_and_cheese_on_plain_bagel_and_a_coffee_is_multi_item(self):
@@ -2405,8 +2405,8 @@ class TestParsedItemsMultiItem:
         # Check item types
         types = [_get_parsed_item_type(item) for item in result.parsed_items]
         assert "egg_sandwich" in types, f"Expected egg_sandwich, got: {types}"
-        # Coffee can be sized_beverage or coffee depending on parsing path
-        coffee_types = {"sized_beverage", "coffee"}
+        # Coffee can be coffee_based_beverage or coffee depending on parsing path
+        coffee_types = {"coffee_based_beverage", "coffee"}
         assert any(t in coffee_types for t in types), f"Expected a coffee-type item, got: {types}"
 
         # Verify the egg sandwich has the bread attribute
@@ -2446,10 +2446,10 @@ class TestDuplicatePatterns:
         ("another bagel", "bagel"),
         ("another bagels", "bagel"),
         ("one more bagel", "bagel"),
-        # Sized beverages - uses "sized_beverage" item type (data-driven from database)
-        # Note: The old hardcoded mapping returned "coffee" but the database uses "sized_beverage"
-        ("another coffee", "sized_beverage"),
-        ("one more coffee", "sized_beverage"),
+        # Sized beverages - uses "coffee_based_beverage" item type (data-driven from database)
+        # Note: The old hardcoded mapping returned "coffee" but the database uses "coffee_based_beverage"
+        ("another coffee", "coffee_based_beverage"),
+        ("one more coffee", "coffee_based_beverage"),
         ("another tea", "tea"),
         # Espresso-based drinks use "espresso_based" item type (have size, unlike plain espresso)
         ("another latte", "espresso_based"),
@@ -2882,7 +2882,7 @@ class TestAddModifierToItem:
 
         # The item should be a latte/espresso type
         item = result.parsed_items[0]
-        assert item.item_type in ("espresso_based", "sized_beverage", "latte"), (
+        assert item.item_type in ("espresso_based", "coffee_based_beverage", "latte"), (
             f"Expected espresso/beverage type, got: {item.item_type}"
         )
 

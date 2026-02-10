@@ -61,15 +61,15 @@ class TestSyrupToExistingBeverage:
         - User says: "vanilla syrup"
         - Expected: syrup added to coffee, NOT new coffee created
 
-        Note: Coffee is now a data-driven MenuItemTask with menu_item_type="sized_beverage".
+        Note: Coffee is now a data-driven MenuItemTask with menu_item_type="coffee_based_beverage".
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
 
-        # Add coffee to the order (as MenuItemTask with sized_beverage type)
+        # Add coffee to the order (as MenuItemTask with coffee_based_beverage type)
         coffee = MenuItemTask(
             menu_item_name="coffee",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
         )
         coffee.attribute_values["size"] = "medium"
         coffee.attribute_values["iced"] = False
@@ -86,10 +86,10 @@ class TestSyrupToExistingBeverage:
         # Should still have 1 item
         assert len(result.order.items.items) == 1, f"Expected 1 item, got {len(result.order.items.items)}"
 
-        # The item should be a sized_beverage MenuItemTask
+        # The item should be a coffee_based_beverage MenuItemTask
         item = result.order.items.items[0]
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
-        assert item.has_attribute('size'), "Expected is_sized_beverage to be True"
+        assert item.has_attribute('size'), "Expected is_coffee_based_beverage to be True"
 
         # Check that vanilla syrup was added (unified selections list)
         syrup_modifiers = [m for m in (item.modifiers or []) if m.get("category") == "syrup"]
@@ -306,7 +306,7 @@ class TestQuantityPrefixes:
         # Add a coffee to the order
         coffee = MenuItemTask(
             menu_item_name="Coffee",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
         )
         coffee.attribute_values["size"] = "medium"
         coffee.mark_complete()
@@ -428,7 +428,7 @@ class TestShotsHandling:
 
         sm = OrderStateMachine()
 
-        # Order a coffee (sized_beverage) to get the shots question
+        # Order a coffee (coffee_based_beverage) to get the shots question
         result = sm.process("large black coffee", order)
         assert len(result.order.items.items) == 1
 
@@ -865,7 +865,7 @@ class TestChangeRequestWithQuantity:
         # Create a pre-configured latte with 1 vanilla syrup
         latte = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
         )
         latte.attribute_values["size"] = "medium"
         latte.attribute_values["iced"] = False
@@ -926,13 +926,13 @@ class TestSyrupDisambiguationWithMultiInput:
         # Create a latte that is already configured up to milk/sweetener/syrup question
         latte = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
         )
         latte.attribute_values["size"] = "large"
         latte.attribute_values["iced"] = True
         order.items.add_item(latte)
         order.pending_item_id = latte.id
-        order.pending_field = "sized_beverage:milk_sweetener_syrup"
+        order.pending_field = "coffee_based_beverage:milk_sweetener_syrup"
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
         sm = OrderStateMachine()
@@ -984,13 +984,13 @@ class TestSyrupDisambiguationWithMultiInput:
 
         latte = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
         )
         latte.attribute_values["size"] = "large"
         latte.attribute_values["iced"] = True
         order.items.add_item(latte)
         order.pending_item_id = latte.id
-        order.pending_field = "sized_beverage:milk_sweetener_syrup"
+        order.pending_field = "coffee_based_beverage:milk_sweetener_syrup"
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
         sm = OrderStateMachine()
@@ -1021,13 +1021,13 @@ class TestSyrupDisambiguationWithMultiInput:
 
         latte = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="sized_beverage",
+            menu_item_type="coffee_based_beverage",
         )
         latte.attribute_values["size"] = "large"
         latte.attribute_values["iced"] = True
         order.items.add_item(latte)
         order.pending_item_id = latte.id
-        order.pending_field = "sized_beverage:milk_sweetener_syrup"
+        order.pending_field = "coffee_based_beverage:milk_sweetener_syrup"
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
         sm = OrderStateMachine()

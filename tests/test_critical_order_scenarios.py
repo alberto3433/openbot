@@ -61,7 +61,7 @@ class TestCriticalOrderScenarios:
                 break  # All done
 
             # Check pending_field to determine the correct response
-            # pending_field format is now "item_type:attribute" (e.g., "sized_beverage:size")
+            # pending_field format is now "item_type:attribute" (e.g., "coffee_based_beverage:size")
             pending = order.pending_field or ""
             pending_attr = pending.split(":")[-1] if ":" in pending else pending
 

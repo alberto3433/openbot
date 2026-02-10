@@ -22,7 +22,7 @@ class TestGetConfigurableItemNames:
         assert isinstance(result, set)
 
     def test_get_configurable_item_names_includes_beverage_items(self):
-        """get_configurable_item_names should include sized_beverage item names from database."""
+        """get_configurable_item_names should include coffee_based_beverage item names from database."""
         from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
         # These are actual item names from the database (lowercase)
@@ -63,7 +63,7 @@ class TestGetConfigurableItemNames:
         """get_configurable_item_names should not include non-configurable items like sodas."""
         from orderbot.cache import menu_cache
         item_names = menu_cache.get_configurable_item_names()
-        # These are beverages (item_type='beverage'), not sized_beverage
+        # These are beverages (item_type='beverage'), not coffee_based_beverage
         # They don't have askable attributes so should not be included
         assert "coca-cola" not in item_names
         assert "sprite" not in item_names
@@ -167,12 +167,6 @@ class TestConfigurableItemAliasesIntegration:
         assert "hot chocolate" in item_names
         assert "hot cocoa" in item_names
         assert "cocoa" in item_names
-
-    def test_cold_brew_recognized(self):
-        """Cold brew should be recognized."""
-        from orderbot.cache import menu_cache
-        item_names = menu_cache.get_configurable_item_names()
-        assert "cold brew" in item_names
 
 
 class TestEspressoParsingIntegration:

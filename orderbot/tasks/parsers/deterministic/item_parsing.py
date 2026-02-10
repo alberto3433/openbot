@@ -591,35 +591,25 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # specific menu items like "Bagel Chips - Salt", "Bagel Chips - BBQ", etc.
     # Use text_cleaned (ordering phrases stripped) for more accurate matching
     more_specific_matches = menu_cache.find_items_by_word_match(text_cleaned)
+
+    # Also check if any complete menu item name (from a different type) appears as a
+    # phrase in the user's input. This catches cases like "hot chai tea" where "chai tea"
+    # is a complete menu item (type: chai_drink) but the trigger word "tea" detected
+    # the "tea" type. We want to defer to the more specific match.
+    text_cleaned_lower = text_cleaned.lower()
+    for item_name, item_info in menu_cache._menu_items.items():
+        item_type = item_info.get("item_type")
+        if item_type and item_type != detected_item_type:
+            item_name_lower = item_name.lower()
+            # Check if this menu item name appears as a word-boundary phrase in input
+            if re.search(rf'\b{re.escape(item_name_lower)}\b', text_cleaned_lower):
+                logger.info(
+                    "CONFIGURABLE_ITEM: skipping '%s' - found complete menu item '%s' of type '%s' (detected: %s)",
+                    text[:50], item_name, item_type, detected_item_type
+                )
+                return None
+
     if more_specific_matches:
-        text_cleaned_lower = text_cleaned.lower()
-
-        # FIRST: Check for complete menu item name matches from a DIFFERENT type
-        # This catches cases like "hot chai tea" where "chai tea" is a complete menu item
-        # (type: chai_drink) but "hot" also matches "Hot Tea" (type: tea).
-        # We prefer the more specific match where the complete name appears in the input.
-        for match in more_specific_matches:
-            match_name = match.get("name", "").lower()
-            match_type = match.get("item_type")
-            if match_name and match_type and match_type != detected_item_type:
-                # Check if this complete menu item name appears as a phrase in the input
-                if re.search(rf'\b{re.escape(match_name)}\b', text_cleaned_lower):
-                    logger.info(
-                        "CONFIGURABLE_ITEM: skipping '%s' - found complete menu item '%s' of type '%s' (detected: %s)",
-                        text[:50], match.get("name"), match_type, detected_item_type
-                    )
-                    return None
-
-        # THEN: Check if ANY of the specific matches are from a DIFFERENT item type than detected
-        # This indicates the user likely wants a specific menu item, not a configurable one
-        specific_item_types = {m.get("item_type") for m in more_specific_matches if m.get("item_type")}
-        if specific_item_types and detected_item_type not in specific_item_types:
-            logger.info(
-                "CONFIGURABLE_ITEM: skipping '%s' - found %d more specific menu items with types %s (detected: %s)",
-                text[:50], len(more_specific_matches), specific_item_types, detected_item_type
-            )
-            return None
-
         # Check if user's input has extra specificity beyond the item type word
         # e.g., "bagel package" has "package" beyond "bagel", and if "package" appears
         # in matching menu items like "3 Bagel Package", defer to menu item lookup

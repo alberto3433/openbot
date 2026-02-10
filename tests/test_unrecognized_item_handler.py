@@ -145,11 +145,11 @@ class TestGenericFallback(TestUnrecognizedItemHandler):
         with patch('orderbot.tasks.unrecognized_item_handler.menu_cache') as mock_cache:
             mock_cache.get_all_menu_item_names.return_value = []
             mock_cache.get_categories_for_inference.return_value = []
-            mock_cache.get_available_menu_categories.return_value = {
-                "drink": "Drinks",
-                "food": "Food",
-                "pastry": "Pastries",
-            }
+            mock_cache.get_menu_display_groups.return_value = [
+                {"display_name": "Drinks"},
+                {"display_name": "Food"},
+                {"display_name": "Pastries"},
+            ]
 
             with patch.object(handler, '_infer_category_with_llm') as mock_llm:
                 mock_llm.return_value = None
@@ -169,7 +169,7 @@ class TestGenericFallback(TestUnrecognizedItemHandler):
         with patch('orderbot.tasks.unrecognized_item_handler.menu_cache') as mock_cache:
             mock_cache.get_all_menu_item_names.return_value = []
             mock_cache.get_categories_for_inference.return_value = []
-            mock_cache.get_available_menu_categories.return_value = {}
+            mock_cache.get_menu_display_groups.return_value = []
 
             with patch.object(handler, '_infer_category_with_llm') as mock_llm:
                 mock_llm.return_value = None

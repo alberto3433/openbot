@@ -93,6 +93,8 @@ class UnrecognizedItemHandler:
         item_name_normalized = item_name.lower().strip()
         # Strip filler words for lookup (some, a, an, the)
         item_name_for_lookup = strip_leading_filler_words(item_name_normalized)
+        # Strip trailing punctuation (?, !, .)
+        item_name_for_lookup = item_name_for_lookup.rstrip('?!.')
 
         order_item_count = 0
         if order and hasattr(order, 'items') and hasattr(order.items, 'items'):
@@ -251,7 +253,7 @@ class UnrecognizedItemHandler:
     ) -> tuple[str, str | None]:
         """Build response from curated suggestion."""
         # Clean up item name by removing filler words
-        clean_name = strip_leading_filler_words(item_name)
+        clean_name = strip_leading_filler_words(item_name).rstrip('?!.')
 
         # If specific menu items are suggested
         if curated.get("menu_items"):
@@ -343,7 +345,7 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> str:
         """Build response with fuzzy match suggestions."""
-        clean_name = strip_leading_filler_words(item_name)
+        clean_name = strip_leading_filler_words(item_name).rstrip('?!.')
         match_list = format_english_list(fuzzy_matches, conjunction="or")
         followup = self._get_order_aware_followup(order_item_count, len(fuzzy_matches))
         return f"We don't have {clean_name}. Did you mean {match_list}? {followup}"
@@ -378,7 +380,7 @@ class UnrecognizedItemHandler:
         order_item_count: int,
     ) -> tuple[str, str | None]:
         """Build response based on LLM-inferred category."""
-        clean_name = strip_leading_filler_words(item_name)
+        clean_name = strip_leading_filler_words(item_name).rstrip('?!.')
         suggestions = self.menu_lookup.get_suggestions_for_item_type(
             category_slug, limit=4
         )
@@ -409,7 +411,7 @@ class UnrecognizedItemHandler:
         Uses high-level display groups (Breads, Sandwiches, Drinks) instead of
         granular item types (Bagels, Chai Drinks, etc.) for cleaner UX.
         """
-        clean_name = strip_leading_filler_words(item_name)
+        clean_name = strip_leading_filler_words(item_name).rstrip('?!.')
         # Get high-level display groups
         display_groups = menu_cache.get_menu_display_groups()
 

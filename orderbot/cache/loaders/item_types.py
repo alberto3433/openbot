@@ -6,7 +6,7 @@ Contains loader methods for item types, attributes, and related configuration.
 
 import logging
 
-from ..base import build_index_by_key
+from ..base import build_index_by_key, pluralize
 
 logger = logging.getLogger(__name__)
 
@@ -427,7 +427,7 @@ class ItemTypeLoaderMixin:
         for item_type in item_types:
             slug = item_type.slug
             display_name = item_type.display_name
-            display_name_plural = item_type.display_name_plural or f"{display_name}s"
+            display_name_plural = item_type.display_name_plural or pluralize(display_name)
 
             category_info = {
                 "slug": slug,
@@ -453,7 +453,7 @@ class ItemTypeLoaderMixin:
         for category in categories:
             slug = category.slug
             display_name = category.name
-            display_name_plural = f"{display_name}s" if not display_name.endswith('s') else display_name
+            display_name_plural = pluralize(display_name)
 
             category_info = {
                 "slug": slug,

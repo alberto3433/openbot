@@ -167,11 +167,13 @@ class AttributeUpchargeCalculator:
                         matching_modifier["price"] = upcharge
                 else:
                     # Check if category is included
+                    # BUT: only apply "included" discount if this is a default ingredient.
                     option_category = self._pricing._get_option_ingredient_category(
                         item_type, attr_slug, item_val
                     )
-                    if option_category and option_category in included_categories:
-                        # Mark as priced even at $0 to prevent double-counting
+                    is_default = matching_modifier.get("is_default", False) if matching_modifier else False
+                    if option_category and option_category in included_categories and is_default:
+                        # This is a default ingredient in an included category - no charge
                         priced_slugs.add(item_val_normalized)
                         if matching_modifier:
                             matching_modifier["price"] = 0.0
@@ -244,11 +246,14 @@ class AttributeUpchargeCalculator:
             return upcharge * quantity, priced_slugs
 
         # Check if category is included (no charge)
+        # BUT: only apply "included" discount if this is a default ingredient.
+        # If user explicitly added/upgraded the item (is_default=False), charge for it.
         option_category = self._pricing._get_option_ingredient_category(
             item_type, attr_slug, attr_value
         )
-        if option_category and option_category in included_categories:
-            # Mark as priced even at $0 to prevent double-counting
+        is_default_ingredient = matching_modifier.get("is_default", False) if matching_modifier else False
+        if option_category and option_category in included_categories and is_default_ingredient:
+            # This is a default ingredient in an included category - no charge
             priced_slugs.add(attr_value_normalized)
             if matching_modifier:
                 matching_modifier["price"] = 0.0

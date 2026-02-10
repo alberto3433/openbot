@@ -13,6 +13,7 @@ This module is order-state aware, adjusting responses based on cart contents.
 import logging
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import singularize
 from orderbot.constants import FUZZY_MATCH_THRESHOLD, MAX_FUZZY_MATCHES
 
 from .menu_lookup import MenuLookup
@@ -150,6 +151,9 @@ class UnrecognizedItemHandler:
         """
         Check the curated suggestions table for a matching pattern.
 
+        Tries both the original input and singularized form to handle
+        plural variations (e.g., "tacos" -> "taco").
+
         Args:
             normalized_input: Lowercase, stripped item name
 
@@ -162,45 +166,53 @@ class UnrecognizedItemHandler:
 
         logger.debug("Checking curated suggestions for: '%s'", normalized_input)
 
+        # Build list of forms to try: original and singularized
+        forms_to_try = [normalized_input]
+        singular_form = singularize(normalized_input)
+        if singular_form and singular_form != normalized_input:
+            forms_to_try.append(singular_form)
+
         try:
             from orderbot.db.models import UnrecognizedItemSuggestion
 
-            # Try exact match first
-            suggestion = self._db_session.query(UnrecognizedItemSuggestion).filter(
-                UnrecognizedItemSuggestion.is_active == True,
-                UnrecognizedItemSuggestion.match_type == "exact",
-                UnrecognizedItemSuggestion.input_pattern == normalized_input,
-            ).first()
+            # Try exact match first (for both original and singular forms)
+            for form in forms_to_try:
+                suggestion = self._db_session.query(UnrecognizedItemSuggestion).filter(
+                    UnrecognizedItemSuggestion.is_active == True,
+                    UnrecognizedItemSuggestion.match_type == "exact",
+                    UnrecognizedItemSuggestion.input_pattern == form,
+                ).first()
 
-            if suggestion:
-                # Increment hit count
-                suggestion.hit_count += 1
-                self._db_session.commit()
-                return self._extract_suggestion_data(suggestion)
+                if suggestion:
+                    suggestion.hit_count += 1
+                    self._db_session.commit()
+                    return self._extract_suggestion_data(suggestion)
 
-            # Try prefix match
+            # Try prefix match (for both forms)
             suggestions = self._db_session.query(UnrecognizedItemSuggestion).filter(
                 UnrecognizedItemSuggestion.is_active == True,
                 UnrecognizedItemSuggestion.match_type == "prefix",
             ).all()
 
             for s in suggestions:
-                if normalized_input.startswith(s.input_pattern):
-                    s.hit_count += 1
-                    self._db_session.commit()
-                    return self._extract_suggestion_data(s)
+                for form in forms_to_try:
+                    if form.startswith(s.input_pattern):
+                        s.hit_count += 1
+                        self._db_session.commit()
+                        return self._extract_suggestion_data(s)
 
-            # Try contains match
+            # Try contains match (for both forms)
             suggestions = self._db_session.query(UnrecognizedItemSuggestion).filter(
                 UnrecognizedItemSuggestion.is_active == True,
                 UnrecognizedItemSuggestion.match_type == "contains",
             ).all()
 
             for s in suggestions:
-                if s.input_pattern in normalized_input:
-                    s.hit_count += 1
-                    self._db_session.commit()
-                    return self._extract_suggestion_data(s)
+                for form in forms_to_try:
+                    if s.input_pattern in form:
+                        s.hit_count += 1
+                        self._db_session.commit()
+                        return self._extract_suggestion_data(s)
 
         except Exception as e:
             logger.warning("Failed to query curated suggestions: %s", e)
@@ -392,18 +404,22 @@ class UnrecognizedItemHandler:
         item_name: str,
         order_item_count: int,
     ) -> str:
-        """Build generic fallback response with top categories."""
-        clean_name = strip_leading_filler_words(item_name)
-        # Get available categories
-        categories = menu_cache.get_available_menu_categories()
+        """Build generic fallback response with top categories.
 
-        if categories:
-            # Show top 3-4 categories
-            category_names = list(categories.values())[:4]
-            category_list = format_english_list(category_names, conjunction="and")
+        Uses high-level display groups (Breads, Sandwiches, Drinks) instead of
+        granular item types (Bagels, Chai Drinks, etc.) for cleaner UX.
+        """
+        clean_name = strip_leading_filler_words(item_name)
+        # Get high-level display groups
+        display_groups = menu_cache.get_menu_display_groups()
+
+        if display_groups:
+            # Show top 3-4 display groups
+            group_names = [g["display_name"] for g in display_groups][:4]
+            group_list = format_english_list(group_names, conjunction="and")
             return (
                 f"I'm sorry, we don't have {clean_name}. "
-                f"We do have {category_list} though - would any of those interest you?"
+                f"We do have {group_list} though - would any of those interest you?"
             )
         else:
             return (

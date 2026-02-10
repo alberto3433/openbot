@@ -140,7 +140,10 @@ class TakingItemsHandler(MenuDataMixin):
             item_adder_handler=item_adder_handler,
             pricing=config.pricing,
         )
-        self._dietary_inquiry_handler = DietaryInquiryHandler(config=config)
+        self._dietary_inquiry_handler = DietaryInquiryHandler(
+            config=config,
+            unrecognized_handler=self._unrecognized_handler,
+        )
         self._inquiry_router = InquiryRouter(
             menu_inquiry_handler=menu_inquiry_handler,
             store_info_handler=store_info_handler,

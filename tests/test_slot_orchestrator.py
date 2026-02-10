@@ -104,7 +104,7 @@ def mock_get_item_type_attributes(item_type):
         return MOCK_COFFEE_ATTRIBUTES
     elif item_type == "espresso":
         return MOCK_COFFEE_ATTRIBUTES  # Espresso drinks use same attributes as coffee_based_beverage
-    elif item_type == "espresso_based":
+    elif item_type == "espresso_based_beverage":
         return MOCK_COFFEE_ATTRIBUTES  # Espresso-based drinks (latte, cappuccino) use same attributes
     elif item_type == "omelette":
         return MOCK_OMELETTE_ATTRIBUTES

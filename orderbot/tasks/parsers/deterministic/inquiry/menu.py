@@ -226,8 +226,16 @@ def parse_more_menu_items(text: str) -> OpenInputResponse | None:
                 # Clean up common suffixes
                 if category.endswith(' options'):
                     category = category[:-8].strip()
-                if category:
+                # Filter out common phrases that aren't real categories
+                # "what else do you have?" captures "do you have" which is not a category
+                non_category_phrases = {
+                    "do you have", "are there", "can i get", "you got",
+                    "is there", "have you got", "do you got",
+                }
+                if category and category not in non_category_phrases:
                     logger.info("MORE MENU ITEMS: extracted category '%s'", category)
+                else:
+                    category = None
 
             return OpenInputResponse(wants_more_menu_items=True, more_menu_category=category)
 

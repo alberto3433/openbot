@@ -937,7 +937,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
 def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
     """Check if text contains words that look like an unrecognized menu item.
 
-    Used to detect cases like "iced mocha" where "iced" triggers espresso_based
+    Used to detect cases like "iced mocha" where "iced" triggers espresso_based_beverage
     but "mocha" is not a recognized item. In such cases, we should reject the
     generic parse and let the unrecognized item handler provide better suggestions.
 
@@ -1037,9 +1037,8 @@ def _get_default_menu_item_for_type(item_type_slug: str) -> str | None:
     which specific menu item they want (e.g., "Hot Tea" vs "Green Tea").
 
     The default is selected by:
-    1. Looking for "Hot X" variant (common default for beverages)
-    2. Looking for item name ending with the type (e.g., "Chai Tea" for "tea")
-    3. Falling back to the first item in the list
+    1. Looking for item name ending with the type (e.g., "Chai Tea" for "tea")
+    2. Falling back to the first item alphabetically
 
     Args:
         item_type_slug: The item type slug
@@ -1054,13 +1053,8 @@ def _get_default_menu_item_for_type(item_type_slug: str) -> str | None:
     if len(item_names) == 1:
         return item_names[0].title()
 
-    # Look for "Hot X" variant (common default for beverages)
-    type_display = item_type_slug.replace('_', ' ')
-    for name in item_names:
-        if name.lower().startswith('hot '):
-            return name.title()
-
     # Look for item name ending with the type slug word
+    type_display = item_type_slug.replace('_', ' ')
     for name in item_names:
         if name.lower().endswith(type_display):
             return name.title()

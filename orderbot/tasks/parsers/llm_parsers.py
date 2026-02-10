@@ -216,12 +216,37 @@ def parse_open_input(
     ]:
         cleaned = cleaned.replace(phrase, "")
 
+    # Check for repeated quantity patterns (e.g., "2 plain bagels 2 everything bagels")
+    # This handles space-separated items without "and" or commas
+    quantity_pattern = re.compile(
+        r'(?:^|\s)(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+\w+',
+        re.IGNORECASE
+    )
+    quantity_matches = quantity_pattern.findall(cleaned)
+    has_repeated_quantities = len(quantity_matches) >= 2
+
     # If "and" or comma still appears, it might be multi-item OR a single item with modifiers
+    # Also try multi-item parsing if we detect repeated quantity patterns
     # Try multi-item parsing first - the multi-item parser has built-in logic to detect
     # modifier chains ("bagel with butter and cream cheese") and will return None for those.
-    if " and " in cleaned or ", " in cleaned:
+    if " and " in cleaned or ", " in cleaned or has_repeated_quantities:
         logger.info("Potential multi-item detected, trying multi-item parse: %s", user_input[:50])
-        result = _parse_multi_item_order(user_input)
+
+        # If we detected repeated quantities without commas, normalize by inserting commas
+        # e.g., "2 plain bagels 2 everything bagels" -> "2 plain bagels, 2 everything bagels"
+        parse_input = user_input
+        if has_repeated_quantities and ", " not in input_lower and " and " not in cleaned:
+            # Insert comma between item (word ending in 's') and following quantity
+            parse_input = re.sub(
+                r'(\w+s)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)(?=\s+\w)',
+                r'\1, \2',
+                user_input,
+                flags=re.IGNORECASE
+            )
+            if parse_input != user_input:
+                logger.info("Normalized repeated quantities: %s", parse_input[:60])
+
+        result = _parse_multi_item_order(parse_input)
         if result is not None:
             logger.info("Parsed multi-item order deterministically: %s", user_input[:50])
             return result

@@ -18,6 +18,7 @@ import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import pluralize
 
 from .models import OrderTask
 from .pending_fields import PendingField
@@ -69,15 +70,18 @@ class MenuInquiryHandler(MenuDataMixin):
     def _get_available_menu_categories_message(self) -> str:
         """Build a message listing a few available menu categories from database.
 
-        Returns a formatted string like "sandwiches or beverages" for use in
+        Returns a formatted string like "sandwiches or drinks" for use in
         helpful suggestions when an item isn't found.
+
+        Uses high-level display groups (Breads, Sandwiches, Drinks) instead of
+        granular item types (Bagels, Chai Drinks, etc.) for cleaner UX.
         """
         try:
-            # Get a few main categories to suggest
-            categories = menu_cache.get_available_menu_categories()
-            if categories:
+            # Get high-level display groups (e.g., Breads, Sandwiches, Drinks)
+            display_groups = menu_cache.get_menu_display_groups()
+            if display_groups:
                 # Pick 2-3 main categories
-                display_names = list(categories.values())[:3]
+                display_names = [g["display_name"] for g in display_groups][:3]
                 if len(display_names) == 1:
                     return display_names[0].lower()
                 elif len(display_names) == 2:
@@ -85,7 +89,7 @@ class MenuInquiryHandler(MenuDataMixin):
                 else:
                     return f"{display_names[0].lower()}, {display_names[1].lower()}, or {display_names[2].lower()}"
         except Exception as e:
-            logger.warning("Failed to get available categories from database: %s", e)
+            logger.warning("Failed to get display groups from database: %s", e)
 
         # Fallback message
         return "our menu items"
@@ -124,7 +128,7 @@ class MenuInquiryHandler(MenuDataMixin):
                     return items, display_group["slug"]
 
         # Look up category info from DB-loaded cache
-        # This ensures "beverage" maps to sized_beverage/espresso_based per DB config
+        # This ensures "beverage" maps to sized_beverage/espresso_based_beverage per DB config
         category_info = menu_cache.get_category_keyword_mapping(menu_query_type)
 
         if category_info:
@@ -307,22 +311,32 @@ class MenuInquiryHandler(MenuDataMixin):
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
         if not menu_query_type:
-            # Generic "what do you have?" - list display groups (not granular item types)
+            # Generic "what do you have?" - list a few display groups conversationally
             display_groups = menu_cache.get_menu_display_groups()
             if display_groups:
-                group_names = [g["display_name"].lower() for g in display_groups]
+                # Show only first few categories to avoid overwhelming the user
+                max_categories_to_show = 5
+                group_names = [g["display_name"] for g in display_groups]
+                shown_names = group_names[:max_categories_to_show]
+
+                if len(group_names) > max_categories_to_show:
+                    # More categories than we're showing
+                    categories_text = format_english_list(shown_names) + ", and more"
+                    # Save pagination state for "what else" follow-ups
+                    order.menu_query_pagination = {
+                        "type": "item_types",
+                        "items": group_names,
+                        "offset": max_categories_to_show,
+                    }
+                else:
+                    categories_text = format_english_list(shown_names)
+                    order.clear_menu_pagination()
+
                 return StateMachineResult(
-                    message=f"We have {format_english_list(group_names)}. What would you like?",
+                    message=f"We have a great selection! What are you in the mood for? We have {categories_text}.",
                     order=order,
                 )
-            # Fallback to item types if no display groups configured
-            display_names = self.menu_data.get("item_type_display_names", {}) if self.menu_data else {}
-            available_types = [get_item_type_display_name(t, display_names) for t, items in items_by_type.items() if items]
-            if available_types:
-                return StateMachineResult(
-                    message=f"We have {format_english_list(available_types)}. What would you like?",
-                    order=order,
-                )
+            # Fallback if no display groups configured - use generic message
             return StateMachineResult(
                 message="What can I get for you?",
                 order=order,
@@ -332,13 +346,23 @@ class MenuInquiryHandler(MenuDataMixin):
         items, lookup_type = self._get_items_for_category(menu_query_type)
 
         if not items:
-            # Try to suggest what we do have
+            # Try to suggest what we do have using high-level display groups
             display_names = self.menu_data.get("item_type_display_names", {}) if self.menu_data else {}
-            available_types = [get_item_type_display_name(t, display_names) for t, i in items_by_type.items() if i]
             type_display = get_item_type_display_name(menu_query_type, display_names)
-            if available_types:
+
+            # Use display groups for cleaner suggestions
+            display_groups = menu_cache.get_menu_display_groups()
+            if display_groups:
+                # Show only first few categories to avoid overwhelming the user
+                max_categories_to_show = 5
+                group_names = [g["display_name"] for g in display_groups]
+                shown_names = group_names[:max_categories_to_show]
+                if len(group_names) > max_categories_to_show:
+                    categories_text = format_english_list(shown_names) + ", and more"
+                else:
+                    categories_text = format_english_list(shown_names)
                 return StateMachineResult(
-                    message=f"We have {', '.join(available_types)}. What would you like?",
+                    message=f"We don't have {type_display}, but we do have {categories_text}. What are you in the mood for?",
                     order=order,
                 )
             return StateMachineResult(
@@ -348,13 +372,8 @@ class MenuInquiryHandler(MenuDataMixin):
 
         # Format the items list using helper method
         type_name = menu_query_type.replace("_", " ")
-        # Proper pluralization - check if already plural first
-        if type_name.endswith("s") and not type_name.endswith("ss"):
-            type_display = type_name  # Already plural (e.g., "signature items")
-        elif type_name.endswith("ch") or type_name.endswith("sh") or type_name.endswith("x"):
-            type_display = type_name + "es"
-        else:
-            type_display = type_name + "s"
+        # Use proper pluralization via inflect library
+        type_display = pluralize(type_name)
 
         items_str, has_more = self._format_items_list(items, 0, show_prices, lookup_type)
 
@@ -569,15 +588,9 @@ class MenuInquiryHandler(MenuDataMixin):
         if menu_type:
             items = items_by_type.get(menu_type, [])
             category_key = menu_type
-            # Get the display name from the type slug (proper pluralization)
+            # Get the display name from the type slug (use proper pluralization via inflect)
             type_name = menu_type.replace("_", " ")
-            # Check if already plural (ends with "s" but not "ss" like "grass")
-            if type_name.endswith("s") and not type_name.endswith("ss"):
-                type_display_name = type_name  # Already plural
-            elif type_name.endswith("ch"):
-                type_display_name = type_name + "es"
-            else:
-                type_display_name = type_name + "s"
+            type_display_name = pluralize(type_name)
         else:
             # No specific type - get all signature items
             items = items_by_type.get("signature_items", [])

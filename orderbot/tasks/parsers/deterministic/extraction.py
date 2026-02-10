@@ -349,7 +349,12 @@ def _extract_attribute_values(
         else:
             # Single select: only set if not already set
             if cand.attr_slug not in result:
-                result[cand.attr_slug] = slug
+                # Preserve quantity for single-select when user specified a quantity
+                # e.g., "2 shots" should store quantity=2, not just "shot"
+                if quantity > 1:
+                    result[cand.attr_slug] = match_data
+                else:
+                    result[cand.attr_slug] = slug
 
         logger.debug(
             "Extracted attribute value: '%s' -> '%s' (qty=%d, attr=%s)",

@@ -26,6 +26,7 @@ from .pending_fields import PendingField
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
+    from .unrecognized_item_handler import UnrecognizedItemHandler
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +53,20 @@ class DietaryInquiryHandler(MenuDataMixin):
     and customization questions.
     """
 
-    def __init__(self, config: "HandlerConfig | None" = None):
+    def __init__(
+        self,
+        config: "HandlerConfig | None" = None,
+        unrecognized_handler: "UnrecognizedItemHandler | None" = None,
+    ):
         """
         Initialize the dietary inquiry handler.
 
         Args:
             config: HandlerConfig with shared dependencies.
+            unrecognized_handler: Handler for unrecognized item suggestions.
         """
         self._menu_data = config.menu_data if config else {}
+        self._unrecognized_handler = unrecognized_handler
 
     def _resolve_category_to_item_types(self, category: str) -> list[str] | None:
         """Resolve a category term to a list of item type slugs.
@@ -475,7 +482,17 @@ class DietaryInquiryHandler(MenuDataMixin):
                     order=order,
                 )
 
-        # Nothing found
+        # Nothing found - use unrecognized handler for curated suggestions
+        if self._unrecognized_handler:
+            message, category_slug = self._unrecognized_handler.get_not_found_response(
+                item_name, order=order
+            )
+            if category_slug:
+                order.pending_menu_category = category_slug
+                order.pending_field = PendingField.CONFIRM_MENU_CATEGORY
+            return StateMachineResult(message=message, order=order)
+
+        # Fallback if no unrecognized handler
         return StateMachineResult(
             message=(
                 f"I couldn't find \"{item_name}\" on our menu. "

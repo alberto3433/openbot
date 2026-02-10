@@ -78,9 +78,15 @@ class MenuPaginationHandler(MenuDataMixin):
                 logger.info("MORE MENU ITEMS: No pagination, treating '%s' as fresh query", category)
                 return self._handle_category_as_menu_query(category, order)
 
-            # No category either - ask what they want to see more of
+            # No category either - treat as a general menu query
+            # "what else do you have?" without context means show the general menu
+            logger.info("MORE MENU ITEMS: No pagination and no category, showing general menu")
+            if self.menu_inquiry_handler:
+                return self.menu_inquiry_handler.handle_menu_query(None, order)
+
+            # Fallback if no menu_inquiry_handler
             return StateMachineResult(
-                message="More of what? What would you like me to list?",
+                message="What would you like to know more about?",
                 order=order,
             )
 

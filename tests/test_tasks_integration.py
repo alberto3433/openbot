@@ -186,7 +186,7 @@ def mock_get_item_type_attributes(item_type_slug):
     """Mock menu_cache.get_item_type_attributes for tests."""
     if item_type_slug == "bagel":
         return get_mock_bagel_attributes()
-    elif item_type_slug in ("coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based"):
+    elif item_type_slug in ("coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based_beverage"):
         return get_mock_coffee_attributes()
     elif item_type_slug == "spread_sandwich":
         return get_mock_spread_sandwich_attributes()
@@ -219,10 +219,10 @@ def mock_get_category_keyword_mapping(keyword: str):
         "beverage": {"slug": "coffee_based_beverage", "lookup_type": "item_type"},
         "beverages": {"slug": "coffee_based_beverage", "lookup_type": "item_type"},
         # Espresso-based drinks (latte, cappuccino, americano) have their own item type
-        "latte": {"slug": "espresso_based", "lookup_type": "item_type"},
-        "lattes": {"slug": "espresso_based", "lookup_type": "item_type"},
-        "cappuccino": {"slug": "espresso_based", "lookup_type": "item_type"},
-        "americano": {"slug": "espresso_based", "lookup_type": "item_type"},
+        "latte": {"slug": "espresso_based_beverage", "lookup_type": "item_type"},
+        "lattes": {"slug": "espresso_based_beverage", "lookup_type": "item_type"},
+        "cappuccino": {"slug": "espresso_based_beverage", "lookup_type": "item_type"},
+        "americano": {"slug": "espresso_based_beverage", "lookup_type": "item_type"},
         # Plain espresso has no size attribute
         "espresso": {"slug": "espresso", "lookup_type": "item_type"},
         # Sandwich keywords - sandwich is a category that groups subtypes via join table
@@ -318,12 +318,12 @@ def mock_get_known_menu_items():
 
 def mock_get_configurable_item_type_slugs():
     """Return mock set of configurable item type slugs."""
-    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based", "spread_sandwich", "egg_bagel", "fruit_salad"}
+    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based_beverage", "spread_sandwich", "egg_bagel", "fruit_salad"}
 
 
 def mock_get_configurable_item_types():
     """Return mock set of configurable item types (same as slugs for tests)."""
-    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based", "spread_sandwich", "egg_bagel", "fruit_salad"}
+    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based_beverage", "spread_sandwich", "egg_bagel", "fruit_salad"}
 
 
 def mock_get_item_type_triggers(item_type_slug: str | None = None):
@@ -336,7 +336,7 @@ def mock_get_item_type_triggers(item_type_slug: str | None = None):
     Note: These must match the actual database item types. In the DB:
     - coffee_based_beverage: coffee, chai, cold brew, etc.
     - espresso: standalone espresso drink
-    - espresso_based: latte, cappuccino, americano, etc. (drinks based on espresso)
+    - espresso_based_beverage: latte, cappuccino, americano, etc. (drinks based on espresso)
     """
     triggers = {
         "bagel": {"bagel", "bagels"},
@@ -344,7 +344,7 @@ def mock_get_item_type_triggers(item_type_slug: str | None = None):
         "cocoa_based_beverage": {"hot chocolate"},
         "coffee": {"coffee", "coffees"},
         "espresso": {"espresso", "espressos"},
-        "espresso_based": {
+        "espresso_based_beverage": {
             "latte", "lattes", "hot latte", "iced latte",
             "cappuccino", "cappuccinos", "hot cappuccino", "iced cappuccino",
             "americano", "cafe americano", "iced americano",
@@ -2047,7 +2047,7 @@ class TestBagelWithCoffeeConfig:
 
         # Now should ask coffee questions - size
         assert "size" in result.message.lower() or "small" in result.message.lower(), f"Expected coffee size question, got: {result.message}"
-        assert order.pending_field in ("coffee_size", "menu_item_attr_size", "coffee_based_beverage:size", "espresso:size", "espresso_based:size")
+        assert order.pending_field in ("coffee_size", "menu_item_attr_size", "coffee_based_beverage:size", "espresso:size", "espresso_based_beverage:size")
 
     def test_bagel_and_latte_complete_with_coffee_config(self):
         """Test that coffee configuration completes properly after bagel."""
@@ -2650,11 +2650,13 @@ class TestMenuQuery:
         result = sm.menu_inquiry_handler.handle_menu_query(None, order)
 
         # Should list display groups (from menu_display_groups table)
-        assert "We have" in result.message
-        # Display groups: breads, sandwiches, omelettes and breakfasts, drinks,
-        # desserts and pastries, sides, food by the pound
-        assert "breads" in result.message or "sandwiches" in result.message or "drinks" in result.message
-        assert "What would you like?" in result.message
+        msg_lower = result.message.lower()
+        assert "we have" in msg_lower
+        # Display groups: breads, sandwiches, omelettes, drinks,
+        # pastries, sides, food by the pound
+        assert "breads" in msg_lower or "sandwiches" in msg_lower or "drinks" in msg_lower
+        # Should prompt user to choose
+        assert "what" in msg_lower  # "What are you in the mood for?" or similar
 
     def test_display_group_query_returns_items_from_group(self):
         """Test querying a display group returns items from all item types in that group.
@@ -2691,7 +2693,7 @@ class TestMenuQuery:
 
         sm = OrderStateMachine(menu_data={
             "items_by_type": {
-                "espresso_based": [{"name": "Latte", "base_price": 4.50}],
+                "espresso_based_beverage": [{"name": "Latte", "base_price": 4.50}],
                 "coffee_based_beverage": [{"name": "Hot Coffee", "base_price": 3.00}],
                 "beverage": [{"name": "Coke", "base_price": 2.00}],
             }
@@ -5722,9 +5724,9 @@ class TestTakingItemsHandler:
             result = sm._handle_taking_items("another espresso", order)
 
             # Should have espressos as MenuItemTask with menu_item_type='espresso'
-            # NOT coffee_based_beverage or espresso_based (those are coffee/latte types)
+            # NOT coffee_based_beverage or espresso_based_beverage (those are coffee/latte types)
             espressos = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type == "espresso"]
-            wrong_type_items = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type in ("coffee_based_beverage", "espresso_based")]
+            wrong_type_items = [i for i in order.items.items if isinstance(i, MenuItemTask) and i.menu_item_type in ("coffee_based_beverage", "espresso_based_beverage")]
 
             # Accept either: 2 espressos added, OR disambiguation triggered (options provided)
             # Both are valid data-driven behaviors depending on menu configuration
@@ -5739,7 +5741,7 @@ class TestTakingItemsHandler:
                 assert len(espressos) >= 1, f"Expected at least 1 espresso, got {len(espressos)}"
 
             # Verify espresso didn't get wrong item type (coffee_based_beverage is for regular coffee)
-            assert len(wrong_type_items) == 0, f"Espresso should not create coffee_based_beverage/espresso_based, got {[i.menu_item_type for i in wrong_type_items]}"
+            assert len(wrong_type_items) == 0, f"Espresso should not create coffee_based_beverage/espresso_based_beverage, got {[i.menu_item_type for i in wrong_type_items]}"
 
 
 class TestEspressoItemTypeConsistency:

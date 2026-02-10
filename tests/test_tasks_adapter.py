@@ -277,7 +277,7 @@ class TestOrderTaskToDict:
         assert len(result["items"]) == 1
         item = result["items"][0]
         # Lattes are espresso-based drinks
-        assert item["item_type"] == "espresso_based"
+        assert item["item_type"] == "espresso_based_beverage"
         assert item["menu_item_name"] == "latte"
         # Check attribute_values for stored configuration
         # Note: "iced" property stores as "temperature" in attribute_values

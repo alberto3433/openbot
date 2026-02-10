@@ -6,7 +6,7 @@ Contains methods for querying item types, configurable types, and type metadata.
 
 import logging
 
-from .base import normalize_text
+from .base import normalize_text, pluralize
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +304,7 @@ class ItemTypeCoreQueryMixin:
         info = self._category_keywords.get(item_type_slug)
         if info:
             if plural:
-                return info.get("display_name_plural", info.get("display_name", item_type_slug) + "s")
+                return info.get("display_name_plural", pluralize(info.get("display_name", item_type_slug)))
             return info.get("display_name", item_type_slug)
 
         return item_type_slug

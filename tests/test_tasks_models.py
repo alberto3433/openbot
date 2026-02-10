@@ -614,7 +614,7 @@ class TestQuantityAwareRemoval:
 
         item = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="espresso_based",
+            menu_item_type="espresso_based_beverage",
         )
         # Add 5 shots
         item.add_selection("shot", "espresso_shots", quantity=5)
@@ -639,7 +639,7 @@ class TestQuantityAwareRemoval:
 
         item = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="espresso_based",
+            menu_item_type="espresso_based_beverage",
         )
         # Add 2 shots
         item.add_selection("shot", "espresso_shots", quantity=2)
@@ -658,7 +658,7 @@ class TestQuantityAwareRemoval:
 
         item = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="espresso_based",
+            menu_item_type="espresso_based_beverage",
         )
         # Add 3 shots
         item.add_selection("shot", "espresso_shots", quantity=3)
@@ -677,7 +677,7 @@ class TestQuantityAwareRemoval:
 
         item = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="espresso_based",
+            menu_item_type="espresso_based_beverage",
         )
         # Add 5 shots
         item.add_selection("shot", "espresso_shots", quantity=5)
@@ -696,7 +696,7 @@ class TestQuantityAwareRemoval:
 
         item = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="espresso_based",
+            menu_item_type="espresso_based_beverage",
         )
         # Add multiple selections in same category
         item.add_selection("shot", "espresso_shots", quantity=3)
@@ -716,7 +716,7 @@ class TestQuantityAwareRemoval:
 
         item = MenuItemTask(
             menu_item_name="Latte",
-            menu_item_type="espresso_based",
+            menu_item_type="espresso_based_beverage",
         )
         # Add different types of modifiers
         item.add_selection("shot", "espresso_shots", quantity=5)

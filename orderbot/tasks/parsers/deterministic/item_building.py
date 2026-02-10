@@ -126,8 +126,17 @@ def build_parsed_item(
                     else:
                         # Simple string value
                         final_selections.append(Selection(slug=str(item), category=category))
+            elif isinstance(value, dict):
+                # Single-select with quantity info (e.g., "2 shots")
+                final_selections.append(Selection(
+                    slug=value.get("slug", ""),
+                    category=value.get("category") or category,
+                    quantity=value.get("quantity", 1),
+                    price=value.get("price", 0.0),
+                    display_name=value.get("display_name"),
+                ))
             elif isinstance(value, str):
-                # Single-select: just the slug
+                # Single-select: just the slug (default quantity=1)
                 final_selections.append(Selection(slug=value, category=category))
 
     # Add modifiers if provided

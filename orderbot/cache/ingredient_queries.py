@@ -344,7 +344,7 @@ class IngredientQueryMixin:
 
         Returns:
             List of dicts with item_type_slug and display info, e.g.:
-            [{"slug": "espresso_based", "label": "Espresso Based topping"}, ...]
+            [{"slug": "espresso_based_beverage", "label": "Espresso Based Beverage topping"}, ...]
 
         Raises:
             MenuDataNotLoadedError: If cache is not loaded

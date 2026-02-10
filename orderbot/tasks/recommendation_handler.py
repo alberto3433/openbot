@@ -170,64 +170,43 @@ class RecommendationHandler(MenuDataMixin):
         )
 
     def _format_item_type_suggestions(self, order: OrderTask) -> StateMachineResult:
-        """Format a response with item type suggestions for generic recommendation requests.
+        """Format a response with display group suggestions for generic recommendation requests.
 
-        Shows up to 5 item types (plural display names), with pagination support
-        for the rest via "what else" follow-ups.
+        Shows up to 5 display groups (high-level categories like Breads, Sandwiches, Drinks),
+        with pagination support for the rest via "what else" follow-ups.
 
         Args:
             order: Current order state
         """
-        # Get all item types and their display names
-        # Filter to only customer-facing item types (not ingredient categories)
-        all_slugs = sorted(menu_cache.get_all_item_type_slugs())
-        item_types_with_names = []
+        # Use display groups for high-level categories (same as menu inquiry handler)
+        display_groups = menu_cache.get_menu_display_groups()
 
-        for slug in all_slugs:
-            display_name = menu_cache.get_item_type_display_name(slug, plural=True)
-            # Skip if:
-            # 1. No display name
-            # 2. Display name is just the slug
-            # 3. Display name starts with lowercase (internal/ingredient category)
-            if not display_name or display_name == slug:
-                continue
-            if display_name[0].islower():
-                continue
-            item_types_with_names.append((slug, display_name))
+        if display_groups:
+            page_size = DEFAULT_PAGINATION_SIZE
+            group_names = [g["display_name"] for g in display_groups]
+            shown_names = group_names[:page_size]
+            has_more = len(group_names) > page_size
 
-        if not item_types_with_names:
+            # Format the list
+            categories_text = format_english_list(shown_names)
+            if has_more:
+                categories_text += ", and more"
+                # Store pagination state for "what else" follow-ups
+                order.menu_query_pagination = {
+                    "type": "item_types",
+                    "items": group_names,
+                    "offset": page_size,
+                }
+            else:
+                order.clear_menu_pagination()
+
             return StateMachineResult(
-                message="We have a great selection! What are you in the mood for?",
+                message=f"We have a great selection! What are you in the mood for? We have {categories_text}.",
                 order=order,
             )
 
-        # Show first 5 item types
-        page_size = DEFAULT_PAGINATION_SIZE
-        first_page = item_types_with_names[:page_size]
-        has_more = len(item_types_with_names) > page_size
-
-        # Format the list
-        type_names = [name for _, name in first_page]
-        if len(type_names) == 1:
-            type_list = type_names[0]
-        elif len(type_names) == 2:
-            type_list = f"{type_names[0]} and {type_names[1]}"
-        else:
-            type_list = ", ".join(type_names[:-1]) + f", and {type_names[-1]}"
-
-        # Build message
-        message = f"We have a great selection! What are you in the mood for? We have {type_list}"
-        if has_more:
-            message += ", and more"
-            # Store pagination state for "what else" follow-ups
-            order.menu_query_pagination = {
-                "type": "item_types",
-                "items": [name for _, name in item_types_with_names],
-                "offset": page_size,
-            }
-        message += "."
-
+        # Fallback if no display groups configured
         return StateMachineResult(
-            message=message,
+            message="We have a great selection! What are you in the mood for?",
             order=order,
         )

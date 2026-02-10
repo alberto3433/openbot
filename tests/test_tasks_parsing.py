@@ -39,7 +39,7 @@ def _get_parsed_item_type(item) -> str:
     item_type = getattr(item, 'item_type', None)
     if item_type:
         # Map item_type to legacy type names for test compatibility
-        if item_type in ("coffee_based_beverage", "espresso_based"):
+        if item_type in ("coffee_based_beverage", "espresso_based_beverage"):
             return "coffee"
         return item_type
     return 'unknown'
@@ -48,7 +48,7 @@ def _get_parsed_item_type(item) -> str:
 def _is_coffee_item(item) -> bool:
     """Check if a ParsedItem is a coffee/beverage."""
     item_type = getattr(item, 'item_type', None)
-    return item_type in ("coffee_based_beverage", "espresso_based")
+    return item_type in ("coffee_based_beverage", "espresso_based_beverage")
 
 
 def _is_bagel_item(item) -> bool:
@@ -973,7 +973,7 @@ class TestFindNthItemOfType:
         result = find_nth_item_of_type(items, "item", 2)
         assert result is not None
         item, idx = result
-        assert item.menu_item_type == "espresso_based"  # The coffee item
+        assert item.menu_item_type == "espresso_based_beverage"  # The coffee item
         assert idx == 1
 
     def test_find_nth_item_out_of_range(self):
@@ -2385,8 +2385,8 @@ class TestParsedItemsMultiItem:
         # Check item types
         types = [_get_parsed_item_type(item) for item in result.parsed_items]
         assert "egg_sandwich" in types, f"Expected egg_sandwich, got: {types}"
-        # Latte can be espresso_based, coffee_based_beverage, or coffee depending on parsing path
-        coffee_types = {"espresso_based", "coffee_based_beverage", "coffee"}
+        # Latte can be espresso_based_beverage, coffee_based_beverage, or coffee depending on parsing path
+        coffee_types = {"espresso_based_beverage", "coffee_based_beverage", "coffee"}
         assert any(t in coffee_types for t in types), f"Expected a coffee-type item, got: {types}"
 
     def test_egg_and_cheese_on_plain_bagel_and_a_coffee_is_multi_item(self):
@@ -2451,11 +2451,11 @@ class TestDuplicatePatterns:
         ("another coffee", "coffee_based_beverage"),
         ("one more coffee", "coffee_based_beverage"),
         ("another tea", "tea"),
-        # Espresso-based drinks use "espresso_based" item type (have size, unlike plain espresso)
-        ("another latte", "espresso_based"),
-        ("one more latte", "espresso_based"),
-        ("another cappuccino", "espresso_based"),
-        ("another americano", "espresso_based"),
+        # Espresso-based drinks use "espresso_based_beverage" item type (have size, unlike plain espresso)
+        ("another latte", "espresso_based_beverage"),
+        ("one more latte", "espresso_based_beverage"),
+        ("another cappuccino", "espresso_based_beverage"),
+        ("another americano", "espresso_based_beverage"),
         ("another espresso", "espresso"),  # Plain espresso has its own item type (no size)
     ])
     def test_another_item_type_detected(self, text, expected_type):
@@ -2882,7 +2882,7 @@ class TestAddModifierToItem:
 
         # The item should be a latte/espresso type
         item = result.parsed_items[0]
-        assert item.item_type in ("espresso_based", "coffee_based_beverage", "latte"), (
+        assert item.item_type in ("espresso_based_beverage", "coffee_based_beverage", "latte"), (
             f"Expected espresso/beverage type, got: {item.item_type}"
         )
 

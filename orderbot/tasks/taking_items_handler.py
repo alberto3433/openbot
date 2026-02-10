@@ -506,37 +506,59 @@ class TakingItemsHandler(MenuDataMixin):
         Returns:
             StateMachineResult if handled, None otherwise.
         """
+        logger.info(
+            "CATEGORY_INQUIRY_RESPONSE: pending_field=%s, user_input='%s'",
+            order.pending_field, user_input
+        )
+
         if order.pending_field != PendingField.CATEGORY_INQUIRY:
             return None
 
+        logger.info("CATEGORY_INQUIRY_RESPONSE: Matched CATEGORY_INQUIRY pending field")
+
         if not is_affirmative(user_input):
             # Not an affirmative response - clear pending state and continue
+            logger.info("CATEGORY_INQUIRY_RESPONSE: Not affirmative, clearing state")
             order.pending_field = None
             order.pending_config_queue = []
             return None
+
+        logger.info("CATEGORY_INQUIRY_RESPONSE: Affirmative response detected")
 
         # Clear the pending field since we're handling this now
         order.pending_field = None
 
         # Check if there's display group pagination to continue
         pagination = order.get_menu_pagination()
+        logger.info("CATEGORY_INQUIRY_RESPONSE: pagination=%s", pagination)
+
         if pagination and pagination.get("type") == "display_group_items":
             # Use menu_inquiry_handler to show more items
+            logger.info("CATEGORY_INQUIRY_RESPONSE: Calling handle_more_menu_items")
             if self.menu_inquiry_handler:
-                return self.menu_inquiry_handler.handle_more_menu_items(order)
+                try:
+                    return self.menu_inquiry_handler.handle_more_menu_items(order)
+                except Exception as e:
+                    logger.error("CATEGORY_INQUIRY_RESPONSE: handle_more_menu_items failed: %s", e, exc_info=True)
 
         # Check if there's a pending category to list items from
         pending_category = None
         if order.pending_config_queue:
             pending_category = order.pending_config_queue[0]
             order.pending_config_queue = []
+            logger.info("CATEGORY_INQUIRY_RESPONSE: pending_category=%s", pending_category)
 
         if pending_category and isinstance(pending_category, str):
             # List items from this category
+            logger.info("CATEGORY_INQUIRY_RESPONSE: Calling handle_menu_query for %s", pending_category)
             if self.menu_inquiry_handler:
-                return self.menu_inquiry_handler.handle_menu_query(pending_category, order)
+                try:
+                    return self.menu_inquiry_handler.handle_menu_query(pending_category, order)
+                except Exception as e:
+                    logger.error("CATEGORY_INQUIRY_RESPONSE: handle_menu_query failed: %s", e, exc_info=True)
 
         # Fallback: no pagination or category found
+        logger.info("CATEGORY_INQUIRY_RESPONSE: Fallback - no pagination or category")
         return StateMachineResult(
             message="What would you like to order?",
             order=order,

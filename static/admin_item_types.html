@@ -388,6 +388,10 @@
       background: #e8f5e9;
       color: #2e7d32;
     }
+    .attr-badge.listen-only {
+      background: #f3e5f5;
+      color: #7b1fa2;
+    }
     .attr-badge.options {
       background: #fff3e0;
       color: #e65100;
@@ -1528,6 +1532,7 @@
               <span class="attr-badge type">${(link.input_type || 'single_select').replace('_', ' ')}</span>
               ${link.is_required ? '<span class="attr-badge required">Required</span>' : ''}
               ${link.ask_in_conversation ? '<span class="attr-badge ask">Ask</span>' : ''}
+              ${link.listen_only ? '<span class="attr-badge listen-only">Listen Only</span>' : ''}
               <span class="attr-badge options">${(link.options || []).length} options</span>
             </div>
           </div>

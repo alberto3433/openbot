@@ -237,6 +237,11 @@ class TakingItemsHandler(MenuDataMixin):
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle taking new item orders."""
+        # Check for category inquiry follow-up (e.g., "yes" to "Would you like to hear more?")
+        result = self._handle_category_inquiry_response(user_input, order)
+        if result:
+            return result
+
         # Check for early patterns (before LLM parsing) - delegates to EarlyPatternHandler
         result = self._early_pattern_handler.handle_all_early_patterns(user_input, order)
         if result:
@@ -487,6 +492,55 @@ class TakingItemsHandler(MenuDataMixin):
     ) -> StateMachineResult | None:
         """Fallback for single_select attribute modifications not caught by EarlyPatternHandler."""
         return self._modifier_input_handler.handle_single_select_attribute_fallback(raw_user_input, order)
+
+    def _handle_category_inquiry_response(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle affirmative response to category inquiry (e.g., 'Would you like to hear more?').
+
+        When pending_field is CATEGORY_INQUIRY and user says 'yes', show more items
+        from the display group pagination or list items from the pending category.
+
+        Returns:
+            StateMachineResult if handled, None otherwise.
+        """
+        if order.pending_field != PendingField.CATEGORY_INQUIRY:
+            return None
+
+        if not is_affirmative(user_input):
+            # Not an affirmative response - clear pending state and continue
+            order.pending_field = None
+            order.pending_config_queue = []
+            return None
+
+        # Clear the pending field since we're handling this now
+        order.pending_field = None
+
+        # Check if there's display group pagination to continue
+        pagination = order.get_menu_pagination()
+        if pagination and pagination.get("type") == "display_group_items":
+            # Use menu_inquiry_handler to show more items
+            if self.menu_inquiry_handler:
+                return self.menu_inquiry_handler.handle_more_menu_items(order)
+
+        # Check if there's a pending category to list items from
+        pending_category = None
+        if order.pending_config_queue:
+            pending_category = order.pending_config_queue[0]
+            order.pending_config_queue = []
+
+        if pending_category and isinstance(pending_category, str):
+            # List items from this category
+            if self.menu_inquiry_handler:
+                return self.menu_inquiry_handler.handle_menu_query(pending_category, order)
+
+        # Fallback: no pagination or category found
+        return StateMachineResult(
+            message="What would you like to order?",
+            order=order,
+        )
 
     def _handle_ingredient_search(
         self,

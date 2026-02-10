@@ -1,286 +1,41 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <title>Menu Display Groups</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
-    }
-    .app-header {
-      background: #1976d2;
-      color: #fff;
-      padding: 12px 20px;
-      font-size: 18px;
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .app-header a {
-      color: #bbdefb;
-      text-decoration: none;
-      font-size: 14px;
-      margin-left: 16px;
-    }
-    .app-header a:hover {
-      color: #fff;
-    }
-    .container {
-      max-width: 900px;
-      margin: 20px auto;
-      padding: 0 20px;
-    }
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-    .section-header {
-      background: #f5f5f5;
-      padding: 12px 16px;
-      font-weight: 600;
-      font-size: 14px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .section-body {
-      padding: 20px;
-    }
-    .btn {
-      padding: 8px 16px;
-      border-radius: 4px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: #fff;
-    }
-    .btn:hover {
-      background: #f5f5f5;
-    }
-    .btn.primary {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .btn.primary:hover {
-      background: #1565c0;
-    }
-    .btn.danger {
-      background: #d32f2f;
-      color: #fff;
-      border-color: #d32f2f;
-    }
-    .btn.danger:hover {
-      background: #c62828;
-    }
-    .btn.small {
-      padding: 4px 10px;
-      font-size: 12px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    th, td {
-      padding: 10px 12px;
-      text-align: left;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    th {
-      background: #fafafa;
-      font-weight: 600;
-      font-size: 12px;
-      text-transform: uppercase;
-      color: #666;
-    }
-    tr:hover {
-      background: #f9f9f9;
-    }
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: #666;
-    }
-    .empty-state {
-      text-align: center;
-      padding: 40px;
-      color: #999;
-    }
-    .count-badge {
-      display: inline-block;
+    /* Page-specific styles */
+    code {
+      background: var(--bg-tertiary);
       padding: 2px 8px;
-      background: #e3f2fd;
-      color: #1565c0;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 500;
-    }
-    .order-badge {
-      display: inline-block;
-      padding: 2px 8px;
-      background: #f3e5f5;
-      color: #7b1fa2;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 500;
-    }
-    /* Modal styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-overlay.active {
-      display: flex;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 8px;
-      max-width: 500px;
-      width: 90%;
-      max-height: 90vh;
-      overflow: auto;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-    }
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #e0e0e0;
-      font-weight: 600;
-      font-size: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .modal-header .close-btn {
-      background: none;
-      border: none;
-      font-size: 20px;
-      cursor: pointer;
-      color: #999;
-      padding: 0;
-      line-height: 1;
-    }
-    .modal-header .close-btn:hover {
-      color: #333;
-    }
-    .modal-body {
-      padding: 20px;
-    }
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-    .form-group {
-      margin-bottom: 16px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: #333;
-      margin-bottom: 6px;
-    }
-    .form-group input,
-    .form-group textarea {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ccc;
       border-radius: 4px;
-      font-size: 14px;
-      font-family: inherit;
-      box-sizing: border-box;
-    }
-    .form-group input:focus,
-    .form-group textarea:focus {
-      outline: none;
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-    }
-    .form-group .hint {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-secondary);
     }
 
-    /* Toast notification styles */
-    .toast-container {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .toast {
-      padding: 14px 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      animation: slideIn 0.3s ease;
-      max-width: 350px;
-    }
-    .toast.success { background: #10b981; color: white; }
-    .toast.error { background: #ef4444; color: white; }
-    .toast.info { background: #3b82f6; color: white; }
-    .toast-icon { font-size: 18px; }
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
+    .help-text {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.6;
     }
 
-    /* Button state styles */
-    .btn.saving {
-      position: relative;
-      pointer-events: none;
-      opacity: 0.8;
+    .help-text p {
+      margin: 0 0 12px 0;
     }
-    .btn.saving::after {
-      content: "";
-      width: 14px;
-      height: 14px;
-      border: 2px solid transparent;
-      border-top-color: currentColor;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-left: 8px;
-      display: inline-block;
-      vertical-align: middle;
+
+    .help-text p:last-child {
+      margin-bottom: 0;
     }
-    .btn.saved {
-      background: #10b981 !important;
-      border-color: #10b981 !important;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+
+    .help-text strong {
+      color: var(--text-primary);
     }
   </style>
 </head>
@@ -289,21 +44,24 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <div class="app-header">
-    <div>Menu Display Groups</div>
-    <div>
+    <div class="header-title">
+      <span class="icon"><i data-lucide="layout-grid"></i></span>
+      <span>Menu Display Groups</span>
+    </div>
+    <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <span class="nav-group">
-        <span class="nav-group-label">Item Types &#9662;</span>
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_item_types.html">Basic Info</a>
           <a href="/static/admin_modifiers.html">Modifiers</a>
         </div>
       </span>
       <span class="nav-group">
-        <span class="nav-group-label">Config &#9662;</span>
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_global_attributes.html">Global Attributes</a>
           <a href="/static/admin_size_categories.html">Size Categories</a>
@@ -311,7 +69,7 @@
           <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
           <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
           <a href="/static/admin_overall_categories.html">Overall Categories</a>
-          <a href="/static/admin_menu_display_groups.html"><strong>Display Groups</strong></a>
+          <a href="/static/admin_menu_display_groups.html" class="active">Display Groups</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
           <a href="/static/admin_unrecognized_suggestions.html">Unrecognized Suggestions</a>
         </div>
@@ -319,6 +77,10 @@
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
     </div>
   </div>
 
@@ -326,12 +88,17 @@
     <div class="section">
       <div class="section-header">
         <span>Display Groups</span>
-        <button class="btn primary" onclick="openCreateModal()">+ Add Group</button>
+        <button class="btn primary" onclick="openCreateModal()">
+          <span class="icon"><i data-lucide="plus"></i></span>
+          Add Group
+        </button>
       </div>
       <div class="section-body">
         <div id="loadingState" class="loading">Loading display groups...</div>
         <div id="emptyState" class="empty-state" style="display: none;">
-          No display groups found. Click "Add Group" to create one.
+          <span class="icon"><i data-lucide="folder-open"></i></span>
+          <p>No display groups found</p>
+          <p style="font-size: 13px;">Click "Add Group" to create one.</p>
         </div>
         <table id="groupsTable" style="display: none;">
           <thead>
@@ -353,8 +120,11 @@
 
     <!-- Help Section -->
     <div class="section">
-      <div class="section-header">How Menu Display Groups Work</div>
-      <div class="section-body" style="font-size: 13px; color: #666;">
+      <div class="section-header">
+        <span class="icon" style="width:16px;height:16px;margin-right:8px;color:var(--text-tertiary);"><i data-lucide="help-circle"></i></span>
+        How Menu Display Groups Work
+      </div>
+      <div class="section-body help-text">
         <p><strong>Menu Display Groups</strong> consolidate item types into user-friendly categories for menu listing. When a user asks "what's on your menu?", we show these groups instead of 25+ granular item types.</p>
         <p><strong>Display Order:</strong> Lower numbers appear first in the menu listing.</p>
         <p><strong>Name:</strong> The display name shown to users (e.g., "Breads", "Sandwiches", "Omelettes and Breakfasts").</p>
@@ -371,7 +141,9 @@
     <div class="modal">
       <div class="modal-header">
         <span id="modalTitle">Add Display Group</span>
-        <button class="close-btn" onclick="closeModal()">&times;</button>
+        <button class="close-btn" onclick="closeModal()">
+          <span class="icon"><i data-lucide="x"></i></span>
+        </button>
       </div>
       <div class="modal-body">
         <form id="groupForm">
@@ -406,7 +178,10 @@
         </form>
       </div>
       <div class="modal-footer">
-        <button class="btn danger" id="deleteBtn" style="display: none; margin-right: auto;" onclick="deleteGroup()">Delete</button>
+        <button class="btn danger" id="deleteBtn" style="display: none; margin-right: auto;" onclick="deleteGroup()">
+          <span class="icon"><i data-lucide="trash-2"></i></span>
+          Delete
+        </button>
         <button class="btn" onclick="closeModal()">Cancel</button>
         <button class="btn primary" onclick="saveGroup()">Save</button>
       </div>
@@ -414,6 +189,68 @@
   </div>
 
   <script>
+    // =====================================================
+    // Theme Toggle
+    // =====================================================
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const html = document.documentElement;
+
+    // Load saved theme or default to light
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    html.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark'
+        ? '<i data-lucide="moon"></i>'
+        : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons({ nodes: [themeIcon] });
+      }
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+
+    // Initialize Lucide icons
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+      // Mark active nav link based on current URL
+      const currentPath = window.location.pathname;
+      document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+        // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
+        const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+        const linkPage = hrefMatch ? hrefMatch[1] : null;
+        // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
+        const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+        const currentPage = currentMatch ? currentMatch[1] : null;
+
+        if (linkPage && currentPage && linkPage === currentPage) {
+          link.classList.add('active');
+          // Also mark parent dropdown label as active
+          const navGroup = link.closest('.nav-group');
+          if (navGroup) {
+            const label = navGroup.querySelector('.nav-group-label');
+            if (label) label.classList.add('active');
+          }
+        }
+      });
+      updateThemeButton(html.getAttribute('data-theme'));
+    });
+
+    // =====================================================
+    // API and State
+    // =====================================================
     const API_BASE = "/api/v1/admin/menu-display-groups";
     const CATEGORIES_API = "/api/v1/admin/modifiers/overall-categories";
     let groups = [];
@@ -426,9 +263,15 @@
     function showToast(message, type = "info") {
       const toast = document.createElement("div");
       toast.className = `toast ${type}`;
-      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
-      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
+      const iconNames = { success: "check", error: "x", info: "info" };
+      toast.innerHTML = `
+        <span class="icon"><i data-lucide="${iconNames[type] || iconNames.info}"></i></span>
+        <span>${message}</span>
+      `;
       toastContainer.appendChild(toast);
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons({ nodes: [toast] });
+      }
       setTimeout(() => {
         toast.style.animation = "slideOut 0.3s ease forwards";
         setTimeout(() => toast.remove(), 300);
@@ -521,8 +364,8 @@
           <td><span class="order-badge">${g.display_order}</span></td>
           <td><strong>${escapeHtml(g.display_name)}</strong></td>
           <td><code>${escapeHtml(g.slug)}</code></td>
-          <td>${g.overall_category_name ? escapeHtml(g.overall_category_name) : '<span style="color: #999;">—</span>'}</td>
-          <td>${g.aliases && g.aliases.length > 0 ? `<span class="count-badge" title="${escapeHtml(g.aliases.join(', '))}">${g.aliases.length} aliases</span>` : '<span style="color: #999;">—</span>'}</td>
+          <td>${g.overall_category_name ? escapeHtml(g.overall_category_name) : '<span style="color: var(--text-tertiary);">—</span>'}</td>
+          <td>${g.aliases && g.aliases.length > 0 ? `<span class="count-badge" title="${escapeHtml(g.aliases.join(', '))}">${g.aliases.length} aliases</span>` : '<span style="color: var(--text-tertiary);">—</span>'}</td>
           <td><span class="count-badge">${g.item_type_count} item types</span></td>
           <td>
             <button class="btn small" onclick="openEditModal(${g.id})">Edit</button>
@@ -556,7 +399,7 @@
       document.getElementById("displayOrderInput").value = group.display_order;
       document.getElementById("categoryInput").value = group.overall_category_id || "";
       document.getElementById("aliasesInput").value = (group.aliases || []).join(", ");
-      document.getElementById("deleteBtn").style.display = "block";
+      document.getElementById("deleteBtn").style.display = "flex";
       document.getElementById("groupModal").classList.add("active");
     }
 

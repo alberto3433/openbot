@@ -1,271 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <title>Unrecognized Suggestions</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
-    }
-    .app-header {
-      background: #1976d2;
-      color: #fff;
-      padding: 12px 20px;
-      font-size: 18px;
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .app-header a {
-      color: #bbdefb;
-      text-decoration: none;
-      font-size: 14px;
-      margin-left: 16px;
-    }
-    .app-header a:hover {
-      color: #fff;
-    }
-    .nav-group {
-      display: inline-block;
-      position: relative;
-    }
-    .nav-group-label {
-      color: #bbdefb;
-      font-size: 14px;
-      margin-left: 16px;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 4px;
-    }
-    .nav-group-label:hover {
-      background: rgba(255,255,255,0.1);
-      color: #fff;
-    }
-    .nav-dropdown {
-      display: none;
-      position: absolute;
-      top: 100%;
-      left: 0;
-      background: #fff;
-      border-radius: 4px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      min-width: 220px;
-      z-index: 1000;
-      padding: 8px 0;
-    }
-    .nav-group:hover .nav-dropdown {
-      display: block;
-    }
-    .nav-dropdown a {
-      display: block;
-      color: #333;
-      padding: 8px 16px;
-      margin: 0;
-      font-size: 13px;
-    }
-    .nav-dropdown a:hover {
-      background: #f5f5f5;
-      color: #1976d2;
-    }
-    .nav-dropdown a.active {
-      background: #e3f2fd;
-      color: #1976d2;
-      font-weight: 500;
-    }
-    .container {
-      max-width: 1200px;
-      margin: 20px auto;
-      padding: 0 20px;
-    }
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-    .section-header {
-      background: #f5f5f5;
-      padding: 12px 16px;
-      font-weight: 600;
-      font-size: 14px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .section-body {
-      padding: 20px;
-    }
-    .btn {
-      padding: 8px 16px;
-      border-radius: 4px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: #fff;
-    }
-    .btn:hover {
-      background: #f5f5f5;
-    }
-    .btn.primary {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .btn.primary:hover {
-      background: #1565c0;
-    }
-    .btn.danger {
-      background: #d32f2f;
-      color: #fff;
-      border-color: #d32f2f;
-    }
-    .btn.danger:hover {
-      background: #c62828;
-    }
-    .btn.small {
-      padding: 4px 10px;
-      font-size: 12px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    th, td {
-      padding: 10px 12px;
-      text-align: left;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    th {
-      background: #fafafa;
-      font-weight: 600;
-      font-size: 12px;
-      text-transform: uppercase;
-      color: #666;
-    }
-    tr:hover {
-      background: #f9f9f9;
-    }
+    /* Badge colors for match types and statuses */
     .badge {
       display: inline-block;
-      padding: 3px 8px;
+      padding: 4px 10px;
       border-radius: 12px;
       font-size: 11px;
       font-weight: 500;
       text-transform: uppercase;
     }
-    .badge-exact { background: #e8f5e9; color: #2e7d32; }
-    .badge-prefix { background: #e3f2fd; color: #1565c0; }
-    .badge-contains { background: #fff3e0; color: #e65100; }
-    .badge-active { background: #e8f5e9; color: #2e7d32; }
-    .badge-inactive { background: #ffebee; color: #c62828; }
-    .badge-curated { background: #e8f5e9; color: #2e7d32; }
-    .badge-fuzzy { background: #e3f2fd; color: #1565c0; }
-    .badge-llm { background: #fff3e0; color: #e65100; }
-    .badge-generic { background: #fce4ec; color: #c2185b; }
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: #666;
-    }
-    .empty-state {
-      text-align: center;
-      padding: 40px;
-      color: #999;
-    }
-    /* Modal styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      z-index: 2000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-overlay.active {
-      display: flex;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 8px;
-      width: 90%;
-      max-width: 500px;
-      max-height: 90vh;
-      overflow-y: auto;
-    }
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #e0e0e0;
-      font-weight: 600;
-      font-size: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .modal-close {
-      background: none;
-      border: none;
-      font-size: 20px;
-      cursor: pointer;
-      color: #666;
-    }
-    .modal-close:hover {
-      color: #333;
-    }
-    .modal-body {
-      padding: 20px;
-    }
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-    .form-group {
-      margin-bottom: 16px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: #333;
-      margin-bottom: 6px;
-    }
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 14px;
-      font-family: inherit;
-      box-sizing: border-box;
-    }
-    .form-group input:focus,
-    .form-group select:focus,
-    .form-group textarea:focus {
-      outline: none;
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-    }
-    .form-group .hint {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
-    }
+    .badge-exact { background: var(--success-bg); color: var(--success-text); }
+    .badge-prefix { background: var(--info-bg); color: var(--info-text); }
+    .badge-contains { background: var(--warning-bg); color: var(--warning-text); }
+    .badge-active { background: var(--success-bg); color: var(--success-text); }
+    .badge-inactive { background: var(--error-bg); color: var(--error-text); }
+    .badge-curated { background: var(--success-bg); color: var(--success-text); }
+    .badge-fuzzy { background: var(--info-bg); color: var(--info-text); }
+    .badge-llm { background: var(--warning-bg); color: var(--warning-text); }
+    .badge-generic { background: var(--badge-secondary-bg); color: var(--badge-secondary-text); }
+
     /* Multi-select with tags */
     .multi-select-container {
       position: relative;
@@ -279,15 +43,15 @@
     }
     .selected-tags:empty::before {
       content: 'No items selected';
-      color: #999;
+      color: var(--text-tertiary);
       font-size: 12px;
       font-style: italic;
     }
     .tag {
       display: inline-flex;
       align-items: center;
-      background: #e3f2fd;
-      color: #1565c0;
+      background: var(--info-bg);
+      color: var(--info-text);
       padding: 4px 8px;
       border-radius: 4px;
       font-size: 12px;
@@ -296,21 +60,21 @@
     .tag-remove {
       cursor: pointer;
       font-weight: bold;
-      color: #1565c0;
+      color: var(--info-text);
       line-height: 1;
     }
     .tag-remove:hover {
-      color: #c62828;
+      color: var(--error-text);
     }
     .multi-select-dropdown {
       position: absolute;
       top: 100%;
       left: 0;
       right: 0;
-      background: #fff;
-      border: 1px solid #ccc;
+      background: var(--card-bg);
+      border: 1px solid var(--input-border);
       border-top: none;
-      border-radius: 0 0 4px 4px;
+      border-radius: 0 0 8px 8px;
       max-height: 200px;
       overflow-y: auto;
       z-index: 100;
@@ -323,25 +87,29 @@
       padding: 8px 12px;
       cursor: pointer;
       font-size: 13px;
+      color: var(--text-primary);
     }
     .multi-select-option:hover {
-      background: #f5f5f5;
+      background: var(--bg-tertiary);
     }
     .multi-select-option.selected {
-      background: #e3f2fd;
+      background: var(--info-bg);
     }
     .multi-select-empty {
       padding: 12px;
-      color: #999;
+      color: var(--text-tertiary);
       font-size: 13px;
       text-align: center;
     }
+
+    /* Toolbar and filters */
     .toolbar {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 16px;
       gap: 12px;
+      flex-wrap: wrap;
     }
     .filter-group {
       display: flex;
@@ -349,50 +117,73 @@
       align-items: center;
     }
     .filter-group select {
-      padding: 6px 10px;
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
+      padding: 8px 12px;
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
       font-size: 13px;
+      background: var(--bg-input);
+      color: var(--text-primary);
     }
+    .filter-group select:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: var(--input-focus-shadow);
+    }
+    .filter-group label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
     /* Stats cards */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 16px;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
-    @media (max-width: 800px) {
+    @media (max-width: 900px) {
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
       }
     }
+    @media (max-width: 500px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+    }
     .stat-card {
-      background: #fff;
-      border-radius: 8px;
+      background: var(--card-bg);
+      border-radius: 12px;
       padding: 16px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--card-border);
     }
     .stat-card .stat-label {
       font-size: 12px;
       text-transform: uppercase;
       font-weight: 600;
-      color: #666;
+      color: var(--text-secondary);
       margin-bottom: 8px;
     }
     .stat-card .stat-value {
       font-size: 28px;
       font-weight: 700;
       margin-bottom: 4px;
+      color: var(--text-primary);
     }
     .stat-card .stat-detail {
       font-size: 11px;
-      color: #888;
+      color: var(--text-tertiary);
     }
+
     /* Tabs */
     .tabs {
       display: flex;
-      border-bottom: 2px solid #e0e0e0;
-      margin-bottom: 20px;
+      border-bottom: 2px solid var(--border-light);
+      margin-bottom: 24px;
     }
     .tab {
       padding: 12px 20px;
@@ -400,14 +191,15 @@
       border-bottom: 2px solid transparent;
       margin-bottom: -2px;
       font-weight: 500;
-      color: #666;
+      color: var(--text-secondary);
+      transition: all 0.15s ease;
     }
     .tab:hover {
-      color: #1976d2;
+      color: var(--brand-primary);
     }
     .tab.active {
-      color: #1976d2;
-      border-bottom-color: #1976d2;
+      color: var(--brand-primary);
+      border-bottom-color: var(--brand-primary);
     }
     .tab-content {
       display: none;
@@ -415,42 +207,75 @@
     .tab-content.active {
       display: block;
     }
+
     /* Hit count */
     .hit-count {
       font-weight: 600;
-      color: #1976d2;
+      color: var(--brand-primary);
     }
     .hit-count.high {
-      color: #2e7d32;
+      color: var(--success-text);
     }
-    /* Toast notification styles */
-    .toast-container {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
+
+    /* Nav dropdown styles */
+    .nav-group {
+      display: inline-block;
+      position: relative;
     }
-    .toast {
-      padding: 14px 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 14px;
+    .nav-group-label {
+      color: var(--nav-link);
+      font-size: 13px;
       font-weight: 500;
-      animation: slideIn 0.3s ease;
-      max-width: 350px;
+      cursor: pointer;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
-    .toast.success { background: #10b981; color: white; }
-    .toast.error { background: #ef4444; color: white; }
-    .toast.info { background: #3b82f6; color: white; }
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
+    .nav-group-label:hover {
+      background: var(--bg-tertiary);
+      color: var(--nav-link-hover);
+    }
+    .nav-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: var(--nav-dropdown-bg);
+      border-radius: 8px;
+      box-shadow: var(--shadow-lg);
+      min-width: 200px;
+      z-index: 1000;
+      padding: 8px 0;
+      border: 1px solid var(--border-light);
+    }
+    .nav-group:hover .nav-dropdown {
+      display: block;
+    }
+    .nav-dropdown a {
+      display: block;
+      color: var(--text-primary);
+      padding: 8px 16px;
+      margin: 0;
+      font-size: 13px;
+      border-radius: 0;
+    }
+    .nav-dropdown a:hover {
+      background: var(--nav-dropdown-hover);
+    }
+    .nav-dropdown a.active {
+      background: var(--nav-dropdown-active);
+      color: var(--brand-primary);
+      font-weight: 500;
+    }
+
+    /* Description text */
+    .section-description {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-bottom: 16px;
     }
   </style>
 </head>
@@ -459,21 +284,24 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <div class="app-header">
-    <div>Unrecognized Suggestions</div>
-    <div>
+    <div class="header-title">
+      <span class="icon"><i data-lucide="help-circle"></i></span>
+      <span>Unrecognized Suggestions</span>
+    </div>
+    <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <span class="nav-group">
-        <span class="nav-group-label">Item Types &#9662;</span>
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_item_types.html">Basic Info</a>
           <a href="/static/admin_modifiers.html">Modifiers</a>
         </div>
       </span>
       <span class="nav-group">
-        <span class="nav-group-label">Config &#9662;</span>
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_global_attributes.html">Global Attributes</a>
           <a href="/static/admin_size_categories.html">Size Categories</a>
@@ -489,6 +317,10 @@
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
     </div>
   </div>
 
@@ -529,7 +361,10 @@
       <div class="section">
         <div class="section-header">
           <span>Curated Suggestions</span>
-          <button class="btn primary" onclick="openCreateModal()">+ Add Suggestion</button>
+          <button class="btn primary" onclick="openCreateModal()">
+            <span class="icon"><i data-lucide="plus"></i></span>
+            Add Suggestion
+          </button>
         </div>
         <div class="section-body">
           <div class="toolbar">
@@ -543,7 +378,7 @@
               <select id="filterCategory" onchange="loadSuggestions()">
                 <option value="">All Categories</option>
               </select>
-              <label style="font-size:13px;">
+              <label>
                 <input type="checkbox" id="filterActive" onchange="loadSuggestions()"> Active only
               </label>
             </div>
@@ -574,7 +409,10 @@
       <div class="section">
         <div class="section-header">
           <span>Unrecognized Option Suggestions</span>
-          <button class="btn primary" onclick="openOptionModal()">+ Add Option Suggestion</button>
+          <button class="btn primary" onclick="openOptionModal()">
+            <span class="icon"><i data-lucide="plus"></i></span>
+            Add Option Suggestion
+          </button>
         </div>
         <div class="section-body">
           <div class="toolbar">
@@ -582,12 +420,12 @@
               <select id="filterAttrSlug" onchange="loadOptionSuggestions()">
                 <option value="">All Attributes</option>
               </select>
-              <label style="font-size:13px;">
+              <label>
                 <input type="checkbox" id="filterOptActive" onchange="loadOptionSuggestions()"> Active only
               </label>
             </div>
           </div>
-          <p style="color:#666;font-size:13px;margin-bottom:16px;">
+          <p class="section-description">
             These are common attribute option terms that users request but aren't in our menu (e.g., "venti" size).
           </p>
           <div id="optionSuggestionsTable">
@@ -627,7 +465,7 @@
           <span>Top Unrecognized Items (Potential Suggestions)</span>
         </div>
         <div class="section-body">
-          <p style="color:#666;font-size:13px;margin-bottom:16px;">
+          <p class="section-description">
             These items were requested but not found. Consider adding curated suggestions for the most common ones.
           </p>
           <div id="topUnrecognized">
@@ -663,7 +501,9 @@
     <div class="modal">
       <div class="modal-header">
         <span id="modalTitle">Add Suggestion</span>
-        <button class="modal-close" onclick="closeModal()">&times;</button>
+        <button class="close-btn" onclick="closeModal()">
+          <span class="icon"><i data-lucide="x"></i></span>
+        </button>
       </div>
       <div class="modal-body">
         <form id="suggestionForm">
@@ -695,7 +535,7 @@
               <input type="text" id="menuItemSearch" placeholder="Type to search menu items..." autocomplete="off">
               <div class="multi-select-dropdown" id="menuItemsDropdown"></div>
             </div>
-            <div class="hint">Click items to add, click × to remove</div>
+            <div class="hint">Click items to add, click x to remove</div>
           </div>
           <div class="form-group">
             <label>
@@ -717,7 +557,9 @@
     <div class="modal">
       <div class="modal-header">
         <span id="optionModalTitle">Add Option Suggestion</span>
-        <button class="modal-close" onclick="closeOptionModal()">&times;</button>
+        <button class="close-btn" onclick="closeOptionModal()">
+          <span class="icon"><i data-lucide="x"></i></span>
+        </button>
       </div>
       <div class="modal-body">
         <form id="optionSuggestionForm">
@@ -791,9 +633,14 @@
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
       toast.className = `toast ${type}`;
-      toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+      const iconNames = { success: 'check', error: 'x', info: 'info' };
+      toast.innerHTML = `<span class="icon"><i data-lucide="${iconNames[type] || iconNames.info}"></i></span><span>${escapeHtml(message)}</span>`;
       container.appendChild(toast);
-      setTimeout(() => toast.remove(), 4000);
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
+      setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
     }
 
     function escapeHtml(text) {
@@ -913,6 +760,7 @@
       document.getElementById('menuItemSearch').value = '';
       document.getElementById('isActive').checked = true;
       document.getElementById('suggestionModal').classList.add('active');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
     async function editSuggestion(id) {
@@ -934,6 +782,7 @@
 
         document.getElementById('isActive').checked = s.is_active;
         document.getElementById('suggestionModal').classList.add('active');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
       } catch (err) {
         showToast('Failed to load suggestion: ' + err.message, 'error');
       }
@@ -1048,7 +897,8 @@
           <td>${item.count}</td>
           <td>
             <button class="btn small primary" onclick="quickAddSuggestion('${escapeHtml(item.input)}')">
-              + Add Suggestion
+              <span class="icon"><i data-lucide="plus"></i></span>
+              Add Suggestion
             </button>
           </td>
         </tr>`;
@@ -1056,6 +906,7 @@
 
       html += '</tbody></table>';
       document.getElementById('topUnrecognized').innerHTML = html;
+      if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
     async function loadLogs() {
@@ -1101,7 +952,7 @@
           <td><span class="badge badge-${log.fallback_level}">${log.fallback_level}</span></td>
           <td>${log.inferred_category || '-'}</td>
           <td>${log.order_item_count}</td>
-          <td style="font-size:12px;color:#666;">${time}</td>
+          <td style="font-size:12px;color:var(--text-tertiary);">${time}</td>
         </tr>`;
       });
 
@@ -1316,6 +1167,7 @@
       document.getElementById('optDisplayName').value = '';
       document.getElementById('optIsActive').checked = true;
       document.getElementById('optionModal').classList.add('active');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
     async function editOptionSuggestion(id) {
@@ -1331,6 +1183,7 @@
         document.getElementById('optDisplayName').value = s.suggested_display_name;
         document.getElementById('optIsActive').checked = s.is_active;
         document.getElementById('optionModal').classList.add('active');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
       } catch (err) {
         showToast('Failed to load option suggestion: ' + err.message, 'error');
       }
@@ -1401,6 +1254,22 @@
       }
     }
 
+    // Close modals on outside click
+    document.getElementById('suggestionModal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+    document.getElementById('optionModal').addEventListener('click', function(e) {
+      if (e.target === this) closeOptionModal();
+    });
+
+    // Close modals on Escape
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeModal();
+        closeOptionModal();
+      }
+    });
+
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
       loadDropdownOptions();
@@ -1408,6 +1277,53 @@
       loadSuggestions();
       loadSuggestionStats();
       setupMenuItemsMultiSelect();
+
+      // Initialize Lucide icons
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+
+      // Mark active nav link based on current URL
+      const currentPath = window.location.pathname;
+      document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+        // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
+        const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+        const linkPage = hrefMatch ? hrefMatch[1] : null;
+        // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
+        const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+        const currentPage = currentMatch ? currentMatch[1] : null;
+
+        if (linkPage && currentPage && linkPage === currentPage) {
+          link.classList.add('active');
+          // Also mark parent dropdown label as active
+          const navGroup = link.closest('.nav-group');
+          if (navGroup) {
+            const label = navGroup.querySelector('.nav-group-label');
+            if (label) label.classList.add('active');
+          }
+        }
+      });
+    });
+
+    // Theme Toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const htmlEl = document.documentElement;
+
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    htmlEl.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      htmlEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
     });
   </script>
 </body>

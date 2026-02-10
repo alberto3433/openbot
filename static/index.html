@@ -169,7 +169,7 @@
       color: var(--header-text);
       padding: 14px 24px;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       align-items: center;
       border-bottom: 1px solid var(--header-border);
       position: relative;
@@ -179,7 +179,6 @@
     .header-left {
       display: flex;
       align-items: center;
-      gap: 12px;
     }
 
     .header-brand {
@@ -188,14 +187,39 @@
       color: var(--text-primary);
     }
 
-    .bagel-logo {
-      width: 36px;
-      height: 36px;
-      transition: transform 0.3s ease;
+    /* Logo Sidebar */
+    .logo-sidebar {
+      width: 140px;
+      min-width: 140px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 8px;
     }
 
-    .bagel-logo:hover {
-      transform: rotate(15deg);
+    .sidebar-logo {
+      width: 110px;
+      height: auto;
+      mix-blend-mode: multiply;
+    }
+
+    /* For dark mode: invert logo and use screen blend to make black transparent */
+    [data-theme="dark"] .sidebar-logo {
+      filter: invert(1);
+      mix-blend-mode: screen;
+    }
+
+    /* Mobile header logo - hidden on desktop */
+    .header-logo-mobile {
+      display: none;
+      height: 28px;
+      width: auto;
+      mix-blend-mode: multiply;
+    }
+
+    [data-theme="dark"] .header-logo-mobile {
+      filter: invert(1);
+      mix-blend-mode: screen;
     }
 
     .header-right {
@@ -1125,6 +1149,18 @@
        Responsive
        ===================================================== */
     @media (max-width: 960px) {
+      .logo-sidebar {
+        display: none;
+      }
+
+      .header-logo-mobile {
+        display: block;
+      }
+
+      .app-header {
+        justify-content: space-between;
+      }
+
       .main-layout {
         flex-direction: column;
         padding: 0;
@@ -1166,16 +1202,8 @@
 
     @media (max-width: 480px) {
       .app-header {
-        padding: 10px 16px;
-      }
-
-      .bagel-logo {
-        width: 32px;
-        height: 32px;
-      }
-
-      .header-brand {
-        font-size: 15px;
+        padding: 0 16px;
+        height: 48px;
       }
 
       #theme-text {
@@ -1208,33 +1236,8 @@
 <body>
   <div class="app-header">
     <div class="header-left">
-      <!-- Zucker's Bagel Logo SVG -->
-      <svg class="bagel-logo" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <!-- Outer bagel ring -->
-        <circle cx="24" cy="24" r="20" fill="var(--bagel-outer)" />
-        <!-- Inner shadow/depth -->
-        <circle cx="24" cy="24" r="16" fill="var(--bagel-inner)" />
-        <!-- Center hole -->
-        <circle cx="24" cy="24" r="8" fill="var(--bagel-hole)" />
-        <!-- Everything bagel seeds -->
-        <circle cx="14" cy="12" r="1.5" fill="var(--bagel-seeds)" />
-        <circle cx="19" cy="9" r="1.2" fill="var(--bagel-seeds)" />
-        <circle cx="29" cy="10" r="1.4" fill="var(--bagel-seeds)" />
-        <circle cx="34" cy="14" r="1.3" fill="var(--bagel-seeds)" />
-        <circle cx="37" cy="22" r="1.5" fill="var(--bagel-seeds)" />
-        <circle cx="36" cy="30" r="1.2" fill="var(--bagel-seeds)" />
-        <circle cx="32" cy="36" r="1.4" fill="var(--bagel-seeds)" />
-        <circle cx="24" cy="39" r="1.3" fill="var(--bagel-seeds)" />
-        <circle cx="16" cy="37" r="1.5" fill="var(--bagel-seeds)" />
-        <circle cx="11" cy="30" r="1.2" fill="var(--bagel-seeds)" />
-        <circle cx="10" cy="21" r="1.4" fill="var(--bagel-seeds)" />
-        <!-- Additional seeds for fullness -->
-        <ellipse cx="22" cy="7" rx="1" ry="1.3" fill="var(--bagel-seeds)" opacity="0.8" />
-        <ellipse cx="38" cy="26" rx="1.2" ry="1" fill="var(--bagel-seeds)" opacity="0.8" />
-        <ellipse cx="28" cy="38" rx="1" ry="1.2" fill="var(--bagel-seeds)" opacity="0.8" />
-        <ellipse cx="8" cy="26" rx="1.2" ry="1" fill="var(--bagel-seeds)" opacity="0.8" />
-      </svg>
-      <span class="header-brand" id="header-brand">Zucker's</span>
+      <!-- Logo shown in header on mobile only -->
+      <img src="/static/images/logo-light.png" alt="Zucker's Bagels" class="header-logo-mobile">
     </div>
     <div class="header-right">
       <span class="header-subtitle">Demo Web Chat</span>
@@ -1246,6 +1249,10 @@
   </div>
 
   <div class="main-layout">
+    <!-- Logo Sidebar -->
+    <div class="logo-sidebar">
+      <img src="/static/images/logo-light.png" alt="Zucker's Bagels" class="sidebar-logo">
+    </div>
     <div class="chat-container">
       <!-- Caller ID Simulation Panel -->
       <details class="caller-id-panel" id="caller-id-panel">
@@ -1496,11 +1503,6 @@
         companyInfo = await response.json();
         console.log("[Company] Loaded:", companyInfo.name);
         document.title = `${companyInfo.name} - Order Bot`;
-        // Update header brand name
-        const headerBrand = document.getElementById("header-brand");
-        if (headerBrand && companyInfo.name) {
-          headerBrand.textContent = companyInfo.name.split("'")[0] + "'s";
-        }
         return companyInfo;
       } catch (error) {
         console.error("[Company] Failed to load:", error);

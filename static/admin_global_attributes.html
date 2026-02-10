@@ -1,47 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <title>Global Attributes</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
-    }
-    .app-header {
-      background: #1976d2;
-      color: #fff;
-      padding: 12px 20px;
-      font-size: 18px;
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .app-header a {
-      color: #bbdefb;
-      text-decoration: none;
-      font-size: 14px;
-      margin-left: 16px;
-    }
-    .app-header a:hover {
-      color: #fff;
-    }
     .container {
       max-width: 1200px;
-      margin: 20px auto;
-      padding: 0 20px;
+      margin: 24px auto;
+      padding: 0 24px;
     }
     .page-description {
-      background: #e3f2fd;
+      background: var(--info-bg);
       padding: 16px;
       border-radius: 8px;
       margin-bottom: 20px;
       font-size: 14px;
-      color: #1565c0;
+      color: var(--info-text);
+      border: 1px solid var(--border-light);
     }
     .master-detail {
       display: grid;
@@ -53,24 +35,9 @@
         grid-template-columns: 1fr;
       }
     }
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-      overflow: hidden;
-    }
-    .section-header {
-      background: #f5f5f5;
-      padding: 12px 16px;
-      font-weight: 600;
-      font-size: 14px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
     .section-header .count {
-      background: #e0e0e0;
+      background: var(--badge-count-bg);
+      color: var(--badge-count-text);
       padding: 2px 8px;
       border-radius: 10px;
       font-size: 12px;
@@ -88,7 +55,7 @@
       justify-content: space-between;
       align-items: center;
       padding: 12px 16px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--border-light);
       cursor: pointer;
       transition: background 0.15s;
     }
@@ -96,11 +63,11 @@
       border-bottom: none;
     }
     .item-row:hover {
-      background: #f5f5f5;
+      background: var(--bg-tertiary);
     }
     .item-row.selected {
-      background: #e3f2fd;
-      border-left: 3px solid #1976d2;
+      background: var(--badge-primary-bg);
+      border-left: 3px solid var(--brand-primary);
     }
     .item-info {
       flex: 1;
@@ -108,11 +75,11 @@
     .item-name {
       font-weight: 600;
       font-size: 14px;
-      color: #333;
+      color: var(--text-primary);
     }
     .item-slug {
       font-size: 12px;
-      color: #666;
+      color: var(--text-secondary);
       font-family: monospace;
     }
     .item-meta {
@@ -127,35 +94,30 @@
       font-weight: 500;
     }
     .badge.type {
-      background: #e3f2fd;
-      color: #1565c0;
+      background: var(--badge-primary-bg);
+      color: var(--badge-primary-text);
     }
     .badge.count {
-      background: #e8f5e9;
-      color: #2e7d32;
+      background: var(--success-bg);
+      color: var(--success-text);
     }
     .badge.linked {
-      background: #fff3e0;
-      color: #e65100;
-    }
-    .empty-state {
-      padding: 40px;
-      text-align: center;
-      color: #666;
-      font-size: 14px;
+      background: var(--warning-bg);
+      color: var(--warning-text);
     }
     .add-btn {
       padding: 8px 16px;
-      background: #4caf50;
+      background: var(--success-text);
       color: #fff;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
+      transition: all 0.15s ease;
     }
     .add-btn:hover {
-      background: #43a047;
+      background: #059669;
     }
     /* Detail panel */
     .detail-panel {
@@ -163,16 +125,17 @@
     }
     .detail-header {
       padding: 20px;
-      border-bottom: 1px solid #e0e0e0;
+      border-bottom: 1px solid var(--border-light);
     }
     .detail-title {
       font-size: 20px;
       font-weight: 600;
       margin: 0 0 4px;
+      color: var(--text-primary);
     }
     .detail-subtitle {
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
       font-family: monospace;
     }
     .detail-actions {
@@ -189,7 +152,7 @@
     .detail-section-title {
       font-size: 14px;
       font-weight: 600;
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 12px;
       display: flex;
       justify-content: space-between;
@@ -201,71 +164,75 @@
       gap: 16px;
     }
     .info-item {
-      background: #f9f9f9;
+      background: var(--bg-tertiary);
       padding: 12px;
-      border-radius: 4px;
+      border-radius: 6px;
     }
     .info-label {
       font-size: 11px;
-      color: #888;
+      color: var(--text-tertiary);
       text-transform: uppercase;
       margin-bottom: 4px;
     }
     .info-value {
       font-size: 14px;
       font-weight: 500;
+      color: var(--text-primary);
     }
     /* Options list */
     .options-list {
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      overflow: hidden;
     }
     .option-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 10px 14px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--border-light);
     }
     .option-row:last-child {
       border-bottom: none;
     }
     .option-row:hover {
-      background: #fafafa;
+      background: var(--bg-tertiary);
     }
     .option-info {
       display: flex;
       align-items: center;
       gap: 10px;
       flex: 1;
+      flex-wrap: wrap;
     }
     .option-name {
       font-weight: 500;
       font-size: 14px;
+      color: var(--text-primary);
     }
     .option-slug {
       font-size: 12px;
-      color: #888;
+      color: var(--text-secondary);
       font-family: monospace;
     }
     .option-price {
       font-size: 12px;
-      color: #2e7d32;
-      background: #e8f5e9;
+      color: var(--success-text);
+      background: var(--success-bg);
       padding: 2px 6px;
       border-radius: 4px;
     }
     .option-default {
       font-size: 10px;
-      background: #e3f2fd;
-      color: #1565c0;
+      background: var(--info-bg);
+      color: var(--info-text);
       padding: 2px 6px;
       border-radius: 4px;
     }
     .option-category {
       font-size: 10px;
-      background: #fff3e0;
-      color: #e65100;
+      background: var(--warning-bg);
+      color: var(--warning-text);
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -276,25 +243,27 @@
     .btn-sm {
       padding: 4px 10px;
       font-size: 11px;
-      border-radius: 3px;
-      border: 1px solid #ccc;
-      background: #fff;
+      border-radius: 4px;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       cursor: pointer;
+      transition: all 0.15s ease;
     }
     .btn-sm:hover {
-      background: #f5f5f5;
+      background: var(--bg-tertiary);
     }
     .btn-sm.danger {
-      color: #c62828;
-      border-color: #ef9a9a;
+      color: var(--error-text);
+      border-color: var(--error-text);
     }
     .btn-sm.danger:hover {
-      background: #ffebee;
+      background: var(--error-bg);
     }
     .empty-options {
       padding: 30px;
       text-align: center;
-      color: #888;
+      color: var(--text-secondary);
       font-size: 13px;
     }
     /* Linked item types */
@@ -304,51 +273,19 @@
       gap: 8px;
     }
     .linked-type-badge {
-      background: #e3f2fd;
+      background: var(--badge-primary-bg);
       padding: 6px 12px;
-      border-radius: 4px;
+      border-radius: 6px;
       font-size: 13px;
-      color: #1565c0;
+      color: var(--brand-primary);
       text-decoration: none;
       transition: background 0.15s, color 0.15s;
     }
     .linked-type-badge:hover {
-      background: #1976d2;
+      background: var(--brand-primary);
       color: #fff;
     }
-    /* Modal Styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-overlay.active {
-      display: flex;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-      width: 100%;
-      max-width: 500px;
-      max-height: 90vh;
-      overflow-y: auto;
-      margin: 20px;
-    }
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
+    /* Modal header h2 */
     .modal-header h2 {
       margin: 0;
       font-size: 18px;
@@ -359,48 +296,13 @@
       border: none;
       font-size: 24px;
       cursor: pointer;
-      color: #666;
+      color: var(--text-tertiary);
       padding: 0;
       line-height: 1;
+      transition: color 0.15s ease;
     }
     .modal-close:hover {
-      color: #333;
-    }
-    .modal-body {
-      padding: 20px;
-    }
-    .form-group {
-      margin-bottom: 16px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: #333;
-      margin-bottom: 6px;
-    }
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 14px;
-      font-family: inherit;
-      box-sizing: border-box;
-    }
-    .form-group input:focus,
-    .form-group select:focus,
-    .form-group textarea:focus {
-      outline: none;
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-    }
-    .form-group .hint {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
+      color: var(--text-primary);
     }
     .form-row {
       display: grid;
@@ -417,118 +319,31 @@
       width: 18px;
       height: 18px;
       cursor: pointer;
+      accent-color: var(--brand-primary);
     }
     .checkbox-row label {
       margin: 0;
       font-size: 14px;
       cursor: pointer;
-    }
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-    .btn {
-      padding: 10px 20px;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: #fff;
-    }
-    .btn:hover {
-      background: #f5f5f5;
-    }
-    .btn.primary {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .btn.primary:hover {
-      background: #1565c0;
-    }
-    .btn.danger {
-      background: #c62828;
-      color: #fff;
-      border-color: #c62828;
-    }
-    .btn.danger:hover {
-      background: #b71c1c;
-    }
-    /* Toast notifications */
-    .toast-container {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .toast {
-      padding: 14px 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      animation: slideIn 0.3s ease;
-      max-width: 350px;
-    }
-    .toast.success { background: #10b981; color: white; }
-    .toast.error { background: #ef4444; color: white; }
-    .toast.info { background: #3b82f6; color: white; }
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
-    }
-    /* Button state styles */
-    .btn.saving {
-      position: relative;
-      pointer-events: none;
-      opacity: 0.8;
-    }
-    .btn.saving::after {
-      content: "";
-      width: 14px;
-      height: 14px;
-      border: 2px solid transparent;
-      border-top-color: currentColor;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-left: 8px;
-      display: inline-block;
-      vertical-align: middle;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+      color: var(--text-primary);
     }
     /* Disabled-derived state for ingredient-linked options */
     .disabled-derived {
-      background-color: #f0f0f0 !important;
-      color: #888 !important;
+      background-color: var(--bg-tertiary) !important;
+      color: var(--text-tertiary) !important;
       cursor: not-allowed;
     }
     .disabled-derived-hint {
       font-size: 10px;
-      color: #1976d2;
+      color: var(--brand-primary);
       font-style: italic;
       margin-top: 2px;
     }
     /* Ingredient link badge in options list */
     .option-ingredient {
       font-size: 10px;
-      background: #e8f5e9;
-      color: #2e7d32;
+      background: var(--success-bg);
+      color: var(--success-text);
       padding: 2px 6px;
       border-radius: 4px;
       cursor: help;
@@ -537,30 +352,31 @@
     .skip-rules-section {
       margin-top: 20px;
       padding-top: 16px;
-      border-top: 1px solid #e0e0e0;
+      border-top: 1px solid var(--border-light);
     }
     .skip-rules-section .section-label {
       font-size: 13px;
       font-weight: 600;
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 8px;
       display: block;
     }
     .skip-rules-section .hint {
       font-size: 11px;
-      color: #888;
+      color: var(--text-tertiary);
       margin-bottom: 12px;
     }
     .skip-rules-table {
       width: 100%;
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
       margin-bottom: 10px;
     }
     .skip-rules-table td {
       padding: 8px 12px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--border-light);
       font-size: 13px;
+      color: var(--text-primary);
     }
     .skip-rules-table tr:last-child td {
       border-bottom: none;
@@ -569,7 +385,7 @@
       flex: 1;
     }
     .skip-rules-table .empty-row td {
-      color: #888;
+      color: var(--text-secondary);
       font-style: italic;
       text-align: center;
     }
@@ -577,19 +393,20 @@
       padding: 4px 8px;
       font-size: 11px;
       background: none;
-      border: 1px solid #ef9a9a;
-      color: #c62828;
-      border-radius: 3px;
+      border: 1px solid var(--error-text);
+      color: var(--error-text);
+      border-radius: 4px;
       cursor: pointer;
+      transition: all 0.15s ease;
     }
     .skip-rule-delete-btn:hover {
-      background: #ffebee;
+      background: var(--error-bg);
     }
     /* Skip badge in options list */
     .option-skip-badge {
       font-size: 10px;
-      background: #fce4ec;
-      color: #c2185b;
+      background: var(--badge-secondary-bg);
+      color: var(--badge-secondary-text);
       padding: 2px 6px;
       border-radius: 4px;
       cursor: help;
@@ -600,21 +417,24 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <div class="app-header">
-    <div>Global Attributes</div>
-    <div>
+    <div class="header-title">
+      <span class="icon"><i data-lucide="settings-2"></i></span>
+      <span>Global Attributes</span>
+    </div>
+    <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <span class="nav-group">
-        <span class="nav-group-label">Item Types &#9662;</span>
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_item_types.html">Basic Info</a>
           <a href="/static/admin_modifiers.html">Modifiers</a>
         </div>
       </span>
       <span class="nav-group">
-        <span class="nav-group-label">Config &#9662;</span>
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_global_attributes.html" class="active">Global Attributes</a>
           <a href="/static/admin_size_categories.html">Size Categories</a>
@@ -625,12 +445,15 @@
           <a href="/static/admin_menu_display_groups.html">Display Groups</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
           <a href="/static/admin_unrecognized_suggestions.html">Unrecognized Suggestions</a>
-          <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
         </div>
       </span>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
     </div>
   </div>
 
@@ -698,7 +521,7 @@
               <div class="detail-section-title">
                 <span>Options</span>
                 <div style="display: flex; gap: 8px;">
-                  <button class="add-btn" id="addFromIngredientBtn" style="padding: 6px 12px; font-size: 12px; background: #1976d2;">+ From Ingredient</button>
+                  <button class="add-btn" id="addFromIngredientBtn" style="padding: 6px 12px; font-size: 12px; background: var(--brand-primary);">+ From Ingredient</button>
                   <button class="add-btn" id="addOptionBtn" style="padding: 6px 12px; font-size: 12px;">+ Add Option</button>
                 </div>
               </div>
@@ -710,7 +533,7 @@
             <div class="detail-section" id="linkedTypesSection">
               <div class="detail-section-title">Item Types Using This Attribute</div>
               <div class="linked-types" id="linkedTypes">
-                <span style="color: #888; font-size: 13px;">Not linked to any item types yet</span>
+                <span style="color: var(--text-secondary); font-size: 13px;">Not linked to any item types yet</span>
               </div>
             </div>
           </div>
@@ -854,8 +677,8 @@
         <button class="modal-close" id="deleteModalClose">&times;</button>
       </div>
       <div class="modal-body">
-        <p>Are you sure you want to delete <strong id="deleteAttrName"></strong>?</p>
-        <p style="color: #c62828; font-size: 13px;">This will remove all options and unlink from all item types. This action cannot be undone.</p>
+        <p style="color: var(--text-primary);">Are you sure you want to delete <strong id="deleteAttrName"></strong>?</p>
+        <p style="color: var(--error-text); font-size: 13px;">This will remove all options and unlink from all item types. This action cannot be undone.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
@@ -872,7 +695,7 @@
         <button class="modal-close" id="fromIngredientModalClose">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+        <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
           Select an ingredient to auto-populate slug and display name. You only need to set the price.
         </p>
         <form id="fromIngredientForm">
@@ -889,16 +712,16 @@
             </div>
           </div>
           <div class="form-group">
-            <label for="ingredientSelect">Ingredient * <span id="ingredientCount" style="font-weight: normal; color: #888;"></span></label>
+            <label for="ingredientSelect">Ingredient * <span id="ingredientCount" style="font-weight: normal; color: var(--text-secondary);"></span></label>
             <select id="ingredientSelect" required size="8" style="height: auto;">
               <option value="">-- Select an ingredient --</option>
             </select>
             <div class="hint">Only shows ingredients not yet linked to this attribute</div>
           </div>
-          <div id="ingredientPreview" style="display: none; background: #f5f5f5; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
-            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Will create option:</div>
-            <div><strong id="previewName">--</strong></div>
-            <div style="font-size: 12px; color: #888; font-family: monospace;" id="previewSlug">--</div>
+          <div id="ingredientPreview" style="display: none; background: var(--bg-tertiary); padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">Will create option:</div>
+            <div style="color: var(--text-primary);"><strong id="previewName">--</strong></div>
+            <div style="font-size: 12px; color: var(--text-secondary); font-family: monospace;" id="previewSlug">--</div>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -1125,7 +948,7 @@
               ${opt.price_modifier > 0 ? `<span class="option-price">+$${opt.price_modifier.toFixed(2)}</span>` : ''}
               ${opt.is_default ? '<span class="option-default">default</span>' : ''}
               ${opt.modifier_category_name ? `<span class="option-category" title="Modifier Category">${escapeHtml(opt.modifier_category_name)}</span>` : ''}
-              ${opt.ingredient_id ? `<span class="option-ingredient" title="Linked to ingredient - slug/name derived">🔗</span>` : ''}
+              ${opt.ingredient_id ? `<span class="option-ingredient" title="Linked to ingredient - slug/name derived">linked</span>` : ''}
               ${skipBadge}
               ${opt.aliases ? `<span class="option-slug" title="Aliases" style="margin-left: 8px;">aliases: ${escapeHtml(opt.aliases)}</span>` : ''}
             </div>
@@ -1160,7 +983,7 @@
     function renderLinkedItemTypes(linkedTypes) {
       const container = document.getElementById("linkedTypes");
       if (!linkedTypes || linkedTypes.length === 0) {
-        container.innerHTML = `<span style="color: #888; font-size: 13px;">Not linked to any item types yet. Link in <a href="/static/admin_item_types.html" style="color: #1976d2;">Item Types</a>.</span>`;
+        container.innerHTML = `<span style="color: var(--text-secondary); font-size: 13px;">Not linked to any item types yet. Link in <a href="/static/admin_item_types.html" style="color: var(--brand-primary);">Item Types</a>.</span>`;
         return;
       }
 
@@ -1359,7 +1182,7 @@
       const displayNameHint = document.getElementById('displayNameDerivedHint');
 
       if (ingredientId) {
-        // Ingredient selected → derive slug/display_name from ingredient
+        // Ingredient selected - derive slug/display_name from ingredient
         const ingredient = ingredientsCache.find(i => i.id === parseInt(ingredientId));
         if (ingredient) {
           slugInput.value = ingredient.slug;
@@ -1372,7 +1195,7 @@
         slugHint.style.display = 'block';
         displayNameHint.style.display = 'block';
       } else {
-        // No ingredient → enable manual entry
+        // No ingredient - enable manual entry
         slugInput.disabled = false;
         displayNameInput.disabled = false;
         slugInput.classList.remove('disabled-derived');
@@ -1927,6 +1750,53 @@
 
     // Initial load
     loadAttributes();
+
+    // Theme Toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const htmlEl = document.documentElement;
+
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    htmlEl.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      htmlEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+
+    // Initialize Lucide icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    // Mark active nav link based on current URL
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
+      const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+      const linkPage = hrefMatch ? hrefMatch[1] : null;
+      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
+      const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+      const currentPage = currentMatch ? currentMatch[1] : null;
+
+      if (linkPage && currentPage && linkPage === currentPage) {
+        link.classList.add('active');
+        // Also mark parent dropdown label as active
+        const navGroup = link.closest('.nav-group');
+        if (navGroup) {
+          const label = navGroup.querySelector('.nav-group-label');
+          if (label) label.classList.add('active');
+        }
+      }
+    });
   </script>
   <script src="/static/admin_common.js"></script>
 </body>

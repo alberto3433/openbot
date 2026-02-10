@@ -1,32 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <title>Menu Admin</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
-    }
-    .app-header {
-      background: #1976d2;
-      color: #fff;
-      padding: 12px 20px;
-      font-size: 18px;
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .app-header a {
-      color: #bbdefb;
-      text-decoration: none;
-      font-size: 14px;
-      margin-left: 16px;
-    }
     .layout {
       display: flex;
       height: calc(100vh - 52px);
@@ -34,8 +18,8 @@
     .sidebar {
       width: 40%;
       max-width: 520px;
-      border-right: 1px solid #ddd;
-      background: #fafafa;
+      border-right: 1px solid var(--border-light);
+      background: var(--bg-tertiary);
       display: flex;
       flex-direction: column;
     }
@@ -44,32 +28,36 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--border-light);
     }
     .sidebar-header input[type="text"] {
       flex: 1;
       padding: 6px 8px;
       border-radius: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       font-size: 14px;
     }
     .sidebar-header select {
       padding: 6px 8px;
       border-radius: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       font-size: 14px;
     }
     .sidebar-header button {
       padding: 6px 10px;
       border-radius: 4px;
       border: none;
-      background: #1976d2;
+      background: var(--brand-primary);
       color: #fff;
       font-size: 13px;
       cursor: pointer;
     }
     .sidebar-header button:hover {
-      background: #115293;
+      background: var(--brand-primary-hover);
     }
     .list {
       flex: 1;
@@ -77,7 +65,7 @@
     }
     .item-row {
       padding: 8px 12px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--border-light);
       cursor: pointer;
       display: flex;
       justify-content: space-between;
@@ -85,10 +73,10 @@
       font-size: 14px;
     }
     .item-row:hover {
-      background: #e3f2fd;
+      background: var(--badge-primary-bg);
     }
     .item-row.active {
-      background: #bbdefb;
+      background: var(--badge-primary-bg);
     }
     .item-main {
       display: flex;
@@ -99,7 +87,7 @@
     }
     .item-meta {
       font-size: 12px;
-      color: #666;
+      color: var(--text-secondary);
     }
     .item-badge {
       font-size: 11px;
@@ -112,7 +100,7 @@
     .empty-state {
       padding: 20px;
       text-align: center;
-      color: #777;
+      color: var(--text-secondary);
       font-size: 14px;
     }
     .detail {
@@ -126,25 +114,27 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--border-light);
       padding-bottom: 6px;
       margin-bottom: 8px;
     }
     .detail-title {
       font-size: 18px;
       font-weight: 600;
+      color: var(--text-primary);
     }
     .detail-nav button {
       padding: 4px 8px;
       margin-left: 4px;
       border-radius: 4px;
-      border: 1px solid #ccc;
-      background: #fff;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       font-size: 12px;
       cursor: pointer;
     }
     .detail-nav button:hover {
-      background: #e0e0e0;
+      background: var(--border-light);
     }
     .field-row {
       display: flex;
@@ -167,12 +157,14 @@
     .field textarea {
       padding: 6px 8px;
       border-radius: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       font-size: 13px;
     }
     .field input[readonly] {
-      background: #e9e9e9;
-      color: #666;
+      background: var(--border-light);
+      color: var(--text-secondary);
       cursor: not-allowed;
     }
     .field textarea {
@@ -206,11 +198,11 @@
       cursor: pointer;
     }
     .btn-primary {
-      background: #1976d2;
+      background: var(--brand-primary);
       color: #fff;
     }
     .btn-primary:hover {
-      background: #115293;
+      background: var(--brand-primary-hover);
     }
     .btn-danger {
       background: #d32f2f;
@@ -220,15 +212,15 @@
       background: #9a0007;
     }
     .btn-secondary {
-      background: #e0e0e0;
-      color: #000;
+      background: var(--border-light);
+      color: var(--text-primary);
     }
     .btn-secondary:hover {
-      background: #bdbdbd;
+      background: var(--border-medium);
     }
     .status-text {
       font-size: 12px;
-      color: #666;
+      color: var(--text-secondary);
     }
     /* Category chip styles (shared) */
     .attr-checkbox-group {
@@ -241,21 +233,22 @@
       align-items: center;
       gap: 4px;
       padding: 6px 12px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border-medium);
       border-radius: 16px;
       font-size: 12px;
       cursor: pointer;
-      background: #fff;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       transition: all 0.15s;
     }
     .attr-chip:hover {
-      background: #f5f5f5;
-      border-color: #999;
+      background: var(--bg-tertiary);
+      border-color: var(--text-secondary);
     }
     .attr-chip.selected {
-      background: #e3f2fd;
-      border-color: #1976d2;
-      color: #1565c0;
+      background: var(--badge-primary-bg);
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
     }
     .attr-chip input[type="checkbox"] {
       display: none;
@@ -265,8 +258,8 @@
       position: absolute;
       left: 0;
       right: 0;
-      background: white;
-      border: 1px solid #ccc;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-medium);
       border-top: none;
       border-radius: 0 0 6px 6px;
       max-height: 200px;
@@ -282,16 +275,17 @@
       padding: 8px 12px;
       cursor: pointer;
       font-size: 14px;
+      color: var(--text-primary);
     }
     .autocomplete-item:hover {
-      background: #f5f5f5;
+      background: var(--bg-tertiary);
     }
     .autocomplete-item.highlighted {
-      background: #e3f2fd;
+      background: var(--badge-primary-bg);
     }
     .autocomplete-no-results {
       padding: 8px 12px;
-      color: #888;
+      color: var(--text-secondary);
       font-size: 13px;
       font-style: italic;
     }
@@ -369,14 +363,16 @@
       width: 100px;
       padding: 6px 8px;
       border-radius: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       font-size: 13px;
     }
     #sizePricesContainer {
       padding: 10px;
-      background: #f9f9f9;
+      background: var(--bg-tertiary);
       border-radius: 6px;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-light);
     }
     .single-price-input {
       display: flex;
@@ -391,14 +387,16 @@
       width: 100px;
       padding: 6px 8px;
       border-radius: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       font-size: 13px;
     }
     /* Tab styles */
     .detail-tabs {
       display: flex;
       gap: 0;
-      border-bottom: 2px solid #e0e0e0;
+      border-bottom: 2px solid var(--border-light);
       margin: 0 0 16px 0;
       padding: 0 20px;
     }
@@ -408,15 +406,15 @@
       background: transparent;
       font-size: 14px;
       font-weight: 500;
-      color: #666;
+      color: var(--text-secondary);
       cursor: pointer;
       border-bottom: 2px solid transparent;
       margin-bottom: -2px;
     }
-    .detail-tab:hover { color: #1976d2; }
+    .detail-tab:hover { color: var(--brand-primary); }
     .detail-tab.active {
-      color: #1976d2;
-      border-bottom-color: #1976d2;
+      color: var(--brand-primary);
+      border-bottom-color: var(--brand-primary);
     }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
@@ -427,12 +425,12 @@
       align-items: center;
       gap: 12px;
       padding: 8px 12px;
-      background: #f9f9f9;
+      background: var(--bg-tertiary);
       border-radius: 4px;
       margin-bottom: 8px;
     }
-    .ingredient-name { flex: 1; font-size: 14px; }
-    .ingredient-category { color: #888; font-size: 12px; }
+    .ingredient-name { flex: 1; font-size: 14px; color: var(--text-primary); }
+    .ingredient-category { color: var(--text-secondary); font-size: 12px; }
     .quantity-controls {
       display: flex;
       align-items: center;
@@ -441,13 +439,14 @@
     .quantity-btn {
       width: 28px;
       height: 28px;
-      border: 1px solid #ccc;
-      background: #fff;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       border-radius: 4px;
       font-size: 16px;
       cursor: pointer;
     }
-    .quantity-btn:hover { background: #f0f0f0; }
+    .quantity-btn:hover { background: var(--border-light); }
     .quantity-value {
       min-width: 20px;
       text-align: center;
@@ -471,22 +470,25 @@
   <!-- Toast notification container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <div class="app-header">
-    <div>Menu Admin</div>
-    <div>
+<div class="app-header">
+    <div class="header-title">
+      <span class="icon"><i data-lucide="utensils"></i></span>
+      <span>Menu</span>
+    </div>
+    <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
-      <a href="/static/admin_menu.html"><strong>Menu</strong></a>
+      <a href="/static/admin_menu.html" class="active">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <span class="nav-group">
-        <span class="nav-group-label">Item Types &#9662;</span>
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_item_types.html">Basic Info</a>
           <a href="/static/admin_modifiers.html">Modifiers</a>
         </div>
       </span>
       <span class="nav-group">
-        <span class="nav-group-label">Config &#9662;</span>
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_global_attributes.html">Global Attributes</a>
           <a href="/static/admin_size_categories.html">Size Categories</a>
@@ -497,12 +499,15 @@
           <a href="/static/admin_menu_display_groups.html">Display Groups</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
           <a href="/static/admin_unrecognized_suggestions.html">Unrecognized Suggestions</a>
-          <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
         </div>
       </span>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
     </div>
   </div>
 
@@ -551,7 +556,7 @@
         <div class="field">
           <label for="itemDescription">Description</label>
           <textarea id="itemDescription" rows="2" placeholder="e.g., Two eggs, bacon, and cheddar cheese on a bagel"></textarea>
-          <small style="color: #666; font-size: 0.8em;">Brief description of what's included in this item</small>
+          <small style="color: var(--text-secondary); font-size: 0.8em;">Brief description of what's included in this item</small>
         </div>
 
         <div class="field-row">
@@ -566,7 +571,7 @@
             <select id="sizeCategorySelect">
               <option value="">-- Single Price --</option>
             </select>
-            <small style="color: #666; font-size: 0.8em;">Select a size category for items with multiple sizes (e.g., small/large)</small>
+            <small style="color: var(--text-secondary); font-size: 0.8em;">Select a size category for items with multiple sizes (e.g., small/large)</small>
           </div>
         </div>
 
@@ -587,7 +592,7 @@
         <div class="field-row" style="display: flex; gap: 16px;">
           <div class="field" style="flex: 1;">
             <label for="unitType">Unit Type</label>
-            <select id="unitType" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 13px;">
+            <select id="unitType" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border-medium); background: var(--bg-secondary); color: var(--text-primary); font-size: 13px;">
               <option value="each">Each (single item)</option>
               <option value="pack">Pack (multiple items)</option>
               <option value="dozen">Dozen</option>
@@ -596,14 +601,14 @@
           </div>
           <div class="field" style="flex: 1;" id="quantityPerUnitField">
             <label for="quantityPerUnit">Quantity per Unit</label>
-            <input id="quantityPerUnit" type="number" min="1" max="100" placeholder="e.g., 3" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 13px;" />
-            <small style="color: #666; font-size: 0.8em;">How many items in one pack</small>
+            <input id="quantityPerUnit" type="number" min="1" max="100" placeholder="e.g., 3" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border-medium); background: var(--bg-secondary); color: var(--text-primary); font-size: 13px;" />
+            <small style="color: var(--text-secondary); font-size: 0.8em;">How many items in one pack</small>
           </div>
         </div>
 
         <div class="field">
           <label>Dietary Options</label>
-          <div id="dietaryComputedIndicator" style="display: none; color: #1976d2; font-size: 0.85em; margin-bottom: 4px; font-style: italic;"></div>
+          <div id="dietaryComputedIndicator" style="display: none; color: var(--brand-primary); font-size: 0.85em; margin-bottom: 4px; font-style: italic;"></div>
           <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 4px;">
             <div class="field-checkbox" style="margin-top: 0;">
               <input id="isVegan" type="checkbox" class="dietary-checkbox" />
@@ -626,7 +631,7 @@
               <label for="isKosher">Kosher</label>
             </div>
           </div>
-          <small id="dietaryHelpText" style="color: #666; font-size: 0.8em;">Check if this item qualifies for these dietary restrictions</small>
+          <small id="dietaryHelpText" style="color: var(--text-secondary); font-size: 0.8em;">Check if this item qualifies for these dietary restrictions</small>
         </div>
 
         <div class="field">
@@ -649,7 +654,7 @@
               <label for="containsNuts">Nuts</label>
             </div>
           </div>
-          <small id="allergenHelpText" style="color: #666; font-size: 0.8em;">Check if this item contains these allergens</small>
+          <small id="allergenHelpText" style="color: var(--text-secondary); font-size: 0.8em;">Check if this item contains these allergens</small>
         </div>
 
         <div class="field">
@@ -657,7 +662,7 @@
           <div class="tag-input-container" id="aliasesContainer" onclick="document.getElementById('aliasInput').focus()">
             <input id="aliasInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
           </div>
-          <small style="color: #666; font-size: 0.8em;">Alternative names that customers might use (press Enter to add each one)</small>
+          <small style="color: var(--text-secondary); font-size: 0.8em;">Alternative names that customers might use (press Enter to add each one)</small>
         </div>
 
         <div class="field">
@@ -665,7 +670,7 @@
           <div class="tag-input-container" id="requiredPhrasesContainer" onclick="document.getElementById('requiredPhraseInput').focus()">
             <input id="requiredPhraseInput" class="tag-input" type="text" placeholder="Type and press Enter to add..." />
           </div>
-          <small style="color: #666; font-size: 0.8em;">If set, user input must contain one of these phrases to match this item (prevents "Russian Coffee Cake" from matching just "coffee")</small>
+          <small style="color: var(--text-secondary); font-size: 0.8em;">If set, user input must contain one of these phrases to match this item (prevents "Russian Coffee Cake" from matching just "coffee")</small>
         </div>
         </div>
 
@@ -674,7 +679,7 @@
           <div class="field">
             <label>Add Ingredient</label>
             <div style="position: relative;">
-              <input id="ingredientSearchInput" type="text" placeholder="Search ingredients..." autocomplete="off" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid #ccc; font-size: 13px;" />
+              <input id="ingredientSearchInput" type="text" placeholder="Search ingredients..." autocomplete="off" style="width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border-medium); background: var(--bg-secondary); color: var(--text-primary); font-size: 13px;" />
               <div class="autocomplete-dropdown" id="ingredientDropdown"></div>
             </div>
           </div>
@@ -1018,7 +1023,7 @@
 
         dropdown.innerHTML = matches.map(i => `
           <div class="autocomplete-item" data-id="${i.id}" data-name="${escapeHtml(i.name)}" data-category="${escapeHtml(i.category)}">
-            ${escapeHtml(i.name)} <span style="color:#888">(${escapeHtml(i.category)})</span>
+            ${escapeHtml(i.name)} <span style="color:var(--text-secondary)">(${escapeHtml(i.category)})</span>
           </div>
         `).join('');
         dropdown.style.display = 'block';
@@ -1057,7 +1062,7 @@
 
     function setStatus(msg, isError = false) {
       statusTextEl.textContent = msg || "";
-      statusTextEl.style.color = isError ? "#d32f2f" : "#666";
+      statusTextEl.style.color = isError ? "var(--danger)" : "var(--text-secondary)";
     }
 
     async function loadMenuItems(skipAutoSelect = false) {
@@ -1476,6 +1481,52 @@
       setupIngredientAutocomplete();
     }
     init();
+
+    // Theme Toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const htmlEl = document.documentElement;
+
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    htmlEl.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      htmlEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+
+    // Initialize Lucide icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    // Mark active nav link based on current URL
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
+      const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+      const linkPage = hrefMatch ? hrefMatch[1] : null;
+      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
+      const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+      const currentPage = currentMatch ? currentMatch[1] : null;
+
+      if (linkPage && currentPage && linkPage === currentPage) {
+        link.classList.add('active');
+        // Also mark parent dropdown label as active
+        const navGroup = link.closest('.nav-group');
+        if (navGroup) {
+          const label = navGroup.querySelector('.nav-group-label');
+          if (label) label.classList.add('active');
+        }
+      }
+    });
   </script>
 </body>
 </html>

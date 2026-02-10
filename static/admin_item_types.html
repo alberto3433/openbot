@@ -1,36 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <title>Item Type Management</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
-    }
-    .app-header {
-      background: #1976d2;
-      color: #fff;
-      padding: 12px 20px;
-      font-size: 18px;
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .app-header a {
-      color: #bbdefb;
-      text-decoration: none;
-      font-size: 14px;
-      margin-left: 16px;
-    }
-    .app-header a:hover {
-      color: #fff;
-    }
-
     /* Two-panel layout */
     .layout {
       display: flex;
@@ -39,8 +19,8 @@
     .sidebar {
       width: 40%;
       max-width: 520px;
-      border-right: 1px solid #ddd;
-      background: #fafafa;
+      border-right: 1px solid var(--border-light);
+      background: var(--bg-tertiary);
       display: flex;
       flex-direction: column;
     }
@@ -49,26 +29,33 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--border-light);
     }
     .sidebar-header input[type="text"] {
       flex: 1;
       padding: 6px 8px;
       border-radius: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--input-border);
       font-size: 14px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+    }
+    .sidebar-header input[type="text"]:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: var(--input-focus-shadow);
     }
     .sidebar-header button {
       padding: 6px 10px;
       border-radius: 4px;
       border: none;
-      background: #1976d2;
-      color: #fff;
+      background: var(--brand-primary);
+      color: var(--text-inverse);
       font-size: 13px;
       cursor: pointer;
     }
     .sidebar-header button:hover {
-      background: #115293;
+      background: var(--brand-primary-hover);
     }
     .list {
       flex: 1;
@@ -76,7 +63,7 @@
     }
     .item-row {
       padding: 10px 12px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--border-light);
       cursor: pointer;
       display: flex;
       justify-content: space-between;
@@ -84,10 +71,10 @@
       font-size: 14px;
     }
     .item-row:hover {
-      background: #e3f2fd;
+      background: var(--table-row-hover);
     }
     .item-row.active {
-      background: #bbdefb;
+      background: var(--badge-primary-bg);
     }
     .item-main {
       display: flex;
@@ -96,10 +83,11 @@
     }
     .item-name {
       font-weight: 600;
-      }
+      color: var(--text-primary);
+    }
     .item-slug {
       font-size: 12px;
-      color: #666;
+      color: var(--text-secondary);
       font-family: monospace;
     }
     .item-badges {
@@ -115,25 +103,25 @@
       font-weight: 500;
     }
     .item-badge.configurable {
-      background: #e3f2fd;
-      color: #1565c0;
+      background: var(--info-bg);
+      color: var(--info-text);
     }
     .item-badge.simple {
-      background: #f5f5f5;
-      color: #666;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
     }
     .item-badge.skip {
-      background: #fff3e0;
-      color: #e65100;
+      background: var(--warning-bg);
+      color: var(--warning-text);
     }
     .item-badge.count {
-      background: #e8f5e9;
-      color: #2e7d32;
+      background: var(--success-bg);
+      color: var(--success-text);
     }
     .empty-state {
       padding: 20px;
       text-align: center;
-      color: #777;
+      color: var(--text-secondary);
       font-size: 14px;
     }
 
@@ -144,36 +132,39 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      background: var(--bg-primary);
     }
     .detail-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid #ddd;
+      border-bottom: 1px solid var(--border-light);
       padding-bottom: 10px;
       margin-bottom: 12px;
     }
     .detail-title {
       font-size: 18px;
       font-weight: 600;
+      color: var(--text-primary);
     }
     .detail-nav button {
       padding: 4px 8px;
       margin-left: 4px;
       border-radius: 4px;
-      border: 1px solid #ccc;
-      background: #fff;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       font-size: 12px;
       cursor: pointer;
     }
     .detail-nav button:hover {
-      background: #e0e0e0;
+      background: var(--bg-tertiary);
     }
 
     /* Tabs */
     .detail-tabs {
       display: flex;
-      border-bottom: 1px solid #e0e0e0;
+      border-bottom: 1px solid var(--border-light);
       margin-bottom: 16px;
     }
     .detail-tab {
@@ -183,17 +174,17 @@
       cursor: pointer;
       border: none;
       background: none;
-      color: #666;
+      color: var(--text-secondary);
       border-bottom: 2px solid transparent;
       margin-bottom: -1px;
     }
     .detail-tab:hover {
-      color: #333;
-      background: #f5f5f5;
+      color: var(--text-primary);
+      background: var(--bg-tertiary);
     }
     .detail-tab.active {
-      color: #1976d2;
-      border-bottom-color: #1976d2;
+      color: var(--brand-primary);
+      border-bottom-color: var(--brand-primary);
     }
     .tab-panel {
       display: none;
@@ -212,36 +203,38 @@
       display: block;
       font-size: 13px;
       font-weight: 500;
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 6px;
     }
     .field input[type="text"],
     .field select {
       width: 100%;
       padding: 10px 12px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--input-border);
       border-radius: 4px;
       font-size: 14px;
       font-family: inherit;
       box-sizing: border-box;
+      background: var(--bg-input);
+      color: var(--text-primary);
     }
     .field input:focus,
     .field select:focus {
       outline: none;
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+      border-color: var(--input-focus-border);
+      box-shadow: var(--input-focus-shadow);
     }
     .field .hint {
       font-size: 11px;
-      color: #888;
+      color: var(--text-tertiary);
       margin-top: 4px;
     }
     .config-note {
-      background: #f5f5f5;
+      background: var(--bg-tertiary);
       padding: 12px;
       border-radius: 4px;
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
       display: flex;
       gap: 8px;
       align-items: flex-start;
@@ -253,15 +246,15 @@
     /* Item stats section */
     .item-stats {
       margin-top: 20px;
-      background: #fafafa;
-      border: 1px solid #e0e0e0;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-light);
       border-radius: 4px;
       padding: 12px;
     }
     .stats-header {
       font-size: 12px;
       font-weight: 600;
-      color: #666;
+      color: var(--text-secondary);
       text-transform: uppercase;
       margin-bottom: 10px;
     }
@@ -276,20 +269,20 @@
     .stat-label {
       display: block;
       font-size: 11px;
-      color: #888;
+      color: var(--text-tertiary);
       margin-bottom: 4px;
     }
     .stat-value {
       display: block;
       font-size: 14px;
       font-weight: 600;
-      color: #333;
+      color: var(--text-primary);
     }
     .stat-value.configurable {
-      color: #4caf50;
+      color: var(--success-text);
     }
     .stat-value.simple {
-      color: #888;
+      color: var(--text-tertiary);
     }
 
     /* Attributes section */
@@ -303,13 +296,15 @@
     .link-attr-row select {
       flex: 1;
       padding: 8px 10px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--input-border);
       border-radius: 4px;
       font-size: 13px;
+      background: var(--bg-input);
+      color: var(--text-primary);
     }
     .link-attr-row button {
       padding: 8px 16px;
-      background: #4caf50;
+      background: var(--success-text);
       color: #fff;
       border: none;
       border-radius: 4px;
@@ -317,10 +312,10 @@
       cursor: pointer;
     }
     .link-attr-row button:hover {
-      background: #43a047;
+      opacity: 0.9;
     }
     .attributes-list {
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-light);
       border-radius: 4px;
     }
     .attributes-list-header {
@@ -328,30 +323,33 @@
       justify-content: space-between;
       align-items: center;
       padding: 10px 14px;
-      background: #f5f5f5;
-      border-bottom: 1px solid #e0e0e0;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-light);
       font-weight: 600;
       font-size: 13px;
+      color: var(--text-primary);
     }
     .attributes-list-header .count {
-      background: #e0e0e0;
+      background: var(--border-light);
       padding: 2px 8px;
       border-radius: 10px;
       font-size: 11px;
       font-weight: normal;
+      color: var(--text-secondary);
     }
     .attr-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 10px 14px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--border-light);
+      background: var(--bg-secondary);
     }
     .attr-row:last-child {
       border-bottom: none;
     }
     .attr-row:hover {
-      background: #fafafa;
+      background: var(--bg-tertiary);
     }
     .attr-info {
       flex: 1;
@@ -359,10 +357,11 @@
     .attr-name {
       font-weight: 500;
       font-size: 14px;
+      color: var(--text-primary);
     }
     .attr-slug {
       font-size: 11px;
-      color: #666;
+      color: var(--text-secondary);
       font-family: monospace;
     }
     .attr-meta {
@@ -377,24 +376,24 @@
       font-weight: 500;
     }
     .attr-badge.type {
-      background: #e3f2fd;
-      color: #1565c0;
+      background: var(--info-bg);
+      color: var(--info-text);
     }
     .attr-badge.required {
-      background: #ffebee;
-      color: #c62828;
+      background: var(--error-bg);
+      color: var(--error-text);
     }
     .attr-badge.ask {
-      background: #e8f5e9;
-      color: #2e7d32;
+      background: var(--success-bg);
+      color: var(--success-text);
     }
     .attr-badge.listen-only {
-      background: #f3e5f5;
-      color: #7b1fa2;
+      background: var(--badge-secondary-bg);
+      color: var(--badge-secondary-text);
     }
     .attr-badge.options {
-      background: #fff3e0;
-      color: #e65100;
+      background: var(--warning-bg);
+      color: var(--warning-text);
     }
     .attr-actions {
       display: flex;
@@ -404,25 +403,27 @@
       padding: 4px 10px;
       font-size: 11px;
       border-radius: 3px;
-      border: 1px solid #ccc;
-      background: #fff;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       cursor: pointer;
     }
     .attr-btn:hover {
-      background: #f5f5f5;
+      background: var(--bg-tertiary);
     }
     .attr-btn.danger {
-      color: #c62828;
-      border-color: #ef9a9a;
+      color: var(--error-text);
+      border-color: var(--error-text);
     }
     .attr-btn.danger:hover {
-      background: #ffebee;
+      background: var(--error-bg);
     }
     .empty-attrs {
       padding: 20px;
       text-align: center;
-      color: #888;
+      color: var(--text-tertiary);
       font-size: 13px;
+      background: var(--bg-secondary);
     }
 
     /* Detail footer */
@@ -431,152 +432,8 @@
       justify-content: flex-end;
       gap: 10px;
       padding-top: 16px;
-      border-top: 1px solid #ddd;
+      border-top: 1px solid var(--border-light);
       margin-top: auto;
-    }
-    .btn {
-      padding: 10px 20px;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: #fff;
-    }
-    .btn:hover {
-      background: #f5f5f5;
-    }
-    .btn.primary {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .btn.primary:hover {
-      background: #1565c0;
-    }
-    .btn.danger {
-      background: #fff;
-      color: #c62828;
-      border-color: #ef9a9a;
-    }
-    .btn.danger:hover {
-      background: #ffebee;
-    }
-
-    /* Modal Styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-overlay.active {
-      display: flex;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-      width: 100%;
-      max-width: 500px;
-      max-height: 90vh;
-      overflow-y: auto;
-      margin: 20px;
-    }
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .modal-header h2 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-    }
-    .modal-close {
-      background: none;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      color: #666;
-      padding: 0;
-      line-height: 1;
-    }
-    .modal-close:hover {
-      color: #333;
-    }
-    .modal-body {
-      padding: 20px;
-    }
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-    .form-group {
-      margin-bottom: 16px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: #333;
-      margin-bottom: 6px;
-    }
-    .form-group input,
-    .form-group select {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 14px;
-      font-family: inherit;
-      box-sizing: border-box;
-    }
-    .form-group input:focus,
-    .form-group select:focus {
-      outline: none;
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-    }
-    .form-group .hint {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
-    }
-    .checkbox-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 0;
-    }
-    .checkbox-row input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
-      cursor: pointer;
-    }
-    .checkbox-row label {
-      margin: 0;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    .attr-form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .attr-form-row.full {
-      grid-template-columns: 1fr;
     }
 
     /* Included Choices tab styles */
@@ -593,13 +450,13 @@
       margin: 0;
       font-size: 14px;
       font-weight: 600;
-      color: #333;
+      color: var(--text-primary);
     }
     .slot-card {
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-light);
       border-radius: 6px;
       margin-bottom: 8px;
-      background: #fff;
+      background: var(--bg-secondary);
     }
     .slot-card-header {
       display: flex;
@@ -607,14 +464,14 @@
       align-items: center;
       padding: 12px 14px;
       cursor: pointer;
-      background: #fafafa;
+      background: var(--bg-tertiary);
       border-radius: 6px 6px 0 0;
     }
     .slot-card.collapsed .slot-card-header {
       border-radius: 6px;
     }
     .slot-card-header:hover {
-      background: #f0f0f0;
+      background: var(--table-row-hover);
     }
     .slot-card-title {
       display: flex;
@@ -623,7 +480,7 @@
     }
     .slot-toggle {
       font-size: 12px;
-      color: #666;
+      color: var(--text-secondary);
       transition: transform 0.2s;
     }
     .slot-card.collapsed .slot-toggle {
@@ -632,6 +489,7 @@
     .slot-name {
       font-weight: 600;
       font-size: 14px;
+      color: var(--text-primary);
     }
     .slot-badges {
       display: flex;
@@ -644,16 +502,16 @@
       font-weight: 500;
     }
     .slot-badge.required {
-      background: #ffebee;
-      color: #c62828;
+      background: var(--error-bg);
+      color: var(--error-text);
     }
     .slot-badge.optional {
-      background: #e8f5e9;
-      color: #2e7d32;
+      background: var(--success-bg);
+      color: var(--success-text);
     }
     .slot-badge.options {
-      background: #fff3e0;
-      color: #e65100;
+      background: var(--warning-bg);
+      color: var(--warning-text);
     }
     .slot-card-actions {
       display: flex;
@@ -661,7 +519,7 @@
     }
     .slot-card-body {
       padding: 14px;
-      border-top: 1px solid #e0e0e0;
+      border-top: 1px solid var(--border-light);
     }
     .slot-card.collapsed .slot-card-body {
       display: none;
@@ -674,120 +532,46 @@
       justify-content: space-between;
       align-items: center;
       padding: 8px 10px;
-      background: #f9f9f9;
+      background: var(--bg-tertiary);
       border-radius: 4px;
       margin-bottom: 4px;
       font-size: 13px;
     }
     .slot-option-row:hover {
-      background: #f0f0f0;
+      background: var(--table-row-hover);
     }
     .slot-option-info {
       display: flex;
       align-items: center;
       gap: 8px;
+      color: var(--text-primary);
     }
     .slot-option-type {
       font-size: 10px;
-      color: #666;
-      background: #e0e0e0;
+      color: var(--text-secondary);
+      background: var(--border-light);
       padding: 2px 6px;
       border-radius: 4px;
     }
     .slot-option-price {
       font-size: 11px;
-      color: #2e7d32;
+      color: var(--success-text);
     }
     .empty-slots {
       padding: 30px;
       text-align: center;
-      color: #888;
+      color: var(--text-tertiary);
       font-size: 13px;
-      background: #fafafa;
+      background: var(--bg-tertiary);
       border-radius: 6px;
-      border: 1px dashed #ddd;
+      border: 1px dashed var(--border-light);
     }
 
-    /* Toast notification styles */
-    .toast-container {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .toast {
-      padding: 14px 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      animation: slideIn 0.3s ease;
-      max-width: 500px;
-    }
-    .toast-content {
-      flex: 1;
-    }
-    .toast-content .toast-title {
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-    .toast-content .toast-detail {
-      font-weight: 400;
-      font-size: 13px;
-      opacity: 0.95;
-    }
-    .toast-content .duplicate-location {
-      margin-top: 6px;
-      padding: 6px 10px;
-      background: rgba(255,255,255,0.15);
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 12px;
-    }
-    .toast.success { background: #10b981; color: white; }
-    .toast.error { background: #ef4444; color: white; }
-    .toast.info { background: #3b82f6; color: white; }
-    .toast-icon { font-size: 18px; }
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
-    }
-
-    /* Button state styles */
-    .btn.saving {
-      position: relative;
-      pointer-events: none;
-      opacity: 0.8;
-    }
-    .btn.saving::after {
-      content: "";
-      width: 14px;
-      height: 14px;
-      border: 2px solid transparent;
-      border-top-color: currentColor;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-left: 8px;
-      display: inline-block;
-      vertical-align: middle;
-    }
-    .btn.saved {
-      background: #10b981 !important;
-      border-color: #10b981 !important;
-      color: #fff !important;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    /* Modal Form overrides for dark mode */
+    [data-theme="dark"] .field input[type="text"],
+    [data-theme="dark"] .field select,
+    [data-theme="dark"] .link-attr-row select {
+      background: var(--bg-tertiary);
     }
   </style>
 </head>
@@ -796,21 +580,24 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <div class="app-header">
-    <div>Item Type Management</div>
-    <div>
+    <div class="header-title">
+      <span class="icon"><i data-lucide="layers"></i></span>
+      <span>Item Types</span>
+    </div>
+    <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <span class="nav-group">
-        <span class="nav-group-label"><strong>Item Types</strong> &#9662;</span>
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
-          <a href="/static/admin_item_types.html"><strong>Basic Info</strong></a>
+          <a href="/static/admin_item_types.html" class="active">Basic Info</a>
           <a href="/static/admin_modifiers.html">Modifiers</a>
         </div>
       </span>
       <span class="nav-group">
-        <span class="nav-group-label">Config &#9662;</span>
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_global_attributes.html">Global Attributes</a>
           <a href="/static/admin_size_categories.html">Size Categories</a>
@@ -821,12 +608,15 @@
           <a href="/static/admin_menu_display_groups.html">Display Groups</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
           <a href="/static/admin_unrecognized_suggestions.html">Unrecognized Suggestions</a>
-          <a href="#" id="refreshCacheBtn" style="border-top: 1px solid #eee; margin-top: 4px; padding-top: 12px;">Refresh Cache</a>
         </div>
       </span>
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
     </div>
   </div>
 
@@ -921,13 +711,13 @@
 
         <!-- Attributes Tab -->
         <div class="tab-panel" id="tabAttributes">
-          <p style="font-size: 13px; color: #666; margin-top: 0; margin-bottom: 16px;">
+          <p style="font-size: 13px; color: var(--text-secondary); margin-top: 0; margin-bottom: 16px;">
             Link global attributes to this item type. Options are managed in
-            <a href="/static/admin_global_attributes.html" style="color: #1976d2;">Global Attributes</a>.
+            <a href="/static/admin_global_attributes.html" style="color: var(--brand-primary);">Global Attributes</a>.
           </p>
 
           <div class="link-attr-section">
-            <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px;">Link Global Attribute</label>
+            <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-primary);">Link Global Attribute</label>
             <div class="link-attr-row">
               <select id="globalAttrSelect">
                 <option value="">-- Select attribute to link --</option>
@@ -950,7 +740,7 @@
 
         <!-- Included Choices Tab -->
         <div class="tab-panel" id="tabComponentSlots">
-          <p style="font-size: 13px; color: #666; margin-top: 0; margin-bottom: 16px;">
+          <p style="font-size: 13px; color: var(--text-secondary); margin-top: 0; margin-bottom: 16px;">
             Included choices allow items of this type to include configurable sub-items.
             For example, an omelette can include a "side" choice that accepts bagels or fruit salad.
           </p>
@@ -979,22 +769,22 @@
     <div class="modal">
       <div class="modal-header">
         <h2 id="attrModalTitle">Edit Attribute Settings</h2>
-        <button class="modal-close" id="attrModalClose">&times;</button>
+        <button class="close-btn" id="attrModalClose"><span class="icon"><i data-lucide="x"></i></span></button>
       </div>
       <div class="modal-body">
         <form id="attributeForm">
           <input type="hidden" id="attrLinkId" />
 
           <!-- Show global attribute info (read-only) -->
-          <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
-            <div style="font-weight: 600; font-size: 14px;" id="attrDisplayName">--</div>
-            <div style="font-size: 12px; color: #666; font-family: monospace;" id="attrSlug">--</div>
-            <div style="font-size: 12px; color: #1976d2; margin-top: 4px;" id="attrInputType">--</div>
-            <div style="font-size: 12px; color: #888; margin-top: 4px;" id="attrOptionsCount">-- options</div>
+          <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+            <div style="font-weight: 600; font-size: 14px; color: var(--text-primary);" id="attrDisplayName">--</div>
+            <div style="font-size: 12px; color: var(--text-secondary); font-family: monospace;" id="attrSlug">--</div>
+            <div style="font-size: 12px; color: var(--brand-primary); margin-top: 4px;" id="attrInputType">--</div>
+            <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;" id="attrOptionsCount">-- options</div>
           </div>
 
-          <p style="font-size: 12px; color: #888; margin-bottom: 16px;">
-            Options are managed in <a href="/static/admin_global_attributes.html" style="color: #1976d2;">Global Attributes</a>.
+          <p style="font-size: 12px; color: var(--text-tertiary); margin-bottom: 16px;">
+            Options are managed in <a href="/static/admin_global_attributes.html" style="color: var(--brand-primary);">Global Attributes</a>.
             Below are settings specific to this item type.
           </p>
 
@@ -1072,11 +862,11 @@
     <div class="modal" style="max-width: 400px;">
       <div class="modal-header">
         <h2>Delete Item Type</h2>
-        <button class="modal-close" id="deleteModalClose">&times;</button>
+        <button class="close-btn" id="deleteModalClose"><span class="icon"><i data-lucide="x"></i></span></button>
       </div>
       <div class="modal-body">
         <p>Are you sure you want to delete <strong id="deleteItemTypeName"></strong>?</p>
-        <p style="color: #c62828; font-size: 13px;">This action cannot be undone. Item types with menu items cannot be deleted.</p>
+        <p style="color: var(--error-text); font-size: 13px;">This action cannot be undone. Item types with menu items cannot be deleted.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
@@ -1090,7 +880,7 @@
     <div class="modal">
       <div class="modal-header">
         <h2 id="slotModalTitle">New Included Choice</h2>
-        <button class="modal-close" id="slotModalClose">&times;</button>
+        <button class="close-btn" id="slotModalClose"><span class="icon"><i data-lucide="x"></i></span></button>
       </div>
       <div class="modal-body">
         <form id="slotForm">
@@ -1155,7 +945,7 @@
     <div class="modal">
       <div class="modal-header">
         <h2>Add Choice Option</h2>
-        <button class="modal-close" id="slotOptionModalClose">&times;</button>
+        <button class="close-btn" id="slotOptionModalClose"><span class="icon"><i data-lucide="x"></i></span></button>
       </div>
       <div class="modal-body">
         <form id="slotOptionForm">
@@ -1217,11 +1007,11 @@
     <div class="modal" style="max-width: 400px;">
       <div class="modal-header">
         <h2>Delete Included Choice</h2>
-        <button class="modal-close" id="deleteSlotModalClose">&times;</button>
+        <button class="close-btn" id="deleteSlotModalClose"><span class="icon"><i data-lucide="x"></i></span></button>
       </div>
       <div class="modal-body">
         <p>Are you sure you want to delete <strong id="deleteSlotName"></strong>?</p>
-        <p style="color: #c62828; font-size: 13px;">This will also delete all options for this choice. This action cannot be undone.</p>
+        <p style="color: var(--error-text); font-size: 13px;">This will also delete all options for this choice. This action cannot be undone.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" id="deleteSlotCancelBtn">Cancel</button>
@@ -2018,13 +1808,13 @@
               </div>
             </div>
             <div class="slot-card-body">
-              <div style="font-size: 12px; color: #666; margin-bottom: 8px;">
+              <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
                 ${slot.prompt_text ? `<em>"${escapeHtml(slot.prompt_text)}"</em>` : 'No prompt text set'}
                 <br>Min: ${slot.min_quantity || 1}, Max: ${slot.max_quantity || 1}
               </div>
               <div class="slot-options-list">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <strong style="font-size: 12px;">Allowed Options:</strong>
+                  <strong style="font-size: 12px; color: var(--text-primary);">Allowed Options:</strong>
                   <button class="attr-btn" onclick="openAddOptionModal(${slot.id})" style="padding: 2px 8px; font-size: 10px;">+ Add</button>
                 </div>
                 ${renderSlotOptions(slot.options || [])}
@@ -2038,7 +1828,7 @@
     // Render choice options
     function renderSlotOptions(options) {
       if (options.length === 0) {
-        return '<div style="font-size: 12px; color: #888; padding: 8px; text-align: center;">No options configured</div>';
+        return '<div style="font-size: 12px; color: var(--text-tertiary); padding: 8px; text-align: center;">No options configured</div>';
       }
 
       return options.map(opt => {
@@ -2497,6 +2287,53 @@
 
     document.getElementById("slug").addEventListener("input", () => {
       document.getElementById("slug").dataset.manuallyEdited = "true";
+    });
+
+    // Theme Toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const htmlEl = document.documentElement;
+
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    htmlEl.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      htmlEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+
+    // Initialize Lucide icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    // Mark active nav link based on current URL
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
+      const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+      const linkPage = hrefMatch ? hrefMatch[1] : null;
+      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
+      const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+      const currentPage = currentMatch ? currentMatch[1] : null;
+
+      if (linkPage && currentPage && linkPage === currentPage) {
+        link.classList.add('active');
+        // Also mark parent dropdown label as active
+        const navGroup = link.closest('.nav-group');
+        if (navGroup) {
+          const label = navGroup.querySelector('.nav-group-label');
+          if (label) label.classList.add('active');
+        }
+      }
     });
 
     // Initial load

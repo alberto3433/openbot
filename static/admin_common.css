@@ -1,6 +1,7 @@
 /**
  * Admin Common CSS
  * Shared styles for admin pages
+ * Theme-aware using CSS custom properties from admin_theme.css
  */
 
 /* Tag Input Styles */
@@ -8,40 +9,50 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--input-border, #ccc);
+  border-radius: 8px;
+  background: var(--bg-tertiary, #F1F3F5);
+  min-height: 44px;
   align-items: center;
   cursor: text;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+
 .tag-input-container:focus-within {
-  border-color: #1976d2;
-  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+  border-color: var(--input-focus-border, #D4754E);
+  box-shadow: var(--input-focus-shadow, 0 0 0 3px rgba(212, 117, 78, 0.12));
 }
+
 .tag-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  background: #e3f2fd;
-  border: 1px solid #90caf9;
-  border-radius: 12px;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--badge-primary-bg, rgba(212, 117, 78, 0.12));
+  border: 1px solid transparent;
+  border-radius: 6px;
   font-size: 12px;
-  color: #1565c0;
+  color: var(--badge-primary-text, #B35E2C);
+  font-weight: 500;
 }
+
 .tag-item .tag-remove {
   cursor: pointer;
   font-size: 14px;
   font-weight: bold;
-  color: #1976d2;
+  color: var(--badge-primary-text, #B35E2C);
   line-height: 1;
   padding: 0 2px;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
 }
+
 .tag-item .tag-remove:hover {
-  color: #d32f2f;
+  opacity: 1;
+  color: var(--error-text, #DC2626);
 }
+
 .tag-input {
   flex: 1;
   min-width: 120px;
@@ -49,6 +60,12 @@
   outline: none;
   font-size: 14px;
   padding: 4px 0;
+  background: transparent;
+  color: var(--text-primary, #1A1A1A);
+}
+
+.tag-input::placeholder {
+  color: var(--text-tertiary, #9CA3AF);
 }
 
 /* Navigation Container - use flexbox for consistent spacing */
@@ -56,8 +73,9 @@
 .nav-links {
   display: flex !important;
   align-items: center;
-  gap: 20px;
+  gap: 8px;
 }
+
 .app-header > div:last-child > a,
 .nav-links > a {
   margin: 0 !important;
@@ -68,33 +86,52 @@
   display: inline-block;
   position: relative;
 }
+
 .nav-group-label {
-  color: #bbdefb;
-  font-size: 14px;
+  color: var(--nav-link, #6B7280);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  padding: 8px 0;
-  border-radius: 4px;
+  padding: 6px 12px;
+  border-radius: 6px;
   text-decoration: none;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
 }
+
 .nav-group-label:hover {
-  background: rgba(255,255,255,0.1);
-  color: #fff;
+  background: var(--bg-tertiary, #F1F3F5);
+  color: var(--nav-link-hover, #1A1A1A);
 }
+
+.nav-group-label.active {
+  background: var(--nav-dropdown-active, rgba(212, 117, 78, 0.08));
+  color: var(--brand-primary, #D4754E);
+  font-weight: 600;
+}
+
+.nav-group-label.active:hover {
+  background: var(--badge-primary-bg, rgba(212, 117, 78, 0.12));
+}
+
 .nav-dropdown {
   display: none;
   position: absolute;
   top: 100%;
   left: 0;
-  background: #fff;
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  min-width: 180px;
+  background: var(--nav-dropdown-bg, #FFFFFF);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--border-light, #E5E7EB);
+  min-width: 200px;
   z-index: 1000;
   padding: 8px 0;
   padding-top: 12px;
-  margin-top: 0;
+  margin-top: 4px;
 }
+
 /* Invisible bridge to prevent hover gap */
 .nav-dropdown::before {
   content: "";
@@ -104,44 +141,75 @@
   right: 0;
   height: 12px;
 }
+
 .nav-group:hover .nav-dropdown {
   display: block;
 }
+
 .nav-dropdown a {
   display: block;
-  color: #333 !important;
-  padding: 8px 16px;
+  color: var(--text-secondary, #6B7280) !important;
+  padding: 10px 16px;
   margin: 0 !important;
   font-size: 13px;
-  text-decoration: none;
-}
-.nav-dropdown a:hover {
-  background: #f5f5f5;
-  color: #1976d2 !important;
-}
-.nav-dropdown a.active {
-  background: #e3f2fd;
-  color: #1976d2 !important;
   font-weight: 500;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  border-radius: 0;
+}
+
+.nav-dropdown a:hover {
+  background: var(--nav-dropdown-hover, #F8F9FA);
+  color: var(--text-primary, #1A1A1A) !important;
+}
+
+.nav-dropdown a.active {
+  background: var(--nav-dropdown-active, rgba(212, 117, 78, 0.08));
+  color: var(--brand-primary, #D4754E) !important;
+  font-weight: 600;
 }
 
 /* Refresh Cache Button */
 .refresh-cache-btn {
-  background: #ff9800;
-  color: #fff !important;
+  background: var(--brand-accent, #F5A623);
+  color: var(--text-inverse, #FFFFFF) !important;
   border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
+  padding: 8px 14px;
+  border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  margin-left: 16px;
-  transition: background 0.2s;
+  margin-left: 8px;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
+
 .refresh-cache-btn:hover {
-  background: #f57c00;
+  background: #E09520;
+  transform: translateY(-1px);
 }
+
+.refresh-cache-btn:active {
+  transform: translateY(0);
+}
+
 .refresh-cache-btn:disabled {
-  background: #ccc;
+  background: var(--text-tertiary, #9CA3AF);
   cursor: not-allowed;
+  transform: none;
+}
+
+.refresh-cache-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Icon helper for nav dropdowns */
+.nav-group-label svg,
+.nav-group-label i {
+  width: 14px;
+  height: 14px;
+  opacity: 0.7;
 }

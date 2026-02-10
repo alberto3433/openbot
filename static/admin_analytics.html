@@ -1,29 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
   <title>Session Analytics</title>
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 0;
-      padding: 0;
-      background: #f5f5f7;
-      color: #222;
-    }
-
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin-bottom: 20px;
-    }
-
     .summary-cards {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -32,16 +19,17 @@
     }
 
     .card {
-      background: #fff;
+      background: var(--card-bg);
       border-radius: 8px;
       padding: 16px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--card-border);
     }
 
     .card h3 {
       margin: 0 0 8px 0;
       font-size: 12px;
-      color: #666;
+      color: var(--text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
@@ -49,34 +37,27 @@
     .card .value {
       font-size: 26px;
       font-weight: 600;
-      color: #1976d2;
+      color: var(--brand-primary);
     }
 
     .card .value.success {
-      color: #2e7d32;
+      color: var(--success-text);
     }
 
     .card .value.warning {
-      color: #d32f2f;
+      color: var(--error-text);
     }
 
     .card .subtext {
       font-size: 12px;
-      color: #888;
+      color: var(--text-tertiary);
       margin-top: 4px;
-    }
-
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      padding: 16px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
     }
 
     .section h2 {
       font-size: 16px;
       margin: 0 0 12px 0;
+      color: var(--text-primary);
     }
 
     .filters {
@@ -87,45 +68,31 @@
       flex-wrap: wrap;
     }
 
+    .filters label {
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
     select, button {
       padding: 6px 10px;
       border-radius: 4px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border-light);
       font-size: 14px;
       cursor: pointer;
-      background: #fafafa;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
     }
 
     button {
-      background: #2563eb;
+      background: var(--brand-primary);
       color: white;
       border: none;
     }
 
     button:disabled {
-      background: #ccc;
+      background: var(--border-light);
+      color: var(--text-tertiary);
       cursor: default;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    th, td {
-      padding: 8px 10px;
-      border-bottom: 1px solid #eee;
-      text-align: left;
-    }
-
-    th {
-      background: #f9f9f9;
-      font-weight: 600;
-    }
-
-    tr:hover {
-      background: #f5f9ff;
     }
 
     .status-pill {
@@ -136,13 +103,13 @@
     }
 
     .status-completed {
-      background: #dcfce7;
-      color: #166534;
+      background: var(--success-bg);
+      color: var(--success-text);
     }
 
     .status-abandoned {
-      background: #fee2e2;
-      color: #991b1b;
+      background: var(--error-bg);
+      color: var(--error-text);
     }
 
     .reason-pill {
@@ -153,27 +120,27 @@
     }
 
     .reason-browser_close {
-      background: #fee2e2;
-      color: #991b1b;
+      background: var(--error-bg);
+      color: var(--error-text);
     }
 
     .reason-refresh {
-      background: #fef3c7;
-      color: #92400e;
+      background: var(--warning-bg);
+      color: var(--warning-text);
     }
 
     .reason-navigation {
-      background: #dbeafe;
-      color: #1e40af;
+      background: var(--info-bg);
+      color: var(--info-text);
     }
 
     .had-items {
-      color: #d32f2f;
+      color: var(--error-text);
       font-weight: 600;
     }
 
     .no-items {
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .pagination {
@@ -208,23 +175,24 @@
 
     .trend-bar-completed {
       width: 100%;
-      background: #4caf50;
+      background: var(--success-text);
       border-radius: 2px 2px 0 0;
     }
 
     .trend-bar-abandoned {
       width: 100%;
-      background: #f44336;
+      background: var(--error-text);
     }
 
     .trend-label {
       font-size: 10px;
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .trend-count {
       font-size: 10px;
       font-weight: 600;
+      color: var(--text-primary);
     }
 
     .message-preview {
@@ -233,26 +201,11 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 12px;
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .muted {
-      color: #666;
-    }
-
-    .nav-links {
-      margin-bottom: 16px;
-      font-size: 13px;
-    }
-
-    .nav-links a {
-      color: #1976d2;
-      text-decoration: none;
-      margin-right: 16px;
-    }
-
-    .nav-links a:hover {
-      text-decoration: underline;
+      color: var(--text-secondary);
     }
 
     .reason-breakdown {
@@ -278,6 +231,7 @@
       display: flex;
       align-items: center;
       gap: 4px;
+      color: var(--text-secondary);
     }
 
     .legend-dot {
@@ -287,73 +241,16 @@
     }
 
     .legend-dot.completed {
-      background: #4caf50;
+      background: var(--success-text);
     }
 
     .legend-dot.abandoned {
-      background: #f44336;
+      background: var(--error-text);
     }
 
     /* Modal styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-
-    .modal-overlay.active {
-      display: flex;
-    }
-
-    .modal {
-      background: #fff;
-      border-radius: 12px;
+    .conversation-modal {
       max-width: 700px;
-      width: 90%;
-      max-height: 80vh;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-    }
-
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #eee;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .modal-header h3 {
-      margin: 0;
-      font-size: 16px;
-    }
-
-    .modal-close {
-      background: none;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      color: #666;
-      padding: 0;
-      line-height: 1;
-    }
-
-    .modal-close:hover {
-      color: #333;
-    }
-
-    .modal-body {
-      padding: 16px 20px;
-      overflow-y: auto;
-      flex: 1;
     }
 
     .session-info {
@@ -362,7 +259,7 @@
       gap: 12px;
       margin-bottom: 16px;
       padding-bottom: 16px;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--border-light);
     }
 
     .info-item {
@@ -370,13 +267,14 @@
     }
 
     .info-item label {
-      color: #666;
+      color: var(--text-secondary);
       display: block;
       margin-bottom: 2px;
     }
 
     .info-item .val {
       font-weight: 500;
+      color: var(--text-primary);
     }
 
     .conversation {
@@ -395,20 +293,20 @@
 
     .conv-msg.user {
       align-self: flex-end;
-      background: #1976d2;
+      background: var(--brand-primary);
       color: white;
       border-bottom-right-radius: 4px;
     }
 
     .conv-msg.assistant {
       align-self: flex-start;
-      background: #f0f0f0;
-      color: #333;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
       border-bottom-left-radius: 4px;
     }
 
     .conv-empty {
-      color: #888;
+      color: var(--text-tertiary);
       font-style: italic;
       text-align: center;
       padding: 20px;
@@ -419,26 +317,30 @@
     }
 
     tr.clickable:hover {
-      background: #e3f2fd !important;
+      background: var(--table-row-hover) !important;
     }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="app-header">
+    <div class="header-title">
+      <span class="icon"><i data-lucide="bar-chart-2"></i></span>
+      <span>Analytics</span>
+    </div>
     <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <span class="nav-group">
-        <span class="nav-group-label">Item Types &#9662;</span>
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_item_types.html">Basic Info</a>
           <a href="/static/admin_modifiers.html">Modifiers</a>
         </div>
       </span>
       <span class="nav-group">
-        <span class="nav-group-label">Config &#9662;</span>
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_global_attributes.html">Global Attributes</a>
           <a href="/static/admin_size_categories.html">Size Categories</a>
@@ -452,12 +354,16 @@
         </div>
       </span>
       <a href="/static/admin_stores.html">Stores</a>
-      <a href="/static/admin_analytics.html"><strong>Analytics</strong></a>
+      <a href="/static/admin_analytics.html" class="active">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
     </div>
+  </div>
 
-    <h1>Session Analytics</h1>
-
+  <div class="container">
     <div class="summary-cards">
       <div class="card">
         <h3>Total Sessions</h3>
@@ -492,79 +398,87 @@
     </div>
 
     <div class="section">
-      <h2>Last 7 Days</h2>
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot completed"></div> Completed</div>
-        <div class="legend-item"><div class="legend-dot abandoned"></div> Abandoned</div>
-      </div>
-      <div class="trend-bar" id="trendChart"></div>
-    </div>
-
-    <div class="section">
-      <h2>Abandonment by Reason</h2>
-      <div class="reason-breakdown" id="reasonBreakdown"></div>
-    </div>
-
-    <div class="section">
-      <h2>Sessions</h2>
-
-      <div class="filters">
-        <label>Status:</label>
-        <select id="statusFilter">
-          <option value="">All</option>
-          <option value="completed">Completed</option>
-          <option value="abandoned">Abandoned</option>
-        </select>
-
-        <label>Reason:</label>
-        <select id="reasonFilter">
-          <option value="">All</option>
-          <option value="browser_close">Browser Close</option>
-          <option value="refresh">Refresh</option>
-          <option value="navigation">Navigation</option>
-        </select>
-
-        <label>Had Items:</label>
-        <select id="itemsFilter">
-          <option value="">All</option>
-          <option value="true">Yes</option>
-          <option value="false">No</option>
-        </select>
-      </div>
-
-      <p class="muted" style="font-size: 12px; margin-bottom: 8px;">Click on a row to view the full conversation</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Store</th>
-            <th>Status</th>
-            <th>Reason</th>
-            <th>Customer</th>
-            <th>Messages</th>
-            <th>Items</th>
-            <th>Value</th>
-          </tr>
-        </thead>
-        <tbody id="sessionsBody"></tbody>
-      </table>
-
-      <div class="pagination">
-        <div>
-          <button id="prevPage">Prev</button>
-          <button id="nextPage">Next</button>
+      <div class="section-body">
+        <h2>Last 7 Days</h2>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot completed"></div> Completed</div>
+          <div class="legend-item"><div class="legend-dot abandoned"></div> Abandoned</div>
         </div>
-        <div id="pageInfo" class="muted"></div>
+        <div class="trend-bar" id="trendChart"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-body">
+        <h2>Abandonment by Reason</h2>
+        <div class="reason-breakdown" id="reasonBreakdown"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-body">
+        <h2>Sessions</h2>
+
+        <div class="filters">
+          <label>Status:</label>
+          <select id="statusFilter">
+            <option value="">All</option>
+            <option value="completed">Completed</option>
+            <option value="abandoned">Abandoned</option>
+          </select>
+
+          <label>Reason:</label>
+          <select id="reasonFilter">
+            <option value="">All</option>
+            <option value="browser_close">Browser Close</option>
+            <option value="refresh">Refresh</option>
+            <option value="navigation">Navigation</option>
+          </select>
+
+          <label>Had Items:</label>
+          <select id="itemsFilter">
+            <option value="">All</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+
+        <p class="muted" style="font-size: 12px; margin-bottom: 8px;">Click on a row to view the full conversation</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Store</th>
+              <th>Status</th>
+              <th>Reason</th>
+              <th>Customer</th>
+              <th>Messages</th>
+              <th>Items</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody id="sessionsBody"></tbody>
+        </table>
+
+        <div class="pagination">
+          <div>
+            <button id="prevPage">Prev</button>
+            <button id="nextPage">Next</button>
+          </div>
+          <div id="pageInfo" class="muted"></div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Conversation Modal -->
   <div class="modal-overlay" id="conversationModal">
-    <div class="modal">
+    <div class="modal conversation-modal">
       <div class="modal-header">
         <h3>Session Conversation</h3>
-        <button class="modal-close" onclick="closeModal()">&times;</button>
+        <button class="close-btn" onclick="closeModal()">
+          <span class="icon"><i data-lucide="x"></i></span>
+        </button>
       </div>
       <div class="modal-body">
         <div class="session-info" id="modalSessionInfo"></div>
@@ -753,7 +667,7 @@
 
       } catch (err) {
         console.error(err);
-        sessionsBodyEl.innerHTML = `<tr><td colspan="8" style="color:red;">Error loading data</td></tr>`;
+        sessionsBodyEl.innerHTML = `<tr><td colspan="8" style="color:var(--error-text);">Error loading data</td></tr>`;
       }
     }
 
@@ -903,6 +817,52 @@
       fetchSessions();
     }
     init();
+
+    // Theme Toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const htmlEl = document.documentElement;
+
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    htmlEl.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      htmlEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+
+    // Initialize Lucide icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    // Mark active nav link based on current URL
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
+      const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+      const linkPage = hrefMatch ? hrefMatch[1] : null;
+      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
+      const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+      const currentPage = currentMatch ? currentMatch[1] : null;
+
+      if (linkPage && currentPage && linkPage === currentPage) {
+        link.classList.add('active');
+        // Also mark parent dropdown label as active
+        const navGroup = link.closest('.nav-group');
+        if (navGroup) {
+          const label = navGroup.querySelector('.nav-group-label');
+          if (label) label.classList.add('active');
+        }
+      }
+    });
   </script>
 </body>
 </html>

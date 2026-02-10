@@ -1,94 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <title>Size Categories</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
-    }
-    .app-header {
-      background: #1976d2;
-      color: #fff;
-      padding: 12px 20px;
-      font-size: 18px;
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .app-header a {
-      color: #bbdefb;
-      text-decoration: none;
-      font-size: 14px;
-      margin-left: 16px;
-    }
-    .app-header a:hover {
-      color: #fff;
-    }
-    .nav-group {
-      display: inline-block;
-      position: relative;
-    }
-    .nav-group-label {
-      color: #bbdefb;
-      font-size: 14px;
-      margin-left: 16px;
-      cursor: pointer;
-      padding: 4px 8px;
-      border-radius: 4px;
-    }
-    .nav-group-label:hover {
-      background: rgba(255,255,255,0.1);
-      color: #fff;
-    }
-    .nav-dropdown {
-      display: none;
-      position: absolute;
-      top: 100%;
-      left: 0;
-      background: #fff;
-      border-radius: 4px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      min-width: 180px;
-      z-index: 1000;
-      padding: 8px 0;
-    }
-    .nav-group:hover .nav-dropdown {
-      display: block;
-    }
-    .nav-dropdown a {
-      display: block;
-      color: #333;
-      padding: 8px 16px;
-      margin: 0;
-      font-size: 13px;
-    }
-    .nav-dropdown a:hover {
-      background: #f5f5f5;
-      color: #1976d2;
-    }
-    .nav-dropdown a.active {
-      background: #e3f2fd;
-      color: #1976d2;
-      font-weight: 500;
-    }
-    .container {
-      max-width: 1200px;
-      margin: 20px auto;
-      padding: 0 20px;
-    }
     .page-description {
-      background: #e3f2fd;
+      background: var(--info-bg);
       padding: 16px;
       border-radius: 8px;
       margin-bottom: 20px;
       font-size: 14px;
-      color: #1565c0;
+      color: var(--info-text);
     }
     .master-detail {
       display: grid;
@@ -100,24 +29,9 @@
         grid-template-columns: 1fr;
       }
     }
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-      overflow: hidden;
-    }
-    .section-header {
-      background: #f5f5f5;
-      padding: 12px 16px;
-      font-weight: 600;
-      font-size: 14px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
     .section-header .count {
-      background: #e0e0e0;
+      background: var(--badge-count-bg);
+      color: var(--badge-count-text);
       padding: 2px 8px;
       border-radius: 10px;
       font-size: 12px;
@@ -135,7 +49,7 @@
       justify-content: space-between;
       align-items: center;
       padding: 12px 16px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--border-light);
       cursor: pointer;
       transition: background 0.15s;
     }
@@ -143,11 +57,11 @@
       border-bottom: none;
     }
     .item-row:hover {
-      background: #f5f5f5;
+      background: var(--table-row-hover);
     }
     .item-row.selected {
-      background: #e3f2fd;
-      border-left: 3px solid #1976d2;
+      background: var(--nav-dropdown-active);
+      border-left: 3px solid var(--brand-primary);
     }
     .item-info {
       flex: 1;
@@ -155,11 +69,11 @@
     .item-name {
       font-weight: 600;
       font-size: 14px;
-      color: #333;
+      color: var(--text-primary);
     }
     .item-slug {
       font-size: 12px;
-      color: #666;
+      color: var(--text-secondary);
       font-family: monospace;
     }
     .item-meta {
@@ -174,27 +88,22 @@
       font-weight: 500;
     }
     .badge.count {
-      background: #e8f5e9;
-      color: #2e7d32;
-    }
-    .empty-state {
-      padding: 40px;
-      text-align: center;
-      color: #666;
-      font-size: 14px;
+      background: var(--success-bg);
+      color: var(--success-text);
     }
     .add-btn {
       padding: 8px 16px;
-      background: #4caf50;
+      background: var(--success-text);
       color: #fff;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
+      transition: all 0.15s ease;
     }
     .add-btn:hover {
-      background: #43a047;
+      opacity: 0.9;
     }
     /* Detail panel */
     .detail-panel {
@@ -202,16 +111,17 @@
     }
     .detail-header {
       padding: 20px;
-      border-bottom: 1px solid #e0e0e0;
+      border-bottom: 1px solid var(--border-light);
     }
     .detail-title {
       font-size: 20px;
       font-weight: 600;
       margin: 0 0 4px;
+      color: var(--text-primary);
     }
     .detail-subtitle {
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
       font-family: monospace;
     }
     .detail-actions {
@@ -228,7 +138,7 @@
     .detail-section-title {
       font-size: 14px;
       font-weight: 600;
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 12px;
       display: flex;
       justify-content: space-between;
@@ -240,37 +150,38 @@
       gap: 16px;
     }
     .info-item {
-      background: #f9f9f9;
+      background: var(--bg-tertiary);
       padding: 12px;
-      border-radius: 4px;
+      border-radius: 6px;
     }
     .info-label {
       font-size: 11px;
-      color: #888;
+      color: var(--text-tertiary);
       text-transform: uppercase;
       margin-bottom: 4px;
     }
     .info-value {
       font-size: 14px;
       font-weight: 500;
+      color: var(--text-primary);
     }
     /* Sizes list */
     .sizes-list {
-      border: 1px solid #e0e0e0;
-      border-radius: 4px;
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
     }
     .size-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 10px 14px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--border-light);
     }
     .size-row:last-child {
       border-bottom: none;
     }
     .size-row:hover {
-      background: #fafafa;
+      background: var(--table-row-hover);
     }
     .size-info {
       display: flex;
@@ -280,8 +191,8 @@
     }
     .size-order {
       font-size: 11px;
-      color: #888;
-      background: #f0f0f0;
+      color: var(--text-tertiary);
+      background: var(--bg-tertiary);
       padding: 2px 6px;
       border-radius: 4px;
       min-width: 24px;
@@ -290,11 +201,12 @@
     .size-name {
       font-weight: 500;
       font-size: 14px;
+      color: var(--text-primary);
     }
     .size-menu-items {
       font-size: 12px;
-      color: #2e7d32;
-      background: #e8f5e9;
+      color: var(--success-text);
+      background: var(--success-bg);
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -305,59 +217,33 @@
     .btn-sm {
       padding: 4px 10px;
       font-size: 11px;
-      border-radius: 3px;
-      border: 1px solid #ccc;
-      background: #fff;
+      border-radius: 4px;
+      border: 1px solid var(--border-medium);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
       cursor: pointer;
+      transition: all 0.15s ease;
     }
     .btn-sm:hover {
-      background: #f5f5f5;
+      background: var(--bg-tertiary);
     }
     .btn-sm.danger {
-      color: #c62828;
-      border-color: #ef9a9a;
+      color: var(--error-text);
+      border-color: var(--error-text);
     }
     .btn-sm.danger:hover {
-      background: #ffebee;
+      background: var(--error-bg);
     }
     .empty-sizes {
       padding: 30px;
       text-align: center;
-      color: #888;
+      color: var(--text-tertiary);
       font-size: 13px;
     }
-    /* Modal Styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-overlay.active {
-      display: flex;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-      width: 100%;
-      max-width: 500px;
-      max-height: 90vh;
-      overflow-y: auto;
-      margin: 20px;
-    }
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
     .modal-header h2 {
       margin: 0;
@@ -369,142 +255,13 @@
       border: none;
       font-size: 24px;
       cursor: pointer;
-      color: #666;
+      color: var(--text-tertiary);
       padding: 0;
       line-height: 1;
+      transition: color 0.15s ease;
     }
     .modal-close:hover {
-      color: #333;
-    }
-    .modal-body {
-      padding: 20px;
-    }
-    .form-group {
-      margin-bottom: 16px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: #333;
-      margin-bottom: 6px;
-    }
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 14px;
-      font-family: inherit;
-      box-sizing: border-box;
-    }
-    .form-group input:focus,
-    .form-group select:focus,
-    .form-group textarea:focus {
-      outline: none;
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-    }
-    .form-group .hint {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
-    }
-    .form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-    .btn {
-      padding: 10px 20px;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: #fff;
-    }
-    .btn:hover {
-      background: #f5f5f5;
-    }
-    .btn.primary {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .btn.primary:hover {
-      background: #1565c0;
-    }
-    .btn.danger {
-      background: #c62828;
-      color: #fff;
-      border-color: #c62828;
-    }
-    .btn.danger:hover {
-      background: #b71c1c;
-    }
-    /* Toast notifications */
-    .toast-container {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .toast {
-      padding: 14px 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      animation: slideIn 0.3s ease;
-      max-width: 350px;
-    }
-    .toast.success { background: #10b981; color: white; }
-    .toast.error { background: #ef4444; color: white; }
-    .toast.info { background: #3b82f6; color: white; }
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
-    }
-    /* Button state styles */
-    .btn.saving {
-      position: relative;
-      pointer-events: none;
-      opacity: 0.8;
-    }
-    .btn.saving::after {
-      content: "";
-      width: 14px;
-      height: 14px;
-      border: 2px solid transparent;
-      border-top-color: currentColor;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-left: 8px;
-      display: inline-block;
-      vertical-align: middle;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+      color: var(--text-primary);
     }
   </style>
 </head>
@@ -512,21 +269,24 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <div class="app-header">
-    <div>Size Categories</div>
-    <div>
+    <div class="header-title">
+      <span class="icon"><i data-lucide="ruler"></i></span>
+      <span>Size Categories</span>
+    </div>
+    <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <span class="nav-group">
-        <span class="nav-group-label">Item Types &#9662;</span>
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_item_types.html">Basic Info</a>
           <a href="/static/admin_modifiers.html">Modifiers</a>
         </div>
       </span>
       <span class="nav-group">
-        <span class="nav-group-label">Config &#9662;</span>
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_global_attributes.html">Global Attributes</a>
           <a href="/static/admin_size_categories.html" class="active">Size Categories</a>
@@ -542,6 +302,10 @@
       <a href="/static/admin_stores.html">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
     </div>
   </div>
 
@@ -685,7 +449,7 @@
       </div>
       <div class="modal-body">
         <p>Are you sure you want to delete <strong id="deleteCategoryName"></strong>?</p>
-        <p style="color: #c62828; font-size: 13px;">You must delete all sizes in this category first.</p>
+        <p style="color: var(--error-text); font-size: 13px;">You must delete all sizes in this category first.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
@@ -1162,6 +926,53 @@
 
     // Initial load
     loadCategories();
+
+    // Theme Toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const htmlEl = document.documentElement;
+
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    htmlEl.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      htmlEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+
+    // Initialize Lucide icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
+    // Mark active nav link based on current URL
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
+      const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+      const linkPage = hrefMatch ? hrefMatch[1] : null;
+      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
+      const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+      const currentPage = currentMatch ? currentMatch[1] : null;
+
+      if (linkPage && currentPage && linkPage === currentPage) {
+        link.classList.add('active');
+        // Also mark parent dropdown label as active
+        const navGroup = link.closest('.nav-group');
+        if (navGroup) {
+          const label = navGroup.querySelector('.nav-group-label');
+          if (label) label.classList.add('active');
+        }
+      }
+    });
   </script>
 </body>
 </html>

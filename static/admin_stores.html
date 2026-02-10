@@ -1,64 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <title>Store Management</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
   <link rel="stylesheet" href="/static/admin_common.css">
   <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f5;
-    }
-    .app-header {
-      background: #1976d2;
-      color: #fff;
-      padding: 12px 20px;
-      font-size: 18px;
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .app-header a {
-      color: #bbdefb;
-      text-decoration: none;
-      font-size: 14px;
-      margin-left: 16px;
-    }
-    .app-header a:hover {
-      color: #fff;
-    }
-    .container {
-      max-width: 900px;
-      margin: 20px auto;
-      padding: 0 20px;
-    }
-    .section {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-    .section-header {
-      background: #f5f5f5;
-      padding: 12px 16px;
-      font-weight: 600;
-      font-size: 14px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .section-header .count {
-      background: #e0e0e0;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 12px;
-      font-weight: normal;
-    }
+    /* Page-specific styles */
     .store-list {
       padding: 0;
       margin: 0;
@@ -69,13 +22,13 @@
       justify-content: space-between;
       align-items: flex-start;
       padding: 16px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--border-light);
     }
     .store-item:last-child {
       border-bottom: none;
     }
     .store-item:hover {
-      background: #fafafa;
+      background: var(--bg-primary);
     }
     .store-info {
       display: flex;
@@ -86,15 +39,15 @@
     .store-name {
       font-weight: 600;
       font-size: 16px;
-      color: #1976d2;
+      color: var(--brand-primary);
     }
     .store-address {
       font-size: 14px;
-      color: #333;
+      color: var(--text-primary);
     }
     .store-phone {
       font-size: 13px;
-      color: #666;
+      color: var(--text-secondary);
     }
     .store-meta {
       display: flex;
@@ -123,8 +76,8 @@
     .action-btn {
       padding: 6px 14px;
       border-radius: 4px;
-      border: 1px solid #ccc;
-      background: #fff;
+      border: 1px solid var(--border-light);
+      background: var(--bg-secondary);
       font-size: 12px;
       font-weight: 500;
       cursor: pointer;
@@ -132,19 +85,19 @@
       transition: all 0.2s;
     }
     .action-btn:hover {
-      background: #f5f5f5;
-      border-color: #999;
+      background: var(--bg-primary);
+      border-color: var(--text-tertiary);
     }
     .action-btn.primary {
-      background: #1976d2;
+      background: var(--brand-primary);
       color: #fff;
-      border-color: #1976d2;
+      border-color: var(--brand-primary);
     }
     .action-btn.primary:hover {
-      background: #1565c0;
+      background: var(--brand-primary-hover);
     }
     .action-btn.danger {
-      background: #fff;
+      background: var(--bg-secondary);
       color: #c62828;
       border-color: #ef9a9a;
     }
@@ -178,158 +131,24 @@
       font-weight: 500;
       cursor: pointer;
       margin-bottom: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
     .add-btn:hover {
       background: #43a047;
     }
     .store-hours {
       font-size: 12px;
-      color: #888;
+      color: var(--text-tertiary);
       margin-top: 4px;
     }
     .store-id {
       font-size: 11px;
-      color: #999;
+      color: var(--text-tertiary);
       font-family: monospace;
     }
-    .empty-state {
-      padding: 40px;
-      text-align: center;
-      color: #666;
-    }
 
-    /* Modal Styles */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    .modal-overlay.active {
-      display: flex;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-      width: 100%;
-      max-width: 500px;
-      max-height: 90vh;
-      overflow-y: auto;
-      margin: 20px;
-    }
-    .modal-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .modal-header h2 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-    }
-    .modal-close {
-      background: none;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      color: #666;
-      padding: 0;
-      line-height: 1;
-    }
-    .modal-close:hover {
-      color: #333;
-    }
-    .modal-body {
-      padding: 20px;
-    }
-    .form-group {
-      margin-bottom: 16px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: #333;
-      margin-bottom: 6px;
-    }
-    .form-group input,
-    .form-group textarea,
-    .form-group select {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 14px;
-      font-family: inherit;
-      box-sizing: border-box;
-    }
-    .form-group input:focus,
-    .form-group textarea:focus,
-    .form-group select:focus {
-      outline: none;
-      border-color: #1976d2;
-      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
-    }
-    .form-group textarea {
-      resize: vertical;
-      min-height: 60px;
-    }
-    .form-group .hint {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
-    }
-    .form-row {
-      display: flex;
-      gap: 12px;
-    }
-    .form-row .form-group {
-      flex: 1;
-    }
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-    .btn {
-      padding: 10px 20px;
-      border-radius: 4px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      border: 1px solid #ccc;
-      background: #fff;
-    }
-    .btn:hover {
-      background: #f5f5f5;
-    }
-    .btn.primary {
-      background: #1976d2;
-      color: #fff;
-      border-color: #1976d2;
-    }
-    .btn.primary:hover {
-      background: #1565c0;
-    }
-    .btn.danger {
-      background: #c62828;
-      color: #fff;
-      border-color: #c62828;
-    }
-    .btn.danger:hover {
-      background: #b71c1c;
-    }
     /* Payment Methods Checkbox Styles */
     .checkbox-group {
       display: flex;
@@ -342,18 +161,18 @@
       align-items: center;
       gap: 8px;
       padding: 8px 14px;
-      border: 1px solid #ccc;
+      border: 1px solid var(--border-light);
       border-radius: 4px;
       cursor: pointer;
       transition: all 0.2s;
     }
     .checkbox-item:hover {
-      background: #f5f5f5;
-      border-color: #999;
+      background: var(--bg-primary);
+      border-color: var(--text-tertiary);
     }
     .checkbox-item.selected {
       background: #e3f2fd;
-      border-color: #1976d2;
+      border-color: var(--brand-primary);
     }
     .checkbox-item input[type="checkbox"] {
       width: 16px;
@@ -380,47 +199,13 @@
       padding: 2px 6px;
       border-radius: 8px;
       font-weight: 500;
-      background: #e0e0e0;
+      background: var(--border-light);
       color: #555;
     }
     .payment-badge.cash { background: #e8f5e9; color: #2e7d32; }
     .payment-badge.credit { background: #e3f2fd; color: #1565c0; }
     .payment-badge.bitcoin { background: #fff3e0; color: #e65100; }
 
-    /* Toast notification styles */
-    .toast-container {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .toast {
-      padding: 14px 20px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      animation: slideIn 0.3s ease;
-      max-width: 350px;
-    }
-    .toast.success { background: #10b981; color: white; }
-    .toast.error { background: #ef4444; color: white; }
-    .toast.info { background: #3b82f6; color: white; }
-    .toast-icon { font-size: 18px; }
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
-    }
     /* Button state styles */
     .btn.saving {
       position: relative;
@@ -446,6 +231,14 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    .form-row {
+      display: flex;
+      gap: 12px;
+    }
+    .form-row .form-group {
+      flex: 1;
+    }
   </style>
 </head>
 <body>
@@ -453,21 +246,24 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <div class="app-header">
-    <div>Store Management</div>
-    <div>
+    <div class="header-title">
+      <span class="icon"><i data-lucide="store"></i></span>
+      <span>Store Management</span>
+    </div>
+    <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
       <a href="/static/admin_orders.html">Orders</a>
       <a href="/static/admin_menu.html">Menu</a>
       <a href="/static/admin_ingredients.html">Ingredients</a>
       <span class="nav-group">
-        <span class="nav-group-label">Item Types &#9662;</span>
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_item_types.html">Basic Info</a>
           <a href="/static/admin_modifiers.html">Modifiers</a>
         </div>
       </span>
       <span class="nav-group">
-        <span class="nav-group-label">Config &#9662;</span>
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
         <div class="nav-dropdown">
           <a href="/static/admin_global_attributes.html">Global Attributes</a>
           <a href="/static/admin_size_categories.html">Size Categories</a>
@@ -480,16 +276,20 @@
           <a href="/static/admin_unrecognized_suggestions.html">Unrecognized Suggestions</a>
         </div>
       </span>
-      <a href="/static/admin_stores.html"><strong>Stores</strong></a>
+      <a href="/static/admin_stores.html" class="active">Stores</a>
       <a href="/static/admin_analytics.html">Analytics</a>
       <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
     </div>
   </div>
 
   <div class="container">
     <div id="statusBar" class="status-bar" style="display: none;"></div>
 
-    <button class="add-btn" id="addStoreBtn">+ Add New Store</button>
+    <button class="add-btn" id="addStoreBtn"><span class="icon"><i data-lucide="plus"></i></span> Add Store</button>
 
     <div class="section">
       <div class="section-header">
@@ -629,7 +429,7 @@
       </div>
       <div class="modal-body">
         <p>Are you sure you want to delete <strong id="deleteStoreName"></strong>?</p>
-        <p style="color: #666; font-size: 13px;">The store will be archived and can be restored later.</p>
+        <p style="color: var(--text-secondary); font-size: 13px;">The store will be archived and can be restored later.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn" id="deleteCancelBtn">Cancel</button>
@@ -707,7 +507,7 @@
     function showToast(message, type = "info") {
       const toast = document.createElement("div");
       toast.className = `toast ${type}`;
-      const icons = { success: "✓", error: "✕", info: "ℹ" };
+      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
       toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
       toastContainer.appendChild(toast);
       setTimeout(() => {
@@ -824,7 +624,7 @@
       storeCount.textContent = activeStores.length;
 
       if (activeStores.length === 0) {
-        storeList.innerHTML = '<li class="empty-state">No stores found. Click "Add New Store" to create one.</li>';
+        storeList.innerHTML = '<li class="empty-state">No stores found. Click "Add Store" to create one.</li>';
         return;
       }
 
@@ -1165,7 +965,7 @@
         return `
           <li class="store-item" data-id="${store.id}" style="opacity: 0.7;">
             <div class="store-info">
-              <span class="store-name" style="color: #666;">${escapeHtml(store.name)}</span>
+              <span class="store-name" style="color: var(--text-secondary);">${escapeHtml(store.name)}</span>
               <span class="store-address">${escapeHtml(formatAddress(store))}</span>
               <span class="store-phone">${escapeHtml(store.phone)}</span>
               <div class="store-meta">
@@ -1253,6 +1053,52 @@
         updateCheckboxItemStyle(cb);
         hidePaymentError();
       });
+    });
+
+    // Theme Toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const htmlEl = document.documentElement;
+
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    htmlEl.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      htmlEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+
+    // Initialize Lucide icons
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    // Mark active nav link based on current URL
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
+      const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+      const linkPage = hrefMatch ? hrefMatch[1] : null;
+      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
+      const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+      const currentPage = currentMatch ? currentMatch[1] : null;
+
+      if (linkPage && currentPage && linkPage === currentPage) {
+        link.classList.add('active');
+        // Also mark parent dropdown label as active
+        const navGroup = link.closest('.nav-group');
+        if (navGroup) {
+          const label = navGroup.querySelector('.nav-group-label');
+          if (label) label.classList.add('active');
+        }
+      }
     });
 
     // Initial load

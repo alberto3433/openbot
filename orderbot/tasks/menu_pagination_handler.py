@@ -75,12 +75,10 @@ class MenuPaginationHandler(MenuDataMixin):
             # No previous menu query - check if we have a category from "what other X"
             if category:
                 # Treat as a fresh menu query for this category
-                logger.info("MORE MENU ITEMS: No pagination, treating '%s' as fresh query", category)
                 return self._handle_category_as_menu_query(category, order)
 
             # No category either - treat as a general menu query
             # "what else do you have?" without context means show the general menu
-            logger.info("MORE MENU ITEMS: No pagination and no category, showing general menu")
             if self.menu_inquiry_handler:
                 return self.menu_inquiry_handler.handle_menu_query(None, order)
 
@@ -109,17 +107,16 @@ class MenuPaginationHandler(MenuDataMixin):
         category = pagination.get("category")
         offset = pagination.get("offset", 0)
 
-        # Check if this is a modifier category (toppings, proteins, cheeses, spreads, milks, etc.)
-        # Use data-driven lookup from modifier_categories table
-        modifier_categories = menu_cache.get_modifier_categories_for_inquiry()
-
-        if category in modifier_categories:
-            # Use generic data-driven getter for modifier items
-            get_items = lambda: menu_cache.get_modifier_category_items(category)
-            return self._handle_more_modifier_items(category, get_items, offset, order)
-
-        # Get items for this category (menu items)
+        # Try to get menu items for this category
         items, lookup_type = self._get_items_for_category(category)
+
+        # If no menu items found, check if this is a modifier category
+        if not items:
+            modifier_categories = menu_cache.get_modifier_categories_for_inquiry()
+            if category in modifier_categories:
+                # Use generic data-driven getter for modifier items
+                get_items = lambda: menu_cache.get_modifier_category_items(category)
+                return self._handle_more_modifier_items(category, get_items, offset, order)
 
         if not items or offset >= len(items):
             # No more items to show

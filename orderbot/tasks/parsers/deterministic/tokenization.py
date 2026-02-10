@@ -26,6 +26,17 @@ logger = logging.getLogger(__name__)
 # Import consolidated skip words from constants
 from orderbot.tasks.parsers.constants import TOKENIZATION_SKIP_WORDS as _SKIP_WORDS
 
+# Trailing politeness words that should be stripped before menu item matching
+_TRAILING_STRIP_WORDS = {"please", "thanks", "thank you", "ok", "okay", "alright", "pls", "thx"}
+
+
+def _strip_trailing_words(text: str) -> str:
+    """Strip trailing politeness words from text for menu item matching."""
+    words = text.split()
+    while words and words[-1].lower().rstrip(".,!?") in _TRAILING_STRIP_WORDS:
+        words.pop()
+    return " ".join(words)
+
 
 # =============================================================================
 # Item Indicator Detection
@@ -57,16 +68,19 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     """
     text_lower = text.lower().strip()
 
+    # Strip trailing politeness words (please, thanks, etc.) before matching
+    text_for_matching = _strip_trailing_words(text_lower)
+
     # Also prepare singularized version for matching plurals like "coffees" -> "coffee"
     # Singularize each word to handle "three coffees" -> "three coffee"
-    words = text_lower.split()
+    words = text_for_matching.split()
     singularized_words = [singularize(w) for w in words]
     text_singularized = " ".join(singularized_words)
 
     # First, check if entire text matches a menu item (including aliases)
     # Try both original and singularized forms
-    resolved = menu_cache.resolve_menu_item_alias(text_lower)
-    if not resolved and text_singularized != text_lower:
+    resolved = menu_cache.resolve_menu_item_alias(text_for_matching)
+    if not resolved and text_singularized != text_for_matching:
         resolved = menu_cache.resolve_menu_item_alias(text_singularized)
     if resolved:
         # Get the item type from the resolved menu item (not from text triggers)
@@ -80,13 +94,13 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     # Second, check if text matches menu items by word boundary (for ambiguous cases)
     # This handles "the classic" which matches multiple items (The Classic BEC, etc.)
     # We return True to indicate it's an item indicator, even if disambiguation is needed later
-    word_matches = menu_cache.find_items_by_word_match(text_lower)
+    word_matches = menu_cache.find_items_by_word_match(text_for_matching)
     if word_matches:
         # Multiple matches - pick the first one's item_type (disambiguation happens later)
         first_match = word_matches[0]
         item_type = first_match.get("item_type")
         # Use the search term as resolved_name since we don't have a single match
-        return True, item_type, text_lower
+        return True, item_type, text_for_matching
 
     # Check for item type triggers - prioritize early matches
     all_triggers = menu_cache.get_item_type_triggers()
@@ -101,8 +115,8 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     matches: list[tuple[int, int, str, str]] = []  # (position, length, item_type, trigger)
 
     # Try matching triggers against both original and singularized text
-    texts_to_try = [text_lower]
-    if text_singularized != text_lower:
+    texts_to_try = [text_for_matching]
+    if text_singularized != text_for_matching:
         texts_to_try.append(text_singularized)
 
     for item_type_slug, triggers in all_triggers.items():

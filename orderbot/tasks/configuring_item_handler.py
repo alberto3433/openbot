@@ -319,7 +319,7 @@ class ConfiguringItemHandler:
                 return self.menu_item_handler.get_first_question(item, order)
 
         # No match found - ask again or give an error
-        from ..utils.text import format_english_list
+        from .utils.text import format_english_list
         option_names = [opt.get("display_name", opt.get("slug", "")) for opt in matching_options]
         options_str = format_english_list(option_names, conjunction="or")
 

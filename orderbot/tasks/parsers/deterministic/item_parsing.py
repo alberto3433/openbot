@@ -592,7 +592,25 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # Use text_cleaned (ordering phrases stripped) for more accurate matching
     more_specific_matches = menu_cache.find_items_by_word_match(text_cleaned)
     if more_specific_matches:
-        # Check if ANY of the specific matches are from a DIFFERENT item type than detected
+        text_cleaned_lower = text_cleaned.lower()
+
+        # FIRST: Check for complete menu item name matches from a DIFFERENT type
+        # This catches cases like "hot chai tea" where "chai tea" is a complete menu item
+        # (type: chai_drink) but "hot" also matches "Hot Tea" (type: tea).
+        # We prefer the more specific match where the complete name appears in the input.
+        for match in more_specific_matches:
+            match_name = match.get("name", "").lower()
+            match_type = match.get("item_type")
+            if match_name and match_type and match_type != detected_item_type:
+                # Check if this complete menu item name appears as a phrase in the input
+                if re.search(rf'\b{re.escape(match_name)}\b', text_cleaned_lower):
+                    logger.info(
+                        "CONFIGURABLE_ITEM: skipping '%s' - found complete menu item '%s' of type '%s' (detected: %s)",
+                        text[:50], match.get("name"), match_type, detected_item_type
+                    )
+                    return None
+
+        # THEN: Check if ANY of the specific matches are from a DIFFERENT item type than detected
         # This indicates the user likely wants a specific menu item, not a configurable one
         specific_item_types = {m.get("item_type") for m in more_specific_matches if m.get("item_type")}
         if specific_item_types and detected_item_type not in specific_item_types:
@@ -1124,7 +1142,7 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     }
 
     # Collect all matches with position info for smarter selection
-    # Format: (item_type, trigger, length, start_pos, slug_matches, is_menu_item)
+    # Format: (item_type, trigger, length, start_pos, slug_matches, is_complete_item_name)
     matches: list[tuple[str, str, int, int, bool, bool]] = []
 
     for item_type_slug in configurable_slugs:
@@ -1140,20 +1158,32 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
                 start_pos = match.start()
                 # Prefer item types where slug matches trigger
                 slug_matches = trigger.lower() == item_type_slug or trigger.lower().rstrip("s") == item_type_slug
-                # Check if trigger is a menu item name/alias (not just a modifier name)
-                # This ensures "Chai Tea" beats "tea" type, but "cream cheese" doesn't beat "bagel"
-                is_menu_item = menu_cache.resolve_menu_item_alias(trigger) is not None
-                matches.append((item_type_slug, trigger, len(trigger), start_pos, slug_matches, is_menu_item))
+                # Check if trigger is a complete item name/alias for this item type
+                # (more specific than partial word triggers like "tea" in "Hot Tea")
+                item_names = menu_cache.get_item_names_by_type(item_type_slug)
+                is_complete_item_name = trigger.lower() in item_names
+                matches.append((item_type_slug, trigger, len(trigger), start_pos, slug_matches, is_complete_item_name))
 
     if not matches:
         return None, None
 
-    # Sort by: (1) is_menu_item (menu item names first - most specific),
-    # (2) slug_matches (type slug matches next), (3) start_pos (earlier first),
-    # (4) length (longer first - as tiebreaker)
-    # This ensures "Chai Tea" (menu item) beats "tea" (slug), but "cream cheese" (modifier)
-    # doesn't beat "bagel" (slug) in "bagel with cream cheese"
-    matches.sort(key=lambda x: (not x[5], not x[4], x[3], -x[2]))
+    # Sort by:
+    # (1) is_complete_item_name (True first) - complete item names are most specific
+    # (2) For complete item names: prefer earlier position, then longer
+    # (3) For partial triggers: prefer slug_matches, then earlier position, then longer
+    # This ensures:
+    # - "bagels" wins over "scallion cream cheese" (earlier position) in split orders
+    # - "chai tea" wins over "tea" (earlier position and is complete item name)
+    # - "bagel" wins over "everything" (bagel is slug match, everything is not)
+    def sort_key(x):
+        item_type, trigger, length, start_pos, slug_matches, is_complete_item_name = x
+        if is_complete_item_name:
+            # Complete item names: earlier position first, then longer
+            return (0, start_pos, -length)
+        else:
+            # Partial triggers: prefer slug matches, then earlier, then longer
+            return (1, not slug_matches, start_pos, -length)
+    matches.sort(key=sort_key)
     return matches[0][0], matches[0][1]
 
 

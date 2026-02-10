@@ -292,6 +292,10 @@ def resolve_to_canonical(
     # Handle boolean attributes (data-driven via options with "true"/"false" slugs)
     input_type = attr_info.get("input_type") if attr_info else None
     if input_type == "boolean":
+        # Handle "not X" pattern for boolean attributes → return False
+        # e.g., "not toasted" → False, "not scooped" → False
+        if value_clean.startswith("not "):
+            return False
         # Boolean attributes have options with slugs "true" and "false"
         # Aliases like "decaf", "yes" → "true" and "regular", "no" → "false"
         option = menu_cache.resolve_option_by_alias(attr_slug, value_clean)

@@ -206,6 +206,26 @@ class ModifierChangeHandler:
         new_value_lower = self._clean_modifier_value(new_value)
         target_attr_map = self._get_target_attr_map()
 
+        # Handle "not X" pattern - extract attribute name from negation
+        # e.g., "not toasted" -> check if "toasted" is an attribute
+        if new_value_lower.startswith("not "):
+            potential_attr = new_value_lower[4:].strip()  # Remove "not " prefix
+            # Check if this is a known attribute (e.g., "toasted", "scooped", "iced")
+            is_attr_option, attr_slug = menu_cache.is_known_attribute_option(potential_attr)
+            if is_attr_option and attr_slug:
+                return False, [attr_slug]
+            # Also check if it matches an attribute slug directly
+            if potential_attr in target_attr_map:
+                return False, [target_attr_map[potential_attr]]
+            # Check if it's a valid attribute slug (without mapping)
+            try:
+                for item_type_slug in menu_cache.get_all_item_type_slugs():
+                    attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                    if potential_attr in attrs:
+                        return False, [potential_attr]
+            except Exception:
+                pass
+
         # If target is explicitly specified, use that attribute
         if target:
             target_lower = target.lower()

@@ -223,6 +223,10 @@ CHANGE_REQUEST_PATTERNS = [
     (re.compile(r"i\s+want(?:ed)?\s+(.+?)\s+instead(?:\?|$)", re.IGNORECASE), (None, 1)),
     # "no wait, X" / "wait, X instead"
     (re.compile(r"(?:no\s+)?wait[,.]?\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "make the bagel not toasted" - negate boolean attribute on specific item
+    (re.compile(r"(?:make|have)\s+(?:the|my)\s+(\w+(?:\s+\w+)?)\s+(not\s+\w+)(?:\s+please)?(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "make it not toasted" - negate boolean attribute on implicit target
+    (re.compile(r"(?:make|have)\s+(?:it|that)\s+(not\s+\w+)(?:\s+please)?(?:\?|$)", re.IGNORECASE), (None, 1)),
 ]
 
 # Repeat order patterns: "repeat my order", "same as last time", "my usual", etc.

@@ -424,6 +424,22 @@ class MenuLookup(MenuDataMixin):
         """
         return menu_cache.infer_item_type_from_text(item_name)
 
+    def get_items_for_item_type(self, item_type_slug: str) -> list[dict]:
+        """
+        Get all menu items for an item type.
+
+        Args:
+            item_type_slug: The item type slug (e.g., "sized_beverage", "side", "bagel")
+
+        Returns:
+            List of menu item dicts with name, base_price, etc.
+        """
+        if not self._menu_data:
+            return []
+
+        items_by_type = self._menu_data.get("items_by_type", {})
+        return items_by_type.get(item_type_slug, [])
+
     def get_suggestions_for_item_type(self, item_type_slug: str, limit: int = 5) -> str:
         """
         Get a formatted string of menu suggestions for an item type.

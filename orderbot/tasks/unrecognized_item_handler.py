@@ -117,6 +117,15 @@ class UnrecognizedItemHandler:
             )
             return (message, category)
 
+        # Level 1.5: Check if term matches a display group (e.g., "sandwich" -> "Sandwiches")
+        display_group_result = self._check_display_group_match(item_name_for_lookup, order)
+        if display_group_result:
+            self._log_unrecognized(
+                item_name, item_name_for_lookup, session_id,
+                order_item_count, "display_group", display_group_result[1]
+            )
+            return display_group_result
+
         # Level 2: Try fuzzy matching (using cleaned name)
         fuzzy_matches = self._get_fuzzy_matches(item_name_for_lookup)
         if fuzzy_matches:
@@ -220,6 +229,75 @@ class UnrecognizedItemHandler:
             logger.warning("Failed to query curated suggestions: %s", e)
 
         return None
+
+    def _check_display_group_match(
+        self,
+        normalized_input: str,
+        order=None,
+    ) -> tuple[str, str | None] | None:
+        """
+        Check if the input matches a display group (e.g., "sandwich" -> "Sandwiches").
+
+        If matched, returns a helpful response listing items from that display group.
+
+        Args:
+            normalized_input: Lowercase, stripped item name
+            order: Optional OrderTask for pagination state
+
+        Returns:
+            Tuple of (message, display_group_slug) if match found, None otherwise.
+        """
+        # Try to find a matching display group
+        display_group = menu_cache.get_display_group_by_slug(normalized_input)
+
+        if not display_group:
+            return None
+
+        group_name = display_group.get("display_name", normalized_input)
+        group_slug = display_group.get("slug", normalized_input)
+
+        # Get items from this display group
+        item_type_slugs = menu_cache.get_item_types_in_display_group(group_slug)
+        if not item_type_slugs:
+            return None
+
+        # Gather all items from the display group's item types
+        all_items = []
+        for item_type_slug in item_type_slugs:
+            items = self.menu_lookup.get_items_for_item_type(item_type_slug)
+            all_items.extend(items)
+
+        if not all_items:
+            return None
+
+        # Show first few items with pagination hint if more available
+        max_to_show = 4
+        item_names = [item.get("name", "") for item in all_items[:max_to_show]]
+        items_list = format_english_list(item_names, conjunction="or")
+
+        remaining = len(all_items) - max_to_show
+        if remaining > 0:
+            message = (
+                f"We have several {group_name.lower()}! Here are a few: {items_list}. "
+                f"We have {remaining} more options. Would you like to hear more, or would you like any of these?"
+            )
+            # Set up pagination state
+            if order:
+                order.menu_query_pagination = {
+                    "type": "display_group_items",
+                    "display_group": group_slug,
+                    "items": [item.get("name", "") for item in all_items],
+                    "offset": max_to_show,
+                }
+        else:
+            message = (
+                f"We have {group_name.lower()}! Our options are: {items_list}. "
+                f"Would you like any of these?"
+            )
+            if order:
+                order.clear_menu_pagination()
+
+        return (message, group_slug)
 
     def _extract_suggestion_data(self, suggestion) -> dict:
         """Extract category slug and menu items from a suggestion object.

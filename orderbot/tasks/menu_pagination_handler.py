@@ -102,6 +102,10 @@ class MenuPaginationHandler(MenuDataMixin):
         if pagination.get("type") == "dietary_items":
             return self._handle_more_dietary_items(order, pagination)
 
+        # Handle display_group_items pagination (from "can I get a sandwich?" response)
+        if pagination.get("type") == "display_group_items":
+            return self._handle_more_display_group_items(order, pagination)
+
         category = pagination.get("category")
         offset = pagination.get("offset", 0)
 
@@ -470,6 +474,52 @@ class MenuPaginationHandler(MenuDataMixin):
         else:
             category_suffix = f" {category}" if category else " options"
             message = f"We also have {items_str}. That's all the {dietary_display}{category_suffix} we have. Would you like any?"
+
+        return StateMachineResult(message=message, order=order)
+
+    def _handle_more_display_group_items(
+        self,
+        order: OrderTask,
+        pagination: dict,
+    ) -> StateMachineResult:
+        """Handle 'show more' for display group items (from 'can I get a sandwich?' response).
+
+        Args:
+            order: Current order state
+            pagination: Pagination dict with "items" list, "offset", and "display_group"
+        """
+        items = pagination.get("items", [])
+        offset = pagination.get("offset", 0)
+        display_group = pagination.get("display_group", "items")
+
+        if not items or offset >= len(items):
+            order.clear_menu_pagination()
+            return StateMachineResult(
+                message="That's all we have. Would you like to order something?",
+                order=order,
+            )
+
+        # Get next batch
+        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
+        remaining = len(items) - (offset + len(batch))
+        has_more = remaining > 0
+
+        # Format the list
+        items_str = format_english_list(batch, conjunction="or")
+
+        if has_more:
+            # Update pagination for next "what else"
+            new_offset = offset + DEFAULT_PAGINATION_SIZE
+            order.menu_query_pagination = {
+                "type": "display_group_items",
+                "display_group": display_group,
+                "items": items,
+                "offset": new_offset,
+            }
+            message = f"We also have {items_str}, and {remaining} more. Would you like any of these?"
+        else:
+            order.clear_menu_pagination()
+            message = f"We also have {items_str}. That's all we have. Would you like any of these?"
 
         return StateMachineResult(message=message, order=order)
 

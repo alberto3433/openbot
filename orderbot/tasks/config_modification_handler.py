@@ -41,6 +41,18 @@ ADD_MODIFIER_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# Pattern for "I'd like X on that" style phrases where modifier is in the middle
+# Captures the modifier term in group 1
+ADD_MODIFIER_MIDDLE_PATTERN = re.compile(
+    r"^(?:"
+    r"i'?d\s+like\s+(.+?)\s+on\s+(?:that|it|this|there)"
+    r"|i\s+want\s+(.+?)\s+on\s+(?:that|it|this|there)"
+    r"|(?:put|throw)\s+(?:some\s+)?(.+?)\s+on\s+(?:that|it|this|there)"
+    r"|(?:can|could)\s+(?:you\s+)?(?:put|throw)\s+(?:some\s+)?(.+?)\s+on\s+(?:that|it|this|there)"
+    r")(?:\s+(?:please|thanks|thank\s+you))?$",
+    re.IGNORECASE
+)
+
 
 class ConfigModificationHandler:
     """
@@ -465,18 +477,31 @@ class ConfigModificationHandler:
 
         logger.info("ADD_DURING_CONFIG: Checking input '%s'", user_input[:50])
 
+        modifier_text = None
+
         # Check for add modifier patterns: "add X", "also add X", "can you add X", etc.
         match = ADD_MODIFIER_PATTERN.match(user_lower)
-        if not match:
-            logger.debug("ADD_DURING_CONFIG: Input doesn't match add pattern, skipping")
-            return None
-
-        # Extract the modifier text after the matched prefix
-        modifier_text = user_lower[match.end():].strip()
-        # Remove trailing "please", "thanks"
-        modifier_text = re.sub(r"\s*(please|thanks|thank you)$", "", modifier_text).strip()
+        if match:
+            # Extract the modifier text after the matched prefix
+            modifier_text = user_lower[match.end():].strip()
+            # Remove trailing "please", "thanks"
+            modifier_text = re.sub(r"\s*(please|thanks|thank you)$", "", modifier_text).strip()
+        else:
+            # Check for "I'd like X on that" style patterns
+            middle_match = ADD_MODIFIER_MIDDLE_PATTERN.match(user_lower)
+            if middle_match:
+                # Find the first non-None group (different patterns capture in different groups)
+                modifier_text = next(
+                    (g for g in middle_match.groups() if g is not None), None
+                )
+                if modifier_text:
+                    logger.debug(
+                        "ADD_DURING_CONFIG: Matched middle pattern, modifier='%s'",
+                        modifier_text
+                    )
 
         if not modifier_text:
+            logger.debug("ADD_DURING_CONFIG: Input doesn't match add pattern, skipping")
             return None
 
         # Split by "and" and commas to get individual modifier terms

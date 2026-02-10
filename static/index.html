@@ -7,6 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <style>
     /* =====================================================
        Theme System - CSS Custom Properties
@@ -18,102 +20,116 @@
       --brand-secondary: #8B5A2B;
       --brand-accent: #F5A623;
 
-      /* Light Theme (default) */
-      --bg-primary: #FAF7F4;
+      /* Light Theme (default) - Clean, modern neutrals */
+      --bg-primary: #F8F9FA;
       --bg-secondary: #FFFFFF;
-      --bg-tertiary: #F5F0EB;
+      --bg-tertiary: #F1F3F5;
       --bg-input: #FFFFFF;
 
-      --text-primary: #2D2A26;
-      --text-secondary: #5C574F;
-      --text-tertiary: #8A847A;
+      --text-primary: #1A1A1A;
+      --text-secondary: #6B7280;
+      --text-tertiary: #9CA3AF;
       --text-inverse: #FFFFFF;
 
-      --border-light: #E8E2DA;
-      --border-medium: #D4CCC2;
+      --border-light: #E5E7EB;
+      --border-medium: #D1D5DB;
 
-      --shadow-sm: 0 1px 3px rgba(45, 42, 38, 0.06);
-      --shadow-md: 0 4px 12px rgba(45, 42, 38, 0.08);
-      --shadow-lg: 0 8px 24px rgba(45, 42, 38, 0.12);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
 
-      /* Component Colors */
-      --header-bg: linear-gradient(135deg, #D4754E 0%, #C46842 100%);
-      --chat-bg: #FDFCFB;
+      /* Component Colors - Minimal header style */
+      --header-bg: #FFFFFF;
+      --header-border: var(--border-light);
+      --header-text: var(--text-primary);
+      --chat-bg: #FFFFFF;
       --user-bubble-bg: var(--brand-primary);
       --user-bubble-text: #FFFFFF;
-      --assistant-bubble-bg: #FFFFFF;
-      --assistant-bubble-border: #E8E2DA;
+      --assistant-bubble-bg: #F8F9FA;
+      --assistant-bubble-border: #E5E7EB;
       --assistant-bubble-text: var(--text-primary);
 
-      --input-border: #D4CCC2;
+      --input-border: #E5E7EB;
       --input-focus-border: var(--brand-primary);
-      --input-focus-shadow: 0 0 0 3px rgba(212, 117, 78, 0.15);
+      --input-focus-shadow: 0 0 0 3px rgba(212, 117, 78, 0.12);
 
       --badge-bg: #FFF3E8;
       --badge-text: #B35E2C;
       --badge-delivery-bg: #FFF0E6;
       --badge-delivery-text: #D4754E;
 
-      --success-bg: #E8F5E9;
-      --success-text: #2E7D32;
-      --warning-bg: #FFF8E1;
-      --warning-text: #F57F17;
-      --error-bg: #FFEBEE;
-      --error-text: #C62828;
+      --success-bg: #ECFDF5;
+      --success-text: #059669;
+      --warning-bg: #FFFBEB;
+      --warning-text: #D97706;
+      --error-bg: #FEF2F2;
+      --error-text: #DC2626;
 
       /* Bagel icon colors */
       --bagel-outer: #D4A574;
       --bagel-inner: #C49A6C;
       --bagel-hole: var(--bg-primary);
       --bagel-seeds: #8B5A2B;
+
+      /* Icon colors */
+      --icon-primary: var(--text-secondary);
+      --icon-muted: var(--text-tertiary);
     }
 
     [data-theme="dark"] {
-      --bg-primary: #1A1816;
-      --bg-secondary: #242220;
-      --bg-tertiary: #2E2B28;
-      --bg-input: #2E2B28;
+      /* True dark mode - OLED-friendly */
+      --bg-primary: #0D0D0D;
+      --bg-secondary: #1A1A1A;
+      --bg-tertiary: #262626;
+      --bg-input: #1A1A1A;
 
-      --text-primary: #F5F0EB;
-      --text-secondary: #B8B0A5;
-      --text-tertiary: #8A847A;
-      --text-inverse: #1A1816;
+      --text-primary: #FFFFFF;
+      --text-secondary: #A1A1AA;
+      --text-tertiary: #71717A;
+      --text-inverse: #0D0D0D;
 
-      --border-light: #3D3935;
-      --border-medium: #4A4540;
+      --border-light: #2A2A2A;
+      --border-medium: #3F3F46;
 
-      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
-      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
-      --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+      --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
 
-      --header-bg: linear-gradient(135deg, #3D3935 0%, #2E2B28 100%);
-      --chat-bg: #1E1C1A;
+      /* Minimal header style */
+      --header-bg: #1A1A1A;
+      --header-border: #2A2A2A;
+      --header-text: #FFFFFF;
+      --chat-bg: #0D0D0D;
       --user-bubble-bg: var(--brand-primary);
       --user-bubble-text: #FFFFFF;
-      --assistant-bubble-bg: #2E2B28;
-      --assistant-bubble-border: #3D3935;
+      --assistant-bubble-bg: #1A1A1A;
+      --assistant-bubble-border: #2A2A2A;
       --assistant-bubble-text: var(--text-primary);
 
-      --input-border: #4A4540;
+      --input-border: #3F3F46;
       --input-focus-border: var(--brand-primary);
-      --input-focus-shadow: 0 0 0 3px rgba(212, 117, 78, 0.25);
+      --input-focus-shadow: 0 0 0 3px rgba(212, 117, 78, 0.3);
 
-      --badge-bg: #3D3935;
+      --badge-bg: rgba(212, 117, 78, 0.15);
       --badge-text: #E8A87C;
-      --badge-delivery-bg: #3D3530;
+      --badge-delivery-bg: rgba(212, 117, 78, 0.15);
       --badge-delivery-text: #E8A87C;
 
-      --success-bg: #1B3D1E;
-      --success-text: #81C784;
-      --warning-bg: #3D3520;
-      --warning-text: #FFD54F;
-      --error-bg: #3D2020;
-      --error-text: #EF9A9A;
+      --success-bg: rgba(5, 150, 105, 0.15);
+      --success-text: #34D399;
+      --warning-bg: rgba(217, 119, 6, 0.15);
+      --warning-text: #FBBF24;
+      --error-bg: rgba(220, 38, 38, 0.15);
+      --error-text: #F87171;
 
       --bagel-outer: #C49A6C;
       --bagel-inner: #B08860;
       --bagel-hole: var(--bg-primary);
       --bagel-seeds: #D4A574;
+
+      /* Icon colors */
+      --icon-primary: #A1A1AA;
+      --icon-muted: #71717A;
     }
 
     /* =====================================================
@@ -128,22 +144,34 @@
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg-primary);
       color: var(--text-primary);
-      transition: background-color 0.3s ease, color 0.3s ease;
+      transition: background-color 0.25s ease, color 0.25s ease;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
 
+    /* Smooth transition for all theme-related elements */
+    *, *::before, *::after {
+      transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+      transition-duration: 0.15s;
+      transition-timing-function: ease;
+    }
+
+    /* Disable transitions during page load to prevent flash */
+    .no-transitions * {
+      transition: none !important;
+    }
+
     /* =====================================================
-       Header
+       Header - Minimal Surface Style
        ===================================================== */
     .app-header {
       background: var(--header-bg);
-      color: var(--text-inverse);
-      padding: 12px 24px;
+      color: var(--header-text);
+      padding: 14px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      box-shadow: var(--shadow-md);
+      border-bottom: 1px solid var(--header-border);
       position: relative;
       z-index: 50;
     }
@@ -152,6 +180,12 @@
       display: flex;
       align-items: center;
       gap: 12px;
+    }
+
+    .header-brand {
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--text-primary);
     }
 
     .bagel-logo {
@@ -172,37 +206,41 @@
 
     .header-subtitle {
       font-size: 13px;
-      font-weight: 400;
-      opacity: 0.85;
+      font-weight: 500;
+      color: var(--text-secondary);
     }
 
-    /* Theme Toggle */
+    /* Theme Toggle - Clean pill button */
     .theme-toggle {
       display: flex;
       align-items: center;
       gap: 8px;
-      background: rgba(255, 255, 255, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-light);
       border-radius: 20px;
-      padding: 6px 12px;
+      padding: 8px 14px;
       cursor: pointer;
       transition: all 0.2s ease;
-      color: inherit;
+      color: var(--text-primary);
       font-size: 13px;
       font-weight: 500;
     }
 
     .theme-toggle:hover {
-      background: rgba(255, 255, 255, 0.25);
+      background: var(--border-light);
+      border-color: var(--border-medium);
     }
 
     .theme-toggle .icon {
-      font-size: 16px;
+      width: 18px;
+      height: 18px;
+      color: var(--icon-primary);
       transition: transform 0.3s ease;
     }
 
-    [data-theme="dark"] .theme-toggle .icon {
-      transform: rotate(180deg);
+    .theme-toggle .icon svg {
+      width: 18px;
+      height: 18px;
     }
 
     /* =====================================================
@@ -229,7 +267,11 @@
       flex-direction: column;
       overflow: hidden;
       border: 1px solid var(--border-light);
-      transition: background-color 0.3s ease, border-color 0.3s ease;
+      transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    [data-theme="dark"] .chat-container {
+      box-shadow: 0 0 0 1px var(--border-light), var(--shadow-lg);
     }
 
     .main-layout .chat-container {
@@ -331,6 +373,12 @@
       font-weight: 500;
     }
 
+    .tts-controls label .icon {
+      width: 16px;
+      height: 16px;
+      color: var(--icon-primary);
+    }
+
     .tts-controls select {
       padding: 6px 10px;
       border: 1px solid var(--input-border);
@@ -363,12 +411,13 @@
 
     .tts-mute-btn.muted {
       background: var(--error-bg);
-      border-color: var(--error-text);
+      border-color: transparent;
       color: var(--error-text);
     }
 
     .tts-mute-btn .icon {
-      font-size: 16px;
+      width: 16px;
+      height: 16px;
     }
 
     .tts-status {
@@ -385,15 +434,28 @@
       color: var(--error-text);
     }
 
+    /* Global icon styling */
+    .icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .icon svg {
+      width: 100%;
+      height: 100%;
+    }
+
     /* Chat Header */
     .chat-header {
-      padding: 12px 20px;
+      padding: 10px 20px;
       text-align: center;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 500;
-      color: var(--text-secondary);
+      color: var(--text-tertiary);
       border-bottom: 1px solid var(--border-light);
-      background: var(--bg-tertiary);
+      background: var(--bg-secondary);
+      letter-spacing: 0.02em;
     }
 
     /* Chat Messages */
@@ -430,41 +492,47 @@
     }
 
     .msg-bubble {
-      max-width: 70%;
+      max-width: 75%;
       padding: 12px 16px;
-      border-radius: 18px;
+      border-radius: 20px;
       font-size: 14px;
-      line-height: 1.5;
+      line-height: 1.55;
       word-wrap: break-word;
     }
 
     .msg-row.user .msg-bubble {
       background: var(--user-bubble-bg);
       color: var(--user-bubble-text);
-      border-bottom-right-radius: 6px;
+      border-bottom-right-radius: 4px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
 
     .msg-row.assistant .msg-bubble {
       background: var(--assistant-bubble-bg);
       color: var(--assistant-bubble-text);
       border: 1px solid var(--assistant-bubble-border);
-      border-bottom-left-radius: 6px;
+      border-bottom-left-radius: 4px;
+    }
+
+    [data-theme="dark"] .msg-row.assistant .msg-bubble {
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     }
 
     /* Typing Indicator */
     .typing-indicator {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
       padding: 12px 16px;
     }
 
     .typing-indicator .dot {
-      width: 8px;
-      height: 8px;
-      background: var(--text-tertiary);
+      width: 7px;
+      height: 7px;
+      background: var(--brand-primary);
       border-radius: 50%;
       animation: typing-bounce 1.4s infinite ease-in-out both;
+      opacity: 0.7;
     }
 
     .typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
@@ -472,7 +540,7 @@
     .typing-indicator .dot:nth-child(3) { animation-delay: 0s; }
 
     @keyframes typing-bounce {
-      0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+      0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
       40% { transform: scale(1); opacity: 1; }
     }
 
@@ -503,23 +571,28 @@
     /* Chat Footer / Input */
     .chat-footer {
       border-top: 1px solid var(--border-light);
-      padding: 14px 16px;
+      padding: 16px 20px;
       display: flex;
-      gap: 10px;
+      gap: 12px;
       background: var(--bg-secondary);
     }
 
     .chat-footer input[type="text"] {
       flex: 1;
       border-radius: 24px;
-      border: 2px solid var(--input-border);
-      padding: 12px 18px;
+      border: 1px solid var(--input-border);
+      padding: 12px 20px;
       font-size: 14px;
       font-family: inherit;
       background: var(--bg-input);
       color: var(--text-primary);
       outline: none;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    }
+
+    [data-theme="dark"] .chat-footer input[type="text"] {
+      background: var(--bg-tertiary);
+      border-color: var(--border-medium);
     }
 
     .chat-footer input[type="text"]:focus {
@@ -531,17 +604,29 @@
       color: var(--text-tertiary);
     }
 
+    /* Send Button */
     .chat-footer button[type="submit"] {
-      border-radius: 24px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
       border: none;
       background: var(--brand-primary);
       color: var(--text-inverse);
-      padding: 0 24px;
+      padding: 0;
       font-size: 14px;
       font-weight: 600;
       font-family: inherit;
       cursor: pointer;
       transition: background-color 0.2s ease, transform 0.1s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .chat-footer button[type="submit"] .icon {
+      width: 20px;
+      height: 20px;
+      color: white;
     }
 
     .chat-footer button[type="submit"]:hover {
@@ -549,7 +634,7 @@
     }
 
     .chat-footer button[type="submit"]:active {
-      transform: scale(0.98);
+      transform: scale(0.95);
     }
 
     .chat-footer button[type="submit"]:disabled {
@@ -562,24 +647,36 @@
       width: 44px;
       height: 44px;
       border-radius: 50%;
-      border: 2px solid var(--input-border);
+      border: 1px solid var(--input-border);
       background: var(--bg-input);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
       transition: all 0.2s ease;
+      color: var(--icon-primary);
+    }
+
+    [data-theme="dark"] .mic-btn {
+      background: var(--bg-tertiary);
+      border-color: var(--border-medium);
+    }
+
+    .mic-btn .icon {
+      width: 20px;
+      height: 20px;
     }
 
     .mic-btn:hover {
       background: var(--bg-tertiary);
       border-color: var(--border-medium);
+      color: var(--text-primary);
     }
 
     .mic-btn.listening {
       background: var(--error-bg);
-      border-color: var(--error-text);
+      border-color: transparent;
+      color: var(--error-text);
       animation: pulse 1.5s infinite;
     }
 
@@ -590,7 +687,7 @@
 
     @keyframes pulse {
       0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.08); }
+      50% { transform: scale(1.05); }
     }
 
     /* =====================================================
@@ -606,7 +703,11 @@
       flex-direction: column;
       overflow: hidden;
       border: 1px solid var(--border-light);
-      transition: background-color 0.3s ease, border-color 0.3s ease;
+      transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    [data-theme="dark"] .order-panel {
+      box-shadow: 0 0 0 1px var(--border-light), var(--shadow-lg);
     }
 
     .order-panel-header {
@@ -622,7 +723,9 @@
     }
 
     .order-panel-header .icon {
-      font-size: 18px;
+      width: 20px;
+      height: 20px;
+      color: var(--brand-primary);
     }
 
     .order-panel-body {
@@ -788,7 +891,8 @@
     }
 
     .order-type-badge .icon {
-      font-size: 16px;
+      width: 16px;
+      height: 16px;
     }
 
     /* Empty State */
@@ -799,9 +903,11 @@
     }
 
     .order-empty .icon {
-      font-size: 52px;
+      width: 48px;
+      height: 48px;
       margin-bottom: 14px;
-      opacity: 0.6;
+      opacity: 0.5;
+      color: var(--text-tertiary);
     }
 
     .order-empty p {
@@ -845,8 +951,10 @@
     }
 
     .order-customer-row .icon {
-      width: 18px;
-      text-align: center;
+      width: 16px;
+      height: 16px;
+      color: var(--icon-muted);
+      flex-shrink: 0;
     }
 
     .order-special-instructions {
@@ -864,8 +972,10 @@
     }
 
     .order-special-instructions-header .icon {
-      width: 18px;
-      text-align: center;
+      width: 16px;
+      height: 16px;
+      color: var(--icon-muted);
+      flex-shrink: 0;
     }
 
     .order-special-instructions-text {
@@ -908,7 +1018,9 @@
     }
 
     .order-panel-collapsed-icon {
-      font-size: 22px;
+      width: 24px;
+      height: 24px;
+      color: var(--brand-primary);
     }
 
     .order-panel-collapsed-text {
@@ -924,7 +1036,8 @@
     }
 
     .order-panel-collapsed-chevron {
-      font-size: 18px;
+      width: 20px;
+      height: 20px;
       color: var(--text-tertiary);
     }
 
@@ -970,8 +1083,15 @@
     }
 
     .order-panel-expanded-close {
-      font-size: 22px;
+      width: 24px;
+      height: 24px;
       color: var(--text-tertiary);
+      cursor: pointer;
+      transition: color 0.2s ease;
+    }
+
+    .order-panel-expanded-close:hover {
+      color: var(--text-primary);
     }
 
     .order-panel-expanded-body {
@@ -1054,21 +1174,33 @@
         height: 32px;
       }
 
-      .theme-toggle span:not(.icon) {
+      .header-brand {
+        font-size: 15px;
+      }
+
+      #theme-text {
         display: none;
       }
 
       .theme-toggle {
-        padding: 8px;
+        padding: 10px;
         border-radius: 50%;
       }
 
       .chat-footer {
-        padding: 12px;
+        padding: 12px 16px;
       }
 
-      .chat-footer button[type="submit"] {
-        padding: 0 18px;
+      .chat-footer button[type="submit"],
+      .mic-btn {
+        width: 40px;
+        height: 40px;
+      }
+
+      .chat-footer button[type="submit"] .icon,
+      .mic-btn .icon {
+        width: 18px;
+        height: 18px;
       }
     }
   </style>
@@ -1077,7 +1209,7 @@
   <div class="app-header">
     <div class="header-left">
       <!-- Zucker's Bagel Logo SVG -->
-      <svg class="bagel-logo" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg class="bagel-logo" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <!-- Outer bagel ring -->
         <circle cx="24" cy="24" r="20" fill="var(--bagel-outer)" />
         <!-- Inner shadow/depth -->
@@ -1102,12 +1234,13 @@
         <ellipse cx="28" cy="38" rx="1" ry="1.2" fill="var(--bagel-seeds)" opacity="0.8" />
         <ellipse cx="8" cy="26" rx="1.2" ry="1" fill="var(--bagel-seeds)" opacity="0.8" />
       </svg>
+      <span class="header-brand" id="header-brand">Zucker's</span>
     </div>
     <div class="header-right">
       <span class="header-subtitle">Demo Web Chat</span>
       <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
-        <span class="icon">☀️</span>
-        <span>Light</span>
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
       </button>
     </div>
   </div>
@@ -1137,15 +1270,15 @@
       <!-- TTS Voice Controls -->
       <div class="tts-controls" id="tts-controls">
         <label>
-          <span class="icon">🔊</span>
+          <span class="icon"><i data-lucide="volume-2"></i></span>
           Voice:
           <select id="tts-voice-select">
             <option value="">Loading voices...</option>
           </select>
         </label>
         <button type="button" class="tts-mute-btn" id="tts-mute-btn" title="Toggle voice on/off">
-          <span class="icon">🔊</span>
-          <span class="label">Voice On</span>
+          <span class="icon" id="tts-mute-icon"></span>
+          <span class="label" id="tts-mute-label">Voice On</span>
         </button>
         <span class="tts-status" id="tts-status"></span>
       </div>
@@ -1162,24 +1295,28 @@
           autofocus
           placeholder="Type your message..."
         />
-        <button type="button" class="mic-btn" id="mic-btn" title="Voice input">🎤</button>
-        <button type="submit">Send</button>
+        <button type="button" class="mic-btn" id="mic-btn" title="Voice input">
+          <span class="icon"><i data-lucide="mic"></i></span>
+        </button>
+        <button type="submit">
+          <span class="icon"><i data-lucide="send"></i></span>
+        </button>
       </form>
     </div>
 
     <!-- Order Panel - Desktop -->
     <div class="order-panel" id="order-panel">
       <div class="order-panel-header">
-        <span class="icon">🛒</span>
+        <span class="icon"><i data-lucide="shopping-bag"></i></span>
         Your Order
       </div>
       <div class="order-panel-body" id="order-panel-body">
         <div class="order-type-badge" id="order-type-badge" style="display: none;">
-          <span class="icon">🏪</span>
+          <span class="icon" id="order-type-icon"></span>
           <span id="order-type-text">Pickup</span>
         </div>
         <div class="order-empty" id="order-empty">
-          <div class="icon">🥯</div>
+          <div class="icon"><i data-lucide="shopping-bag"></i></div>
           <p>Your cart is empty</p>
           <p style="font-size: 12px; margin-top: 10px; color: var(--text-tertiary);">Items will appear here as you order</p>
         </div>
@@ -1213,21 +1350,21 @@
         <div class="order-status" id="order-status-badge" style="display: none;">Order Confirmed!</div>
         <div class="order-customer" id="order-customer" style="display: none;">
           <div class="order-customer-row" id="customer-name-row">
-            <span class="icon">👤</span>
+            <span class="icon"><i data-lucide="user"></i></span>
             <span id="customer-name"></span>
           </div>
           <div class="order-customer-row" id="customer-phone-row" style="display: none;">
-            <span class="icon">📞</span>
+            <span class="icon"><i data-lucide="phone"></i></span>
             <span id="customer-phone"></span>
           </div>
           <div class="order-customer-row" id="customer-address-row" style="display: none;">
-            <span class="icon">📍</span>
+            <span class="icon"><i data-lucide="map-pin"></i></span>
             <span id="customer-address"></span>
           </div>
         </div>
         <div class="order-special-instructions" id="order-special-instructions" style="display: none;">
           <div class="order-special-instructions-header">
-            <span class="icon">📝</span>
+            <span class="icon"><i data-lucide="file-text"></i></span>
             <span>Special Instructions</span>
           </div>
           <div class="order-special-instructions-text" id="order-special-instructions-text"></div>
@@ -1242,17 +1379,17 @@
     <div class="order-panel-collapsed" id="order-panel-collapsed">
       <div class="order-panel-collapsed-content">
         <div class="order-panel-collapsed-left">
-          <span class="order-panel-collapsed-icon">🥯</span>
+          <span class="order-panel-collapsed-icon"><i data-lucide="shopping-bag"></i></span>
           <span class="order-panel-collapsed-text" id="mobile-cart-summary">Cart empty</span>
         </div>
         <div class="order-panel-collapsed-total" id="mobile-cart-total">$0.00</div>
-        <span class="order-panel-collapsed-chevron">▲</span>
+        <span class="order-panel-collapsed-chevron"><i data-lucide="chevron-up"></i></span>
       </div>
     </div>
     <div class="order-panel-expanded" id="order-panel-expanded">
       <div class="order-panel-expanded-header" id="order-panel-expanded-header">
-        <h3><span class="icon">🥯</span> Your Order</h3>
-        <span class="order-panel-expanded-close">✕</span>
+        <h3><span class="icon"><i data-lucide="shopping-bag"></i></span> Your Order</h3>
+        <span class="order-panel-expanded-close"><i data-lucide="x"></i></span>
       </div>
       <div class="order-panel-expanded-body" id="order-panel-expanded-body"></div>
       <div class="order-panel-expanded-footer" id="order-panel-expanded-footer"></div>
@@ -1261,9 +1398,37 @@
 
   <script>
     // =====================================================
+    // Initialize Lucide Icons
+    // =====================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+    });
+
+    // Helper to create Lucide icon element
+    function createLucideIcon(iconName) {
+      const icon = document.createElement('i');
+      icon.setAttribute('data-lucide', iconName);
+      return icon;
+    }
+
+    // Helper to update an icon container with a new Lucide icon
+    function updateLucideIcon(container, iconName) {
+      container.innerHTML = '';
+      const icon = createLucideIcon(iconName);
+      container.appendChild(icon);
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons({ nodes: [container] });
+      }
+    }
+
+    // =====================================================
     // Theme Toggle
     // =====================================================
     const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
     const html = document.documentElement;
 
     // Load saved theme or default to light
@@ -1272,14 +1437,12 @@
     updateThemeButton(savedTheme);
 
     function updateThemeButton(theme) {
-      const icon = themeToggle.querySelector('.icon');
-      const text = themeToggle.querySelector('span:not(.icon)');
       if (theme === 'dark') {
-        icon.textContent = '🌙';
-        text.textContent = 'Dark';
+        updateLucideIcon(themeIcon, 'moon');
+        themeText.textContent = 'Dark';
       } else {
-        icon.textContent = '☀️';
-        text.textContent = 'Light';
+        updateLucideIcon(themeIcon, 'sun');
+        themeText.textContent = 'Light';
       }
     }
 
@@ -1333,6 +1496,11 @@
         companyInfo = await response.json();
         console.log("[Company] Loaded:", companyInfo.name);
         document.title = `${companyInfo.name} - Order Bot`;
+        // Update header brand name
+        const headerBrand = document.getElementById("header-brand");
+        if (headerBrand && companyInfo.name) {
+          headerBrand.textContent = companyInfo.name.split("'")[0] + "'s";
+        }
         return companyInfo;
       } catch (error) {
         console.error("[Company] Failed to load:", error);
@@ -1615,6 +1783,15 @@
     });
 
     window.addEventListener("load", async () => {
+      // Initialize Lucide icons
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+      // Initialize theme icon
+      updateThemeButton(html.getAttribute('data-theme'));
+      // Initialize TTS mute button icon
+      updateMuteButtonUI();
+
       await loadAppVersion();
       await loadCompanyInfo();
       await loadTTSVoices();
@@ -1674,14 +1851,16 @@
     let ttsReady = false;
 
     function updateMuteButtonUI() {
+      const iconEl = document.getElementById("tts-mute-icon");
+      const labelEl = document.getElementById("tts-mute-label");
       if (ttsMuted) {
         ttsMuteBtn.classList.add("muted");
-        ttsMuteBtn.querySelector(".icon").textContent = "🔇";
-        ttsMuteBtn.querySelector(".label").textContent = "Voice Off";
+        updateLucideIcon(iconEl, "volume-x");
+        labelEl.textContent = "Voice Off";
       } else {
         ttsMuteBtn.classList.remove("muted");
-        ttsMuteBtn.querySelector(".icon").textContent = "🔊";
-        ttsMuteBtn.querySelector(".label").textContent = "Voice On";
+        updateLucideIcon(iconEl, "volume-2");
+        labelEl.textContent = "Voice On";
       }
     }
 
@@ -2063,13 +2242,14 @@
       const orderType = state.order_type;
       if (orderType) {
         orderTypeBadge.style.display = "inline-flex";
+        const orderTypeIcon = document.getElementById("order-type-icon");
         if (orderType === "delivery") {
           orderTypeBadge.classList.add("delivery");
-          orderTypeBadge.querySelector(".icon").textContent = "🚗";
+          updateLucideIcon(orderTypeIcon, "truck");
           orderTypeText.textContent = "Delivery";
         } else {
           orderTypeBadge.classList.remove("delivery");
-          orderTypeBadge.querySelector(".icon").textContent = "🏪";
+          updateLucideIcon(orderTypeIcon, "store");
           orderTypeText.textContent = "Pickup";
         }
       } else {

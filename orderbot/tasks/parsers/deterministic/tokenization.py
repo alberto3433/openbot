@@ -386,24 +386,32 @@ def _classify_token(text: str) -> "Token":
     from orderbot.tasks.schemas.parser_responses import Token
 
     text = text.strip()
+    original_text = text  # Preserve for Token.original
     text_lower = text.lower()
+
+    # Strip ordering prefixes (e.g., "I'd like a") that may remain on the
+    # first token after splitting on " and ".
+    stripped = _strip_ordering_prefix(text_lower)
+    if stripped != text_lower:
+        text_lower = stripped
+        text = stripped  # Update matching text too
 
     # Check for separator
     if text_lower in ("and", ","):
-        return Token(original=text, token_type="separator")
+        return Token(original=original_text, token_type="separator")
 
     # Extract quantity
     quantity, remaining = _extract_leading_quantity(text)
 
     # If only quantity (e.g., just "a" or "2"), it's a quantity token
     if not remaining and quantity is not None:
-        return Token(original=text, token_type="quantity", quantity=quantity)
+        return Token(original=original_text, token_type="quantity", quantity=quantity)
 
     # Check if it has an item indicator
     has_item, item_type, resolved_name = _has_item_indicator(remaining if remaining else text)
     if has_item:
         return Token(
-            original=text,
+            original=original_text,
             token_type="item",
             quantity=quantity or 1,
             item_type=item_type,
@@ -414,7 +422,7 @@ def _classify_token(text: str) -> "Token":
     is_mod, modifiers = _is_modifier_only(remaining if remaining else text)
     if is_mod:
         return Token(
-            original=text,
+            original=original_text,
             token_type="modifier",
             resolved_name=", ".join(modifiers) if modifiers else None,
         )
@@ -423,13 +431,13 @@ def _classify_token(text: str) -> "Token":
     attr_options = menu_cache.get_all_attribute_option_words()
     if text_lower in attr_options:
         return Token(
-            original=text,
+            original=original_text,
             token_type="attribute",
             attribute_slug=attr_options[text_lower],
         )
 
     # Unknown
-    return Token(original=text, token_type="unknown")
+    return Token(original=original_text, token_type="unknown")
 
 
 # =============================================================================

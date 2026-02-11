@@ -232,6 +232,33 @@ def parse_open_input_deterministic(
     # e.g., "actually, make it two" -> "make it two"
     text = strip_conversational_fillers(text)
 
+    # Strip container/packaging words that don't affect item identification
+    # e.g., "a bottle of orange juice" -> "a  orange juice" -> parsers match "orange juice"
+    # Only strips "container of" patterns (requires "of" to avoid false positives)
+    text = re.sub(
+        r'\b(?:bottles?|glasses?|cups?|cans?|boxes?|cartons?|bags?|packs?|jars?|jugs?)\s+of\s+',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
+    # Strip trailing indifference/flexibility phrases that don't affect item identification
+    # e.g., "orange juice or whatever they have" -> "orange juice"
+    # e.g., "a coffee or something" -> "a coffee"
+    text = re.sub(
+        r'\s+or\s+(?:whatever(?:\s+(?:you|they|you guys)\s+(?:have|got|recommend))?'
+        r'|something(?:\s+like\s+that)?'
+        r'|anything(?:\s+(?:like\s+that|similar|really|works?))?'
+        r')\s*$',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+    # Also strip "if you have it/that", "if that's available", "if possible", etc.
+    text = re.sub(
+        r'\s+if\s+(?:you\s+have\s+(?:it|that|any|some)'
+        r'|that(?:\'s|\s+is)\s+(?:available|okay|ok|fine|possible)'
+        r'|possible'
+        r')\s*$',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
     # Check for order type mentions (pickup/delivery)
     order_type = _extract_order_type(text)
     if order_type:

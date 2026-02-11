@@ -30,11 +30,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Pattern to detect "add modifier" requests during config
-# Matches: "add X", "also add X", "can you add X", "could you add X", "please add X"
+# Matches: "add X", "also add X", "can you add X", "could you add X", "please add X",
+#           "with X", "also with X"
 ADD_MODIFIER_PREFIXES = [
     r"(?:also\s+)?add\s+",
     r"(?:can|could)\s+you\s+add\s+",
     r"please\s+add\s+",
+    r"(?:also\s+)?with\s+",
 ]
 ADD_MODIFIER_PATTERN = re.compile(
     r"^(?:" + "|".join(ADD_MODIFIER_PREFIXES) + r")",
@@ -518,8 +520,6 @@ class ConfigModificationHandler:
 
         # Apply each modifier to the current item
         added_names = []
-        # Pre-fetch modifier→category map once for all terms (avoids repeated lookups in loop)
-        modifier_to_category = menu_cache.get_modifier_to_category_map()
         for term in modifier_terms:
             # Extract quantity from the term (e.g., "two eggs" -> qty=2, term="eggs")
             extracted_qty, search_term = extract_leading_quantity(term)
@@ -591,28 +591,14 @@ class ConfigModificationHandler:
                 )
                 return self._start_modifier_disambiguation(term, matches, item, order)
             else:
-                # No match found - try category lookup (using pre-fetched map)
-                # Use search_term (with quantity stripped) for lookup, not the raw term
-                category = modifier_to_category.get(search_term)
-                if category:
-                    modifier_slug = search_term.replace(" ", "_")
-                    item.add_selection(
-                        slug=modifier_slug,
-                        category=category,
-                        display_name=search_term.title(),
-                        quantity=quantity,  # Preserve extracted quantity (was hardcoded to 1)
-                        increment_if_exists=True,
-                    )
-                    added_names.append(search_term.title())
-                    logger.info(
-                        "ADD_DURING_CONFIG: Added '%s' (category=%s, qty=%d) via category lookup",
-                        search_term, category, quantity
-                    )
-                else:
-                    logger.warning(
-                        "ADD_DURING_CONFIG: Could not find modifier '%s' in database",
-                        search_term
-                    )
+                # No match found - don't add fake modifiers
+                # Note: modifier_to_category may have an alias entry, but if
+                # find_matching_ingredients returned 0, it means must_match filter
+                # excluded it (e.g., "plain spread" requires "cream cheese" in input)
+                logger.warning(
+                    "ADD_DURING_CONFIG: Could not find modifier '%s' in database",
+                    search_term
+                )
 
         if not added_names:
             return None

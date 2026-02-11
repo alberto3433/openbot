@@ -269,6 +269,7 @@ class OptionsInquiryHandler:
             "more",
             "next",
             "keep going",
+            "go on",
             "continue",
             "different",
         ]

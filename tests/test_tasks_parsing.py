@@ -678,15 +678,16 @@ class TestCancellationPatternDetection:
         if result is not None:
             assert result.cancel_item is None, f"Did not expect cancellation for: {text}"
 
-    def test_no_coke_is_replacement_not_cancellation(self):
-        """Test that 'no coke' is treated as replacement (ambiguous phrase)."""
-        # "no coke" could mean "no, I want a coke" or "no more coke"
-        # We treat it as replacement to be safe
+    def test_no_coke_is_cancellation(self):
+        """Test that 'no coke' is treated as cancellation (removal)."""
+        # "no coke" means "remove the coke" / "I don't want the coke"
+        # Changed from replacement to cancellation behavior to match user expectation
+        # for phrases like "no whole milk" meaning "remove whole milk"
         result = parse_open_input_deterministic("no coke")
         assert result is not None
-        # Should match as replacement, not cancellation
-        assert result.replace_last_item is True
-        assert result.cancel_item is None
+        # Should match as cancellation, not replacement
+        assert result.cancel_item == "coke"
+        assert result.replace_last_item is False
 
     def test_no_more_coke_is_cancellation(self):
         """Test that 'no more coke' is unambiguously cancellation."""

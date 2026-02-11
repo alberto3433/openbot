@@ -46,8 +46,9 @@ REPLACE_ITEM_PATTERN = re.compile(
     # "actually X", "no X", "nope X", "wait X" - requires one of these words
     r"(?:actually|nope|wait)[,]?\s+(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
-    # "no X" but NOT "no more X" (cancellation) or "no, I said/meant X" (handled separately)
-    r"no[,]?\s+(?!more\s)(?!i\s+(?:said|meant)\s)(?:make\s+(?:it\s+)?)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
+    # "no, make it X" / "no make it X" - requires "make it" to indicate replacement
+    # Plain "no X" is handled by CANCEL_ITEM_PATTERN as removal
+    r"no[,]?\s+make\s+(?:it\s+)?(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
     r"|"
     # "i meant X", "i said X", "no, i said X" - requires "i meant" or "i said"
     r"(?:no[,]?\s+)?i\s+(?:meant|said)\s+(?:a\s+)?(.+?)(?:\s+instead)?[\s!.,?]*$"
@@ -83,9 +84,17 @@ CANCEL_ITEM_PATTERN = re.compile(
     r"|"
     r"scratch\s+(?:the\s+)?(.+?)[\s!.,]*$"
     r"|"
-    r"(?:i\s+)?don'?t\s+want\s+(?:the\s+)?(.+?)(?:\s+anymore)?[\s!.,]*$"
+    # Handle "I don't want X", "don't want X", and "no I don't want X" (decline + remove)
+    r"(?:no[,]?\s+)?(?:i\s+)?don'?t\s+want\s+(?:the\s+)?(.+?)(?:\s+anymore)?[\s!.,]*$"
     r"|"
     r"no\s+more\s+(.+?)[\s!.,]*$"
+    r"|"
+    # "no X" / "no X please" - treat as removal (e.g., "no whole milk", "no sugar please")
+    # Exclude common false positives: "no thanks", "no that's it", "no I'm good"
+    # Also exclude "no make it X" which is a replacement pattern handled by REPLACE_ITEM_PATTERN
+    # Also exclude "no I don't want..." which should be handled by the "I don't want X" pattern
+    # Use negative lookahead to avoid matching these phrases
+    r"no\s+(?!thanks\b|thank\s+you|that'?s?\s+(?:it|all|fine|good|ok|okay)|i'?m\s+(?:good|fine|ok|okay|done|all\s+set)|problem|worries|way|make\s+(?:it\s+)?|i\s+don)(?:the\s+)?(.+?)(?:\s+please)?[\s!.,]*$"
     r"|"
     # "can you remove X?", "could you remove X?", "would you remove X?"
     r"(?:can|could|would)\s+you\s+(?:remove|delete|cancel|skip|take\s+off)\s+(?:the\s+)?(.+?)[\s!.,?]*$"

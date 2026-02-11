@@ -225,6 +225,12 @@ class IngredientLoaderMixin:
                         ingredient.name.lower()
                     )
 
+                    # Add ingredient slug (for validation when slug is passed instead of name)
+                    if ingredient.slug:
+                        ingredients_for_item_type[item_type_slug][category].add(
+                            ingredient.slug.lower()
+                        )
+
                     # Add ingredient aliases
                     for alias in ingredient.aliases:
                         alias_lower = alias.strip().lower()

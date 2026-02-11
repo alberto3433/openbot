@@ -454,3 +454,34 @@ class AttributeQueryMixin:
         """
         options = self._global_attribute_options.get(attr_slug, [])
         return [opt for opt in options if opt.get("forward_to_attribute")]
+
+    @ensure_cache_loaded
+    def get_all_attribute_option_slugs_for_item_type(self, item_type_slug: str) -> set[str]:
+        """Get all attribute option slugs for an item type.
+
+        Returns all option slugs from all attributes linked to this item type.
+        Used to check if a word in user input refers to an attribute option
+        (e.g., "bagel" as a bread option for egg_sandwich).
+
+        Args:
+            item_type_slug: The item type slug
+
+        Returns:
+            Set of lowercase option slugs.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        result = set()
+        attrs = self.get_item_type_attributes(item_type_slug)
+        for attr_slug in attrs:
+            options = self._global_attribute_options.get(attr_slug, [])
+            for opt in options:
+                slug = opt.get("slug", "")
+                if slug:
+                    result.add(slug.lower())
+                # Also add display name as it might match menu item names
+                name = opt.get("name", "")
+                if name:
+                    result.add(name.lower())
+        return result

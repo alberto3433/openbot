@@ -152,7 +152,10 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                 field.field_name, matching_aliases[:5], normalized_input
             )
         for alias in field.aliases:
-            if normalized_input == alias or alias in normalized_input:
+            is_exact_alias_match = (normalized_input == alias)
+            is_substring_alias_match = (alias in normalized_input) and not is_exact_alias_match
+
+            if is_exact_alias_match or is_substring_alias_match:
                 if field.is_list:
                     # For lists, find the specific matching item
                     if isinstance(value, list):
@@ -165,11 +168,18 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                                 item_value = list_item.get("slug", "") or ""
                             else:
                                 item_value = str(list_item)
-                            if alias in item_value.lower() or normalized_input in item_value.lower():
+                            # Normalize underscores to spaces for comparison
+                            item_value_normalized = item_value.lower().replace("_", " ")
+                            if alias in item_value_normalized or normalized_input in item_value_normalized:
                                 return ModifierMatch(field=field, matched_value=item_value, item=item)
-                        # If alias matched but no specific list item, still return match
-                        # This handles "remove syrup" removing all syrups
-                        return ModifierMatch(field=field, matched_value=None, item=item)
+                        # Only return "remove all" match if it's an EXACT alias match
+                        # e.g., "remove syrup" should remove all syrups
+                        # But "no whole milk" (where "milk" is substring) should NOT remove
+                        # other items if "whole_milk" isn't in the list
+                        if is_exact_alias_match:
+                            return ModifierMatch(field=field, matched_value=None, item=item)
+                        # For substring matches, continue looking in other fields
+                        continue
                 else:
                     return ModifierMatch(field=field, matched_value=None, item=item)
 
@@ -196,7 +206,9 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                     item_value = list_item.get("slug", "") or ""
                 else:
                     item_value = str(list_item)
-                if normalized_input in item_value.lower() or item_value.lower() in normalized_input:
+                # Normalize underscores to spaces for comparison
+                item_value_normalized = item_value.lower().replace("_", " ")
+                if normalized_input in item_value_normalized or item_value_normalized in normalized_input:
                     return ModifierMatch(field=field, matched_value=item_value, item=item)
 
     # For MenuItemTask, also check attribute_values dictionary

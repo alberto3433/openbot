@@ -458,13 +458,16 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # due to the "bagel" trigger word. Items with defaults should be detected by their aliases.
     matched_item_name: str | None = None
     matched_item_type: str | None = None
+    matched_item_span: tuple[int, int] | None = None  # Track span to exclude from attribute extraction
     items_with_defaults_aliases = get_items_with_defaults_aliases()
     # Sort aliases by length (longest first) for most specific match
     sorted_aliases = sorted(items_with_defaults_aliases.keys(), key=len, reverse=True)
     for alias in sorted_aliases:
         # Allow optional plural suffix (s, es) to match "classic becs" with alias "classic bec"
-        if re.search(rf'\b{re.escape(alias)}(?:e?s)?\b', text_lower):
+        match = re.search(rf'\b{re.escape(alias)}(?:e?s)?\b', text_lower)
+        if match:
             matched_item_name = items_with_defaults_aliases[alias]
+            matched_item_span = (match.start(), match.end())
             # Look up the item type for this item
             matched_item_type = menu_cache.get_item_type_for_menu_item(matched_item_name)
             if matched_item_type:
@@ -596,18 +599,48 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # phrase in the user's input. This catches cases like "hot chai tea" where "chai tea"
     # is a complete menu item (type: chai_drink) but the trigger word "tea" detected
     # the "tea" type. We want to defer to the more specific match.
+    # BUT: Skip this check if the menu item name is also an attribute option for the
+    # detected item type (e.g., "bagel" in "ham egg and cheese bagel" is the bread choice,
+    # not a reference to a standalone bagel item).
     text_cleaned_lower = text_cleaned.lower()
+    detected_type_attr_options = menu_cache.get_all_attribute_option_slugs_for_item_type(detected_item_type)
+
+    def is_attribute_option_word(word: str) -> bool:
+        """Check if a word appears in any attribute option for the detected type."""
+        word_lower = word.lower()
+        for opt in detected_type_attr_options:
+            # Check if word is the option or appears as a word within the option
+            if word_lower == opt or word_lower in opt.split('_') or word_lower in opt.split():
+                return True
+        return False
+
     for item_name, item_info in menu_cache._menu_items.items():
         item_type = item_info.get("item_type")
         if item_type and item_type != detected_item_type:
             item_name_lower = item_name.lower()
+            # Skip if this menu item name is also an attribute option for the detected type
+            # (e.g., "bagel" as a bread option for egg_sandwich - options are "plain_bagel", etc.)
+            if is_attribute_option_word(item_name_lower):
+                continue
             # Check if this menu item name appears as a word-boundary phrase in input
             if re.search(rf'\b{re.escape(item_name_lower)}\b', text_cleaned_lower):
-                logger.info(
-                    "CONFIGURABLE_ITEM: skipping '%s' - found complete menu item '%s' of type '%s' (detected: %s)",
-                    text[:50], item_name, item_type, detected_item_type
-                )
-                return None
+                # Found a complete menu item of a different type - use its type instead
+                # e.g., "large iced tea" detected type "tea" but "iced tea" is type "iced_tea"
+                # Switch to the correct type so configurable item parsing continues
+                if item_type in configurable_slugs:
+                    logger.info(
+                        "CONFIGURABLE_ITEM: switching type '%s' -> '%s' based on menu item '%s' in '%s'",
+                        detected_item_type, item_type, item_name, text[:50]
+                    )
+                    detected_item_type = item_type
+                    break
+                else:
+                    # Non-configurable item - defer to menu item lookup
+                    logger.info(
+                        "CONFIGURABLE_ITEM: skipping '%s' - found non-configurable menu item '%s' of type '%s'",
+                        text[:50], item_name, item_type
+                    )
+                    return None
 
     if more_specific_matches:
         # Check if user's input has extra specificity beyond the item type word
@@ -644,6 +677,15 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     return None
 
     logger.info("CONFIGURABLE_ITEM: detected type '%s' in '%s'", detected_item_type, text[:50])
+
+    # 2c. Early menu item name matching
+    # This finds the specific menu item within the item type (e.g., "Hot Coffee" for coffee).
+    # NOTE: We do NOT use the span from this match for exclusion because menu item NAMES
+    # like "Bagel" are short and don't contain modifier words. The span exclusion is only
+    # needed for ALIASES matched in step 1b (e.g., "ham egg and cheese" contains "cheese"
+    # which shouldn't trigger cheese attribute matching).
+    if not matched_item_name:
+        matched_item_name = _match_menu_item_name_for_type(text, detected_item_type)
 
     # 3. Extract quantity
     # Handle common prefixes like "I want 5", "Can I get three", "Give me two", etc.
@@ -732,7 +774,17 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # - list[{slug, quantity, ...}] for multi_select
     # - bool for boolean
     # Also returns matched_spans to pass to modifier extraction to avoid double-extraction
-    attr_result = _get_pipeline().extract_attributes(text, detected_item_type)
+    #
+    # Build exclude_spans from the matched menu item name to prevent attribute extraction
+    # from matching words within the menu item name. E.g., "ham egg and cheese bagel with
+    # pepper" - the word "cheese" is part of the menu item name "Ham Egg and Cheese Sandwich",
+    # not a request for a specific cheese type.
+    from .result_types import TextSpan
+    exclude_spans_for_attrs: list[TextSpan] = []
+    if matched_item_span:
+        exclude_spans_for_attrs.append(TextSpan(start=matched_item_span[0], end=matched_item_span[1]))
+
+    attr_result = _get_pipeline().extract_attributes(text, detected_item_type, exclude_spans=exclude_spans_for_attrs if exclude_spans_for_attrs else None)
     attr_matched_spans = [(s.start, s.end) for s in attr_result.matched_spans]
 
     # Merge inferred attribute values from option alias fallback
@@ -749,9 +801,11 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             unmatched=attr_result.unmatched,
         )
 
-    # 5. Try to match a specific menu item name within this type
-    # If we already found an item with defaults, use that name; otherwise try to match
-    item_name = matched_item_name or _match_menu_item_name_for_type(text, detected_item_type)
+    # 5. Use the menu item name found earlier (from step 1b or 2c)
+    # matched_item_name was already set by:
+    # - Step 1b: items_with_defaults_aliases matching
+    # - Step 2c: early menu item name matching via _match_menu_item_name_for_type_with_span
+    item_name = matched_item_name
 
     # 5a. Guard against creating generic items from partial trigger matches
     # If we detected an item type but no specific menu item matched,
@@ -1071,6 +1125,44 @@ def _get_default_menu_item_for_type(item_type_slug: str) -> str | None:
     return sorted(item_names)[0].title()
 
 
+def _match_menu_item_name_for_type_with_span(
+    text: str,
+    item_type_slug: str
+) -> tuple[str | None, tuple[int, int] | None]:
+    """
+    Try to match a specific menu item name within an item type, returning the span.
+
+    For example, for sized_beverage, this would try to match "Iced Latte",
+    "Hot Coffee", "Chai Tea", etc.
+
+    Args:
+        text: User input text
+        item_type_slug: The item type slug to search within
+
+    Returns:
+        Tuple of (canonical_name, (start, end)) if found, (None, None) otherwise
+    """
+    text_lower = text.lower()
+
+    # Get all item names for this type
+    item_names = menu_cache.get_item_names_by_type(item_type_slug)
+    alias_to_canonical = menu_cache.get_item_alias_to_canonical_by_type(item_type_slug)
+
+    # Try to match longest name first for specificity
+    all_names_and_aliases = list(item_names) + list(alias_to_canonical.keys())
+    all_names_and_aliases.sort(key=len, reverse=True)
+
+    for name in all_names_and_aliases:
+        pattern = rf'\b{re.escape(name)}s?\b'
+        match = re.search(pattern, text_lower)
+        if match:
+            # Return canonical name and span
+            canonical_name = alias_to_canonical.get(name, name.title())
+            return canonical_name, (match.start(), match.end())
+
+    return None, None
+
+
 def _match_menu_item_name_for_type(text: str, item_type_slug: str) -> str | None:
     """
     Try to match a specific menu item name within an item type.
@@ -1085,23 +1177,8 @@ def _match_menu_item_name_for_type(text: str, item_type_slug: str) -> str | None
     Returns:
         The canonical menu item name if found, None otherwise
     """
-    text_lower = text.lower()
-
-    # Get all item names for this type
-    item_names = menu_cache.get_item_names_by_type(item_type_slug)
-    alias_to_canonical = menu_cache.get_item_alias_to_canonical_by_type(item_type_slug)
-
-    # Try to match longest name first for specificity
-    all_names_and_aliases = list(item_names) + list(alias_to_canonical.keys())
-    all_names_and_aliases.sort(key=len, reverse=True)
-
-    for name in all_names_and_aliases:
-        pattern = rf'\b{re.escape(name)}s?\b'
-        if re.search(pattern, text_lower):
-            # Return canonical name
-            return alias_to_canonical.get(name, name.title())
-
-    return None
+    name, _ = _match_menu_item_name_for_type_with_span(text, item_type_slug)
+    return name
 
 
 def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:

@@ -138,6 +138,15 @@ class InquiryRouter:
 
         # Handle availability inquiries
         if parsed.asks_availability and self.dietary_inquiry_handler:
+            # If the query item is a broad category (e.g., "beverages", "bagels"),
+            # redirect to the menu query handler which has pagination support
+            item = parsed.availability_query_item
+            if item and self.menu_inquiry_handler:
+                from ..cache import menu_cache
+                category_info = menu_cache.get_category_keyword_mapping(item)
+                display_group = menu_cache.get_display_group_by_slug(item) if not category_info else None
+                if category_info or display_group:
+                    return self.menu_inquiry_handler.handle_menu_query(item, order)
             return self.dietary_inquiry_handler.handle_availability_inquiry(
                 parsed.availability_query_item, order
             )

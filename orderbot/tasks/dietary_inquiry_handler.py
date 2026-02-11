@@ -518,9 +518,51 @@ class DietaryInquiryHandler(MenuDataMixin):
                     order=order,
                 )
             else:
-                # Multiple matches - list them (user needs to pick one, no pending state)
+                # Multiple matches - paginate
                 item_names = [item.get("name", "") for item in matching_items]
-                items_list = ", ".join(item_names[:-1]) + f" and {item_names[-1]}"
+                items_list, new_offset = format_paginated_list(
+                    item_names, DEFAULT_PAGINATION_SIZE
+                )
+                if new_offset > 0:
+                    order.menu_query_pagination = {
+                        "type": "availability_items",
+                        "items": item_names,
+                        "offset": new_offset,
+                    }
+                else:
+                    order.clear_menu_pagination()
+                return StateMachineResult(
+                    message=(
+                        f"Yes! We have {items_list}. Would you like any of these?"
+                    ),
+                    order=order,
+                )
+
+        # Nothing found in menu items — check if the term matches a known ingredient
+        ingredient_matches = menu_cache.find_matching_ingredients(item_name)
+        if ingredient_matches:
+            if len(ingredient_matches) == 1:
+                ing = ingredient_matches[0]
+                ing_name = ing.get("name", item_name)
+                return StateMachineResult(
+                    message=(
+                        f"Yes, we have {ing_name}! Would you like to order something with {ing_name}?"
+                    ),
+                    order=order,
+                )
+            else:
+                ing_names = [m.get("name", "") for m in ingredient_matches]
+                items_list, new_offset = format_paginated_list(
+                    ing_names, DEFAULT_PAGINATION_SIZE
+                )
+                if new_offset > 0:
+                    order.menu_query_pagination = {
+                        "type": "availability_items",
+                        "items": ing_names,
+                        "offset": new_offset,
+                    }
+                else:
+                    order.clear_menu_pagination()
                 return StateMachineResult(
                     message=(
                         f"Yes! We have {items_list}. Would you like any of these?"

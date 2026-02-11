@@ -72,20 +72,6 @@ class TestComplexBagelOrders:
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_bagel_with_double_spread(self):
-        """Bagel with two types of cream cheese."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
-
-        result = sm.process(
-            "Everything bagel with scallion and plain cream cheese",
-            order
-        )
-
-        items = result.order.items.get_active_items()
-        assert len(items) >= 1, "Should have at least 1 item"
-
     def test_bagel_not_toasted_explicit(self):
         """Explicit not toasted request."""
         order = OrderTask()

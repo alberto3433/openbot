@@ -488,6 +488,19 @@ class ConfigModificationHandler:
             modifier_text = user_lower[match.end():].strip()
             # Remove trailing "please", "thanks"
             modifier_text = re.sub(r"\s*(please|thanks|thank you)$", "", modifier_text).strip()
+            # Strip item-targeting suffix: "to the Sausage Egg and Cheese Sandwich"
+            # and redirect the modifier to the targeted item
+            target_prepositions = (" to the ", " on the ", " for the ",
+                                   " to my ", " on my ", " for my ")
+            for prep in target_prepositions:
+                prep_idx = modifier_text.find(prep)
+                if prep_idx != -1:
+                    suffix = modifier_text[prep_idx + len(prep):].strip()
+                    for order_item in order.items.items:
+                        if order_item.menu_item_name and order_item.menu_item_name.lower() == suffix:
+                            modifier_text = modifier_text[:prep_idx].strip()
+                            item = order_item
+                            break
         else:
             # Check for "I'd like X on that" style patterns
             middle_match = ADD_MODIFIER_MIDDLE_PATTERN.match(user_lower)

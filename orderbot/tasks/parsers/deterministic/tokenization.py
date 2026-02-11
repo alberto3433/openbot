@@ -544,10 +544,19 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
             resolved_name=resolved_name,
         )]
 
+    # Protect compound phrases from being split on " and "
+    text_to_split = text_lower
+    placeholder = "\x00AND\x00"
+    for phrase in sorted(menu_cache.get_compound_phrases(), key=len, reverse=True):
+        if phrase in text_to_split:
+            text_to_split = text_to_split.replace(phrase, phrase.replace(" and ", placeholder))
+
     # Split on " and " and ", "
-    # Normalize separators
-    normalized = text_lower.replace(", and ", ", ").replace(" and ", ", ")
+    normalized = text_to_split.replace(", and ", ", ").replace(" and ", ", ")
     parts = [p.strip() for p in normalized.split(",") if p.strip()]
+
+    # Restore protected " and "s
+    parts = [p.replace(placeholder, " and ") for p in parts]
 
     if len(parts) < 2:
         # Not a multi-item order

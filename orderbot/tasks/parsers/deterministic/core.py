@@ -981,20 +981,12 @@ def parse_open_input(
 
     # Check if input likely contains multiple items
     input_lower = user_input.lower()
-    # Clean up common phrases that contain "and" but aren't multi-item orders
+    # Clean up compound phrases that contain "and" but aren't multi-item orders
+    # These are loaded from database (menu item names/aliases with "and")
     # Order matters: longer phrases first to match properly
     cleaned = input_lower
-    for phrase in [
-        # Egg sandwich phrases (must come first - longer phrases)
-        "bacon egg and cheese", "ham egg and cheese", "sausage egg and cheese",
-        "bacon and egg and cheese", "ham and egg and cheese",
-        "bacon eggs and cheese", "ham eggs and cheese", "egg and cheese",
-        "egg cheese and bacon", "egg, cheese and bacon",
-        # Other compound phrases
-        "ham and cheese", "ham and egg", "bacon and egg", "egg and bacon",
-        "lox and cream cheese", "salt and pepper", "cream cheese and lox",
-        "eggs and bacon", "black and white", "spinach and feta",
-    ]:
+    compound_phrases = menu_cache.get_compound_phrases()
+    for phrase in sorted(compound_phrases, key=len, reverse=True):
         cleaned = cleaned.replace(phrase, "")
 
     # Check for repeated quantity patterns (e.g., "2 plain bagels 2 everything bagels")

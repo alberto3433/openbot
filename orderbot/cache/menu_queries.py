@@ -661,6 +661,21 @@ class MenuQueryMixin:
                     return phrase
         return None
 
+    @ensure_cache_loaded
+    def get_compound_phrases(self) -> set[str]:
+        """Get all known compound phrases that shouldn't be split on 'and'.
+
+        Returns a set of phrases (lowercase) that contain "and" but should be
+        treated as single items (e.g., "bacon egg and cheese", "ham and swiss").
+
+        Returns:
+            Set of compound phrase strings.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return self._compound_phrases.copy()
+
     def get_status(self) -> dict[str, Any]:
         """Get cache status information."""
         return {

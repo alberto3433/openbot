@@ -218,6 +218,13 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
             # Get singular/plural variants for matching (e.g., "eggs" -> ["eggs", "egg"])
             input_variants = get_singular_plural_variants(normalized_input)
 
+            # Expand alias abbreviations via DB (e.g., "scallion cc" → "scallion cream cheese")
+            canonical_input = menu_cache.normalize_modifier(normalized_input)
+            if canonical_input:
+                canonical_lower = canonical_input.lower().replace("_", " ")
+                if canonical_lower not in input_variants:
+                    input_variants.append(canonical_lower)
+
             for attr_key, attr_value in attribute_values.items():
                 # Skip metadata fields
                 if is_price_metadata_key(attr_key):

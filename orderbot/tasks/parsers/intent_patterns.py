@@ -84,6 +84,8 @@ CANCEL_ITEM_PATTERN = re.compile(
     r"|"
     r"scratch\s+(?:the\s+)?(.+?)[\s!.,]*$"
     r"|"
+    r"hold\s+(?:the\s+)?(.+?)[\s!.,]*$"
+    r"|"
     # Handle "I don't want X", "don't want X", and "no I don't want X" (decline + remove)
     r"(?:no[,]?\s+)?(?:i\s+)?don'?t\s+want\s+(?:the\s+)?(.+?)(?:\s+anymore)?[\s!.,]*$"
     r"|"

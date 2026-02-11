@@ -21,6 +21,7 @@ from .modifier_operations import (
     find_default_ingredient_match,
     remove_default_ingredient_from_item,
 )
+from .modifier_resolver import TRAILING_FILLERS
 from .normalization import format_slug_for_display
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
@@ -210,6 +211,13 @@ class ConfigCancellationHandler:
 
             if not cancel_desc:
                 return None
+
+            # Strip trailing pleasantries ("thank you", "thanks", "please")
+            # so "scallion cc thank you" becomes "scallion cc"
+            for filler in TRAILING_FILLERS:
+                if cancel_desc.endswith(filler.strip()):
+                    cancel_desc = cancel_desc[:-len(filler.strip())].strip()
+                    break
 
         logger.info("Cancel request during config: '%s'", cancel_desc)
 

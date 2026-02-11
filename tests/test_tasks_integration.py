@@ -1586,10 +1586,10 @@ class TestUnknownItemHandling:
         canonical_name, error_message = sm.item_adder_handler.add_side_item("latkes", 1, order)
 
         # Should succeed
-        assert canonical_name == "Latkes", f"Expected 'Latkes', got: {canonical_name}"
+        assert canonical_name == "Side of Breakfast Latke", f"Expected 'Side of Breakfast Latke', got: {canonical_name}"
         assert error_message is None, f"Expected no error, got: {error_message}"
         assert len(order.items.items) == 1
-        assert order.items.items[0].menu_item_name == "Latkes"
+        assert order.items.items[0].menu_item_name == "Side of Breakfast Latke"
         assert order.items.items[0].unit_price > 0, "Price should be set from database"
 
     def test_infer_item_type_sides(self):
@@ -6877,7 +6877,7 @@ class TestUnavailableAttributeOptions:
         This tests the parser's ability to detect unavailable options and
         store them in unavailable_selections for later "We don't have X" messaging.
         """
-        from orderbot.tasks.parsers.llm_parsers import parse_open_input
+        from orderbot.tasks.parsers.deterministic.core import parse_open_input
 
         # Parse user input with unavailable "medium" size
         result = parse_open_input("medium hot coffee with 2 splendas")

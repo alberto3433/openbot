@@ -78,13 +78,16 @@ DELIVERY_ZONE_PATTERNS = [
 # These return "general" as the recommendation type
 RECOMMENDATION_GENERAL_PATTERNS = [
     re.compile(r"what\s+(?:do\s+you|would\s+you|should\s+i|can\s+you)\s+recommend\??$", re.IGNORECASE),
-    re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular|the\s+best)\??$", re.IGNORECASE),
+    re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular|the\s+best)(?:\s+here)?\??$", re.IGNORECASE),
     re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?(?:most\s+)?popular\??$", re.IGNORECASE),
     re.compile(r"what\s+(?:are\s+)?(?:your\s+)?(?:best|most\s+popular)\s+(?:sellers?|items?)", re.IGNORECASE),
     re.compile(r"what(?:'?s|\s+is)\s+(?:your\s+)?most\s+popular\s+item", re.IGNORECASE),
     re.compile(r"(?:any|have\s+any|got\s+any|do\s+you\s+have\s+any)\s+recommendations?\??", re.IGNORECASE),
     re.compile(r"(?:suggest|recommend)\s+(?:something|anything)", re.IGNORECASE),
     re.compile(r"what\s+sells\s+best", re.IGNORECASE),
+    re.compile(r"what\s+(?:should\s+i|do\s+i)\s+(?:get|try|order)(?:\s+here)?\??$", re.IGNORECASE),
+    re.compile(r"what\s+(?:do\s+you|would\s+you|can\s+you)\s+suggest\??$", re.IGNORECASE),
+    re.compile(r"what(?:'?s|\s+is)\s+your\s+favorite\??$", re.IGNORECASE),
     # Meal-based recommendations (breakfast/lunch) - treat as general
     re.compile(r"what\s+(?:do\s+you\s+)?recommend\s+for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),
     re.compile(r"what(?:'?s|\s+is)\s+(?:good|popular)\s+for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),

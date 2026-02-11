@@ -428,6 +428,42 @@ class DietaryInquiryHandler(MenuDataMixin):
             order=order,
         )
 
+    def _search_category_items(self, term: str) -> list[dict]:
+        """Search for menu items by category/display-group matching.
+
+        Checks if the term matches a display group or category keyword,
+        and returns the items belonging to that group.
+
+        Args:
+            term: Search term (e.g., "breakfast", "drinks")
+
+        Returns:
+            List of menu item dicts with at least a "name" key.
+        """
+        # Try display group first (e.g., "breakfast" -> display group -> item types)
+        display_group = menu_cache.get_display_group_by_slug(term)
+        if display_group:
+            item_types = menu_cache.get_item_types_in_display_group(display_group["slug"])
+            if item_types:
+                items_by_type = self._menu_data.get("items_by_type", {})
+                results = []
+                for it_slug in item_types:
+                    results.extend(items_by_type.get(it_slug, []))
+                return results
+
+        # Try category keyword mapping (e.g., "bagels" -> item_type or category)
+        keyword_info = menu_cache.get_category_keyword_mapping(term)
+        if keyword_info:
+            slug = keyword_info.get("slug", "")
+            lookup_type = keyword_info.get("lookup_type", "")
+            if lookup_type == "category":
+                return menu_cache.get_items_by_category(slug)
+            elif lookup_type == "item_type":
+                items_by_type = self._menu_data.get("items_by_type", {})
+                return list(items_by_type.get(slug, []))
+
+        return []
+
     def handle_availability_inquiry(
         self,
         item_name: str,
@@ -458,6 +494,16 @@ class DietaryInquiryHandler(MenuDataMixin):
 
         # Fallback: word-boundary search (handles "tea" -> "Hot Tea", "Iced Tea")
         matching_items = menu_cache.search_menu_items_by_term(item_name)
+
+        # Also search by category/display-group and merge results
+        category_items = self._search_category_items(item_name)
+        if category_items:
+            seen_names = {item.get("name", "").lower() for item in matching_items}
+            for item in category_items:
+                name_lower = item.get("name", "").lower()
+                if name_lower not in seen_names:
+                    seen_names.add(name_lower)
+                    matching_items.append(item)
 
         if matching_items:
             if len(matching_items) == 1:

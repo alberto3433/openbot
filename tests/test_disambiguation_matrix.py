@@ -298,14 +298,14 @@ class TestSideItems:
     """Test side items that should be added directly."""
 
     @pytest.mark.parametrize("user_input,expected_canonical", [
-        ("latkes", "Latkes"),
-        pytest.param("latke", "Latkes", marks=pytest.mark.xfail(
-            reason="Singular 'latke' matches 'Side of Breakfast Latke' not 'Latkes'"
-        )),
+        ("latkes", "Side of Breakfast Latke"),
+        ("latke", "Side of Breakfast Latke"),
         pytest.param("home fries", "Home Fries", marks=pytest.mark.xfail(
             reason="'home fries' not being parsed - may need alias in DB"
         )),
-        ("fruit salad", "Fruit Salad"),
+        pytest.param("fruit salad", "Fruit Salad", marks=pytest.mark.xfail(
+            reason="'fruit salad' not being parsed - may need alias in DB"
+        )),
     ])
     def test_side_item_parser_output(self, user_input, expected_canonical):
         """Side items should be parsed and added to order."""

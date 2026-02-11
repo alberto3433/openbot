@@ -287,6 +287,22 @@ class OptionMatcher:
                     matched_slugs.add(opt["slug"])
                     matched.append(opt)
 
+        # Exact-match priority: if one option exactly matches the full input, prefer it
+        # over options that only matched via partial word overlap.
+        # e.g., "strawberry cream cheese" exactly matches "Strawberry Cream Cheese"
+        # but only word-matches "Plain Cream Cheese" via "cream"/"cheese".
+        if len(matched) > 1:
+            exact = [
+                opt for opt in matched
+                if opt.get("display_name", "").lower() == user_raw_lower
+                or opt["slug"].replace("_", " ") == user_raw_lower
+                or self.normalizer.normalize_for_matching(
+                    opt.get("display_name", "")
+                ) == user_lower
+            ]
+            if len(exact) == 1:
+                matched = exact
+
         # Deduplicate within same category: if specific must_match options matched
         # alongside generic (no must_match) options, prefer the specific ones.
         # e.g., "oat milk" matches oat_milk (must_match=["oat milk"]) AND whole_milk

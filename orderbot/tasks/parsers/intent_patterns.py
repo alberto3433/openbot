@@ -129,7 +129,7 @@ def _build_filler_pattern() -> re.Pattern:
     # Special cases that need context-aware matching
     special_patterns = [
         r"actually,\s*",  # "actually," with comma is filler
-        r"actually\s+(?=cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off)",
+        r"actually\s+(?=cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off|no\s)",
         r"never\s*mind,\s*",  # "never mind," when followed by another command
     ]
 

@@ -830,3 +830,235 @@ def _check_standalone_ingredient(text: str) -> OpenInputResponse | None:
             )
 
     return None
+
+
+# =============================================================================
+# Inline Attribute Spec Pattern Detection
+# =============================================================================
+
+def _is_inline_attribute_spec_pattern(text: str) -> bool:
+    """Check if text is an inline attribute specification pattern.
+
+    Inline spec pattern: "N items N attr1 N attr2" where:
+    - "N items" identifies the item type (e.g., "2 bagels")
+    - "N attr1 N attr2" are quantity+attribute pairs (e.g., "1 everything 1 plain")
+
+    This differs from multi-item orders like "2 bagels 2 coffees" where
+    each quantity is followed by a different item type.
+
+    Args:
+        text: Lowercase user input
+
+    Returns:
+        True if this is an inline spec pattern that should NOT be split
+        by comma insertion.
+    """
+    from .item_parsing import _detect_configurable_item_type
+
+    # Pattern: qty word qty word qty word...
+    # e.g., "2 bagels 1 everything 1 plain"
+    qty_word_pattern = r'(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(\w+)'
+    matches = re.findall(qty_word_pattern, text, re.IGNORECASE)
+
+    if len(matches) < 2:
+        return False  # Not enough qty+word pairs
+
+    # First match should identify the item type
+    first_word = matches[0][1].lower()
+
+    # Detect item type from the first qty+word pair
+    first_phrase = f"{matches[0][0]} {first_word}"
+    detected_type, _ = _detect_configurable_item_type(first_phrase)
+
+    if not detected_type:
+        return False  # Couldn't identify item type
+
+    # Get attribute options for this item type
+    attrs = menu_cache.get_item_type_attributes(detected_type)
+    if not attrs:
+        return False
+
+    # Build set of all attribute option words (slugs, display names, aliases)
+    # Also extract individual words from multi-word options for partial matching
+    # e.g., "everything_bagel" -> add "everything" as well
+    attr_option_words: set[str] = set()
+    for attr_slug, attr_info in attrs.items():
+        options = attr_info.get("options", [])
+        for opt in options:
+            if isinstance(opt, dict):
+                slug = opt.get("slug", "")
+                display_name = opt.get("display_name", "")
+                aliases = opt.get("aliases", [])
+
+                # Add full names
+                if slug:
+                    attr_option_words.add(slug.lower())
+                    # Also add parts split by underscore (e.g., "everything" from "everything_bagel")
+                    for part in slug.lower().split("_"):
+                        if len(part) >= 3:  # Skip very short parts
+                            attr_option_words.add(part)
+                if display_name:
+                    attr_option_words.add(display_name.lower())
+                    # Also add parts split by space
+                    for part in display_name.lower().split():
+                        if len(part) >= 3:
+                            attr_option_words.add(part)
+                for alias in aliases:
+                    attr_option_words.add(alias.lower())
+                    for part in alias.lower().split():
+                        if len(part) >= 3:
+                            attr_option_words.add(part)
+
+    # Check if subsequent qty+word pairs have words that are attribute options
+    subsequent_words = [m[1].lower() for m in matches[1:]]
+    attr_matches = [w for w in subsequent_words if w in attr_option_words]
+
+    # If ALL subsequent words are attribute options, this is an inline spec pattern
+    if len(attr_matches) == len(subsequent_words):
+        logger.debug(
+            "Inline spec detected: type=%s, specs=%s",
+            detected_type, subsequent_words
+        )
+        return True
+
+    return False
+
+
+# =============================================================================
+# Main Parse Open Input Function
+# =============================================================================
+
+def parse_open_input(
+    user_input: str,
+    context: str = "",
+    model: str = "gpt-4o-mini",
+    modifier_category_keywords: dict[str, str] | None = None,
+    modifier_item_keywords: dict[str, str] | None = None,
+    ingredient_to_items: dict[str, list[dict]] | None = None,
+) -> OpenInputResponse:
+    """Parse user input when open for new orders.
+
+    Uses deterministic parsing only - no LLM fallback.
+    All parsing is data-driven via database-loaded patterns.
+
+    Args:
+        user_input: The user's input string
+        context: Unused (kept for API compatibility)
+        model: Unused (kept for API compatibility)
+        modifier_category_keywords: Mapping of keywords to category slugs
+            (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
+        modifier_item_keywords: Mapping of item keywords to item type slugs
+            (e.g., {"latte": "coffee", "cappuccino": "coffee"})
+        ingredient_to_items: Mapping of ingredient names to menu items containing them
+            (e.g., {"chicken": [{"name": "Chicken Salad Sandwich", ...}]})
+    """
+    # Check for replacement patterns FIRST, before configurable item parsing
+    # This ensures "No, I said plain bagel" triggers replacement, not a new item
+    replace_match = REPLACE_ITEM_PATTERN.match(user_input)
+    if replace_match:
+        replacement_item = None
+        for i in range(1, 11):  # 10 capture groups in REPLACE_ITEM_PATTERN
+            if replace_match.group(i):
+                replacement_item = replace_match.group(i)
+                break
+        if replacement_item:
+            replacement_item = replacement_item.strip()
+            replacement_item = re.sub(r"^(?:a|an)\s+", "", replacement_item, flags=re.IGNORECASE)
+            logger.info("Replacement pattern detected early, item='%s'", replacement_item)
+
+            # Parse the replacement item
+            parsed_replacement = parse_open_input_deterministic(
+                replacement_item,
+                modifier_category_keywords=modifier_category_keywords,
+                modifier_item_keywords=modifier_item_keywords,
+                ingredient_to_items=ingredient_to_items,
+            )
+            if parsed_replacement:
+                parsed_replacement.replace_last_item = True
+                return parsed_replacement
+
+            return OpenInputResponse(replace_last_item=True)
+
+    # Check if input likely contains multiple items
+    input_lower = user_input.lower()
+    # Clean up common phrases that contain "and" but aren't multi-item orders
+    # Order matters: longer phrases first to match properly
+    cleaned = input_lower
+    for phrase in [
+        # Egg sandwich phrases (must come first - longer phrases)
+        "bacon egg and cheese", "ham egg and cheese", "sausage egg and cheese",
+        "bacon and egg and cheese", "ham and egg and cheese",
+        "bacon eggs and cheese", "ham eggs and cheese", "egg and cheese",
+        "egg cheese and bacon", "egg, cheese and bacon",
+        # Other compound phrases
+        "ham and cheese", "ham and egg", "bacon and egg", "egg and bacon",
+        "lox and cream cheese", "salt and pepper", "cream cheese and lox",
+        "eggs and bacon", "black and white", "spinach and feta",
+    ]:
+        cleaned = cleaned.replace(phrase, "")
+
+    # Check for repeated quantity patterns (e.g., "2 plain bagels 2 everything bagels")
+    # This handles space-separated items without "and" or commas
+    quantity_pattern = re.compile(
+        r'(?:^|\s)(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+\w+',
+        re.IGNORECASE
+    )
+    quantity_matches = quantity_pattern.findall(cleaned)
+    has_repeated_quantities = len(quantity_matches) >= 2
+
+    # If "and" or comma still appears, it might be multi-item OR a single item with modifiers
+    # Also try multi-item parsing if we detect repeated quantity patterns
+    # Try multi-item parsing first - the multi-item parser has built-in logic to detect
+    # modifier chains ("bagel with butter and cream cheese") and will return None for those.
+    if " and " in cleaned or ", " in cleaned or has_repeated_quantities:
+        logger.info("Potential multi-item detected, trying multi-item parse: %s", user_input[:50])
+
+        # If we detected repeated quantities without commas, normalize by inserting commas
+        # e.g., "2 plain bagels 2 everything bagels" -> "2 plain bagels, 2 everything bagels"
+        # BUT: skip if this looks like an inline attribute spec pattern
+        # e.g., "2 bagels 1 everything 1 plain" should NOT be split - it's 2 bagels with inline specs
+        parse_input = user_input
+        if has_repeated_quantities and ", " not in input_lower and " and " not in cleaned:
+            # Check if this is an inline attribute spec pattern before inserting commas
+            if not _is_inline_attribute_spec_pattern(input_lower):
+                # Insert comma between item (word ending in 's') and following quantity
+                parse_input = re.sub(
+                    r'(\w+s)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)(?=\s+\w)',
+                    r'\1, \2',
+                    user_input,
+                    flags=re.IGNORECASE
+                )
+                if parse_input != user_input:
+                    logger.info("Normalized repeated quantities: %s", parse_input[:60])
+            else:
+                logger.info("Detected inline attribute spec pattern, skipping comma: %s", input_lower[:60])
+
+        result = _parse_multi_item_order(parse_input)
+        if result is not None:
+            logger.info("Parsed multi-item order deterministically: %s", user_input[:50])
+            return result
+        # Fall through to configurable item if multi-item parse fails
+        logger.info("Multi-item parse failed, trying configurable item: %s", user_input[:50])
+
+        # Try configurable item patterns (bagels, coffees, etc.)
+        # e.g., "plain bagel with Egg Whites, Swiss, and Spinach", "large iced latte"
+        logger.info("Trying configurable item pattern: %s", user_input[:50])
+        result = _parse_configurable_item(user_input)
+        if result is not None:
+            logger.info("Parsed configurable item: %s", user_input[:50])
+            return result
+
+    # Try deterministic parsing for single-item orders
+    result = parse_open_input_deterministic(
+        user_input,
+        modifier_category_keywords=modifier_category_keywords,
+        modifier_item_keywords=modifier_item_keywords,
+        ingredient_to_items=ingredient_to_items,
+    )
+    if result is not None:
+        logger.info("Parsed deterministically: %s", user_input[:50])
+        return result
+
+    # No LLM fallback - return unclear response
+    logger.info("Unable to parse deterministically, returning unclear: %s", user_input[:50])
+    return OpenInputResponse(unclear=True)

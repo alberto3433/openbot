@@ -181,7 +181,7 @@ class TestThreeItemOrders:
         sm = OrderStateMachine()
 
         result = sm.process(
-            "Plain bagel with butter, everything with scallion cream cheese, and sesame with lox",
+            "Plain bagel with butter, everything bagel with scallion cream cheese, and sesame bagel with lox",
             order
         )
 

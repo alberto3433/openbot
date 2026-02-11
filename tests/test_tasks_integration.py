@@ -1256,7 +1256,7 @@ class TestOrderTypeUpfront:
         order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
 
         # Mock parse_payment_method to return email choice (no email address)
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
             mock_parse.return_value = MagicMock(
                 choice="email",
                 email_address=None,  # No email provided yet
@@ -4721,7 +4721,7 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice_deterministic") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="pickup", address=None)
 
             result = sm.checkout_handler.handle_delivery("pickup please", order)
@@ -4745,7 +4745,7 @@ class TestDeliveryHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice_deterministic") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="delivery", address=None)
 
             result = sm.checkout_handler.handle_delivery("delivery", order)
@@ -4764,7 +4764,7 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice_deterministic") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(
                 choice="delivery",
                 address="123 Main St, New York, NY 10001"
@@ -4832,7 +4832,7 @@ class TestDeliveryHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
 
-        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice_deterministic") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="unclear", address=None)
 
             result = sm.checkout_handler.handle_delivery("what?", order)
@@ -4852,7 +4852,7 @@ class TestDeliveryHandler:
         order.delivery_method.order_type = "delivery"
         order.delivery_method.address.street = None  # No address yet
 
-        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice") as mock_parse:
+        with patch("orderbot.tasks.delivery_handler.parse_delivery_choice_deterministic") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="unclear", address=None)
 
             result = sm.checkout_handler.handle_delivery("hmm not sure", order)
@@ -5138,7 +5138,7 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_confirmation") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_confirmation_deterministic") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=True, wants_changes=False, asks_about_tax=False
             )
@@ -5164,7 +5164,7 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_confirmation") as mock_confirm:
+        with patch("orderbot.tasks.checkout_handler.parse_confirmation_deterministic") as mock_confirm:
             mock_confirm.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=True, asks_about_tax=False
             )
@@ -5240,7 +5240,7 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_confirmation") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_confirmation_deterministic") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=False, asks_about_tax=False
             )
@@ -5288,7 +5288,7 @@ class TestConfirmationHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_confirmation") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_confirmation_deterministic") as mock_parse:
             mock_parse.return_value = ConfirmationResponse(
                 confirmed=False, wants_changes=False, asks_about_tax=False
             )
@@ -5860,7 +5860,7 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(choice="unclear")
 
             result = sm.checkout_handler.handle_payment_method("what?", order)
@@ -5882,7 +5882,7 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(choice="text")
 
             result = sm.checkout_handler.handle_payment_method("text me", order)
@@ -5905,7 +5905,7 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(
                 choice="text", phone_number="2015551234"
             )
@@ -5933,7 +5933,7 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(choice="text")
 
             result = sm.checkout_handler.handle_payment_method("text me", order)
@@ -5957,7 +5957,7 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(choice="email")
 
             result = sm.checkout_handler.handle_payment_method("email me", order)
@@ -5980,7 +5980,7 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method") as mock_parse, \
+        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse, \
              patch("orderbot.tasks.checkout_handler.validate_email_address") as mock_validate:
             mock_parse.return_value = PaymentMethodResponse(
                 choice="email", email_address="john@example.com"
@@ -6009,7 +6009,7 @@ class TestPaymentMethodHandler:
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method") as mock_parse:
+        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
             mock_parse.return_value = PaymentMethodResponse(
                 choice="text", phone_number="123"  # Too short
             )

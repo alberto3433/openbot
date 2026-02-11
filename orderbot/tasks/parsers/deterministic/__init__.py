@@ -136,15 +136,21 @@ from .tokenization import (
 # =============================================================================
 # Core Module Exports
 # =============================================================================
-from .core import parse_open_input_deterministic
+from .core import (
+    parse_open_input_deterministic,
+    parse_open_input,
+    _is_inline_attribute_spec_pattern,
+)
 
 
 # =============================================================================
 # Public API
 # =============================================================================
 __all__ = [
-    # Main entry point
+    # Main entry points
     "parse_open_input_deterministic",
+    "parse_open_input",
+    "_is_inline_attribute_spec_pattern",
     # Pipeline (unified API)
     "ExtractionPipeline",
     "get_pipeline",

@@ -179,3 +179,177 @@ def validate_delivery_zip_code(
     else:
         logger.info("Delivery ZIP code rejected: %s not in %s", zip_code, allowed_zip_codes)
         return (None, f"Sorry, we don't deliver to {zip_code}. Would you like to do pickup instead?")
+
+
+# =============================================================================
+# Deterministic Parsers (replacing LLM-based parsers)
+# =============================================================================
+
+from ..schemas import (
+    ConfirmationResponse,
+    DeliveryChoiceResponse,
+    PaymentMethodResponse,
+)
+from orderbot.cache import menu_cache
+
+
+def parse_confirmation_deterministic(user_input: str) -> ConfirmationResponse:
+    """Parse yes/no confirmation using database patterns.
+
+    Uses menu_cache.is_affirmative() and is_negative() which load patterns
+    from the database response_pattern table.
+
+    Args:
+        user_input: User's input text
+
+    Returns:
+        ConfirmationResponse with confirmed, wants_changes, or asks_about_tax
+    """
+    text = user_input.lower().strip()
+
+    # Check for tax question patterns first
+    tax_patterns = [
+        "tax", "total with tax", "with tax", "after tax",
+        "including tax", "plus tax", "how much with tax",
+    ]
+    if any(p in text for p in tax_patterns):
+        return ConfirmationResponse(asks_about_tax=True)
+
+    # Check for affirmative response using database patterns
+    if menu_cache.is_affirmative(text):
+        return ConfirmationResponse(confirmed=True)
+
+    # Check for negative/change response using database patterns
+    if menu_cache.is_negative(text):
+        return ConfirmationResponse(wants_changes=True)
+
+    # Additional change request patterns not in database
+    change_patterns = [
+        "wait", "hold on", "actually", "change", "modify",
+        "add", "remove", "different", "instead", "switch",
+        "can i", "could i", "i want to",
+    ]
+    if any(p in text for p in change_patterns):
+        return ConfirmationResponse(wants_changes=True)
+
+    # Additional confirmation patterns
+    confirm_patterns = [
+        "looks good", "that's right", "thats right", "correct",
+        "perfect", "sounds good", "all good", "good to go",
+        "that's it", "thats it", "confirmed", "confirm",
+    ]
+    if any(p in text for p in confirm_patterns):
+        return ConfirmationResponse(confirmed=True)
+
+    # Can't determine - return with neither set
+    # The handler will re-ask for clarification
+    logger.debug("Confirmation parse unclear for: %s", text[:50])
+    return ConfirmationResponse()
+
+
+def parse_delivery_choice_deterministic(user_input: str) -> DeliveryChoiceResponse:
+    """Parse pickup/delivery choice using patterns.
+
+    Args:
+        user_input: User's input text
+
+    Returns:
+        DeliveryChoiceResponse with choice and optional address
+    """
+    text = user_input.lower().strip()
+    original = user_input.strip()
+
+    # Pickup patterns
+    pickup_patterns = [
+        "pickup", "pick up", "pick-up", "i'll pick", "i will pick",
+        "come get", "in store", "in-store", "walk in", "walk-in",
+        "picking up", "picking it up", "get it myself",
+    ]
+
+    # Delivery patterns
+    delivery_patterns = [
+        "delivery", "deliver", "delivered", "to my", "drop off",
+        "drop-off", "send it", "bring it", "ship it",
+    ]
+
+    # Check for pickup
+    for p in pickup_patterns:
+        if p in text:
+            return DeliveryChoiceResponse(choice="pickup")
+
+    # Check for delivery - may include an address
+    for p in delivery_patterns:
+        if p in text:
+            # Try to extract address from the input
+            # Look for patterns like "delivery to 123 Main St" or "deliver to my address at 123..."
+            address = None
+            address_patterns = [
+                r"(?:deliver(?:y|ed)?|to|at)\s+(.+?)(?:\s*[,.]?\s*(?:please|thanks|thank you)?)?$",
+                r"(?:to|at)\s+(.+)$",
+            ]
+            for pattern in address_patterns:
+                match = re.search(pattern, original, re.IGNORECASE)
+                if match:
+                    potential_address = match.group(1).strip()
+                    # Validate it looks like an address (has numbers or street words)
+                    if re.search(r'\d|street|st\b|ave\b|avenue|road|rd\b|drive|dr\b|blvd|lane|ln\b|way\b|place|pl\b|court|ct\b', potential_address, re.IGNORECASE):
+                        address = potential_address
+                        break
+
+            return DeliveryChoiceResponse(choice="delivery", address=address)
+
+    # Can't determine
+    return DeliveryChoiceResponse(choice="unclear")
+
+
+def parse_payment_method_deterministic(user_input: str) -> PaymentMethodResponse:
+    """Parse text/email payment link choice.
+
+    Also extracts phone number or email if provided in the input.
+
+    Args:
+        user_input: User's input text
+
+    Returns:
+        PaymentMethodResponse with choice, optional phone_number, optional email_address
+    """
+    text = user_input.lower().strip()
+    original = user_input.strip()
+
+    # Text/SMS patterns
+    text_patterns = ["text", "sms", "message me", "text me", "send a text"]
+
+    # Email patterns
+    email_patterns = ["email", "mail", "e-mail", "email me", "send an email"]
+
+    # Try to extract phone number (10 digits, various formats)
+    phone_match = re.search(r'(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})', original)
+    phone_number = None
+    if phone_match:
+        # Clean up to just digits
+        phone_number = re.sub(r'\D', '', phone_match.group(1))
+
+    # Try to extract email address
+    email_match = re.search(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', original)
+    email_address = email_match.group(1) if email_match else None
+
+    # If we found an email, that's likely the choice
+    if email_address:
+        return PaymentMethodResponse(choice="email", email_address=email_address)
+
+    # If we found a phone number without explicit email preference, assume text
+    if phone_number and not any(p in text for p in email_patterns):
+        return PaymentMethodResponse(choice="text", phone_number=phone_number)
+
+    # Check explicit text preference
+    for p in text_patterns:
+        if p in text:
+            return PaymentMethodResponse(choice="text", phone_number=phone_number)
+
+    # Check explicit email preference
+    for p in email_patterns:
+        if p in text:
+            return PaymentMethodResponse(choice="email", email_address=email_address)
+
+    # Can't determine
+    return PaymentMethodResponse(choice="unclear")

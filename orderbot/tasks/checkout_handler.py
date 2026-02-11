@@ -29,7 +29,6 @@ from ..cache import menu_cache
 from .parsers import (
     validate_email_address,
     validate_phone_number,
-    parse_confirmation,
     parse_open_input,
     TAX_QUESTION_PATTERN,
 )
@@ -37,9 +36,12 @@ from .parsers.deterministic import MAKE_IT_N_PATTERN
 from .parsers.quantity_utils import extract_make_it_n_target
 from .parsers.llm_parsers import (
     parse_name,
-    parse_payment_method,
     parse_phone,
     parse_email,
+)
+from .parsers.validators import (
+    parse_confirmation_deterministic,
+    parse_payment_method_deterministic,
 )
 from .handler_config import BaseStateHandler
 from .handler_utils import get_last_item
@@ -196,7 +198,7 @@ class CheckoutHandler(BaseStateHandler):
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle text or email choice for order details."""
-        parsed = parse_payment_method(user_input, model=self.model)
+        parsed = parse_payment_method_deterministic(user_input)
 
         if parsed.choice == "unclear":
             return StateMachineResult(
@@ -356,7 +358,7 @@ class CheckoutHandler(BaseStateHandler):
             if result:
                 return result
 
-        parsed = parse_confirmation(user_input, model=self.model)
+        parsed = parse_confirmation_deterministic(user_input)
         logger.info("CONFIRMATION: parse result - wants_changes=%s, confirmed=%s, asks_about_tax=%s",
                    parsed.wants_changes, parsed.confirmed, parsed.asks_about_tax)
 

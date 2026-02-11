@@ -614,6 +614,10 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 return True
         return False
 
+    # Find " with " position to detect modifier patterns
+    # In "everything bagel with scallion cream cheese", items after "with" are modifiers
+    with_pos_for_menu_check = text_cleaned_lower.find(" with ")
+
     for item_name, item_info in menu_cache._menu_items.items():
         item_type = item_info.get("item_type")
         if item_type and item_type != detected_item_type:
@@ -623,7 +627,12 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             if is_attribute_option_word(item_name_lower):
                 continue
             # Check if this menu item name appears as a word-boundary phrase in input
-            if re.search(rf'\b{re.escape(item_name_lower)}\b', text_cleaned_lower):
+            match = re.search(rf'\b{re.escape(item_name_lower)}\b', text_cleaned_lower)
+            if match:
+                # Skip if this menu item appears AFTER "with" - it's likely a modifier on the main item
+                # e.g., "everything bagel with scallion cream cheese" - cream cheese is a modifier
+                if with_pos_for_menu_check != -1 and match.start() > with_pos_for_menu_check:
+                    continue
                 # Found a complete menu item of a different type - use its type instead
                 # e.g., "large iced tea" detected type "tea" but "iced tea" is type "iced_tea"
                 # Switch to the correct type so configurable item parsing continues
@@ -678,17 +687,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
 
     logger.info("CONFIGURABLE_ITEM: detected type '%s' in '%s'", detected_item_type, text[:50])
 
-    # 2c. Early menu item name matching
-    # This finds the specific menu item within the item type (e.g., "Hot Coffee" for coffee).
-    # NOTE: We do NOT use the span from this match for exclusion because menu item NAMES
-    # like "Bagel" are short and don't contain modifier words. The span exclusion is only
-    # needed for ALIASES matched in step 1b (e.g., "ham egg and cheese" contains "cheese"
-    # which shouldn't trigger cheese attribute matching).
-    if not matched_item_name:
-        matched_item_name = _match_menu_item_name_for_type(text, detected_item_type)
-
-    # 3. Extract quantity
-    # Handle common prefixes like "I want 5", "Can I get three", "Give me two", etc.
+    # 2c. Extract quantity BEFORE menu item name matching
+    # We need quantity first to check for inline attribute specs like "2 bagels 1 everything 1 plain"
     quantity = 1
     qty_match = re.match(
         r"^(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
@@ -706,11 +706,10 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         else:
             quantity = WORD_TO_NUM.get(qty_str, 1)
 
-    # 3b. Check for inline attribute specifications (e.g., "2 bagels 1 everything 1 plain")
-    # This handles cases where user specifies attribute values inline with quantities.
-    # Must be checked BEFORE attribute extraction to split into multiple items.
-    # SKIP if matched_item_name is set - user is ordering a specific menu item (e.g., "The Classic BEC")
-    # and any modifiers like "on wheat" are for the item, not inline specs.
+    # 2d. Check for inline attribute specifications BEFORE menu item name matching
+    # Pattern: "2 bagels 1 everything 1 plain" - user specifies attribute values inline
+    # Must check BEFORE setting matched_item_name, otherwise the generic item name match
+    # (e.g., "Bagel" from "bagels") causes inline spec parsing to be skipped.
     if quantity > 1 and matched_item_name is None:
         from .inline_spec_parsing import (
             parse_inline_attribute_specs,
@@ -767,6 +766,15 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                         [(p.quantity, list(s.slug for s in p.selections)) for p in parsed_items]
                     )
                     return OpenInputResponse(parsed_items=parsed_items)
+
+    # 2e. Early menu item name matching
+    # This finds the specific menu item within the item type (e.g., "Hot Coffee" for coffee).
+    # NOTE: We do NOT use the span from this match for exclusion because menu item NAMES
+    # like "Bagel" are short and don't contain modifier words. The span exclusion is only
+    # needed for ALIASES matched in step 1b (e.g., "ham egg and cheese" contains "cheese"
+    # which shouldn't trigger cheese attribute matching).
+    if not matched_item_name:
+        matched_item_name = _match_menu_item_name_for_type(text, detected_item_type)
 
     # 4. Extract attribute values using data-driven extraction
     # This returns all attributes as {slug: value} where value can be:

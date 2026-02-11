@@ -13,7 +13,7 @@ from .pending_fields import PendingField
 from .models import OrderTask
 from .schemas import OrderPhase, StateMachineResult
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
-from .parsers.llm_parsers import parse_delivery_choice
+from .parsers.validators import parse_delivery_choice_deterministic
 from ..address_service import complete_address
 from .handler_config import BaseHandler
 
@@ -86,7 +86,7 @@ class DeliveryHandler(BaseHandler):
         if order.pending_field == PendingField.ADDRESS_CONFIRMATION:
             return self._handle_address_confirmation(user_input, order, transition_callback)
 
-        parsed = parse_delivery_choice(user_input, model=self.model)
+        parsed = parse_delivery_choice_deterministic(user_input)
 
         if parsed.choice == "unclear":
             # Check if we're waiting for an address (delivery selected but no address yet)
@@ -175,7 +175,7 @@ class DeliveryHandler(BaseHandler):
         # Otherwise treat as a new address
         order.pending_field = None
         order.delivery_method.address.street = None
-        parsed = parse_delivery_choice(user_input, model=self.model)
+        parsed = parse_delivery_choice_deterministic(user_input)
         if parsed.address:
             result = self._complete_delivery_address(parsed.address, order)
             if result:

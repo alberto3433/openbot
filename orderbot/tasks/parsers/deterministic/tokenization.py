@@ -24,7 +24,11 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Import consolidated skip words from constants
-from orderbot.tasks.parsers.constants import TOKENIZATION_SKIP_WORDS as _SKIP_WORDS
+from orderbot.tasks.parsers.constants import (
+    TOKENIZATION_SKIP_WORDS as _SKIP_WORDS,
+    ORDERING_PREFIXES,
+    ARTICLES,
+)
 
 # Trailing politeness words that should be stripped before menu item matching
 _TRAILING_STRIP_WORDS = {"please", "thanks", "thank you", "ok", "okay", "alright", "pls", "thx"}
@@ -36,6 +40,37 @@ def _strip_trailing_words(text: str) -> str:
     while words and words[-1].lower().rstrip(".,!?") in _TRAILING_STRIP_WORDS:
         words.pop()
     return " ".join(words)
+
+
+def _strip_ordering_prefix(text: str) -> str:
+    """Strip ordering prefixes and following articles from text.
+
+    Handles phrases like "I'd like an egg and cheese sandwich" -> "egg and cheese sandwich"
+
+    Args:
+        text: Text to strip
+
+    Returns:
+        Text with ordering prefix and article stripped
+    """
+    text_lower = text.lower().strip()
+
+    # Strip ordering prefixes (sorted by length, longest first)
+    for prefix in sorted(ORDERING_PREFIXES, key=len, reverse=True):
+        if text_lower.startswith(prefix):
+            # Check for word boundary
+            if len(text_lower) > len(prefix) and text_lower[len(prefix)].isalnum():
+                continue
+            text_lower = text_lower[len(prefix):].strip()
+            break
+
+    # Strip leading articles (a, an, the)
+    for article in sorted(ARTICLES, key=len, reverse=True):
+        if text_lower.startswith(article + " "):
+            text_lower = text_lower[len(article):].strip()
+            break
+
+    return text_lower
 
 
 # =============================================================================
@@ -418,19 +453,25 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
 
     text_lower = text.lower().strip()
 
+    # Strip ordering prefixes for compound phrase detection
+    # "I'd like an egg and cheese sandwich" -> "egg and cheese sandwich"
+    text_for_compound = _strip_ordering_prefix(text_lower)
+
     # First, try to match entire input as a single item
     has_item, item_type, resolved_name = _has_item_indicator(text_lower)
 
     # Check if this is a compound phrase that shouldn't be split (e.g., "bacon egg and cheese")
     # First check exact match, then check if input STARTS with a compound phrase
-    is_compound = menu_cache.is_compound_phrase(text_lower)
+    # Use stripped text for compound detection to handle "I'd like an egg and cheese sandwich"
+    is_compound = menu_cache.is_compound_phrase(text_for_compound)
     compound_match = None
     if not is_compound:
         # Check if a compound phrase appears at the start (e.g., "egg and cheese on plain bagel")
-        compound_match = menu_cache.find_compound_phrase_in(text_lower)
+        compound_match = menu_cache.find_compound_phrase_in(text_for_compound)
         if compound_match:
             # Found a compound phrase at start - check if there's a second item anywhere
-            remainder = text_lower[len(compound_match):].strip()
+            # Use text_for_compound (stripped version) for remainder since compound_match is from it
+            remainder = text_for_compound[len(compound_match):].strip()
 
             # Helper function to create the multi-item split result
             def _create_multi_item_split(

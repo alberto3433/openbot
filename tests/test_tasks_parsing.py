@@ -2438,6 +2438,35 @@ class TestParsedItemsMultiItem:
             f"parsed_items: {[(getattr(i, 'item_name', None), getattr(i, 'item_type', None)) for i in result.parsed_items] if result else 'N/A'}"
         )
 
+    @pytest.mark.parametrize("text", [
+        "i'd like an egg and cheese sandwich",
+        "can i get an egg and cheese sandwich",
+        "i want an egg and cheese",
+        "give me an egg and cheese sandwich",
+        "i'll have an egg and cheese",
+    ])
+    def test_ordering_prefix_with_egg_and_cheese_is_single_item(self, text):
+        """Test that ordering prefixes don't break compound phrase detection.
+
+        Regression test: The ordering prefix ("I'd like an", "can I get an", etc.)
+        should be stripped before compound phrase detection. Without stripping, the
+        tokenizer would incorrectly split on " and " because it doesn't see
+        "egg and cheese sandwich" at the start.
+
+        Bug: "I'd like an egg and cheese sandwich" was being split into:
+        - "I'd like an egg" (not found)
+        - "cheese sandwich" (matched wrong item)
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        # This should NOT be parsed as multi-item - it's a single egg and cheese sandwich
+        result = _parse_multi_item_order(text)
+
+        assert result is None, (
+            f"Expected None (single item from '{text}'), but got multi-item result. "
+            f"parsed_items: {[(getattr(i, 'item_name', None), getattr(i, 'item_type', None)) for i in result.parsed_items] if result else 'N/A'}"
+        )
+
 
 class TestDuplicatePatterns:
     """Tests for duplicate item patterns: 'another one', 'one more', 'another bagel', etc."""

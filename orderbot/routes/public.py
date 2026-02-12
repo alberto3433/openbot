@@ -52,7 +52,7 @@ from ..db import get_db
 from ..db.models import Store
 from ..schemas.stores import StoreOut
 from ..schemas.company import CompanyOut
-from ..services.helpers import get_or_create_company
+from ..services.store_service import get_or_create_company
 
 
 logger = logging.getLogger(__name__)

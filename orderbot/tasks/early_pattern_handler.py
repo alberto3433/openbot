@@ -154,7 +154,7 @@ class EarlyPatternHandler:
         logger.info("TAKING_ITEMS: Added %d more of '%s'", added_count, last_item_name)
 
         return StateMachineResult(
-            message=item_added_anything_else(added_count, last_item_name),
+            message=f"Sure, that's {target_qty} total. Anything else?",
             order=order,
         )
 
@@ -449,9 +449,12 @@ class EarlyPatternHandler:
             # Recalculate pricing for the new item
             safe_recalculate_price(self.pricing, new_item, "for duplicated item")
 
-        item_name = template_item.get_display_name()
+        total_qty = sum(
+            1 for it in order.items.get_active_items()
+            if it.menu_item_name == template_item.menu_item_name
+        )
         return StateMachineResult(
-            message=item_added_anything_else(quantity, item_name),
+            message=f"Sure, that's {total_qty} total. Anything else?",
             order=order,
         )
 

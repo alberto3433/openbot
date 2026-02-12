@@ -227,18 +227,15 @@ class DuplicateHandler:
         for _ in range(count):
             order.items.add_item(item_to_duplicate.duplicate())
 
-        if count == 1:
-            logger.info("Added 1 more of '%s' to order (from clarification)", item_name)
-            return StateMachineResult(
-                message=item_added_anything_else(1, item_name),
-                order=order,
-            )
-        else:
-            logger.info("Added %d more of '%s' to order (from clarification)", count, item_name)
-            return StateMachineResult(
-                message=item_added_anything_else(count, item_name),
-                order=order,
-            )
+        total_qty = sum(
+            1 for it in order.items.get_active_items()
+            if it.get_summary() == item_name
+        )
+        logger.info("Added %d more of '%s' to order (from clarification)", count, item_name)
+        return StateMachineResult(
+            message=f"Sure, that's {total_qty} {item_name} total. Anything else?",
+            order=order,
+        )
 
     def handle_same_thing_clarification(
         self,
@@ -390,9 +387,10 @@ class DuplicateHandler:
             for _ in range(added_count):
                 order.items.add_item(last_item.duplicate())
 
+            total_qty = 1 + added_count
             logger.info("Added %d more of '%s' to order", added_count, last_item_name)
             return StateMachineResult(
-                message=item_added_anything_else(added_count, last_item_name),
+                message=f"Sure, that's {total_qty} total. Anything else?",
                 order=order,
             )
 

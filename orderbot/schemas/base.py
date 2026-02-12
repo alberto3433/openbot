@@ -110,6 +110,31 @@ class ListResponse(BaseModel, Generic[T]):
     total: int = 0
 
 
+class PaginatedListResponse(BaseModel, Generic[T]):
+    """
+    Generic paginated list response with page navigation metadata.
+
+    Extends the basic list pattern with page, page_size, and has_next
+    for endpoints that support cursor-based pagination.
+
+    Type Parameters:
+        T: The item type in the list (e.g., OrderSummaryOut)
+
+    Fields:
+        items: List of items for the current page
+        page: Current page number (1-indexed)
+        page_size: Number of items per page
+        total: Total count of matching items
+        has_next: Whether there are more pages after this one
+    """
+
+    items: list[T] = Field(default_factory=list)
+    page: int
+    page_size: int
+    total: int
+    has_next: bool
+
+
 class AvailabilityUpdate(BaseModel):
     """
     Base class for availability toggle requests.

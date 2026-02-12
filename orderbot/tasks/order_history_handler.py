@@ -614,7 +614,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         Falls back to returning_customer data if no DB session.
         """
         if self._db_session:
-            from ..services.helpers import lookup_customer_order_history
+            from ..services.customer_service import lookup_customer_order_history
             return lookup_customer_order_history(
                 self._db_session, phone, days=days, limit=limit
             )
@@ -623,16 +623,8 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         if self._returning_customer:
             items = self._returning_customer.get("last_order_items", [])
             if items:
-                # Calculate summary
-                summary_parts = []
-                for item in items:
-                    qty = item.get("quantity", 1)
-                    name = item.get("menu_item_name", "item")
-                    if qty > 1:
-                        summary_parts.append(f"{qty} {name}s")
-                    else:
-                        summary_parts.append(name)
-                summary = ", ".join(summary_parts)
+                from ..services.helpers import build_order_items_summary
+                summary = build_order_items_summary(items)
 
                 return {
                     "customer": {

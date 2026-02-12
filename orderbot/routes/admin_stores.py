@@ -77,7 +77,7 @@ from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import Store
 from ..schemas.stores import StoreOut, StoreCreate, StoreUpdate
-from ..services.helpers import invalidate_store_cache
+from ..services.store_service import invalidate_store_cache
 
 
 logger = logging.getLogger(__name__)

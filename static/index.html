@@ -1788,7 +1788,9 @@
       if (!text) return;
       inputEl.value = "";
       inputEl.style.height = 'auto';
-      sendMessage(text);
+      // Normalize newlines to commas so multi-item parser handles each line as a separate item
+      const normalized = text.replace(/\n+/g, ', ');
+      sendMessage(normalized);
     });
 
     startWithCallerIdBtn.addEventListener("click", () => {

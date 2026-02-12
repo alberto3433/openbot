@@ -47,7 +47,7 @@ from ..db.models import (
     ItemType,
     ItemTypeGlobalAttribute,
 )
-from ..services.helpers import sync_entity_aliases
+from ..services.alias_service import sync_entity_aliases
 from ..schemas.global_attributes import (
     GlobalAttributeOut,
     GlobalAttributeListOut,

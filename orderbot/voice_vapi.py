@@ -28,7 +28,7 @@ from .db import get_db
 from .db.models import ChatSession, Store, Company, SessionAnalytics
 from .menu_index import get_menu_version
 from .cache import menu_cache
-from .services.helpers import lookup_customer_by_phone
+from .services.customer_service import lookup_customer_by_phone
 
 
 logger = logging.getLogger(__name__)

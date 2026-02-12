@@ -45,7 +45,7 @@ from ..schemas.menu_item_sizes import (
     SizeOut,
     SizeList,
 )
-from ..services.helpers import get_or_create_company
+from ..services.store_service import get_or_create_company
 from .crud_helpers import apply_payload_updates
 
 

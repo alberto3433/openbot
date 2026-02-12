@@ -309,8 +309,8 @@ class TestQuantityChangeDuringConfig:
         # Response should confirm the addition
         msg_lower = result.message.lower()
         print(f"Input: '{quantity_phrase}' -> Response: {result.message}")
-        assert "added" in msg_lower, \
-            f"Expected confirmation of adding items for '{quantity_phrase}', got: {result.message}"
+        assert "total" in msg_lower, \
+            f"Expected confirmation of quantity for '{quantity_phrase}', got: {result.message}"
 
     def test_quantity_change_with_item_name(self):
         """Test 'make it two hot teas' works during config.
@@ -336,7 +336,7 @@ class TestQuantityChangeDuringConfig:
         # Response should confirm and continue with config
         msg_lower = result.message.lower()
         print(f"Bot response: {result.message}")
-        assert "added" in msg_lower, f"Expected addition confirmation, got: {result.message}"
+        assert "total" in msg_lower, f"Expected quantity confirmation, got: {result.message}"
 
     def test_can_you_make_it_quantity_change(self):
         """Test 'can you make it two hot teas' works during config.
@@ -361,7 +361,7 @@ class TestQuantityChangeDuringConfig:
         # Response should confirm and continue with config
         msg_lower = result.message.lower()
         print(f"Bot response: {result.message}")
-        assert "added" in msg_lower, f"Expected addition confirmation, got: {result.message}"
+        assert "total" in msg_lower, f"Expected quantity confirmation, got: {result.message}"
 
     def test_quantity_change_continues_config(self):
         """Test that after quantity change, config question is still asked."""

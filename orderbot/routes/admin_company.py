@@ -54,7 +54,7 @@ from sqlalchemy.orm import Session
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..schemas.company import CompanyOut, CompanyUpdate
-from ..services.helpers import get_or_create_company
+from ..services.store_service import get_or_create_company
 
 
 logger = logging.getLogger(__name__)

@@ -408,6 +408,20 @@ class ConfiguringItemHandler:
             if add_result:
                 return add_result
 
+        # Fallback: if input isn't a valid answer and wasn't caught as a modifier,
+        # try parsing as a new menu item (without requiring "and a"/"also" prefix).
+        # This handles cases like "a latte" during config being misrouted as an attribute answer.
+        # Guard: only try if input starts with an article or quantity word — bare words
+        # like "provolone" or "swiss cheese" are more likely attribute answers.
+        if not is_valid_answer and isinstance(item, MenuItemTask):
+            stripped = user_input.strip()
+            if re.match(r'^(?:a(?:n)?\s+|(?:\d+|two|three|four|five|six)\s+)', stripped, re.IGNORECASE):
+                add_item_fallback = self.config_modification_handler.handle_add_item_during_config(
+                    stripped, item, order, require_prefix=False
+                )
+                if add_item_fallback:
+                    return add_item_fallback
+
         # Check for off-topic requests during configuration (e.g., "what syrups do you have?", "add vanilla syrup")
         # If detected, politely redirect back to the current configuration question
         # Note: Questions relevant to the current config (e.g., "what cream cheese do you have?" when asked about spread) are allowed
@@ -523,13 +537,8 @@ class ConfiguringItemHandler:
 
         # Continue with the current config question
         current_question = self.config_helper_handler.get_current_config_question(order, item)
-        if current_question:
-            return StateMachineResult(
-                message=f"Sure, I've added {added_count} more {item_name}. {current_question}",
-                order=order,
-            )
-        else:
-            return StateMachineResult(
-                message=f"Sure, I've added {added_count} more {item_name}. Anything else?",
-                order=order,
-            )
+        suffix = current_question or "Anything else?"
+        return StateMachineResult(
+            message=f"Sure, that's {target_qty} total. {suffix}",
+            order=order,
+        )

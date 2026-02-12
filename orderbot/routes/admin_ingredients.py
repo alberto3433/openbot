@@ -86,7 +86,8 @@ from ..schemas.ingredients import (
     MenuItemStoreAvailabilityOut,
     MenuItemAvailabilityUpdate,
 )
-from ..services.helpers import batch_load_store_availability, sync_entity_aliases
+from ..services.alias_service import sync_entity_aliases
+from ..services.helpers import batch_load_store_availability
 
 
 logger = logging.getLogger(__name__)

@@ -401,16 +401,10 @@ class CheckoutHandler(BaseStateHandler):
         # Return to confirmation with updated summary
         summary = self.message_builder.build_order_summary(order)
 
-        if added_count == 1:
-            return StateMachineResult(
-                message=f"I've added a second {last_item_name}.\n\n{summary}\n\nDoes that look right?",
-                order=order,
-            )
-        else:
-            return StateMachineResult(
-                message=f"I've added {added_count} more {last_item_name}.\n\n{summary}\n\nDoes that look right?",
-                order=order,
-            )
+        return StateMachineResult(
+            message=f"Sure, that's {target_qty} total.\n\n{summary}\n\nDoes that look right?",
+            order=order,
+        )
 
     def _handle_wants_changes(
         self,

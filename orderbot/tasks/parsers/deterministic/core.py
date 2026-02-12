@@ -1004,10 +1004,12 @@ def _is_inline_attribute_spec_pattern(text: str) -> bool:
     # Pattern: qty word qty word qty word...
     # e.g., "2 bagels 1 everything 1 plain"
     qty_word_pattern = r'(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(\w+)'
-    matches = re.findall(qty_word_pattern, text, re.IGNORECASE)
+    raw_matches = list(re.finditer(qty_word_pattern, text, re.IGNORECASE))
 
-    if len(matches) < 2:
+    if len(raw_matches) < 2:
         return False  # Not enough qty+word pairs
+
+    matches = [(m.group(1), m.group(2)) for m in raw_matches]
 
     # First match should identify the item type
     first_word = matches[0][1].lower()
@@ -1054,6 +1056,19 @@ def _is_inline_attribute_spec_pattern(text: str) -> bool:
                     for part in alias.lower().split():
                         if len(part) >= 3:
                             attr_option_words.add(part)
+
+    # If item type triggers appear between qty+word pairs, this is multi-item, not inline spec
+    all_triggers_dict = menu_cache.get_item_type_triggers()
+    all_trigger_flat: set[str] = set()
+    for trigger_set in all_triggers_dict.values():
+        all_trigger_flat.update(t.lower() for t in trigger_set)
+
+    for i in range(len(raw_matches) - 1):
+        gap_text = text[raw_matches[i].end():raw_matches[i + 1].start()].strip()
+        if gap_text:
+            for word in gap_text.lower().split():
+                if word in all_trigger_flat or singularize(word) in all_trigger_flat:
+                    return False
 
     # Check if subsequent qty+word pairs have words that are attribute options
     subsequent_words = [m[1].lower() for m in matches[1:]]
@@ -1165,17 +1180,37 @@ def parse_open_input(
         if has_repeated_quantities and ", " not in input_lower and " and " not in cleaned:
             # Check if this is an inline attribute spec pattern before inserting commas
             if not _is_inline_attribute_spec_pattern(input_lower):
-                # Insert comma between item (word ending in 's') and following quantity
+                # Build trigger set from cache for boundary detection
+                all_triggers_dict = menu_cache.get_item_type_triggers()
+                all_trigger_flat: set[str] = set()
+                for trigger_set in all_triggers_dict.values():
+                    all_trigger_flat.update(t.lower() for t in trigger_set)
+
+                qty_words = r'\d+|one|two|three|four|five|six|seven|eight|nine|ten'
+
+                def _comma_if_trigger(m: re.Match) -> str:
+                    word = m.group(1).lower()
+                    if word in all_trigger_flat or singularize(word) in all_trigger_flat:
+                        return f"{m.group(1)}, {m.group(2)}"
+                    return m.group(0)
+
                 parse_input = re.sub(
-                    r'(\w+s)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)(?=\s+\w)',
-                    r'\1, \2',
+                    rf'(\w+)\s+({qty_words})(?=\s+\w)',
+                    _comma_if_trigger,
                     user_input,
-                    flags=re.IGNORECASE
+                    flags=re.IGNORECASE,
                 )
                 if parse_input != user_input:
                     logger.info("Normalized repeated quantities: %s", parse_input[:60])
             else:
                 logger.info("Detected inline attribute spec pattern, skipping comma: %s", input_lower[:60])
+
+        # Try split-quantity FIRST (e.g., "two bagels one with lox one with cream cheese")
+        # Mirrors priority in _try_parse_new_items() (lines 722-734).
+        split_qty_result = _parse_split_quantity_items(parse_input)
+        if split_qty_result is not None:
+            logger.info("Parsed split-quantity order: %s", user_input[:50])
+            return split_qty_result
 
         result = _parse_multi_item_order(parse_input)
         if result is not None:

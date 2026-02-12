@@ -70,7 +70,7 @@ from ..schemas.menu import (
     MenuItemIngredientOut,
 )
 from ..schemas.serializers import serialize_menu_item
-from ..services.helpers import sync_entity_aliases
+from ..services.alias_service import sync_entity_aliases
 from ..cache import menu_cache
 
 

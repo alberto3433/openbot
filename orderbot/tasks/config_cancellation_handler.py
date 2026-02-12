@@ -12,6 +12,7 @@ from typing import Optional, Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
 from .parsers import CANCEL_ITEM_PATTERN, strip_conversational_fillers
+from .pending_fields import PendingField
 from .parsers.quantity_utils import extract_leading_quantity
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
 from .handler_utils import remove_item_from_order
@@ -236,6 +237,25 @@ class ConfigCancellationHandler:
                     cancel_desc, pending_attr_slug,
                 )
                 return None
+
+        # At customization checkpoint, "no X" where X is an attribute display name
+        # is a decline, not a removal. E.g., "no condiments" when the bot asked
+        # "You can add Condiments" means "I don't want condiments".
+        if order.pending_field in (
+            PendingField.CUSTOMIZATION_CHECKPOINT,
+            PendingField.CUSTOMIZATION_SELECTION,
+        ) and isinstance(current_item, MenuItemTask):
+            item_type_attrs = menu_cache.get_item_type_attributes(current_item.menu_item_type)
+            cancel_variants = get_singular_plural_variants(cancel_desc)
+            for attr_slug, attr_data in item_type_attrs.items():
+                attr_display_lower = (attr_data.get("display_name") or "").lower()
+                if attr_slug in cancel_variants or attr_display_lower in cancel_variants:
+                    logger.info(
+                        "Cancel during config: '%s' matches attribute '%s' at customization "
+                        "checkpoint - deferring to checkpoint handler",
+                        cancel_desc, attr_slug,
+                    )
+                    return None
 
         # Handle "this" or "it" - cancel the current item being configured
         if cancel_desc in ("this", "it", "that", "this one", "that one"):

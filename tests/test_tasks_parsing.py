@@ -1838,7 +1838,7 @@ class TestSplitQuantityBagelParsing:
         assert bagels[0].attribute_values.get("spread") == "scallion_cream_cheese"
         # Second bagel: lox (meat category - salmon is a protein topping)
         assert bagels[1].attribute_values.get("bread") == "plain_bagel"
-        assert bagels[1].attribute_values.get("meat") == "nova_scotia_salmon"
+        assert bagels[1].attribute_values.get("meat") == "belly_lox"
 
     def test_two_bagels_toasted_variants(self):
         """Test parsing 'two everything bagels one toasted one not toasted'."""
@@ -1896,7 +1896,7 @@ class TestSplitQuantityBagelParsing:
         assert bagels[0].attribute_values.get("toasted") is True
         # Second bagel: lox (meat category), not toasted
         assert bagels[1].attribute_values.get("bread") == "plain_bagel"
-        assert bagels[1].attribute_values.get("meat") == "nova_scotia_salmon"
+        assert bagels[1].attribute_values.get("meat") == "belly_lox"
         assert bagels[1].attribute_values.get("toasted") is False
 
     def test_different_bagel_types_with_toppings(self):

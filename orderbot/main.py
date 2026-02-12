@@ -149,7 +149,7 @@ async def lifespan(app: FastAPI):
             menu_cache.load_from_db(db, fail_on_error=True)
 
             # Warm up store info cache
-            from .services.helpers import warmup_store_cache
+            from .services.store_service import warmup_store_cache
             logger.info("Warming up store info cache...")
             warmup_store_cache(db)
         finally:

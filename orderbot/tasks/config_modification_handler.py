@@ -725,6 +725,7 @@ class ConfigModificationHandler:
         user_input: str,
         item: MenuItemTask,
         order: OrderTask,
+        require_prefix: bool = True,
     ) -> StateMachineResult | None:
         """Handle adding new items during configuration (e.g., 'and a latte').
 
@@ -752,10 +753,14 @@ class ConfigModificationHandler:
         # Step 1: Check for ordering prefix
         prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(user_input)
         if not prefix_match:
-            return None
+            if require_prefix:
+                return None
+            # No prefix — parse full input as item text
+            item_text = user_input.strip()
+        else:
+            item_text = user_input[prefix_match.end():].strip()
 
-        # Step 2: Extract item portion and parse with existing parser
-        item_text = user_input[prefix_match.end():].strip()
+        # Step 2: Validate item text is non-empty
         if not item_text:
             return None
 

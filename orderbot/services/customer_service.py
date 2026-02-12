@@ -17,6 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from ..db.models import Order
+from .helpers import build_order_items_summary
 
 
 logger = logging.getLogger(__name__)
@@ -233,16 +234,7 @@ def lookup_customer_order_history(
                 item_data.update(item.item_config)
             items.append(item_data)
 
-        # Build summary (e.g., "2 bagels, 1 latte")
-        summary_parts = []
-        for item in order.items:
-            qty = item.quantity
-            name = item.menu_item_name
-            if qty > 1:
-                summary_parts.append(f"{qty} {name}s")
-            else:
-                summary_parts.append(name)
-        summary = ", ".join(summary_parts) if summary_parts else "No items"
+        summary = build_order_items_summary(order.items)
 
         order_list.append({
             "order_id": order.id,
@@ -314,16 +306,7 @@ def get_order_by_id(
             item_data.update(item.item_config)
         items.append(item_data)
 
-    # Build summary
-    summary_parts = []
-    for item in order.items:
-        qty = item.quantity
-        name = item.menu_item_name
-        if qty > 1:
-            summary_parts.append(f"{qty} {name}s")
-        else:
-            summary_parts.append(name)
-    summary = ", ".join(summary_parts) if summary_parts else "No items"
+    summary = build_order_items_summary(order.items)
 
     return {
         "order_id": order.id,

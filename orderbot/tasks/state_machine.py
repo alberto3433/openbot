@@ -436,10 +436,17 @@ class OrderStateMachine:
 
                     logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
 
-                    if added_count == 1:
-                        msg = f"I've added another {last_item_name}, so that's {target_qty} total. Anything else?"
-                    else:
-                        msg = f"I've added {added_count} more {last_item_name}, so that's {target_qty} total. Anything else?"
+                    # If mid-configuration, re-ask the pending config question
+                    # instead of "Anything else?"
+                    suffix = "Anything else?"
+                    if order.is_configuring_item() and order.pending_item_id:
+                        config_item = order.items.get_item_by_id(order.pending_item_id)
+                        if config_item:
+                            question = self.config_helper_handler.get_current_config_question(order, config_item)
+                            if question:
+                                suffix = question
+
+                    msg = f"Sure, that's {target_qty} total. {suffix}"
 
                     order.add_message("assistant", msg)
                     return StateMachineResult(message=msg, order=order)

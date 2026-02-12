@@ -5222,7 +5222,7 @@ class TestConfirmationHandler:
 
         # Should have doubled the items
         assert len(order.items.items) == initial_count + 1
-        assert "added" in result.message.lower() or "second" in result.message.lower()
+        assert "total" in result.message.lower()
 
     def test_unclear_response_asks_if_correct(self):
         """Test that unclear response asks if order is correct."""
@@ -5270,7 +5270,7 @@ class TestConfirmationHandler:
 
         # Should have added 2 more (total of 3)
         assert len(order.items.items) == initial_count + 2
-        assert "added" in result.message.lower()
+        assert "total" in result.message.lower()
 
     def test_order_reviewed_not_set_until_confirmed(self):
         """Test that order_reviewed stays False until user confirms."""
@@ -5614,7 +5614,7 @@ class TestTakingItemsHandler:
             result = sm._handle_taking_items("make it 2", order)
 
             assert len(order.items.items) == initial_count + 1
-            assert "added" in result.message.lower() or "second" in result.message.lower()
+            assert "total" in result.message.lower()
 
     def test_order_type_pickup_sets_delivery_method(self):
         """Test that mentioning pickup sets delivery method."""

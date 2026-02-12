@@ -2,12 +2,7 @@
 Helper Functions for Orderbot
 =================================
 
-Remaining utility functions that don't belong to a specific service domain.
-Most functions have been moved to focused service modules:
-
-- store_service: Store info, caching, company lookup
-- customer_service: Customer lookup by phone, order history
-- alias_service: Alias validation, uniqueness, syncing
+Utility functions that don't belong to a specific service domain.
 
 Functions in this module:
 - get_primary_item_type_name: Get name of primary configurable item type
@@ -15,7 +10,7 @@ Functions in this module:
 """
 
 import logging
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from sqlalchemy.orm import Session
 
@@ -26,26 +21,32 @@ from ..db.models import (
 )
 from .item_type_helpers import has_linked_attributes
 
-# Re-exports for backward compatibility — all imports via helpers still work
-from .store_service import (  # noqa: F401
-    get_or_create_company,
-    build_store_info,
-    invalidate_store_cache,
-    warmup_store_cache,
-)
-from .customer_service import (  # noqa: F401
-    lookup_customer_by_phone,
-    lookup_customer_order_history,
-    get_order_by_id,
-)
-from .alias_service import (  # noqa: F401
-    check_alias_uniqueness,
-    validate_aliases,
-    sync_entity_aliases,
-)
 
 
 logger = logging.getLogger(__name__)
+
+
+def build_order_items_summary(items: Iterable) -> str:
+    """Build a human-readable summary string from order items.
+
+    Works with both ORM objects (attribute access) and dicts.
+
+    Args:
+        items: Iterable of order items with quantity and menu_item_name.
+
+    Returns:
+        Comma-separated summary like "2 Bagels, Latte" or "No items".
+    """
+    parts = []
+    for item in items:
+        if isinstance(item, dict):
+            qty = item.get("quantity", 1)
+            name = item.get("menu_item_name", "item")
+        else:
+            qty = item.quantity
+            name = item.menu_item_name
+        parts.append(f"{qty} {name}s" if qty > 1 else name)
+    return ", ".join(parts) if parts else "No items"
 
 
 def get_primary_item_type_name(db: Session) -> str:

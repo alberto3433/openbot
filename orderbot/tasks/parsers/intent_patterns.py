@@ -98,7 +98,7 @@ CANCEL_ITEM_PATTERN = re.compile(
     # Also exclude "no make it X" which is a replacement pattern handled by REPLACE_ITEM_PATTERN
     # Also exclude "no I don't want..." which should be handled by the "I don't want X" pattern
     # Use negative lookahead to avoid matching these phrases
-    r"no\s+(?!thanks\b|thank\s+you|that'?s?\s+(?:it|all|fine|good|ok|okay)|i'?m\s+(?:good|fine|ok|okay|done|all\s+set)|problem|worries|way|make\s+(?:it\s+)?|i\s+don)(?:the\s+)?(.+?)(?:\s+please)?[\s!.,]*$"
+    r"no\s+(?!thanks\b|thank\s+you|more\b|that'?s?\s+(?:it|all|fine|good|ok|okay)|i'?m\s+(?:good|fine|ok|okay|done|all\s+set)|problem|worries|way|make\s+(?:it\s+)?|i\s+don)(?:the\s+)?(.+?)(?:\s+please)?[\s!.,]*$"
     r"|"
     # "can you remove X?", "could you remove X?", "would you remove X?"
     r"(?:can|could|would)\s+you\s+(?:remove|delete|cancel|skip|take\s+off)\s+(?:the\s+)?(.+?)[\s!.,?]*$"
@@ -206,6 +206,9 @@ MAKE_IT_N_PATTERN = re.compile(
     r"|"
     r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
     r"|"
+    # "change it to 3", "change that to three", "switch it to two"
+    r"(?:change|switch)\s+(?:it|that|this)\s+to\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
     r"i'?ll\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
     r"|"
     r"i'?d\s+like\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
@@ -237,6 +240,9 @@ MAKE_IT_N_CONFIG_PATTERN = re.compile(
     r"actually[,]?\s+make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
     r"|"
     r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    r"|"
+    # "change it to 3", "change that to three", "switch it to two"
+    r"(?:change|switch)\s+(?:it|that|this)\s+to\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
     r"|"
     # "can you make it two" / "could you make that three"
     r"(?:can|could|would)\s+you\s+make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"

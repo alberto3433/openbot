@@ -78,6 +78,21 @@ class TestMultiItemOrders:
         assert any("everything" in t for t in types), f"Should have everything bagel. Types: {types}"
         assert any("plain" in t for t in types), f"Should have plain bagel. Types: {types}"
 
+    def test_two_different_bagels_without_separator(self):
+        """User says "one everything bagel one plain bagel" (no separator)."""
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+        result = sm.process("one everything bagel one plain bagel", order)
+
+        assert result.message is not None
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+        total_quantity = sum(b.quantity for b in bagels)
+        assert total_quantity == 2, f"Should have 2 bagels, got {total_quantity}"
+        types = [b["bread"] for b in bagels]
+        assert any("everything" in t for t in types), f"Missing everything. Types: {types}"
+        assert any("plain" in t for t in types), f"Missing plain. Types: {types}"
+
     def test_comma_separated_items(self):
         """
         Test: User lists items separated by commas.
@@ -177,3 +192,27 @@ class TestMultiItemOrders:
         assert bagel_qty >= 1, f"Should have bagels. Got qty={bagel_qty}"
         assert coffee_qty >= 1 or any("coffee" in result.message.lower() for _ in [1]), \
             f"Should have coffees or mention them. Got qty={coffee_qty}"
+
+    def test_add_item_during_config_no_prefix(self):
+        """User says 'a latte' during config — should queue latte and re-ask config question."""
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        # First add a sandwich to trigger config
+        result = sm.process("Chipotle Cream Cheese Sandwich", order)
+        order = result.order
+
+        # Now say "a latte" while being asked about bread
+        result = sm.process("a latte", order)
+        order = result.order
+
+        # Should have added the latte (queued) and re-asked the config question
+        all_items = order.items.get_active_items()
+        item_names = [i.menu_item_name for i in all_items]
+        assert any("latte" in n.lower() for n in item_names), \
+            f"Should have added latte. Items: {item_names}"
+
+        # Should still be configuring the sandwich (re-ask bread question)
+        assert order.pending_field is not None, \
+            f"Should still be configuring. Message: {result.message}"

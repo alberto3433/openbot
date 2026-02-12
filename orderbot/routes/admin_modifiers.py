@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import ItemType, MenuItem, ItemTypeGlobalAttribute, GlobalAttribute, MenuDisplayGroup, OverallCategory
-from ..services.helpers import sync_entity_aliases
+from ..services.alias_service import sync_entity_aliases
 from ..schemas.modifiers import (
     GlobalAttributeRef,
     ItemTypeListOut,

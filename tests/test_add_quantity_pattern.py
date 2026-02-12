@@ -87,8 +87,8 @@ class TestAddQuantityWithOneItemType:
 
         # Should have added 3 more (total 4)
         assert len(result.order.items.items) == 4
-        assert "added" in result.message.lower()
-        assert "3" in result.message
+        assert "total" in result.message.lower()
+        assert "4" in result.message
 
     def test_add_1_with_single_item_creates_one_copy(self):
         """'add 1' should add one more of the existing item."""
@@ -108,7 +108,7 @@ class TestAddQuantityWithOneItemType:
         result = sm.process("add 1", order)
 
         assert len(result.order.items.items) == 2
-        assert "added" in result.message.lower()
+        assert "total" in result.message.lower()
 
     def test_add_copies_preserves_attributes(self):
         """Copies should preserve all attributes from the original."""
@@ -256,7 +256,7 @@ class TestAddQuantityWithMultipleItemTypes:
         assert result2.order.pending_field is None
         # Total: original 2 + 3 copies of first = 5
         assert len(result2.order.items.items) == 5
-        assert "added" in result2.message.lower()
+        assert "total" in result2.message.lower()
 
     def test_disambiguation_selection_by_name(self):
         """User can select item by name in disambiguation."""
@@ -292,7 +292,7 @@ class TestAddQuantityWithMultipleItemTypes:
         # Should have added 2 copies of the bagel
         assert result2.order.pending_quantity_addition is None
         assert len(result2.order.items.items) == 4  # original 2 + 2 bagels
-        assert "added" in result2.message.lower()
+        assert "total" in result2.message.lower()
 
     def test_multiple_same_item_type_counts_as_one(self):
         """Multiple items of same type should count as one unique type."""

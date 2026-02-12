@@ -42,7 +42,7 @@ from ..schemas.modifiers import (
     ModifierCategoryCreate,
     ModifierCategoryUpdate,
 )
-from ..services.helpers import sync_entity_aliases
+from ..services.alias_service import sync_entity_aliases
 from .crud_factory import CRUDRouterFactory
 from .crud_helpers import apply_payload_updates
 

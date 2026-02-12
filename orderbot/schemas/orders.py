@@ -56,6 +56,8 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from .base import PaginatedListResponse
+
 
 class OrderItemOut(BaseModel):
     """
@@ -232,31 +234,6 @@ class OrderStatusHistoryOut(BaseModel):
     created_at: Union[str, datetime]
 
 
-class OrderListResponse(BaseModel):
-    """
-    Paginated response for order listing.
-
-    Wraps a list of orders with pagination metadata for efficient
-    navigation through large order histories.
-
-    Attributes:
-        items: List of orders for the current page
-        page: Current page number (1-indexed)
-        page_size: Number of items per page
-        total: Total number of orders matching the query
-        has_next: Whether there are more pages after this one
-
-    Example:
-        {
-            "items": [...],
-            "page": 1,
-            "page_size": 20,
-            "total": 157,
-            "has_next": true
-        }
-    """
-    items: List[OrderSummaryOut]
-    page: int
-    page_size: int
-    total: int
-    has_next: bool
+class OrderListResponse(PaginatedListResponse[OrderSummaryOut]):
+    """Paginated response for order listing."""
+    pass

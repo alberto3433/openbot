@@ -68,12 +68,9 @@ from ..config import get_rate_limit_chat, get_random_store_id
 from ..db import get_db
 from ..db.models import SessionAnalytics
 from ..services.session import get_or_create_session, save_session
-from ..services.helpers import (
-    lookup_customer_by_phone,
-    get_or_create_company,
-    get_primary_item_type_name,
-    build_store_info,
-)
+from ..services.customer_service import lookup_customer_by_phone
+from ..services.helpers import get_primary_item_type_name
+from ..services.store_service import get_or_create_company, build_store_info
 from ..schemas.chat import (
     ChatStartResponse,
     ChatMessageRequest,

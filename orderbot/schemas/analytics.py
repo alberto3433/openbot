@@ -75,6 +75,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from .base import PaginatedListResponse
+
 
 class SessionAnalyticsOut(BaseModel):
     """
@@ -123,25 +125,9 @@ class SessionAnalyticsOut(BaseModel):
     ended_at: str
 
 
-class SessionAnalyticsListResponse(BaseModel):
-    """
-    Paginated response for session analytics listing.
-
-    Wraps session records with pagination metadata for efficient
-    navigation through analytics data.
-
-    Attributes:
-        items: List of session records for current page
-        page: Current page number (1-indexed)
-        page_size: Number of items per page
-        total: Total matching records
-        has_next: Whether more pages exist
-    """
-    items: List[SessionAnalyticsOut]
-    page: int
-    page_size: int
-    total: int
-    has_next: bool
+class SessionAnalyticsListResponse(PaginatedListResponse[SessionAnalyticsOut]):
+    """Paginated response for session analytics listing."""
+    pass
 
 
 class AnalyticsSummary(BaseModel):

@@ -17,5 +17,5 @@ Import services directly from submodules:
 
     from orderbot.services.session import get_or_create_session, save_session
     from orderbot.services.order import persist_confirmed_order
-    from orderbot.services.helpers import get_or_create_company
+    from orderbot.services.store_service import get_or_create_company
 """

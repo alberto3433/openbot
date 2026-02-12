@@ -404,6 +404,14 @@ class ConfigCancellationHandler:
 
             try:
                 modifier_match = find_modifier_match(current_item, modifier_term)
+                # If direct match fails, resolve via ingredient DB lookup
+                # (e.g., "jalapeno spread" → "Jalapeno Cream Cheese" → match on item)
+                if not modifier_match:
+                    ingredient_matches = menu_cache.find_matching_ingredients(modifier_term)
+                    if len(ingredient_matches) == 1:
+                        resolved_name = ingredient_matches[0].get("slug", "").replace("_", " ")
+                        if resolved_name:
+                            modifier_match = find_modifier_match(current_item, resolved_name)
                 if modifier_match:
                     removal_result = remove_modifier_from_item(
                         current_item, modifier_match, quantity=removal_qty
@@ -581,9 +589,6 @@ class ConfigCancellationHandler:
             # Check if user's category term maps to this item's type (e.g., "coffee" -> "sized_beverage")
             elif mapped_item_type and menu_item_type == mapped_item_type:
                 matches = True
-            elif any(word in item_summary for word in cancel_desc.split() if word):
-                matches = True
-
             if matches:
                 items_to_remove.append(item)
                 # If not plural, only remove one item

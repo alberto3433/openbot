@@ -86,6 +86,22 @@ class ItemModificationHandler:
         # Find the target item
         target_item = self._find_target_item(target_desc, active_items)
 
+        # For vague targets (pronouns or implicit), if the resolved item can't
+        # accept the modifiers, look for another item in the cart that can.
+        # E.g. "add sugar to that" with a sandwich + hot chocolate -> hot chocolate
+        if target_item and parsed.modify_add_modifiers:
+            is_vague = not target_desc or target_desc in self.LAST_ITEM_PRONOUNS
+            if is_vague and not self._can_accept_modifiers(target_item, parsed.modify_add_modifiers):
+                compatible = self._find_compatible_item(
+                    parsed.modify_add_modifiers, active_items, exclude=target_item
+                )
+                if compatible:
+                    logger.info(
+                        "MODIFY EXISTING: Rerouting modifier from '%s' to '%s' (modifier compatibility)",
+                        target_item.menu_item_name, compatible.menu_item_name,
+                    )
+                    target_item = compatible
+
         if target_item:
             return self._apply_modifications(
                 target_item, parsed, order, raw_user_input
@@ -115,6 +131,12 @@ class ItemModificationHandler:
             order=order,
         )
 
+    # Pronouns that refer to the last item (shared with cancellation handler)
+    LAST_ITEM_PRONOUNS = {
+        "that", "it", "this", "last", "the last one", "the last item",
+        "last one", "last item",
+    }
+
     def _find_target_item(
         self,
         target_desc: str,
@@ -122,6 +144,11 @@ class ItemModificationHandler:
     ) -> MenuItemTask | None:
         """Find the item that matches the target description."""
         menu_items_in_cart = [i for i in active_items if isinstance(i, MenuItemTask)]
+
+        # Resolve pronouns ("that", "it", "this") to the last item
+        if target_desc and target_desc in self.LAST_ITEM_PRONOUNS:
+            last = get_last_item(active_items)
+            return last if isinstance(last, MenuItemTask) else None
 
         if target_desc:
             # Match items by summary (data-driven, works for any item type)
@@ -347,6 +374,31 @@ class ItemModificationHandler:
                 )
 
         return None
+
+    def _can_accept_modifiers(self, item: MenuItemTask, modifiers: list[str]) -> bool:
+        """Check if an item's type can accept at least one of the given modifiers."""
+        if not menu_cache.is_item_type_configurable(item.menu_item_type):
+            return False
+        for modifier in modifiers:
+            base = modifier.lower().split(" (")[0].strip()
+            matches = menu_cache.find_matching_ingredients(base)
+            for match in matches:
+                if menu_cache.is_valid_modifier_for_item_type(match["slug"], item.menu_item_type):
+                    return True
+        return False
+
+    def _find_compatible_item(
+        self,
+        modifiers: list[str],
+        active_items: list,
+        exclude: MenuItemTask,
+    ) -> MenuItemTask | None:
+        """Find a single item in the cart that can accept the modifiers."""
+        candidates = [
+            i for i in active_items
+            if isinstance(i, MenuItemTask) and i != exclude and self._can_accept_modifiers(i, modifiers)
+        ]
+        return candidates[0] if len(candidates) == 1 else None
 
     def _handle_no_target_found(
         self,

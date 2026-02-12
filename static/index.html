@@ -597,11 +597,12 @@
       border-top: 1px solid var(--border-light);
       padding: 16px 20px;
       display: flex;
+      align-items: flex-end;
       gap: 12px;
       background: var(--bg-secondary);
     }
 
-    .chat-footer input[type="text"] {
+    .chat-footer textarea {
       flex: 1;
       border-radius: 24px;
       border: 1px solid var(--input-border);
@@ -612,19 +613,24 @@
       color: var(--text-primary);
       outline: none;
       transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+      resize: none;
+      overflow-y: hidden;
+      min-height: 44px;
+      max-height: 150px;
+      line-height: 1.4;
     }
 
-    [data-theme="dark"] .chat-footer input[type="text"] {
+    [data-theme="dark"] .chat-footer textarea {
       background: var(--bg-tertiary);
       border-color: var(--border-medium);
     }
 
-    .chat-footer input[type="text"]:focus {
+    .chat-footer textarea:focus {
       border-color: var(--input-focus-border);
       box-shadow: var(--input-focus-shadow);
     }
 
-    .chat-footer input[type="text"]::placeholder {
+    .chat-footer textarea::placeholder {
       color: var(--text-tertiary);
     }
 
@@ -1295,13 +1301,13 @@
       <div class="status-bar" id="status-bar">Disconnected</div>
       <div class="mic-status" id="mic-status"></div>
       <form class="chat-footer" id="chat-form">
-        <input
-          type="text"
+        <textarea
           id="chat-input"
           autocomplete="off"
           autofocus
+          rows="1"
           placeholder="Type your message..."
-        />
+        ></textarea>
         <button type="button" class="mic-btn" id="mic-btn" title="Voice input">
           <span class="icon"><i data-lucide="mic"></i></span>
         </button>
@@ -1758,11 +1764,30 @@
       }
     }
 
+    // Auto-resize textarea as content changes
+    function autoResizeInput() {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = inputEl.scrollHeight + 'px';
+      // Show scrollbar if at max height
+      inputEl.style.overflowY = inputEl.scrollHeight > 150 ? 'auto' : 'hidden';
+    }
+
+    inputEl.addEventListener("input", autoResizeInput);
+
+    // Enter sends, Shift+Enter adds a new line
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        formEl.requestSubmit();
+      }
+    });
+
     formEl.addEventListener("submit", (e) => {
       e.preventDefault();
       const text = inputEl.value.trim();
       if (!text) return;
       inputEl.value = "";
+      inputEl.style.height = 'auto';
       sendMessage(text);
     });
 

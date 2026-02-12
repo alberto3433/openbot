@@ -422,7 +422,7 @@ class MenuItemConfigHandler(BaseHandler):
         # Calculate ordinal position and context for multi-item orders
         ordinal, item_num, has_duplicates = self._question_builder.calculate_item_ordinal(item, order)
         multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
-        item_ref = item.get_display_name().lower()
+        item_ref = item.get_display_name()
 
         # Build base question text
         question = self._question_builder.build_base_question(

@@ -47,6 +47,7 @@ def send_payment_link_email(
     city_tax: Optional[float] = None,
     state_tax: Optional[float] = None,
     delivery_fee: Optional[float] = None,
+    payment_url: Optional[str] = None,
 ) -> dict:
     """
     Send an email with a payment link to the customer.
@@ -64,12 +65,14 @@ def send_payment_link_email(
         city_tax: Optional city tax amount (only shown if > 0)
         state_tax: Optional state tax amount (only shown if > 0)
         delivery_fee: Optional delivery fee (only shown if > 0)
+        payment_url: Optional Stripe checkout URL. Falls back to mock URL if not provided.
 
     Returns:
         dict with status and details
     """
-    # Generate mock payment URL (in production, this would be a real Stripe checkout URL)
-    payment_url = f"https://pay.example.com/order/{order_id}"
+    # Use provided Stripe URL or fall back to mock URL
+    if not payment_url:
+        payment_url = f"https://pay.example.com/order/{order_id}"
 
     # Build the email content
     greeting = f"Hi {customer_name}," if customer_name else "Hi,"

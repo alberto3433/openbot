@@ -31,7 +31,8 @@ from ..intent_patterns import (
     MAKE_IT_N_WITH_ITEM_PATTERN,
 )
 from .pipeline import get_pipeline
-from .result_types import TextSpan
+from .result_types import ParserContext, TextSpan
+from ..quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity
 from .item_parsing import (
     build_parsed_item,
     _parse_configurable_item,
@@ -172,37 +173,19 @@ def _add_order_type_to_response(
 
 
 # =============================================================================
-# Main Deterministic Parser
+# Sub-functions for parse_open_input_deterministic
 # =============================================================================
 
-def parse_open_input_deterministic(
-    user_input: str,
-    modifier_category_keywords: dict[str, str] | None = None,
-    modifier_item_keywords: dict[str, str] | None = None,
-    ingredient_to_items: dict[str, list[dict]] | None = None,
-) -> OpenInputResponse | None:
-    """
-    Try to parse user input deterministically without LLM.
 
-    Spread options are loaded from the database cache (GlobalAttributeOption for "spread").
+def _try_parse_greeting_or_meta(text: str) -> OpenInputResponse | None:
+    """Check for greetings, gratitude, help requests, done ordering, repeat order.
 
     Args:
-        user_input: The user's input string
-        modifier_category_keywords: Mapping of keywords to category slugs
-            (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
-        modifier_item_keywords: Mapping of item keywords to item type slugs
-            (e.g., {"latte": "coffee", "cappuccino": "coffee"})
-        ingredient_to_items: Mapping of ingredient names to menu items containing them
-            (e.g., {"chicken": [{"name": "Chicken Salad Sandwich", ...}]})
+        text: Cleaned user input text (after abbreviation expansion).
 
-    Returns OpenInputResponse if parsing succeeds, None if should fall back to LLM.
+    Returns:
+        OpenInputResponse if matched, None otherwise.
     """
-    text = user_input.strip()
-
-    # Expand abbreviations before any parsing (e.g., "cc" -> "cream cheese")
-    # This must happen first so downstream parsers see canonical forms
-    text = menu_cache.expand_abbreviations(text)
-
     # Check for greetings (patterns loaded from database)
     if menu_cache.is_greeting(text):
         logger.debug("Deterministic parse: greeting detected")
@@ -228,51 +211,22 @@ def parse_open_input_deterministic(
         logger.debug("Deterministic parse: repeat order detected")
         return OpenInputResponse(wants_repeat_order=True)
 
-    # Strip conversational fillers (after greeting/done checks, before order parsing)
-    # e.g., "actually, make it two" -> "make it two"
-    text = strip_conversational_fillers(text)
+    return None
 
-    # Strip container/packaging words that don't affect item identification
-    # e.g., "a bottle of orange juice" -> "a  orange juice" -> parsers match "orange juice"
-    # Only strips "container of" patterns (requires "of" to avoid false positives)
-    text = re.sub(
-        r'\b(?:bottles?|glasses?|cups?|cans?|boxes?|cartons?|bags?|packs?|jars?|jugs?)\s+of\s+',
-        '', text, flags=re.IGNORECASE
-    ).strip()
 
-    # Strip trailing indifference/flexibility phrases that don't affect item identification
-    # e.g., "orange juice or whatever they have" -> "orange juice"
-    # e.g., "a coffee or something" -> "a coffee"
-    text = re.sub(
-        r'\s+or\s+(?:whatever(?:\s+(?:you|they|you guys)\s+(?:have|got|recommend))?'
-        r'|something(?:\s+like\s+that)?'
-        r'|anything(?:\s+(?:like\s+that|similar|really|works?))?'
-        r')\s*$',
-        '', text, flags=re.IGNORECASE
-    ).strip()
-    # Also strip "if you have it/that", "if that's available", "if possible", etc.
-    text = re.sub(
-        r'\s+if\s+(?:you\s+have\s+(?:it|that|any|some)'
-        r'|that(?:\'s|\s+is)\s+(?:available|okay|ok|fine|possible)'
-        r'|possible'
-        r')\s*$',
-        '', text, flags=re.IGNORECASE
-    ).strip()
+def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | None:
+    """Check for all inquiry types: price, dietary, menu, store, modifier, ingredient, etc.
 
-    # Check for order type mentions (pickup/delivery)
-    order_type = _extract_order_type(text)
-    if order_type:
-        logger.debug("Deterministic parse: order type '%s' detected", order_type)
-        # Strip order type phrase from text to continue parsing any items
-        text_for_items = _strip_order_type_phrase(text)
+    Also handles add-modifier patterns, more-of-same, and by-the-pound orders since
+    they must be checked in specific order relative to inquiry parsers.
 
-        # If nothing meaningful left, return just order type
-        if not text_for_items.strip() or _is_only_filler(text_for_items):
-            return OpenInputResponse(order_type=order_type)
+    Args:
+        text: Cleaned user input text.
+        ctx: Parser context with modifier/ingredient keyword mappings.
 
-        # Continue parsing with cleaned text, will add order_type at the end
-        text = text_for_items
-
+    Returns:
+        OpenInputResponse if matched, None otherwise.
+    """
     # Check for price inquiries
     price_result = parse_price_inquiry(text)
     if price_result:
@@ -347,13 +301,15 @@ def parse_open_input_deterministic(
         return item_desc_result
 
     # Check for modifier/add-on inquiries
-    modifier_inquiry_result = parse_modifier_inquiry(text, modifier_category_keywords, modifier_item_keywords)
+    modifier_inquiry_result = parse_modifier_inquiry(
+        text, ctx.modifier_category_keywords, ctx.modifier_item_keywords
+    )
     if modifier_inquiry_result:
         return modifier_inquiry_result
 
     # Check for ingredient-based menu search
     # When user says "chicken" or "something with bacon", show matching items
-    ingredient_search_result = parse_ingredient_search(text, ingredient_to_items)
+    ingredient_search_result = parse_ingredient_search(text, ctx.ingredient_to_items)
     if ingredient_search_result:
         return ingredient_search_result
 
@@ -364,31 +320,30 @@ def parse_open_input_deterministic(
     if by_pound_result:
         return by_pound_result
 
+    return None
+
+
+def _try_parse_quantity_change(text: str) -> OpenInputResponse | None:
+    """Check for make-it-N and reduce-to-one patterns.
+
+    Args:
+        text: Cleaned user input text.
+
+    Returns:
+        OpenInputResponse if matched, None otherwise.
+    """
     # Check for "make it 2" patterns BEFORE replacement (since "make it X" could match both)
     make_it_n_match = MAKE_IT_N_PATTERN.match(text)
     if make_it_n_match:
-        # Find which group matched
-        num_str = None
-        for i in range(1, 9):
-            if make_it_n_match.group(i):
-                num_str = make_it_n_match.group(i).lower()
-                break
-        if num_str:
-            # Convert to number
-            word_to_num = {
-                "two": 2, "three": 3, "four": 4, "five": 5,
-                "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
-            }
-            if num_str.isdigit():
-                target_qty = int(num_str)
-            else:
-                target_qty = word_to_num.get(num_str, 0)
-
-            if target_qty >= 2:
-                # User says "make it 2" means they want 2 total, so add (target - 1) more
-                additional = target_qty - 1
-                logger.info("Deterministic parse: 'make it N' detected, target=%d, adding %d more", target_qty, additional)
-                return OpenInputResponse(duplicate_last_item=additional)
+        target_qty = extract_make_it_n_target(make_it_n_match)
+        if target_qty is not None:
+            # User says "make it 2" means they want 2 total, so add (target - 1) more
+            additional = target_qty - 1
+            logger.info(
+                "Deterministic parse: 'make it N' detected, target=%d, adding %d more",
+                target_qty, additional,
+            )
+            return OpenInputResponse(duplicate_last_item=additional)
 
     # Check for "just one" / "only one" patterns - reduces quantity to 1
     # e.g., "actually just one bagel", "only one", "just one"
@@ -414,9 +369,27 @@ def parse_open_input_deterministic(
         else:
             cancel_value = "__reduce_to_one__"
 
-        logger.info("Deterministic parse: 'just/only one' detected, reducing to 1 (item_type=%s)", item_type or "any")
+        logger.info(
+            "Deterministic parse: 'just/only one' detected, reducing to 1 (item_type=%s)",
+            item_type or "any",
+        )
         return OpenInputResponse(cancel_item=cancel_value)
 
+    return None
+
+
+def _try_parse_another_item(text: str) -> OpenInputResponse | None:
+    """Check for 'another' patterns, 'one more', and 'make it N [item]'.
+
+    Handles ANOTHER_ITEM_PATTERN (with item type specified), ONE_MORE_PATTERN
+    (generic), and MAKE_IT_N_WITH_ITEM_PATTERN.
+
+    Args:
+        text: Cleaned user input text.
+
+    Returns:
+        OpenInputResponse if matched, None otherwise.
+    """
     # Check for "another" patterns (with item type specified)
     # This must be checked BEFORE ONE_MORE_PATTERN since it's more specific
     # Uses data-driven validation against menu_cache triggers
@@ -440,7 +413,10 @@ def parse_open_input_deterministic(
         if menu_item:
             item_type_for_item = menu_cache.get_item_type_for_menu_item(menu_item)
             is_sig = menu_cache.item_has_default_ingredients(menu_item)
-            logger.info("Deterministic parse: 'another %s' matched menu item '%s'", item_keyword, menu_item)
+            logger.info(
+                "Deterministic parse: 'another %s' matched menu item '%s'",
+                item_keyword, menu_item,
+            )
             parsed_items = [
                 build_parsed_item(
                     item_type=item_type_for_item or "menu_item",
@@ -483,7 +459,10 @@ def parse_open_input_deterministic(
                         item_name = exact_match.get("name")
                         item_type_for_item = exact_match.get("item_type")
                         is_sig = menu_cache.item_has_default_ingredients(item_name)
-                        logger.info("Deterministic parse: 'another %s' exact match menu item '%s'", item_keyword, item_name)
+                        logger.info(
+                            "Deterministic parse: 'another %s' exact match menu item '%s'",
+                            item_keyword, item_name,
+                        )
                         parsed_items = [
                             build_parsed_item(
                                 item_type=item_type_for_item or "menu_item",
@@ -506,7 +485,7 @@ def parse_open_input_deterministic(
                 word_matches = menu_cache.find_items_by_word_match(item_keyword_singular)
             if word_matches:
                 # Check if any match is an EXACT match to the search term (case-insensitive)
-                # This handles "6 bagel package" -> "6 Bagel Package" where the full item name is specified
+                # This handles "6 bagel package" -> "6 Bagel Package"
                 exact_match = None
                 for m in word_matches:
                     match_name = m.get("name", "")
@@ -519,7 +498,10 @@ def parse_open_input_deterministic(
                     item_name = exact_match.get("name")
                     item_type_for_item = exact_match.get("item_type")
                     is_sig = menu_cache.item_has_default_ingredients(item_name)
-                    logger.info("Deterministic parse: 'another %s' exact match menu item '%s'", item_keyword, item_name)
+                    logger.info(
+                        "Deterministic parse: 'another %s' exact match menu item '%s'",
+                        item_keyword, item_name,
+                    )
                     parsed_items = [
                         build_parsed_item(
                             item_type=item_type_for_item or "menu_item",
@@ -538,16 +520,19 @@ def parse_open_input_deterministic(
                     resolved_item_type = Counter(item_types).most_common(1)[0][0]
                     logger.debug(
                         "Deterministic parse: 'another %s' word-matches %d items, item_type '%s'",
-                        item_keyword_lower, len(word_matches), resolved_item_type
+                        item_keyword_lower, len(word_matches), resolved_item_type,
                     )
 
         if resolved_item_type:
             # Valid item type keyword - pass the canonical item type to downstream handler
-            logger.info("Deterministic parse: 'another %s' detected -> item_type '%s'", item_keyword_lower, resolved_item_type)
+            logger.info(
+                "Deterministic parse: 'another %s' detected -> item_type '%s'",
+                item_keyword_lower, resolved_item_type,
+            )
             return OpenInputResponse(duplicate_new_item_type=resolved_item_type)
 
         # 4. No item type match - check if it's a generic pronoun/reference
-        # "another one", "one more of those", "another of them" should fall through to ONE_MORE_PATTERN
+        # "another one", "one more of those", "another of them" should fall through
         generic_refs = {
             "one", "of those", "of them", "of that", "one of those", "one of them",
             "of these", "one of these", "please",
@@ -556,11 +541,14 @@ def parse_open_input_deterministic(
             # Return for cart lookup
             # e.g., "another bag of chips" -> duplicate_by_reference="bag of chips"
             # The handler will try to match against cart items
-            logger.info("Deterministic parse: 'another %s' -> duplicate_by_reference for cart lookup", item_keyword)
+            logger.info(
+                "Deterministic parse: 'another %s' -> duplicate_by_reference for cart lookup",
+                item_keyword,
+            )
             return OpenInputResponse(duplicate_by_reference=item_keyword)
         # else: fall through to ONE_MORE_PATTERN
 
-    # Check for "one more" / "another" patterns (without item type - needs clarification if multiple items)
+    # Check for "one more" / "another" patterns (without item type)
     if ONE_MORE_PATTERN.match(text):
         logger.info("Deterministic parse: 'one more' / 'another' detected, adding 1 more")
         return OpenInputResponse(duplicate_last_item=1)
@@ -572,29 +560,33 @@ def parse_open_input_deterministic(
     if make_n_with_item_match:
         num_str = make_n_with_item_match.group(1).lower()
         item_ref = make_n_with_item_match.group(2).strip()
-        # Convert to number
-        word_to_num = {
-            "two": 2, "three": 3, "four": 4, "five": 5,
-            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
-        }
-        if num_str.isdigit():
-            target_qty = int(num_str)
-        else:
-            target_qty = word_to_num.get(num_str, 0)
+        target_qty = parse_make_it_n_quantity(num_str)
 
-        if target_qty >= 2:
+        if target_qty is not None:
             # User says "make that 2 bags of chips" means they want 2 total
             # Return duplicate_by_reference with the additional count needed
             additional = target_qty - 1
             logger.info(
                 "Deterministic parse: 'make it N [item]' detected, target=%d, item_ref='%s', adding %d more",
-                target_qty, item_ref, additional
+                target_qty, item_ref, additional,
             )
             return OpenInputResponse(
                 duplicate_last_item=additional,
                 duplicate_by_reference=item_ref,
             )
 
+    return None
+
+
+def _try_parse_modification(text: str) -> OpenInputResponse | None:
+    """Check for modify-existing-item and replacement phrases.
+
+    Args:
+        text: Cleaned user input text.
+
+    Returns:
+        OpenInputResponse if matched, None otherwise.
+    """
     # Check for modification to existing item BEFORE replacement patterns
     # This catches patterns like "make the bagel with scallion cream cheese"
     # which should modify an existing bagel, not trigger replace_last_item
@@ -622,6 +614,18 @@ def parse_open_input_deterministic(
 
             return OpenInputResponse(replace_last_item=True)
 
+    return None
+
+
+def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
+    """Check for cancel all/last/N items and 'add more' patterns.
+
+    Args:
+        text: Cleaned user input text.
+
+    Returns:
+        OpenInputResponse if matched, None otherwise.
+    """
     # Check for cancellation phrases
     cancel_match = CANCEL_ITEM_PATTERN.match(text)
     if cancel_match:
@@ -697,6 +701,24 @@ def parse_open_input_deterministic(
     if add_more_result:
         return add_more_result
 
+    return None
+
+
+def _try_parse_new_items(
+    text: str,
+    order_type: Literal["pickup", "delivery"] | None,
+) -> OpenInputResponse | None:
+    """Check for new item orders: split-quantity, multi-item, configurable, direct lookup, simple.
+
+    Also checks for standalone ingredient orders.
+
+    Args:
+        text: Cleaned user input text.
+        order_type: Detected order type to attach to response, or None.
+
+    Returns:
+        OpenInputResponse if matched, None otherwise.
+    """
     # Check for split-quantity items (e.g., "two bagels one with lox one with cream cheese")
     # This MUST run BEFORE configurable_item to handle multi-item orders with different configs
     # Generic, data-driven parser that works for any configurable item type
@@ -782,6 +804,130 @@ def parse_open_input_deterministic(
     ingredient_result = _check_standalone_ingredient(text)
     if ingredient_result:
         return ingredient_result
+
+    return None
+
+
+# =============================================================================
+# Main Deterministic Parser
+# =============================================================================
+
+def parse_open_input_deterministic(
+    user_input: str,
+    modifier_category_keywords: dict[str, str] | None = None,
+    modifier_item_keywords: dict[str, str] | None = None,
+    ingredient_to_items: dict[str, list[dict]] | None = None,
+    ctx: ParserContext | None = None,
+) -> OpenInputResponse | None:
+    """
+    Try to parse user input deterministically without LLM.
+
+    Spread options are loaded from the database cache (GlobalAttributeOption for "spread").
+
+    Args:
+        user_input: The user's input string
+        modifier_category_keywords: Mapping of keywords to category slugs
+            (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
+        modifier_item_keywords: Mapping of item keywords to item type slugs
+            (e.g., {"latte": "coffee", "cappuccino": "coffee"})
+        ingredient_to_items: Mapping of ingredient names to menu items containing them
+            (e.g., {"chicken": [{"name": "Chicken Salad Sandwich", ...}]})
+
+    Returns OpenInputResponse if parsing succeeds, None if should fall back to LLM.
+    """
+    # Build ParserContext from legacy kwargs if not provided
+    if ctx is None:
+        ctx = ParserContext(
+            modifier_category_keywords=modifier_category_keywords,
+            modifier_item_keywords=modifier_item_keywords,
+            ingredient_to_items=ingredient_to_items,
+        )
+
+    text = user_input.strip()
+
+    # Expand abbreviations before any parsing (e.g., "cc" -> "cream cheese")
+    # This must happen first so downstream parsers see canonical forms
+    text = menu_cache.expand_abbreviations(text)
+
+    # Check for greetings, gratitude, help, done ordering, repeat order
+    greeting_or_meta = _try_parse_greeting_or_meta(text)
+    if greeting_or_meta:
+        return greeting_or_meta
+
+    # Strip conversational fillers (after greeting/done checks, before order parsing)
+    # e.g., "actually, make it two" -> "make it two"
+    text = strip_conversational_fillers(text)
+
+    # Strip container/packaging words that don't affect item identification
+    # e.g., "a bottle of orange juice" -> "a  orange juice" -> parsers match "orange juice"
+    # Only strips "container of" patterns (requires "of" to avoid false positives)
+    text = re.sub(
+        r'\b(?:bottles?|glasses?|cups?|cans?|boxes?|cartons?|bags?|packs?|jars?|jugs?)\s+of\s+',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
+    # Strip trailing indifference/flexibility phrases that don't affect item identification
+    # e.g., "orange juice or whatever they have" -> "orange juice"
+    # e.g., "a coffee or something" -> "a coffee"
+    text = re.sub(
+        r'\s+or\s+(?:whatever(?:\s+(?:you|they|you guys)\s+(?:have|got|recommend))?'
+        r'|something(?:\s+like\s+that)?'
+        r'|anything(?:\s+(?:like\s+that|similar|really|works?))?'
+        r')\s*$',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+    # Also strip "if you have it/that", "if that's available", "if possible", etc.
+    text = re.sub(
+        r'\s+if\s+(?:you\s+have\s+(?:it|that|any|some)'
+        r'|that(?:\'s|\s+is)\s+(?:available|okay|ok|fine|possible)'
+        r'|possible'
+        r')\s*$',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
+    # Check for order type mentions (pickup/delivery)
+    order_type = _extract_order_type(text)
+    if order_type:
+        logger.debug("Deterministic parse: order type '%s' detected", order_type)
+        # Strip order type phrase from text to continue parsing any items
+        text_for_items = _strip_order_type_phrase(text)
+
+        # If nothing meaningful left, return just order type
+        if not text_for_items.strip() or _is_only_filler(text_for_items):
+            return OpenInputResponse(order_type=order_type)
+
+        # Continue parsing with cleaned text, will add order_type at the end
+        text = text_for_items
+
+    # Check for all inquiry types (price, dietary, menu, store, modifier, etc.)
+    inquiry_result = _try_parse_inquiry(text, ctx)
+    if inquiry_result:
+        return inquiry_result
+
+    # Check for make-it-N, reduce-to-one quantity changes
+    quantity_result = _try_parse_quantity_change(text)
+    if quantity_result:
+        return quantity_result
+
+    # Check for "another" patterns, "one more", "make it N [item]"
+    another_result = _try_parse_another_item(text)
+    if another_result:
+        return another_result
+
+    # Check for modify-existing-item and replacement phrases
+    modification_result = _try_parse_modification(text)
+    if modification_result:
+        return modification_result
+
+    # Check for cancellation and "add more" patterns
+    cancellation_result = _try_parse_cancellation(text)
+    if cancellation_result:
+        return cancellation_result
+
+    # Check for new item orders (split-qty, multi-item, configurable, direct, simple)
+    new_items_result = _try_parse_new_items(text, order_type)
+    if new_items_result:
+        return new_items_result
 
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])
@@ -935,6 +1081,7 @@ def parse_open_input(
     modifier_category_keywords: dict[str, str] | None = None,
     modifier_item_keywords: dict[str, str] | None = None,
     ingredient_to_items: dict[str, list[dict]] | None = None,
+    ctx: ParserContext | None = None,
 ) -> OpenInputResponse:
     """Parse user input when open for new orders.
 
@@ -946,12 +1093,19 @@ def parse_open_input(
         context: Unused (kept for API compatibility)
         model: Unused (kept for API compatibility)
         modifier_category_keywords: Mapping of keywords to category slugs
-            (e.g., {"sweetener": "sweeteners", "sugar": "sweeteners"})
         modifier_item_keywords: Mapping of item keywords to item type slugs
-            (e.g., {"latte": "coffee", "cappuccino": "coffee"})
         ingredient_to_items: Mapping of ingredient names to menu items containing them
-            (e.g., {"chicken": [{"name": "Chicken Salad Sandwich", ...}]})
+        ctx: ParserContext bundling the keyword arguments above
     """
+    # Build ParserContext from legacy kwargs if not provided
+    if ctx is None:
+        ctx = ParserContext(
+            modifier_category_keywords=modifier_category_keywords,
+            modifier_item_keywords=modifier_item_keywords,
+            ingredient_to_items=ingredient_to_items,
+        )
+    # Strip greetings/fillers early so ALL paths get clean text
+    user_input = strip_conversational_fillers(user_input.strip())
     # Check for replacement patterns FIRST, before configurable item parsing
     # This ensures "No, I said plain bagel" triggers replacement, not a new item
     replace_match = REPLACE_ITEM_PATTERN.match(user_input)
@@ -969,9 +1123,7 @@ def parse_open_input(
             # Parse the replacement item
             parsed_replacement = parse_open_input_deterministic(
                 replacement_item,
-                modifier_category_keywords=modifier_category_keywords,
-                modifier_item_keywords=modifier_item_keywords,
-                ingredient_to_items=ingredient_to_items,
+                ctx=ctx,
             )
             if parsed_replacement:
                 parsed_replacement.replace_last_item = True
@@ -1043,9 +1195,7 @@ def parse_open_input(
     # Try deterministic parsing for single-item orders
     result = parse_open_input_deterministic(
         user_input,
-        modifier_category_keywords=modifier_category_keywords,
-        modifier_item_keywords=modifier_item_keywords,
-        ingredient_to_items=ingredient_to_items,
+        ctx=ctx,
     )
     if result is not None:
         logger.info("Parsed deterministically: %s", user_input[:50])

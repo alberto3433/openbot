@@ -228,7 +228,7 @@ class QuestionBuilder:
                 if has_duplicates:
                     item_desc = f"the {ordinal} {item_display}"
                 else:
-                    item_desc = f"the {item_display.lower()}"
+                    item_desc = f"the {item_display}"
                 if input_type == "boolean":
                     return f"For {item_desc}, would you like that {attr_name}?"
                 elif input_type == "quantity":

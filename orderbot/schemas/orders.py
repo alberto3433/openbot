@@ -51,7 +51,8 @@ Usage:
         print(f"{item.menu_item_name}: ${item.line_total}")
 """
 
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -156,6 +157,9 @@ class OrderSummaryOut(BaseModel):
     delivery_address: Optional[str] = None
     payment_status: Optional[str] = None
     payment_method: Optional[str] = None
+    estimated_ready_at: Optional[Union[str, datetime]] = None
+    staff_notes: Optional[str] = None
+    created_at: Optional[Union[str, datetime]] = None
 
 
 class OrderDetailOut(BaseModel):
@@ -188,8 +192,44 @@ class OrderDetailOut(BaseModel):
     delivery_address: Optional[str] = None
     payment_status: Optional[str] = None
     payment_method: Optional[str] = None
-    created_at: str
+    estimated_ready_at: Optional[Union[str, datetime]] = None
+    ready_at: Optional[Union[str, datetime]] = None
+    completed_at: Optional[Union[str, datetime]] = None
+    cancelled_at: Optional[Union[str, datetime]] = None
+    cancellation_reason: Optional[str] = None
+    staff_notes: Optional[str] = None
+    created_at: Union[str, datetime]
+    updated_at: Optional[Union[str, datetime]] = None
     items: List[OrderItemOut]
+
+
+class OrderStatusUpdateIn(BaseModel):
+    """Request body for updating an order's status."""
+    status: str
+    note: Optional[str] = None
+    cancellation_reason: Optional[str] = None
+
+
+class OrderEstimatedTimeIn(BaseModel):
+    """Request body for setting estimated ready time."""
+    estimated_minutes: int  # Minutes from now
+
+
+class OrderNotesIn(BaseModel):
+    """Request body for updating staff notes."""
+    staff_notes: str
+
+
+class OrderStatusHistoryOut(BaseModel):
+    """Response model for a single status history entry."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    from_status: Optional[str] = None
+    to_status: str
+    changed_by: Optional[str] = None
+    note: Optional[str] = None
+    created_at: Union[str, datetime]
 
 
 class OrderListResponse(BaseModel):

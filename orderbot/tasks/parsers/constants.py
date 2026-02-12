@@ -64,8 +64,15 @@ HESITATION_FILLERS = frozenset({
     "well", "so", "ok", "okay", "hey", "like", "sorry",
     # Informal affirmative/negative
     "yeah", "yep", "yup", "nah", "nope", "sure", "alright", "right",
-    # Hesitation sounds
+    # Hesitation sounds and variants
     "er", "err", "hm", "mm", "mmm", "ah", "aha",
+    "umm", "ummm", "hmmm", "uhh",
+    # Discourse markers
+    "basically", "honestly", "literally",
+    # Greetings used as filler before orders
+    "hi", "hello", "hi there", "hey there", "howdy", "yo",
+    # Polite interjections
+    "excuse me", "pardon", "pardon me",
     # Topic changers
     "anyway", "anyways",
 })

@@ -89,6 +89,7 @@ from .admin_unrecognized_suggestions import (
 )
 from .admin_component_slots import admin_component_slots_router
 from .public import public_stores_router, public_company_router
+from .stripe_webhook import stripe_webhook_router
 from .tts import tts_router
 
 __all__ = [
@@ -116,5 +117,6 @@ __all__ = [
     "admin_component_slots_router",
     "public_stores_router",
     "public_company_router",
+    "stripe_webhook_router",
     "tts_router",
 ]

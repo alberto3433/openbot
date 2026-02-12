@@ -40,11 +40,12 @@ specific configurations.
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from ..db.models import Order, OrderItem, Store
+from ..db.models import Order, OrderItem, OrderStatusHistory, Store
 
 
 logger = logging.getLogger(__name__)
@@ -388,6 +389,155 @@ def persist_confirmed_order(
     db.commit()
     logger.info("Order #%d persisted (status: confirmed)", order.id)
     return order
+
+
+def update_order_stripe_session(
+    db: Session,
+    order_id: int,
+    stripe_session_id: str,
+) -> bool:
+    """Store the Stripe checkout session ID on an order.
+
+    Called after creating a Stripe Checkout Session so the webhook can
+    correlate the payment back to the order.
+
+    Args:
+        db: Database session
+        order_id: The order ID to update
+        stripe_session_id: Stripe checkout session ID (cs_...)
+
+    Returns:
+        True if updated, False if order not found
+    """
+    order = db.get(Order, order_id)
+    if not order:
+        logger.warning("Cannot set Stripe session: order #%d not found", order_id)
+        return False
+
+    order.stripe_checkout_session_id = stripe_session_id
+    order.payment_status = "pending_payment"
+    db.commit()
+    logger.info("Order #%d linked to Stripe session %s", order_id, stripe_session_id)
+    return True
+
+
+# =============================================================================
+# Order Status Transitions (Fulfillment)
+# =============================================================================
+
+# Valid forward transitions: status -> set of allowed next statuses
+VALID_TRANSITIONS: Dict[str, set] = {
+    "pending": {"pending_payment", "confirmed", "cancelled"},
+    "pending_payment": {"confirmed", "cancelled"},
+    "confirmed": {"preparing", "cancelled"},
+    "preparing": {"ready", "cancelled"},
+    "ready": {"completed", "cancelled"},
+    "completed": set(),  # Terminal state
+    "cancelled": set(),  # Terminal state
+}
+
+
+class InvalidStatusTransition(Exception):
+    """Raised when an order status transition is not allowed."""
+    pass
+
+
+def transition_order_status(
+    db: Session,
+    order_id: int,
+    new_status: str,
+    changed_by: Optional[str] = None,
+    note: Optional[str] = None,
+    cancellation_reason: Optional[str] = None,
+) -> Order:
+    """Transition an order to a new status with validation.
+
+    Records the transition in order_status_history and updates timestamp
+    columns (ready_at, completed_at, cancelled_at) as appropriate.
+
+    Args:
+        db: Database session
+        order_id: The order to transition
+        new_status: Target status
+        changed_by: Username or "system" for audit trail
+        note: Optional note for the history entry
+        cancellation_reason: Reason if cancelling (stored on order)
+
+    Returns:
+        The updated Order
+
+    Raises:
+        ValueError: If order not found
+        InvalidStatusTransition: If the transition is not allowed
+    """
+    order = db.get(Order, order_id)
+    if not order:
+        raise ValueError(f"Order #{order_id} not found")
+
+    old_status = order.status
+    allowed = VALID_TRANSITIONS.get(old_status, set())
+
+    if new_status not in allowed:
+        raise InvalidStatusTransition(
+            f"Cannot transition order #{order_id} from '{old_status}' to '{new_status}'. "
+            f"Allowed: {allowed or 'none (terminal state)'}"
+        )
+
+    now = datetime.now(timezone.utc)
+
+    # Update the order status
+    order.status = new_status
+
+    # Set timestamp columns based on new status
+    if new_status == "ready":
+        order.ready_at = now
+    elif new_status == "completed":
+        order.completed_at = now
+    elif new_status == "cancelled":
+        order.cancelled_at = now
+        if cancellation_reason:
+            order.cancellation_reason = cancellation_reason
+
+    # Record in history
+    history_entry = OrderStatusHistory(
+        order_id=order_id,
+        from_status=old_status,
+        to_status=new_status,
+        changed_by=changed_by,
+        note=note or cancellation_reason,
+    )
+    db.add(history_entry)
+    db.commit()
+
+    logger.info(
+        "Order #%d transitioned: %s -> %s (by %s)",
+        order_id, old_status, new_status, changed_by or "unknown",
+    )
+
+    # Send notifications for key transitions
+    _send_transition_notifications(db, order, new_status)
+
+    return order
+
+
+def _send_transition_notifications(db: Session, order: Order, new_status: str) -> None:
+    """Send customer notifications on key status transitions.
+
+    Best-effort: failures are logged but don't block the transition.
+    """
+    try:
+        from ..notification_service import notify_order_ready, notify_order_cancelled
+        from ..db.models import Company
+
+        company = db.query(Company).first()
+        store_name = company.name if company else "OrderBot"
+
+        if new_status == "ready":
+            notify_order_ready(db, order, store_name)
+        elif new_status == "cancelled":
+            notify_order_cancelled(db, order, store_name)
+    except Exception as e:
+        logger.error("Failed to send transition notification for order #%d: %s", order.id, e)
 
 
 def _add_order_items(db: Session, order: Order, items: list) -> None:

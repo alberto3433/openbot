@@ -88,6 +88,57 @@ def _detect_partial_modifier_split(text_after_item: str, total_qty: int) -> tupl
 
 
 # =============================================================================
+# Shared Trigger Matching
+# =============================================================================
+
+# Common words that should not be treated as item triggers.
+# Shared by _detect_item_type, _detect_configurable_item_type, and _has_item_indicator.
+_SKIP_TRIGGER_WORDS = {
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
+}
+
+
+def _find_trigger_matches(
+    text: str,
+    *,
+    configurable_only: bool = False,
+    allow_plural: bool = False,
+) -> list[tuple[str, str, re.Match]]:
+    """Find item type trigger matches in text using word-boundary regex.
+
+    Core matching logic shared by all item type detection functions.
+    Iterates triggers from menu_cache, skips common words, applies
+    word-boundary matching.
+
+    Args:
+        text: Lowercased user input text
+        configurable_only: Only check configurable item types
+        allow_plural: Also match trigger + trailing 's'
+
+    Returns:
+        List of (item_type_slug, trigger_keyword, regex_match) tuples.
+        Caller is responsible for filtering, enrichment, and sorting.
+    """
+    all_triggers = menu_cache.get_item_type_triggers()
+    if configurable_only:
+        configurable_slugs = menu_cache.get_configurable_item_type_slugs()
+        all_triggers = {k: v for k, v in all_triggers.items() if k in configurable_slugs}
+
+    results: list[tuple[str, str, re.Match]] = []
+    for item_type_slug, triggers in all_triggers.items():
+        for keyword in triggers:
+            if keyword.lower() in _SKIP_TRIGGER_WORDS:
+                continue
+            keyword_lower = keyword.lower()
+            suffix = r's?' if allow_plural else r''
+            pattern = rf'\b{re.escape(keyword_lower)}{suffix}\b'
+            for match in re.finditer(pattern, text):
+                results.append((item_type_slug, keyword, match))
+    return results
+
+
+# =============================================================================
 # Item Type Detection
 # =============================================================================
 
@@ -106,55 +157,34 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
 
     """
     text_lower = text.lower()
+    raw_matches = _find_trigger_matches(text_lower)
 
-    # Get all item type triggers from cache
-    all_triggers = menu_cache.get_item_type_triggers()
-
-    # Common words that should not be treated as item triggers
-    # - Quantity words (e.g., "two" from "Two Egg Sandwich" shouldn't match "two coffees")
-    # - Articles and prepositions (e.g., "the" from "The Leo Omelette" shouldn't match "on the side")
-    skip_trigger_words = {
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
-    }
-
-    # Collect all matches with their position and length
+    # Enrich with position-based metadata and filter negated triggers
     # Format: (item_type, keyword, match_length, end_position, is_at_end_region, slug_matches)
     matches: list[tuple[str, str, int, int, bool, bool]] = []
 
-    for item_type_slug, triggers in all_triggers.items():
-        for keyword in triggers:
-            # Skip common words that appear as triggers from menu item names
-            if keyword.lower() in skip_trigger_words:
-                continue
-            keyword_lower = keyword.lower()
-            # Find all occurrences using word boundary matching to prevent
-            # partial matches (e.g., "hot" matching inside "shot")
-            pattern = rf'\b{re.escape(keyword_lower)}\b'
-            for match in re.finditer(pattern, text_lower):
-                idx = match.start()
-                end_pos = match.end()
-                # Skip triggers preceded by negation words ("no", "without", "skip", "not")
-                # "no spread" is a modifier negation, not an item type reference
-                if idx > 0:
-                    text_before = text_lower[:idx].rstrip()
-                    if text_before:
-                        last_word = text_before.split()[-1] if text_before.split() else ""
-                        if last_word in {"no", "without", "skip", "not"}:
-                            continue
-                # Check if this match is in the "end region" (last 20% of text or last 15 chars)
-                text_len = len(text_lower)
-                end_region_start = max(text_len - 15, int(text_len * 0.8))
-                is_at_end = end_pos >= end_region_start
-                # Prefer item types where the slug matches the trigger
-                slug_matches = keyword_lower == item_type_slug or keyword_lower.rstrip("s") == item_type_slug
-                matches.append((item_type_slug, keyword, len(keyword_lower), end_pos, is_at_end, slug_matches))
+    for item_type_slug, keyword, match in raw_matches:
+        idx = match.start()
+        end_pos = match.end()
+        keyword_lower = keyword.lower()
+        # Skip triggers preceded by negation words ("no", "without", "skip", "not")
+        if idx > 0:
+            text_before = text_lower[:idx].rstrip()
+            if text_before:
+                last_word = text_before.split()[-1] if text_before.split() else ""
+                if last_word in {"no", "without", "skip", "not"}:
+                    continue
+        # Check if this match is in the "end region" (last 20% of text or last 15 chars)
+        text_len = len(text_lower)
+        end_region_start = max(text_len - 15, int(text_len * 0.8))
+        is_at_end = end_pos >= end_region_start
+        slug_matches = keyword_lower == item_type_slug or keyword_lower.rstrip("s") == item_type_slug
+        matches.append((item_type_slug, keyword, len(keyword_lower), end_pos, is_at_end, slug_matches))
 
     if not matches:
         return None, None
 
     # Sort by: (1) is_at_end_region (True first), (2) slug_matches (True first), (3) match_length (longer first)
-    # This prefers: triggers at end > slug matches > longer matches
     matches.sort(key=lambda x: (not x[4], not x[5], -x[2]))
     best_item_type, best_match, _, _, _, _ = matches[0]
 
@@ -342,46 +372,20 @@ def _parse_item_generic(
 # Configurable Item Parsing (Data-Driven)
 # =============================================================================
 
-def _parse_configurable_item(text: str) -> OpenInputResponse | None:
-    """
-    Parse orders for any configurable item type using data-driven patterns.
+def _should_defer_to_multi_item_parser(text_lower: str, text: str) -> bool:
+    """Check if text contains multi-item patterns that should be handled by _parse_multi_item_order.
 
-    This is the generic replacement for _parse_bagel_with_modifiers() and
-    _parse_coffee_deterministic(). It uses database configuration to detect
-    which item type is being ordered and extract the appropriate attributes.
+    Checks two patterns:
+    1. "one X and one Y" or "2 X and 3 Y" - quantity on both sides of "and"
+    2. Same item type trigger appears on BOTH sides of " and "
 
-    Algorithm:
-    1. Check for exclusion phrases (e.g., "coffee cake" should not match "coffee")
-    2. Detect item type from text by matching against configurable item type triggers
-    3. If no configurable item type detected, return None
-    4. Extract quantity
-    5. Match specific menu item name within that type
-    6. Extract attributes using pipeline.extract_attributes()
-    7. Build and return ParsedItemEntry via build_parsed_item()
+    Args:
+        text_lower: Lowercased user input text
+        text: Original user input text
 
     Returns:
-        OpenInputResponse with parsed_items if a configurable item was detected,
-        None otherwise.
+        True if multi-item parser should handle this text
     """
-    text_lower = text.lower().strip()
-
-    # Strip ordering phrases for cleaner matching (these don't affect item detection)
-    # This is a cleaned version for menu item matching - original text_lower is still used
-    # for other matching that might need the full context
-    # Note: "i like" is NOT stripped - it's a statement, not an ordering phrase
-    text_cleaned = re.sub(
-        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|i\'?ll\s+have\s+|i\s+will\s+have\s+|'
-        r'can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+|add\s+)',
-        '', text_lower
-    )
-    text_cleaned = re.sub(r'^(a|an|the)\s+', '', text_cleaned)
-
-    # 1. Check for exclusion phrases (e.g., "coffee cake" -> not a coffee beverage)
-    if menu_cache.text_matches_exclusion_phrase(text):
-        logger.debug("CONFIGURABLE_ITEM: excluded by required_match_phrases: '%s'", text[:50])
-        return None
-
-    # 1a. Check for multi-item patterns that should be handled by _parse_multi_item_order
     # Pattern 1: "one X and one Y" or "2 X and 3 Y" - quantity on both sides of "and"
     # This prevents "one everything bagel and one plain bagel" from being treated as one item
     # BUT: We must verify the qty word after "and" is followed by an item trigger, not a modifier
@@ -412,7 +416,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 )
                 if is_item_trigger:
                     logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty before and after 'and' with item trigger '%s'), delegating to multi-item parser: '%s'", following_word, text[:50])
-                    return None
+                    return True
 
                 # Also check if after_and (minus the quantity) is a menu item or item with defaults
                 # This handles "one bagel and one classic BEC" where "classic BEC" has default ingredients
@@ -423,7 +427,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 has_item, _, _ = _has_item_indicator(after_and_item_part)
                 if has_item:
                     logger.debug("CONFIGURABLE_ITEM: skipping multi-item pattern (qty before and after 'and', right part '%s' is item indicator), delegating to multi-item parser: '%s'", after_and_item_part, text[:50])
-                    return None
+                    return True
 
     # Pattern 2: Same item type trigger appears on BOTH sides of " and "
     # This catches "plain bagel and everything bagel" where no explicit quantities are used
@@ -451,7 +455,34 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                             "delegating to multi-item parser: '%s'",
                             trigger, text[:50]
                         )
-                        return None
+                        return True
+
+    return False
+
+
+def _resolve_item_type_and_menu_item(
+    text: str,
+    text_lower: str,
+    text_cleaned: str,
+) -> tuple[str, str | None, tuple[int, int] | None, dict] | None:
+    """Resolve the item type and optional menu item from user text.
+
+    Checks (in order):
+    1. Items with default ingredients (e.g., "The Classic BEC") - by alias matching
+    2. Trigger-based item type detection (e.g., "bagel", "coffee", "latte")
+    3. Option alias fallback (e.g., "earl grey" -> tea with tea_flavor=earl_gray)
+    4. More-specific menu item checks to avoid false positives
+
+    Args:
+        text: Original user input text
+        text_lower: Lowercased user input text
+        text_cleaned: Lowercased text with ordering phrases stripped
+
+    Returns:
+        (detected_item_type, matched_item_name, matched_item_span, inferred_attr_values)
+        or None if no configurable item type was detected
+    """
+    configurable_slugs = menu_cache.get_configurable_item_type_slugs()
 
     # 1b. Check for items with default ingredients FIRST - they take precedence over trigger-based detection
     # This prevents "The Classic BEC on a wheat bagel" from matching "bagel" item type
@@ -475,17 +506,10 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                 break
 
     # 2. Detect which configurable item type this text matches
-    configurable_slugs = menu_cache.get_configurable_item_type_slugs()
     detected_item_type: str | None = matched_item_type  # Use matched item type if found
 
     # Only do trigger-based detection if no item with defaults was found
     if not detected_item_type:
-        # Common words that should not be treated as item triggers
-        skip_trigger_words = {
-            "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-            "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
-        }
-
         # Find position of " with " to detect modifier patterns
         # In "everything bagel with cream cheese", triggers after "with" are modifiers, not main items
         with_pos = text_lower.find(" with ")
@@ -502,7 +526,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
             triggers = menu_cache.get_item_type_triggers(item_type_slug)
             for trigger in triggers:
                 # Skip common words that appear as triggers from menu item names
-                if trigger.lower() in skip_trigger_words:
+                if trigger.lower() in _SKIP_TRIGGER_WORDS:
                     continue
                 # Check for word boundary match
                 pattern = rf'\b{re.escape(trigger)}s?\b'
@@ -685,31 +709,31 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     )
                     return None
 
-    logger.info("CONFIGURABLE_ITEM: detected type '%s' in '%s'", detected_item_type, text[:50])
+    return (detected_item_type, matched_item_name, matched_item_span, inferred_attr_values)
 
-    # 2c. Extract quantity BEFORE menu item name matching
-    # We need quantity first to check for inline attribute specs like "2 bagels 1 everything 1 plain"
-    quantity = 1
-    qty_match = re.match(
-        r"^(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
-        r"(?:can|could|may)\s+i\s+(?:get|have)|"
-        r"give\s+me|"
-        r"let\s*(?:me|'s)\s*(?:get|have)|"
-        r")?\s*"
-        r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+couple|a\s+few|few|half\s+(?:a\s+)?dozen|a?\s*dozen)\s+",
-        text_lower
-    )
-    if qty_match:
-        qty_str = qty_match.group(1).strip()
-        if qty_str.isdigit():
-            quantity = int(qty_str)
-        else:
-            quantity = WORD_TO_NUM.get(qty_str, 1)
 
-    # 2d. Check for inline attribute specifications BEFORE menu item name matching
-    # Pattern: "2 bagels 1 everything 1 plain" - user specifies attribute values inline
-    # Must check BEFORE setting matched_item_name, otherwise the generic item name match
-    # (e.g., "Bagel" from "bagels") causes inline spec parsing to be skipped.
+def _try_parse_inline_specs(
+    text: str,
+    text_lower: str,
+    detected_item_type: str,
+    matched_item_name: str | None,
+    quantity: int,
+) -> OpenInputResponse | None:
+    """Check for inline attribute specifications and parse them if found.
+
+    Handles patterns like "2 bagels 1 everything 1 plain" where the user specifies
+    attribute values inline with quantities.
+
+    Args:
+        text: Original user input text
+        text_lower: Lowercased user input text
+        detected_item_type: The detected item type slug
+        matched_item_name: The matched menu item name (if any)
+        quantity: The extracted quantity
+
+    Returns:
+        OpenInputResponse if inline specs found, None otherwise
+    """
     if quantity > 1 and matched_item_name is None:
         from .inline_spec_parsing import (
             parse_inline_attribute_specs,
@@ -767,6 +791,43 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
                     )
                     return OpenInputResponse(parsed_items=parsed_items)
 
+    return None
+
+
+def _extract_and_build_configurable_item(
+    text: str,
+    text_lower: str,
+    detected_item_type: str,
+    matched_item_name: str | None,
+    matched_item_span: tuple[int, int] | None,
+    inferred_attr_values: dict,
+    quantity: int,
+) -> OpenInputResponse | None:
+    """Extract attributes, modifiers, and build the final configurable item response.
+
+    Handles:
+    - Menu item name matching (if not already matched)
+    - Attribute extraction via pipeline
+    - Inferred attribute merging
+    - Unrecognized item text guard
+    - Default menu item fallback
+    - Partial modifier split detection
+    - Food modifier extraction
+    - Special instruction extraction and filtering
+    - Final ParsedItemEntry building
+
+    Args:
+        text: Original user input text
+        text_lower: Lowercased user input text
+        detected_item_type: The detected item type slug
+        matched_item_name: The matched menu item name (if any)
+        matched_item_span: The span of the matched item name in text_lower (if any)
+        inferred_attr_values: Pre-filled attribute values from option alias fallback
+        quantity: The extracted quantity
+
+    Returns:
+        OpenInputResponse with parsed_items, or None if unrecognized item text detected
+    """
     # 2e. Early menu item name matching
     # This finds the specific menu item within the item type (e.g., "Hot Coffee" for coffee).
     # NOTE: We do NOT use the span from this match for exclusion because menu item NAMES
@@ -1004,6 +1065,88 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     return OpenInputResponse(parsed_items=[parsed_item])
 
 
+def _parse_configurable_item(text: str) -> OpenInputResponse | None:
+    """
+    Parse orders for any configurable item type using data-driven patterns.
+
+    This is the generic replacement for _parse_bagel_with_modifiers() and
+    _parse_coffee_deterministic(). It uses database configuration to detect
+    which item type is being ordered and extract the appropriate attributes.
+
+    Algorithm:
+    1. Check for exclusion phrases (e.g., "coffee cake" should not match "coffee")
+    2. Detect item type from text by matching against configurable item type triggers
+    3. If no configurable item type detected, return None
+    4. Extract quantity
+    5. Match specific menu item name within that type
+    6. Extract attributes using pipeline.extract_attributes()
+    7. Build and return ParsedItemEntry via build_parsed_item()
+
+    Returns:
+        OpenInputResponse with parsed_items if a configurable item was detected,
+        None otherwise.
+    """
+    text_lower = text.lower().strip()
+
+    # Strip ordering phrases for cleaner matching (these don't affect item detection)
+    # This is a cleaned version for menu item matching - original text_lower is still used
+    # for other matching that might need the full context
+    # Note: "i like" is NOT stripped - it's a statement, not an ordering phrase
+    text_cleaned = re.sub(
+        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|i\'?ll\s+have\s+|i\s+will\s+have\s+|'
+        r'can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+|add\s+)',
+        '', text_lower
+    )
+    text_cleaned = re.sub(r'^(a|an|the)\s+', '', text_cleaned)
+
+    # 1. Check for exclusion phrases (e.g., "coffee cake" -> not a coffee beverage)
+    if menu_cache.text_matches_exclusion_phrase(text):
+        logger.debug("CONFIGURABLE_ITEM: excluded by required_match_phrases: '%s'", text[:50])
+        return None
+
+    # 2. Check for multi-item patterns that should be handled by _parse_multi_item_order
+    if _should_defer_to_multi_item_parser(text_lower, text):
+        return None
+
+    # 3. Resolve item type and menu item
+    resolution = _resolve_item_type_and_menu_item(text, text_lower, text_cleaned)
+    if resolution is None:
+        return None
+    detected_item_type, matched_item_name, matched_item_span, inferred_attr_values = resolution
+
+    logger.info("CONFIGURABLE_ITEM: detected type '%s' in '%s'", detected_item_type, text[:50])
+
+    # 4. Extract quantity BEFORE menu item name matching
+    # We need quantity first to check for inline attribute specs like "2 bagels 1 everything 1 plain"
+    quantity = 1
+    qty_match = re.match(
+        r"^(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
+        r"(?:can|could|may)\s+i\s+(?:get|have)|"
+        r"give\s+me|"
+        r"let\s*(?:me|'s)\s*(?:get|have)|"
+        r")?\s*"
+        r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+couple|a\s+few|few|half\s+(?:a\s+)?dozen|a?\s*dozen)\s+",
+        text_lower
+    )
+    if qty_match:
+        qty_str = qty_match.group(1).strip()
+        if qty_str.isdigit():
+            quantity = int(qty_str)
+        else:
+            quantity = WORD_TO_NUM.get(qty_str, 1)
+
+    # 5. Check for inline attribute specifications
+    inline_result = _try_parse_inline_specs(text, text_lower, detected_item_type, matched_item_name, quantity)
+    if inline_result:
+        return inline_result
+
+    # 6. Extract configuration and build result
+    return _extract_and_build_configurable_item(
+        text, text_lower, detected_item_type, matched_item_name,
+        matched_item_span, inferred_attr_values, quantity
+    )
+
+
 def _has_unrecognized_item_text(text: str, item_type_slug: str) -> bool:
     """Check if text contains words that look like an unrecognized menu item.
 
@@ -1205,39 +1348,28 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     Returns:
         (item_type_slug, matched_trigger) or (None, None) if no match
     """
-    configurable_slugs = menu_cache.get_configurable_item_type_slugs()
     text_lower = text.lower()
+    raw_matches = _find_trigger_matches(text_lower, configurable_only=True, allow_plural=True)
 
-    # Common words that should not be treated as item triggers
-    # - Quantity words (e.g., "two" from "Two Egg Sandwich" shouldn't match "two coffees")
-    # - Articles and prepositions (e.g., "the" from "The Leo Omelette" shouldn't match "on the side")
-    skip_trigger_words = {
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
-    }
+    # Deduplicate to first match per (item_type, trigger) pair — _find_trigger_matches
+    # uses finditer so may return multiple positions, but this function only needs the first
+    seen: set[tuple[str, str]] = set()
 
-    # Collect all matches with position info for smarter selection
+    # Enrich with configurable-item-specific metadata
     # Format: (item_type, trigger, length, start_pos, slug_matches, is_complete_item_name)
     matches: list[tuple[str, str, int, int, bool, bool]] = []
 
-    for item_type_slug in configurable_slugs:
-        triggers = menu_cache.get_item_type_triggers(item_type_slug)
-        for trigger in triggers:
-            # Skip common words that appear as triggers from menu item names
-            if trigger.lower() in skip_trigger_words:
-                continue
-            # Match trigger with optional plural 's'
-            pattern = rf'\b{re.escape(trigger)}s?\b'
-            match = re.search(pattern, text_lower)
-            if match:
-                start_pos = match.start()
-                # Prefer item types where slug matches trigger
-                slug_matches = trigger.lower() == item_type_slug or trigger.lower().rstrip("s") == item_type_slug
-                # Check if trigger is a complete item name/alias for this item type
-                # (more specific than partial word triggers like "tea" in "Hot Tea")
-                item_names = menu_cache.get_item_names_by_type(item_type_slug)
-                is_complete_item_name = trigger.lower() in item_names
-                matches.append((item_type_slug, trigger, len(trigger), start_pos, slug_matches, is_complete_item_name))
+    for item_type_slug, keyword, match in raw_matches:
+        key = (item_type_slug, keyword.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        start_pos = match.start()
+        trigger_lower = keyword.lower()
+        slug_matches = trigger_lower == item_type_slug or trigger_lower.rstrip("s") == item_type_slug
+        item_names = menu_cache.get_item_names_by_type(item_type_slug)
+        is_complete_item_name = trigger_lower in item_names
+        matches.append((item_type_slug, keyword, len(keyword), start_pos, slug_matches, is_complete_item_name))
 
     if not matches:
         return None, None
@@ -1246,17 +1378,11 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
     # (1) is_complete_item_name (True first) - complete item names are most specific
     # (2) For complete item names: prefer earlier position, then longer
     # (3) For partial triggers: prefer slug_matches, then earlier position, then longer
-    # This ensures:
-    # - "bagels" wins over "scallion cream cheese" (earlier position) in split orders
-    # - "chai tea" wins over "tea" (earlier position and is complete item name)
-    # - "bagel" wins over "everything" (bagel is slug match, everything is not)
     def sort_key(x):
         item_type, trigger, length, start_pos, slug_matches, is_complete_item_name = x
         if is_complete_item_name:
-            # Complete item names: earlier position first, then longer
             return (0, start_pos, -length)
         else:
-            # Partial triggers: prefer slug matches, then earlier, then longer
             return (1, not slug_matches, start_pos, -length)
     matches.sort(key=sort_key)
     return matches[0][0], matches[0][1]

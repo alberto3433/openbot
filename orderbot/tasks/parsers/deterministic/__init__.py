@@ -42,6 +42,7 @@ from ..intent_patterns import (
 # =============================================================================
 from .pipeline import ExtractionPipeline, get_pipeline
 from .result_types import (
+    ParserContext,
     TextSpan,
     QuantityResult,
     AttributeExtractionResult,
@@ -150,6 +151,7 @@ __all__ = [
     # Main entry points
     "parse_open_input_deterministic",
     "parse_open_input",
+    "ParserContext",
     "_is_inline_attribute_spec_pattern",
     # Pipeline (unified API)
     "ExtractionPipeline",

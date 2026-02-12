@@ -221,6 +221,22 @@ class ConfigCancellationHandler:
 
         logger.info("Cancel request during config: '%s'", cancel_desc)
 
+        # If cancel_desc matches the pending attribute slug, this is a decline/skip
+        # response, not an item removal. "no cheese" during cheese config means
+        # "I don't want cheese", not "remove the cheese item from my order".
+        # Return None to let the attribute handler process it (select_input.py
+        # handles "no X" as a skip for optional attributes).
+        if order.pending_field and ":" in order.pending_field:
+            _, pending_attr_slug = order.pending_field.split(":", 1)
+            cancel_variants = get_singular_plural_variants(cancel_desc)
+            if pending_attr_slug in cancel_variants or cancel_desc == pending_attr_slug:
+                logger.info(
+                    "Cancel during config: '%s' matches pending attribute '%s' - "
+                    "deferring to attribute handler",
+                    cancel_desc, pending_attr_slug,
+                )
+                return None
+
         # Handle "this" or "it" - cancel the current item being configured
         if cancel_desc in ("this", "it", "that", "this one", "that one"):
             item_name = current_item.get_summary()

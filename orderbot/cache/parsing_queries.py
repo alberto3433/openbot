@@ -8,6 +8,8 @@ import re
 import logging
 from typing import Pattern
 
+from .base import _SMART_QUOTE_MAP
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,6 +46,8 @@ class ParsingQueryMixin:
         """
         self._ensure_loaded()
         normalized = text.lower().strip()
+        # Normalize smart quotes from speech-to-text input (U+2018/2019/201C/201D)
+        normalized = normalized.translate(_SMART_QUOTE_MAP)
 
         exact_patterns = self._response_patterns.get(pattern_type, set())
         if normalized in exact_patterns:

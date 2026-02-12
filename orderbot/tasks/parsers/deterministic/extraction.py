@@ -31,63 +31,144 @@ from .qualifier_extraction import extract_modifiers_with_qualifiers
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Generic Attribute Value Extraction (Data-Driven)
-# =============================================================================
-
-def _extract_attribute_values(
-    user_input: str,
-    item_type: str,
-    exclude_spans: list[tuple[int, int]] | None = None,
-) -> AttributeExtractionResult:
-    """
-    Extract attribute values from user input for a specific item type.
-
-    Internal function - use ExtractionPipeline.extract_attributes() instead.
-
-    This is the generic, data-driven function. It queries the database for what
-    attributes the item type has and matches input against those options.
-
-    Uses cross-attribute longest-match-first algorithm:
-    1. Collect ALL potential matches from ALL attributes
-    2. Sort by match length descending
-    3. Apply matches in order, skipping overlaps
-
-    This ensures longer matches always win regardless of attribute processing order.
-    For example, "plain cream cheese" will match spread before "plain" matches bread.
+def _spans_overlap(
+    start: int,
+    end: int,
+    *span_lists: list[tuple[int, int]] | None,
+) -> bool:
+    """Check if a (start, end) span overlaps with any span in the given lists.
 
     Args:
-        user_input: The raw user input string
-        item_type: The item type slug
-        exclude_spans: Optional list of (start, end) tuples to exclude from matching.
-            Used to prevent matching words within menu item names (e.g., "butter" in
-            "Cinnamon Sugar Butter Sandwich" should not match as a spread attribute).
+        start: Start position to check
+        end: End position to check
+        *span_lists: One or more lists of (start, end) tuples to check against.
+            None values are safely skipped.
 
     Returns:
-        AttributeExtractionResult containing:
-        - values: Dict mapping attribute slugs to extracted values
-        - matched_spans: List of TextSpan indicating consumed text spans
-        - unavailable: List of UnavailableSelection for unavailable options user tried
-        - unmatched: List of UnmatchedToken for unrecognized tokens
-
+        True if the span overlaps with any span in any of the provided lists.
     """
-    result: dict[str, any] = {}
-    unavailable_selections: list[UnavailableSelection] = []
-    ambiguous_selections: list[AmbiguousSelection] = []
-    input_lower = user_input.lower()
+    for span_list in span_lists:
+        if not span_list:
+            continue
+        for s, e in span_list:
+            if not (end <= s or start >= e):
+                return True
+    return False
 
-    # Get all attributes for this item type from database
-    attributes = menu_cache.get_item_type_attributes(item_type)
-    if not attributes:
-        logger.debug("No attributes found for item type '%s'", item_type)
-        return AttributeExtractionResult(values={}, matched_spans=[])
 
-    # ==========================================================================
-    # Pre-Phase: Detect "no {attribute}" negation patterns for ALL attributes
-    # This must run BEFORE any option matching to prevent false positives.
-    # E.g., "no spread" should set spread=None and skip all spread matching.
-    # ==========================================================================
+def _check_plural_boundary(text: str, start: int, end: int) -> tuple[bool, int]:
+    """Check if match is at word boundary, allowing for plural suffixes.
+
+    Returns (is_valid, actual_end) where actual_end includes any plural suffix.
+    Handles common English plural patterns: -s, -es.
+
+    Examples:
+        "bagel" in "bagels" -> (True, end+1)  # includes 's'
+        "box" in "boxes" -> (True, end+2)     # includes 'es'
+    """
+    before_ok = start == 0 or not text[start - 1].isalnum()
+    if not before_ok:
+        return (False, end)
+
+    # Check exact word boundary first
+    if end >= len(text) or not text[end].isalnum():
+        return (True, end)
+
+    # Check for plural suffix
+    remaining = text[end:]
+
+    # Check 's' suffix (bagels, drinks)
+    if remaining.startswith('s') and (len(remaining) == 1 or not remaining[1].isalnum()):
+        return (True, end + 1)
+
+    # Check 'es' suffix (boxes, dishes, tomatoes)
+    if remaining.startswith('es') and (len(remaining) == 2 or not remaining[2].isalnum()):
+        return (True, end + 2)
+
+    return (False, end)
+
+
+def _extract_quantity_before(text: str, pos: int) -> int:
+    """Extract quantity prefix before a match position.
+
+    Uses BASIC_WORD_TO_NUM from quantity_utils as single source of truth.
+    """
+    before_text = text[:pos].strip()
+    if not before_text:
+        return 1
+
+    qty_pattern = re.compile(
+        r'(\d+|one|two|three|four|five|six|double|triple|quad|quadruple|extra)\s*$',
+        re.IGNORECASE
+    )
+    qty_match = qty_pattern.search(before_text)
+    if qty_match:
+        qty_str = qty_match.group(1).lower()
+        if qty_str.isdigit():
+            return int(qty_str)
+        elif qty_str == "extra":
+            return 2  # "extra" means 2 in modifier context
+        else:
+            return BASIC_WORD_TO_NUM.get(qty_str, 1)
+    return 1
+
+
+def _check_must_match(option: dict, text: str) -> bool:
+    """Check if must_match patterns are present in text.
+
+    Handles both string and list formats for must_match.
+    If must_match is set, at least ONE pattern must be present (OR logic).
+
+    The must_match list contains alternative disambiguation patterns.
+    For example, vegetable_cream_cheese has must_match=['veggie cream', 'vegetable cream']
+    meaning the input must contain at least one of these to disambiguate from
+    other cream cheese options.
+    """
+    must_match_raw = option.get("must_match")
+    if not must_match_raw:
+        return True  # No must_match requirement
+
+    # Normalize to list (handle string or list format)
+    if isinstance(must_match_raw, str):
+        must_match_list = [m.strip().lower() for m in must_match_raw.split(",") if m.strip()]
+    else:
+        must_match_list = [str(m).lower() for m in must_match_raw]
+
+    if not must_match_list:
+        return True
+
+    return any(pattern in text for pattern in must_match_list)
+
+
+CandidateMatch = namedtuple('CandidateMatch', [
+    'attr_slug', 'option', 'pattern', 'start', 'end', 'length', 'is_multi_select'
+])
+
+
+# =============================================================================
+# Sub-functions for _extract_attribute_values
+# =============================================================================
+
+def _detect_negated_attributes(
+    input_lower: str,
+    attributes: dict[str, dict],
+) -> tuple[dict[str, Any], set[str]]:
+    """Detect "no {attribute}" negation patterns for ALL attributes.
+
+    Must run BEFORE any option matching to prevent false positives.
+    E.g., "no spread" should set spread=None and skip all spread matching.
+
+    Args:
+        input_lower: Lowercased user input
+        attributes: Attribute configs from menu cache
+
+    Returns:
+        Tuple of (result_updates, negated_attrs) where result_updates maps
+        attr slugs to None and negated_attrs is the set of negated slugs.
+    """
+    result_updates: dict[str, Any] = {}
     negated_attrs: set[str] = set()
+
     for attr_slug, attr_config in attributes.items():
         attr_display = attr_config.get("display_name", attr_slug).lower()
 
@@ -109,7 +190,7 @@ def _extract_attribute_values(
                 # This follows the codebase convention where None triggers the
                 # "_declined" marker in MenuItemTask.__setitem__, which marks
                 # the attribute as "answered" so the slot orchestrator won't ask.
-                result[attr_slug] = None
+                result_updates[attr_slug] = None
                 negated_attrs.add(attr_slug)
                 logger.debug(
                     "Negation detected for attribute '%s' (matched '%s'): "
@@ -118,88 +199,29 @@ def _extract_attribute_values(
                 )
                 break
 
-    def check_plural_boundary(text: str, start: int, end: int) -> tuple[bool, int]:
-        """Check if match is at word boundary, allowing for plural suffixes.
+    return result_updates, negated_attrs
 
-        Returns (is_valid, actual_end) where actual_end includes any plural suffix.
-        Handles common English plural patterns: -s, -es.
 
-        Examples:
-            "bagel" in "bagels" -> (True, end+1)  # includes 's'
-            "box" in "boxes" -> (True, end+2)     # includes 'es'
-        """
-        before_ok = start == 0 or not text[start - 1].isalnum()
-        if not before_ok:
-            return (False, end)
+def _extract_boolean_attrs(
+    input_lower: str,
+    attributes: dict[str, dict],
+    negated_attrs: set[str],
+) -> dict[str, bool]:
+    """Extract boolean true/false attributes from user input.
 
-        # Check exact word boundary first
-        if end >= len(text) or not text[end].isalnum():
-            return (True, end)
+    Checks for negative patterns first (e.g., "not toasted") before positive
+    patterns (e.g., "toasted"), to avoid false matches.
 
-        # Check for plural suffix
-        remaining = text[end:]
+    Args:
+        input_lower: Lowercased user input
+        attributes: Attribute configs from menu cache
+        negated_attrs: Set of attribute slugs already negated (to skip)
 
-        # Check 's' suffix (bagels, drinks)
-        if remaining.startswith('s') and (len(remaining) == 1 or not remaining[1].isalnum()):
-            return (True, end + 1)
+    Returns:
+        Dict mapping attribute slugs to boolean values.
+    """
+    result: dict[str, bool] = {}
 
-        # Check 'es' suffix (boxes, dishes, tomatoes)
-        if remaining.startswith('es') and (len(remaining) == 2 or not remaining[2].isalnum()):
-            return (True, end + 2)
-
-        return (False, end)
-
-    def extract_quantity_before(text: str, pos: int) -> int:
-        """Extract quantity prefix before a match position.
-
-        Uses BASIC_WORD_TO_NUM from quantity_utils as single source of truth.
-        """
-        before_text = text[:pos].strip()
-        if not before_text:
-            return 1
-
-        qty_pattern = re.compile(
-            r'(\d+|one|two|three|four|five|six|double|triple|quad|quadruple|extra)\s*$',
-            re.IGNORECASE
-        )
-        qty_match = qty_pattern.search(before_text)
-        if qty_match:
-            qty_str = qty_match.group(1).lower()
-            if qty_str.isdigit():
-                return int(qty_str)
-            elif qty_str == "extra":
-                return 2  # "extra" means 2 in modifier context
-            else:
-                return BASIC_WORD_TO_NUM.get(qty_str, 1)
-        return 1
-
-    def check_must_match(option: dict, text: str) -> bool:
-        """Check if must_match patterns are present in text.
-
-        Handles both string and list formats for must_match.
-        If must_match is set, at least ONE pattern must be present (OR logic).
-
-        The must_match list contains alternative disambiguation patterns.
-        For example, vegetable_cream_cheese has must_match=['veggie cream', 'vegetable cream']
-        meaning the input must contain at least one of these to disambiguate from
-        other cream cheese options.
-        """
-        must_match_raw = option.get("must_match")
-        if not must_match_raw:
-            return True  # No must_match requirement
-
-        # Normalize to list (handle string or list format)
-        if isinstance(must_match_raw, str):
-            must_match_list = [m.strip().lower() for m in must_match_raw.split(",") if m.strip()]
-        else:
-            must_match_list = [str(m).lower() for m in must_match_raw]
-
-        if not must_match_list:
-            return True
-
-        return any(pattern in text for pattern in must_match_list)
-
-    # Phase 1: Handle boolean attributes first (they don't overlap with option matches)
     for attr_slug, attr_config in attributes.items():
         if attr_slug in negated_attrs:
             continue  # Skip - user explicitly said "no {attribute}"
@@ -214,17 +236,35 @@ def _extract_attribute_values(
                 result[attr_slug] = True
                 logger.debug("Extracted boolean attribute: %s = True", attr_slug)
 
-    # Phase 2: Collect all potential option matches from all attributes
-    CandidateMatch = namedtuple('CandidateMatch', [
-        'attr_slug', 'option', 'pattern', 'start', 'end', 'length', 'is_multi_select'
-    ])
+    return result
+
+
+def _collect_option_candidates(
+    input_lower: str,
+    attributes: dict[str, dict],
+    negated_attrs: set[str],
+) -> list:
+    """Build candidate match list from all non-boolean, non-negated attributes.
+
+    Scans user input for all potential option matches from all attributes,
+    using display names, slugs, and aliases. Validates word boundaries
+    (including plural forms) and must_match constraints.
+
+    Args:
+        input_lower: Lowercased user input
+        attributes: Attribute configs from menu cache
+        negated_attrs: Set of attribute slugs already negated (to skip)
+
+    Returns:
+        List of CandidateMatch namedtuples (unsorted).
+    """
     candidates: list[CandidateMatch] = []
 
     for attr_slug, attr_config in attributes.items():
         if attr_slug in negated_attrs:
             continue  # Skip - user explicitly said "no {attribute}"
         if attr_config.get("input_type") == "boolean":
-            continue  # Already handled in Phase 1
+            continue  # Already handled in boolean phase
 
         options = attr_config.get("options", [])
         if not options:
@@ -251,10 +291,10 @@ def _extract_attribute_values(
                     if pos == -1:
                         break
                     end = pos + len(pattern)
-                    # Use check_plural_boundary to match both singular and plural forms
+                    # Use _check_plural_boundary to match both singular and plural forms
                     # e.g., "plain bagel" matches "plain bagels"
-                    is_valid, actual_end = check_plural_boundary(input_lower, pos, end)
-                    if is_valid and check_must_match(opt, input_lower):
+                    is_valid, actual_end = _check_plural_boundary(input_lower, pos, end)
+                    if is_valid and _check_must_match(opt, input_lower):
                         candidates.append(CandidateMatch(
                             attr_slug=attr_slug,
                             option=opt,
@@ -266,22 +306,39 @@ def _extract_attribute_values(
                         ))
                     start = pos + 1
 
-    # Phase 3: Sort by length descending (longest matches first)
+    return candidates
+
+
+def _apply_longest_match_first(
+    candidates: list,
+    input_lower: str,
+    exclude_spans: list[tuple[int, int]] | None,
+) -> tuple[dict[str, Any], list[tuple[int, int]], dict[str, set[str]], list[UnavailableSelection]]:
+    """Sort candidates by length and apply non-overlapping matches.
+
+    Processes candidates longest-first. For each candidate, checks for span
+    overlaps, negation prefixes, and availability before recording the match.
+
+    Args:
+        candidates: List of CandidateMatch namedtuples (will be sorted in place)
+        input_lower: Lowercased user input
+        exclude_spans: Optional list of (start, end) tuples to exclude from matching
+
+    Returns:
+        Tuple of (result, matched_spans, matched_options_per_attr, unavailable_selections)
+        where:
+        - result: Dict mapping attr slugs to matched values
+        - matched_spans: List of (start, end) tuples for consumed spans
+        - matched_options_per_attr: Dict mapping attr slugs to sets of matched option slugs
+        - unavailable_selections: List of UnavailableSelection for unavailable options
+    """
+    # Sort by length descending (longest matches first)
     candidates.sort(key=lambda c: c.length, reverse=True)
 
-    # Phase 4: Apply matches, tracking spans and avoiding overlaps
+    result: dict[str, Any] = {}
     matched_spans: list[tuple[int, int]] = []
-    matched_options_per_attr: dict[str, set[str]] = {}  # Track matched option slugs per attribute
-
-    def spans_overlap(start: int, end: int) -> bool:
-        """Check if position overlaps with any matched span or excluded span."""
-        # Check against previously matched spans
-        if any(not (end <= s or start >= e) for s, e in matched_spans):
-            return True
-        # Check against excluded spans (e.g., menu item name span)
-        if exclude_spans and any(not (end <= s or start >= e) for s, e in exclude_spans):
-            return True
-        return False
+    matched_options_per_attr: dict[str, set[str]] = {}
+    unavailable_selections: list[UnavailableSelection] = []
 
     for cand in candidates:
         slug = cand.option.get("slug", "")
@@ -291,7 +348,7 @@ def _extract_attribute_values(
             continue
 
         # Skip if overlaps with existing match
-        if spans_overlap(cand.start, cand.end):
+        if _spans_overlap(cand.start, cand.end, matched_spans, exclude_spans):
             continue
 
         # Skip if preceded by negation word ("no", "without", "skip")
@@ -335,7 +392,7 @@ def _extract_attribute_values(
         matched_spans.append((cand.start, cand.end))
         matched_options_per_attr.setdefault(cand.attr_slug, set()).add(slug)
 
-        quantity = extract_quantity_before(input_lower, cand.start)
+        quantity = _extract_quantity_before(input_lower, cand.start)
         match_data = {
             "slug": slug,
             "display_name": cand.option.get("display_name", slug),
@@ -361,39 +418,61 @@ def _extract_attribute_values(
             cand.pattern, slug, quantity, cand.attr_slug
         )
 
-    # Phase 5: Reverse matching - user token appears in option name
-    # E.g., "milk" (user token) in "Whole Milk" (option display_name)
-    # This handles cases where user says "coffee with milk" but database has
-    # options like "Whole Milk", "Oat Milk" etc.
-    #
-    # Only applies to multi_select attributes. Adds to existing matches (e.g., Phase 4
-    # found "sugar", Phase 5 can still add "milk" → "Whole Milk").
-    # Uses must_match to filter: "oat_milk" requires "oat" in input, but "whole_milk"
-    # (with no must_match) matches just "milk".
-    #
-    # Important: Filter out tokens that fall within spans already matched in Phase 4.
-    # This prevents "cream" from matching "Veggie Cream Cheese" when "plain cream cheese"
-    # was already matched by Phase 4.
-    #
-    # AMBIGUITY HANDLING: If a token matches multiple options, skip ALL matches for
-    # that token - it's ambiguous. E.g., "syrup" matches "Vanilla Syrup", "Hazelnut Syrup",
-    # "Caramel Syrup", "Peppermint Syrup" - skip all, let user specify which one.
+    return result, matched_spans, matched_options_per_attr, unavailable_selections
+
+
+def _apply_reverse_matching(
+    input_lower: str,
+    attributes: dict[str, dict],
+    negated_attrs: set[str],
+    matched_spans: list[tuple[int, int]],
+    matched_options_per_attr: dict[str, set[str]],
+    exclude_spans: list[tuple[int, int]] | None,
+    result: dict[str, Any],
+) -> list[AmbiguousSelection]:
+    """Reverse matching: user token appears inside option name.
+
+    E.g., "milk" (user token) in "Whole Milk" (option display_name).
+    Handles cases where user says "coffee with milk" but database has
+    options like "Whole Milk", "Oat Milk" etc.
+
+    Only applies to multi_select attributes. Adds to existing matches.
+    Uses must_match to filter ambiguous options.
+
+    If a token matches multiple options, all matches for that token are
+    skipped and an AmbiguousSelection is recorded for disambiguation.
+
+    Args:
+        input_lower: Lowercased user input
+        attributes: Attribute configs from menu cache
+        negated_attrs: Set of attribute slugs already negated (to skip)
+        matched_spans: Spans already consumed (mutated in place)
+        matched_options_per_attr: Already matched options per attr (mutated in place)
+        exclude_spans: Optional list of (start, end) tuples to exclude
+        result: Result dict to add matches to (mutated in place)
+
+    Returns:
+        List of AmbiguousSelection for tokens that matched multiple options.
+    """
+    ambiguous_selections: list[AmbiguousSelection] = []
+
+    # Tokenize input, filtering out short tokens and already-matched spans
     input_token_matches = [(m.group(), m.start(), m.end())
                            for m in re.finditer(r'\b\w+\b', input_lower)
                            if len(m.group()) >= 3]
     input_tokens = [(word, start, end) for word, start, end in input_token_matches
-                    if not spans_overlap(start, end)]
+                    if not _spans_overlap(start, end, matched_spans, exclude_spans)]
 
     for attr_slug, attr_config in attributes.items():
         if attr_slug in negated_attrs:
             continue  # Skip - user explicitly said "no {attribute}"
-        # Only apply Phase 5 to multi_select attributes
+        # Only apply reverse matching to multi_select attributes
         input_type = attr_config.get("input_type", "single_select")
         if input_type != "multi_select":
             continue
 
-        # Note: Don't skip if matches exist - Phase 5 adds ADDITIONAL
-        # reverse matches. The per-option guard below prevents duplicates.
+        # Note: Don't skip if matches exist - reverse matching adds ADDITIONAL
+        # matches. The per-option guard below prevents duplicates.
 
         options = attr_config.get("options", [])
         if not options:
@@ -408,7 +487,7 @@ def _extract_attribute_values(
                 continue
 
             # Check must_match constraint
-            if not check_must_match(opt, input_lower):
+            if not _check_must_match(opt, input_lower):
                 continue
 
             display_lower = opt.get("display_name", "").lower()
@@ -461,7 +540,7 @@ def _extract_attribute_values(
             slug = match_info["slug"]
             token_start = match_info["token_start"]
 
-            quantity = extract_quantity_before(input_lower, token_start)
+            quantity = _extract_quantity_before(input_lower, token_start)
             result.setdefault(attr_slug, []).append({
                 "slug": slug,
                 "display_name": opt.get("display_name", slug),
@@ -475,33 +554,133 @@ def _extract_attribute_values(
                 token, opt.get("display_name", slug), attr_slug
             )
 
-    # Phase 6: Detect unrecognized size terms
-    # If user mentions a common size term (medium, regular, tall, etc.) that isn't
-    # in our menu options, store it so the handler can say "We don't have medium"
+    return ambiguous_selections
+
+
+def _detect_unrecognized_size_terms(
+    input_lower: str,
+    attributes: dict[str, dict],
+    result: dict[str, Any],
+    unavailable_selections: list[UnavailableSelection],
+) -> None:
+    """Detect common size terms not in the menu and add to unavailable list.
+
+    If user mentions a size term (medium, regular, tall, etc.) that isn't
+    in our menu options, adds it to unavailable_selections so the handler
+    can say "We don't have medium".
+
+    Args:
+        input_lower: Lowercased user input
+        attributes: Attribute configs from menu cache
+        result: Current result dict (checked for existing size match)
+        unavailable_selections: List to append to (mutated in place)
+    """
     has_size_unavailable = any(u.attr_slug == "size" for u in unavailable_selections)
-    if "size" in attributes and "size" not in result and not has_size_unavailable:
-        # Get unavailable size terms from database
-        unavailable_size_terms = menu_cache.get_unavailable_size_terms()
+    if "size" not in attributes or "size" in result or has_size_unavailable:
+        return
 
-        for term, display in unavailable_size_terms.items():
-            # Word boundary match
-            pattern = re.compile(rf'\b{re.escape(term)}\b', re.IGNORECASE)
-            if pattern.search(input_lower):
-                # Check if this term is NOT a known size option for this item
-                known_slugs = {opt.get("slug", "").lower() for opt in attributes["size"].get("options", [])}
-                known_displays = {opt.get("display_name", "").lower() for opt in attributes["size"].get("options", [])}
+    # Get unavailable size terms from database
+    unavailable_size_terms = menu_cache.get_unavailable_size_terms()
 
-                if term.lower() not in known_slugs and term.lower() not in known_displays:
-                    unavailable_selections.append(UnavailableSelection(
-                        attr_slug="size",
-                        attempted_slug=term,
-                        attempted_display=display,
-                    ))
-                    logger.info(
-                        "Unrecognized size term detected: '%s' (not in menu options)",
-                        term
-                    )
-                    break
+    for term, display in unavailable_size_terms.items():
+        # Word boundary match
+        pattern = re.compile(rf'\b{re.escape(term)}\b', re.IGNORECASE)
+        if pattern.search(input_lower):
+            # Check if this term is NOT a known size option for this item
+            known_slugs = {opt.get("slug", "").lower() for opt in attributes["size"].get("options", [])}
+            known_displays = {opt.get("display_name", "").lower() for opt in attributes["size"].get("options", [])}
+
+            if term.lower() not in known_slugs and term.lower() not in known_displays:
+                unavailable_selections.append(UnavailableSelection(
+                    attr_slug="size",
+                    attempted_slug=term,
+                    attempted_display=display,
+                ))
+                logger.info(
+                    "Unrecognized size term detected: '%s' (not in menu options)",
+                    term
+                )
+                break
+
+
+# =============================================================================
+# Generic Attribute Value Extraction (Data-Driven)
+# =============================================================================
+
+def _extract_attribute_values(
+    user_input: str,
+    item_type: str,
+    exclude_spans: list[tuple[int, int]] | None = None,
+) -> AttributeExtractionResult:
+    """
+    Extract attribute values from user input for a specific item type.
+
+    Internal function - use ExtractionPipeline.extract_attributes() instead.
+
+    This is the generic, data-driven function. It queries the database for what
+    attributes the item type has and matches input against those options.
+
+    Uses cross-attribute longest-match-first algorithm:
+    1. Collect ALL potential matches from ALL attributes
+    2. Sort by match length descending
+    3. Apply matches in order, skipping overlaps
+
+    This ensures longer matches always win regardless of attribute processing order.
+    For example, "plain cream cheese" will match spread before "plain" matches bread.
+
+    Args:
+        user_input: The raw user input string
+        item_type: The item type slug
+        exclude_spans: Optional list of (start, end) tuples to exclude from matching.
+            Used to prevent matching words within menu item names (e.g., "butter" in
+            "Cinnamon Sugar Butter Sandwich" should not match as a spread attribute).
+
+    Returns:
+        AttributeExtractionResult containing:
+        - values: Dict mapping attribute slugs to extracted values
+        - matched_spans: List of TextSpan indicating consumed text spans
+        - unavailable: List of UnavailableSelection for unavailable options user tried
+        - unmatched: List of UnmatchedToken for unrecognized tokens
+
+    """
+    input_lower = user_input.lower()
+
+    # Get all attributes for this item type from database
+    attributes = menu_cache.get_item_type_attributes(item_type)
+    if not attributes:
+        logger.debug("No attributes found for item type '%s'", item_type)
+        return AttributeExtractionResult(values={}, matched_spans=[])
+
+    # Pre-Phase: Detect "no {attribute}" negation patterns
+    negation_updates, negated_attrs = _detect_negated_attributes(input_lower, attributes)
+
+    # Phase 1: Extract boolean attributes
+    boolean_updates = _extract_boolean_attrs(input_lower, attributes, negated_attrs)
+
+    # Phase 2: Collect all potential option matches from all attributes
+    candidates = _collect_option_candidates(input_lower, attributes, negated_attrs)
+
+    # Phase 3-4: Sort by length descending and apply non-overlapping matches
+    forward_result, matched_spans, matched_options_per_attr, unavailable_selections = (
+        _apply_longest_match_first(candidates, input_lower, exclude_spans)
+    )
+
+    # Merge results: negation -> boolean -> forward matches
+    result: dict[str, Any] = {}
+    result.update(negation_updates)
+    result.update(boolean_updates)
+    result.update(forward_result)
+
+    # Phase 5: Reverse matching - user token appears in option name
+    ambiguous_selections = _apply_reverse_matching(
+        input_lower, attributes, negated_attrs,
+        matched_spans, matched_options_per_attr, exclude_spans, result,
+    )
+
+    # Phase 6: Detect unrecognized size terms
+    _detect_unrecognized_size_terms(
+        input_lower, attributes, result, unavailable_selections,
+    )
 
     logger.debug(
         "Extracted attribute values for %s: %s",
@@ -550,16 +729,6 @@ def _extract_modifiers_generic(
     """
     text_lower = text.lower()
     found_modifiers = []
-
-    def overlaps_excluded(start: int, end: int) -> bool:
-        """Check if a span overlaps with any excluded span."""
-        if not exclude_spans:
-            return False
-        for ex_start, ex_end in exclude_spans:
-            # Overlap exists if NOT (end <= ex_start OR start >= ex_end)
-            if not (end <= ex_start or start >= ex_end):
-                return True
-        return False
 
     # Get modifier category for this item type (data-driven from database)
     modifier_type = menu_cache.get_modifier_category(item_type)
@@ -613,7 +782,7 @@ def _extract_modifiers_generic(
             pos = text_lower.find(ing_lower)
             if pos != -1:
                 end_pos = pos + len(ing_lower)
-                if not overlaps_excluded(pos, end_pos):
+                if not _spans_overlap(pos, end_pos, exclude_spans):
                     found_modifiers.append(ing_lower)
 
     return found_modifiers

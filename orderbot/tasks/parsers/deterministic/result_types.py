@@ -10,6 +10,25 @@ from typing import Any
 
 
 @dataclass
+class ParserContext:
+    """Bundles keyword arguments passed through the parser pipeline.
+
+    This replaces the loose **kwargs pattern used by parse_open_input_deterministic()
+    and parse_open_input(), providing a single typed object that flows through
+    the parsing pipeline.
+    """
+
+    modifier_category_keywords: dict[str, str] | None = None
+    """Mapping of keywords to category slugs."""
+
+    modifier_item_keywords: dict[str, str] | None = None
+    """Mapping of item keywords to item type slugs."""
+
+    ingredient_to_items: dict[str, list[dict]] | None = None
+    """Mapping of ingredient names to menu items containing them."""
+
+
+@dataclass
 class TextSpan:
     """Represents a span of text with start and end positions."""
 

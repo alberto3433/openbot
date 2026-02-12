@@ -1948,8 +1948,15 @@
         };
         ttsAudio.onerror = () => {
           URL.revokeObjectURL(audioUrl);
-          setTTSStatus("Playback error", "error");
-          processQueue();
+          if (!audioEnabled) {
+            pendingGreeting = text;
+            ttsQueue = [];
+            ttsAudio = null;
+            ttsSpeaking = false;
+          } else {
+            setTTSStatus("Playback error", "error");
+            processQueue();
+          }
         };
         if (ttsMuted) {
           ttsAudio = null;
@@ -1961,10 +1968,13 @@
           await ttsAudio.play();
         } catch (playError) {
           if (playError.name === 'NotAllowedError') {
-            setTTSStatus("Click to enable", "error");
+            pendingGreeting = text;
+            ttsQueue = [];
+            ttsAudio.onerror = null;
+            ttsAudio.onended = null;
             URL.revokeObjectURL(audioUrl);
             ttsAudio = null;
-            processQueue();
+            ttsSpeaking = false;
             return;
           }
           throw playError;

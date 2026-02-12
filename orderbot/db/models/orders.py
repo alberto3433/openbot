@@ -48,15 +48,44 @@ class Order(Base):
     payment_status = Column(String, nullable=False, default="unpaid")  # "unpaid", "pending_payment", "paid"
     payment_method = Column(String, nullable=True)  # "cash", "card_in_store", "card_phone", "card_link"
 
+    # Stripe payment integration
+    stripe_checkout_session_id = Column(String, nullable=True, index=True)
+    stripe_payment_intent_id = Column(String, nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+
     # Order-level special instructions (e.g., "light on the cream cheese", "extra crispy")
     special_instructions = Column(Text, nullable=True)
 
+    # Fulfillment tracking
+    estimated_ready_at = Column(DateTime(timezone=True), nullable=True)
+    ready_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancellation_reason = Column(String, nullable=True)
+    staff_notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
+
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    status_history = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan")
 
     # Composite index for common query pattern: filtering by status and sorting by date
     __table_args__ = (
         Index("ix_orders_status_created_at", "status", "created_at"),
     )
+
+
+class OrderStatusHistory(Base):
+    __tablename__ = "order_status_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
+    from_status = Column(String, nullable=True)
+    to_status = Column(String, nullable=False)
+    changed_by = Column(String, nullable=True)  # Username or "system"
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    order = relationship("Order", back_populates="status_history")
 
 
 class OrderItem(Base):
@@ -80,3 +109,18 @@ class OrderItem(Base):
 
     order = relationship("Order", back_populates="items")
     menu_item = relationship("MenuItem", back_populates="order_items")
+
+
+class NotificationLog(Base):
+    __tablename__ = "notification_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
+    notification_type = Column(String, nullable=False)  # "sms" or "email"
+    event = Column(String, nullable=False)  # "order_confirmed", "order_ready", "order_cancelled", "payment_received"
+    recipient = Column(String, nullable=False)  # Phone number or email
+    status = Column(String, nullable=False, default="sent")  # "sent", "failed", "pending"
+    provider_message_id = Column(String, nullable=True)  # Twilio SID or SMTP message ID
+    error_message = Column(Text, nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

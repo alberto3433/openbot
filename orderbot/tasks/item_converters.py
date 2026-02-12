@@ -338,6 +338,18 @@ class UnifiedItemConverter:
         # Get item type attributes to check for modifies_ingredient_slug
         item_attrs = menu_cache.get_item_type_attributes(menu_item_type) if menu_item_type else {}
 
+        # Get default ingredient slugs from DB (included in base price).
+        # The is_default flag on selections may be cleared by config flow (__setitem__),
+        # so use DB as the authoritative source for display pricing.
+        default_ingredient_slugs: set[str] = set()
+        if item.menu_item_id:
+            try:
+                db_defaults = menu_cache.get_menu_item_default_ingredients(item.menu_item_id)
+                if db_defaults:
+                    default_ingredient_slugs = {d["ingredient_slug"] for d in db_defaults}
+            except Exception:
+                pass
+
         for mod in item_modifiers:
             # Skip name-forming categories (e.g., bread) - already in display name
             # Exception: items with default ingredients keep their fixed name,
@@ -372,7 +384,8 @@ class UnifiedItemConverter:
                 continue
 
             mod_display = mod.get("display_name") or format_slug_for_display(mod_slug, mod_category)
-            mod_price = mod.get("price", 0) or 0.0
+            is_included_default = mod.get("is_default") or mod_slug in default_ingredient_slugs
+            mod_price = 0.0 if is_included_default else (mod.get("price", 0) or 0.0)
             mod_quantity = mod.get("quantity", 1) or 1
 
             # Handle quantity display

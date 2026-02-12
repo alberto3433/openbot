@@ -34,6 +34,9 @@ from .menu_data_factories import (
 # Generic menu data builder
 from .menu_data_builder import MenuDataBuilder
 
+# Conversation driver for multi-turn tests
+from .conversation_driver import ConversationDriver
+
 # Parsed item query helpers
 from .parsed_item_queries import (
     get_parsed_items,
@@ -73,6 +76,8 @@ __all__ = [
     "create_full_menu_data",
     # Generic menu data builder
     "MenuDataBuilder",
+    # Conversation driver
+    "ConversationDriver",
     # Parsed item queries
     "get_parsed_items",
     "get_parsed_item",

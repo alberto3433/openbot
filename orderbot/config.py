@@ -163,6 +163,34 @@ ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
 
 
 # =============================================================================
+# Stripe Payment Configuration
+# =============================================================================
+# Stripe is used for processing customer payments via Checkout Sessions.
+# In test mode, use Stripe test keys (sk_test_..., whsec_test_...).
+
+# Stripe secret API key for server-side operations
+STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
+
+# Webhook signing secret for verifying Stripe webhook signatures
+STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+# Base URL of the application (used for Stripe success/cancel redirect URLs)
+# Example: "https://order.zuckersbagels.com" or "http://localhost:8000" for dev
+BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
+
+
+# =============================================================================
+# Twilio SMS Configuration
+# =============================================================================
+# Twilio is used for sending SMS notifications to customers.
+# Leave empty to disable SMS (graceful degradation).
+
+TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM_NUMBER: str = os.getenv("TWILIO_FROM_NUMBER", "")
+
+
+# =============================================================================
 # Admin UI Page Mappings
 # =============================================================================
 # Maps URL paths to HTML files for the protected admin interface.

@@ -52,7 +52,7 @@ from .ingredients import (
 )
 
 # Order models
-from .orders import Order, OrderItem
+from .orders import NotificationLog, Order, OrderItem, OrderStatusHistory
 
 # Session models
 from .sessions import ChatSession, SessionAnalytics
@@ -106,8 +106,10 @@ __all__ = [
     "IngredientCategory",
     "IngredientStoreAvailability",
     # Orders
+    "NotificationLog",
     "Order",
     "OrderItem",
+    "OrderStatusHistory",
     # Sessions
     "ChatSession",
     "SessionAnalytics",

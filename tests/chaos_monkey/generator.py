@@ -159,6 +159,16 @@ class ScenarioGenerator:
             seed=self.rng.randint(0, 2**31),
         )
 
+    @staticmethod
+    def _filter_display_names(modifiers: set[str] | list[str]) -> list[str]:
+        """Filter modifier list to only display names, excluding slugs.
+
+        The ingredient cache stores names, slugs, and aliases together.
+        Slugs use underscores (e.g., 'vanilla_syrup') while display names
+        and aliases use spaces or are single words (e.g., 'Vanilla Syrup', 'lox').
+        """
+        return [m for m in modifiers if "_" not in m]
+
     def _generate_modifier_scenario(self) -> BaseScenario | None:
         """Generate a modifier addition/removal scenario."""
         from tests.chaos_monkey.scenarios.modifier import ModifierScenario
@@ -184,10 +194,10 @@ class ScenarioGenerator:
             item_type
         )
 
-        # Flatten all valid ingredient names
+        # Flatten valid ingredient display names (exclude slugs with underscores)
         valid_modifiers: list[str] = []
         for category_ingredients in valid_ingredients.values():
-            valid_modifiers.extend(category_ingredients)
+            valid_modifiers.extend(self._filter_display_names(category_ingredients))
 
         if not valid_modifiers:
             return None
@@ -246,10 +256,10 @@ class ScenarioGenerator:
             first_item_type
         )
 
-        # Flatten all valid ingredient names
+        # Flatten valid ingredient display names (exclude slugs with underscores)
         valid_modifiers: list[str] = []
         for category_ingredients in valid_ingredients.values():
-            valid_modifiers.extend(category_ingredients)
+            valid_modifiers.extend(self._filter_display_names(category_ingredients))
 
         if not valid_modifiers:
             return None

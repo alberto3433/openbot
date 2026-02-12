@@ -110,6 +110,7 @@ from .routes import (
     admin_component_slots_router,
     public_stores_router,
     public_company_router,
+    stripe_webhook_router,
     tts_router,
 )
 from .voice_vapi import vapi_router
@@ -350,3 +351,6 @@ api_v1_router.include_router(vapi_router)
 
 # Mount versioned API
 app.include_router(api_v1_router)
+
+# Stripe webhook mounted at root level (not under /api/v1) per Stripe convention
+app.include_router(stripe_webhook_router)

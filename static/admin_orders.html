@@ -35,10 +35,40 @@
       margin-bottom: 12px;
     }
 
-    .filter-group {
+    /* Status filter bar */
+    .status-filters {
       display: flex;
-      gap: 8px;
-      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .status-filter-btn {
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border-light);
+      font-size: 12px;
+      cursor: pointer;
+      background: var(--bg-secondary);
+      color: var(--text-secondary);
+      transition: all 0.15s;
+    }
+
+    .status-filter-btn:hover {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+    }
+
+    .status-filter-btn.active {
+      background: var(--brand-primary);
+      color: white;
+      border-color: var(--brand-primary);
+    }
+
+    .status-filter-btn .count {
+      display: inline-block;
+      margin-left: 4px;
+      font-weight: 600;
     }
 
     select, button {
@@ -60,6 +90,7 @@
     button[disabled] {
       background: var(--border-light);
       cursor: default;
+      color: var(--text-secondary);
     }
 
     table {
@@ -98,6 +129,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+      overflow-y: auto;
     }
 
     .details-card {
@@ -119,23 +151,38 @@
       font-size: 18px;
     }
 
+    .badge-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
     .status-pill {
       padding: 3px 8px;
       border-radius: 999px;
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      font-weight: 600;
     }
 
-    .status-pending {
-      background: #fef9c3;
-      color: #92400e;
-    }
+    .status-pending { background: #fef9c3; color: #92400e; }
+    .status-pending_payment { background: #fed7aa; color: #9a3412; }
+    .status-confirmed { background: #dcfce7; color: #166534; }
+    .status-preparing { background: #dbeafe; color: #1e40af; }
+    .status-ready { background: #e0e7ff; color: #3730a3; }
+    .status-completed { background: #d1d5db; color: #374151; }
+    .status-cancelled { background: #fee2e2; color: #991b1b; }
 
-    .status-confirmed {
-      background: #dcfce7;
-      color: #166534;
+    .payment-badge {
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
     }
+    .payment-paid { background: #dcfce7; color: #166534; }
+    .payment-unpaid { background: #fef9c3; color: #92400e; }
+    .payment-pending_payment { background: #fed7aa; color: #9a3412; }
 
     .details-grid {
       display: grid;
@@ -158,6 +205,97 @@
       border-top: none;
     }
 
+    /* Action buttons */
+    .action-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .action-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .action-btn:hover:not([disabled]) { opacity: 0.85; }
+    .action-btn.preparing { background: #3b82f6; color: white; }
+    .action-btn.ready { background: #8b5cf6; color: white; }
+    .action-btn.completed { background: #10b981; color: white; }
+    .action-btn.cancel { background: #ef4444; color: white; }
+
+    /* Estimated time */
+    .est-time-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    .est-time-row input {
+      width: 60px;
+      padding: 4px 8px;
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      font-size: 13px;
+      background: var(--bg-input, var(--bg-secondary));
+      color: var(--text-primary);
+    }
+
+    .est-time-row button {
+      padding: 4px 12px;
+      font-size: 12px;
+    }
+
+    /* Staff notes */
+    .notes-section {
+      margin-top: 8px;
+    }
+
+    .notes-section textarea {
+      width: 100%;
+      min-height: 50px;
+      padding: 8px;
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: inherit;
+      resize: vertical;
+      background: var(--bg-input, var(--bg-secondary));
+      color: var(--text-primary);
+      box-sizing: border-box;
+    }
+
+    .notes-section button {
+      margin-top: 4px;
+      padding: 4px 12px;
+      font-size: 12px;
+    }
+
+    /* Status history timeline */
+    .history-timeline {
+      margin-top: 8px;
+      font-size: 12px;
+    }
+
+    .history-entry {
+      display: flex;
+      gap: 8px;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-secondary);
+    }
+
+    .history-entry:last-child { border-bottom: none; }
+    .history-entry .time { min-width: 120px; }
+    .history-entry .transition { font-weight: 500; color: var(--text-primary); }
+
     .nav-buttons {
       display: flex;
       justify-content: space-between;
@@ -171,6 +309,26 @@
 
     .price-breakdown {
       background: var(--bg-primary);
+    }
+
+    .auto-refresh-indicator {
+      font-size: 11px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .refresh-dot {
+      width: 6px; height: 6px;
+      background: #10b981;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
     }
   </style>
 </head>
@@ -219,14 +377,14 @@
   <div class="sidebar">
     <div class="header">
       <h1 style="font-size:18px; margin:0;">Orders</h1>
-      <div class="filter-group">
-        <label for="statusFilter" style="font-size:13px;">Status:</label>
-        <select id="statusFilter">
-          <option value="">All</option>
-          <option value="pending">Pending</option>
-          <option value="confirmed">Confirmed</option>
-        </select>
+      <div class="auto-refresh-indicator">
+        <span class="refresh-dot"></span>
+        <span>Auto-refresh</span>
       </div>
+    </div>
+
+    <div class="status-filters" id="statusFilters">
+      <!-- Populated by JS -->
     </div>
 
     <table>
@@ -235,14 +393,13 @@
           <th>ID</th>
           <th>Store</th>
           <th>Customer</th>
-          <th>Phone</th>
-          <th>Email</th>
           <th>Status</th>
+          <th>Payment</th>
           <th>Total</th>
+          <th>Created</th>
         </tr>
       </thead>
       <tbody id="ordersBody">
-        <!-- Rows injected here -->
       </tbody>
     </table>
 
@@ -259,7 +416,10 @@
     <div class="details-card" id="detailsCard">
       <div class="details-header">
         <h2>Order details</h2>
-        <span id="statusPill" class="status-pill status-pending" style="display:none;"></span>
+        <div class="badge-row">
+          <span id="paymentBadge" class="payment-badge" style="display:none;"></span>
+          <span id="statusPill" class="status-pill" style="display:none;"></span>
+        </div>
       </div>
       <div id="detailsContent" class="muted">
         Select an order from the list to view details.
@@ -275,44 +435,35 @@
 
   <script>
     const API_BASE = "/api/v1";
-
-    // Auth credentials storage (cached after first successful auth)
     let authCredentials = null;
 
-    // Authenticated fetch helper - prompts for credentials on 401
     async function authFetch(url, options = {}) {
       let response = await fetch(url, { ...options, credentials: 'include' });
-
       if (response.status === 401 && authCredentials) {
         response = await fetch(url, {
           ...options,
           headers: { ...options.headers, 'Authorization': 'Basic ' + authCredentials }
         });
       }
-
       if (response.status === 401) {
         const username = prompt('Admin username:');
         if (!username) throw new Error('Authentication cancelled');
         const password = prompt('Admin password:');
         if (!password) throw new Error('Authentication cancelled');
-
         authCredentials = btoa(username + ':' + password);
-
         response = await fetch(url, {
           ...options,
           headers: { ...options.headers, 'Authorization': 'Basic ' + authCredentials }
         });
-
         if (response.status === 401) {
           authCredentials = null;
           throw new Error('Invalid credentials');
         }
       }
-
       return response;
     }
 
-    // Store ID to name and timezone mapping - loaded dynamically from API
+    // Store data
     let STORE_DATA = {};
 
     async function loadStores() {
@@ -343,117 +494,138 @@
       return STORE_DATA[storeId]?.timezone || "America/New_York";
     }
 
-    // Format a UTC datetime string in the store's timezone
     function formatInStoreTimezone(utcDateStr, storeId) {
       if (!utcDateStr) return "";
       try {
-        // Normalize date string - handle cases like "2025-12-27T22:18:32.290525+00:00Z"
-        // which has both a timezone offset AND a Z suffix (invalid ISO 8601)
         let normalized = utcDateStr;
-        if (normalized.includes('+') && normalized.endsWith('Z')) {
-          normalized = normalized.slice(0, -1);  // Remove trailing Z
-        }
-        if (normalized.includes('-') && normalized.endsWith('Z') && normalized.lastIndexOf('-') > 10) {
-          // Has negative offset like "-05:00Z" - remove trailing Z
-          normalized = normalized.slice(0, -1);
-        }
-
+        if (normalized.includes('+') && normalized.endsWith('Z')) normalized = normalized.slice(0, -1);
+        if (normalized.includes('-') && normalized.endsWith('Z') && normalized.lastIndexOf('-') > 10) normalized = normalized.slice(0, -1);
         const date = new Date(normalized);
         if (isNaN(date.getTime())) return utcDateStr;
-
         const timezone = getStoreTimezone(storeId);
         return date.toLocaleString("en-US", {
-          timeZone: timezone,
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true
+          timeZone: timezone, month: "short", day: "numeric",
+          hour: "numeric", minute: "2-digit", hour12: true
         });
-      } catch (err) {
-        console.error("Failed to format date:", err);
-        return utcDateStr;
-      }
+      } catch (err) { return utcDateStr; }
     }
 
+    function formatShortTime(utcDateStr, storeId) {
+      if (!utcDateStr) return "";
+      try {
+        let normalized = utcDateStr;
+        if (normalized.includes('+') && normalized.endsWith('Z')) normalized = normalized.slice(0, -1);
+        const date = new Date(normalized);
+        if (isNaN(date.getTime())) return utcDateStr;
+        return date.toLocaleString("en-US", {
+          timeZone: getStoreTimezone(storeId),
+          hour: "numeric", minute: "2-digit", hour12: true
+        });
+      } catch (err) { return utcDateStr; }
+    }
+
+    // State
     let currentPage = 1;
     let currentStatus = "";
     let lastPageSize = 10;
     let ordersCache = [];
     let selectedIndex = -1;
+    let selectedOrderId = null;
+    let statusCounts = {};
+    let autoRefreshTimer = null;
 
-    const statusFilter = document.getElementById("statusFilter");
     const ordersBody = document.getElementById("ordersBody");
     const prevPageBtn = document.getElementById("prevPage");
     const nextPageBtn = document.getElementById("nextPage");
     const pageInfo = document.getElementById("pageInfo");
     const detailsContent = document.getElementById("detailsContent");
     const statusPill = document.getElementById("statusPill");
+    const paymentBadge = document.getElementById("paymentBadge");
     const prevOrderBtn = document.getElementById("prevOrder");
     const nextOrderBtn = document.getElementById("nextOrder");
-
-    statusFilter.addEventListener("change", () => {
-      currentStatus = statusFilter.value;
-      currentPage = 1;
-      selectedIndex = -1;
-      fetchOrders();
-    });
+    const statusFiltersEl = document.getElementById("statusFilters");
 
     prevPageBtn.addEventListener("click", () => {
-      if (currentPage > 1) {
-        currentPage--;
-        selectedIndex = -1;
-        fetchOrders();
-      }
+      if (currentPage > 1) { currentPage--; selectedIndex = -1; fetchOrders(); }
     });
-
     nextPageBtn.addEventListener("click", () => {
-      if (!nextPageBtn.disabled) {
-        currentPage++;
-        selectedIndex = -1;
-        fetchOrders();
-      }
+      if (!nextPageBtn.disabled) { currentPage++; selectedIndex = -1; fetchOrders(); }
     });
-
     prevOrderBtn.addEventListener("click", () => {
-      if (selectedIndex > 0) {
-        selectOrder(selectedIndex - 1);
-      }
+      if (selectedIndex > 0) selectOrder(selectedIndex - 1);
+    });
+    nextOrderBtn.addEventListener("click", () => {
+      if (selectedIndex >= 0 && selectedIndex < ordersCache.length - 1) selectOrder(selectedIndex + 1);
     });
 
-    nextOrderBtn.addEventListener("click", () => {
-      if (selectedIndex >= 0 && selectedIndex < ordersCache.length - 1) {
-        selectOrder(selectedIndex + 1);
+    // Status filter bar
+    const STATUS_LABELS = {
+      "": "All",
+      "confirmed": "Confirmed",
+      "preparing": "Preparing",
+      "ready": "Ready",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "pending_payment": "Pending Payment",
+    };
+
+    function renderStatusFilters() {
+      statusFiltersEl.innerHTML = "";
+      for (const [value, label] of Object.entries(STATUS_LABELS)) {
+        const btn = document.createElement("button");
+        btn.className = "status-filter-btn" + (currentStatus === value ? " active" : "");
+        const count = value === "" ? (statusCounts.all || 0) : (statusCounts[value] || 0);
+        btn.innerHTML = `${label}<span class="count">${count}</span>`;
+        btn.addEventListener("click", () => {
+          currentStatus = value;
+          currentPage = 1;
+          selectedIndex = -1;
+          renderStatusFilters();
+          fetchOrders();
+        });
+        statusFiltersEl.appendChild(btn);
       }
-    });
+    }
+
+    async function fetchStatusCounts() {
+      try {
+        const resp = await authFetch(`${API_BASE}/admin/orders/counts`);
+        if (resp.ok) statusCounts = await resp.json();
+      } catch (err) { console.error("Failed to load counts:", err); }
+    }
 
     async function fetchOrders() {
       try {
         const params = new URLSearchParams();
         params.append("page", String(currentPage));
         params.append("page_size", String(lastPageSize));
-        if (currentStatus) {
-          params.append("status", currentStatus);
-        }
+        if (currentStatus) params.append("status", currentStatus);
 
         const resp = await authFetch(`${API_BASE}/admin/orders?${params.toString()}`);
-        if (!resp.ok) {
-          throw new Error(`Failed to load orders: ${resp.status}`);
-        }
+        if (!resp.ok) throw new Error(`Failed: ${resp.status}`);
         const data = await resp.json();
 
         ordersCache = data.items;
         lastPageSize = data.page_size || 10;
 
         renderOrdersTable();
-        pageInfo.textContent = `Page ${data.page} • ${data.total} total orders`;
+        pageInfo.textContent = `Page ${data.page} / ${Math.ceil(data.total / lastPageSize)} (${data.total} orders)`;
         prevPageBtn.disabled = data.page <= 1;
         nextPageBtn.disabled = !data.has_next;
+
+        // Re-select if we had a selection
+        if (selectedOrderId) {
+          const idx = ordersCache.findIndex(o => o.id === selectedOrderId);
+          if (idx >= 0) {
+            selectedIndex = idx;
+            renderOrdersTable();
+          }
+        }
 
         if (selectedIndex === -1) {
           detailsContent.textContent = "Select an order from the list to view details.";
           statusPill.style.display = "none";
+          paymentBadge.style.display = "none";
           prevOrderBtn.disabled = true;
           nextOrderBtn.disabled = true;
         }
@@ -465,7 +637,6 @@
 
     function renderOrdersTable() {
       ordersBody.innerHTML = "";
-
       if (!ordersCache.length) {
         ordersBody.innerHTML = `<tr><td colspan="7" class="muted">No orders found</td></tr>`;
         return;
@@ -473,126 +644,210 @@
 
       ordersCache.forEach((order, idx) => {
         const tr = document.createElement("tr");
-        if (idx === selectedIndex) {
-          tr.classList.add("selected");
-        }
+        if (idx === selectedIndex) tr.classList.add("selected");
+
+        const statusClass = `status-${order.status}`;
+        const payClass = order.payment_status === "paid" ? "payment-paid" : "payment-unpaid";
+        const createdShort = formatInStoreTimezone(order.created_at, order.store_id);
 
         tr.innerHTML = `
           <td>${order.id}</td>
           <td>${getStoreName(order.store_id)}</td>
           <td>${order.customer_name || ""}</td>
-          <td>${order.phone || ""}</td>
-          <td>${order.customer_email || ""}</td>
-          <td>${order.status}</td>
+          <td><span class="status-pill ${statusClass}">${order.status}</span></td>
+          <td><span class="payment-badge ${payClass}">${order.payment_status || "unpaid"}</span></td>
           <td>$${order.total_price.toFixed(2)}</td>
+          <td style="font-size:12px;">${createdShort}</td>
         `;
-
-        tr.addEventListener("click", () => {
-          selectOrder(idx);
-        });
-
+        tr.addEventListener("click", () => selectOrder(idx));
         ordersBody.appendChild(tr);
       });
     }
 
     async function selectOrder(idx) {
       if (idx < 0 || idx >= ordersCache.length) return;
-
       selectedIndex = idx;
+      selectedOrderId = ordersCache[idx].id;
       renderOrdersTable();
-
-      const order = ordersCache[idx];
-      await loadOrderDetails(order.id);
-
+      await loadOrderDetails(ordersCache[idx].id);
       prevOrderBtn.disabled = selectedIndex <= 0;
       nextOrderBtn.disabled = selectedIndex >= ordersCache.length - 1;
     }
 
+    // Next action for each status
+    const NEXT_ACTIONS = {
+      "confirmed": { label: "Start Preparing", next: "preparing", cls: "preparing" },
+      "preparing": { label: "Mark Ready", next: "ready", cls: "ready" },
+      "ready": { label: "Mark Completed", next: "completed", cls: "completed" },
+    };
+
+    async function updateOrderStatus(orderId, newStatus, note, cancellationReason) {
+      try {
+        const body = { status: newStatus };
+        if (note) body.note = note;
+        if (cancellationReason) body.cancellation_reason = cancellationReason;
+
+        const resp = await authFetch(`${API_BASE}/admin/orders/${orderId}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          alert("Error: " + (err.detail || resp.status));
+          return;
+        }
+        await fetchStatusCounts();
+        renderStatusFilters();
+        await fetchOrders();
+        if (selectedOrderId === orderId) await loadOrderDetails(orderId);
+      } catch (err) {
+        console.error(err);
+        alert("Failed to update status");
+      }
+    }
+
+    async function setEstimatedTime(orderId, minutes) {
+      try {
+        const resp = await authFetch(`${API_BASE}/admin/orders/${orderId}/estimated-time`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ estimated_minutes: minutes }),
+        });
+        if (resp.ok) await loadOrderDetails(orderId);
+      } catch (err) { console.error(err); }
+    }
+
+    async function saveStaffNotes(orderId, notes) {
+      try {
+        const resp = await authFetch(`${API_BASE}/admin/orders/${orderId}/notes`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ staff_notes: notes }),
+        });
+        if (resp.ok) await loadOrderDetails(orderId);
+      } catch (err) { console.error(err); }
+    }
+
     async function loadOrderDetails(orderId) {
       try {
-        const resp = await authFetch(`${API_BASE}/admin/orders/${orderId}`);
-        if (!resp.ok) {
-          throw new Error(`Failed to load order ${orderId}: ${resp.status}`);
-        }
-        const order = await resp.json();
+        const [detailResp, historyResp] = await Promise.all([
+          authFetch(`${API_BASE}/admin/orders/${orderId}`),
+          authFetch(`${API_BASE}/admin/orders/${orderId}/history`),
+        ]);
 
-        const statusClass =
-          order.status === "confirmed"
-            ? "status-confirmed"
-            : "status-pending";
+        if (!detailResp.ok) throw new Error(`Failed: ${detailResp.status}`);
+        const order = await detailResp.json();
+        const history = historyResp.ok ? await historyResp.json() : [];
 
+        // Status pill
         statusPill.style.display = "inline-block";
-        statusPill.className = `status-pill ${statusClass}`;
+        statusPill.className = `status-pill status-${order.status}`;
         statusPill.textContent = order.status;
 
-        // Helper function to build item display key for consolidation
-        // Data-driven: uses modifiers list instead of hardcoded fields
+        // Payment badge
+        paymentBadge.style.display = "inline-block";
+        const payClass = order.payment_status === "paid" ? "payment-paid" : (order.payment_status === "pending_payment" ? "payment-pending_payment" : "payment-unpaid");
+        paymentBadge.className = `payment-badge ${payClass}`;
+        paymentBadge.textContent = order.payment_status || "unpaid";
+
+        // Consolidate items
         function buildItemKey(item) {
           const parts = [item.menu_item_name];
-
-          // Add all modifiers to create unique key
           const modifiers = item.modifiers || [];
-          const modifierKeys = modifiers
-            .map(m => `${m.name}:${m.price || 0}`)
-            .sort();
-          parts.push(...modifierKeys);
-
-          // Add notes if present (different notes = different item)
+          parts.push(...modifiers.map(m => `${m.name}:${m.price || 0}`).sort());
           if (item.notes) parts.push(item.notes);
-
           return parts.join("|");
         }
 
-        // Consolidate identical items
         const consolidatedItems = {};
         order.items.forEach(item => {
           const key = buildItemKey(item);
           if (!consolidatedItems[key]) {
-            consolidatedItems[key] = {
-              ...item,
-              quantity: item.quantity || 1,
-              line_total: item.line_total || 0
-            };
+            consolidatedItems[key] = { ...item, quantity: item.quantity || 1, line_total: item.line_total || 0 };
           } else {
             consolidatedItems[key].quantity += (item.quantity || 1);
             consolidatedItems[key].line_total += (item.line_total || 0);
           }
         });
 
-        const itemsHtml = Object.values(consolidatedItems)
-          .map((item) => {
-            // Add notes if present
-            const notesDisplay = item.notes ? `<div class="muted" style="font-style: italic;">Note: ${item.notes}</div>` : '';
+        const itemsHtml = Object.values(consolidatedItems).map(item => {
+          const notesDisplay = item.notes ? `<div class="muted" style="font-style: italic;">Note: ${item.notes}</div>` : '';
+          const modifiers = item.modifiers || [];
+          const basePrice = item.base_price || 0;
+          const modifiersHtml = modifiers.map(mod => {
+            const priceStr = mod.price > 0 ? `$${mod.price.toFixed(2)}` : '';
+            return `<div class="muted" style="display:flex;justify-content:space-between;padding-left:16px;"><span>${mod.name}</span><span>${priceStr}</span></div>`;
+          }).join('');
+          return `
+            <div class="item-card">
+              <div style="display:flex;justify-content:space-between;"><strong>${item.quantity}x ${item.display_name || item.menu_item_name}</strong><span>$${basePrice.toFixed(2)}</span></div>
+              ${modifiersHtml}
+              ${notesDisplay}
+              <div style="border-top:1px solid var(--border-light);margin-top:4px;padding-top:4px;"><strong>Total: $${item.line_total.toFixed(2)}</strong></div>
+            </div>`;
+        }).join("");
 
-            // Data-driven: all customizations are in the modifiers list
-            const modifiers = item.modifiers || [];
-            const basePrice = item.base_price || 0;
+        // Action buttons
+        let actionsHtml = '<div class="action-bar">';
+        const action = NEXT_ACTIONS[order.status];
+        if (action) {
+          actionsHtml += `<button class="action-btn ${action.cls}" onclick="updateOrderStatus(${order.id}, '${action.next}')">${action.label}</button>`;
+        }
+        if (!["completed", "cancelled"].includes(order.status)) {
+          actionsHtml += `<button class="action-btn cancel" onclick="cancelOrder(${order.id})">Cancel Order</button>`;
+        }
+        actionsHtml += '</div>';
 
-            // Build modifiers HTML - show all customizations with prices
-            const modifiersHtml = modifiers.map(mod => {
-              const priceStr = mod.price > 0 ? `$${mod.price.toFixed(2)}` : '';
-              return `<div class="muted" style="display: flex; justify-content: space-between; padding-left: 16px;"><span>${mod.name}</span><span>${priceStr}</span></div>`;
-            }).join('');
+        // Estimated time
+        let estTimeHtml = '';
+        if (["confirmed", "preparing"].includes(order.status)) {
+          const currentEst = order.estimated_ready_at ? formatShortTime(order.estimated_ready_at, order.store_id) : '';
+          estTimeHtml = `
+            <div class="est-time-row">
+              <span>Est. ready:</span>
+              <input type="number" id="estMinutes" value="15" min="1" max="120" style="width:50px;">
+              <span>min</span>
+              <button onclick="setEstimatedTime(${order.id}, parseInt(document.getElementById('estMinutes').value))">Set</button>
+              ${currentEst ? `<span class="muted">Currently: ${currentEst}</span>` : ''}
+            </div>`;
+        }
 
-            return `
-              <div class="item-card">
-                <div style="display: flex; justify-content: space-between;"><strong>${item.quantity}× ${item.display_name || item.menu_item_name}</strong><span>$${basePrice.toFixed(2)}</span></div>
-                ${modifiersHtml}
-                ${notesDisplay}
-                <div style="border-top: 1px solid var(--border-light); margin-top: 4px; padding-top: 4px;"><strong>Total: $${item.line_total.toFixed(2)}</strong></div>
-              </div>
-            `;
-          })
-          .join("");
+        // Staff notes
+        let notesHtml = `
+          <div class="notes-section">
+            <strong style="font-size:13px;">Staff Notes</strong>
+            <textarea id="staffNotes">${order.staff_notes || ''}</textarea>
+            <button onclick="saveStaffNotes(${order.id}, document.getElementById('staffNotes').value)">Save Notes</button>
+          </div>`;
 
-        const formattedCreatedAt = formatInStoreTimezone(order.created_at, order.store_id);
+        // Status history timeline
+        let historyHtml = '';
+        if (history.length > 0) {
+          const entries = history.map(e => {
+            const time = formatInStoreTimezone(e.created_at, order.store_id);
+            return `<div class="history-entry">
+              <span class="time">${time}</span>
+              <span class="transition">${e.from_status || '(new)'} &rarr; ${e.to_status}</span>
+              <span>${e.changed_by || ''}</span>
+              <span class="muted">${e.note || ''}</span>
+            </div>`;
+          }).join('');
+          historyHtml = `
+            <div class="history-timeline">
+              <strong style="font-size:13px;">Status History</strong>
+              ${entries}
+            </div>`;
+        }
 
-        // Build price breakdown section
+        // Price breakdown
         const hasSubtotal = order.subtotal !== null && order.subtotal !== undefined;
         const cityTax = order.city_tax || 0;
         const stateTax = order.state_tax || 0;
         const deliveryFee = order.delivery_fee || 0;
         const total = order.total_price || 0;
+
+        const formattedCreatedAt = formatInStoreTimezone(order.created_at, order.store_id);
 
         detailsContent.innerHTML = `
           <div class="details-grid">
@@ -602,58 +857,60 @@
             <div><strong>Phone:</strong> ${order.phone || ""}</div>
             <div><strong>Email:</strong> ${order.customer_email || ""}</div>
             <div><strong>Order Type:</strong> ${order.order_type || "pickup"}</div>
-            ${order.delivery_address ? `<div><strong>Delivery Address:</strong> ${order.delivery_address}</div>` : ''}
-            <div><strong>Payment:</strong> ${order.payment_method || ""} (${order.payment_status || "unpaid"})</div>
-            <div><strong>Ready Time:</strong> ${order.pickup_time || ""}</div>
+            ${order.delivery_address ? `<div><strong>Address:</strong> ${order.delivery_address}</div>` : ''}
+            <div><strong>Payment:</strong> ${order.payment_method || "N/A"}</div>
             <div><strong>Created:</strong> ${formattedCreatedAt}</div>
+            ${order.cancellation_reason ? `<div><strong>Cancel Reason:</strong> ${order.cancellation_reason}</div>` : ''}
           </div>
+          ${actionsHtml}
+          ${estTimeHtml}
           <div class="items-list">
             <h3 style="font-size:14px; margin:8px 0 4px;">Items</h3>
-            ${itemsHtml || '<div class="muted">No items on this order</div>'}
+            ${itemsHtml || '<div class="muted">No items</div>'}
           </div>
-          <div class="price-breakdown" style="margin-top: 12px; padding: 12px; border-radius: 6px;">
-            <h3 style="font-size: 14px; margin: 0 0 8px 0;">Price Breakdown</h3>
-            ${hasSubtotal ? `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-              <span>Subtotal:</span>
-              <span>$${order.subtotal.toFixed(2)}</span>
-            </div>
-            ` : ''}
-            ${cityTax > 0 ? `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--text-secondary);">
-              <span>City Tax:</span>
-              <span>$${cityTax.toFixed(2)}</span>
-            </div>
-            ` : ''}
-            ${stateTax > 0 ? `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--text-secondary);">
-              <span>State Tax:</span>
-              <span>$${stateTax.toFixed(2)}</span>
-            </div>
-            ` : ''}
-            ${deliveryFee > 0 ? `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--text-secondary);">
-              <span>Delivery Fee:</span>
-              <span>$${deliveryFee.toFixed(2)}</span>
-            </div>
-            ` : ''}
-            <div style="display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-light); font-weight: 600; font-size: 15px;">
-              <span>Total:</span>
-              <span>$${total.toFixed(2)}</span>
-            </div>
+          <div class="price-breakdown" style="margin-top:12px;padding:12px;border-radius:6px;">
+            <h3 style="font-size:14px;margin:0 0 8px 0;">Price Breakdown</h3>
+            ${hasSubtotal ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Subtotal:</span><span>$${order.subtotal.toFixed(2)}</span></div>` : ''}
+            ${cityTax > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;color:var(--text-secondary);"><span>City Tax:</span><span>$${cityTax.toFixed(2)}</span></div>` : ''}
+            ${stateTax > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;color:var(--text-secondary);"><span>State Tax:</span><span>$${stateTax.toFixed(2)}</span></div>` : ''}
+            ${deliveryFee > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;color:var(--text-secondary);"><span>Delivery Fee:</span><span>$${deliveryFee.toFixed(2)}</span></div>` : ''}
+            <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);font-weight:600;font-size:15px;"><span>Total:</span><span>$${total.toFixed(2)}</span></div>
           </div>
+          ${notesHtml}
+          ${historyHtml}
         `;
       } catch (err) {
         console.error(err);
         detailsContent.innerHTML = `<span style="color:red;">Error loading order details</span>`;
         statusPill.style.display = "none";
+        paymentBadge.style.display = "none";
       }
     }
 
-    // Initialize - load stores first so names are available
+    // Cancel with reason prompt
+    window.cancelOrder = function(orderId) {
+      const reason = prompt("Cancellation reason (optional):");
+      if (reason === null) return; // User clicked cancel on prompt
+      updateOrderStatus(orderId, "cancelled", null, reason || null);
+    };
+
+    // Auto-refresh every 30 seconds
+    function startAutoRefresh() {
+      if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+      autoRefreshTimer = setInterval(async () => {
+        await fetchStatusCounts();
+        renderStatusFilters();
+        await fetchOrders();
+      }, 30000);
+    }
+
+    // Initialize
     async function init() {
       await loadStores();
-      fetchOrders();
+      await fetchStatusCounts();
+      renderStatusFilters();
+      await fetchOrders();
+      startAutoRefresh();
     }
     init();
 
@@ -680,21 +937,15 @@
       updateThemeButton(newTheme);
     });
 
-    // Initialize Lucide icons
     if (typeof lucide !== 'undefined') lucide.createIcons();
-    // Mark active nav link based on current URL
     const currentPath = window.location.pathname;
     document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
-      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
       const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
       const linkPage = hrefMatch ? hrefMatch[1] : null;
-      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
       const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
       const currentPage = currentMatch ? currentMatch[1] : null;
-
       if (linkPage && currentPage && linkPage === currentPage) {
         link.classList.add('active');
-        // Also mark parent dropdown label as active
         const navGroup = link.closest('.nav-group');
         if (navGroup) {
           const label = navGroup.querySelector('.nav-group-label');

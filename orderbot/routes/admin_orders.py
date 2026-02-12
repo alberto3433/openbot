@@ -10,64 +10,41 @@ Endpoints:
 ----------
 - GET /admin/orders: List orders with pagination and filtering
 - GET /admin/orders/{id}: Get detailed order information
+- PATCH /admin/orders/{id}/status: Update order status with validation
+- PATCH /admin/orders/{id}/estimated-time: Set estimated ready time
+- PATCH /admin/orders/{id}/notes: Update staff notes
+- GET /admin/orders/{id}/history: Get status transition history
+- GET /admin/orders/counts: Get order counts by status
 
 Authentication:
 ---------------
 All endpoints require admin authentication via HTTP Basic Auth.
-
-Order States:
--------------
-- pending: Order not yet confirmed
-- pending_payment: Awaiting payment (payment link sent)
-- confirmed: Order confirmed by customer
-- completed: Order fulfilled
-- cancelled: Order was cancelled
-
-Filtering:
-----------
-Orders can be filtered by status:
-- ?status=pending - Only pending orders
-- ?status=confirmed - Only confirmed orders
-- No status parameter - All orders
-
-Pagination:
------------
-Uses page/page_size parameters:
-- ?page=1&page_size=20 (defaults)
-- Returns total count and has_next flag for navigation
-
-Order Details:
---------------
-The detail endpoint returns the full order including:
-- Customer information (name, phone, email)
-- All line items with configurations
-- Tax breakdown (city, state, subtotal, total)
-- Delivery information if applicable
-- Payment status and method
-
-Usage:
-------
-    # List recent confirmed orders
-    GET /admin/orders?status=confirmed&page=1&page_size=20
-
-    # Get order details
-    GET /admin/orders/123
 """
 
 import logging
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
-from ..db.models import Order
+from ..db.models import Order, OrderStatusHistory
 from ..schemas.orders import (
     OrderSummaryOut,
     OrderDetailOut,
     OrderItemOut,
     OrderListResponse,
+    OrderStatusUpdateIn,
+    OrderEstimatedTimeIn,
+    OrderNotesIn,
+    OrderStatusHistoryOut,
+)
+from ..services.order import (
+    transition_order_status,
+    InvalidStatusTransition,
 )
 
 
@@ -77,9 +54,32 @@ logger = logging.getLogger(__name__)
 admin_orders_router = APIRouter(prefix="/admin/orders", tags=["Admin - Orders"])
 
 
+def _format_dt(dt: Optional[datetime]) -> Optional[str]:
+    """Format a datetime to ISO string with Z suffix, or None."""
+    if dt is None:
+        return None
+    return dt.isoformat() + ("Z" if dt.tzinfo is None else "")
+
+
 # =============================================================================
-# Order Endpoints
+# Order List + Detail Endpoints
 # =============================================================================
+
+@admin_orders_router.get("/counts")
+def get_order_counts(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> dict:
+    """Get order counts grouped by status for the dashboard filter bar."""
+    rows = (
+        db.query(Order.status, func.count(Order.id))
+        .group_by(Order.status)
+        .all()
+    )
+    counts = {status: count for status, count in rows}
+    counts["all"] = sum(counts.values())
+    return counts
+
 
 @admin_orders_router.get("", response_model=OrderListResponse)
 def list_orders(
@@ -87,20 +87,16 @@ def list_orders(
     _admin: str = Depends(verify_admin_credentials),
     status: Optional[str] = Query(
         None,
-        description="Filter by status: pending, confirmed, or leave empty for all",
+        description="Filter by status: pending, confirmed, preparing, ready, completed, cancelled",
     ),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
 ) -> OrderListResponse:
-    """
-    Return a paginated list of orders.
-
-    Requires admin authentication. Orders are sorted by creation date
-    (newest first).
-    """
+    """Return a paginated list of orders sorted by creation date (newest first)."""
     query = db.query(Order)
 
-    if status in ("pending", "confirmed", "pending_payment", "completed", "cancelled"):
+    valid_statuses = {"pending", "confirmed", "pending_payment", "preparing", "ready", "completed", "cancelled"}
+    if status in valid_statuses:
         query = query.filter(Order.status == status)
 
     total = query.count()
@@ -131,6 +127,9 @@ def list_orders(
             delivery_address=o.delivery_address,
             payment_status=o.payment_status,
             payment_method=o.payment_method,
+            estimated_ready_at=_format_dt(o.estimated_ready_at),
+            staff_notes=o.staff_notes,
+            created_at=_format_dt(o.created_at),
         )
         for o in orders
     ]
@@ -152,23 +151,12 @@ def get_order_detail(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
 ) -> OrderDetailOut:
-    """
-    Get detailed information about a specific order.
-
-    Requires admin authentication. Returns full order including all
-    line items with their configurations.
-    """
+    """Get detailed information about a specific order."""
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    # Convert order items to response format
     items_out = [OrderItemOut.model_validate(item) for item in order.items]
-
-    # Format created_at with UTC indicator for JavaScript
-    created_at_str = ""
-    if getattr(order, "created_at", None):
-        created_at_str = order.created_at.isoformat() + "Z"
 
     return OrderDetailOut(
         id=order.id,
@@ -187,6 +175,114 @@ def get_order_detail(
         delivery_address=order.delivery_address,
         payment_status=order.payment_status,
         payment_method=order.payment_method,
-        created_at=created_at_str,
+        estimated_ready_at=_format_dt(order.estimated_ready_at),
+        ready_at=_format_dt(order.ready_at),
+        completed_at=_format_dt(order.completed_at),
+        cancelled_at=_format_dt(order.cancelled_at),
+        cancellation_reason=order.cancellation_reason,
+        staff_notes=order.staff_notes,
+        created_at=_format_dt(order.created_at) or "",
+        updated_at=_format_dt(order.updated_at),
         items=items_out,
     )
+
+
+# =============================================================================
+# Fulfillment Endpoints
+# =============================================================================
+
+@admin_orders_router.patch("/{order_id}/status")
+def update_order_status(
+    order_id: int,
+    body: OrderStatusUpdateIn,
+    db: Session = Depends(get_db),
+    admin: str = Depends(verify_admin_credentials),
+) -> dict:
+    """Update an order's status with validation.
+
+    Valid transitions: confirmed->preparing->ready->completed, any->cancelled.
+    """
+    try:
+        order = transition_order_status(
+            db=db,
+            order_id=order_id,
+            new_status=body.status,
+            changed_by=admin,
+            note=body.note,
+            cancellation_reason=body.cancellation_reason,
+        )
+        return {"status": order.status, "order_id": order.id}
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Order not found")
+    except InvalidStatusTransition as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@admin_orders_router.patch("/{order_id}/estimated-time")
+def set_estimated_time(
+    order_id: int,
+    body: OrderEstimatedTimeIn,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> dict:
+    """Set the estimated ready time for an order (minutes from now)."""
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    order.estimated_ready_at = datetime.now(timezone.utc) + timedelta(minutes=body.estimated_minutes)
+    db.commit()
+
+    return {
+        "order_id": order.id,
+        "estimated_ready_at": _format_dt(order.estimated_ready_at),
+    }
+
+
+@admin_orders_router.patch("/{order_id}/notes")
+def update_staff_notes(
+    order_id: int,
+    body: OrderNotesIn,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> dict:
+    """Update staff notes on an order."""
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    order.staff_notes = body.staff_notes
+    db.commit()
+
+    return {"order_id": order.id, "staff_notes": order.staff_notes}
+
+
+@admin_orders_router.get("/{order_id}/history", response_model=List[OrderStatusHistoryOut])
+def get_order_history(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+) -> List[OrderStatusHistoryOut]:
+    """Get the status transition history for an order."""
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    entries = (
+        db.query(OrderStatusHistory)
+        .filter(OrderStatusHistory.order_id == order_id)
+        .order_by(OrderStatusHistory.created_at.asc())
+        .all()
+    )
+
+    return [
+        OrderStatusHistoryOut(
+            id=e.id,
+            from_status=e.from_status,
+            to_status=e.to_status,
+            changed_by=e.changed_by,
+            note=e.note,
+            created_at=_format_dt(e.created_at) or "",
+        )
+        for e in entries
+    ]

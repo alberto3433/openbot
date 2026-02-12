@@ -230,6 +230,11 @@ orderbot/email_service.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/notification_service.py:
+  - term: plain
+    context: all
+    reason: "MIME type parameter for MIMEText, not a food term"
+
 orderbot/menu_data_cache.py:
   - term: egg sandwich
     context: all

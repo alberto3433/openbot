@@ -336,7 +336,7 @@ class MessageProcessor:
         customer_name: Optional[str],
         customer_phone: Optional[str],
     ) -> bool:
-        """Send payment link email."""
+        """Create Stripe checkout session (if configured) and send payment link email."""
         try:
             db_order_id = order_state.get("db_order_id")
             if not db_order_id:
@@ -354,6 +354,14 @@ class MessageProcessor:
             )
             order_type = order_state.get("order_type", "pickup")
 
+            # Try to create a Stripe checkout session for real payment
+            payment_url = None
+            stripe_result = self._create_stripe_session(
+                db_order_id, items, order_total, customer_email,
+            )
+            if stripe_result:
+                payment_url = stripe_result["url"]
+
             result = send_payment_link_email(
                 to_email=customer_email,
                 order_id=db_order_id,
@@ -367,9 +375,73 @@ class MessageProcessor:
                 city_tax=checkout_state.get("city_tax", 0),
                 state_tax=checkout_state.get("state_tax", 0),
                 delivery_fee=checkout_state.get("delivery_fee", 0),
+                payment_url=payment_url,
             )
             logger.info("Payment link email sent: %s", result)
             return True
         except Exception as e:
             logger.error("Failed to send payment email: %s", e)
             return False
+
+    def _create_stripe_session(
+        self,
+        order_id: int,
+        items: List[Dict[str, Any]],
+        order_total: float,
+        customer_email: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Create a Stripe Checkout Session and link it to the order.
+
+        Returns dict with 'session_id' and 'url' on success, None if Stripe
+        is not configured or creation fails.
+        """
+        try:
+            from .stripe_service import create_checkout_session, is_stripe_configured
+            if not is_stripe_configured():
+                return None
+
+            # Build line items for Stripe (one entry per order item)
+            stripe_line_items = []
+            for item in items:
+                name = item.get("display_name") or item.get("menu_item_name") or "Item"
+                quantity = item.get("quantity", 1)
+                line_total = item.get("line_total", 0)
+                amount_cents = round((line_total / quantity) * 100) if quantity > 0 else 0
+                stripe_line_items.append({
+                    "name": name,
+                    "quantity": quantity,
+                    "amount_cents": amount_cents,
+                })
+
+            # Add tax as a separate line item if present
+            checkout_state = self._get_order_state_checkout(items)
+            tax_total = round(order_total * 100) - sum(
+                item["amount_cents"] * item["quantity"] for item in stripe_line_items
+            )
+            if tax_total > 0:
+                stripe_line_items.append({
+                    "name": "Tax & Fees",
+                    "quantity": 1,
+                    "amount_cents": tax_total,
+                })
+
+            result = create_checkout_session(
+                order_id=order_id,
+                line_items=stripe_line_items,
+                customer_email=customer_email,
+            )
+
+            if result:
+                # Link Stripe session to order in DB
+                from .services.order import update_order_stripe_session
+                update_order_stripe_session(self.db, order_id, result["session_id"])
+
+            return result
+        except Exception as e:
+            logger.error("Failed to create Stripe session for order #%d: %s", order_id, e)
+            return None
+
+    @staticmethod
+    def _get_order_state_checkout(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Helper to get checkout state from items."""
+        return {}

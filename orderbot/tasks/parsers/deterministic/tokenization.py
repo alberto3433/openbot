@@ -14,7 +14,12 @@ from orderbot.cache.base import singularize
 from ...schemas import OpenInputResponse
 from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity
 
-from .item_parsing import _detect_item_type, _parse_item_generic, _is_modifier_chain
+from .item_parsing import (
+    _detect_item_type,
+    _find_trigger_matches,
+    _parse_item_generic,
+    _is_modifier_chain,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,38 +142,24 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
         # Use the search term as resolved_name since we don't have a single match
         return True, item_type, text_for_matching
 
-    # Check for item type triggers - prioritize early matches
-    all_triggers = menu_cache.get_item_type_triggers()
-
-    # Common words that should not be treated as item triggers
-    skip_trigger_words = {
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
-    }
-
-    # Find all matches and their positions
-    matches: list[tuple[int, int, str, str]] = []  # (position, length, item_type, trigger)
-
-    # Try matching triggers against both original and singularized text
+    # Check for item type triggers using shared matching function
+    # Try both original and singularized text, deduplicate to first occurrence
     texts_to_try = [text_for_matching]
     if text_singularized != text_for_matching:
         texts_to_try.append(text_singularized)
 
-    for item_type_slug, triggers in all_triggers.items():
-        for keyword in triggers:
-            # Skip common words that appear as triggers from menu item names
-            if keyword.lower() in skip_trigger_words:
-                continue
-            keyword_lower = keyword.lower()
-            # Use word boundary matching to prevent partial matches
-            # (e.g., "hot" matching inside "shot")
-            pattern = rf'\b{re.escape(keyword_lower)}\b'
-            for try_text in texts_to_try:
-                match = re.search(pattern, try_text)
-                if match:
-                    pos = match.start()
-                    matches.append((pos, len(keyword_lower), item_type_slug, keyword))
-                    break  # Found in one form, no need to try singularized
+    raw_matches = _find_trigger_matches(text_for_matching)
+    if text_singularized != text_for_matching:
+        raw_matches.extend(_find_trigger_matches(text_singularized))
+
+    seen_triggers: set[tuple[str, str]] = set()
+    matches: list[tuple[int, int, str, str]] = []  # (position, length, item_type, trigger)
+    for item_type_slug, keyword, m in raw_matches:
+        key = (item_type_slug, keyword.lower())
+        if key in seen_triggers:
+            continue
+        seen_triggers.add(key)
+        matches.append((m.start(), len(keyword.lower()), item_type_slug, keyword))
 
     # Add implicit triggers for item type names themselves
     # This handles cases where "bagel" type doesn't have "bagel" as explicit trigger
@@ -583,6 +574,26 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
 # Token Recombination
 # =============================================================================
 
+def _is_demotable_to_modifier(token: "Token") -> bool:
+    """Check if an item-classified token could be demoted to a modifier.
+
+    When a token like "lox" is classified as an item (because it matches a menu item),
+    but it's also a known modifier/ingredient, it can be demoted to attach to a
+    preceding item in a "with X and Y" chain.
+
+    Args:
+        token: An item-classified token to check
+
+    Returns:
+        True if the token's text is also a known modifier
+    """
+    text = token.original.lower().strip()
+    # Strip quantity prefix (e.g., "2 lox" -> "lox")
+    _, remaining = _extract_leading_quantity(text)
+    check_text = remaining if remaining else text
+    return menu_cache.is_known_modifier(check_text)
+
+
 def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
     """Recombine modifier tokens with their associated item tokens.
 
@@ -610,6 +621,16 @@ def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
 
     for token in tokens:
         if token.token_type == "item":
+            # Demote item to modifier if it follows an active "with" clause
+            # e.g., "bagel with cream cheese" + "lox" → lox attaches as modifier
+            if (
+                current_item
+                and " with " in current_item.original.lower()
+                and _is_demotable_to_modifier(token)
+            ):
+                accumulated_modifiers.append(token)
+                continue
+
             # Save previous item with its modifiers
             if current_item:
                 if accumulated_modifiers:

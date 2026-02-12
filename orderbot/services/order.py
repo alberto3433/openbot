@@ -540,6 +540,39 @@ def _send_transition_notifications(db: Session, order: Order, new_status: str) -
         logger.error("Failed to send transition notification for order #%d: %s", order.id, e)
 
 
+def update_order_toast_status(
+    db: Session,
+    order_id: int,
+    toast_status: str,
+    toast_guid: Optional[str] = None,
+) -> bool:
+    """Update Toast POS tracking fields on an order.
+
+    Args:
+        db: Database session
+        order_id: The order ID to update
+        toast_status: Toast sync status (pending_sync, submitted, failed, synced)
+        toast_guid: Optional Toast order GUID
+
+    Returns:
+        True if updated, False if order not found
+    """
+    order = db.get(Order, order_id)
+    if not order:
+        logger.warning("Cannot set Toast status: order #%d not found", order_id)
+        return False
+
+    order.toast_order_status = toast_status
+    if toast_guid:
+        order.toast_order_guid = toast_guid
+    if toast_status == "submitted":
+        order.toast_submitted_at = datetime.now(timezone.utc)
+
+    db.commit()
+    logger.info("Order #%d Toast status updated to '%s'", order_id, toast_status)
+    return True
+
+
 def _add_order_items(db: Session, order: Order, items: list) -> None:
     """Add order items to an order.
 

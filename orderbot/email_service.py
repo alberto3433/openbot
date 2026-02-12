@@ -1,37 +1,49 @@
 """
 Email service for sending payment links.
 
-Sends real emails via SMTP when configured, falls back to logging in mock mode.
+Sends real emails via AWS SES when configured, falls back to logging in mock mode.
 
 Environment variables:
-- SMTP_HOST: SMTP server hostname (e.g., smtp.gmail.com)
-- SMTP_PORT: SMTP server port (default: 587 for TLS)
-- SMTP_USERNAME: SMTP authentication username
-- SMTP_PASSWORD: SMTP authentication password (for Gmail, use App Password)
-- SMTP_FROM_EMAIL: Sender email address
+- AWS_ACCESS_KEY_ID: AWS IAM access key
+- AWS_SECRET_ACCESS_KEY: AWS IAM secret key
+- AWS_REGION: AWS region (default: us-east-1)
+- AWS_SES_FROM_EMAIL: Verified sender email address
 """
 
 import logging
-import os
-import smtplib
-import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
 
+from .config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SES_FROM_EMAIL
+
 logger = logging.getLogger(__name__)
 
-# SMTP configuration from environment
-SMTP_HOST = os.getenv("SMTP_HOST")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL")
+# Lazy-initialize SES client
+_ses_client = None
+
+
+def _get_ses_client():
+    """Lazy-load and configure the AWS SES client."""
+    global _ses_client
+    if _ses_client is None:
+        try:
+            import boto3
+            _ses_client = boto3.client(
+                "ses",
+                aws_access_key_id=AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                region_name=AWS_REGION,
+            )
+        except ImportError:
+            logger.warning("boto3 package not installed; email features disabled")
+            return None
+    return _ses_client
 
 
 def is_email_configured() -> bool:
-    """Check if SMTP is properly configured."""
-    return all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL])
+    """Check if AWS SES email is properly configured."""
+    return bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SES_FROM_EMAIL)
 
 
 def send_payment_link_email(
@@ -236,26 +248,35 @@ Thanks,
             "subject": subject,
             "payment_url": payment_url,
             "mock": True,
-            "message": "Email logged (SMTP not configured)",
+            "message": "Email logged (AWS SES not configured)",
         }
 
-    # Send real email via SMTP
+    # Send real email via AWS SES
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = SMTP_FROM_EMAIL
+        msg["From"] = AWS_SES_FROM_EMAIL
         msg["To"] = to_email
 
         # Attach both plain text and HTML versions
         msg.attach(MIMEText(body_text, "plain"))
         msg.attach(MIMEText(body_html, "html"))
 
-        # Connect and send with secure SSL context
-        context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls(context=context)
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(SMTP_FROM_EMAIL, to_email, msg.as_string())
+        client = _get_ses_client()
+        if client is None:
+            return {
+                "status": "error",
+                "to_email": to_email,
+                "error": "boto3 not installed",
+                "mock": False,
+                "message": "Failed to send email: boto3 not installed",
+            }
+
+        client.send_raw_email(
+            Source=AWS_SES_FROM_EMAIL,
+            Destinations=[to_email],
+            RawMessage={"Data": msg.as_string()},
+        )
 
         logger.info("Email sent successfully to %s for order %d", to_email, order_id)
 
@@ -277,5 +298,3 @@ Thanks,
             "mock": False,
             "message": f"Failed to send email: {str(e)}",
         }
-
-

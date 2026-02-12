@@ -174,6 +174,10 @@ class MessageProcessor:
                 store_id=persist_store_id
             )
 
+        # Submit to Toast POS (best-effort, never blocks order flow)
+        if order_persisted and updated_order_state.get("db_order_id"):
+            self._submit_to_toast(updated_order_state)
+
         # Log analytics for ALL confirmed orders (regardless of customer info)
         if order_is_confirmed and order_not_yet_logged:
             updated_order_state["_confirmed_logged"] = True
@@ -283,6 +287,32 @@ class MessageProcessor:
             return True
         except Exception as e:
             logger.error("Failed to persist order: %s", e)
+            return False
+
+    # -------------------------------------------------------------------------
+    # Toast POS Submission
+    # -------------------------------------------------------------------------
+
+    def _submit_to_toast(self, order_state: Dict[str, Any]) -> bool:
+        """Submit confirmed order to Toast POS. Best-effort: never raises."""
+        try:
+            from .toast.service import is_toast_configured, submit_order
+            if not is_toast_configured():
+                return False
+
+            result = submit_order(self.db, order_state)
+            if result:
+                logger.info(
+                    "Order #%s submitted to Toast POS",
+                    order_state.get("db_order_id"),
+                )
+                return True
+            return False
+        except Exception as e:
+            logger.error(
+                "Failed to submit order #%s to Toast: %s",
+                order_state.get("db_order_id"), e,
+            )
             return False
 
     # -------------------------------------------------------------------------

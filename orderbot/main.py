@@ -349,8 +349,16 @@ api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(tts_router)
 api_v1_router.include_router(vapi_router)
 
+# Toast POS admin routes (under /api/v1/admin/toast)
+from .toast.admin_routes import toast_admin_router
+api_v1_router.include_router(toast_admin_router)
+
 # Mount versioned API
 app.include_router(api_v1_router)
 
 # Stripe webhook mounted at root level (not under /api/v1) per Stripe convention
 app.include_router(stripe_webhook_router)
+
+# Toast POS webhook mounted at root level (same pattern as Stripe)
+from .toast.webhook import toast_webhook_router
+app.include_router(toast_webhook_router)

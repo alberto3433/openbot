@@ -53,6 +53,11 @@ class Order(Base):
     stripe_payment_intent_id = Column(String, nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Toast POS integration
+    toast_order_guid = Column(String, nullable=True, index=True)
+    toast_order_status = Column(String, nullable=True)  # pending_sync / submitted / failed / synced
+    toast_submitted_at = Column(DateTime(timezone=True), nullable=True)
+
     # Order-level special instructions (e.g., "light on the cream cheese", "extra crispy")
     special_instructions = Column(Text, nullable=True)
 

@@ -1,5 +1,14 @@
 # Auto-generated allowlist for existing violations
 
+# Toast POS integration - "toast" refers to the Toast POS software vendor, not food
+orderbot/toast/__init__.py: "*"
+orderbot/toast/service.py: "*"
+orderbot/toast/order_builder.py: "*"
+orderbot/toast/guid_resolver.py: "*"
+orderbot/toast/webhook.py: "*"
+orderbot/toast/admin_routes.py: "*"
+orderbot/toast/menu_sync.py: "*"
+
 orderbot/cache/__init__.py:
   - term: lox
     context: all
@@ -303,6 +312,9 @@ orderbot/message_processor.py:
   - term: bagel
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
+  - term: toast
+    context: all
+    reason: "Toast POS - software vendor, not food term"
 
 orderbot/models.py:
   - term: bacon
@@ -760,6 +772,9 @@ orderbot/services/order.py:
   - term: side
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
+  - term: toast
+    context: all
+    reason: "Toast POS - software vendor, not food term"
   - term: toasted
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"

@@ -54,6 +54,9 @@ from .ingredients import (
 # Order models
 from .orders import NotificationLog, Order, OrderItem, OrderStatusHistory
 
+# Toast POS integration models
+from .toast import ToastGuidMap
+
 # Session models
 from .sessions import ChatSession, SessionAnalytics
 
@@ -124,4 +127,6 @@ __all__ = [
     "UnrecognizedItemSuggestion",
     "UnrecognizedItemLog",
     "UnrecognizedOptionSuggestion",
+    # Toast POS
+    "ToastGuidMap",
 ]

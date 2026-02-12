@@ -191,33 +191,41 @@ def _send_simple_email(
     body_text: str,
     event: str,
 ) -> None:
-    """Send a simple text email and log the result."""
-    import smtplib
-    import ssl
+    """Send a simple text email via AWS SES and log the result."""
     from email.mime.text import MIMEText
-    from .email_service import SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL
+    from .config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SES_FROM_EMAIL
 
-    if not all([SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL]):
-        logger.info("SMTP not configured; skipping %s email for order #%d", event, order.id)
+    if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SES_FROM_EMAIL]):
+        logger.info("AWS SES not configured; skipping %s email for order #%d", event, order.id)
         return
 
     try:
+        import boto3
+
         msg = MIMEText(body_text, "plain")
         msg["Subject"] = subject
-        msg["From"] = SMTP_FROM_EMAIL
+        msg["From"] = AWS_SES_FROM_EMAIL
         msg["To"] = order.customer_email
 
-        context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls(context=context)
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(SMTP_FROM_EMAIL, order.customer_email, msg.as_string())
+        ses_client = boto3.client(
+            "ses",
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION,
+        )
+        ses_client.send_raw_email(
+            Source=AWS_SES_FROM_EMAIL,
+            Destinations=[order.customer_email],
+            RawMessage={"Data": msg.as_string()},
+        )
 
         _log_notification(
             db, order.id, "email", event, order.customer_email, status="sent",
         )
         logger.info("%s email sent to %s for order #%d", event, order.customer_email, order.id)
 
+    except ImportError:
+        logger.warning("boto3 not installed; skipping %s email for order #%d", event, order.id)
     except Exception as e:
         _log_notification(
             db, order.id, "email", event, order.customer_email,

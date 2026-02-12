@@ -180,14 +180,29 @@ BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
 
 
 # =============================================================================
-# Twilio SMS Configuration
+# AWS Messaging Configuration (SNS for SMS, SES for Email)
 # =============================================================================
-# Twilio is used for sending SMS notifications to customers.
-# Leave empty to disable SMS (graceful degradation).
+# AWS SNS sends SMS notifications; AWS SES sends emails.
+# Leave credentials empty to disable (graceful degradation).
 
-TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")
-TWILIO_FROM_NUMBER: str = os.getenv("TWILIO_FROM_NUMBER", "")
+AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+AWS_SNS_FROM_NUMBER: str = os.getenv("AWS_SNS_FROM_NUMBER", "")
+AWS_SES_FROM_EMAIL: str = os.getenv("AWS_SES_FROM_EMAIL", "")
+
+
+# =============================================================================
+# Toast POS Configuration
+# =============================================================================
+# Toast POS integration for pushing confirmed orders to the kitchen display.
+# Leave all empty to disable Toast (graceful degradation, zero impact on orders).
+
+TOAST_CLIENT_ID: str = os.getenv("TOAST_CLIENT_ID", "")
+TOAST_CLIENT_SECRET: str = os.getenv("TOAST_CLIENT_SECRET", "")
+TOAST_RESTAURANT_GUID: str = os.getenv("TOAST_RESTAURANT_GUID", "")
+TOAST_API_BASE_URL: str = os.getenv("TOAST_API_BASE_URL", "https://ws-sandbox-api.eng.toasttab.com")
+TOAST_WEBHOOK_SECRET: str = os.getenv("TOAST_WEBHOOK_SECRET", "")
 
 
 # =============================================================================

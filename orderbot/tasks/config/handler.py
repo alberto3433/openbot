@@ -313,6 +313,18 @@ class MenuItemConfigHandler(BaseHandler):
         """
         return format_display_list(items, key=key, conjunction=conjunction)
 
+    def _format_checkpoint_questions(self, attrs: list[dict]) -> str:
+        """Format unanswered optional attributes as individual questions."""
+        questions = []
+        for attr in attrs:
+            q = attr.get("question_text")
+            if q:
+                questions.append(q)
+            else:
+                display = attr.get("display_name") or attr["slug"]
+                questions.append(f"Add {display}?")
+        return " ".join(questions)
+
     # =========================================================================
     # Main Entry Point
     # =========================================================================
@@ -523,11 +535,11 @@ class MenuItemConfigHandler(BaseHandler):
         order.pending_item_id = item.id
         order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
 
-        # List available customization options
-        options_list = self._format_display_list(unanswered_optional)
+        # List available customization options as individual questions
+        options_questions = self._format_checkpoint_questions(unanswered_optional)
 
         return StateMachineResult(
-            message=f"{ack_prefix}Any more changes? You can add {options_list}.",
+            message=f"{ack_prefix}Any more changes? {options_questions}",
             order=order,
         )
 
@@ -1213,15 +1225,15 @@ class MenuItemConfigHandler(BaseHandler):
                 order=order,
             )
 
-        # List remaining options
-        options_list = self._format_display_list(unanswered)
+        # List remaining options as individual questions
+        options_questions = self._format_checkpoint_questions(unanswered)
 
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id
         order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
 
         return StateMachineResult(
-            message=f"{ack_prefix}Any more changes? You can add {options_list}.",
+            message=f"{ack_prefix}Any more changes? {options_questions}",
             order=order,
         )
 

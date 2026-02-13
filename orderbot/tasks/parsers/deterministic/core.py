@@ -927,9 +927,9 @@ def parse_open_input_deterministic(
     # Strip ordering prefixes ("just", "some") before new-item parsing.
     # These are in ORDERING_PREFIXES but not HESITATION_FILLERS. Must happen AFTER
     # quantity change checks (e.g., "just one bagel" = reduce-to-one needs "just")
-    # but BEFORE item parsing (e.g., "just a 6 Bagel Package" needs "just" stripped
-    # so downstream article stripping can remove the leading "a").
-    text = re.sub(r'^(?:just|some)\b[,\s]*', '', text, flags=re.IGNORECASE).strip()
+    # but BEFORE item parsing (e.g., "just a 6 Bagel Package" needs "just a" stripped).
+    # Also strip the trailing article (a/an/the) so "just a bagel" -> "bagel".
+    text = re.sub(r'^(?:just|some)\b[,\s]*(?:(?:a|an|the)\b\s*)?', '', text, flags=re.IGNORECASE).strip()
 
     # Check for new item orders (split-qty, multi-item, configurable, direct, simple)
     new_items_result = _try_parse_new_items(text, order_type)

@@ -166,13 +166,12 @@ class AttributeUpchargeCalculator:
                     if matching_modifier:
                         matching_modifier["price"] = upcharge
                 else:
-                    # Check if category is included
-                    # BUT: only apply "included" discount if this is a default ingredient.
+                    # Check if category is included (no charge).
+                    # If the base price includes this ingredient category, any option is free.
                     option_category = self._pricing._get_option_ingredient_category(
                         item_type, attr_slug, item_val
                     )
-                    is_default = matching_modifier.get("is_default", False) if matching_modifier else False
-                    if option_category and option_category in included_categories and is_default:
+                    if option_category and option_category in included_categories:
                         # This is a default ingredient in an included category - no charge
                         priced_slugs.add(item_val_normalized)
                         if matching_modifier:
@@ -245,14 +244,13 @@ class AttributeUpchargeCalculator:
                 matching_modifier["price"] = upcharge
             return upcharge * quantity, priced_slugs
 
-        # Check if category is included (no charge)
-        # BUT: only apply "included" discount if this is a default ingredient.
-        # If user explicitly added/upgraded the item (is_default=False), charge for it.
+        # Check if category is included (no charge).
+        # If the item's base price already includes this ingredient category,
+        # any option in that category is free (user is just picking their preference).
         option_category = self._pricing._get_option_ingredient_category(
             item_type, attr_slug, attr_value
         )
-        is_default_ingredient = matching_modifier.get("is_default", False) if matching_modifier else False
-        if option_category and option_category in included_categories and is_default_ingredient:
+        if option_category and option_category in included_categories:
             # This is a default ingredient in an included category - no charge
             priced_slugs.add(attr_value_normalized)
             if matching_modifier:

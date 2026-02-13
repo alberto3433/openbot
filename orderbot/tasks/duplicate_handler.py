@@ -378,8 +378,9 @@ class DuplicateHandler:
 
         added_count = parsed.duplicate_last_item
 
-        # Single item in cart - duplicate silently
-        if len(active_items) == 1:
+        # All items identical - duplicate silently (covers single item and N identical items)
+        unique_summaries = {item.get_summary() for item in active_items}
+        if len(unique_summaries) == 1:
             last_item = get_last_item(active_items)
             last_item_name = last_item.get_summary()
 
@@ -387,14 +388,14 @@ class DuplicateHandler:
             for _ in range(added_count):
                 order.items.add_item(last_item.duplicate())
 
-            total_qty = 1 + added_count
+            total_qty = len(active_items) + added_count
             logger.info("Added %d more of '%s' to order", added_count, last_item_name)
             return StateMachineResult(
                 message=f"Sure, that's {total_qty} total. Anything else?",
                 order=order,
             )
 
-        # Multiple items in cart - ask which one to duplicate
+        # Multiple different items in cart - ask which one to duplicate
         else:
             # Build the clarifying question: "Another [last], another [second-to-last], ... or all items?"
             item_options = build_item_options_list(active_items)

@@ -166,12 +166,14 @@ class AttributeUpchargeCalculator:
                     if matching_modifier:
                         matching_modifier["price"] = upcharge
                 else:
-                    # Check if category is included (no charge).
-                    # If the base price includes this ingredient category, any option is free.
+                    # Check if this is a default ingredient in an included category.
+                    # Only default ingredients (is_default=True) get the free pass.
+                    # User-added extras in the same category should be priced.
+                    is_default = matching_modifier.get("is_default", False) if matching_modifier else False
                     option_category = self._pricing._get_option_ingredient_category(
                         item_type, attr_slug, item_val
                     )
-                    if option_category and option_category in included_categories:
+                    if is_default and option_category and option_category in included_categories:
                         # This is a default ingredient in an included category - no charge
                         priced_slugs.add(item_val_normalized)
                         if matching_modifier:

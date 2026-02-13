@@ -256,10 +256,16 @@ class ModifierCategory(Base):
 
     # For database-backed categories (load from Ingredient table)
     loads_from_ingredients = Column(Boolean, nullable=False, default=False)
-    ingredient_category = Column(String, nullable=True)  # Maps to Ingredient.category value
+    ingredient_category = Column(
+        String, ForeignKey("ingredient_categories.slug"), nullable=True,
+    )  # Maps to Ingredient.category value
 
     # Relationships
     alias_records = relationship("ModifierCategoryAlias", back_populates="modifier_category", cascade="all, delete-orphan")
+    # FK-based relationship to IngredientCategory (when loads_from_ingredients=True)
+    ingredient_category_rel = relationship(
+        "IngredientCategory", foreign_keys=[ingredient_category],
+    )
 
     @property
     def aliases(self) -> list[str]:

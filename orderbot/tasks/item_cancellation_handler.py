@@ -29,6 +29,7 @@ from .modifier_operations import (
     find_default_ingredient_on_any_item,
     remove_default_ingredient_from_item,
 )
+from .config.attribute_resolver import get_mandatory_attributes
 from .utils.pricing_utils import safe_recalculate_price
 
 if TYPE_CHECKING:
@@ -329,6 +330,34 @@ class ItemCancellationHandler:
 
         modifier_match = find_modifier_on_any_item(active_items, parsed.cancel_item)
         if modifier_match:
+            # If the match is on a required attribute and removing it would leave
+            # the item with no filled mandatory attributes, the user is referring
+            # to the item by its attribute (e.g., "remove one pound" means remove
+            # the 1-lb item, not strip the weight attribute).
+            if modifier_match.attribute_key and isinstance(modifier_match.item, MenuItemTask):
+                item_type = modifier_match.item.menu_item_type
+                if item_type:
+                    mandatory_attrs = get_mandatory_attributes(item_type)
+                    mandatory_slugs = {attr['slug'] for attr in mandatory_attrs}
+                    if modifier_match.attribute_key in mandatory_slugs:
+                        attr_values = modifier_match.item.attribute_values or {}
+                        filled_mandatory = sum(
+                            1 for slug in mandatory_slugs if slug in attr_values
+                        )
+                        if filled_mandatory <= 1:
+                            removed_name = modifier_match.item.get_summary()
+                            remove_item_from_order(order, modifier_match.item)
+                            remaining = order.items.get_active_items()
+                            logger.info(
+                                "Cancellation: '%s' matched required attr '%s' on '%s' "
+                                "- removing entire item (only %d mandatory filled)",
+                                parsed.cancel_item, modifier_match.attribute_key,
+                                removed_name, filled_mandatory,
+                            )
+                            return self._build_removal_response(
+                                order, removed_name, bool(remaining)
+                            )
+
             result = remove_modifier_from_item(modifier_match.item, modifier_match)
             if result.success:
                 safe_recalculate_price(self.pricing, modifier_match.item, "after removing modifier")

@@ -23,7 +23,7 @@ from orderbot.cache import menu_cache
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult
 from .parsers.deterministic import MAKE_IT_N_PATTERN
-from .parsers.quantity_utils import parse_make_it_n_quantity
+from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity
 from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.intent_patterns import strip_conversational_fillers
 from .handler_utils import (
@@ -193,16 +193,7 @@ class EarlyPatternHandler:
         if not make_it_n_match:
             return None
 
-        num_str = None
-        for i in range(1, 8):
-            if make_it_n_match.group(i):
-                num_str = make_it_n_match.group(i).lower()
-                break
-
-        if not num_str:
-            return None
-
-        target_qty = parse_make_it_n_quantity(num_str)
+        target_qty = extract_make_it_n_target(make_it_n_match)
         if not target_qty:
             return None
 

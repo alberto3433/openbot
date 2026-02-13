@@ -380,7 +380,10 @@ class PricingEngine(MenuDataMixin):
         )
 
         if price is not None:
-            # Check if this option's ingredient category is already included
+            # Premium options (price_modifier > 0) always charge their upcharge
+            if price > 0:
+                return price
+            # For $0 options, check if the category is already included in base price
             if included_ingredient_categories:
                 option_category = self._get_option_ingredient_category(
                     item_type, attr_slug, option_value
@@ -684,7 +687,30 @@ class PricingEngine(MenuDataMixin):
         This is the single entry point for all price recalculation. It calculates
         price using a fully data-driven approach with no hardcoded attribute names:
 
-        total = base_price + sum(attribute_option.price_modifier) + modifier_prices
+            total = base_price + attr_upcharges + modifier_prices
+
+        **Price sources and their database tables:**
+
+        1. Base price — from ``menu_item_size_prices.price`` (variant/size pricing)
+           or ``menu_items.base_price`` (flat pricing). Resolved in
+           ``_calculate_base_price()``. Bundle pricing rules
+           (``component_slot_options.fixed_price`` / ``included_price_cents``)
+           may reduce or zero out the base.
+
+        2. Attribute upcharges — from ``global_attribute_options.price_modifier``,
+           looked up via ``AttributeUpchargeCalculator.apply_upcharges()``.
+           Each attribute value (bread type, size, iced, etc.) is matched to its
+           option row and the price_modifier is summed. The variant attribute
+           (e.g. "size") is skipped here because it's already covered by #1.
+
+        3. Modifier prices — also from ``global_attribute_options.price_modifier``,
+           but for modifiers not already priced in step 2 (tracked via
+           ``priced_slugs``). Falls back to ingredient price contexts (built from
+           the same ``global_attribute_options`` table but indexed by ingredient
+           name) via ``menu_cache.get_ingredient_price_for_item_type()``.
+
+        The ``priced_slugs`` set prevents double-counting across steps 2 and 3.
+        See ``tests/test_pricing_audit.py`` for data-level consistency guards.
 
         Args:
             item: Any item task (MenuItemTask)

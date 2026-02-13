@@ -19,6 +19,7 @@ from .modifier_change_handler import ChangeRequest
 from .parsers.quantity_utils import extract_leading_quantity
 from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
+from .utils.option_matcher import OptionMatcher
 from .config.attribute_resolver import get_unanswered_mandatory
 
 if TYPE_CHECKING:
@@ -577,11 +578,30 @@ class ConfigModificationHandler:
                 if pending_attr and match.get("category") == pending_attr:
                     # Treat as attribute answer: replace the default and advance config
                     # (mirrors select_input.py:619-620 pattern)
+                    # Resolve through OptionMatcher to get the canonical option slug,
+                    # which may differ from the ingredient slug (e.g. after slug
+                    # renames).  This ensures pricing lookups find the right option.
+                    resolved_slug = ingredient_slug
+                    resolved_display = match.get("name")
+                    attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
+                    options = attrs.get(pending_attr, {}).get("options", [])
+                    if options:
+                        matcher = OptionMatcher()
+                        matched_opt, _ = matcher.match_single(search_term, options)
+                        if not matched_opt:
+                            matched_opt, _ = matcher.match_single(
+                                match.get("name", ""), options
+                            )
+                        if matched_opt:
+                            resolved_slug = matched_opt["slug"]
+                            resolved_display = (
+                                matched_opt.get("display_name") or resolved_display
+                            )
                     item.remove_selection(pending_attr)
                     item.add_selection(
-                        slug=ingredient_slug,
+                        slug=resolved_slug,
                         category=pending_attr,
-                        display_name=match.get("name"),
+                        display_name=resolved_display,
                     )
                     # Recalculate price
                     pricing = (

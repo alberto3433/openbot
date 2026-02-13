@@ -11,6 +11,20 @@ from ...inquiry_patterns import MORE_MENU_ITEMS_PATTERNS
 
 logger = logging.getLogger(__name__)
 
+# Strips common question prefixes from captured text before "by the pound"
+# e.g., "what's your food" -> "food", "do you have any fish" -> "fish"
+_QUESTION_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"what(?:'s|'s|\s+is|\s+are)\s+(?:your|the)\s+"
+    r"|what\s+"
+    r"|do\s+you\s+have\s+(?:any\s+)?"
+    r"|show\s+me\s+(?:your|the)\s+"
+    r"|tell\s+me\s+about\s+(?:your|the)\s+"
+    r"|can\s+i\s+see\s+(?:your|the)\s+"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def parse_signature_menu_inquiry(text: str) -> OpenInputResponse | None:
     """Parse inquiries about signature items, specials, popular items, etc.
@@ -87,21 +101,25 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
     by_pound_match = by_pound_pattern.match(text_lower)
     if by_pound_match:
         category_term = by_pound_match.group(1).strip()
-        # Check if it maps to a known category (DB lookup)
-        category_info = menu_cache.get_category_keyword_mapping(category_term)
-        if category_info:
-            menu_type = category_info["slug"]
-            logger.info("MENU QUERY (by the pound): '%s' -> menu_query_type=%s", text[:50], menu_type)
+        # Strip question prefixes like "what's your", "do you have any"
+        category_term = _QUESTION_PREFIX_RE.sub("", category_term).strip()
+        if category_term:
+            # Check if it maps to a known category (DB lookup)
+            category_info = menu_cache.get_category_keyword_mapping(category_term)
+            if category_info:
+                menu_type = category_info["slug"]
+                logger.info("MENU QUERY (by the pound): '%s' -> menu_query_type=%s", text[:50], menu_type)
+                return OpenInputResponse(
+                    menu_query=True,
+                    menu_query_type=menu_type,
+                )
+            # Even if not in DB mapping, return as a menu query for fallback search
+            logger.info("MENU QUERY (by the pound fallback): '%s' -> menu_query_type=%s", text[:50], category_term)
             return OpenInputResponse(
                 menu_query=True,
-                menu_query_type=menu_type,
+                menu_query_type=category_term,
             )
-        # Even if not in DB mapping, return as a menu query for fallback search
-        logger.info("MENU QUERY (by the pound fallback): '%s' -> menu_query_type=%s", text[:50], category_term)
-        return OpenInputResponse(
-            menu_query=True,
-            menu_query_type=category_term,
-        )
+        # Empty after stripping prefix (e.g., "what's by the pound?") — fall through
 
     # NOTE: Specials/signature menu inquiries are now handled by parse_signature_menu_inquiry()
     # which is called earlier in the parsing pipeline (before dietary inquiry)

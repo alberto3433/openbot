@@ -128,7 +128,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        name_lower = normalize_text(ingredient_name)
+        name_lower = normalize_text(ingredient_name).replace("_", " ")
 
         for category, names in self._ingredients_by_category.items():
             if name_lower in names:
@@ -290,7 +290,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        modifier_lower = normalize_text(modifier)
+        modifier_lower = normalize_text(modifier).replace("_", " ")
         return self._modifier_aliases.get(modifier_lower, modifier)
 
     @ensure_cache_loaded
@@ -349,7 +349,7 @@ class IngredientQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        contexts = self._ingredient_price_contexts.get(normalize_text(ingredient_name), [])
+        contexts = self._ingredient_price_contexts.get(normalize_text(ingredient_name).replace("_", " "), [])
         item_types = []
         seen = set()
 

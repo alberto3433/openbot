@@ -428,6 +428,18 @@ def _try_parse_another_item(text: str) -> OpenInputResponse | None:
             ]
             return OpenInputResponse(parsed_items=parsed_items)
 
+        # Check if keyword is a known attribute option (e.g., "pound" → weight)
+        # If so, treat as "one more of the same" — mirrors _parse_add_more_request logic
+        is_option, attr_slug = menu_cache.is_known_attribute_option(item_keyword_lower)
+        if not is_option:
+            is_option, attr_slug = menu_cache.is_known_attribute_option(item_keyword_singular)
+        if is_option:
+            logger.info(
+                "Deterministic parse: 'another %s' is attribute option (attr=%s), treating as duplicate",
+                item_keyword, attr_slug,
+            )
+            return OpenInputResponse(duplicate_last_item=1)
+
         # Validate against data-driven category keywords or item type triggers
         # This replaces the hardcoded ANOTHER_ITEM_TYPE_KEYWORDS mapping
         resolved_item_type: str | None = None

@@ -427,6 +427,43 @@ class TestDeterministicParserFallback:
 
 
 # =============================================================================
+# "By the Pound" Menu Query Tests
+# =============================================================================
+
+class TestByThePoundMenuQuery:
+    """Tests that question prefixes are stripped from 'by the pound' queries."""
+
+    @pytest.mark.parametrize("text,should_not_contain", [
+        ("what's your food by the pound?", "what"),
+        ("what is your food by the pound", "what"),
+        ("tell me about your fish by the pound", "tell"),
+        ("show me your cheese by the pound", "show"),
+        ("can i see your food by the pound?", "can"),
+    ])
+    def test_by_the_pound_strips_question_prefix(self, text, should_not_contain):
+        """Question words must not leak into menu_query_type."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected parse for: {text}"
+        assert result.menu_query is True, f"Expected menu_query for: {text}"
+        assert result.menu_query_type is not None, f"Expected menu_query_type for: {text}"
+        assert should_not_contain not in result.menu_query_type.lower(), (
+            f"menu_query_type '{result.menu_query_type}' should not contain '{should_not_contain}'"
+        )
+
+    @pytest.mark.parametrize("text", [
+        "food by the pound",
+        "fish by the pound",
+        "cheese by the pound",
+    ])
+    def test_by_the_pound_no_prefix_still_works(self, text):
+        """Bare category + 'by the pound' still parses correctly (regression)."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected parse for: {text}"
+        assert result.menu_query is True, f"Expected menu_query for: {text}"
+        assert result.menu_query_type is not None, f"Expected menu_query_type for: {text}"
+
+
+# =============================================================================
 # Delivery ZIP Code Validation Tests
 # =============================================================================
 
@@ -2569,6 +2606,80 @@ class TestDuplicatePatterns:
         assert result is not None
         assert result.duplicate_last_item == 2  # Add 2 more to reach 3 total
         assert result.duplicate_new_item_type is None
+
+
+class TestAnotherAttributeOptionDuplicate:
+    """Tests for 'another <attribute_option>' triggering duplicate_last_item.
+
+    When the user says 'give me another pound', 'pound' is an attribute option
+    (alias of the 'one_pound' weight option), not a menu item. The parser should
+    treat this as a request to duplicate the last cart item.
+    """
+
+    @pytest.mark.parametrize("text", [
+        "give me another pound",
+        "add another lb",
+    ])
+    def test_attribute_option_triggers_duplicate(self, text):
+        """Attribute option terms like 'pound', 'lb' should set duplicate_last_item=1."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.duplicate_last_item == 1, (
+            f"Expected duplicate_last_item=1 for '{text}', "
+            f"got duplicate_last_item={result.duplicate_last_item}"
+        )
+
+    @pytest.mark.parametrize("text,expected_type", [
+        ("give me another coffee", "coffee_based_beverage"),
+        ("add another bagel", "bagel"),
+    ])
+    def test_non_option_another_still_resolves_items(self, text, expected_type):
+        """Non-attribute-option 'another X' should resolve to items, not duplicate_last_item."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.duplicate_last_item == 0, (
+            f"Expected duplicate_last_item=0 for '{text}', "
+            f"got duplicate_last_item={result.duplicate_last_item}"
+        )
+        # Should have resolved to an item type or parsed items
+        if result.duplicate_new_item_type:
+            assert result.duplicate_new_item_type == expected_type
+        elif result.parsed_items:
+            item_types = [item.item_type for item in result.parsed_items]
+            assert expected_type in item_types, (
+                f"Expected item_type '{expected_type}' in parsed_items for: {text}"
+            )
+        else:
+            raise AssertionError(f"Expected item resolution for: {text}")
+
+    @pytest.mark.parametrize("text,expected_qty", [
+        ("give me 2 more pounds", 2),
+        ("add 3 more pounds", 3),
+        ("give me two more pounds", 2),
+        ("add 2 more lb", 2),
+    ])
+    def test_n_more_attribute_option_triggers_duplicate(self, text, expected_qty):
+        """'N more <attribute_option>' should set duplicate_last_item=N."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.duplicate_last_item == expected_qty, (
+            f"Expected duplicate_last_item={expected_qty} for '{text}', "
+            f"got duplicate_last_item={result.duplicate_last_item}"
+        )
+
+    @pytest.mark.parametrize("text", [
+        "give me 2 more coffees",
+        "add 3 more bagels",
+    ])
+    def test_n_more_non_option_resolves_items(self, text):
+        """'N more <menu_item>' should resolve to items with correct quantity."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected pattern match for: {text}"
+        assert result.duplicate_last_item == 0, (
+            f"Expected duplicate_last_item=0 for '{text}', "
+            f"got duplicate_last_item={result.duplicate_last_item}"
+        )
+        assert result.parsed_items, f"Expected parsed_items for: {text}"
 
 
 # =============================================================================

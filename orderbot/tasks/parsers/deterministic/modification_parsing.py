@@ -23,8 +23,8 @@ from ..constants import (
     SKIP_WORDS_BASIC,
     SKIP_WORDS_PREPOSITIONS,
 )
-from ..intent_patterns import ADD_MORE_PATTERN
-from ..quantity_utils import extract_leading_quantity
+from ..intent_patterns import ADD_MORE_PATTERN, ADD_N_MORE_PATTERN
+from ..quantity_utils import extract_leading_quantity, BASIC_WORD_TO_NUM
 
 from .extraction import extract_modifiers_with_qualifiers
 from .pipeline import get_pipeline
@@ -563,32 +563,62 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int, str | None
 
 def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     """
-    Parse "add more" requests like "add a third orange juice", "add another coffee".
+    Parse "add more" requests like "add a third orange juice", "add another coffee",
+    or "give me 2 more pounds".
 
-    These phrases mean "add 1 more" - ordinals like "third" mean "one more to make 3 total",
+    These phrases mean "add N more" - ordinals like "third" mean "one more to make 3 total",
     NOT "add 3 items".
 
-    Returns OpenInputResponse with quantity=1 for the item, or None if no match.
+    Returns OpenInputResponse with quantity for the item, or None if no match.
     """
-    match = ADD_MORE_PATTERN.match(text.strip())
-    if not match:
-        return None
+    stripped = text.strip()
+    quantity = 1
+    item_text = None
 
-    item_text = match.group(1)
+    # Try "another <thing>" pattern first (quantity always 1)
+    match = ADD_MORE_PATTERN.match(stripped)
+    if match:
+        item_text = match.group(1)
+    else:
+        # Try "N more <thing>" pattern (e.g., "give me 2 more pounds")
+        n_match = ADD_N_MORE_PATTERN.match(stripped)
+        if n_match:
+            qty_str = n_match.group(1)
+            quantity = int(qty_str) if qty_str.isdigit() else BASIC_WORD_TO_NUM.get(qty_str.lower(), 1)
+            item_text = n_match.group(2)
+        else:
+            return None
+
     if item_text:
         item_text = item_text.strip()
         # Clean up trailing punctuation
         item_text = clean_extracted_text(item_text)
 
-    logger.info("ADD MORE REQUEST: detected in '%s', item_text='%s'", text[:50], item_text)
+    logger.info("ADD MORE REQUEST: detected in '%s', item_text='%s', qty=%d", text[:50], item_text, quantity)
 
     # If no item specified, we can't parse deterministically - need context
     # The state machine will need to infer from the last item type
     if not item_text:
+        if quantity > 1:
+            # "give me 2 more" (no item) — duplicate last item N times
+            logger.info("ADD MORE: no item specified, qty=%d, treating as duplicate", quantity)
+            return OpenInputResponse(duplicate_last_item=quantity)
         # Return a special marker that indicates "add 1 more of whatever was last ordered"
         # For now, return None and let it fall through to LLM or state machine handling
         logger.debug("ADD MORE: no item specified, needs context")
         return None
+
+    # If item_text is an attribute option (e.g., "pound" → weight, "large" → size),
+    # treat as "another of the same" — the handler will duplicate the last cart item.
+    # Try both the original text and singularized form (e.g., "pounds" → "pound").
+    is_option, attr_slug = menu_cache.is_known_attribute_option(item_text)
+    if not is_option:
+        singular = singularize(item_text)
+        if singular != item_text:
+            is_option, attr_slug = menu_cache.is_known_attribute_option(singular)
+    if is_option:
+        logger.info("ADD MORE: '%s' is attribute option (attr=%s), treating as duplicate (qty=%d)", item_text, attr_slug, quantity)
+        return OpenInputResponse(duplicate_last_item=quantity)
 
     # Import here to avoid circular imports
     from .item_parsing import (
@@ -602,42 +632,60 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     # and don't require additional configuration questions
     simple_result = _parse_simple_item_deterministic(item_text)
     if simple_result and simple_result.parsed_items:
-        # Set quantity to 1 for "add another"
         for item in simple_result.parsed_items:
-            item.quantity = 1
+            item.quantity = quantity
         item_name = simple_result.parsed_items[0].item_name if hasattr(simple_result.parsed_items[0], 'item_name') else "item"
-        logger.info("ADD MORE: parsed as simple item '%s' (qty=1)", item_name)
+        logger.info("ADD MORE: parsed as simple item '%s' (qty=%d)", item_name, quantity)
         return simple_result
 
     # Try configurable item types using data-driven parser
     configurable_result = _parse_configurable_item(item_text)
     if configurable_result and configurable_result.parsed_items:
-        # Set quantity to 1 for "add another"
         for item in configurable_result.parsed_items:
-            item.quantity = 1
+            item.quantity = quantity
         item_type = configurable_result.parsed_items[0].item_type if hasattr(configurable_result.parsed_items[0], 'item_type') else "item"
-        logger.info("ADD MORE: parsed as configurable item '%s' (qty=1)", item_type)
+        logger.info("ADD MORE: parsed as configurable item '%s' (qty=%d)", item_type, quantity)
         return configurable_result
 
     # Try menu item (includes signature items)
     menu_item, _, _ = _extract_menu_item_from_text(item_text)
     if menu_item:
-        logger.info("ADD MORE: parsed as menu item '%s' (qty=1)", menu_item)
+        logger.info("ADD MORE: parsed as menu item '%s' (qty=%d)", menu_item, quantity)
         return OpenInputResponse(
-            parsed_items=[build_parsed_item(item_type="menu_item", item_name=menu_item, quantity=1)],
+            parsed_items=[build_parsed_item(item_type="menu_item", item_name=menu_item, quantity=quantity)],
         )
 
     # Try to detect any configurable item type using data-driven triggers
     # This replaces hardcoded bagel detection
-    detected_type, _ = _detect_configurable_item_type(item_text)
+    detected_type, trigger = _detect_configurable_item_type(item_text)
     if detected_type:
         # Extract attributes using data-driven extraction
         attr_result = _pipeline.extract_attributes(item_text, detected_type)
-        logger.info("ADD MORE: parsed as %s (qty=1), attrs=%s", detected_type, list(attr_result.values.keys()))
+
+        # Try to find the actual menu item name to avoid falling back to item_type slug
+        item_name = None
+        # 1. Try the trigger as a menu item alias (e.g., "smoked trout" → "Smoked Trout")
+        if trigger:
+            item_name = menu_cache.resolve_menu_item_alias(trigger)
+        # 2. Fallback: check all items of this type for word-boundary match in item_text
+        if not item_name:
+            type_item_names = menu_cache.get_item_names_by_type(detected_type)
+            for name in sorted(type_item_names, key=len, reverse=True):
+                if re.search(rf'\b{re.escape(name)}\b', item_text.lower()):
+                    item_name = menu_cache.resolve_menu_item_alias(name)
+                    if item_name:
+                        break
+
+        logger.info(
+            "ADD MORE: parsed as %s (qty=%d), attrs=%s, item_name=%s",
+            detected_type, quantity, list(attr_result.values.keys()), item_name,
+        )
         return OpenInputResponse(
             parsed_items=[build_parsed_item(
                 item_type=detected_type,
+                item_name=item_name,
                 attr_result=attr_result,
+                quantity=quantity,
             )],
         )
 
@@ -646,12 +694,12 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     if resolved_item:
         # Look up item type for the resolved item
         resolved_item_type = menu_cache.get_item_type_for_menu_item(resolved_item)
-        logger.info("ADD MORE: resolved alias '%s' -> '%s' (type=%s, qty=1)", item_text[:30], resolved_item, resolved_item_type)
+        logger.info("ADD MORE: resolved alias '%s' -> '%s' (type=%s, qty=%d)", item_text[:30], resolved_item, resolved_item_type, quantity)
         return OpenInputResponse(
             parsed_items=[build_parsed_item(
                 item_type=resolved_item_type or "menu_item",
                 item_name=resolved_item,
-                quantity=1,
+                quantity=quantity,
             )],
         )
 

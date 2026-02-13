@@ -32,6 +32,7 @@ from ..intent_patterns import (
     ONE_MORE_PATTERN,
     ANOTHER_ITEM_PATTERN,
     ADD_MORE_PATTERN,
+    ADD_N_MORE_PATTERN,
     # Pattern utilities
     strip_conversational_fillers,
     _get_configurable_item_pattern,
@@ -178,6 +179,7 @@ __all__ = [
     "ONE_MORE_PATTERN",
     "ANOTHER_ITEM_PATTERN",
     "ADD_MORE_PATTERN",
+    "ADD_N_MORE_PATTERN",
     "strip_conversational_fillers",
     "_get_configurable_item_pattern",
     # Extraction

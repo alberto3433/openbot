@@ -37,7 +37,7 @@ class Ingredient(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     slug = Column(String(100), unique=True, nullable=False, index=True)  # Canonical identifier
-    category = Column(String, nullable=False)
+    category = Column(String, ForeignKey("ingredient_categories.slug"), nullable=False)
     unit_id = Column(Integer, ForeignKey("ingredient_units.id"), nullable=False)
     track_inventory = Column(Boolean, nullable=False, default=True)
     # NOTE: Pricing for ingredients is managed via GlobalAttributeOption.price_modifier,
@@ -70,8 +70,12 @@ class Ingredient(Base):
     # Unit relationship
     unit_rel = relationship("IngredientUnit", back_populates="ingredients")
 
-    # Relationship to ModifierCategory via ingredient_category field
-    # This enables deriving modifier_category from ingredient at runtime
+    # FK-based relationship to IngredientCategory
+    category_rel = relationship("IngredientCategory", foreign_keys=[category])
+
+    # Viewonly relationship to ModifierCategory via shared ingredient_categories.slug
+    # Both Ingredient.category and ModifierCategory.ingredient_category FK to
+    # ingredient_categories.slug; this join bridges them for runtime lookups.
     modifier_category = relationship(
         "ModifierCategory",
         primaryjoin="Ingredient.category == foreign(ModifierCategory.ingredient_category)",

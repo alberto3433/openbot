@@ -126,7 +126,7 @@ class OptionsInquiryHandler:
 
             # Also check for partial topic matches for compound topics like "Tea Flavor"
             # "what flavors do you have?" should match when topic is "Tea Flavor"
-            topic_words = topic_lower.replace("_", " ").split()
+            topic_words = [w.strip(",.;:!?&/()") for w in topic_lower.replace("_", " ").split()]
             for word in topic_words:
                 if len(word) >= 4:  # Skip short words like "of", "the"
                     word_patterns = [

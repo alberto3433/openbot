@@ -43,7 +43,9 @@ from .checkout_messages import (
     sure_added_to_anything_else,
     sure_removed_anything_else,
     sure_updated_anything_else,
+    got_it_anything_else,
 )
+from .parsers.deterministic.qualifier_extraction import extract_modifiers_with_qualifiers
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -81,6 +83,71 @@ def _parse_quantity(num_str: str) -> int | None:
         qty = int(num_str)
         return qty if qty >= 1 else None
     return _WORD_TO_NUM.get(num_str)
+
+
+def apply_qualifier_to_selection(item: MenuItemTask, input_lower: str) -> bool:
+    """Apply qualifier phrases (e.g., "on the side") to existing selections.
+
+    Parses the input for modifier+qualifier pairs and updates matching
+    selections' display_name to include the qualifier.
+
+    For example, if the item has a "Ketchup" selection and the user says
+    "ketchup on the side", the display_name becomes "Ketchup (on the side)".
+
+    Args:
+        item: The MenuItemTask whose selections may be updated.
+        input_lower: Lowercase user input to parse.
+
+    Returns:
+        True if any selection was updated with a qualifier, False otherwise.
+    """
+    if not item.selections or not item.menu_item_type:
+        return False
+
+    # Get modifier patterns for this item type to pass to qualifier extraction
+    modifier_patterns = get_all_modifier_patterns_for_item(item.menu_item_type)
+    if not modifier_patterns:
+        return False
+
+    # Extract modifiers with their qualifiers from the input
+    formatted_mods, _conflicts = extract_modifiers_with_qualifiers(input_lower, modifier_patterns)
+    if not formatted_mods:
+        return False
+
+    updated = False
+    for formatted in formatted_mods:
+        # Only process entries that have a qualifier (contain parentheses)
+        if "(" not in formatted or ")" not in formatted:
+            continue
+
+        # Parse "ModifierName (qualifier)" format
+        paren_start = formatted.index("(")
+        base_name = formatted[:paren_start].strip()
+        qualifier_text = formatted[paren_start + 1:formatted.rindex(")")].strip()
+
+        if not qualifier_text:
+            continue
+
+        # Find matching selection by slug or display_name
+        for sel in item.selections:
+            sel_slug = sel.get("slug", "").replace("_", " ")
+            sel_display = sel.get("display_name", "")
+
+            if (base_name.lower() == sel_slug.lower()
+                    or base_name.lower() == sel_display.lower()):
+                # Update display_name to include qualifier
+                original_display = sel_display or base_name
+                # Don't double-add qualifier if already present
+                if f"({qualifier_text})" not in original_display:
+                    sel["display_name"] = f"{original_display} ({qualifier_text})"
+                    updated = True
+                    logger.info(
+                        "Applied qualifier '%s' to selection '%s' -> '%s'",
+                        qualifier_text, original_display, sel["display_name"],
+                    )
+                break
+
+    return updated
 
 
 class EarlyPatternHandler:
@@ -265,10 +332,16 @@ class EarlyPatternHandler:
             logger.info("EARLY_MOD_DETECT: accepts_modifiers=%s", accepts_modifiers)
             if accepts_modifiers:
                 # Check if input is ONLY a modifier (no other item keywords)
+                # Strip qualifier phrases first so "on the side" doesn't match "side" as an item
+                input_for_keyword_check = input_lower
+                for qp in menu_cache.get_qualifier_patterns():
+                    input_for_keyword_check = re.sub(
+                        rf'\b{re.escape(qp)}\b', '', input_for_keyword_check
+                    ).strip()
                 item_keywords = menu_cache.get_item_keywords()
                 non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
                 has_other_item = any(
-                    re.search(rf'\b{re.escape(kw)}\b', input_lower)
+                    re.search(rf'\b{re.escape(kw)}\b', input_for_keyword_check)
                     for kw in non_modifier_keywords
                 )
                 logger.info("EARLY_MOD_DETECT: has_other_item=%s", has_other_item)
@@ -307,10 +380,17 @@ class EarlyPatternHandler:
         # Try adding modifiers
         made_change = add_modifiers_from_input(last_item, input_lower)
 
-        if made_change:
+        # Apply qualifier to selection (works for both existing and just-added modifiers)
+        qualifier_applied = apply_qualifier_to_selection(last_item, input_lower)
+
+        if made_change or qualifier_applied:
             updated_summary = recalculate_and_summarize(last_item, self.pricing)
+            if qualifier_applied and not made_change:
+                msg = got_it_anything_else(input_lower.strip())
+            else:
+                msg = sure_added_to_anything_else(updated_summary)
             return StateMachineResult(
-                message=sure_added_to_anything_else(updated_summary),
+                message=msg,
                 order=order,
             )
 

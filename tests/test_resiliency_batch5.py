@@ -46,8 +46,8 @@ class TestMultiItemOrders:
             f"First item should be bagel, got: {bagel.menu_item_name}"
 
         # Should be asking about toasted for the bagel
-        assert "toasted" in message_lower, \
-            f"Should ask about toasted. Message: {result.message}"
+        assert "toast" in message_lower, \
+            f"Should ask about toasting. Message: {result.message}"
 
     def test_two_different_bagels(self):
         """

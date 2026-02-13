@@ -530,11 +530,17 @@ class ModifierInputHandler:
                 menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
             )
             if accepts_modifiers:
+                # Strip qualifier phrases first so "on the side" doesn't match "side" as an item
+                input_for_keyword_check = input_lower
+                for qp in menu_cache.get_qualifier_patterns():
+                    input_for_keyword_check = re.sub(
+                        rf'\b{re.escape(qp)}\b', '', input_for_keyword_check
+                    ).strip()
                 item_keywords = menu_cache.get_item_keywords()
                 non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
                 # Use word-boundary matching to avoid false positives
                 has_other_item = any(
-                    re.search(rf'\b{re.escape(kw)}\b', input_lower)
+                    re.search(rf'\b{re.escape(kw)}\b', input_for_keyword_check)
                     for kw in non_modifier_keywords
                 )
                 if not has_other_item:

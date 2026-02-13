@@ -439,7 +439,7 @@ class TestQuantityChangeDuringConfig:
         # Continue configuring until we're done
         max_steps = 10  # Increased to handle size + flavor + milk for both teas
         for step in range(max_steps):
-            if "anything else" in msg_lower and "flavor" not in msg_lower and "milk" not in msg_lower and "size" not in msg_lower:
+            if "anything else" in msg_lower and "flavor" not in msg_lower and "type of tea" not in msg_lower and "milk" not in msg_lower and "size" not in msg_lower:
                 break
 
             # Check what the current question is asking for
@@ -447,7 +447,7 @@ class TestQuantityChangeDuringConfig:
                 result = sm.process("large", order=order)
                 order = result.order
                 print(f"Step {step + 1} - After 'large': {result.message}")
-            elif "flavor" in msg_lower:
+            elif "flavor" in msg_lower or "type of tea" in msg_lower:
                 result = sm.process("green tea", order=order)
                 order = result.order
                 print(f"Step {step + 1} - After 'green tea': {result.message}")

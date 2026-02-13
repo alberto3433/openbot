@@ -77,9 +77,9 @@ Available categories:
 Reply with ONLY the category slug (lowercase, no quotes) or "none" if no match."""
 
     try:
-        from openai import OpenAI
+        from .llm_parsers import _get_openai_client
 
-        client = OpenAI(api_key=api_key, timeout=timeout)
+        client = _get_openai_client(timeout=timeout)
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",

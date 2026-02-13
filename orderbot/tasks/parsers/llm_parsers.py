@@ -38,12 +38,12 @@ from ..schemas.parser_responses import AttributeChoiceResponse
 logger = logging.getLogger(__name__)
 
 
-def get_instructor_client():
+def get_instructor_client(timeout: float = 10.0):
     """Get instructor-wrapped OpenAI client."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("OPENAI_API_KEY not set")
-    return instructor.from_openai(OpenAI(api_key=api_key))
+    return instructor.from_openai(OpenAI(api_key=api_key, timeout=timeout))
 
 
 def _create_llm_parser(

@@ -12,6 +12,7 @@ from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
 from .schemas import OrderPhase, StateMachineResult
+from .config.attribute_resolver import get_unanswered_mandatory
 from .parsers import parse_side_choice
 from .parsers.deterministic import get_pipeline
 from orderbot.cache import menu_cache
@@ -260,23 +261,9 @@ class ConfigSideChoiceHandler:
         # Add the child item to the order
         order.items.add_item(child_item)
 
-        # Check if parent item has remaining mandatory attributes to ask
-        # (e.g., omelette still needs cheese, toppings after side_choice is done)
-        parent_item_type = item.menu_item_type
+        # Set side_choice and decline redundant parent attrs BEFORE checking
+        # unanswered, so get_unanswered_mandatory correctly excludes them.
         if parent_item_type:
-            parent_attrs = menu_cache.get_item_type_attributes(parent_item_type)
-            # Find attributes that are ask_in_conversation and not yet answered
-            # Exclude side_choice since we just answered it
-            unanswered_parent_attrs = []
-            for attr_slug, attr_config in parent_attrs.items():
-                if attr_slug == "side_choice":
-                    continue  # Just answered
-                if not attr_config.get("ask_in_conversation", False):
-                    continue  # Not asked in conversation
-                # Check if this attribute has been answered
-                if attr_slug not in item.attribute_values:
-                    unanswered_parent_attrs.append(attr_slug)
-
             # Mark side_choice as answered on the parent
             # Normalize the value to use global attribute option slug for skip rule matching
             side_choice_value = self._normalize_side_choice_value(
@@ -288,19 +275,26 @@ class ConfigSideChoiceHandler:
             # attribute with the same name, mark it as declined. The child item handles its
             # own configuration, so we don't want to ask the same question on the parent.
             # E.g., omelette has both side_choice=bagel AND a "bagel" attribute - redundant.
-            if opt_item_type and opt_item_type in unanswered_parent_attrs:
-                item[opt_item_type] = None  # Mark as declined/not applicable
-                unanswered_parent_attrs.remove(opt_item_type)
-                logger.info(
-                    "SIDE_CHOICE: Marked parent's '%s' attribute as declined (child handles it)",
-                    opt_item_type
-                )
+            if opt_item_type:
+                parent_attrs = menu_cache.get_item_type_attributes(parent_item_type)
+                if opt_item_type in parent_attrs:
+                    item[opt_item_type] = None  # Mark as declined/not applicable
+                    logger.info(
+                        "SIDE_CHOICE: Marked parent's '%s' attribute as declined (child handles it)",
+                        opt_item_type
+                    )
 
-            if unanswered_parent_attrs:
+            # Use get_unanswered_mandatory which correctly handles:
+            # - skip rules from the side_choice value
+            # - auto-populated defaults (is_default=True) treated as unanswered
+            unanswered = get_unanswered_mandatory(item, parent_item_type)
+
+            if unanswered:
                 # Parent still has questions - keep it in progress
                 logger.info(
                     "SIDE_CHOICE: Parent %s has %d unanswered attributes: %s - keeping IN_PROGRESS",
-                    item.menu_item_name, len(unanswered_parent_attrs), unanswered_parent_attrs
+                    item.menu_item_name, len(unanswered),
+                    [a["slug"] for a in unanswered]
                 )
                 item.mark_in_progress()  # Keep parent in progress
             else:

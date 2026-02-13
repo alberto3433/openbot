@@ -7,7 +7,7 @@ Contains methods for querying categories and category keywords.
 import re
 import logging
 
-from .base import normalize_text, singularize, pluralize
+from .base import ensure_cache_loaded, normalize_text, singularize, pluralize
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 class CategoryQueryMixin:
     """Mixin containing category query methods."""
 
+    @ensure_cache_loaded
     def get_available_menu_categories(self) -> dict[str, str]:
         """Get all available high-level menu categories.
 
@@ -24,9 +25,9 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         return self._available_categories.copy()
 
+    @ensure_cache_loaded
     def get_modifier_categories_for_inquiry(self) -> dict[str, dict]:
         """Get modifier categories for menu inquiries.
 
@@ -36,9 +37,9 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._modifier_categories.copy()
 
+    @ensure_cache_loaded
     def get_modifier_category_items(self, slug: str) -> set[str]:
         """Get items for a modifier category.
 
@@ -51,7 +52,6 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         cat_info = self._modifier_categories.get(slug, {})
 
         if cat_info.get("loads_from_ingredients"):
@@ -61,6 +61,7 @@ class CategoryQueryMixin:
 
         return set()
 
+    @ensure_cache_loaded
     def get_modifier_category_by_alias(self, alias: str) -> str | None:
         """Look up modifier category slug by alias.
 
@@ -76,9 +77,9 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._modifier_category_alias_to_slug.get(normalize_text(alias))
 
+    @ensure_cache_loaded
     def get_category_keyword_mapping(self, keyword: str) -> dict | None:
         """Look up category info for a user keyword.
 
@@ -91,10 +92,10 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         keyword_lower = normalize_text(keyword)
         return self._category_keywords.get(keyword_lower)
 
+    @ensure_cache_loaded
     def is_category_reference(self, term: str) -> str | None:
         """Check if a term matches a category name/slug (case-insensitive).
 
@@ -111,7 +112,6 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         term_lower = normalize_text(term)
 
         # Check category keywords first
@@ -146,6 +146,7 @@ class CategoryQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def get_category_needing_clarification(self, text: str) -> str | None:
         """Check if text contains a generic category term that needs clarification.
 
@@ -158,7 +159,6 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         text_lower = normalize_text(text)
 
         for keyword, mapping in self._category_keywords.items():
@@ -168,6 +168,7 @@ class CategoryQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def get_menu_display_groups(self) -> list[dict]:
         """Get menu display groups for "what's on the menu?" responses.
 
@@ -181,9 +182,9 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return list(self._menu_display_groups_ordered)
 
+    @ensure_cache_loaded
     def get_display_group_by_slug(self, slug: str) -> dict | None:
         """Get display group info by slug, alias, or display name match.
 
@@ -202,7 +203,6 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         query_lower = normalize_text(slug)
 
         # Try exact slug match first
@@ -258,6 +258,7 @@ class CategoryQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def get_item_types_in_display_group(self, display_group_slug: str) -> list[str]:
         """Get item type slugs that belong to a display group.
 
@@ -273,5 +274,4 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._item_types_by_display_group.get(display_group_slug, [])

@@ -112,8 +112,9 @@ def strip_ordering_prefix(user_input: str) -> str:
 
 
 # Filler word definitions for strip_filler_words and strip_leading_filler_words
-# These are duplicated here from parsers/constants.py to avoid circular imports.
-# The canonical definitions live in parsers/constants.py.
+# Cannot import from parsers/constants.py due to circular import:
+#   normalization.py -> parsers/constants.py -> parsers/__init__.py -> normalization.py
+# Canonical definition: parsers/constants.py:ARTICLES
 _ARTICLES = frozenset({'the', 'a', 'an', 'some'})
 _ORDERING_PREFIXES = frozenset({
     "i want", "i'd like", "i need", "i'll have", "i'll take",

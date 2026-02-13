@@ -17,6 +17,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
+from orderbot.tasks.parsers.constants import ARTICLES
 
 if TYPE_CHECKING:
     pass
@@ -76,11 +77,25 @@ def match_any_pattern_in_input(
 # Text Normalization
 # ============================================================================
 
-# Common articles to strip
-ARTICLES = ("a ", "an ", "the ", "some ")
+# ARTICLES imported from parsers.constants (single source of truth)
 
-# Common trailing filler words
-TRAILING_FILLERS = (" please", " thanks", " thank you", " pls")
+# Common trailing filler words (ordered longest-first for greedy matching)
+TRAILING_FILLERS = (
+    " if you don't mind",
+    " if that's alright",
+    " when you get a chance",
+    " if that's okay",
+    " if that's ok",
+    " if you would",
+    " if you could",
+    " if possible",
+    " if you can",
+    " thank you",
+    " thanks",
+    " please",
+    " pls",
+    " thx",
+)
 
 
 def normalize_modifier_input(
@@ -108,8 +123,9 @@ def normalize_modifier_input(
 
     if strip_articles:
         for article in ARTICLES:
-            if result.startswith(article):
-                result = result[len(article):]
+            prefix = article + " "
+            if result.startswith(prefix):
+                result = result[len(prefix):]
                 break
 
     if strip_trailing_fillers:

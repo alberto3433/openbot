@@ -8,7 +8,7 @@ import re
 import logging
 from typing import Pattern
 
-from .base import _SMART_QUOTE_MAP
+from .base import ensure_cache_loaded, _SMART_QUOTE_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class ParsingQueryMixin:
     """Mixin containing parsing-related query methods."""
 
+    @ensure_cache_loaded
     def get_response_patterns(self, pattern_type: str) -> set[str]:
         """Get all patterns for a response type.
 
@@ -28,9 +29,9 @@ class ParsingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._response_patterns.get(pattern_type, set()).copy()
 
+    @ensure_cache_loaded
     def is_response_type(self, text: str, pattern_type: str) -> bool:
         """Check if text matches a response pattern type.
 
@@ -44,7 +45,6 @@ class ParsingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         normalized = text.lower().strip()
         # Normalize smart quotes from speech-to-text input (U+2018/2019/201C/201D)
         normalized = normalized.translate(_SMART_QUOTE_MAP)
@@ -115,6 +115,7 @@ class ParsingQueryMixin:
         """
         return self.is_response_type(text, "greeting")
 
+    @ensure_cache_loaded
     def get_standalone_instruction_patterns(self) -> list[Pattern]:
         """Get compiled patterns for standalone instructions.
 
@@ -127,7 +128,6 @@ class ParsingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         patterns = []
 
         # Return individual patterns without anchors (for searching within text)
@@ -140,6 +140,7 @@ class ParsingQueryMixin:
 
         return patterns
 
+    @ensure_cache_loaded
     def get_item_type_triggers(self, item_type_slug: str | None = None) -> dict[str, set[str]] | set[str]:
         """Get item type trigger keywords.
 
@@ -154,11 +155,11 @@ class ParsingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         if item_type_slug:
             return self._item_type_triggers.get(item_type_slug, set()).copy()
         return {k: v.copy() for k, v in self._item_type_triggers.items()}
 
+    @ensure_cache_loaded
     def get_configurable_item_type_slugs(self) -> set[str]:
         """Get slugs of item types that have askable attributes.
 
@@ -168,9 +169,9 @@ class ParsingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._configurable_item_type_slugs.copy()
 
+    @ensure_cache_loaded
     def get_configurable_item_names(self) -> set[str]:
         """Get all item names for configurable item types.
 
@@ -180,7 +181,6 @@ class ParsingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         if self._configurable_item_names is not None:
             return self._configurable_item_names.copy()
 
@@ -192,6 +192,7 @@ class ParsingQueryMixin:
         self._configurable_item_names = result
         return result.copy()
 
+    @ensure_cache_loaded
     def text_matches_exclusion_phrase(self, text: str) -> bool:
         """Check if text contains an item with required match phrases.
 
@@ -207,7 +208,6 @@ class ParsingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         text_lower = text.lower()
 
         for item_name, phrases in self._items_with_required_phrases.items():

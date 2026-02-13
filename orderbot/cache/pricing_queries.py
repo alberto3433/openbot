@@ -7,7 +7,7 @@ Contains methods for price lookups and price inquiry resolution.
 import logging
 from typing import Any
 
-from .base import normalize_text
+from .base import ensure_cache_loaded, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 class PricingQueryMixin:
     """Mixin containing pricing-related query methods."""
 
+    @ensure_cache_loaded
     def item_type_has_priced_attributes(self, item_type_slug: str) -> bool:
         """Check if an item type has priced attribute options.
 
@@ -27,9 +28,9 @@ class PricingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._item_type_priced_attribute.get(item_type_slug) is not None
 
+    @ensure_cache_loaded
     def get_first_priced_attribute(self, item_type_slug: str) -> str | None:
         """Get the first priced attribute for an item type.
 
@@ -42,9 +43,9 @@ class PricingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._item_type_priced_attribute.get(item_type_slug)
 
+    @ensure_cache_loaded
     def get_resolved_item_price(self, item_name: str) -> float | None:
         """Get the resolved price for a menu item.
 
@@ -57,9 +58,9 @@ class PricingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._resolved_item_prices.get(item_name.lower())
 
+    @ensure_cache_loaded
     def get_ingredient_price_for_item_type(
         self, ingredient_name: str, item_type: str
     ) -> float | None:
@@ -78,8 +79,7 @@ class PricingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
-        ing_lower = normalize_text(ingredient_name)
+        ing_lower = normalize_text(ingredient_name).replace("_", " ")
 
         contexts = self._ingredient_price_contexts.get(ing_lower)
         if not contexts:
@@ -102,6 +102,7 @@ class PricingQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def resolve_price_inquiry(
         self, query: str, context: dict | None = None
     ) -> dict[str, Any]:
@@ -123,7 +124,6 @@ class PricingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         query_lower = normalize_text(query)
 
         # 1. Check for exact menu item match

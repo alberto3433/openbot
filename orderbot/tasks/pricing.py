@@ -544,15 +544,13 @@ class PricingEngine(MenuDataMixin):
     # =========================================================================
 
     def lookup_modifier_price(self, modifier_name: str, item_type: str) -> float:
-        """
-        Look up price modifier for an item add-on (protein, cheese, topping).
+        """Look up price modifier for an item add-on (protein, cheese, topping).
 
-        Searches the specified item_type's attribute options for matching modifier prices.
-        Does NOT fall back to other item types - modifiers must be configured for
-        each item type that uses them.
+        Like lookup_generic_modifier_price, but first resolves database aliases
+        (e.g., "lox" -> "Nova Scotia Salmon") before looking up the price.
 
         Args:
-            modifier_name: Name of the modifier (e.g., "ham", "egg", "american")
+            modifier_name: Name of the modifier (e.g., "ham", "egg", "lox")
             item_type: Item type to look up (required, no default)
 
         Returns:
@@ -561,49 +559,9 @@ class PricingEngine(MenuDataMixin):
         Raises:
             MenuDataNotLoadedError: If menu_data is not available or item_type doesn't exist
         """
-        modifier_lower = modifier_name.lower().strip()
-
-        # First, normalize using database-driven alias lookup (e.g., "lox" -> "Nova Scotia Salmon")
-        canonical_name = menu_cache.normalize_modifier(modifier_lower)
-
-        # Convert to slug format for matching
-        normalized = normalize_to_slug(canonical_name)
-
-        # Use cache helper for validated attribute lookup (raises MenuDataNotLoadedError)
-        attributes = get_item_type_attributes(
-            self._menu_data,
-            item_type,
-            f"look up modifier price for '{modifier_name}'",
-        )
-
-        price, attr_slug = _lookup_option_price_in_attributes(
-            attributes,
-            normalized,
-            modifier_lower,
-        )
-
-        if price is not None:
-            logger.debug(
-                "Found modifier price: %s = $%.2f (from %s.%s)",
-                modifier_name, price, item_type, attr_slug
-            )
-            return price
-
-        # Fallback: Check ingredient price contexts (for ingredients not in attribute options)
-        ing_price = menu_cache.get_ingredient_price_for_item_type(modifier_name, item_type)
-        if ing_price is not None and ing_price > 0:
-            logger.debug(
-                "Found ingredient price: %s = $%.2f (from ingredient contexts for %s)",
-                modifier_name, ing_price, item_type
-            )
-            return ing_price
-
-        # Not found in this item type - return 0.0 (modifier is free or unconfigured)
-        logger.debug(
-            "Modifier '%s' not found in item_type '%s'. Returning $0.00.",
-            modifier_name, item_type
-        )
-        return 0.0
+        # Resolve database alias (e.g., "lox" -> "Nova Scotia Salmon")
+        canonical_name = menu_cache.normalize_modifier(modifier_name.lower().strip())
+        return self.lookup_generic_modifier_price(canonical_name, item_type)
 
     # =========================================================================
     # Unified Price Recalculation (Generic, Data-Driven)

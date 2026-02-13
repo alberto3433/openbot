@@ -589,6 +589,9 @@ class BaseCacheMixin:
         # Maps lowercase alias -> group_slug (e.g., "pastries" -> "desserts_pastries")
         self._display_group_alias_to_slug: dict[str, str] = {}
 
+        # Memoized query results (invalidated on reload)
+        self._all_attribute_option_words_cache: dict[str, str] | None = None
+
         # Metadata
         self._last_refresh: datetime | None = None
         self._is_loaded: bool = False

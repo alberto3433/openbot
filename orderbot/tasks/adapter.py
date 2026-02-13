@@ -57,6 +57,47 @@ logger = logging.getLogger(__name__)
 # Flow State Helpers
 # -----------------------------------------------------------------------------
 
+# Single source of truth for all flow state fields serialized to/from
+# state_machine_state. Each entry is (field_name, default_value).
+# Adding a new field here automatically handles both serialize and restore.
+# Note: pending_item_id is a computed property — do NOT include it here.
+_FLOW_STATE_FIELDS: list[tuple[str, object]] = [
+    ("phase", "greeting"),
+    ("pending_item_ids", []),
+    ("pending_field", None),
+    ("last_bot_message", None),
+    ("pending_config_queue", []),
+    ("pending_item_modifiers", {}),
+    ("pending_item_options", []),
+    ("pending_item_quantity", 1),
+    ("menu_query_pagination", None),
+    ("config_options_page", 0),
+    ("multi_item_config_names", []),
+    ("pending_duplicate_selection", None),
+    ("pending_same_thing_clarification", None),
+    ("pending_suggested_item", None),
+    ("pending_attr_disambiguation", None),
+    ("pending_modifier_quantity", None),
+    ("pending_modifier_is_additive", False),
+    ("pending_modifier_target_item_index", None),
+    ("pending_parsed_items", []),
+    ("pending_dietary_followup", None),
+    ("pending_quantity_addition", None),
+    ("pending_order_history", None),
+    ("pending_reorder_items", None),
+    ("pending_reorder_offer_items", None),
+    # Previously missing fields — were silently lost on session restore
+    ("unknown_item_request", None),
+    ("pending_change_clarification", None),
+    ("pending_ingredient_suggestion", None),
+    ("pending_ingredient_to_apply", None),
+    ("pending_switch_item", None),
+    ("pending_replace_item_id", None),
+    ("pending_ingredient_search", None),
+    ("pending_unmatched_pagination", None),
+]
+
+
 def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
     """Restore flow state fields from state_machine_state dict to OrderTask.
 
@@ -64,30 +105,8 @@ def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
         sm_state: The state_machine_state dict from order_dict
         order: The OrderTask to populate
     """
-    order.pending_item_ids = sm_state.get("pending_item_ids", [])
-    order.pending_field = sm_state.get("pending_field")
-    order.last_bot_message = sm_state.get("last_bot_message")
-    order.phase = sm_state.get("phase", "greeting")
-    order.pending_config_queue = sm_state.get("pending_config_queue", [])
-    order.pending_item_modifiers = sm_state.get("pending_item_modifiers", {})
-    order.pending_item_options = sm_state.get("pending_item_options", [])
-    order.pending_item_quantity = sm_state.get("pending_item_quantity", 1)
-    order.menu_query_pagination = sm_state.get("menu_query_pagination")
-    order.config_options_page = sm_state.get("config_options_page", 0)
-    order.multi_item_config_names = sm_state.get("multi_item_config_names", [])
-    order.pending_duplicate_selection = sm_state.get("pending_duplicate_selection")
-    order.pending_same_thing_clarification = sm_state.get("pending_same_thing_clarification")
-    order.pending_suggested_item = sm_state.get("pending_suggested_item")
-    order.pending_attr_disambiguation = sm_state.get("pending_attr_disambiguation")
-    order.pending_modifier_quantity = sm_state.get("pending_modifier_quantity")
-    order.pending_modifier_is_additive = sm_state.get("pending_modifier_is_additive", False)
-    order.pending_modifier_target_item_index = sm_state.get("pending_modifier_target_item_index")
-    order.pending_parsed_items = sm_state.get("pending_parsed_items", [])
-    order.pending_dietary_followup = sm_state.get("pending_dietary_followup")
-    order.pending_quantity_addition = sm_state.get("pending_quantity_addition")
-    order.pending_order_history = sm_state.get("pending_order_history")
-    order.pending_reorder_items = sm_state.get("pending_reorder_items")
-    order.pending_reorder_offer_items = sm_state.get("pending_reorder_offer_items")
+    for field_name, default in _FLOW_STATE_FIELDS:
+        setattr(order, field_name, sm_state.get(field_name, default))
 
 
 def _build_flow_state_dict(order: OrderTask) -> dict:
@@ -99,33 +118,7 @@ def _build_flow_state_dict(order: OrderTask) -> dict:
     Returns:
         Dict containing all flow state fields
     """
-    return {
-        "phase": order.phase,
-        "pending_item_ids": order.pending_item_ids,
-        "pending_item_id": order.pending_item_id,
-        "pending_field": order.pending_field,
-        "last_bot_message": order.last_bot_message,
-        "pending_config_queue": order.pending_config_queue,
-        "pending_item_modifiers": order.pending_item_modifiers,
-        "pending_item_options": order.pending_item_options,
-        "pending_item_quantity": order.pending_item_quantity,
-        "menu_query_pagination": order.menu_query_pagination,
-        "config_options_page": order.config_options_page,
-        "multi_item_config_names": order.multi_item_config_names,
-        "pending_duplicate_selection": order.pending_duplicate_selection,
-        "pending_same_thing_clarification": order.pending_same_thing_clarification,
-        "pending_suggested_item": order.pending_suggested_item,
-        "pending_attr_disambiguation": order.pending_attr_disambiguation,
-        "pending_modifier_quantity": order.pending_modifier_quantity,
-        "pending_modifier_is_additive": order.pending_modifier_is_additive,
-        "pending_modifier_target_item_index": order.pending_modifier_target_item_index,
-        "pending_parsed_items": order.pending_parsed_items,
-        "pending_dietary_followup": order.pending_dietary_followup,
-        "pending_quantity_addition": order.pending_quantity_addition,
-        "pending_order_history": order.pending_order_history,
-        "pending_reorder_items": order.pending_reorder_items,
-        "pending_reorder_offer_items": order.pending_reorder_offer_items,
-    }
+    return {field_name: getattr(order, field_name) for field_name, _ in _FLOW_STATE_FIELDS}
 
 
 # -----------------------------------------------------------------------------

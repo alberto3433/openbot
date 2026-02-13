@@ -6,12 +6,15 @@ Contains methods for extracting relevant keywords from attributes for matching.
 
 import logging
 
+from .base import ensure_cache_loaded
+
 logger = logging.getLogger(__name__)
 
 
 class KeywordQueryMixin:
     """Mixin containing keyword extraction query methods."""
 
+    @ensure_cache_loaded
     def get_relevant_keywords_for_attribute(
         self, item_type_slug: str | None, attr_slug: str
     ) -> set[str]:
@@ -27,7 +30,6 @@ class KeywordQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         keywords: set[str] = set()
 
         if item_type_slug:
@@ -89,6 +91,7 @@ class KeywordQueryMixin:
         if category:
             keywords.add(category.lower())
 
+    @ensure_cache_loaded
     def get_attribute_for_inquiry_keyword(
         self, keyword: str, item_type_slug: str | None = None
     ) -> str | None:
@@ -113,7 +116,6 @@ class KeywordQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded.
         """
-        self._ensure_loaded()
         keyword_lower = keyword.lower()
 
         # 1. Try exact match with item type

@@ -50,6 +50,29 @@ class OptionQueryMixin:
                 return opt.get("display_name")
         return None
 
+    @staticmethod
+    def _find_matching_option(options: list[dict], input_lower: str) -> dict | None:
+        """Find an option matching by slug, display_name, or alias.
+
+        Args:
+            options: List of option dicts to search
+            input_lower: Normalized lowercase input to match against
+
+        Returns:
+            The matching option dict, or None if no match found.
+        """
+        for opt in options:
+            if opt.get("slug", "").lower() == input_lower:
+                return opt
+            if opt.get("display_name", "").lower() == input_lower:
+                return opt
+            aliases = opt.get("aliases")
+            if aliases:
+                alias_list = [a.strip().lower() for a in aliases]
+                if input_lower in alias_list:
+                    return opt
+        return None
+
     @ensure_cache_loaded
     def resolve_option_by_alias(self, attr_slug: str, input_value: str) -> dict | None:
         """Resolve an option by value or alias within a global attribute.
@@ -65,20 +88,7 @@ class OptionQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         options = self._global_attribute_options.get(attr_slug, [])
-        input_lower = normalize_text(input_value)
-
-        for opt in options:
-            if opt.get("slug", "").lower() == input_lower:
-                return opt
-            if opt.get("display_name", "").lower() == input_lower:
-                return opt
-            aliases = opt.get("aliases")
-            if aliases:
-                alias_list = [a.strip().lower() for a in aliases]
-                if input_lower in alias_list:
-                    return opt
-
-        return None
+        return self._find_matching_option(options, normalize_text(input_value))
 
     @ensure_cache_loaded
     def is_known_attribute_option(self, word: str) -> tuple[bool, str | None]:
@@ -94,13 +104,9 @@ class OptionQueryMixin:
             MenuDataNotLoadedError: If cache is not loaded
         """
         word_lower = normalize_text(word)
-
         for attr_slug, options in self._global_attribute_options.items():
-            for opt in options:
-                if opt.get("slug", "").lower() == word_lower:
-                    return True, attr_slug
-                if opt.get("display_name", "").lower() == word_lower:
-                    return True, attr_slug
+            if self._find_matching_option(options, word_lower) is not None:
+                return True, attr_slug
         return False, None
 
     @ensure_cache_loaded
@@ -110,12 +116,19 @@ class OptionQueryMixin:
         Includes both global attribute options and item-type-specific attribute
         options (including boolean attribute display names like "iced", "toasted").
 
+        Results are memoized after first call since the underlying data is static
+        after cache load. Invalidated automatically on cache reload via
+        _all_attribute_option_words_cache reset in _init_all_caches.
+
         Returns:
             Dict mapping option word -> attribute slug
 
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
+        if self._all_attribute_option_words_cache is not None:
+            return self._all_attribute_option_words_cache.copy()
+
         result: dict[str, str] = {}
 
         # Global attribute options
@@ -171,7 +184,8 @@ class OptionQueryMixin:
                         if prefix not in result:
                             result[prefix] = f"_variant_{item_type_slug}"
 
-        return result
+        self._all_attribute_option_words_cache = result
+        return result.copy()
 
     @ensure_cache_loaded
     def get_all_config_answer_words(self) -> set[str]:

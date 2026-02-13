@@ -6,7 +6,7 @@ Contains methods for querying item types, configurable types, and type metadata.
 
 import logging
 
-from .base import normalize_text, pluralize
+from .base import ensure_cache_loaded, normalize_text, pluralize
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class ItemTypeCoreQueryMixin:
     """Mixin containing core item type query methods."""
 
+    @ensure_cache_loaded
     def get_all_item_type_slugs(self) -> set[str]:
         """Get all available item type slugs.
 
@@ -23,9 +24,9 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return set(self._item_names_by_type.keys())
 
+    @ensure_cache_loaded
     def get_item_type_names_for_regex(self) -> list[str]:
         """Get item type names/aliases for use in regex patterns.
 
@@ -38,13 +39,13 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         names = []
         for keyword, info in self._category_keywords.items():
             if info.get("lookup_type") == "item_type":
                 names.append(keyword)
         return sorted(names, key=len, reverse=True)
 
+    @ensure_cache_loaded
     def get_modifier_category(self, item_type_slug: str) -> str | None:
         """Get the modifier category for an item type.
 
@@ -57,9 +58,9 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._item_type_modifier_categories.get(item_type_slug)
 
+    @ensure_cache_loaded
     def get_item_keywords(self) -> set[str]:
         """Get all item keywords for disambiguation.
 
@@ -69,9 +70,9 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._item_keywords.copy()
 
+    @ensure_cache_loaded
     def get_configurable_item_types(self) -> set[str]:
         """Get item types that have attributes defined.
 
@@ -81,9 +82,9 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._configurable_item_types.copy()
 
+    @ensure_cache_loaded
     def get_simple_item_types(self) -> set[str]:
         """Get item types that have no attributes to ask about.
 
@@ -96,11 +97,11 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         all_types = self.get_all_item_type_slugs()
         configurable = self._configurable_item_types
         return all_types - configurable
 
+    @ensure_cache_loaded
     def item_type_has_side_choice(self, item_type_slug: str) -> bool:
         """Check if an item type has a side choice attribute.
 
@@ -113,10 +114,10 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         config = self._item_type_side_choice.get(item_type_slug, {})
         return config.get("has_side_choice", False)
 
+    @ensure_cache_loaded
     def get_side_choice_attribute(self, item_type_slug: str) -> dict | None:
         """Get side choice attribute details for an item type.
 
@@ -129,7 +130,6 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         config = self._item_type_side_choice.get(item_type_slug, {})
         return config.get("side_choice_attribute")
 
@@ -137,6 +137,7 @@ class ItemTypeCoreQueryMixin:
     # Component Slots (Bundled Items)
     # -------------------------------------------------------------------------
 
+    @ensure_cache_loaded
     def item_type_has_component_slots(self, item_type_slug: str) -> bool:
         """Check if an item type has component slots (includes configurable sub-items).
 
@@ -149,9 +150,9 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return item_type_slug in self._component_slots and len(self._component_slots[item_type_slug]) > 0
 
+    @ensure_cache_loaded
     def get_component_slots(self, item_type_slug: str) -> dict[str, dict]:
         """Get all component slots for an item type.
 
@@ -175,9 +176,9 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self._component_slots.get(item_type_slug, {}).copy()
 
+    @ensure_cache_loaded
     def get_component_slot(self, item_type_slug: str, slot_name: str) -> dict | None:
         """Get a specific component slot configuration.
 
@@ -191,7 +192,6 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         slots = self._component_slots.get(item_type_slug, {})
         return slots.get(slot_name)
 
@@ -213,6 +213,7 @@ class ItemTypeCoreQueryMixin:
             return []
         return slot.get("options", [])
 
+    @ensure_cache_loaded
     def get_unfilled_component_slots(self, item_type_slug: str, filled_slots: set[str]) -> list[dict]:
         """Get component slots that haven't been filled yet.
 
@@ -226,7 +227,6 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         slots = self._component_slots.get(item_type_slug, {})
         unfilled = []
         for slot_name, slot_config in slots.items():
@@ -237,6 +237,7 @@ class ItemTypeCoreQueryMixin:
                 })
         return unfilled
 
+    @ensure_cache_loaded
     def resolve_item_type_slug(self, name_or_alias: str) -> str:
         """Resolve an item type name or alias to its canonical database slug.
 
@@ -249,7 +250,6 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
 
         name_lower = normalize_text(name_or_alias)
         category_info = self._category_keywords.get(name_lower)
@@ -259,6 +259,7 @@ class ItemTypeCoreQueryMixin:
 
         return name_or_alias
 
+    @ensure_cache_loaded
     def infer_item_type_from_text(self, text: str) -> dict | None:
         """Infer item type by checking if any category keyword appears in the text.
 
@@ -271,7 +272,6 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
 
         text_lower = text.lower()
         words = text_lower.split()
@@ -286,6 +286,7 @@ class ItemTypeCoreQueryMixin:
 
         return None
 
+    @ensure_cache_loaded
     def get_item_type_display_name(self, item_type_slug: str, plural: bool = False) -> str:
         """Get the display name for an item type slug.
 
@@ -299,7 +300,6 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
 
         info = self._category_keywords.get(item_type_slug)
         if info:
@@ -309,6 +309,7 @@ class ItemTypeCoreQueryMixin:
 
         return item_type_slug
 
+    @ensure_cache_loaded
     def item_accepts_input_modifiers(self, item_type_slug: str) -> bool:
         """Check if an item type accepts input modifiers.
 
@@ -321,9 +322,9 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         return self.get_modifier_category(item_type_slug) is not None
 
+    @ensure_cache_loaded
     def get_scannable_modifier_categories(self, item_type_slug: str) -> list[str]:
         """Get modifier categories that can be scanned for an item type.
 
@@ -336,7 +337,6 @@ class ItemTypeCoreQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        self._ensure_loaded()
         modifier_type = self.get_modifier_category(item_type_slug)
         if not modifier_type:
             return []

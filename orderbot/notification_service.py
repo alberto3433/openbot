@@ -51,42 +51,6 @@ def _log_notification(
         db.rollback()
 
 
-def notify_order_confirmed(
-    db: Session,
-    order: Order,
-    store_name: str,
-    payment_url: Optional[str] = None,
-) -> None:
-    """Send order confirmation notifications (SMS + email with payment link).
-
-    Args:
-        db: Database session for logging
-        order: The confirmed order
-        store_name: Display name of the store
-        payment_url: Stripe checkout URL (or mock URL)
-    """
-    items_summary = f"{len(order.items)} item(s)" if order.items else "your order"
-    total_str = f"${order.total_price:.2f}" if order.total_price else ""
-
-    # SMS confirmation
-    if order.phone and is_sms_configured():
-        sms_body = (
-            f"Thanks for your order at {store_name}! "
-            f"Order #{order.id}: {items_summary}, total {total_str}."
-        )
-        if payment_url:
-            sms_body += f"\nPay here: {payment_url}"
-
-        sid = send_sms(order.phone, sms_body)
-        _log_notification(
-            db, order.id, "sms", "order_confirmed", order.phone,
-            status="sent" if sid else "failed",
-            provider_message_id=sid,
-        )
-
-    # Email is handled separately by the existing email service flow in message_processor
-
-
 def notify_payment_received(
     db: Session,
     order: Order,
@@ -193,27 +157,21 @@ def _send_simple_email(
 ) -> None:
     """Send a simple text email via AWS SES and log the result."""
     from email.mime.text import MIMEText
-    from .config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SES_FROM_EMAIL
+    from .config import AWS_SES_FROM_EMAIL
+    from .email_service import _get_ses_client
 
-    if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SES_FROM_EMAIL]):
+    client = _get_ses_client()
+    if client is None:
         logger.info("AWS SES not configured; skipping %s email for order #%d", event, order.id)
         return
 
     try:
-        import boto3
-
         msg = MIMEText(body_text, "plain")
         msg["Subject"] = subject
         msg["From"] = AWS_SES_FROM_EMAIL
         msg["To"] = order.customer_email
 
-        ses_client = boto3.client(
-            "ses",
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-            region_name=AWS_REGION,
-        )
-        ses_client.send_raw_email(
+        client.send_raw_email(
             Source=AWS_SES_FROM_EMAIL,
             Destinations=[order.customer_email],
             RawMessage={"Data": msg.as_string()},
@@ -224,8 +182,6 @@ def _send_simple_email(
         )
         logger.info("%s email sent to %s for order #%d", event, order.customer_email, order.id)
 
-    except ImportError:
-        logger.warning("boto3 not installed; skipping %s email for order #%d", event, order.id)
     except Exception as e:
         _log_notification(
             db, order.id, "email", event, order.customer_email,

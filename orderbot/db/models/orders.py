@@ -125,7 +125,7 @@ class NotificationLog(Base):
     event = Column(String, nullable=False)  # "order_confirmed", "order_ready", "order_cancelled", "payment_received"
     recipient = Column(String, nullable=False)  # Phone number or email
     status = Column(String, nullable=False, default="sent")  # "sent", "failed", "pending"
-    provider_message_id = Column(String, nullable=True)  # Twilio SID or SMTP message ID
+    provider_message_id = Column(String, nullable=True)  # AWS SNS/SES message ID
     error_message = Column(Text, nullable=True)
     sent_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

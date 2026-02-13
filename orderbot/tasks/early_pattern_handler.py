@@ -25,6 +25,7 @@ from .schemas import StateMachineResult
 from .parsers.deterministic import MAKE_IT_N_PATTERN
 from .parsers.quantity_utils import parse_make_it_n_quantity
 from .parsers.constants import ADD_MODIFIER_PATTERNS
+from .parsers.intent_patterns import strip_conversational_fillers
 from .handler_utils import (
     is_configurable_menu_item,
     get_last_item,
@@ -223,7 +224,7 @@ class EarlyPatternHandler:
         Returns:
             StateMachineResult if modifier added, None otherwise.
         """
-        input_lower = user_input.lower().strip()
+        input_lower = strip_conversational_fillers(user_input.lower().strip())
 
         # Don't treat "do you have X" questions as modifier inputs
         # These are availability inquiries, not order requests

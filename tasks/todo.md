@@ -1,115 +1,32 @@
-# Bug Fix: "Plain Spread" Accepted as Invalid Modifier [FIXED]
-
-## Summary
-User input "add plain spread" was incorrectly accepted and added to order.
+# Fix: "remove the cheese" at customization checkpoint
 
 ## Root Cause
-Fallback code at `config_modification_handler.py` lines 594-616 bypassed the `must_match` filter by using `modifier_to_category.get()` directly when `find_matching_ingredients` returned 0 matches.
 
-"Plain Cream Cheese" has `must_match = ["cream cheese", "plain cc"]`, so "plain spread" correctly returns 0 matches. The fallback was creating fake modifiers.
+In `config_cancellation_handler.py:244-258`, when at `customization_checkpoint`, the handler defers ALL cancel patterns that match an attribute name (returns `None`). This was designed for **declining** optional attributes not yet set (e.g., "no condiments" when the bot offers "You can add Condiments"). But it also catches **removal** of already-set attributes (e.g., "remove the cheese" after the user chose American Cheese).
 
-## Fix Applied
-Removed the fallback code. Now when `find_matching_ingredients` returns 0, we log a warning and don't add the modifier.
+After deferring, the input cascades through handlers that can't handle removal:
+1. `detect_change_request` → no removal patterns → `None`
+2. `handle_add_modifiers_during_config` → no "remove" prefix → `None`
+3. Falls through to customization checkpoint → `ingredient_fallback` → treats "cheese" as an addition → **adds cheese with qty=1 instead of removing it**
 
-## Verification
-- `"plain spread"` → 0 matches (correctly rejected)
-- `"plain cream cheese"` → 1 match: Plain Cream Cheese (correctly accepted)
+## Fix: Single block in `config_cancellation_handler.py`
 
----
+**File:** `orderbot/tasks/config_cancellation_handler.py`, lines 244-258
 
-# Admin UI Enhancement Plan - Menu Display Groups
+In the checkpoint deferral loop (line 250-258), when `cancel_desc` matches an attribute slug:
 
-## Overview
-Apply the same polished dark/light theme design system from the chatbot UI to the admin screen `admin_menu_display_groups.html` as a pilot. If it looks sharp, this pattern can be applied to all admin screens.
+- **If the attribute IS already set** on the item (`current_item.has_selection(attr_slug)`): this is a removal request. Handle it directly:
+  1. Get display name from the existing selection for the confirmation message
+  2. Call `current_item.remove_selection(category=attr_slug)` to clear the selection
+  3. Call `safe_recalculate_price()` to fix the price ($13.00 → $11.50)
+  4. Get the current config question to re-prompt
+  5. Return confirmation like "OK, I've removed the American Cheese. Any more changes? ..."
 
-## Current State
-- Material Blue theme (#1976d2) - functional but dated
-- Light mode only (no dark mode)
-- Hardcoded colors throughout
-- No theme toggle
-- Basic styling without the polish of the chatbot UI
+- **If the attribute is NOT set**: defer as before (return `None`) — it's a decline of an unselected option
 
-## Design Goals
-Match the chatbot UI's professional look:
-- True black dark mode (#0D0D0D)
-- Clean light mode with cooler neutrals (#F8F9FA)
-- Warm orange brand accent (#D4754E) instead of Material Blue
-- Lucide icons for consistency
-- Smooth theme transitions
-- Theme toggle in header
+No other files need changes. The `remove_selection` method already handles price subtraction, and `safe_recalculate_price` recalculates from scratch. The `cheese_price` key in `attribute_values` is auto-derived and will disappear when the selection is removed.
 
----
+## Checklist
 
-## Implementation Plan
-
-### Phase 1: Create Admin Theme System
-**Create new CSS file with theme variables**
-
-- [ ] Create `static/admin_theme.css` with:
-  - CSS custom properties for both themes
-  - Same color palette as chatbot UI
-  - Component-specific variables (buttons, inputs, tables, modals)
-
-### Phase 2: Update admin_menu_display_groups.html
-**Apply new theme to pilot admin page**
-
-- [ ] Link to Lucide Icons CDN
-- [ ] Link to new admin_theme.css
-- [ ] Replace hardcoded colors with CSS variables
-- [ ] Update header to minimal surface style
-- [ ] Add theme toggle button
-- [ ] Update all component styles:
-  - Buttons (primary uses brand orange)
-  - Tables (cleaner styling, better dark mode)
-  - Modals (theme-aware)
-  - Forms (refined inputs)
-  - Badges (brand-colored)
-  - Toasts (already good colors)
-
-### Phase 3: Update admin_common.css
-**Theme-aware shared styles**
-
-- [ ] Update tag inputs to use CSS variables
-- [ ] Update navigation dropdown for both themes
-- [ ] Update refresh cache button
-
----
-
-## Key Color Mappings
-
-| Element | Current (Blue) | New (Brand Orange) |
-|---------|---------------|-------------------|
-| Primary button | #1976d2 | #D4754E |
-| Primary hover | #1565c0 | #C46842 |
-| Focus ring | rgba(25,118,210,0.1) | rgba(212,117,78,0.12) |
-| Count badge | #e3f2fd / #1565c0 | brand badge colors |
-| Header (light) | #1976d2 | #FFFFFF with border |
-| Header (dark) | n/a | #1A1A1A with border |
-
----
-
-## Expected Result
-- Sharp, professional admin UI that matches chatbot
-- Consistent design language across the app
-- Dark mode support for admin workflows
-- Modern look that inspires confidence
-
----
-
-## Files to Create/Modify
-
-| File | Action |
-|------|--------|
-| `static/admin_theme.css` | CREATE - Theme system |
-| `static/admin_menu_display_groups.html` | MODIFY - Apply theme |
-| `static/admin_common.css` | MODIFY - Theme variables |
-
----
-
-## Success Criteria
-- [ ] Dark mode looks as good as chatbot dark mode
-- [ ] Light mode is clean and professional
-- [ ] Theme toggle works smoothly
-- [ ] All components are properly themed
-- [ ] No hardcoded colors remain
-- [ ] Navigation dropdowns work in both themes
+- [ ] Modify `config_cancellation_handler.py` deferral block (lines 244-258)
+- [ ] Verify with test or manual check

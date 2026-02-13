@@ -193,10 +193,11 @@ def strip_conversational_fillers(text: str) -> str:
         else:
             break
 
-    # Strip mid-sentence "so" - common filler/conjunction that never appears
-    # in food names as a standalone word (word boundary protects "miso", "espresso", etc.)
+    # Strip mid-sentence "so"/"also" - common fillers that never appear
+    # in food names as standalone words (word boundary protects "miso", "espresso", etc.)
     # e.g., "no raisin so bagel please" -> "no raisin bagel please"
-    result = re.sub(r'\bso\b', ' ', result, flags=re.IGNORECASE)
+    # e.g., "also add veggie" -> "add veggie"
+    result = re.sub(r'\b(?:so|also)\b', ' ', result, flags=re.IGNORECASE)
     result = re.sub(r'\s+', ' ', result).strip()
 
     return result

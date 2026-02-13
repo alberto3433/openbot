@@ -250,6 +250,32 @@ class ConfigCancellationHandler:
             for attr_slug, attr_data in item_type_attrs.items():
                 attr_display_lower = (attr_data.get("display_name") or "").lower()
                 if attr_slug in cancel_variants or attr_display_lower in cancel_variants:
+                    # Check if this attribute already has a value — if so, this is a
+                    # removal request ("remove the cheese"), not a decline ("no condiments")
+                    current_value = current_item.attribute_values.get(attr_slug)
+                    if current_value is not None:
+                        current_item[attr_slug] = None
+                        safe_recalculate_price(
+                            self.pricing, current_item, "after attribute removal via cancel"
+                        )
+                        display_name = (
+                            attr_data.get("display_name") or format_slug_for_display(attr_slug)
+                        )
+                        logger.info(
+                            "Removed attribute '%s' from %s",
+                            attr_slug, current_item.menu_item_name,
+                        )
+                        question = self._get_current_config_question(order, current_item)
+                        if question:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {display_name}. {question}",
+                                order=order,
+                            )
+                        return StateMachineResult(
+                            message=f"OK, I've removed the {display_name}. Anything else?",
+                            order=order,
+                        )
+                    # Attribute not set yet — defer to checkpoint handler (decline)
                     logger.info(
                         "Cancel during config: '%s' matches attribute '%s' at customization "
                         "checkpoint - deferring to checkpoint handler",

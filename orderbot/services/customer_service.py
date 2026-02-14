@@ -60,6 +60,25 @@ def _get_normalized_phone_filter(phone_column):
     )
 
 
+def _order_item_to_dict(item) -> Dict[str, Any]:
+    """Convert an OrderItem ORM object to a dict for API responses.
+
+    Args:
+        item: OrderItem ORM instance
+
+    Returns:
+        Dict with menu_item_name, quantity, price, and any item_config fields
+    """
+    item_data: Dict[str, Any] = {
+        "menu_item_name": item.menu_item_name,
+        "quantity": item.quantity,
+        "price": item.unit_price,
+    }
+    if item.item_config:
+        item_data.update(item.item_config)
+    return item_data
+
+
 def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
     """
     Look up a returning customer by phone number.
@@ -119,18 +138,7 @@ def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]
     )
 
     # Get last order items for "usual" feature
-    last_order_items: List[Dict[str, Any]] = []
-    if recent_order.items:
-        for item in recent_order.items:
-            item_data = {
-                "menu_item_name": item.menu_item_name,
-                "quantity": item.quantity,
-                "price": item.unit_price,  # Unit price for repeat order calculations
-            }
-            # All item-specific fields (item_type, bread, toasted, etc.) are in item_config
-            if item.item_config:
-                item_data.update(item.item_config)
-            last_order_items.append(item_data)
+    last_order_items = [_order_item_to_dict(item) for item in recent_order.items] if recent_order.items else []
 
     return {
         "name": recent_order.customer_name,
@@ -222,18 +230,7 @@ def lookup_customer_order_history(
     # Build order list with summaries
     order_list: List[Dict[str, Any]] = []
     for order in orders:
-        # Build items list
-        items: List[Dict[str, Any]] = []
-        for item in order.items:
-            item_data = {
-                "menu_item_name": item.menu_item_name,
-                "quantity": item.quantity,
-                "price": item.unit_price,
-            }
-            if item.item_config:
-                item_data.update(item.item_config)
-            items.append(item_data)
-
+        items = [_order_item_to_dict(item) for item in order.items]
         summary = build_order_items_summary(order.items)
 
         order_list.append({
@@ -294,18 +291,7 @@ def get_order_by_id(
     if not order:
         return None
 
-    # Build items list
-    items: List[Dict[str, Any]] = []
-    for item in order.items:
-        item_data = {
-            "menu_item_name": item.menu_item_name,
-            "quantity": item.quantity,
-            "price": item.unit_price,
-        }
-        if item.item_config:
-            item_data.update(item.item_config)
-        items.append(item_data)
-
+    items = [_order_item_to_dict(item) for item in order.items]
     summary = build_order_items_summary(order.items)
 
     return {

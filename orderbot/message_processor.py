@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .db.models import SessionAnalytics, Company
@@ -285,8 +286,11 @@ class MessageProcessor:
                 store_id
             )
             return True
-        except Exception as e:
-            logger.error("Failed to persist order: %s", e)
+        except SQLAlchemyError:
+            logger.exception("Database error persisting order")
+            return False
+        except Exception:
+            logger.exception("Failed to persist order")
             return False
 
     # -------------------------------------------------------------------------
@@ -308,10 +312,16 @@ class MessageProcessor:
                 )
                 return True
             return False
-        except Exception as e:
-            logger.error(
-                "Failed to submit order #%s to Toast: %s",
-                order_state.get("db_order_id"), e,
+        except (ImportError, OSError, SQLAlchemyError):
+            logger.exception(
+                "Failed to submit order #%s to Toast",
+                order_state.get("db_order_id"),
+            )
+            return False
+        except Exception:
+            logger.exception(
+                "Unexpected error submitting order #%s to Toast",
+                order_state.get("db_order_id"),
             )
             return False
 
@@ -352,8 +362,11 @@ class MessageProcessor:
             self.db.commit()
             logger.info("Session analytics logged: %s", ctx.session_id[:8])
             return True
-        except Exception as e:
-            logger.error("Failed to log session analytics: %s", e)
+        except SQLAlchemyError:
+            logger.exception("Database error logging session analytics")
+            return False
+        except Exception:
+            logger.exception("Failed to log session analytics")
             return False
 
     # -------------------------------------------------------------------------
@@ -410,8 +423,11 @@ class MessageProcessor:
             )
             logger.info("Payment link email sent: %s", result)
             return True
-        except Exception as e:
-            logger.error("Failed to send payment email: %s", e)
+        except (OSError, ValueError):
+            logger.exception("Failed to send payment email")
+            return False
+        except Exception:
+            logger.exception("Unexpected error sending payment email")
             return False
 
     def _create_stripe_session(
@@ -468,8 +484,11 @@ class MessageProcessor:
                 update_order_stripe_session(self.db, order_id, result["session_id"])
 
             return result
-        except Exception as e:
-            logger.error("Failed to create Stripe session for order #%d: %s", order_id, e)
+        except (OSError, SQLAlchemyError, ValueError):
+            logger.exception("Failed to create Stripe session for order #%d", order_id)
+            return None
+        except Exception:
+            logger.exception("Unexpected error creating Stripe session for order #%d", order_id)
             return None
 
     @staticmethod

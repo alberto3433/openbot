@@ -180,6 +180,8 @@ def _calculate_order_totals(
 ) -> OrderTotals:
     """Calculate order totals including taxes and delivery fee.
 
+    Delegates to tax_utils.calculate_order_total for consistent rounding.
+
     Args:
         subtotal: Order subtotal
         tax_info: Tax rates and delivery fee from store
@@ -188,17 +190,21 @@ def _calculate_order_totals(
     Returns:
         OrderTotals with calculated values
     """
-    city_tax = subtotal * tax_info.city_tax_rate
-    state_tax = subtotal * tax_info.state_tax_rate
-    actual_delivery_fee = tax_info.delivery_fee if is_delivery else 0.0
-    total = subtotal + city_tax + state_tax + actual_delivery_fee
+    from .tax_utils import calculate_order_total
+
+    store_info = {
+        "city_tax_rate": tax_info.city_tax_rate,
+        "state_tax_rate": tax_info.state_tax_rate,
+        "delivery_fee": tax_info.delivery_fee,
+    }
+    result = calculate_order_total(subtotal, store_info, is_delivery=is_delivery)
 
     return OrderTotals(
-        subtotal=subtotal,
-        city_tax=city_tax,
-        state_tax=state_tax,
-        delivery_fee=actual_delivery_fee,
-        total=total,
+        subtotal=result["subtotal"],
+        city_tax=result["city_tax"],
+        state_tax=result["state_tax"],
+        delivery_fee=result["delivery_fee"],
+        total=result["total"],
     )
 
 

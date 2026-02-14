@@ -166,6 +166,16 @@ class InquiryRouter:
         if parsed.asking_signature_menu:
             return self.menu_inquiry_handler.handle_signature_menu_inquiry(parsed.signature_menu_type, order)
 
+        if parsed.is_small_talk:
+            from .parsers.constants import get_order_redirect
+            response = parsed.small_talk_response or "Thanks for chatting!"
+            has_items = bool(order.items.items)
+            redirect = get_order_redirect(has_items)
+            return StateMachineResult(
+                message=f"{response} {redirect}",
+                order=order,
+            )
+
         if parsed.is_gratitude:
             return StateMachineResult(
                 message="You're welcome! Anything else I can get for you?",

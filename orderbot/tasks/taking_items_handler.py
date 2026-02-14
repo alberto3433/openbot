@@ -213,6 +213,15 @@ class TakingItemsHandler(MenuDataMixin):
             len(parsed.parsed_items),
         )
 
+        if parsed.is_small_talk:
+            from .parsers.constants import get_order_redirect
+            response = parsed.small_talk_response or "Thanks for chatting!"
+            redirect = get_order_redirect(has_items=False)
+            return StateMachineResult(
+                message=f"{response} {redirect}",
+                order=order,
+            )
+
         if parsed.is_greeting or parsed.unclear:
             # Phase will be derived as TAKING_ITEMS by orchestrator on next turn
             return StateMachineResult(

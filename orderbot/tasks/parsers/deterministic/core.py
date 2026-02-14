@@ -18,6 +18,7 @@ from ..constants import (
     GRATITUDE_PATTERNS,
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
+    match_small_talk,
 )
 from ..intent_patterns import (
     strip_conversational_fillers,
@@ -202,9 +203,16 @@ def _try_parse_greeting_or_meta(text: str) -> OpenInputResponse | None:
         return OpenInputResponse(is_help_request=True)
 
     # Check for done ordering (patterns loaded from database)
+    # Must run BEFORE small talk so "I'm good" is treated as done ordering, not social chat
     if menu_cache.is_done(text):
         logger.debug("Deterministic parse: done ordering detected")
         return OpenInputResponse(done_ordering=True)
+
+    # Check for small talk ("how are you?", "what's up?", etc.)
+    small_talk_response = match_small_talk(text)
+    if small_talk_response:
+        logger.debug("Deterministic parse: small talk detected")
+        return OpenInputResponse(is_small_talk=True, small_talk_response=small_talk_response)
 
     # Check for repeat order
     if REPEAT_ORDER_PATTERNS.match(text):

@@ -11,6 +11,7 @@ Sub-modules:
 """
 
 import logging
+import random
 import re
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,8 @@ MID_SENTENCE_HESITATION_FILLERS = frozenset({
     # Extended variants - users type variable-length hesitation sounds
     "hmmmm", "hmmmmm", "mmmm", "mmmmm", "uhhh", "uhhhh",
     "ummmm", "errr",
+    # Polite filler - safe mid-sentence, never appears in food names
+    "please",
 })
 
 # Category 1: HESITATION_FILLERS - Strip from START of input only
@@ -87,7 +90,7 @@ HESITATION_FILLERS = frozenset({
     # Greetings used as filler before orders
     "hi", "hello", "hi there", "hey there", "howdy", "yo",
     # Polite interjections
-    "excuse me", "pardon", "pardon me",
+    "please", "thanks", "thank you", "thx", "excuse me", "pardon", "pardon me",
     # Topic changers
     "anyway", "anyways",
 })
@@ -186,6 +189,97 @@ QUALIFIER_PATTERNS = [
 
 # Note: GREETING_PATTERNS moved to database (response_pattern table with pattern_type='greeting')
 # Use menu_cache.is_greeting(text) or menu_cache.get_response_regex("greeting") instead.
+
+# =============================================================================
+# Small Talk Patterns - social/conversational inputs
+# =============================================================================
+
+# Each entry is (compiled_regex, response_text)
+SMALL_TALK_RESPONSES: list[tuple[re.Pattern, str]] = [
+    (re.compile(
+        r"^(?:how(?:'s|\s+is)\s+it\s+going|how\s+are\s+you(?:\s+doing)?|how\s+do\s+you\s+do)[\s?!.,]*$",
+        re.IGNORECASE,
+    ), "I'm doing great, thanks for asking!"),
+    (re.compile(
+        r"^good\s+(morning|afternoon|evening)[\s!.,]*$",
+        re.IGNORECASE,
+    ), "Good {1}!"),
+    (re.compile(
+        r"^(?:what'?s\s+up|sup|what'?s\s+new)[\s?!.,]*$",
+        re.IGNORECASE,
+    ), "Not much, just ready to help with your order!"),
+    (re.compile(
+        r"^nice\s+to\s+meet\s+you[\s!.,]*$",
+        re.IGNORECASE,
+    ), "Nice to meet you too!"),
+    (re.compile(
+        r"^i'?m\s+(?:doing\s+)?(?:good|great|fine|well|okay|ok|alright)[\s!.,]*$",
+        re.IGNORECASE,
+    ), "Glad to hear it!"),
+    (re.compile(
+        r"^how(?:'s|\s+is)\s+your\s+day[\s?!.,]*$",
+        re.IGNORECASE,
+    ), "It's going well, thanks!"),
+    (re.compile(
+        r"^how\s+are\s+things|how(?:'s|\s+is)\s+everything[\s?!.,]*$",
+        re.IGNORECASE,
+    ), "All great over here!"),
+]
+
+
+def match_small_talk(text: str) -> str | None:
+    """Check if text is a small talk phrase and return the response.
+
+    Args:
+        text: User input text (stripped).
+
+    Returns:
+        Response string if matched, None otherwise.
+    """
+    for pattern, response_template in SMALL_TALK_RESPONSES:
+        m = pattern.match(text)
+        if m:
+            # Support dynamic placeholders like {1} for capture groups
+            response = response_template
+            for i in range(1, len(m.groups()) + 1):
+                if m.group(i):
+                    response = response.replace(f"{{{i}}}", m.group(i))
+            return response
+    return None
+
+
+# =============================================================================
+# Order Redirect Phrases - varied prompts to redirect back to ordering
+# =============================================================================
+
+ORDER_REDIRECTS = [
+    "What can I get for you?",
+    "Can I take your order?",
+    "How can I help you?",
+    "What can I get started for you?",
+    "What are you in the mood for?",
+    "Ready to order?",
+]
+
+ORDER_REDIRECTS_HAS_ITEMS = [
+    "Anything else I can get for you?",
+    "What else can I get you?",
+    "Can I get you anything else?",
+]
+
+
+def get_order_redirect(has_items: bool) -> str:
+    """Pick a random order redirect phrase.
+
+    Args:
+        has_items: True if the order already has items in the cart.
+
+    Returns:
+        A redirect phrase string.
+    """
+    pool = ORDER_REDIRECTS_HAS_ITEMS if has_items else ORDER_REDIRECTS
+    return random.choice(pool)
+
 
 # Gratitude patterns - thank you, thanks, etc.
 GRATITUDE_PATTERNS = re.compile(

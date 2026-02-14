@@ -77,6 +77,7 @@ from ..schemas.chat import (
     ChatMessageResponse,
     ActionOut,
     AbandonedSessionRequest,
+    ReportSessionRequest,
 )
 
 
@@ -326,3 +327,63 @@ def log_abandoned_session(
     )
 
     return None
+
+
+@chat_router.post("/report")
+def report_session(
+    payload: ReportSessionRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Report a conversation for review.
+
+    Sends an email with session details to the review team.
+    """
+    from ..email_service import send_report_email
+
+    session = get_or_create_session(db, payload.session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Extract session data
+    store_id = session.get("store_id")
+    caller_id = session.get("caller_id")
+    order = session.get("order", {})
+    order_status = order.get("status", "pending")
+    items = order.get("items", [])
+    item_count = len(items)
+    customer = order.get("customer", {})
+    customer_name = customer.get("name")
+    customer_phone = customer.get("phone")
+
+    # Get last 6 messages from history
+    history = session.get("history", [])
+    recent_messages = history[-6:] if history else []
+
+    try:
+        result = send_report_email(
+            session_id=payload.session_id,
+            store_id=store_id,
+            caller_id=caller_id,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            recent_messages=recent_messages,
+            order_status=order_status,
+            item_count=item_count,
+            items=items,
+        )
+
+        if result.get("status") == "error":
+            logger.error("Report email failed for session %s: %s",
+                         payload.session_id[:8], result.get("error"))
+            raise HTTPException(status_code=500, detail="Failed to send report email")
+
+        logger.info("Session reported: %s", payload.session_id[:8])
+        return {"status": "ok"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Report endpoint failed for session %s: %s",
+                     payload.session_id[:8], str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to send report")

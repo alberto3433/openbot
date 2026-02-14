@@ -1258,6 +1258,9 @@ orderbot/tasks/parsers/__init__.py:
     reason: "Legacy code - TODO: refactor to data-driven"
 
 orderbot/tasks/parsers/constants.py:
+  - term: everything
+    context: all
+    reason: "Refers to 'how is everything' (social greeting pattern), not a food term"
   - term: bacon
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
@@ -1774,6 +1777,9 @@ orderbot/tasks/parsers/deterministic/core.py:
   - term: everything
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
+  - term: small
+    context: all
+    reason: "Refers to 'small talk' (conversation concept), not food size"
 
 orderbot/tasks/parsers/deterministic/instructions_extraction.py:
   - term: side

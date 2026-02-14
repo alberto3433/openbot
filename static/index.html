@@ -444,6 +444,42 @@
       height: 16px;
     }
 
+    .report-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      background: var(--bg-input);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      transition: all 0.2s ease;
+    }
+
+    .report-btn:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--border-medium);
+    }
+
+    .report-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .report-btn.sent {
+      background: var(--success-bg, #e8f5e9);
+      border-color: transparent;
+      color: var(--success-text, #2e7d32);
+    }
+
+    .report-btn .icon {
+      width: 16px;
+      height: 16px;
+    }
+
     .tts-status {
       margin-left: auto;
       font-size: 11px;
@@ -1293,6 +1329,10 @@
           <span class="icon" id="tts-mute-icon"></span>
           <span class="label" id="tts-mute-label">Voice On</span>
         </button>
+        <button type="button" class="report-btn" id="report-btn" title="Report an issue with this conversation">
+          <span class="icon" id="report-btn-icon"><i data-lucide="flag"></i></span>
+          <span class="label" id="report-btn-label">Report</span>
+        </button>
         <span class="tts-status" id="tts-status"></span>
       </div>
 
@@ -1807,6 +1847,10 @@
         orderConfirmed = false;
         conversationHistory = [];
         abandonAnalyticsSent = false;
+        reportSent = false;
+        reportBtn.classList.remove("sent");
+        reportBtn.disabled = false;
+        reportBtnLabel.textContent = "Report";
       }
       startSession(callerId || null, storeId);
     });
@@ -2042,6 +2086,40 @@
     });
 
     updateMuteButtonUI();
+
+    // =====================================================
+    // Report Button
+    // =====================================================
+    const reportBtn = document.getElementById("report-btn");
+    const reportBtnIcon = document.getElementById("report-btn-icon");
+    const reportBtnLabel = document.getElementById("report-btn-label");
+    let reportSent = false;
+
+    reportBtn.addEventListener("click", async () => {
+      if (!sessionId || reportSent) return;
+      reportBtn.disabled = true;
+      reportBtnLabel.textContent = "Sending...";
+      try {
+        const resp = await fetch("/api/v1/chat/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+        if (resp.ok) {
+          reportSent = true;
+          reportBtn.classList.add("sent");
+          reportBtnLabel.textContent = "Reported";
+          updateLucideIcon(reportBtnIcon, "flag");
+        } else {
+          reportBtn.disabled = false;
+          reportBtnLabel.textContent = "Report";
+        }
+      } catch (e) {
+        console.error("Report failed:", e);
+        reportBtn.disabled = false;
+        reportBtnLabel.textContent = "Report";
+      }
+    });
 
     let audioEnabled = false;
     let pendingGreeting = null;

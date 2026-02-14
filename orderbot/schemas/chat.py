@@ -154,6 +154,19 @@ class ChatMessageResponse(BaseModel):
     )
 
 
+class ReportSessionRequest(BaseModel):
+    """
+    Request body for reporting a conversation issue.
+
+    Called by the frontend when a user clicks the "Report" button to flag
+    a conversation for review by the team.
+
+    Attributes:
+        session_id: UUID of the session to report
+    """
+    session_id: str
+
+
 class AbandonedSessionRequest(BaseModel):
     """
     Request body for logging an abandoned session.

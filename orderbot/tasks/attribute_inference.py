@@ -98,6 +98,31 @@ def infer_attributes_from_item_name(item: "MenuItemTask") -> None:
                         attr_slug, opt_slug
                     )
                     continue
+                # Skip if the option text is a substring of an existing
+                # selection's readable name AND that name appears in the
+                # item name (e.g. "avocado" covered by "avocado_spread"
+                # in "Avocado Spread Sandwich").
+                is_covered = False
+                for sel in item.selections:
+                    for sel_text in (
+                        sel.get("slug", "").replace("_", " ").lower(),
+                        (sel.get("display_name") or "").lower(),
+                    ):
+                        if (sel_text
+                                and len(sel_text) > len(opt_slug_readable)
+                                and opt_slug_readable in sel_text
+                                and sel_text in item_name_lower):
+                            is_covered = True
+                            break
+                    if is_covered:
+                        break
+                if is_covered:
+                    logger.debug(
+                        "Skipping inferred %s='%s' - covered by existing "
+                        "selection in item name '%s'",
+                        attr_slug, opt_slug, item.menu_item_name
+                    )
+                    continue
                 # Set the attribute value
                 item[attr_slug] = opt_slug
                 logger.info(

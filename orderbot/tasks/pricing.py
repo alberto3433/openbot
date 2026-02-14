@@ -380,17 +380,15 @@ class PricingEngine(MenuDataMixin):
         )
 
         if price is not None:
-            # Premium options (price_modifier > 0) always charge their upcharge
-            if price > 0:
-                return price
-            # For $0 options, check if the category is already included in base price
-            if included_ingredient_categories:
+            # Check inclusion BEFORE returning price — if the menu item already
+            # includes an ingredient in this category, the upcharge is waived.
+            if included_ingredient_categories and price > 0:
                 option_category = self._get_option_ingredient_category(
                     item_type, attr_slug, option_value
                 )
                 if option_category and option_category in included_ingredient_categories:
                     logger.debug(
-                        "Skipping upcharge for %s.%s=%s - category '%s' is included",
+                        "Skipping upcharge for %s.%s=%s - category '%s' is included in base price",
                         item_type, attr_slug, option_value, option_category
                     )
                     return 0.0

@@ -13,7 +13,7 @@ Environment variables:
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Optional
+from typing import List, Optional
 
 from .config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SES_FROM_EMAIL
 
@@ -297,4 +297,215 @@ Thanks,
             "error": str(e),
             "mock": False,
             "message": f"Failed to send email: {str(e)}",
+        }
+
+
+def send_report_email(
+    session_id: str,
+    store_id: Optional[str] = None,
+    caller_id: Optional[str] = None,
+    customer_name: Optional[str] = None,
+    customer_phone: Optional[str] = None,
+    recent_messages: Optional[List[dict]] = None,
+    order_status: Optional[str] = None,
+    item_count: int = 0,
+    items: Optional[List[dict]] = None,
+) -> dict:
+    """
+    Send a conversation report email to the review team.
+
+    Args:
+        session_id: UUID of the session being reported
+        store_id: Store identifier
+        caller_id: Caller ID / phone number used to start the session
+        customer_name: Customer's name if available
+        customer_phone: Customer's phone number if available
+        recent_messages: Last N messages from conversation history
+        order_status: Current order status
+        item_count: Number of items in cart
+        items: Cart items (adapter dict format with display_name, quantity, line_total, modifiers)
+
+    Returns:
+        dict with status and details
+    """
+    to_email = "info@zervio.ai"
+    short_id = session_id[:8]
+    subject = f"Conversation Report - Session {short_id}"
+
+    # Build session details for plain text
+    details_text = f"Session ID: {session_id}\n"
+    if store_id:
+        details_text += f"Store ID: {store_id}\n"
+    if caller_id:
+        details_text += f"Caller ID: {caller_id}\n"
+    if customer_name:
+        details_text += f"Customer Name: {customer_name}\n"
+    if customer_phone:
+        details_text += f"Customer Phone: {customer_phone}\n"
+    if order_status:
+        details_text += f"Order Status: {order_status}\n"
+    details_text += f"Items in Cart: {item_count}\n"
+
+    # Build cart items section
+    cart_text = ""
+    cart_html = ""
+    if items:
+        cart_text = "\nCart Contents:\n"
+        cart_html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Cart Contents</h3>"
+        cart_html += (
+            "<table style='border-collapse: collapse; width: 100%; max-width: 500px; "
+            "border: 1px solid #eee;'>"
+            "<tr style='background: #f5f5f5;'>"
+            "<th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Item</th>"
+            "<th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Details</th>"
+            "<th style='padding: 8px; text-align: right; border-bottom: 1px solid #ddd;'>Price</th>"
+            "</tr>"
+        )
+        for cart_item in items:
+            name = cart_item.get("display_name") or cart_item.get("menu_item_name", "Item")
+            qty = cart_item.get("quantity", 1)
+            line_total = cart_item.get("line_total", 0)
+            mods = cart_item.get("modifiers") or []
+            mod_names = [m.get("name", "") for m in mods if m.get("name")]
+            details = ", ".join(mod_names)
+
+            cart_text += f"  {qty}x {name}"
+            if details:
+                cart_text += f" ({details})"
+            cart_text += f" - ${line_total:.2f}\n"
+
+            cart_html += (
+                f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>"
+                f"{qty}x {name}</td>"
+                f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; "
+                f"font-size: 13px;'>{details}</td>"
+                f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>"
+                f"${line_total:.2f}</td></tr>"
+            )
+        cart_html += "</table>"
+
+    # Build messages section
+    messages_text = ""
+    messages_html = ""
+    if recent_messages:
+        messages_text = "\nRecent Messages:\n"
+        messages_html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Recent Messages</h3>"
+        for msg in recent_messages:
+            role = msg.get("role", "unknown").title()
+            content = msg.get("content", "")
+            messages_text += f"  [{role}]: {content}\n"
+            bg = "#f0f4ff" if role == "Assistant" else "#f9f9f9"
+            messages_html += (
+                f"<div style='padding: 8px 12px; margin: 4px 0; "
+                f"background: {bg}; border-radius: 6px; font-size: 13px;'>"
+                f"<strong>{role}:</strong> {content}</div>"
+            )
+
+    body_text = f"""Conversation Report
+
+A user has flagged this conversation for review.
+
+Session Details:
+{details_text}
+{cart_text}
+{messages_text}
+---
+This is an automated report from the ordering chatbot.
+"""
+
+    # Build session details HTML table
+    details_html = "<table style='border-collapse: collapse; width: 100%; max-width: 500px;'>"
+    detail_rows = [("Session ID", session_id)]
+    if store_id:
+        detail_rows.append(("Store ID", store_id))
+    if caller_id:
+        detail_rows.append(("Caller ID", caller_id))
+    if customer_name:
+        detail_rows.append(("Customer Name", customer_name))
+    if customer_phone:
+        detail_rows.append(("Customer Phone", customer_phone))
+    if order_status:
+        detail_rows.append(("Order Status", order_status))
+    detail_rows.append(("Items in Cart", str(item_count)))
+
+    for label, value in detail_rows:
+        details_html += (
+            f"<tr><td style='padding: 4px 8px; color: #666; white-space: nowrap;'>"
+            f"{label}:</td><td style='padding: 4px 8px;'>{value}</td></tr>"
+        )
+    details_html += "</table>"
+
+    body_html = f"""
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<h2 style="margin: 0 0 16px 0; font-size: 20px;">Conversation Report</h2>
+<p>A user has flagged this conversation for review.</p>
+<h3 style="margin: 16px 0 8px 0; font-size: 16px;">Session Details</h3>
+{details_html}
+{cart_html}
+{messages_html}
+<hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
+<p style="color: #999; font-size: 12px;">This is an automated report from the ordering chatbot.</p>
+</body>
+</html>
+"""
+
+    if not is_email_configured():
+        logger.info(
+            "MOCK EMAIL to %s: Subject: %s | Body: %s",
+            to_email,
+            subject,
+            body_text[:200] + "..."
+        )
+        return {
+            "status": "sent",
+            "to_email": to_email,
+            "subject": subject,
+            "mock": True,
+            "message": "Report email logged (AWS SES not configured)",
+        }
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = AWS_SES_FROM_EMAIL
+        msg["To"] = to_email
+
+        msg.attach(MIMEText(body_text, "plain"))
+        msg.attach(MIMEText(body_html, "html"))
+
+        client = _get_ses_client()
+        if client is None:
+            return {
+                "status": "error",
+                "to_email": to_email,
+                "error": "boto3 not installed",
+                "mock": False,
+                "message": "Failed to send report email: boto3 not installed",
+            }
+
+        client.send_raw_email(
+            Source=AWS_SES_FROM_EMAIL,
+            Destinations=[to_email],
+            RawMessage={"Data": msg.as_string()},
+        )
+
+        logger.info("Report email sent successfully for session %s", short_id)
+
+        return {
+            "status": "sent",
+            "to_email": to_email,
+            "subject": subject,
+            "mock": False,
+            "message": "Report email sent successfully",
+        }
+
+    except Exception as e:
+        logger.error("Failed to send report email for session %s: %s", short_id, str(e))
+        return {
+            "status": "error",
+            "to_email": to_email,
+            "error": str(e),
+            "mock": False,
+            "message": f"Failed to send report email: {str(e)}",
         }

@@ -467,6 +467,14 @@ class OpenInputResponse(BaseModel):
         default=False,
         description="Just a greeting, no order content"
     )
+    is_small_talk: bool = Field(
+        default=False,
+        description="Social/conversational input, no order content"
+    )
+    small_talk_response: str | None = Field(
+        default=None,
+        description="Matched response for small talk"
+    )
     is_gratitude: bool = Field(
         default=False,
         description="Just a thank you, no order content"

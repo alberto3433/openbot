@@ -112,8 +112,69 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
                 # Check if this is a known ingredient
                 if menu_cache.is_known_modifier(answer_value):
                     return True
+
+            # For package_multi_select attributes (e.g., "2 plain 3 rainbow 7 onion"),
+            # check if input contains quantity+option patterns matching the source category
+            if attr_config.get("input_type") == "package_multi_select":
+                if _looks_like_package_contents(answer_value, attr_slug):
+                    return True
+
+        # If current attribute didn't match, check if any sibling attribute on the
+        # same item type is package_multi_select and the input looks like package contents.
+        # This handles users skipping a prior question (e.g., package_variety) by providing
+        # contents directly — the forward delegation in handle_attribute_input will route it.
+        for sibling_slug, sibling_config in attrs.items():
+            if sibling_slug == attr_slug:
+                continue
+            if sibling_config.get("input_type") == "package_multi_select":
+                if _looks_like_package_contents(answer_value, sibling_slug):
+                    return True
     except Exception as e:
         logger.debug("Error checking valid answer for %s: %s", pending_field, e)
+
+    return False
+
+
+def _looks_like_package_contents(answer_value: str, package_attr_slug: str) -> bool:
+    """Check if input looks like package contents (e.g., '2 plain 3 rainbow 7 onion').
+
+    Args:
+        answer_value: Lowercased user input (ordering prefix already stripped)
+        package_attr_slug: The package_multi_select attribute slug
+
+    Returns:
+        True if input contains quantity+option patterns matching the source category
+    """
+    source_category = menu_cache.get_options_source_category(package_attr_slug) or "bread"
+    details = menu_cache.get_ingredient_details(source_category)
+    if not details:
+        return False
+
+    # Collect all valid option names and aliases (e.g., "plain bagel", "rainbow bagel")
+    valid_names: set[str] = set()
+    for detail in details:
+        name = detail.get("name", "").lower()
+        if name:
+            valid_names.add(name)
+        for alias in detail.get("patterns", []):
+            valid_names.add(alias.lower())
+
+    # Split on digit boundaries (same pattern as _parse_package_contents)
+    parts = re.split(r'\s+and\s+|\s*,\s*|(?<=\w)\s+(?=\d)', answer_value)
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        # Strip leading quantity
+        text = re.sub(r'^\d+\s*', '', part).strip()
+        if not text:
+            continue
+        # Check exact match OR partial match (e.g., "plain" matches "plain bagel")
+        # Users typically say short names like "plain", "egg", "rainbow"
+        # while DB has full names like "Plain Bagel", "Egg Bagel"
+        for vn in valid_names:
+            if text == vn or vn.startswith(text + " "):
+                return True
 
     return False
 

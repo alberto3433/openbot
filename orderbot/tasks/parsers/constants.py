@@ -49,6 +49,18 @@ from .selection_patterns import (
 # Note: Basic skip words (SKIP_WORDS_BASIC, etc.) are defined in cache/base.py
 # to avoid circular imports, and re-exported here.
 
+# Category 0: MID_SENTENCE_HESITATION_FILLERS - Strip from ANYWHERE in input
+# Pure hesitation sounds that never appear in food/menu item names.
+# Safe to strip mid-sentence because they are meaningless noise sounds.
+# e.g., "Can uh you add skim" -> "Can you add skim"
+MID_SENTENCE_HESITATION_FILLERS = frozenset({
+    "uh", "um", "er", "err", "hm", "hmm", "mm", "mmm",
+    "ah", "aha", "umm", "ummm", "hmmm", "uhh",
+    # Extended variants - users type variable-length hesitation sounds
+    "hmmmm", "hmmmmm", "mmmm", "mmmmm", "uhhh", "uhhhh",
+    "ummmm", "errr",
+})
+
 # Category 1: HESITATION_FILLERS - Strip from START of input only
 # Conversational hesitation/thinking sounds that add no ordering meaning.
 # These are single words or short phrases that when followed by comma/space
@@ -67,6 +79,9 @@ HESITATION_FILLERS = frozenset({
     # Hesitation sounds and variants
     "er", "err", "hm", "mm", "mmm", "ah", "aha",
     "umm", "ummm", "hmmm", "uhh",
+    # Extended variants - users type variable-length hesitation sounds
+    "hmmmm", "hmmmmm", "mmmm", "mmmmm", "uhhh", "uhhhh",
+    "ummmm", "errr",
     # Discourse markers
     "basically", "honestly", "literally",
     # Greetings used as filler before orders

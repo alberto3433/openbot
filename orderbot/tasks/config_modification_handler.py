@@ -780,7 +780,12 @@ class ConfigModificationHandler:
         else:
             item_text = user_input[prefix_match.end():].strip()
 
-        # Step 2: Validate item text is non-empty
+        # Step 2: Strip conversational fillers from item text after prefix removal
+        # e.g., "Also hmm add tofu scallion" -> prefix strips "Also " -> "hmm add tofu scallion"
+        # -> strip fillers -> "add tofu scallion"
+        item_text = strip_conversational_fillers(item_text)
+
+        # Validate item text is non-empty
         if not item_text:
             return None
 

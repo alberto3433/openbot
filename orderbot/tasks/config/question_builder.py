@@ -229,7 +229,10 @@ class QuestionBuilder:
                     item_desc = f"the {ordinal} {item_display}"
                 else:
                     item_desc = f"the {item_display}"
-                if input_type == "boolean":
+                db_question = attr.get("question_text")
+                if db_question:
+                    return f"For {item_desc}, {db_question[0].lower()}{db_question[1:]}"
+                elif input_type == "boolean":
                     return f"For {item_desc}, would you like that {attr_name}?"
                 elif input_type == "quantity":
                     return f"For {item_desc}, how many {attr_name} would you like?"

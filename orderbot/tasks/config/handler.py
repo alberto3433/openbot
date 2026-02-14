@@ -1264,10 +1264,12 @@ class MenuItemConfigHandler(BaseHandler):
     ) -> StateMachineResult:
         """Ask the question for a specific optional attribute."""
         options = attr.get("options", [])
+        db_question = attr.get("question_text")
 
-        if attr.get("input_type") == "boolean":
-            # For boolean, just confirm
-            question = attr.get("question_text") or f"{attr['display_name']}?"
+        if db_question:
+            question = db_question
+        elif attr.get("input_type") == "boolean":
+            question = f"{attr['display_name']}?"
         elif options:
             # Only list options if there are few enough to be helpful
             if len(options) <= DEFAULT_PAGINATION_SIZE:
@@ -1277,7 +1279,7 @@ class MenuItemConfigHandler(BaseHandler):
                 # Too many options - just ask, user can say "what do you have?" to see list
                 question = f"What kind of {attr['display_name'].lower()}?"
         else:
-            question = attr.get("question_text") or f"What {attr['display_name']}?"
+            question = f"What {attr['display_name']}?"
 
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         order.pending_item_id = item.id

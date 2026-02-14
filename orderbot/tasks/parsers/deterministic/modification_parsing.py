@@ -507,6 +507,16 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int, str | None
     )
     text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
 
+    # FIRST: Try matching with FULL text (including any leading numbers)
+    # This handles menu items like "3 Bagel Package" where the number is part of the name
+    text_for_full_match = text_lower.strip()
+    for item in sorted(get_known_menu_items(), key=len, reverse=True):
+        pattern = rf'\b{re.escape(item)}\b'
+        if re.search(pattern, text_for_full_match):
+            canonical = menu_cache.resolve_menu_item_alias(item)
+            if canonical is not None:
+                return canonical, 1, item
+
     # Extract quantity using extract_leading_quantity which handles all quantity phrases
     # (a few, couple, dozen, etc.)
     extracted_qty, remaining = extract_leading_quantity(text_lower)

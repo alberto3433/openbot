@@ -111,6 +111,14 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     # Strip trailing politeness words (please, thanks, etc.) before matching
     text_for_matching = _strip_trailing_words(text_lower)
 
+    # Strip trailing position qualifiers (e.g., "on the side") before item matching
+    for qual_pattern in menu_cache.get_qualifier_patterns():
+        qual_info = menu_cache.get_qualifier_info(qual_pattern)
+        if qual_info and qual_info.get("category") == "position":
+            if text_for_matching.endswith(" " + qual_pattern):
+                text_for_matching = text_for_matching[: -(len(qual_pattern) + 1)].strip()
+                break  # Only strip one trailing qualifier
+
     # Also prepare singularized version for matching plurals like "coffees" -> "coffee"
     # Singularize each word to handle "three coffees" -> "three coffee"
     words = text_for_matching.split()
@@ -556,6 +564,54 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
 
     # Restore protected " and "s
     parts = [p.replace(placeholder, " and ") for p in parts]
+
+    # --- Boolean attribute reattachment ---
+    # When splitting on " and " separates two boolean attrs of the same item type,
+    # reattach the leading boolean word from part[i+1] back to part[i].
+    # e.g., ["plain bagel toasted", "scooped plain cream cheese on the side"]
+    #     → ["plain bagel toasted and scooped", "plain cream cheese on the side"]
+    if len(parts) >= 2:
+        # Build mapping: boolean attr word → set of item type slugs
+        boolean_attr_to_types: dict[str, set[str]] = {}
+        for item_type_slug in menu_cache.get_configurable_item_types():
+            item_attrs = menu_cache.get_item_type_attributes(item_type_slug)
+            if item_attrs:
+                for attr_name, attr_info in item_attrs.items():
+                    if isinstance(attr_info, dict) and attr_info.get("input_type") == "boolean":
+                        word = attr_name.lower()
+                        boolean_attr_to_types.setdefault(word, set()).add(item_type_slug)
+                        # Also add underscore-replaced variant
+                        word_spaced = word.replace("_", " ")
+                        if word_spaced != word:
+                            boolean_attr_to_types.setdefault(word_spaced, set()).add(item_type_slug)
+
+        if boolean_attr_to_types:
+            i = 0
+            while i < len(parts) - 1:
+                left_words = parts[i].split()
+                right_words = parts[i + 1].split()
+                if left_words and right_words:
+                    last_left = left_words[-1].lower()
+                    first_right = right_words[0].lower()
+                    # Both must be boolean attrs with a common item type
+                    if (
+                        last_left in boolean_attr_to_types
+                        and first_right in boolean_attr_to_types
+                        and boolean_attr_to_types[last_left] & boolean_attr_to_types[first_right]
+                    ):
+                        remainder = " ".join(right_words[1:]).strip()
+                        # Only reattach if remainder still contains an item indicator
+                        if remainder:
+                            has_item, _, _ = _has_item_indicator(remainder)
+                            if has_item:
+                                parts[i] = parts[i] + " and " + first_right
+                                parts[i + 1] = remainder
+                                logger.debug(
+                                    "Boolean reattach: moved '%s' back to part[%d]: %s | %s",
+                                    first_right, i, parts[i], parts[i + 1],
+                                )
+                                continue  # Re-check same index for triple booleans
+                i += 1
 
     if len(parts) < 2:
         # Not a multi-item order

@@ -339,6 +339,13 @@ class UnrecognizedItemHandler:
             if isinstance(items, list) and items:
                 item_list = format_english_list(items[:4], conjunction="or")
                 followup = self._get_order_aware_followup(order_item_count, len(items))
+                # Safety net: if clean_name appears in the suggestions, don't say
+                # "We don't have X" (it would be contradictory)
+                if clean_name.lower() in item_list.lower():
+                    return (
+                        f"We have {item_list}. {followup}",
+                        None,
+                    )
                 return (
                     f"We don't have {clean_name}, but we do have {item_list}. {followup}",
                     None,
@@ -468,6 +475,13 @@ class UnrecognizedItemHandler:
             # Count suggestions from formatted string
             num_suggestions = suggestions.count(",") + 1
             followup = self._get_order_aware_followup(order_item_count, num_suggestions)
+            # Safety net: if clean_name appears in the suggestions, don't say
+            # "We don't have X" (it would be contradictory)
+            if clean_name.lower() in suggestions.lower():
+                return (
+                    f"For {category_display}, we have {suggestions}. {followup}",
+                    None,
+                )
             return (
                 f"We don't have {clean_name}. For {category_display}, we have {suggestions}. {followup}",
                 None,

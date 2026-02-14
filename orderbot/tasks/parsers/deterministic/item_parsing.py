@@ -316,17 +316,28 @@ def _parse_item_generic(
 
     # Extract quantity from text
     quantity = 1
+    item_qty_span = None
     qty_match = re.match(r'^(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+dozen|half\s+a\s+dozen|a\s+couple(?:\s+of)?|a\s+few|few)\s+', text_lower)
     if qty_match:
         qty_str = qty_match.group(1).strip()
         extracted_qty = _extract_quantity(qty_str)
         if extracted_qty is not None:
             quantity = extracted_qty
+            # Capture span of item-level quantity word to prevent attribute-level re-consumption
+            if quantity > 1:
+                item_qty_span = (qty_match.start(1), qty_match.end(1))
 
     # Extract all attributes for this item type using database config
     # This handles all attribute types (single_select, multi_select, boolean)
     # including combined attributes like milk_sweetener_syrup
-    attr_result = _get_pipeline().extract_attributes(text, item_type)
+    # Pass item_qty_span as exclude_span to prevent the item quantity word
+    # (e.g., "two" in "two large iced lattes") from being re-consumed as
+    # an attribute-level quantity (which would make size="2 Larges" instead of "Large")
+    from .result_types import TextSpan
+    exclude_spans_for_attrs = None
+    if item_qty_span:
+        exclude_spans_for_attrs = [TextSpan(start=item_qty_span[0], end=item_qty_span[1])]
+    attr_result = _get_pipeline().extract_attributes(text, item_type, exclude_spans=exclude_spans_for_attrs)
     attr_matched_spans = [(s.start, s.end) for s in attr_result.matched_spans]
 
     # Extract food modifiers (proteins, spreads, toppings, etc.)
@@ -802,6 +813,7 @@ def _extract_and_build_configurable_item(
     matched_item_span: tuple[int, int] | None,
     inferred_attr_values: dict,
     quantity: int,
+    item_qty_span: tuple[int, int] | None = None,
 ) -> OpenInputResponse | None:
     """Extract attributes, modifiers, and build the final configurable item response.
 
@@ -852,6 +864,8 @@ def _extract_and_build_configurable_item(
     exclude_spans_for_attrs: list[TextSpan] = []
     if matched_item_span:
         exclude_spans_for_attrs.append(TextSpan(start=matched_item_span[0], end=matched_item_span[1]))
+    if item_qty_span:
+        exclude_spans_for_attrs.append(TextSpan(start=item_qty_span[0], end=item_qty_span[1]))
 
     attr_result = _get_pipeline().extract_attributes(text, detected_item_type, exclude_spans=exclude_spans_for_attrs if exclude_spans_for_attrs else None)
     attr_matched_spans = [(s.start, s.end) for s in attr_result.matched_spans]
@@ -1119,6 +1133,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # 4. Extract quantity BEFORE menu item name matching
     # We need quantity first to check for inline attribute specs like "2 bagels 1 everything 1 plain"
     quantity = 1
+    item_qty_span = None
     qty_match = re.match(
         r"^(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
         r"(?:can|could|may)\s+i\s+(?:get|have)|"
@@ -1135,6 +1150,27 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         else:
             quantity = WORD_TO_NUM.get(qty_str, 1)
 
+        # Capture span of item-level quantity word to prevent attribute-level re-consumption
+        # e.g., "two" in "two large iced lattes" should not also set size quantity to 2
+        if quantity > 1:
+            item_qty_span = (qty_match.start(1), qty_match.end(1))
+
+        # Check if the extracted number is actually part of a menu item name
+        # e.g., "3 bagel package" -> "3" is part of "3 Bagel Package", not a quantity
+        # Try matching the full text (with number) against menu items for this item type
+        if quantity > 1 or qty_str.isdigit():
+            item_names = menu_cache.get_item_names_by_type(detected_item_type)
+            for item_name in sorted(item_names, key=len, reverse=True):
+                if qty_str in item_name and re.search(rf'\b{re.escape(item_name)}\b', text_cleaned):
+                    # The number is part of the item name, not a quantity
+                    quantity = 1
+                    item_qty_span = None
+                    logger.debug(
+                        "CONFIGURABLE_ITEM: number '%s' is part of item name '%s', qty reset to 1",
+                        qty_str, item_name
+                    )
+                    break
+
     # 5. Check for inline attribute specifications
     inline_result = _try_parse_inline_specs(text, text_lower, detected_item_type, matched_item_name, quantity)
     if inline_result:
@@ -1143,7 +1179,8 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     # 6. Extract configuration and build result
     return _extract_and_build_configurable_item(
         text, text_lower, detected_item_type, matched_item_name,
-        matched_item_span, inferred_attr_values, quantity
+        matched_item_span, inferred_attr_values, quantity,
+        item_qty_span=item_qty_span,
     )
 
 

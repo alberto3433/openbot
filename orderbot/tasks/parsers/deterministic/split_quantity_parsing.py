@@ -140,6 +140,91 @@ def _split_into_parts(text: str) -> list[tuple[int, str]]:
     return result
 
 
+def _parts_contain_different_item_type(
+    parts: list[tuple[int, str]], item_type: str
+) -> bool:
+    """Check if any split part references a different configurable item type.
+
+    Uses item type triggers, attribute option words, and modifier phrases to
+    distinguish genuine cross-type references (e.g., "latte" in a bagel split)
+    from modifier contexts (e.g., "cheese" inside "cream cheese").
+
+    Args:
+        parts: List of (quantity, part_text) tuples from _split_into_parts.
+        item_type: The detected item type slug for this split-quantity order.
+
+    Returns:
+        True if a part references a different item type (caller should bail out).
+    """
+    configurable_slugs = menu_cache.get_configurable_item_type_slugs()
+    all_triggers = menu_cache.get_item_type_triggers()
+
+    # Triggers for the detected type itself — if a word is also a trigger for
+    # the detected type, it's not evidence of a *different* type
+    detected_type_triggers: set[str] = {t.lower() for t in all_triggers.get(item_type, set())}
+
+    # All attribute option words across ALL types (e.g., "iced", "hot", "toasted", "scallion")
+    all_attr_option_words: set[str] = set(menu_cache.get_all_attribute_option_words().keys())
+
+    # Also add individual words from the detected type's attribute option names
+    # (catches "everything" from "Everything Bagel" bread option, etc.)
+    item_type_attrs = menu_cache.get_item_type_attributes(item_type)
+    for attr_config in item_type_attrs.values():
+        for opt in attr_config.get("options", []):
+            for field in (opt.get("slug", "").replace("_", " "), opt.get("display_name", "")):
+                for word in field.lower().split():
+                    if len(word) >= 3:
+                        all_attr_option_words.add(word)
+
+    # All modifier/ingredient phrases (e.g., "cream cheese", "lox", "scallion cream cheese")
+    all_modifier_phrases: set[str] = menu_cache.get_all_modifier_words()
+
+    # Index: individual word → set of modifier phrases containing it
+    # Used to check if a trigger word appears inside a longer modifier in context
+    modifier_phrases_by_word: dict[str, list[str]] = {}
+    for mod in all_modifier_phrases:
+        for word in mod.split():
+            modifier_phrases_by_word.setdefault(word, []).append(mod)
+
+    skip_words = {
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
+    }
+
+    for _, part_text in parts:
+        part_lower = part_text.lower()
+        for other_type in configurable_slugs:
+            if other_type == item_type:
+                continue
+            for trigger in all_triggers.get(other_type, set()):
+                trigger_lower = trigger.lower()
+                if trigger_lower in skip_words or len(trigger_lower) < 3:
+                    continue
+                if trigger_lower in detected_type_triggers:
+                    continue
+                if trigger_lower in all_attr_option_words:
+                    continue
+                if trigger_lower in all_modifier_phrases:
+                    continue
+                if not re.search(rf'\b{re.escape(trigger_lower)}s?\b', part_lower):
+                    continue
+                # Check if trigger appears within a longer modifier phrase in the part
+                # e.g., "cheese" is part of modifier "cream cheese" → skip
+                is_modifier_context = False
+                for mod in modifier_phrases_by_word.get(trigger_lower, []):
+                    if mod != trigger_lower and re.search(rf'\b{re.escape(mod)}\b', part_lower):
+                        is_modifier_context = True
+                        break
+                if is_modifier_context:
+                    continue
+                logger.info(
+                    "SPLIT-QUANTITY ITEMS: aborting - part '%s' has trigger '%s' for type '%s' (expected '%s')",
+                    part_text[:40], trigger_lower, other_type, item_type
+                )
+                return True
+    return False
+
+
 def _parse_split_quantity_items(
     text: str,
     detect_configurable_item_type_func,
@@ -215,6 +300,12 @@ def _parse_split_quantity_items(
         return None
 
     logger.info("SPLIT-QUANTITY ITEMS: found %d parts: %s", len(parts), parts)
+
+    # Validate split parts don't contain triggers for different item types.
+    # "two toasted bagels and two large iced lattes" → part "large iced lattes"
+    # contains "latte" trigger for espresso_based_beverage, not bagel → bail out
+    if _parts_contain_different_item_type(parts, item_type):
+        return None
 
     # Compute total_quantity from parts if not extracted from leading text
     # For "1 everything bagel 1 plain bagel", sum = 1 + 1 = 2

@@ -118,7 +118,7 @@ CANCEL_ITEM_PATTERN = re.compile(
 # =============================================================================
 
 # Import consolidated hesitation fillers from constants
-from .constants import HESITATION_FILLERS
+from .constants import HESITATION_FILLERS, MID_SENTENCE_HESITATION_FILLERS
 
 
 def _build_filler_pattern() -> re.Pattern:
@@ -160,6 +160,12 @@ def _build_filler_pattern() -> re.Pattern:
 # Filler words pattern - words that add no meaning and should be stripped before parsing
 FILLER_WORDS_PATTERN = _build_filler_pattern()
 
+# Mid-sentence hesitation pattern - pure noise sounds safe to strip from anywhere
+_mid_fillers = "|".join(
+    re.escape(f) for f in sorted(MID_SENTENCE_HESITATION_FILLERS, key=len, reverse=True)
+)
+MID_SENTENCE_FILLER_PATTERN = re.compile(rf'\b(?:{_mid_fillers})\b', re.IGNORECASE)
+
 
 def strip_conversational_fillers(text: str) -> str:
     """Remove conversational filler words from the start of user input.
@@ -192,6 +198,13 @@ def strip_conversational_fillers(text: str) -> str:
             result = result[match.end():].strip()
         else:
             break
+
+    # Strip mid-sentence hesitation sounds (uh, um, er, etc.) from ANYWHERE in text.
+    # These are pure noise sounds that never appear in food/menu item names.
+    # Word boundaries protect against false matches in longer words (e.g., "butter").
+    # e.g., "Can uh you add skim" -> "Can you add skim"
+    # e.g., "I want um a bagel" -> "I want a bagel"
+    result = MID_SENTENCE_FILLER_PATTERN.sub(' ', result)
 
     # Strip mid-sentence "so"/"also" - common fillers that never appear
     # in food names as standalone words (word boundary protects "miso", "espresso", etc.)

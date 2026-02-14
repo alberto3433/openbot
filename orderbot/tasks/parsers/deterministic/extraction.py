@@ -88,13 +88,22 @@ def _check_plural_boundary(text: str, start: int, end: int) -> tuple[bool, int]:
     return (False, end)
 
 
-def _extract_quantity_before(text: str, pos: int) -> int:
+def _extract_quantity_before(
+    text: str,
+    pos: int,
+    exclude_spans: list[tuple[int, int]] | None = None,
+) -> int:
     """Extract quantity prefix before a match position.
 
     Uses BASIC_WORD_TO_NUM from quantity_utils as single source of truth.
+
+    Args:
+        text: Full input text
+        pos: Position of the match to look before
+        exclude_spans: Optional spans to exclude (e.g., item-level quantity already consumed)
     """
-    before_text = text[:pos].strip()
-    if not before_text:
+    before_text = text[:pos]
+    if not before_text.strip():
         return 1
 
     qty_pattern = re.compile(
@@ -103,6 +112,10 @@ def _extract_quantity_before(text: str, pos: int) -> int:
     )
     qty_match = qty_pattern.search(before_text)
     if qty_match:
+        # Check if this quantity word overlaps with an excluded span
+        if exclude_spans and _spans_overlap(qty_match.start(1), qty_match.end(1), exclude_spans):
+            return 1
+
         qty_str = qty_match.group(1).lower()
         if qty_str.isdigit():
             return int(qty_str)
@@ -392,7 +405,7 @@ def _apply_longest_match_first(
         matched_spans.append((cand.start, cand.end))
         matched_options_per_attr.setdefault(cand.attr_slug, set()).add(slug)
 
-        quantity = _extract_quantity_before(input_lower, cand.start)
+        quantity = _extract_quantity_before(input_lower, cand.start, exclude_spans=exclude_spans)
         match_data = {
             "slug": slug,
             "display_name": cand.option.get("display_name", slug),
@@ -540,7 +553,7 @@ def _apply_reverse_matching(
             slug = match_info["slug"]
             token_start = match_info["token_start"]
 
-            quantity = _extract_quantity_before(input_lower, token_start)
+            quantity = _extract_quantity_before(input_lower, token_start, exclude_spans=exclude_spans)
             result.setdefault(attr_slug, []).append({
                 "slug": slug,
                 "display_name": opt.get("display_name", slug),

@@ -257,24 +257,38 @@ def process_next_queued_item(
     Returns:
         StateMachineResult if a queued item was processed, None otherwise
     """
-    from .models import MenuItemTask
+    from .models import MenuItemTask, TaskStatus
 
-    if not order.has_queued_config_items() or not menu_item_handler:
+    if not menu_item_handler:
         return None
 
-    next_config = order.pop_next_config_item()
-    if not next_config:
-        return None
+    while order.has_queued_config_items():
+        next_config = order.pop_next_config_item()
+        if not next_config:
+            return None
 
-    next_item = order.items.get_item_by_id(next_config["item_id"])
-    if not isinstance(next_item, MenuItemTask):
-        return None
+        next_item = order.items.get_item_by_id(next_config["item_id"])
+        if not isinstance(next_item, MenuItemTask):
+            continue
 
-    context_str = f"{log_context}: " if log_context else ""
-    logger.info(
-        "%sProcessing queued item %s (%s)",
-        context_str,
-        next_config.get("item_name"),
-        next_config["item_id"][:8]
-    )
-    return menu_item_handler.get_first_question(next_item, order)
+        # Skip already-complete items - they may have been completed via
+        # _get_next_question path while still sitting in the queue
+        if next_item.status == TaskStatus.COMPLETE:
+            logger.info(
+                "%sSkipping already-complete queued item %s (%s)",
+                f"{log_context}: " if log_context else "",
+                next_config.get("item_name"),
+                next_config["item_id"][:8]
+            )
+            continue
+
+        context_str = f"{log_context}: " if log_context else ""
+        logger.info(
+            "%sProcessing queued item %s (%s)",
+            context_str,
+            next_config.get("item_name"),
+            next_config["item_id"][:8]
+        )
+        return menu_item_handler.get_first_question(next_item, order)
+
+    return None

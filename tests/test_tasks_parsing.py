@@ -274,6 +274,7 @@ class TestDeterministicParserBagelOrders:
         ("one bagel", 1),
         ("four bagels", 4),
         ("five everything bagels", 5),
+        ("two bagel sandwiches", 2),
     ])
     def test_bagel_quantity_extraction(self, text, expected_qty):
         """Test that bagel quantities are correctly extracted.
@@ -2504,6 +2505,36 @@ class TestParsedItemsMultiItem:
             f"parsed_items: {[(getattr(i, 'item_name', None), getattr(i, 'item_type', None)) for i in result.parsed_items] if result else 'N/A'}"
         )
 
+    def test_bagel_toasted_and_scooped_with_cream_cheese_on_the_side(self):
+        """Test 'plain bagel toasted and scooped plain cream cheese on the side'.
+
+        Regression test: The tokenizer was splitting on " and " between "toasted"
+        and "scooped", which are both boolean attributes of the bagel. This caused
+        "scooped plain cream cheese on the side" to be misresolved as a wrong item.
+
+        Expected: Plain Bagel (toasted, scooped) + Plain Cream Cheese (on the side)
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order(
+            "plain bagel toasted and scooped plain cream cheese on the side"
+        )
+        assert result is not None, "Failed to parse as multi-item order"
+        assert len(result.parsed_items) == 2, (
+            f"Expected 2 parsed_items, got {len(result.parsed_items)}: "
+            f"{[(getattr(i, 'item_name', None), getattr(i, 'item_type', None)) for i in result.parsed_items]}"
+        )
+
+        # First item should be a bagel
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
+        assert "bagel" in types, f"Expected bagel in parsed_items, got: {types}"
+
+        # Find the bagel item and verify boolean attrs
+        bagel = next(i for i in result.parsed_items if _get_parsed_item_type(i) == "bagel")
+        attrs = getattr(bagel, 'attribute_values', {})
+        assert attrs.get("toasted") is True, f"Expected toasted=True, got {attrs.get('toasted')}"
+        assert attrs.get("scooped") is True, f"Expected scooped=True, got {attrs.get('scooped')}"
+
 
 class TestDuplicatePatterns:
     """Tests for duplicate item patterns: 'another one', 'one more', 'another bagel', etc."""
@@ -3177,3 +3208,143 @@ class TestAvailabilityInquiry:
         from orderbot.tasks.parsers.deterministic.inquiry.dietary import parse_availability_inquiry
         result = parse_availability_inquiry(text)
         assert result is None, f"'{text}' should NOT be an availability inquiry"
+
+
+class TestNumberedMenuItemParsing:
+    """Tests for menu items with numbers in their names (e.g., '3 Bagel Package')."""
+
+    @pytest.mark.parametrize("text", [
+        "I'd like a 3 Bagel Package",
+        "3 bagel package",
+        "can I get a 3 bagel package",
+        "I want the 3 bagel package",
+    ])
+    def test_3_bagel_package_parsed(self, text):
+        """Test that '3 Bagel Package' is recognized as an item, not qty=3 + 'bagel package'."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Failed to parse: {text}"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 1, \
+            f"Expected at least 1 parsed item for: {text}"
+        item = result.parsed_items[0]
+        # The item should be recognized with quantity=1 (not quantity=3)
+        assert item.quantity == 1, \
+            f"Expected quantity=1 for '{text}', got {item.quantity} (number is part of item name)"
+
+    @pytest.mark.parametrize("text", [
+        "6 bagel package",
+        "I'd like a 6 bagel package",
+    ])
+    def test_6_bagel_package_parsed(self, text):
+        """Test that '6 Bagel Package' is recognized as an item, not qty=6."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Failed to parse: {text}"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 1, \
+            f"Expected at least 1 parsed item for: {text}"
+        item = result.parsed_items[0]
+        assert item.quantity == 1, \
+            f"Expected quantity=1 for '{text}', got {item.quantity} (number is part of item name)"
+
+    def test_3_cookies_still_works(self):
+        """Regression test: '3 cookies' should still mean qty=3 of cookies."""
+        result = parse_open_input_deterministic("3 cookies")
+        assert result is not None, "Failed to parse: 3 cookies"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 1
+        # For "3 cookies", the number IS a quantity (not part of the item name)
+        total_qty = sum(item.quantity for item in result.parsed_items)
+        assert total_qty == 3, f"Expected total quantity=3 for '3 cookies', got {total_qty}"
+
+    def test_two_3_bagel_packages(self):
+        """Test 'two 3 bagel packages' means qty=2 of '3 Bagel Package'."""
+        result = parse_open_input_deterministic("two 3 bagel packages")
+        assert result is not None, "Failed to parse: two 3 bagel packages"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 1
+        total_qty = sum(item.quantity for item in result.parsed_items)
+        assert total_qty == 2, \
+            f"Expected total quantity=2 for 'two 3 bagel packages', got {total_qty}"
+
+
+class TestItemQuantityNotBleedingIntoAttributes:
+    """Tests that item-level quantity doesn't bleed into attribute selection quantity.
+
+    Regression: "two large iced lattes" was creating 2 items but each had
+    size=large with quantity=2 (showing "2 Larges") instead of quantity=1.
+    The item-level "two" was being re-consumed by _extract_quantity_before as
+    a per-attribute quantity for "large".
+    """
+
+    def test_two_large_iced_lattes_size_quantity_is_one(self):
+        """'two large iced lattes' → qty=2 items, each with size=large (quantity=1)."""
+        result = parse_open_input_deterministic("two large iced lattes")
+        assert result is not None, "Failed to parse: two large iced lattes"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 1
+        item = result.parsed_items[0]
+        assert item.quantity == 2, f"Expected item quantity=2, got {item.quantity}"
+        # Check that size selection has quantity=1, not 2
+        size_selections = [s for s in item.selections if s.category == "size"]
+        assert len(size_selections) == 1, f"Expected 1 size selection, got {len(size_selections)}"
+        assert size_selections[0].slug == "large", f"Expected size='large', got '{size_selections[0].slug}'"
+        assert size_selections[0].quantity == 1, \
+            f"Size selection quantity should be 1, got {size_selections[0].quantity} (item qty bleeding into attribute)"
+
+    def test_three_small_hot_coffees_size_quantity_is_one(self):
+        """'three small hot coffees' → qty=3 items, each with size=small (quantity=1)."""
+        result = parse_open_input_deterministic("three small hot coffees")
+        assert result is not None, "Failed to parse: three small hot coffees"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 1
+        item = result.parsed_items[0]
+        assert item.quantity == 3, f"Expected item quantity=3, got {item.quantity}"
+        size_selections = [s for s in item.selections if s.category == "size"]
+        if size_selections:
+            assert size_selections[0].quantity == 1, \
+                f"Size selection quantity should be 1, got {size_selections[0].quantity}"
+
+    def test_double_shot_latte_still_works(self):
+        """'double shot latte' → qty=1 item, shots has quantity=2 (double is NOT item qty)."""
+        result = parse_open_input_deterministic("double shot latte")
+        assert result is not None, "Failed to parse: double shot latte"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 1
+        item = result.parsed_items[0]
+        # "double" is not an item quantity word here, it modifies "shot"
+        assert item.quantity == 1, f"Expected item quantity=1, got {item.quantity}"
+
+    def test_two_plain_bagels_bread_not_doubled(self):
+        """'two plain bagels' → qty=2 items, bread=plain (not quantity=2)."""
+        result = parse_open_input_deterministic("two plain bagels")
+        assert result is not None, "Failed to parse: two plain bagels"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 1
+        item = result.parsed_items[0]
+        assert item.quantity == 2, f"Expected item quantity=2, got {item.quantity}"
+        bread_selections = [s for s in item.selections if s.category == "bread"]
+        if bread_selections:
+            assert bread_selections[0].quantity == 1, \
+                f"Bread selection quantity should be 1, got {bread_selections[0].quantity}"
+
+    def test_two_large_iced_lattes_and_two_bagels_multi_item_path(self):
+        """Multi-item: 'two large iced lattes and two bagels' → size=large has quantity=1.
+
+        This tests the _parse_item_generic path used by the multi-item parser.
+        The item-level "two" should not bleed into the size selection quantity.
+        """
+        result = parse_open_input_deterministic("two large iced lattes and two bagels")
+        assert result is not None, "Failed to parse: two large iced lattes and two bagels"
+        assert result.parsed_items is not None and len(result.parsed_items) >= 2
+        # Find the latte item
+        latte_items = [p for p in result.parsed_items if "latte" in (p.item_name or "").lower()]
+        assert len(latte_items) >= 1, f"Expected latte item, got: {[p.item_name for p in result.parsed_items]}"
+        latte = latte_items[0]
+        size_selections = [s for s in latte.selections if s.category == "size"]
+        assert len(size_selections) == 1, f"Expected 1 size selection, got {len(size_selections)}"
+        assert size_selections[0].slug == "large"
+        assert size_selections[0].quantity == 1, \
+            f"Size selection quantity should be 1, got {size_selections[0].quantity} (item qty bleeding into attribute via multi-item path)"
+
+    def test_two_toasted_bagels_and_two_large_iced_lattes(self):
+        """Multi-item order should not be eaten by split-quantity parser."""
+        result = parse_open_input_deterministic("two toasted bagels and two large iced lattes")
+        assert result is not None
+        assert result.parsed_items is not None and len(result.parsed_items) >= 2
+        # Should have both bagels AND lattes
+        item_types = {p.item_type for p in result.parsed_items}
+        assert "bagel" in item_types, f"Missing bagel items, got types: {item_types}"
+        has_beverage = any(t for t in item_types if t != "bagel")
+        assert has_beverage, f"Missing beverage items, got only types: {item_types}"

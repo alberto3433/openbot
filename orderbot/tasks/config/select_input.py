@@ -845,8 +845,19 @@ class SelectInputHandler:
             )
             return None
 
-        # Multiple options match - list them for user
-        options_text = format_display_list_callback(matching_options)
+        # Multiple options match - list them for user (with pagination)
+        if len(matching_options) <= DEFAULT_PAGINATION_SIZE:
+            options_text = format_display_list_callback(matching_options)
+            message = f"We have {options_text}. Which would you like?"
+        else:
+            first_page = matching_options[:DEFAULT_PAGINATION_SIZE]
+            options_text = format_display_list_callback(first_page)
+            remaining = len(matching_options) - DEFAULT_PAGINATION_SIZE
+            message = (
+                f"We have {options_text}, and {remaining} more. "
+                f"Would you like to hear more options or pick one of these?"
+            )
+            order.config_options_page = 1
 
         # Store disambiguation state (including quantity from original input)
         order.pending_attr_disambiguation = {
@@ -865,7 +876,7 @@ class SelectInputHandler:
         )
 
         return StateMachineResult(
-            message=f"We have {options_text}. Which would you like?",
+            message=message,
             order=order,
         )
 

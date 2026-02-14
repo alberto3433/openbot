@@ -14,6 +14,7 @@ from orderbot.cache import menu_cache
 from ..schemas import StateMachineResult
 from ..parsers.constants import extract_quantity_for_pattern
 from ..utils import OptionMatcher
+from ..response_utils import is_affirmative
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
@@ -71,6 +72,17 @@ class ConfigDisambiguationHandler:
             self._advance_to_next_question = advance_to_next_question
             self._get_next_question = get_next_question
 
+    @staticmethod
+    def _is_show_more_request(user_input: str) -> bool:
+        """Check if user is asking to see more options (pagination continuation)."""
+        input_lower = user_input.lower().strip()
+        show_more_phrases = [
+            "what else", "any other", "more options", "other options",
+            "what other", "anything else", "show more", "more", "next",
+            "keep going", "go on", "continue", "different",
+        ]
+        return any(phrase in input_lower for phrase in show_more_phrases)
+
     def resolve_disambiguation(
         self,
         user_input: str,
@@ -117,6 +129,14 @@ class ConfigDisambiguationHandler:
 
         disambiguation = order.pending_attr_disambiguation
         if not disambiguation:
+            return None
+
+        # If pagination is active and user wants to see more options,
+        # defer to the pagination handler downstream instead of treating
+        # the input as a disambiguation selection.
+        if order.config_options_page > 0 and (
+            self._is_show_more_request(user_input) or is_affirmative(user_input)
+        ):
             return None
 
         options = disambiguation.get("options", [])

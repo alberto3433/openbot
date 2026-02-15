@@ -55,8 +55,8 @@ from .deterministic import (
     strip_conversational_fillers,
 )
 
-from .llm_parsers import (
-    parse_side_choice,
+from .validators import (
+    parse_side_choice_deterministic as parse_side_choice,
 )
 
 from .deterministic import (
@@ -80,7 +80,7 @@ __all__ = [
     # === Main Entry Points ===
     "parse_open_input_deterministic",  # Primary parser (fast, regex-based)
     "parse_open_input",                # Main parser (deterministic, no LLM fallback)
-    "parse_side_choice",               # Side choice parsing (LLM-based)
+    "parse_side_choice",               # Side choice parsing (deterministic)
 
     # === Deterministic Parsers ===
     "parse_confirmation_deterministic",      # Confirmation yes/no parsing

@@ -188,8 +188,12 @@ def validate_delivery_zip_code(
 from ..schemas import (
     ConfirmationResponse,
     DeliveryChoiceResponse,
+    EmailResponse,
+    NameResponse,
     PaymentMethodResponse,
+    PhoneResponse,
 )
+from ..schemas.parser_responses import AttributeChoiceResponse
 from orderbot.cache import menu_cache
 
 
@@ -353,3 +357,181 @@ def parse_payment_method_deterministic(user_input: str) -> PaymentMethodResponse
 
     # Can't determine
     return PaymentMethodResponse(choice="unclear")
+
+
+# =============================================================================
+# Deterministic Parsers for Name, Phone, Email, Side Choice
+# (Replacing LLM-based parsers from llm_parsers.py)
+# =============================================================================
+
+# Regex for stripping conversational prefixes from name input
+_NAME_PREFIX_PATTERN = re.compile(
+    r"^(?:my\s+name\s+is|i'?m|it'?s|call\s+me|this\s+is|the\s+name\s+is|"
+    r"name\s+is|i\s+am|just)\s+",
+    re.IGNORECASE,
+)
+
+# Regex for stripping trailing pleasantries
+_NAME_SUFFIX_PATTERN = re.compile(
+    r"\s+(?:please|thanks|thank\s+you|thx)\.?$",
+    re.IGNORECASE,
+)
+
+
+def parse_name_deterministic(user_input: str, model: str = "gpt-4o-mini") -> NameResponse:
+    """Parse user input when waiting for name (deterministic).
+
+    Strips conversational prefixes/suffixes and title-cases the result.
+    The `model` parameter is accepted for call-site compatibility but ignored.
+
+    Args:
+        user_input: User's input text
+        model: Ignored (kept for API compatibility)
+
+    Returns:
+        NameResponse with extracted name or None
+    """
+    text = user_input.strip()
+    if not text:
+        return NameResponse(name=None)
+
+    # Strip conversational prefixes
+    text = _NAME_PREFIX_PATTERN.sub("", text).strip()
+
+    # Strip trailing pleasantries
+    text = _NAME_SUFFIX_PATTERN.sub("", text).strip()
+
+    # Strip surrounding quotes or punctuation
+    text = text.strip("\"'.,!?")
+
+    if not text:
+        return NameResponse(name=None)
+
+    # Guard: if more than 4 words remain, probably not just a name
+    if len(text.split()) > 4:
+        return NameResponse(name=None)
+
+    return NameResponse(name=text.title())
+
+
+def parse_phone_deterministic(user_input: str, model: str = "gpt-4o-mini") -> PhoneResponse:
+    """Parse user input when collecting phone number (deterministic).
+
+    Extracts digits and validates as a 10-digit US number.
+    Downstream validate_phone_number() does full E.164 validation.
+
+    Args:
+        user_input: User's input text
+        model: Ignored (kept for API compatibility)
+
+    Returns:
+        PhoneResponse with extracted phone digits or None
+    """
+    text = user_input.strip()
+    if not text:
+        return PhoneResponse(phone=None)
+
+    # Extract all digits
+    digits = re.sub(r'\D', '', text)
+
+    # 10-digit US number
+    if len(digits) == 10:
+        return PhoneResponse(phone=digits)
+
+    # 11 digits starting with country code 1
+    if len(digits) == 11 and digits.startswith("1"):
+        return PhoneResponse(phone=digits[1:])
+
+    return PhoneResponse(phone=None)
+
+
+# Regex for stripping conversational prefixes from email input
+_EMAIL_PREFIX_PATTERN = re.compile(
+    r"^(?:my\s+email\s+(?:address\s+)?is|it'?s|email\s+is|"
+    r"the\s+email\s+is|send\s+(?:it\s+)?to|use)\s+",
+    re.IGNORECASE,
+)
+
+# Regex for extracting email address
+_EMAIL_EXTRACT_PATTERN = re.compile(
+    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+)
+
+
+def parse_email_deterministic(user_input: str, model: str = "gpt-4o-mini") -> EmailResponse:
+    """Parse user input when collecting email address (deterministic).
+
+    Handles natural language like 'john at gmail dot com' and extracts
+    email via regex. Downstream validate_email_address() does full validation.
+
+    Args:
+        user_input: User's input text
+        model: Ignored (kept for API compatibility)
+
+    Returns:
+        EmailResponse with extracted email or None
+    """
+    text = user_input.strip()
+    if not text:
+        return EmailResponse(email=None)
+
+    # Strip conversational prefixes
+    text = _EMAIL_PREFIX_PATTERN.sub("", text).strip()
+
+    # Natural language conversion: " at " -> "@", " dot " -> "."
+    text = re.sub(r'\s+at\s+', '@', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s+dot\s+', '.', text, flags=re.IGNORECASE)
+
+    # Try to extract email via regex
+    match = _EMAIL_EXTRACT_PATTERN.search(text)
+    if match:
+        return EmailResponse(email=match.group(0).lower())
+
+    return EmailResponse(email=None)
+
+
+def parse_side_choice_deterministic(
+    user_input: str,
+    item_name: str,
+    valid_options: list[dict] | None = None,
+    question_text: str | None = None,
+    model: str = "gpt-4o-mini",
+) -> AttributeChoiceResponse:
+    """Parse side choice selection using deterministic option matching.
+
+    Uses OptionMatcher.match_single() against valid_options. Falls back
+    to unclear if no match or multiple matches found.
+
+    Args:
+        user_input: User's input text
+        item_name: Parent item name (for context)
+        valid_options: List of option dicts with slug/display_name/aliases
+        question_text: The question that was asked (unused, kept for API compat)
+        model: Ignored (kept for API compatibility)
+
+    Returns:
+        AttributeChoiceResponse with matched value, unclear, or wants_cancel
+    """
+    text = user_input.lower().strip()
+
+    # Check cancel patterns first
+    cancel_patterns = ["remove", "cancel", "nevermind", "never mind", "skip", "don't want"]
+    if any(p in text for p in cancel_patterns) or menu_cache.is_negative(text):
+        return AttributeChoiceResponse(wants_cancel=True)
+
+    if not valid_options:
+        return AttributeChoiceResponse(unclear=True)
+
+    # Import here to avoid circular import
+    # (validators -> OptionMatcher -> InputNormalizer -> parsers/__init__ -> validators)
+    from ..utils.option_matcher import OptionMatcher
+
+    # Use OptionMatcher for robust matching
+    matcher = OptionMatcher()
+    matched, partial_matches = matcher.match_single(text, valid_options)
+
+    if matched:
+        return AttributeChoiceResponse(value=matched["slug"])
+
+    # No unique match found
+    return AttributeChoiceResponse(unclear=True)

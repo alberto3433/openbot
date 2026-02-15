@@ -13,7 +13,7 @@ from typing import Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask
 from .schemas import OrderPhase, StateMachineResult
 from .config.attribute_resolver import get_unanswered_mandatory
-from .parsers import parse_side_choice
+from .parsers.validators import parse_side_choice_deterministic as parse_side_choice
 from .parsers.deterministic import get_pipeline
 from orderbot.cache import menu_cache
 

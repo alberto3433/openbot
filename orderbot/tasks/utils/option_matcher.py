@@ -609,22 +609,39 @@ class OptionMatcher:
     def _phase_partial_option_in_input(
         self, user_lower: str, options: list[dict], original_input: str
     ) -> dict | None:
-        """Phase 3: Option name is contained in user input."""
+        """Phase 3: Option name is contained in user input.
+
+        Collects all matches and returns the one with the longest matching
+        text, so that "Gluten Free Cinnamon Raisin Bagel" beats
+        "Cinnamon Raisin Bagel" when both appear in the input.
+        """
+        best_match: dict | None = None
+        best_length = 0
+
         for opt in options:
             if not self._passes_must_match(original_input, opt):
                 continue
             display_lower = opt["display_name"].lower()
             if display_lower in user_lower and self._is_whole_word_match(display_lower, user_lower):
-                return opt
+                if len(display_lower) > best_length:
+                    best_match = opt
+                    best_length = len(display_lower)
+                continue
             slug_readable = opt["slug"].replace("_", " ")
             if slug_readable in user_lower and self._is_whole_word_match(slug_readable, user_lower):
-                return opt
+                if len(slug_readable) > best_length:
+                    best_match = opt
+                    best_length = len(slug_readable)
+                continue
             for alias in self._get_aliases(opt):
                 alias_lower = alias.lower()
                 if len(alias_lower) >= 3 and alias_lower in user_lower:
                     if self._is_whole_word_match(alias_lower, user_lower):
-                        return opt
-        return None
+                        if len(alias_lower) > best_length:
+                            best_match = opt
+                            best_length = len(alias_lower)
+                        break
+        return best_match
 
     # =========================================================================
     # Helper Methods

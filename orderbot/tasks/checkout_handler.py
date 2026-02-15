@@ -34,10 +34,10 @@ from .parsers import (
 )
 from .parsers.deterministic import MAKE_IT_N_PATTERN
 from .parsers.quantity_utils import extract_make_it_n_target
-from .parsers.llm_parsers import (
-    parse_name,
-    parse_phone,
-    parse_email,
+from .parsers.validators import (
+    parse_name_deterministic as parse_name,
+    parse_phone_deterministic as parse_phone,
+    parse_email_deterministic as parse_email,
 )
 from .parsers.validators import (
     parse_confirmation_deterministic,

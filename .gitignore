@@ -26,6 +26,7 @@ htmlcov/
 # Temp files
 session.txt
 nul
+*tmp_logs.json
 
 # Database backups
 db_backup*/

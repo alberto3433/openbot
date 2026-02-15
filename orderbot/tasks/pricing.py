@@ -141,6 +141,15 @@ class PricingEngine(MenuDataMixin):
     # Generic Pricing Methods (Data-Driven)
     # =========================================================================
 
+    def get_size_category_slug(self, menu_item_name: str) -> str | None:
+        """Return the size_category_slug for a menu item, or None."""
+        menu_item = self._lookup_menu_item(menu_item_name)
+        if not menu_item:
+            menu_item = self._lookup_menu_item(menu_item_name.title())
+        if not menu_item:
+            return None
+        return menu_item.get("size_category_slug")
+
     def lookup_size_price(
         self,
         menu_item_name: str,

@@ -567,10 +567,16 @@ class SelectInputHandler:
         variant_price_applied = False
 
         if input_type != "multi_select" and self.pricing:
-            # Look up price from pricing engine
-            variant_price, _ = self.pricing.lookup_size_price(
-                item.menu_item_name, matched["slug"]
-            )
+            # Only use variant pricing when this attribute is the item's
+            # size/variant attribute (e.g., "size" for coffee, "weight" for
+            # spreads).  Other single-select attributes like "bread" should
+            # fall through to the upcharge lookup instead.
+            size_cat = self.pricing.get_size_category_slug(item.menu_item_name)
+            variant_price = None
+            if size_cat and attr_slug == size_cat:
+                variant_price, _ = self.pricing.lookup_size_price(
+                    item.menu_item_name, matched["slug"]
+                )
             if variant_price is not None:
                 # Check if this is a bundle-included item (price should stay $0)
                 bundle_price_rule = getattr(item, 'bundle_price_rule', None)

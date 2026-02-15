@@ -770,17 +770,21 @@ class ConfigModificationHandler:
         from .models import TaskStatus
         from .utils.text import format_english_list
 
-        # Step 1: Check for ordering prefix
-        prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(user_input)
+        # Step 1: Strip leading fillers before checking for ordering prefix
+        # e.g., "um And a Peanut Butter Sandwich" -> "And a Peanut Butter Sandwich"
+        cleaned_input = strip_conversational_fillers(user_input.strip())
+
+        # Step 2: Check for ordering prefix
+        prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(cleaned_input)
         if not prefix_match:
             if require_prefix:
                 return None
             # No prefix — parse full input as item text
-            item_text = user_input.strip()
+            item_text = cleaned_input
         else:
-            item_text = user_input[prefix_match.end():].strip()
+            item_text = cleaned_input[prefix_match.end():].strip()
 
-        # Step 2: Strip conversational fillers from item text after prefix removal
+        # Step 3: Strip conversational fillers from item text after prefix removal
         # e.g., "Also hmm add tofu scallion" -> prefix strips "Also " -> "hmm add tofu scallion"
         # -> strip fillers -> "add tofu scallion"
         item_text = strip_conversational_fillers(item_text)

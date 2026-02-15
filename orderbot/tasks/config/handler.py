@@ -1012,6 +1012,7 @@ class MenuItemConfigHandler(BaseHandler):
         # the matched option name (e.g., "onion" -> matched "Onion Bagel")
         def advance_with_capture(item, order, attr, ack_text=None):
             should_capture = True
+            capture_input = user_input
             if ack_text:
                 # Check if user input is essentially just the matched option
                 # e.g., "onion" matches "Onion Bagel" -> simple answer, skip capture
@@ -1022,9 +1023,15 @@ class MenuItemConfigHandler(BaseHandler):
                 # or if it exactly matches (allowing for minor variations)
                 if user_lower in ack_lower or ack_lower.startswith(user_lower):
                     should_capture = False
+                elif ack_lower in user_lower:
+                    # User input contains the matched option plus extra words
+                    # e.g., "do you have onion bagel?" contains "onion bagel"
+                    # Strip the matched text so it won't double-match other attributes
+                    # e.g., "onion" won't also match as a topping
+                    capture_input = user_lower.replace(ack_lower, "", 1).strip()
 
             if should_capture:
-                self.capture_attributes_from_input(user_input, item, skip_attribute=attr['slug'])
+                self.capture_attributes_from_input(capture_input, item, skip_attribute=attr['slug'])
             return self._advance_to_next_question(item, order, attr, ack_text)
 
         return self._select_input_handler.handle_select_input(

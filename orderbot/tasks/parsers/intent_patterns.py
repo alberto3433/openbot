@@ -384,7 +384,10 @@ CAN_YOU_MAKE_IT_PATTERN = re.compile(
     r"(?:do|does)\s+(?:it|that|this)\s+come\s+(?:in\s+)?(.+?)"
     r"|"
     # Direct "make it X" without "can you" prefix
-    r"(?:make|change|switch)\s+(?:it|that|this)\s+(?:to\s+)?(?:a\s+)?(.+?)"
+    r"(?:make|change)\s+(?:it|that|this)\s+(?:to\s+)?(?:a\s+)?(.+?)"
+    r"|"
+    # "switch to X", "switch it to X" - pronoun optional when "to" is present
+    r"switch\s+(?:(?:it|that|this)\s+)?to\s+(?:a\s+)?(.+?)"
     r"|"
     # "actually make it X" variation
     r"actually\s+(?:make|change)\s+(?:it|that|this)\s+(?:to\s+)?(?:a\s+)?(.+?)"

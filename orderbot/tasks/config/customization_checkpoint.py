@@ -182,6 +182,50 @@ class CustomizationCheckpointHandler:
         display_text = f"{display_name} x{new_qty}"
         return self._ask_customization_checkpoint(item, order, display_text)
 
+    def _check_new_item_at_checkpoint(
+        self, user_lower: str, item: "MenuItemTask", order: "OrderTask"
+    ) -> StateMachineResult | None:
+        """Detect if user is ordering a new item at the customization checkpoint.
+
+        Checks if the input contains an item type trigger word (e.g., "bagel",
+        "latte", "coffee") that isn't also a known modifier/ingredient. At the
+        checkpoint, modifier words take precedence over item type triggers.
+
+        Args:
+            user_lower: Lowercased user input
+            item: Menu item being configured
+            order: Current order
+
+        Returns:
+            StateMachineResult with redirect message if new item detected,
+            None to continue normal checkpoint flow.
+        """
+        all_triggers = menu_cache.get_item_type_triggers()
+        current_attrs = set(menu_cache.get_item_type_attributes(item.menu_item_type).keys())
+
+        for triggers in all_triggers.values():
+            for trigger in triggers:
+                # Skip quantity/multiplier words that happen to be triggers
+                # (e.g., "double" from "Double Chocolate Muffin")
+                if trigger in QUANTITY_MODIFIER_WORDS:
+                    continue
+                if not re.search(rf'\b{re.escape(trigger)}\b', user_lower):
+                    continue
+                # Skip if trigger is also a known modifier/ingredient —
+                # at checkpoint, "pepper" means the condiment, not "Pepper Jack Cheese Sandwich"
+                if menu_cache.is_known_modifier(trigger):
+                    continue
+                # Skip if trigger matches an attribute slug of the current item
+                # (e.g., "cheese" trigger at egg sandwich checkpoint = cheese attribute)
+                if trigger in current_attrs:
+                    continue
+                item_name = item.get_display_name()
+                return StateMachineResult(
+                    message=f"Let's finish configuring the {item_name} first. Any more changes?",
+                    order=order,
+                )
+        return None
+
     def handle_customization_checkpoint(
         self, user_input: str, item: "MenuItemTask", order: "OrderTask"
     ) -> StateMachineResult:
@@ -257,6 +301,17 @@ class CustomizationCheckpointHandler:
                     message=f"You can add: {options_list}. What would you like?",
                     order=order,
                 )
+
+        # Check if user is ordering a NEW item (e.g., "onion bagel toasted and scooped")
+        # This must happen BEFORE direct option matching, which would greedily match
+        # words like "onion" as toppings on the current item.
+        # We check item type triggers but skip triggers that are also known modifiers/
+        # ingredients — at the checkpoint, modifier words take precedence over item
+        # type triggers (e.g., "pepper" is a condiment, not a reference to
+        # "Pepper Jack Cheese Sandwich").
+        new_item_result = self._check_new_item_at_checkpoint(user_lower, item, order)
+        if new_item_result:
+            return new_item_result
 
         # Try to match option values directly FIRST (e.g., "blueberry cream cheese" -> spread option)
         # This allows users to specify options without naming the attribute.

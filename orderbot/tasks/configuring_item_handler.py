@@ -421,12 +421,13 @@ class ConfiguringItemHandler:
 
         # Fallback: if input isn't a valid answer and wasn't caught as a modifier,
         # try parsing as a new menu item (without requiring "and a"/"also" prefix).
-        # This handles cases like "a latte" during config being misrouted as an attribute answer.
-        # Guard: only try if input starts with an article or quantity word — bare words
-        # like "provolone" or "swiss cheese" are more likely attribute answers.
+        # This handles cases like "a latte" or "can I get a Chai Tea?" during config
+        # being misrouted as an attribute answer.
+        # Guard: only try if input starts with an article, quantity word, or ordering
+        # phrase — bare words like "provolone" or "swiss cheese" are more likely attribute answers.
         if not is_valid_answer and isinstance(item, MenuItemTask):
             stripped = user_input.strip()
-            if re.match(r'^(?:a(?:n)?\s+|(?:\d+|two|three|four|five|six)\s+)', stripped, re.IGNORECASE):
+            if re.match(r'^(?:a(?:n)?\s+|(?:\d+|two|three|four|five|six)\s+|(?:can|could)\s+i\s+(?:get|have)\s+)', stripped, re.IGNORECASE):
                 add_item_fallback = self.config_modification_handler.handle_add_item_during_config(
                     stripped, item, order, require_prefix=False
                 )
@@ -613,7 +614,23 @@ class ConfiguringItemHandler:
             else:
                 ack = f"Got it, no {display_name.lower()}."
 
-            # Re-ask the current pending question
+            # Also check if the input answers the pending boolean question.
+            # e.g., "yes and scoop" → "scoop" matched scooped (non-pending),
+            # but "yes" should also answer the pending toasted question.
+            if pending_attr:
+                pending_config = all_attrs.get(pending_attr, {})
+                if pending_config.get("input_type") == "boolean":
+                    pending_result = parser.parse(user_input, pending_config)
+                    if pending_result.value is not None:
+                        item[pending_attr] = pending_result.value
+                        safe_recalculate_price(pricing, item, f"after boolean {pending_attr} change")
+                        pending_display = pending_config.get("display_name", pending_attr)
+                        if pending_result.value:
+                            ack += f" {pending_display}."
+                        else:
+                            ack += f" Not {pending_display.lower()}."
+
+            # Re-ask the current pending question (skips already-answered attributes)
             current_question = self.config_helper_handler.get_current_config_question(order, item)
             if current_question:
                 return StateMachineResult(message=f"{ack} {current_question}", order=order)

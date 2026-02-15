@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache.base import pluralize
+from ..models.utilities import is_name_forming_category
 from ..schemas import StateMachineResult, OrderPhase
 from ..utils.text import format_english_list, number_to_word
 
@@ -239,11 +240,38 @@ class QuestionBuilder:
                 else:
                     return f"For {item_desc}, what kind of {attr_name} would you like?"
         else:
-            # Single item - include special instructions if present
-            if item.special_instructions:
-                instructions_str = ", ".join(item.special_instructions)
-                # Format: "Got it, for the Hot Coffee with room for cream."
-                item_desc = f"{item_display} with {instructions_str}"
+            # Single item - include selections and special instructions
+            parts = []
+            instructions = item.special_instructions or []
+            instructions_text = " ".join(instructions).lower()
+            instructions_words = set(instructions_text.split()) if instructions_text else set()
+
+            # Add non-name-forming selections not already covered by special instructions
+            for sel in item.selections:
+                slug = sel.get("slug", "")
+                if slug in ("no", "_declined"):
+                    continue
+                if sel.get("_skip_display"):
+                    continue
+                category = sel.get("category", "")
+                if is_name_forming_category(category):
+                    continue
+                display = sel.get("display_name", "")
+                if not display:
+                    continue
+                # Skip if any significant word overlaps with special instructions
+                if instructions_words:
+                    display_words = {w for w in display.lower().split() if len(w) > 2}
+                    if display_words and any(w in instructions_words for w in display_words):
+                        continue
+                parts.append(display)
+
+            # Add special instructions
+            parts.extend(instructions)
+
+            if parts:
+                parts_str = format_english_list(parts)
+                item_desc = f"{item_display} with {parts_str}"
             else:
                 item_desc = item_display
             return f"Got it, for the {item_desc}. "

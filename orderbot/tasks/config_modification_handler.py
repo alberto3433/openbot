@@ -770,19 +770,23 @@ class ConfigModificationHandler:
         from .models import TaskStatus
         from .utils.text import format_english_list
 
-        # Step 1: Strip leading fillers before checking for ordering prefix
-        # e.g., "um And a Peanut Butter Sandwich" -> "And a Peanut Butter Sandwich"
-        cleaned_input = strip_conversational_fillers(user_input.strip())
-
-        # Step 2: Check for ordering prefix
-        prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(cleaned_input)
-        if not prefix_match:
-            if require_prefix:
-                return None
-            # No prefix — parse full input as item text
-            item_text = cleaned_input
+        # Step 1: Try prefix match on raw input first (preserves "also" before filler stripping)
+        # e.g., "Can I also get a Chai Tea" — "also" would be stripped by filler removal
+        raw_input = user_input.strip()
+        prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(raw_input)
+        if prefix_match:
+            item_text = raw_input[prefix_match.end():].strip()
         else:
-            item_text = cleaned_input[prefix_match.end():].strip()
+            # Step 2: Fall back to stripped input for cases like "um and a latte"
+            cleaned_input = strip_conversational_fillers(raw_input)
+            prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(cleaned_input)
+            if not prefix_match:
+                if require_prefix:
+                    return None
+                # No prefix — parse full input as item text
+                item_text = cleaned_input
+            else:
+                item_text = cleaned_input[prefix_match.end():].strip()
 
         # Step 3: Strip conversational fillers from item text after prefix removal
         # e.g., "Also hmm add tofu scallion" -> prefix strips "Also " -> "hmm add tofu scallion"

@@ -516,6 +516,9 @@ ADD_ITEM_DURING_CONFIG_PREFIX = re.compile(
     r"|"
     # "I'd also like X", "I would also like X", "I also want X"
     r"i(?:'?d|\s+would)?\s+also\s+(?:like|want)\s+"
+    r"|"
+    # "can I also get a X", "could I also have X"
+    r"(?:can|could)\s+i\s+also\s+(?:get|have)\s+(?:a(?:n)?\s+)?"
     r")",
     re.IGNORECASE
 )

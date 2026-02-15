@@ -227,6 +227,20 @@ class AttributeUpchargeCalculator:
         )
         quantity = matching_modifier.get("quantity", 1) if matching_modifier else 1
 
+        # Default ingredients in included categories are always free.
+        # Check BEFORE upcharge lookup so premium calculations don't accidentally
+        # charge defaults (e.g., spinach on The Lexington).
+        is_default = matching_modifier.get("is_default", False) if matching_modifier else False
+        if is_default and included_categories:
+            option_category = self._pricing._get_option_ingredient_category(
+                item_type, attr_slug, attr_value
+            )
+            if option_category and option_category in included_categories:
+                priced_slugs.add(attr_value_normalized)
+                if matching_modifier:
+                    matching_modifier["price"] = 0.0
+                return 0.0, priced_slugs
+
         # Always look up price from DB - this is the single source of truth
         upcharge = self._pricing.lookup_attribute_option_upcharge(
             item_type, attr_slug, attr_value, included_categories

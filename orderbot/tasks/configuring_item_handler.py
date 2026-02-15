@@ -27,6 +27,8 @@ from .config_input_validation import (
     is_off_topic_request,
 )
 from orderbot.cache import menu_cache
+from .config.parsers.boolean_parser import BooleanParser
+from .utils.pricing_utils import safe_recalculate_price
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -408,6 +410,15 @@ class ConfiguringItemHandler:
             if add_result:
                 return add_result
 
+        # Check for bare boolean attribute values (e.g., "not toasted" while being asked about bread)
+        # This catches boolean answers for non-pending attributes without verb prefixes.
+        # Guard: only on short inputs (<=4 words) to avoid intercepting multi-attribute phrases
+        # like "plain bagel toasted scooped with cream cheese".
+        if not is_valid_answer and isinstance(item, MenuItemTask) and len(user_input.split()) <= 4:
+            bool_result = self._check_boolean_attribute_match(user_input, item, order)
+            if bool_result:
+                return bool_result
+
         # Fallback: if input isn't a valid answer and wasn't caught as a modifier,
         # try parsing as a new menu item (without requiring "and a"/"also" prefix).
         # This handles cases like "a latte" during config being misrouted as an attribute answer.
@@ -542,3 +553,72 @@ class ConfiguringItemHandler:
             message=f"Sure, that's {target_qty} total. {suffix}",
             order=order,
         )
+
+    def _check_boolean_attribute_match(
+        self, user_input: str, item: MenuItemTask, order: OrderTask
+    ) -> StateMachineResult | None:
+        """Check if input matches a boolean attribute that isn't the pending field.
+
+        Handles cases like "not toasted" when the pending question is about bread.
+        Only accepts specific alias/negation matches to avoid false positives
+        (e.g., "yes" accidentally setting an unrelated boolean).
+
+        Args:
+            user_input: Raw user input string.
+            item: The current item being configured.
+            order: Current order state.
+
+        Returns:
+            StateMachineResult if a boolean attribute was matched, None otherwise.
+        """
+        item_type = item.menu_item_type
+        if not item_type:
+            return None
+
+        # Parse the currently pending attribute so we can skip it
+        pending_item_type, pending_attr = parse_pending_field(order.pending_field)
+
+        all_attrs = menu_cache.get_item_type_attributes(item_type)
+        parser = BooleanParser()
+
+        for attr_slug, attr_config in all_attrs.items():
+            if attr_config.get("input_type") != "boolean":
+                continue
+            # Skip the currently pending attribute (it will be handled by its own handler)
+            if attr_slug == pending_attr:
+                continue
+
+            result = parser.parse(user_input, attr_config)
+            if result.value is None:
+                continue
+
+            # Safety guard: only accept specific alias/negation matches.
+            # Reject generic yes_pattern/no_pattern to prevent "yes" from
+            # accidentally setting an unrelated boolean attribute.
+            safe_match_types = ("true_alias", "false_alias", "negation_pattern")
+            if result.matched_by not in safe_match_types:
+                continue
+
+            # Apply the boolean value
+            item[attr_slug] = result.value
+
+            # Recalculate price
+            pricing = self.modifier_change_handler.pricing if self.modifier_change_handler else None
+            safe_recalculate_price(pricing, item, f"after boolean {attr_slug} change")
+
+            # Build acknowledgment
+            display_name = attr_config.get("display_name", attr_slug)
+            if result.value:
+                ack = f"Got it, {display_name.lower()}."
+            else:
+                ack = f"Got it, no {display_name.lower()}."
+
+            # Re-ask the current pending question
+            current_question = self.config_helper_handler.get_current_config_question(order, item)
+            if current_question:
+                return StateMachineResult(message=f"{ack} {current_question}", order=order)
+
+            # Item is complete, move on
+            return self.checkout_utils_handler.get_next_question(order)
+
+        return None

@@ -162,6 +162,7 @@ class UnifiedItemConverter:
             "display_name", "item_modifiers",  # item_modifiers handled separately
             "is_signature",  # Metadata, not a configurable attribute
             "special_instructions",  # Handled separately, not an attribute
+            "item_total",  # Computed field, not a configurable attribute
             # Bundle fields - stored separately, not attributes
             "bundle_id", "bundle_parent_item_id", "bundle_slot",
             "bundle_price_rule", "bundle_included_price", "side_of_item_id",

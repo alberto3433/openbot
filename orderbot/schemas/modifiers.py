@@ -232,6 +232,37 @@ class OverallCategoryOut(BaseModel):
     display_name: str
 
 
+class OverallCategoryAdminOut(BaseModel):
+    """Response model for overall category admin CRUD (maps display_name to name)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    slug: str
+    description: str | None = None
+    menu_item_count: int = 0
+
+
+class OverallCategoryAdminCreate(BaseModel):
+    """Create payload for overall category."""
+    name: str
+    slug: str
+    description: str | None = None
+
+
+class OverallCategoryAdminUpdate(BaseModel):
+    """Update payload for overall category."""
+    name: str | None = None
+    slug: str | None = None
+    description: str | None = None
+
+
+class OverallCategoryAdminList(BaseModel):
+    """List response for overall categories."""
+    categories: list[OverallCategoryAdminOut]
+    total: int
+
+
 # =============================================================================
 # Item Type Schemas
 # =============================================================================

@@ -108,6 +108,7 @@ from .routes import (
     admin_unrecognized_logs_router,
     admin_unrecognized_option_suggestions_router,
     admin_component_slots_router,
+    admin_overall_categories_router,
     public_stores_router,
     public_company_router,
     stripe_webhook_router,
@@ -344,6 +345,7 @@ api_v1_router.include_router(admin_unrecognized_suggestions_router)
 api_v1_router.include_router(admin_unrecognized_logs_router)
 api_v1_router.include_router(admin_unrecognized_option_suggestions_router)
 api_v1_router.include_router(admin_component_slots_router)
+api_v1_router.include_router(admin_overall_categories_router)
 api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(tts_router)

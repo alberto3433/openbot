@@ -1361,12 +1361,13 @@
           autocomplete="off"
           autofocus
           rows="1"
-          placeholder="Type your message..."
+          placeholder="Connecting..."
+          disabled
         ></textarea>
-        <button type="button" class="mic-btn" id="mic-btn" title="Voice input">
+        <button type="button" class="mic-btn" id="mic-btn" title="Voice input" disabled>
           <span class="icon"><i data-lucide="mic"></i></span>
         </button>
-        <button type="submit">
+        <button type="submit" id="send-btn" disabled>
           <span class="icon"><i data-lucide="send"></i></span>
         </button>
       </form>
@@ -1699,6 +1700,13 @@
           conversationHistory.push({ role: "assistant", content: data.message });
         }
         if (data.returning_customer) console.log("Returning customer:", data.returning_customer);
+
+        // Enable input now that session is ready
+        inputEl.disabled = false;
+        inputEl.placeholder = "Type your message...";
+        inputEl.focus();
+        document.getElementById("mic-btn").disabled = false;
+        document.getElementById("send-btn").disabled = false;
       } catch (err) {
         console.error("Error starting session:", err);
         headerEl.textContent = "Error starting session";

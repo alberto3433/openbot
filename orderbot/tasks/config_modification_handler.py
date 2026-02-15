@@ -477,6 +477,78 @@ class ConfigModificationHandler:
         Returns:
             StateMachineResult if modifiers were added, None if not an add pattern
         """
+        modifier_text, target_item, explicit_target = self._extract_add_modifier_text(
+            user_input, item, order,
+        )
+        if not modifier_text:
+            return None
+
+        # Split by "and" and commas to get individual modifier terms
+        modifier_terms = re.split(r"\s*(?:,\s*|\s+and\s+)\s*", modifier_text)
+        modifier_terms = [t.strip() for t in modifier_terms if t.strip()]
+
+        if not modifier_terms:
+            return None
+
+        logger.info(
+            "ADD_DURING_CONFIG: Detected add pattern '%s' with terms: %s",
+            user_input, modifier_terms
+        )
+
+        # Apply each modifier to the current item (or redirected target)
+        original_config_item = item  # Track original for acknowledgment messages
+        added_names: list[str] = []
+        modified_items: set[str] = set()
+        for term in modifier_terms:
+            result = self._process_single_modifier_term(
+                term, target_item, original_config_item, order,
+                explicit_target, added_names, modified_items,
+            )
+            if result:
+                return result
+
+        if not added_names:
+            return None
+
+        # Recalculate price for all items that received modifiers
+        pricing = self.modifier_change_handler.pricing if self.modifier_change_handler else None
+        for order_item in order.items.items:
+            if isinstance(order_item, MenuItemTask) and order_item.id in modified_items:
+                safe_recalculate_price(pricing, order_item, "after adding modifiers")
+
+        # Build acknowledgment message
+        from .utils.text import format_english_list
+        added_text = format_english_list(added_names)
+        message = f"Sure, I've added {added_text}."
+
+        # Always continue config for the original item being configured
+        return self._continue_config_with_message(message, original_config_item, order)
+
+    def _extract_add_modifier_text(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> tuple[str | None, MenuItemTask, bool]:
+        """Extract modifier text from an 'add X' user input.
+
+        Strips conversational fillers, checks for ADD_MODIFIER_PATTERN and
+        ADD_MODIFIER_MIDDLE_PATTERN matches, and handles item-targeting
+        suffixes (e.g., "add bacon to the bagel").
+
+        Args:
+            user_input: The user's raw input text.
+            item: The item currently being configured.
+            order: The current order state.
+
+        Returns:
+            A tuple of (modifier_text, target_item, explicit_target) where:
+                modifier_text: The extracted modifier string, or None if no
+                    add pattern matched.
+                target_item: The item to add modifiers to (may differ from
+                    ``item`` if user specified a target like "to the bagel").
+                explicit_target: True if the user explicitly named a target item.
+        """
         user_stripped = strip_conversational_fillers(user_input.strip())
         user_lower = user_stripped.lower()
 
@@ -484,7 +556,6 @@ class ConfigModificationHandler:
 
         modifier_text = None
         explicit_target = False
-        original_config_item = item  # Track original item for redirect detection
 
         # Check for add modifier patterns: "add X", "also add X", "can you add X", etc.
         match = ADD_MODIFIER_PATTERN.match(user_lower)
@@ -531,214 +602,219 @@ class ConfigModificationHandler:
 
         if not modifier_text:
             logger.debug("ADD_DURING_CONFIG: Input doesn't match add pattern, skipping")
-            return None
+            return (None, item, False)
 
-        # Split by "and" and commas to get individual modifier terms
-        modifier_terms = re.split(r"\s*(?:,\s*|\s+and\s+)\s*", modifier_text)
-        modifier_terms = [t.strip() for t in modifier_terms if t.strip()]
+        return (modifier_text, item, explicit_target)
 
-        if not modifier_terms:
-            return None
+    def _process_single_modifier_term(
+        self,
+        term: str,
+        item: MenuItemTask,
+        original_config_item: MenuItemTask,
+        order: OrderTask,
+        explicit_target: bool,
+        added_names: list[str],
+        modified_items: set[str],
+    ) -> StateMachineResult | None:
+        """Process a single modifier term during add-modifier-during-config.
 
+        Looks up the term as an ingredient, checks if it is an attribute answer,
+        validates it for the target item type, and either adds it as a selection
+        or returns a result requiring user interaction (disambiguation, attribute
+        option selection).
+
+        Mutates ``added_names`` and ``modified_items`` in place when a modifier
+        is successfully added.
+
+        Args:
+            term: A single modifier term (e.g., "bacon", "two eggs").
+            item: The target item to add modifiers to.
+            original_config_item: The item originally being configured (used for
+                acknowledgment messages when modifiers are redirected).
+            order: The current order state.
+            explicit_target: True if the user explicitly named a target item.
+            added_names: Accumulator list of added modifier display names.
+            modified_items: Accumulator set of item IDs that received modifiers.
+
+        Returns:
+            StateMachineResult if processing should stop (disambiguation, attribute
+            answer, selection flow), None to continue with the next term.
+        """
+        # Extract quantity from the term (e.g., "two eggs" -> qty=2, term="eggs")
+        extracted_qty, search_term = extract_leading_quantity(term)
+        quantity = extracted_qty or 1
+        # If nothing remains after extracting quantity, use the original term
+        if not search_term.strip():
+            search_term = term
+
+        # Find matching ingredients in database
+        matches = menu_cache.find_matching_ingredients(search_term)
         logger.info(
-            "ADD_DURING_CONFIG: Detected add pattern '%s' with terms: %s",
-            user_input, modifier_terms
+            "ADD_DURING_CONFIG: Looking up term '%s' (qty=%d), found %d matches: %s",
+            search_term, quantity, len(matches), [m.get("name") for m in matches[:5]] if matches else []
         )
 
-        # Apply each modifier to the current item (or redirected target)
-        added_names = []
-        modified_items: set[str] = set()  # Track item IDs that received modifiers
-        for term in modifier_terms:
-            # Extract quantity from the term (e.g., "two eggs" -> qty=2, term="eggs")
-            extracted_qty, search_term = extract_leading_quantity(term)
-            quantity = extracted_qty or 1
-            # If nothing remains after extracting quantity, use the original term
-            if not search_term.strip():
-                search_term = term
+        if len(matches) == 1:
+            match = matches[0]
+            ingredient_slug = match["slug"]
 
-            # Find matching ingredients in database
-            matches = menu_cache.find_matching_ingredients(search_term)
-            logger.info(
-                "ADD_DURING_CONFIG: Looking up term '%s' (qty=%d), found %d matches: %s",
-                search_term, quantity, len(matches), [m.get("name") for m in matches[:5]] if matches else []
-            )
+            # Check if ingredient is actually an answer to the pending attribute question.
+            # When the ingredient's category matches the pending attribute slug, the user
+            # is answering the config question with "add X" phrasing (e.g., "add whole
+            # wheat everything flatz to that" when asked about bread).
+            pending_attr = None
+            if order.pending_field and ":" in order.pending_field:
+                _, pending_attr = order.pending_field.split(":", 1)
 
-            if len(matches) == 1:
-                match = matches[0]
-                ingredient_slug = match["slug"]
-
-                # Check if ingredient is actually an answer to the pending attribute question.
-                # When the ingredient's category matches the pending attribute slug, the user
-                # is answering the config question with "add X" phrasing (e.g., "add whole
-                # wheat everything flatz to that" when asked about bread).
-                pending_attr = None
-                if order.pending_field and ":" in order.pending_field:
-                    _, pending_attr = order.pending_field.split(":", 1)
-
-                if pending_attr and match.get("category") == pending_attr:
-                    # Treat as attribute answer: replace the default and advance config
-                    # (mirrors select_input.py:619-620 pattern)
-                    # Resolve through OptionMatcher to get the canonical option slug,
-                    # which may differ from the ingredient slug (e.g. after slug
-                    # renames).  This ensures pricing lookups find the right option.
-                    resolved_slug = ingredient_slug
-                    resolved_display = match.get("name")
-                    attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
-                    options = attrs.get(pending_attr, {}).get("options", [])
-                    if options:
-                        matcher = OptionMatcher()
-                        matched_opt, _ = matcher.match_single(search_term, options)
-                        if not matched_opt:
-                            matched_opt, _ = matcher.match_single(
-                                match.get("name", ""), options
-                            )
-                        if matched_opt:
-                            resolved_slug = matched_opt["slug"]
-                            resolved_display = (
-                                matched_opt.get("display_name") or resolved_display
-                            )
-                    item.remove_selection(pending_attr)
-                    item.add_selection(
-                        slug=resolved_slug,
-                        category=pending_attr,
-                        display_name=resolved_display,
-                    )
-                    # Recalculate price
-                    pricing = (
-                        self.modifier_change_handler.pricing
-                        if self.modifier_change_handler else None
-                    )
-                    safe_recalculate_price(pricing, item, "after setting attribute via add")
-                    # Advance pending_field to next unanswered mandatory attribute
-                    unanswered = get_unanswered_mandatory(item, item.menu_item_type)
-                    if unanswered:
-                        order.pending_field = (
-                            f"{item.menu_item_type}:{unanswered[0]['slug']}"
-                        )
-                    else:
-                        order.pending_field = None
-                    message = f"Got it, {match.get('name', ingredient_slug)}."
-                    return self._continue_config_with_message(
-                        message, original_config_item, order
-                    )
-
-                # FIRST: Check if ingredient slug matches an attribute with multiple options
-                # This handles generic ingredients like "egg" that map to style choices
-                # (scrambled, fried, etc.). We check this BEFORE ingredient validation
-                # because "egg" may not be a valid ingredient for bagels, but "egg" IS
-                # a valid attribute with options (scrambled, fried, etc.)
+            if pending_attr and match.get("category") == pending_attr:
+                # Treat as attribute answer: replace the default and advance config
+                # (mirrors select_input.py:619-620 pattern)
+                # Resolve through OptionMatcher to get the canonical option slug,
+                # which may differ from the ingredient slug (e.g. after slug
+                # renames).  This ensures pricing lookups find the right option.
+                resolved_slug = ingredient_slug
+                resolved_display = match.get("name")
                 attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
-                attr_config = attrs.get(ingredient_slug, {})
-                options = attr_config.get("options", [])
-
-                # Only trigger selection if ingredient slug matches attribute slug
-                # AND that attribute has multiple options
-                if options and len(options) > 1:
-                    # Check if item already has a value for this attribute
-                    existing_value = item.attribute_values.get(ingredient_slug)
-                    is_additive = existing_value is not None
-                    logger.info(
-                        "ADD_DURING_CONFIG: Ingredient '%s' matches attribute '%s' with %d options (qty=%d, additive=%s), starting selection",
-                        match["name"], ingredient_slug, len(options), quantity, is_additive
-                    )
-                    # Store quantity for when user selects an option
-                    order.pending_modifier_quantity = quantity
-                    # Mark as additive if item already has this attribute set
-                    order.pending_modifier_is_additive = is_additive
-                    return self._start_attribute_option_selection(
-                        ingredient_slug, attr_config, options, item, order
-                    )
-
-                # SECOND: Validate modifier is allowed for this item type
-                target_item = item
-                is_valid = menu_cache.is_valid_modifier_for_item_type(
-                    ingredient_slug, item.menu_item_type
+                options = attrs.get(pending_attr, {}).get("options", [])
+                if options:
+                    matcher = OptionMatcher()
+                    matched_opt, _ = matcher.match_single(search_term, options)
+                    if not matched_opt:
+                        matched_opt, _ = matcher.match_single(
+                            match.get("name", ""), options
+                        )
+                    if matched_opt:
+                        resolved_slug = matched_opt["slug"]
+                        resolved_display = (
+                            matched_opt.get("display_name") or resolved_display
+                        )
+                item.remove_selection(pending_attr)
+                item.add_selection(
+                    slug=resolved_slug,
+                    category=pending_attr,
+                    display_name=resolved_display,
                 )
-
-                if not is_valid:
-                    if explicit_target:
-                        # User explicitly named this item — reject
-                        msg = modifier_not_available_for_item(
-                            match["name"], item.get_display_name()
-                        )
-                        return self._continue_config_with_message(
-                            msg, original_config_item, order
-                        )
-                    # No explicit target — try to auto-redirect
-                    alt = self._find_item_accepting_modifier(
-                        ingredient_slug, item, order
-                    )
-                    if alt:
-                        target_item = alt
-                        logger.info(
-                            "ADD_DURING_CONFIG: Redirecting '%s' from %s to %s",
-                            match["name"],
-                            item.get_display_name(),
-                            alt.get_display_name(),
-                        )
-                    else:
-                        # No item in order accepts this modifier — reject
-                        msg = modifier_not_available_for_item(
-                            match["name"], item.get_display_name()
-                        )
-                        return self._continue_config_with_message(
-                            msg, original_config_item, order
-                        )
-
-                target_item.add_selection(
-                    slug=match["slug"],
-                    category=match["category"],
-                    display_name=match["name"],
-                    quantity=quantity,
-                    price=match.get("base_price", 0.0),
-                    increment_if_exists=True,
+                # Recalculate price
+                pricing = (
+                    self.modifier_change_handler.pricing
+                    if self.modifier_change_handler else None
                 )
-                modified_items.add(target_item.id)
-                # Track name + whether it was redirected
-                if target_item is not item or item is not original_config_item:
-                    added_names.append(
-                        f"{match['name']} to your {target_item.get_display_name()}"
+                safe_recalculate_price(pricing, item, "after setting attribute via add")
+                # Advance pending_field to next unanswered mandatory attribute
+                unanswered = get_unanswered_mandatory(item, item.menu_item_type)
+                if unanswered:
+                    order.pending_field = (
+                        f"{item.menu_item_type}:{unanswered[0]['slug']}"
                     )
                 else:
-                    added_names.append(match["name"])
-                logger.info(
-                    "ADD_DURING_CONFIG: Added '%s' (category=%s, qty=%d) to %s",
-                    match["name"], match["category"], quantity,
-                    target_item.get_display_name(),
+                    order.pending_field = None
+                message = f"Got it, {match.get('name', ingredient_slug)}."
+                return self._continue_config_with_message(
+                    message, original_config_item, order
                 )
-            elif len(matches) > 1:
-                # Multiple matches - start disambiguation for this modifier
+
+            # FIRST: Check if ingredient slug matches an attribute with multiple options
+            # This handles generic ingredients like "egg" that map to style choices
+            # (scrambled, fried, etc.). We check this BEFORE ingredient validation
+            # because "egg" may not be a valid ingredient for bagels, but "egg" IS
+            # a valid attribute with options (scrambled, fried, etc.)
+            attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
+            attr_config = attrs.get(ingredient_slug, {})
+            options = attr_config.get("options", [])
+
+            # Only trigger selection if ingredient slug matches attribute slug
+            # AND that attribute has multiple options
+            if options and len(options) > 1:
+                # Check if item already has a value for this attribute
+                existing_value = item.attribute_values.get(ingredient_slug)
+                is_additive = existing_value is not None
                 logger.info(
-                    "ADD_DURING_CONFIG: Multiple matches for '%s', starting disambiguation",
-                    term
+                    "ADD_DURING_CONFIG: Ingredient '%s' matches attribute '%s' with %d options (qty=%d, additive=%s), starting selection",
+                    match["name"], ingredient_slug, len(options), quantity, is_additive
                 )
-                return self._start_modifier_disambiguation(term, matches, item, order)
+                # Store quantity for when user selects an option
+                order.pending_modifier_quantity = quantity
+                # Mark as additive if item already has this attribute set
+                order.pending_modifier_is_additive = is_additive
+                return self._start_attribute_option_selection(
+                    ingredient_slug, attr_config, options, item, order
+                )
+
+            # SECOND: Validate modifier is allowed for this item type
+            target_item = item
+            is_valid = menu_cache.is_valid_modifier_for_item_type(
+                ingredient_slug, item.menu_item_type
+            )
+
+            if not is_valid:
+                if explicit_target:
+                    # User explicitly named this item — reject
+                    msg = modifier_not_available_for_item(
+                        match["name"], item.get_display_name()
+                    )
+                    return self._continue_config_with_message(
+                        msg, original_config_item, order
+                    )
+                # No explicit target — try to auto-redirect
+                alt = self._find_item_accepting_modifier(
+                    ingredient_slug, item, order
+                )
+                if alt:
+                    target_item = alt
+                    logger.info(
+                        "ADD_DURING_CONFIG: Redirecting '%s' from %s to %s",
+                        match["name"],
+                        item.get_display_name(),
+                        alt.get_display_name(),
+                    )
+                else:
+                    # No item in order accepts this modifier — reject
+                    msg = modifier_not_available_for_item(
+                        match["name"], item.get_display_name()
+                    )
+                    return self._continue_config_with_message(
+                        msg, original_config_item, order
+                    )
+
+            target_item.add_selection(
+                slug=match["slug"],
+                category=match["category"],
+                display_name=match["name"],
+                quantity=quantity,
+                price=match.get("base_price", 0.0),
+                increment_if_exists=True,
+            )
+            modified_items.add(target_item.id)
+            # Track name + whether it was redirected
+            if target_item is not item or item is not original_config_item:
+                added_names.append(
+                    f"{match['name']} to your {target_item.get_display_name()}"
+                )
             else:
-                # No match found - don't add fake modifiers
-                # Note: modifier_to_category may have an alias entry, but if
-                # find_matching_ingredients returned 0, it means must_match filter
-                # excluded it (e.g., "plain spread" requires "cream cheese" in input)
-                logger.warning(
-                    "ADD_DURING_CONFIG: Could not find modifier '%s' in database",
-                    search_term
-                )
+                added_names.append(match["name"])
+            logger.info(
+                "ADD_DURING_CONFIG: Added '%s' (category=%s, qty=%d) to %s",
+                match["name"], match["category"], quantity,
+                target_item.get_display_name(),
+            )
+        elif len(matches) > 1:
+            # Multiple matches - start disambiguation for this modifier
+            logger.info(
+                "ADD_DURING_CONFIG: Multiple matches for '%s', starting disambiguation",
+                term
+            )
+            return self._start_modifier_disambiguation(term, matches, item, order)
+        else:
+            # No match found - don't add fake modifiers
+            # Note: modifier_to_category may have an alias entry, but if
+            # find_matching_ingredients returned 0, it means must_match filter
+            # excluded it (e.g., "plain spread" requires "cream cheese" in input)
+            logger.warning(
+                "ADD_DURING_CONFIG: Could not find modifier '%s' in database",
+                search_term
+            )
 
-        if not added_names:
-            return None
-
-        # Recalculate price for all items that received modifiers
-        pricing = self.modifier_change_handler.pricing if self.modifier_change_handler else None
-        for order_item in order.items.items:
-            if isinstance(order_item, MenuItemTask) and order_item.id in modified_items:
-                safe_recalculate_price(pricing, order_item, "after adding modifiers")
-
-        # Build acknowledgment message
-        from .utils.text import format_english_list
-        added_text = format_english_list(added_names)
-        message = f"Sure, I've added {added_text}."
-
-        # Always continue config for the original item being configured
-        return self._continue_config_with_message(message, original_config_item, order)
+        return None
 
     def handle_add_item_during_config(
         self,

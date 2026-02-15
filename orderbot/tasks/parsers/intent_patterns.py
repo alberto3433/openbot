@@ -514,11 +514,17 @@ ADD_ITEM_DURING_CONFIG_PREFIX = re.compile(
     # "plus a/an/the X"
     r"plus\s+(?:a(?:n)?|the)?\s*"
     r"|"
-    # "I'd also like X", "I would also like X", "I also want X"
-    r"i(?:'?d|\s+would)?\s+also\s+(?:like|want)\s+"
+    # "I'd also like/want/have/get/take X", "I would also like X", "I also want X"
+    r"i(?:'?d|\s+would)?\s+also\s+(?:like|want|have|get|take|need)\s+(?:a(?:n)?\s+)?"
+    r"|"
+    # "I'll also have/get/take X", "I will also have X"
+    r"i(?:'?ll|\s+will)\s+also\s+(?:have|get|take|need)\s+(?:a(?:n)?\s+)?"
     r"|"
     # "can I also get a X", "could I also have X"
-    r"(?:can|could)\s+i\s+also\s+(?:get|have)\s+(?:a(?:n)?\s+)?"
+    r"(?:can|could)\s+i\s+also\s+(?:get|have|take)\s+(?:a(?:n)?\s+)?"
+    r"|"
+    # "let me also get/have X"
+    r"let\s+me\s+also\s+(?:get|have|take)\s+(?:a(?:n)?\s+)?"
     r")",
     re.IGNORECASE
 )

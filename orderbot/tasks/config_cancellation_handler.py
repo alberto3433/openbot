@@ -238,6 +238,39 @@ class ConfigCancellationHandler:
                 )
                 return None
 
+        # During regular config, "no X" where X is an already-set attribute
+        # means remove that attribute, not the entire item.
+        # E.g., "no toasted" while being asked about bread → remove toasted=True
+        if isinstance(current_item, MenuItemTask):
+            item_type_attrs = menu_cache.get_item_type_attributes(current_item.menu_item_type)
+            cancel_variants = get_singular_plural_variants(cancel_desc)
+            for attr_slug, attr_data in item_type_attrs.items():
+                attr_display_lower = (attr_data.get("display_name") or "").lower()
+                if attr_slug in cancel_variants or attr_display_lower in cancel_variants:
+                    current_value = current_item.attribute_values.get(attr_slug)
+                    if current_value is not None:
+                        current_item[attr_slug] = None
+                        safe_recalculate_price(
+                            self.pricing, current_item, "after attribute removal via cancel"
+                        )
+                        display_name = (
+                            attr_data.get("display_name") or format_slug_for_display(attr_slug)
+                        )
+                        logger.info(
+                            "Removed attribute '%s' from %s during config",
+                            attr_slug, current_item.menu_item_name,
+                        )
+                        question = self._get_current_config_question(order, current_item)
+                        if question:
+                            return StateMachineResult(
+                                message=f"OK, I've removed the {display_name}. {question}",
+                                order=order,
+                            )
+                        return StateMachineResult(
+                            message=f"OK, I've removed the {display_name}. Anything else?",
+                            order=order,
+                        )
+
         # At customization checkpoint, "no X" where X is an attribute display name
         # is a decline, not a removal. E.g., "no condiments" when the bot asked
         # "You can add Condiments" means "I don't want condiments".

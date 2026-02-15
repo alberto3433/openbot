@@ -48,6 +48,10 @@ class MenuDisplayGroupBase(BaseModel):
         None,
         description="FK to overall_categories"
     )
+    parent_id: Optional[int] = Field(
+        None,
+        description="FK to parent display group for hierarchy"
+    )
 
 
 class MenuDisplayGroupCreate(MenuDisplayGroupBase):
@@ -85,6 +89,10 @@ class MenuDisplayGroupUpdate(BaseModel):
         None,
         description="FK to overall_categories"
     )
+    parent_id: Optional[int] = Field(
+        None,
+        description="FK to parent display group for hierarchy (null to clear)"
+    )
     aliases: Optional[list[str]] = Field(
         None,
         description="List of aliases (replaces existing aliases if provided)"
@@ -105,6 +113,14 @@ class MenuDisplayGroupOut(OrmModel):
     overall_category_name: Optional[str] = Field(
         None,
         description="Display name of the overall category"
+    )
+    parent_id: Optional[int] = Field(
+        None,
+        description="FK to parent display group"
+    )
+    parent_name: Optional[str] = Field(
+        None,
+        description="Display name of the parent group"
     )
     item_type_count: int = Field(
         default=0,

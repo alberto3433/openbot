@@ -106,6 +106,7 @@
               <th>Order</th>
               <th>Name</th>
               <th>Slug</th>
+              <th>Parent</th>
               <th>Category</th>
               <th>Aliases</th>
               <th>Item Types</th>
@@ -129,6 +130,7 @@
         <p><strong>Display Order:</strong> Lower numbers appear first in the menu listing.</p>
         <p><strong>Name:</strong> The display name shown to users (e.g., "Breads", "Sandwiches", "Omelettes and Breakfasts").</p>
         <p><strong>Slug:</strong> Unique identifier used internally (e.g., "breads", "sandwiches").</p>
+        <p><strong>Parent Group:</strong> Sets up a hierarchy. E.g., set "Candy Bars" parent to "Snacks" so that asking "what snacks do you have?" also shows candy bars. Child groups are hidden from the top-level "what do you have?" listing.</p>
         <p><strong>Aliases:</strong> Alternative names users can say to reference this group. E.g., "desserts_pastries" can have aliases like "pastries", "pastry", "sweets". When a user says "pastries", we'll show items from this group.</p>
         <p><strong>Item Types:</strong> The number of item types assigned to this group. Assign item types via the Item Types admin page.</p>
         <p><strong>Note:</strong> You cannot delete a group that has item types assigned to it. First reassign or remove item types from the group.</p>
@@ -162,6 +164,13 @@
             <label for="displayOrderInput">Display Order</label>
             <input type="number" id="displayOrderInput" value="0" min="0" />
             <div class="hint">Lower numbers appear first (0, 1, 2...)</div>
+          </div>
+          <div class="form-group">
+            <label for="parentInput">Parent Group</label>
+            <select id="parentInput">
+              <option value="">-- None (top-level) --</option>
+            </select>
+            <div class="hint">Set a parent to create a hierarchy (e.g., "Candy Bars" under "Snacks"). Child groups are included when users ask about the parent.</div>
           </div>
           <div class="form-group">
             <label for="categoryInput">Category</label>
@@ -341,6 +350,16 @@
         categories.map(c => `<option value="${c.id}">${escapeHtml(c.display_name)}</option>`).join("");
     }
 
+    // Populate parent group dropdown (excludes the current group being edited)
+    function populateParentDropdown(excludeId = null) {
+      const select = document.getElementById("parentInput");
+      const options = groups
+        .filter(g => g.id !== excludeId)
+        .map(g => `<option value="${g.id}">${escapeHtml(g.display_name)}</option>`)
+        .join("");
+      select.innerHTML = '<option value="">-- None (top-level) --</option>' + options;
+    }
+
     // Render groups table
     function renderGroups() {
       const tbody = document.getElementById("groupsBody");
@@ -364,6 +383,7 @@
           <td><span class="order-badge">${g.display_order}</span></td>
           <td><strong>${escapeHtml(g.display_name)}</strong></td>
           <td><code>${escapeHtml(g.slug)}</code></td>
+          <td>${g.parent_name ? escapeHtml(g.parent_name) : '<span style="color: var(--text-tertiary);">—</span>'}</td>
           <td>${g.overall_category_name ? escapeHtml(g.overall_category_name) : '<span style="color: var(--text-tertiary);">—</span>'}</td>
           <td>${g.aliases && g.aliases.length > 0 ? `<span class="count-badge" title="${escapeHtml(g.aliases.join(', '))}">${g.aliases.length} aliases</span>` : '<span style="color: var(--text-tertiary);">—</span>'}</td>
           <td><span class="count-badge">${g.item_type_count} item types</span></td>
@@ -381,6 +401,8 @@
       document.getElementById("displayNameInput").value = "";
       document.getElementById("slugInput").value = "";
       document.getElementById("displayOrderInput").value = groups.length > 0 ? Math.max(...groups.map(g => g.display_order)) + 1 : 0;
+      populateParentDropdown();
+      document.getElementById("parentInput").value = "";
       document.getElementById("categoryInput").value = "";
       document.getElementById("aliasesInput").value = "";
       document.getElementById("deleteBtn").style.display = "none";
@@ -397,6 +419,8 @@
       document.getElementById("displayNameInput").value = group.display_name;
       document.getElementById("slugInput").value = group.slug;
       document.getElementById("displayOrderInput").value = group.display_order;
+      populateParentDropdown(group.id);
+      document.getElementById("parentInput").value = group.parent_id || "";
       document.getElementById("categoryInput").value = group.overall_category_id || "";
       document.getElementById("aliasesInput").value = (group.aliases || []).join(", ");
       document.getElementById("deleteBtn").style.display = "flex";
@@ -415,6 +439,8 @@
       const display_name = document.getElementById("displayNameInput").value.trim();
       const slug = document.getElementById("slugInput").value.trim().toLowerCase();
       const display_order = parseInt(document.getElementById("displayOrderInput").value, 10) || 0;
+      const parentValue = document.getElementById("parentInput").value;
+      const parent_id = parentValue ? parseInt(parentValue, 10) : null;
       const categoryValue = document.getElementById("categoryInput").value;
       const overall_category_id = categoryValue ? parseInt(categoryValue, 10) : null;
       const aliasesText = document.getElementById("aliasesInput").value;
@@ -431,7 +457,7 @@
         return;
       }
 
-      const payload = { display_name, slug, display_order, overall_category_id, aliases };
+      const payload = { display_name, slug, display_order, parent_id, overall_category_id, aliases };
 
       setSaveButtonState(saveBtn, "saving");
       try {

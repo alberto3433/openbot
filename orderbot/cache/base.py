@@ -589,6 +589,10 @@ class BaseCacheMixin:
         # Maps lowercase alias -> group_slug (e.g., "pastries" -> "desserts_pastries")
         self._display_group_alias_to_slug: dict[str, str] = {}
 
+        # Display group parent-child hierarchy
+        # Maps parent_slug -> list of child slugs (e.g., "snacks" -> ["candy_bars", "chips"])
+        self._display_group_children: dict[str, list[str]] = {}
+
         # Memoized query results (invalidated on reload)
         self._all_attribute_option_words_cache: dict[str, str] | None = None
 

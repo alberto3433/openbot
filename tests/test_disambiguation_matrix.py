@@ -129,12 +129,10 @@ class TestGenericCategoryTerms:
     """Test generic terms like 'chips', 'cookies', 'juice' that should disambiguate."""
 
     @pytest.mark.parametrize("user_input,min_expected_matches", [
-        ("chips", 4),           # Should show bagel chips, potato chips, kettle chips, etc.
         ("cookie", 2),          # Should show multiple cookie types
         ("cookies", 2),         # Plural variant
         ("muffin", 2),          # Should show multiple muffin types
         ("muffins", 2),         # Plural variant
-        ("juice", 2),           # Should show multiple juice types
         # Note: brownie only has 1 item in DB, so no disambiguation needed
     ])
     def test_generic_term_parser_output(self, user_input, min_expected_matches):
@@ -161,12 +159,25 @@ class TestGenericCategoryTerms:
         assert is_valid, \
             f"Parser should return generic term for '{user_input}', got '{menu_item.item_name}'"
 
+    @pytest.mark.parametrize("user_input", [
+        ("chips"),              # Display group alias -> category clarification
+        ("juice"),              # Display group alias -> category clarification
+    ])
+    def test_category_alias_triggers_clarification(self, user_input):
+        """Terms that are display group aliases should trigger category clarification, not item ordering."""
+        result = get_parser_result(user_input)
+
+        assert result.needs_category_clarification is not None, \
+            f"'{user_input}' is a display group alias and should trigger needs_category_clarification"
+        assert len(result.parsed_items) == 0, \
+            f"'{user_input}' should not produce parsed_items when it's a category term"
+
     @pytest.mark.parametrize("user_input,min_expected_matches", [
-        ("chips", 4),
         ("cookie", 2),
         ("muffin", 2),
-        ("juice", 2),
         # Note: brownie only has 1 item in DB, so no disambiguation needed
+        # Note: "chips" and "juice" are now display group aliases (category terms),
+        # tested in test_category_alias_triggers_menu_query
     ])
     def test_generic_term_menu_lookup(self, menu_lookup, user_input, min_expected_matches):
         """Menu lookup should return multiple matches for generic terms."""
@@ -176,11 +187,11 @@ class TestGenericCategoryTerms:
             f"'{user_input}' should match at least {min_expected_matches} items, got {len(matches)}: {[m['name'] for m in matches]}"
 
     @pytest.mark.parametrize("user_input", [
-        "chips",
         "cookie",
         "muffin",
-        "juice",
         # Note: brownie only has 1 item in DB, so no disambiguation needed
+        # Note: "chips" and "juice" are now display group aliases (category terms),
+        # tested in test_category_alias_triggers_menu_query
     ])
     def test_generic_term_triggers_disambiguation(self, item_handler, user_input, fresh_order):
         """Handler should trigger disambiguation (ask user to choose) for generic terms."""

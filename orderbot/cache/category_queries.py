@@ -170,10 +170,11 @@ class CategoryQueryMixin:
 
     @ensure_cache_loaded
     def get_menu_display_groups(self) -> list[dict]:
-        """Get menu display groups for "what's on the menu?" responses.
+        """Get top-level menu display groups for "what's on the menu?" responses.
 
         Returns high-level user-facing categories like "breads", "sandwiches",
-        "drinks", etc. - consolidated from the more granular item types.
+        "drinks", etc. Child groups (those with a parent) are excluded since
+        they are discoverable via their parent group.
 
         Returns:
             List of dicts ordered by display_order:
@@ -182,7 +183,7 @@ class CategoryQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        return list(self._menu_display_groups_ordered)
+        return [g for g in self._menu_display_groups_ordered if g.get("parent_slug") is None]
 
     @ensure_cache_loaded
     def get_display_group_by_slug(self, slug: str) -> dict | None:
@@ -259,19 +260,48 @@ class CategoryQueryMixin:
         return None
 
     @ensure_cache_loaded
-    def get_item_types_in_display_group(self, display_group_slug: str) -> list[str]:
-        """Get item type slugs that belong to a display group.
+    def get_descendant_display_group_slugs(self, display_group_slug: str) -> list[str]:
+        """Get all descendant display group slugs (children, grandchildren, etc.).
 
-        Used when user asks "what breads do you have?" - returns the item types
-        (e.g., "bagel") that are in the "breads" display group.
+        Traverses the parent-child hierarchy to collect all groups nested under
+        the given group. Does not include the given group itself.
 
         Args:
-            display_group_slug: The display group slug (e.g., "breads")
+            display_group_slug: The parent display group slug (e.g., "snacks")
 
         Returns:
-            List of item type slugs in that display group, empty list if not found.
+            List of all descendant slugs (e.g., ["candy_bars", "chips"]).
 
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        return self._item_types_by_display_group.get(display_group_slug, [])
+        descendants: list[str] = []
+        stack = list(self._display_group_children.get(display_group_slug, []))
+        while stack:
+            child = stack.pop()
+            descendants.append(child)
+            stack.extend(self._display_group_children.get(child, []))
+        return descendants
+
+    @ensure_cache_loaded
+    def get_item_types_in_display_group(self, display_group_slug: str) -> list[str]:
+        """Get item type slugs that belong to a display group and all its descendants.
+
+        Traverses the parent-child hierarchy so that querying "snacks" also
+        returns item types from child groups like "candy_bars" and "chips".
+
+        Args:
+            display_group_slug: The display group slug (e.g., "breads", "snacks")
+
+        Returns:
+            List of item type slugs in that group and all descendant groups.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        # Collect from the group itself
+        result = list(self._item_types_by_display_group.get(display_group_slug, []))
+        # Collect from all descendant groups
+        for child_slug in self.get_descendant_display_group_slugs(display_group_slug):
+            result.extend(self._item_types_by_display_group.get(child_slug, []))
+        return result

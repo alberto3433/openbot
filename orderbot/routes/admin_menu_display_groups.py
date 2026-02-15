@@ -44,6 +44,11 @@ def _group_to_out(group, db):
     if group.overall_category:
         category_name = group.overall_category.display_name
 
+    # Get parent name if set
+    parent_name = None
+    if group.parent:
+        parent_name = group.parent.display_name
+
     return MenuDisplayGroupOut(
         id=group.id,
         slug=group.slug,
@@ -51,6 +56,8 @@ def _group_to_out(group, db):
         display_order=group.display_order,
         overall_category_id=group.overall_category_id,
         overall_category_name=category_name,
+        parent_id=group.parent_id,
+        parent_name=parent_name,
         item_type_count=item_type_count,
         aliases=group.aliases,
     )
@@ -96,6 +103,17 @@ def _build_create_kwargs(payload, db):
                 detail=f"Overall category with id {payload.overall_category_id} not found"
             )
 
+    # Validate parent_id if provided
+    if payload.parent_id is not None:
+        parent = db.query(MenuDisplayGroup).filter(
+            MenuDisplayGroup.id == payload.parent_id
+        ).first()
+        if not parent:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Parent display group with id {payload.parent_id} not found"
+            )
+
     # Validate aliases (will be added in pre_commit hook)
     if payload.aliases:
         _validate_aliases(payload.aliases, db)
@@ -105,6 +123,7 @@ def _build_create_kwargs(payload, db):
         "display_name": display_name,
         "display_order": payload.display_order,
         "overall_category_id": payload.overall_category_id,
+        "parent_id": payload.parent_id,
     }
 
 
@@ -142,6 +161,25 @@ def _handle_before_update(item, payload, db):
                 detail=f"Overall category with id {payload.overall_category_id} not found"
             )
         item.overall_category_id = payload.overall_category_id
+
+    # Handle parent_id update
+    update_data = payload.model_dump(exclude_unset=True)
+    if "parent_id" in update_data:
+        new_parent_id = update_data["parent_id"]
+        if new_parent_id is not None:
+            # Prevent self-reference
+            if new_parent_id == item.id:
+                raise HTTPException(status_code=400, detail="A group cannot be its own parent")
+            # Validate parent exists
+            parent = db.query(MenuDisplayGroup).filter(
+                MenuDisplayGroup.id == new_parent_id
+            ).first()
+            if not parent:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Parent display group with id {new_parent_id} not found"
+                )
+        item.parent_id = new_parent_id
 
     # Handle aliases if provided (replaces all existing aliases)
     if payload.aliases is not None:

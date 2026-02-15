@@ -42,6 +42,10 @@ class MenuDisplayGroup(Base):
     display_name = Column(String(100), nullable=False)
     display_order = Column(Integer, nullable=False, default=0)
 
+    # Parent-child hierarchy: enables "candy bars are snacks" relationships
+    parent_id = Column(Integer, ForeignKey("menu_display_groups.id", ondelete="SET NULL"), nullable=True, index=True)
+    parent = relationship("MenuDisplayGroup", remote_side=[id], backref="children")
+
     # Overall category: "food" or "beverage" - determines modifier extraction rules
     overall_category_id = Column(Integer, ForeignKey("overall_categories.id", ondelete="SET NULL"), nullable=True, index=True)
     overall_category = relationship("OverallCategory", back_populates="menu_display_groups")

@@ -248,7 +248,13 @@ class MenuItemConfigHandler(BaseHandler):
 
         opt_start, opt_end = opt_match.start(), opt_match.end()
 
-        # Check for qualifiers adjacent to this option
+        # Check for qualifiers adjacent to this option — pick the closest one.
+        # When distances tie, prefer a qualifier BEFORE the option over one AFTER,
+        # since English qualifiers naturally precede their noun ("dash of milk").
+        best_qualifier = None
+        best_distance = float('inf')
+        best_is_before = False
+
         for pattern in qualifier_patterns:
             pattern_re = re.compile(rf'\b{re.escape(pattern)}\b', re.IGNORECASE)
             for match in pattern_re.finditer(user_lower):
@@ -260,11 +266,16 @@ class MenuItemConfigHandler(BaseHandler):
                 is_after = qual_start >= opt_end and qual_start - opt_end <= QUALIFIER_PROXIMITY_THRESHOLD
 
                 if is_before or is_after:
-                    info = menu_cache.get_qualifier_info(pattern)
-                    if info:
-                        return info["normalized_form"]
+                    distance = (opt_start - qual_end) if is_before else (qual_start - opt_end)
+                    # Pick this qualifier if it's closer, or if tied prefer before
+                    if distance < best_distance or (distance == best_distance and is_before and not best_is_before):
+                        info = menu_cache.get_qualifier_info(pattern)
+                        if info:
+                            best_qualifier = info["normalized_form"]
+                            best_distance = distance
+                            best_is_before = is_before
 
-        return None
+        return best_qualifier
 
     def _match_attribute_from_input(
         self, user_input: str, attributes: list[dict]
@@ -514,7 +525,7 @@ class MenuItemConfigHandler(BaseHandler):
                 summary = item.get_summary()
                 if ack_prefix:
                     return StateMachineResult(
-                        message=f"{ack_prefix}Got it, {summary}. {next_result.message}",
+                        message=f"{ack_prefix}{summary}. {next_result.message}",
                         order=next_result.order,
                     )
                 return StateMachineResult(
@@ -524,7 +535,7 @@ class MenuItemConfigHandler(BaseHandler):
 
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
-                message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?" if ack_prefix else got_it_anything_else(item.get_summary()),
+                message=f"{ack_prefix}{item.get_summary()}. Anything else?" if ack_prefix else got_it_anything_else(item.get_summary()),
                 order=order,
             )
 
@@ -1173,14 +1184,15 @@ class MenuItemConfigHandler(BaseHandler):
                     # Use multi-item orchestration to check for more items
                     result = self.configure_next_incomplete_item(order, item_type)
                     if matched_choice and result.message:
-                        result.message = f"Got it, {matched_choice}. {result.message}"
+                        # Strip leading "Got it, " from result to avoid double "Got it"
+                        msg = result.message
+                        if msg.startswith("Got it, "):
+                            msg = msg[len("Got it, "):]
+                        result.message = f"Got it, {matched_choice}. {msg}"
                     return result
                 else:
                     # Single-item flow - go to checkpoint
-                    result = self._ask_customization_checkpoint(item, order)
-                    if matched_choice and result.message:
-                        result.message = f"Got it, {matched_choice}. {result.message}"
-                    return result
+                    return self._ask_customization_checkpoint(item, order, acknowledgment=matched_choice)
         else:
             # Just answered an optional question, ask for more customizations
             return self._ask_more_customizations(item, order, matched_choice)
@@ -1218,7 +1230,7 @@ class MenuItemConfigHandler(BaseHandler):
                 summary = item.get_summary()
                 if ack_prefix:
                     return StateMachineResult(
-                        message=f"{ack_prefix}Got it, {summary}. {next_result.message}",
+                        message=f"{ack_prefix}{summary}. {next_result.message}",
                         order=next_result.order,
                     )
                 return StateMachineResult(
@@ -1228,7 +1240,7 @@ class MenuItemConfigHandler(BaseHandler):
 
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
-                message=f"{ack_prefix}Got it, {item.get_summary()}. Anything else?",
+                message=f"{ack_prefix}{item.get_summary()}. Anything else?" if ack_prefix else got_it_anything_else(item.get_summary()),
                 order=order,
             )
 

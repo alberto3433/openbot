@@ -622,7 +622,7 @@ class SelectInputHandler:
                     if len(word) >= 2:  # Skip single-char words
                         qualifier_words.add(word)
             # Also filter common prepositions/articles that appear in qualifiers
-            qualifier_words.update({'a', 'of', 'the', 'on', 'with', 'bit', 'little', 'lots', 'some'})
+            qualifier_words.update({'a', 'of', 'the', 'on', 'with'})
             # Filter out qualifier words from unmatched tokens
             unmatched_tokens = [t for t in unmatched_tokens if t.lower() not in qualifier_words]
 

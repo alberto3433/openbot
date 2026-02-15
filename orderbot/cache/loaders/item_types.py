@@ -748,14 +748,27 @@ class ItemTypeLoaderMixin:
         groups = bulk_data.get("menu_display_groups", [])
         item_types = bulk_data.get("item_types", [])
 
+        # Build id -> slug lookup for resolving parent references
+        id_to_slug = {g.id: g.slug for g in groups}
+
         self._menu_display_groups_ordered = [
             {
                 "slug": g.slug,
                 "display_name": g.display_name,
                 "display_order": g.display_order,
+                "parent_slug": id_to_slug.get(g.parent_id) if g.parent_id else None,
             }
             for g in sorted(groups, key=lambda g: g.display_order)
         ]
+
+        # Build parent-child hierarchy: parent_slug -> [child_slugs]
+        children: dict[str, list[str]] = {}
+        for g in groups:
+            if g.parent_id:
+                parent_slug = id_to_slug.get(g.parent_id)
+                if parent_slug:
+                    children.setdefault(parent_slug, []).append(g.slug)
+        self._display_group_children = children
 
         # Build mapping: display_group_slug -> list of item_type_slugs
         item_types_by_group: dict[str, list[str]] = {}
@@ -788,6 +801,7 @@ class ItemTypeLoaderMixin:
             {k: len(v) for k, v in item_types_by_group.items()},
         )
         logger.debug(
-            "Loaded %d display group aliases",
+            "Loaded %d display group aliases, %d parent-child relationships",
             len(alias_to_slug),
+            sum(len(v) for v in children.values()),
         )

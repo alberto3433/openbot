@@ -155,12 +155,17 @@ class ConfigDisambiguationHandler:
         selected = self.resolve_disambiguation(user_input, options)
 
         if not selected:
-            # Couldn't match - ask again
-            options_text = self._format_display_list(options)
-            return StateMachineResult(
-                message=f"Sorry, I didn't catch that. Did you mean {options_text}?",
-                order=order,
+            # User's input doesn't match any disambiguation option.
+            # Clear disambiguation and let normal attribute handling process it.
+            # This handles cases where the user changes their mind and picks
+            # a different valid option (e.g., "blueberry cream cheese" instead
+            # of choosing between disambiguation options).
+            logger.info(
+                "DISAMBIGUATION: No match for '%s' among %s, clearing and falling through to normal handling",
+                user_input, [o["display_name"] for o in options]
             )
+            order.pending_attr_disambiguation = None
+            return None
 
         # Clear disambiguation state
         order.pending_attr_disambiguation = None

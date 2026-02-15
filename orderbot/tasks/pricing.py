@@ -396,11 +396,15 @@ class PricingEngine(MenuDataMixin):
                     item_type, attr_slug, option_value
                 )
                 if option_category and option_category in included_ingredient_categories:
-                    logger.debug(
-                        "Skipping upcharge for %s.%s=%s - category '%s' is included in base price",
-                        item_type, attr_slug, option_value, option_category
+                    min_price = self._get_min_option_price_for_attribute(
+                        item_type, attr_slug, option_category
                     )
-                    return 0.0
+                    premium = max(0.0, price - min_price)
+                    logger.debug(
+                        "Category '%s' included for %s.%s=%s — price=$%.2f, min=$%.2f, premium=$%.2f",
+                        option_category, item_type, attr_slug, option_value, price, min_price, premium
+                    )
+                    return premium
             return price
 
         # Not found - log and return 0.0
@@ -444,6 +448,48 @@ class PricingEngine(MenuDataMixin):
                     return opt.get("ingredient_category")
 
         return None
+
+    def _get_min_option_price_for_attribute(
+        self,
+        item_type: str,
+        attr_slug: str,
+        ingredient_category: str,
+    ) -> float:
+        """Get the minimum price_modifier among available options in the same
+        ingredient category for a given attribute.
+
+        Used to compute the premium when a category is included in the base price.
+        For example, if bread options are $0 (regular) and $1.85 (GF), the minimum
+        is $0, so ordering GF still carries a $1.85 premium even when bread is
+        included.
+
+        Args:
+            item_type: Item type slug (e.g., "sandwich")
+            attr_slug: Attribute slug (e.g., "bread")
+            ingredient_category: The ingredient category to filter by (e.g., "bread")
+
+        Returns:
+            The minimum price_modifier among matching options, or 0.0 if none found
+        """
+        item_types = self._menu_data.get("item_types", {})
+        type_data = item_types.get(item_type, {})
+        attributes = type_data.get("attributes", [])
+
+        min_price: float | None = None
+
+        for attr in attributes:
+            if attr.get("slug") != attr_slug:
+                continue
+            for opt in attr.get("options", []):
+                if not isinstance(opt, dict):
+                    continue
+                if opt.get("ingredient_category") != ingredient_category:
+                    continue
+                price = OptionMatcher.get_option_price(opt)
+                if min_price is None or price < min_price:
+                    min_price = price
+
+        return min_price if min_price is not None else 0.0
 
     def lookup_attribute_option_upcharge_for_item(
         self,

@@ -14,6 +14,11 @@ from email_validator import validate_email, EmailNotValidError
 
 logger = logging.getLogger(__name__)
 
+# Regex for extracting email address (used by multiple parsers)
+_EMAIL_EXTRACT_PATTERN = re.compile(
+    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+)
+
 
 def validate_email_address(email: str) -> tuple[str | None, str | None]:
     """
@@ -334,8 +339,8 @@ def parse_payment_method_deterministic(user_input: str) -> PaymentMethodResponse
         phone_number = re.sub(r'\D', '', phone_match.group(1))
 
     # Try to extract email address
-    email_match = re.search(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', original)
-    email_address = email_match.group(1) if email_match else None
+    email_match = _EMAIL_EXTRACT_PATTERN.search(original)
+    email_address = email_match.group() if email_match else None
 
     # If we found an email, that's likely the choice
     if email_address:
@@ -451,12 +456,6 @@ _EMAIL_PREFIX_PATTERN = re.compile(
     r"the\s+email\s+is|send\s+(?:it\s+)?to|use)\s+",
     re.IGNORECASE,
 )
-
-# Regex for extracting email address
-_EMAIL_EXTRACT_PATTERN = re.compile(
-    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-)
-
 
 def parse_email_deterministic(user_input: str, model: str = "gpt-4o-mini") -> EmailResponse:
     """Parse user input when collecting email address (deterministic).

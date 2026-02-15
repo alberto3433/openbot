@@ -455,6 +455,10 @@ class UnifiedItemConverter:
         bundle_price_rule = getattr(item, 'bundle_price_rule', None)
         bundle_included_price = getattr(item, 'bundle_included_price', None)
 
+        # Item total: only set when there are upcharges (unit_price differs from base_price)
+        unit_price = item.unit_price or 0.0
+        item_total = unit_price if unit_price != base_price else None
+
         result.update({
             "menu_item_name": menu_item_name,
             "display_name": display_name,
@@ -464,6 +468,7 @@ class UnifiedItemConverter:
             "modifiers": modifiers,
             "free_details": [],
             "base_price": base_price,
+            "item_total": item_total,
             "removed_ingredients": removed_ingredients,
             "attribute_values": attribute_values,
             "customization_offered": customization_offered,
@@ -496,6 +501,7 @@ class UnifiedItemConverter:
             "item_modifiers": item_modifiers,  # Unified modifiers for persistence
             "attribute_values": attribute_values,
             "base_price": base_price,
+            "item_total": item_total,
             "is_signature": getattr(item, 'is_signature', False),
             # Bundle fields for persistence
             "bundle_id": bundle_id,

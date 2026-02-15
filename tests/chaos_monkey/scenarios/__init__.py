@@ -10,6 +10,7 @@ from tests.chaos_monkey.scenarios.single_item import SingleItemScenario
 from tests.chaos_monkey.scenarios.multi_item import MultiItemScenario
 from tests.chaos_monkey.scenarios.modifier import ModifierScenario
 from tests.chaos_monkey.scenarios.cart_ops import CartOperationScenario
+from tests.chaos_monkey.scenarios.tricky import TrickyScenario
 
 __all__ = [
     "BaseScenario",
@@ -20,4 +21,5 @@ __all__ = [
     "MultiItemScenario",
     "ModifierScenario",
     "CartOperationScenario",
+    "TrickyScenario",
 ]

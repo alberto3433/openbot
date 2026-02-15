@@ -779,3 +779,43 @@ class TestModifiersConsistency:
             None
         )
         assert bagel_type_modifier is None, "Bread type should not be in modifiers"
+
+    def test_item_total_with_upcharges(self):
+        """item_total should equal unit_price when there are upcharges."""
+        order = OrderTask()
+        bagel = create_bagel_task(
+            bagel_type="everything",
+            toasted=True,
+            spread="cream cheese",
+            spread_price=2.50,
+            unit_price=4.70,
+            base_price=2.20,
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order, pricing=create_test_pricing())
+        item = result["items"][0]
+
+        assert item["base_price"] == 2.20
+        assert item["unit_price"] == 4.70
+        assert item["item_total"] == 4.70, "item_total should equal unit_price when upcharges exist"
+        assert item["item_config"]["item_total"] == 4.70
+
+    def test_item_total_without_upcharges(self):
+        """item_total should be None when there are no upcharges."""
+        order = OrderTask()
+        bagel = create_bagel_task(
+            bagel_type="plain",
+            toasted=False,
+            unit_price=2.20,
+            base_price=2.20,
+        )
+        order.items.add_item(bagel)
+
+        result = order_task_to_dict(order, pricing=create_test_pricing())
+        item = result["items"][0]
+
+        assert item["base_price"] == 2.20
+        assert item["unit_price"] == 2.20
+        assert item["item_total"] is None, "item_total should be None when no upcharges"
+        assert item["item_config"]["item_total"] is None

@@ -122,6 +122,8 @@ class ScenarioGenerator:
             return self._generate_modifier_flow_scenario()
         elif scenario_type == "menu_inquiry":
             return self._generate_menu_inquiry_scenario()
+        elif scenario_type == "tricky":
+            return self._generate_tricky_scenario()
         else:
             logger.warning("Unknown scenario type: %s", scenario_type)
             return None
@@ -311,6 +313,141 @@ class ScenarioGenerator:
                 inquiry_type=inquiry_type,
                 seed=self.rng.randint(0, 2**31),
             )
+
+    def _get_attribute_data_for_item_type(
+        self, item_type_slug: str
+    ) -> tuple[dict[str, list[str]], list[str]]:
+        """Get attribute options and boolean attrs for an item type.
+
+        Returns:
+            Tuple of (attribute_options dict, boolean_attrs list).
+            attribute_options maps attr_slug -> list of option display names.
+            boolean_attrs is a list of boolean attribute slugs.
+        """
+        attribute_options: dict[str, list[str]] = {}
+        boolean_attrs: list[str] = []
+
+        try:
+            attrs = self.menu_cache.get_item_type_attributes(item_type_slug)
+            for attr_slug, attr_config in attrs.items():
+                if not attr_config.get("ask_in_conversation", False):
+                    continue
+
+                input_type = attr_config.get("input_type", "")
+
+                if input_type == "boolean":
+                    boolean_attrs.append(attr_slug)
+                elif input_type in ("single_select", "multi_select"):
+                    options = self.menu_cache.get_global_attribute_options(attr_slug)
+                    display_names = [
+                        opt.get("display_name", opt.get("slug", ""))
+                        for opt in options
+                        if opt.get("display_name") or opt.get("slug")
+                    ]
+                    # Filter out long names (>3 words) to keep inputs natural
+                    display_names = [n for n in display_names if len(n.split()) <= 3]
+                    if display_names:
+                        attribute_options[attr_slug] = display_names
+        except Exception as e:
+            logger.debug("Could not load attribute data for %s: %s", item_type_slug, e)
+
+        return attribute_options, boolean_attrs
+
+    def _generate_tricky_scenario(self) -> BaseScenario | None:
+        """Generate a tricky scenario with out-of-place inputs (no filler words)."""
+        from tests.chaos_monkey.scenarios.tricky import (
+            MultiAttributeWithModifierScenario,
+            TrickyScenario,
+        )
+
+        if not self._menu_items:
+            return None
+
+        # Filter to configurable items (those with config questions)
+        configurable_items = [
+            item for item in self._menu_items
+            if self.menu_cache.is_item_type_configurable(item.get("item_type", ""))
+        ]
+
+        if not configurable_items:
+            return None
+
+        # Pick primary item
+        primary_item = self.rng.choice(configurable_items)
+        primary_type = primary_item.get("item_type", "")
+
+        # Get attribute data for this item type
+        attribute_options, boolean_attrs = self._get_attribute_data_for_item_type(
+            primary_type
+        )
+
+        # Get valid modifiers for the primary item
+        valid_ingredients = self.menu_cache.get_ingredients_by_category_for_item_type(
+            primary_type
+        )
+        valid_modifiers: list[str] = []
+        for category_ingredients in valid_ingredients.values():
+            valid_modifiers.extend(self._filter_display_names(category_ingredients))
+
+        # Pick secondary item (different from primary)
+        other_items = [
+            item for item in self._menu_items
+            if item.get("name") != primary_item.get("name")
+        ]
+        secondary_item = self.rng.choice(other_items) if other_items else None
+
+        # Choose trick type with weights
+        trick_types = [
+            "add_item_during_config",
+            "multi_attribute",
+            "context_switch",
+            "early_answer",
+            "change_config",
+            "repeat_item",
+        ]
+        trick_weights = [0.20, 0.20, 0.15, 0.15, 0.15, 0.15]
+
+        # Adjust weights based on available data
+        if not boolean_attrs and not attribute_options:
+            # No attribute data — skip multi_attribute, context_switch, change_config
+            trick_weights[1] = 0.0  # multi_attribute
+            trick_weights[2] = 0.0  # context_switch
+            trick_weights[4] = 0.0  # change_config
+        if not valid_modifiers:
+            trick_weights[3] = 0.05  # early_answer less useful without modifiers
+
+        # Normalize weights
+        total = sum(trick_weights)
+        if total == 0:
+            return None
+        trick_weights = [w / total for w in trick_weights]
+
+        chosen_trick = self.rng.choices(trick_types, weights=trick_weights, k=1)[0]
+
+        # 20% chance of the multi-attribute-with-modifier variant
+        if (
+            chosen_trick == "multi_attribute"
+            and valid_modifiers
+            and self.rng.random() < 0.5
+        ):
+            return MultiAttributeWithModifierScenario(
+                primary_item=primary_item,
+                secondary_item=secondary_item,
+                attribute_options=attribute_options,
+                boolean_attrs=boolean_attrs,
+                modifiers=valid_modifiers,
+                seed=self.rng.randint(0, 2**31),
+            )
+
+        return TrickyScenario(
+            trick_type=chosen_trick,
+            primary_item=primary_item,
+            secondary_item=secondary_item,
+            attribute_options=attribute_options,
+            boolean_attrs=boolean_attrs,
+            modifiers=valid_modifiers,
+            seed=self.rng.randint(0, 2**31),
+        )
 
     def _apply_mutations(self, scenario: BaseScenario) -> None:
         """Apply text mutations to scenario turns."""

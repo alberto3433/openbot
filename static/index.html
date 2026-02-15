@@ -900,6 +900,21 @@
       font-weight: 600;
     }
 
+    /* Item Total (shown when upcharges exist) */
+    .order-item-total {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-secondary);
+      padding: 4px 0 0;
+      margin-top: 4px;
+      border-top: 1px solid var(--border-light);
+    }
+
+    .order-item-total-price {
+      font-weight: 600;
+    }
+
     /* Order Totals */
     .order-totals {
       font-size: 14px;
@@ -2309,9 +2324,9 @@
 
       // Decide rendering mode based on DATA presence, not item_type
       if (hasModifiers || hasFreeDetails || hasRemovedIngredients) {
-        // Itemized view: show base price, free details, then priced modifiers
-        const basePrice = item.line_total || item.base_price || item.unit_price || 0;
-        html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(basePrice)}</span></div>`;
+        // Itemized view: show base price on header, modifiers below, item total at end
+        const headerPrice = item.base_price || item.unit_price || 0;
+        html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(headerPrice)}</span></div>`;
 
         // Free details (iced, decaf, toasted, etc.)
         if (hasFreeDetails) {
@@ -2335,6 +2350,11 @@
             html += `<div class="order-item-removed-item">${ingredient}</div>`;
           }
           html += `</div>`;
+        }
+
+        // Item total line: only shown when there are upcharges
+        if (item.item_total != null) {
+          html += `<div class="order-item-total"><span class="order-item-total-label">Item Total</span><span class="order-item-total-price">${formatCurrency(item.item_total * qty)}</span></div>`;
         }
       } else {
         // Simple view: just name and total price (no modifiers or details)

@@ -624,13 +624,15 @@ class ConfiguringItemHandler:
                     if pending_result.value is not None:
                         item[pending_attr] = pending_result.value
                         safe_recalculate_price(pricing, item, f"after boolean {pending_attr} change")
+                        # Clear pending_field so it advances past the now-answered attribute
+                        order.pending_field = None
                         pending_display = pending_config.get("display_name", pending_attr)
                         if pending_result.value:
                             ack += f" {pending_display}."
                         else:
                             ack += f" Not {pending_display.lower()}."
 
-            # Re-ask the current pending question (skips already-answered attributes)
+            # Get next question (pending_field cleared above if pending was answered)
             current_question = self.config_helper_handler.get_current_config_question(order, item)
             if current_question:
                 return StateMachineResult(message=f"{ack} {current_question}", order=order)

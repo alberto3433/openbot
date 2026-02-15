@@ -407,6 +407,42 @@ class ConfigCancellationHandler:
                 )
                 break
 
+        # Try removing a modifier referenced as "X on/from Y"
+        result = self._try_remove_modifier_by_reference(cancel_desc, current_item, order)
+        if result:
+            return result
+
+        # Try removing a modifier on the current item
+        result = self._try_remove_modifier_on_current_item(
+            cancel_desc, current_item, order, matches_item_type, matches_item_in_order,
+        )
+        if result:
+            return result
+
+        # Find and remove matching items (ordinal, plural, category, name)
+        return self._find_and_remove_matching_items(cancel_desc, current_item, order)
+
+    def _try_remove_modifier_by_reference(
+        self,
+        cancel_desc: str,
+        current_item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Try to remove a modifier using "X on/from Y" pattern.
+
+        Handles phrases like "remove onions from the leo" by parsing the modifier
+        and item reference, finding the target item, and attempting modifier removal
+        followed by default ingredient removal.
+
+        Args:
+            cancel_desc: Normalized cancellation description from user input.
+            current_item: The item currently being configured.
+            order: The current order task.
+
+        Returns:
+            StateMachineResult if modifier was removed, None to continue with
+            other checks.
+        """
         # First, try to parse "modifier on/from item" pattern (e.g., "onions on the leo")
         modifier_item_parsed = _extract_modifier_and_item_reference(cancel_desc)
         if modifier_item_parsed:
@@ -486,6 +522,36 @@ class ConfigCancellationHandler:
                             )
             # If pattern matched but no item found or no modifier found, fall through to existing logic
 
+        return None
+
+    def _try_remove_modifier_on_current_item(
+        self,
+        cancel_desc: str,
+        current_item: MenuItemTask,
+        order: OrderTask,
+        matches_item_type: bool,
+        matches_item_in_order: bool,
+    ) -> StateMachineResult | None:
+        """Try to remove a modifier from the current item being configured.
+
+        Uses unified modifier_operations for consistent handling, with a legacy
+        fallback using the removable_modifiers set. Supports quantity-aware
+        removal (e.g., "remove 1 shot" decrements by 1).
+
+        Skipped entirely if cancel_desc matches an item type or item name in the
+        order, since the user likely wants to remove the item itself, not a modifier.
+
+        Args:
+            cancel_desc: Normalized cancellation description from user input.
+            current_item: The item currently being configured.
+            order: The current order task.
+            matches_item_type: Whether cancel_desc matches a known item type.
+            matches_item_in_order: Whether cancel_desc matches an item name in order.
+
+        Returns:
+            StateMachineResult if modifier was removed, None to continue with
+            other checks.
+        """
         # Check if this is a modifier removal on the current item being configured
         # Use unified modifier_operations for consistent handling
         # But SKIP if cancel_desc matches an item type or item in order (user wants to remove items, not modifiers)
@@ -581,6 +647,28 @@ class ConfigCancellationHandler:
                                 order=order,
                             )
 
+        return None
+
+    def _find_and_remove_matching_items(
+        self,
+        cancel_desc: str,
+        current_item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Search for and remove matching items from the order.
+
+        Handles ordinal references ("second bagel"), plural removal ("coffees"),
+        category mapping, and item name/type/summary matching. This is the final
+        fallback -- it always returns a StateMachineResult.
+
+        Args:
+            cancel_desc: Normalized cancellation description from user input.
+            current_item: The item currently being configured.
+            order: The current order task.
+
+        Returns:
+            StateMachineResult indicating items were removed or not found.
+        """
         # Get all active items to search through
         active_items = order.items.get_active_items()
         if not active_items:

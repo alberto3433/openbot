@@ -131,101 +131,14 @@ class ConfigModificationHandler:
         modifier_lower = modifier.lower()
 
         # 1. Check if current item has an attribute option matching this modifier
-        item_type = item.menu_item_type
-        if item_type:
-            try:
-                attrs = menu_cache.get_item_type_attributes(item_type)
-                for attr_slug, attr_config in attrs.items():
-                    options = attr_config.get("options", [])
-                    for opt in options:
-                        opt_slug = opt.get("slug", "").lower()
-                        opt_display = opt.get("display_name", "").lower()
-                        # Also check aliases (e.g., "pound" -> "one_pound")
-                        aliases = opt.get("aliases") or []
-                        alias_list = [a.strip().lower() for a in aliases] if aliases else []
-                        if modifier_lower == opt_slug or modifier_lower == opt_display or modifier_lower in alias_list:
-                            # Found matching attribute option - apply it
-                            logger.info("CAN_YOU_MAKE_IT: Found matching attr %s=%s", attr_slug, opt_slug)
-                            item[attr_slug] = opt.get("slug")
-                            # Recalculate price after attribute change
-                            pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
-                            safe_recalculate_price(pricing, item, "after attribute change")
-                            # Re-ask current question (the one we were on)
-                            current_question = self.config_helper_handler.get_current_config_question(order, item)
-                            if current_question:
-                                return StateMachineResult(
-                                    message=f"Sure! {current_question}",
-                                    order=order,
-                                )
-                            # At customization_checkpoint - return success and continue
-                            opt_name = opt.get("display_name") or opt.get("slug", "").replace("_", " ").title()
-                            return self._continue_config_with_message(
-                                f"Okay, {opt_name}.", item, order
-                            )
-            except Exception as e:
-                logger.debug("Error checking attributes for 'can you make it': %s", e)
+        result = self._try_match_attribute_option(modifier_lower, item, order)
+        if result:
+            return result
 
         # 1b. Try to match weight/priced attribute options via database aliases
-        # Aliases like "pound" -> "1 lb" are stored in global_attribute_option_aliases
-        if item_type:
-            # Get priced attribute, fallback to "weight" for by-weight items
-            priced_attr = menu_cache.get_first_priced_attribute(item_type)
-            if not priced_attr:
-                # Check if this item type has a weight attribute
-                attrs = menu_cache.get_item_type_attributes(item_type)
-                if "weight" in attrs:
-                    priced_attr = "weight"
-            if priced_attr:
-                # Special handling for "half a pound" / "half pound" / "1/2 lb"
-                # These map to 2x quarter pound (1/4 lb) - same logic as by_pound_parsing.py
-                half_pound_pattern = re.compile(
-                    r"^(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?$|^1\s*/\s*2\s*(?:pound|lb)s?$",
-                    re.IGNORECASE
-                )
-                if half_pound_pattern.match(modifier_lower.strip()):
-                    # Look up the quarter pound option
-                    quarter_option = menu_cache.resolve_option_by_alias(priced_attr, "1/4 lb")
-                    if quarter_option:
-                        opt_slug = quarter_option.get("slug")
-                        logger.info(
-                            "CAN_YOU_MAKE_IT: Resolved 'half a pound' to %s=%s with qty=2",
-                            priced_attr, opt_slug
-                        )
-                        item[priced_attr] = opt_slug
-                        item.quantity = 2  # Two quarter-pound portions = half pound
-                        pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
-                        safe_recalculate_price(pricing, item, "after half pound")
-                        # If this answers the current pending question, clear it
-                        pending = order.pending_field
-                        if pending and ":" in pending:
-                            _, pending_attr = pending.split(":", 1)
-                            if pending_attr == priced_attr:
-                                order.pending_field = None
-                        return self._continue_config_with_message(
-                            "Okay, 1/2 lb.", item, order
-                        )
-
-                # Direct lookup - aliases in DB handle variations like "pound" -> "1 lb"
-                option = menu_cache.resolve_option_by_alias(priced_attr, modifier_lower)
-                if option:
-                    opt_slug = option.get("slug")
-                    logger.info(
-                        "CAN_YOU_MAKE_IT: Resolved '%s' to %s=%s via alias",
-                        modifier_lower, priced_attr, opt_slug
-                    )
-                    item[priced_attr] = opt_slug
-                    pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
-                    safe_recalculate_price(pricing, item, "after weight change")
-                    opt_name = option.get("display_name") or opt_slug.replace("_", " ").title()
-                    # If this answers the current pending question, clear it so we move to next
-                    pending = order.pending_field
-                    if pending and ":" in pending:
-                        _, pending_attr = pending.split(":", 1)
-                        if pending_attr == priced_attr:
-                            order.pending_field = None
-                    return self._continue_config_with_message(
-                        f"Okay, {opt_name}.", item, order
-                    )
+        result = self._try_resolve_priced_attribute(modifier_lower, item, order)
+        if result:
+            return result
 
         # 1c. Check for same-type menu items matching this modifier
         # e.g., "make it blueberry" while configuring "Truffle Cream Cheese" (type: spread)
@@ -326,6 +239,148 @@ class ConfigModificationHandler:
             message="Sorry, we don't have that option.",
             order=order,
         )
+
+    def _try_match_attribute_option(
+        self,
+        modifier_lower: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Check if the modifier matches an attribute option on the current item.
+
+        Iterates over all item type attributes and their options, checking slug,
+        display_name, and aliases. If a match is found, applies the option and
+        returns the appropriate result to continue configuration.
+
+        Args:
+            modifier_lower: The modifier text, lowercased.
+            item: The item being configured.
+            order: The current order state.
+
+        Returns:
+            StateMachineResult if an attribute option was matched and applied,
+            None if no match was found.
+        """
+        item_type = item.menu_item_type
+        if not item_type:
+            return None
+        try:
+            attrs = menu_cache.get_item_type_attributes(item_type)
+            for attr_slug, attr_config in attrs.items():
+                options = attr_config.get("options", [])
+                for opt in options:
+                    opt_slug = opt.get("slug", "").lower()
+                    opt_display = opt.get("display_name", "").lower()
+                    # Also check aliases (e.g., "pound" -> "one_pound")
+                    aliases = opt.get("aliases") or []
+                    alias_list = [a.strip().lower() for a in aliases] if aliases else []
+                    if modifier_lower == opt_slug or modifier_lower == opt_display or modifier_lower in alias_list:
+                        # Found matching attribute option - apply it
+                        logger.info("CAN_YOU_MAKE_IT: Found matching attr %s=%s", attr_slug, opt_slug)
+                        item[attr_slug] = opt.get("slug")
+                        # Recalculate price after attribute change
+                        pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+                        safe_recalculate_price(pricing, item, "after attribute change")
+                        # Re-ask current question (the one we were on)
+                        current_question = self.config_helper_handler.get_current_config_question(order, item)
+                        if current_question:
+                            return StateMachineResult(
+                                message=f"Sure! {current_question}",
+                                order=order,
+                            )
+                        # At customization_checkpoint - return success and continue
+                        opt_name = opt.get("display_name") or opt.get("slug", "").replace("_", " ").title()
+                        return self._continue_config_with_message(
+                            f"Okay, {opt_name}.", item, order
+                        )
+        except Exception as e:
+            logger.debug("Error checking attributes for 'can you make it': %s", e)
+        return None
+
+    def _try_resolve_priced_attribute(
+        self,
+        modifier_lower: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Try to match the modifier to a weight/priced attribute option via database aliases.
+
+        Handles the special "half a pound" pattern (mapped to 2x quarter pound) and
+        direct alias lookup (e.g., "pound" to "1 lb"). Clears pending_field if the
+        answer matches the current pending attribute question.
+
+        Args:
+            modifier_lower: The modifier text, lowercased.
+            item: The item being configured.
+            order: The current order state.
+
+        Returns:
+            StateMachineResult if a priced attribute was resolved and applied,
+            None if not applicable.
+        """
+        if not item.menu_item_type:
+            return None
+        item_type = item.menu_item_type
+        # Get priced attribute, fallback to "weight" for by-weight items
+        priced_attr = menu_cache.get_first_priced_attribute(item_type)
+        if not priced_attr:
+            # Check if this item type has a weight attribute
+            attrs = menu_cache.get_item_type_attributes(item_type)
+            if "weight" in attrs:
+                priced_attr = "weight"
+        if not priced_attr:
+            return None
+        # Special handling for "half a pound" / "half pound" / "1/2 lb"
+        # These map to 2x quarter pound (1/4 lb) - same logic as by_pound_parsing.py
+        half_pound_pattern = re.compile(
+            r"^(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?$|^1\s*/\s*2\s*(?:pound|lb)s?$",
+            re.IGNORECASE
+        )
+        if half_pound_pattern.match(modifier_lower.strip()):
+            # Look up the quarter pound option
+            quarter_option = menu_cache.resolve_option_by_alias(priced_attr, "1/4 lb")
+            if quarter_option:
+                opt_slug = quarter_option.get("slug")
+                logger.info(
+                    "CAN_YOU_MAKE_IT: Resolved 'half a pound' to %s=%s with qty=2",
+                    priced_attr, opt_slug
+                )
+                item[priced_attr] = opt_slug
+                item.quantity = 2  # Two quarter-pound portions = half pound
+                pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+                safe_recalculate_price(pricing, item, "after half pound")
+                # If this answers the current pending question, clear it
+                pending = order.pending_field
+                if pending and ":" in pending:
+                    _, pending_attr = pending.split(":", 1)
+                    if pending_attr == priced_attr:
+                        order.pending_field = None
+                return self._continue_config_with_message(
+                    "Okay, 1/2 lb.", item, order
+                )
+
+        # Direct lookup - aliases in DB handle variations like "pound" -> "1 lb"
+        option = menu_cache.resolve_option_by_alias(priced_attr, modifier_lower)
+        if option:
+            opt_slug = option.get("slug")
+            logger.info(
+                "CAN_YOU_MAKE_IT: Resolved '%s' to %s=%s via alias",
+                modifier_lower, priced_attr, opt_slug
+            )
+            item[priced_attr] = opt_slug
+            pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+            safe_recalculate_price(pricing, item, "after weight change")
+            opt_name = option.get("display_name") or opt_slug.replace("_", " ").title()
+            # If this answers the current pending question, clear it so we move to next
+            pending = order.pending_field
+            if pending and ":" in pending:
+                _, pending_attr = pending.split(":", 1)
+                if pending_attr == priced_attr:
+                    order.pending_field = None
+            return self._continue_config_with_message(
+                f"Okay, {opt_name}.", item, order
+            )
+        return None
 
     def handle_confirm_item_switch(
         self,

@@ -93,6 +93,9 @@ HESITATION_FILLERS = frozenset({
     "please", "thanks", "thank you", "thx", "excuse me", "pardon", "pardon me",
     # Topic changers
     "anyway", "anyways",
+    # Retraction fillers - "no wait, untoasted" means hesitation, not cancellation
+    "no wait", "no, wait",
+    "scratch that",
 })
 
 # Category 2: ORDERING_PREFIXES - Strip from START of input only

@@ -155,37 +155,35 @@ class AttributeUpchargeCalculator:
                 )
                 quantity = matching_modifier.get("quantity", 1) if matching_modifier else 1
 
-                # Always look up from DB - single source of truth
+                # Default ingredients in included categories are always free.
+                # Check this BEFORE upcharge lookup so premium calculations
+                # don't accidentally charge defaults (e.g., corned beef on The Reuben).
+                is_default = matching_modifier.get("is_default", False) if matching_modifier else False
+                if is_default and included_categories:
+                    option_category = self._pricing._get_option_ingredient_category(
+                        item_type, attr_slug, item_val
+                    )
+                    if option_category and option_category in included_categories:
+                        priced_slugs.add(item_val_normalized)
+                        if matching_modifier:
+                            matching_modifier["price"] = 0.0
+                        continue
+
+                # Look up upcharge from DB - single source of truth
                 upcharge = self._pricing.lookup_attribute_option_upcharge(
                     item_type, attr_slug, item_val, included_categories
                 )
                 if upcharge > 0:
                     total += upcharge * quantity
                     priced_slugs.add(item_val_normalized)
-                    # Update modifier's price for display purposes
                     if matching_modifier:
                         matching_modifier["price"] = upcharge
                 else:
-                    # Check if this is a default ingredient in an included category.
-                    # Only default ingredients (is_default=True) get the free pass.
-                    # User-added extras in the same category should be priced.
-                    is_default = matching_modifier.get("is_default", False) if matching_modifier else False
-                    option_category = self._pricing._get_option_ingredient_category(
-                        item_type, attr_slug, item_val
-                    )
-                    if is_default and option_category and option_category in included_categories:
-                        # This is a default ingredient in an included category - no charge
-                        priced_slugs.add(item_val_normalized)
-                        if matching_modifier:
-                            matching_modifier["price"] = 0.0
-                    else:
-                        price = self._pricing.lookup_modifier_price(item_val, item_type)
-                        total += price * quantity
-                        # Always mark as priced to prevent double-counting
-                        priced_slugs.add(item_val_normalized)
-                        # Update modifier's price for display purposes
-                        if matching_modifier:
-                            matching_modifier["price"] = price
+                    price = self._pricing.lookup_modifier_price(item_val, item_type)
+                    total += price * quantity
+                    priced_slugs.add(item_val_normalized)
+                    if matching_modifier:
+                        matching_modifier["price"] = price
 
             elif isinstance(item_val, dict):
                 slug, qty = extract_modifier_slug_and_quantity(item_val)

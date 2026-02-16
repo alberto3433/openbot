@@ -282,16 +282,9 @@ class ConfigModificationHandler:
                         pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
                         safe_recalculate_price(pricing, item, "after attribute change")
                         # Re-ask current question (the one we were on)
-                        current_question = self.config_helper_handler.get_current_config_question(order, item)
-                        if current_question:
-                            return StateMachineResult(
-                                message=f"Sure! {current_question}",
-                                order=order,
-                            )
-                        # At customization_checkpoint - return success and continue
                         opt_name = opt.get("display_name") or opt.get("slug", "").replace("_", " ").title()
                         return self._continue_config_with_message(
-                            f"Okay, {opt_name}.", item, order
+                            f"Sure, {opt_name}.", item, order
                         )
         except Exception as e:
             logger.debug("Error checking attributes for 'can you make it': %s", e)

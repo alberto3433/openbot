@@ -837,14 +837,17 @@
     .order-item-header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
       margin-bottom: 6px;
+      gap: 6px;
     }
 
     .order-item-name {
       font-weight: 600;
       font-size: 14px;
       color: var(--text-primary);
+      flex: 1;
+      min-width: 0;
     }
 
     .order-item-price {
@@ -866,6 +869,56 @@
       font-style: italic;
       color: var(--text-tertiary);
       font-size: 12px;
+    }
+
+    .order-item-remove-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      flex-shrink: 0;
+      margin-right: 6px;
+      transition: color 0.15s;
+    }
+    .order-item-remove-btn:hover {
+      color: #e53e3e;
+    }
+    .order-item-remove-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .order-item.pending-removal {
+      opacity: 0.4;
+      pointer-events: none;
+    }
+    .order-item.pending-removal .order-item-undo-bar {
+      pointer-events: auto;
+    }
+
+    .order-item-undo-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: var(--bg-secondary, #f5f5f5);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .order-item-undo-bar .undo-link {
+      color: var(--brand-primary);
+      cursor: pointer;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+    .order-item-undo-bar .undo-link:hover {
+      opacity: 0.8;
     }
 
     .order-item-modifiers {
@@ -2391,16 +2444,23 @@
       return "$" + (amount || 0).toFixed(2);
     }
 
-    function renderOrderItem(item) {
+    function renderOrderItem(item, isConfirmed) {
       // Generic cart item renderer - uses modifiers/free_details from backend
       // No item_type-specific logic; backend controls what details to show
       const div = document.createElement("div");
       div.className = "order-item";
       const qty = item.quantity || 1;
       const name = item.display_name || item.menu_item_name || item.name || "Item";
+      const isBundleChild = !!item.bundle_parent_item_id;
+      const showRemoveBtn = !isConfirmed && !isBundleChild;
       const hasModifiers = item.modifiers && item.modifiers.length > 0;
       const hasFreeDetails = item.free_details && item.free_details.length > 0;
       const hasRemovedIngredients = item.removed_ingredients && item.removed_ingredients.length > 0;
+
+      const itemName = item.menu_item_name || name;
+      const removeBtnHtml = showRemoveBtn
+        ? `<button class="order-item-remove-btn" data-item-name="${itemName.replace(/"/g, '&quot;')}" data-item-qty="${qty}" title="Remove"><i data-lucide="x"></i></button>`
+        : '';
 
       let html = "";
 
@@ -2408,7 +2468,7 @@
       if (hasModifiers || hasFreeDetails || hasRemovedIngredients) {
         // Itemized view: show base price on header, modifiers below, item total at end
         const headerPrice = item.base_price || item.unit_price || 0;
-        html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(headerPrice)}</span></div>`;
+        html += `<div class="order-item-header">${removeBtnHtml}<span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(headerPrice)}</span></div>`;
 
         // Free details (iced, decaf, toasted, etc.)
         if (hasFreeDetails) {
@@ -2441,7 +2501,7 @@
       } else {
         // Simple view: just name and total price (no modifiers or details)
         const price = item.line_total || item.unit_price || 0;
-        html += `<div class="order-item-header"><span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(price)}</span></div>`;
+        html += `<div class="order-item-header">${removeBtnHtml}<span class="order-item-name">${qty > 1 ? qty + "x " : ""}${name}</span><span class="order-item-price">${formatCurrency(price)}</span></div>`;
       }
 
       div.innerHTML = html;
@@ -2481,8 +2541,14 @@
         return;
       }
 
+      // Clear pending removal timers before re-rendering
+      clearPendingRemovals();
+      const isConfirmed = state.status === "confirmed";
       orderItemsList.innerHTML = "";
-      items.forEach(item => orderItemsList.appendChild(renderOrderItem(item)));
+      items.forEach(item => orderItemsList.appendChild(renderOrderItem(item, isConfirmed)));
+      if (!isConfirmed && typeof lucide !== 'undefined') {
+        lucide.createIcons({ nodes: [orderItemsList] });
+      }
 
       const checkout = state.checkout_state || {};
       const subtotal = checkout.subtotal || state.total_price || items.reduce((sum, i) => sum + (i.line_total || i.price || 0), 0);
@@ -2556,6 +2622,65 @@
     orderPanelCollapsed.addEventListener("click", () => { if (!mobileExpanded) expandMobilePanel(); });
     orderPanelOverlay.addEventListener("click", collapseMobilePanel);
     document.getElementById("order-panel-expanded-header").addEventListener("click", collapseMobilePanel);
+
+    // --- Cart item removal with undo ---
+    const pendingRemovals = new Map();
+
+    function clearPendingRemovals() {
+      for (const { timerId } of pendingRemovals.values()) {
+        clearTimeout(timerId);
+      }
+      pendingRemovals.clear();
+    }
+
+    orderItemsList.addEventListener("click", (e) => {
+      // Handle remove button click
+      const removeBtn = e.target.closest(".order-item-remove-btn");
+      if (removeBtn) {
+        const orderItem = removeBtn.closest(".order-item");
+        if (!orderItem || pendingRemovals.has(orderItem)) return;
+
+        const itemName = removeBtn.dataset.itemName;
+        const itemQty = parseInt(removeBtn.dataset.itemQty, 10) || 1;
+
+        // Gray out the item
+        orderItem.classList.add("pending-removal");
+
+        // Add undo bar
+        const undoBar = document.createElement("div");
+        undoBar.className = "order-item-undo-bar";
+        undoBar.innerHTML = `<span>Removing\u2026</span><span class="undo-link">Undo</span>`;
+        orderItem.appendChild(undoBar);
+
+        // Start 4-second timer
+        const timerId = setTimeout(() => {
+          pendingRemovals.delete(orderItem);
+          const msg = itemQty > 1
+            ? `Remove one ${itemName}`
+            : `Remove the ${itemName}`;
+          sendMessage(msg);
+        }, 4000);
+
+        pendingRemovals.set(orderItem, { timerId });
+        return;
+      }
+
+      // Handle undo click
+      const undoLink = e.target.closest(".undo-link");
+      if (undoLink) {
+        const orderItem = undoLink.closest(".order-item");
+        if (!orderItem) return;
+        const pending = pendingRemovals.get(orderItem);
+        if (pending) {
+          clearTimeout(pending.timerId);
+          pendingRemovals.delete(orderItem);
+        }
+        orderItem.classList.remove("pending-removal");
+        const undoBar = orderItem.querySelector(".order-item-undo-bar");
+        if (undoBar) undoBar.remove();
+        return;
+      }
+    });
 
     const origSendMessageNonStreaming = sendMessageNonStreaming;
     sendMessageNonStreaming = async function(text) {

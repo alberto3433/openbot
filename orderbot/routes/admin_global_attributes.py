@@ -165,6 +165,7 @@ def create_global_attribute(
         input_type=payload.input_type,
         description=payload.description,
         question_text=payload.question_text,
+        offer_question_text=payload.offer_question_text,
         options_source_category=payload.options_source_category,
     )
     db.add(attr)
@@ -203,6 +204,7 @@ def create_global_attribute_with_options(
         input_type=payload.input_type,
         description=payload.description,
         question_text=payload.question_text,
+        offer_question_text=payload.offer_question_text,
         options_source_category=payload.options_source_category,
     )
     db.add(attr)
@@ -289,6 +291,8 @@ def update_global_attribute(
         attr.description = payload.description
     if "question_text" in payload.model_fields_set:
         attr.question_text = payload.question_text
+    if "offer_question_text" in payload.model_fields_set:
+        attr.offer_question_text = payload.offer_question_text
     if "options_source_category" in payload.model_fields_set:
         attr.options_source_category = payload.options_source_category
 

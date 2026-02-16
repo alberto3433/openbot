@@ -49,6 +49,11 @@ class GlobalAttribute(Base):
     # Question text to ask the user for this attribute (shared across all item types)
     question_text = Column(Text, nullable=True)
 
+    # Alternative question text used when *offering* an optional attribute at
+    # the customization checkpoint (e.g., "Any cheese?" instead of "What kind of cheese?").
+    # Falls back to question_text when NULL.
+    offer_question_text = Column(Text, nullable=True)
+
     # Property name mapping for Python model access
     # When different from slug (e.g., slug="milk_sweetener_syrup" but property_name="milk")
     # If null, uses slug as property name

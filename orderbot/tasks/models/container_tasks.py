@@ -454,6 +454,21 @@ class OrderTask(BaseTask):
         """
         self.phase = phase.value
 
+    def setup_pending_config(self, item_id: str, pending_field: str) -> None:
+        """Set up order state for a pending configuration question.
+
+        Consolidates the repeated pattern of setting phase, item id, field, and page.
+
+        Args:
+            item_id: The ID of the item being configured
+            pending_field: The field we're asking about
+        """
+        from orderbot.tasks.schemas import OrderPhase
+        self.set_phase(OrderPhase.CONFIGURING_ITEM)
+        self.pending_item_id = item_id
+        self.pending_field = pending_field
+        self.config_options_page = 0
+
     def clear_menu_pagination(self):
         """Clear menu query pagination state."""
         self.menu_query_pagination = None

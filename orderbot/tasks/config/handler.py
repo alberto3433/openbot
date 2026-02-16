@@ -362,7 +362,7 @@ class MenuItemConfigHandler(BaseHandler):
         """Format unanswered optional attributes as individual questions."""
         questions = []
         for attr in attrs:
-            q = attr.get("question_text")
+            q = attr.get("offer_question_text") or attr.get("question_text")
             if q:
                 questions.append(q)
             else:
@@ -501,30 +501,41 @@ class MenuItemConfigHandler(BaseHandler):
         # Set up order state for receiving the answer
         order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr['slug']}")
 
-        # Build quick replies from attribute options (data-driven)
-        # The frontend will only highlight labels that appear in the message text
-        qr = None
+        # Build quick replies from BOTH attribute options AND component slots
+        # The frontend only highlights labels that appear in the message text,
+        # so extra labels from component slots won't cause false positives.
+        qr = []
+
+        # Source 1: Attribute options (data-driven)
         input_type = attr.get("input_type", "single_select")
         if input_type in ("single_select", "multi_select"):
             options = attr.get("options", [])
             available_opts = [o for o in options if o.get("is_available", True)]
-            if available_opts:
-                qr = [{"label": o["display_name"], "value": o["display_name"]} for o in available_opts]
+            for o in available_opts:
+                qr.append({"label": o["display_name"], "value": o["display_name"]})
 
-        # If no attribute options, check component slots (e.g., side_choice → side slot)
-        # Component slot options are stored separately from attribute options
-        if not qr:
-            from orderbot.cache import menu_cache
-            slots = menu_cache.get_component_slots(item.menu_item_type)
-            for _slot_name, slot_config in slots.items():
-                slot_options = slot_config.get("options", [])
-                if slot_options:
-                    qr = [
-                        {"label": o.get("display_name") or o.get("allowed_item_type", ""), "value": o.get("display_name") or o.get("allowed_item_type", "")}
-                        for o in slot_options
-                        if o.get("display_name") or o.get("allowed_item_type")
-                    ]
-                    break  # Use first slot with options
+        # Source 2: Component slot options (e.g., side_choice → side slot)
+        # These are authoritative for side choices and similar slot-backed attributes
+        slots = menu_cache.get_component_slots(item.menu_item_type)
+        for _slot_name, slot_config in slots.items():
+            for o in slot_config.get("options", []):
+                label = o.get("display_name")
+                if not label and o.get("allowed_item_type"):
+                    label = menu_cache.get_item_type_display_name(o["allowed_item_type"])
+                if not label:
+                    label = o.get("allowed_item_type", "")
+                if label:
+                    qr.append({"label": label, "value": label})
+
+        # Deduplicate by label (case-insensitive), preserving order
+        seen: set[str] = set()
+        deduped = []
+        for entry in qr:
+            key = entry["label"].lower()
+            if key not in seen:
+                seen.add(key)
+                deduped.append(entry)
+        qr = deduped or None
 
         return StateMachineResult(message=question, order=order, quick_replies=qr)
 
@@ -603,12 +614,9 @@ class MenuItemConfigHandler(BaseHandler):
         # List available customization options as individual questions
         options_questions = self._format_checkpoint_questions(unanswered_optional)
 
-        # Build quick replies from attribute display names
-        qr = [{"label": a.get("display_name", a["slug"]), "value": a.get("display_name", a["slug"])} for a in unanswered_optional]
         return StateMachineResult(
             message=f"{ack_prefix}Any more changes? {options_questions}",
             order=order,
-            quick_replies=qr,
         )
 
     # =========================================================================

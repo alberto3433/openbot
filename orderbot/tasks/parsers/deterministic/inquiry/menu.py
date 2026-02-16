@@ -11,6 +11,16 @@ from ...inquiry_patterns import MORE_MENU_ITEMS_PATTERNS
 
 logger = logging.getLogger(__name__)
 
+# Strips trailing category suffixes: "breakfast options" → "breakfast"
+_CATEGORY_SUFFIX_RE = re.compile(
+    r"\s+(?:options|items|choices|menu\s+items|menu)\s*$", re.IGNORECASE
+)
+
+
+def _strip_category_suffix(text: str) -> str:
+    """Strip trailing words like 'options', 'items', 'choices' from category text."""
+    return _CATEGORY_SUFFIX_RE.sub("", text).strip()
+
 # Strips common question prefixes from captured text before "by the pound"
 # e.g., "what's your food" -> "food", "do you have any fish" -> "fish"
 _QUESTION_PREFIX_RE = re.compile(
@@ -216,6 +226,22 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
                 menu_query=True,
                 menu_query_type=category_text,
             )
+
+    # Broader "tell me about X" — only match if X resolves to a known DB category.
+    # This catches "tell me about breakfast options" without requiring "your"/"the",
+    # but does NOT catch "tell me about the classic" (not a category → falls through).
+    tell_me_match = re.search(r"tell\s+me\s+about\s+(.+?)(?:\?|$)", text_lower)
+    if tell_me_match:
+        category_text = clean_extracted_text(tell_me_match.group(1).strip())
+        stripped = _strip_category_suffix(category_text)
+        if stripped:
+            category_info = menu_cache.get_category_keyword_mapping(stripped)
+            if category_info:
+                logger.info(
+                    "MENU QUERY (tell me about category): '%s' -> menu_query_type=%s",
+                    text[:50], category_info["slug"],
+                )
+                return OpenInputResponse(menu_query=True, menu_query_type=category_info["slug"])
 
     return None
 

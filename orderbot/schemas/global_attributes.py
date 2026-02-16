@@ -138,6 +138,7 @@ class GlobalAttributeOut(BaseModel):
     input_type: str  # 'single_select', 'multi_select', 'boolean'
     description: Optional[str] = None
     question_text: Optional[str] = None  # Question to ask user for this attribute
+    offer_question_text: Optional[str] = None  # Question when offering at checkpoint
     # Options source category (for package_multi_select input types)
     # Specifies which ingredient category provides the options for this attribute.
     options_source_category: Optional[str] = None
@@ -160,6 +161,7 @@ class GlobalAttributeListOut(BaseModel):
     input_type: str
     description: Optional[str] = None
     question_text: Optional[str] = None
+    offer_question_text: Optional[str] = None
     options_source_category: Optional[str] = None
     option_count: int = 0
     item_type_count: int = 0
@@ -174,6 +176,7 @@ class GlobalAttributeCreate(BaseModel):
     input_type: str = "single_select"
     description: Optional[str] = None
     question_text: Optional[str] = None
+    offer_question_text: Optional[str] = None
     options_source_category: Optional[str] = None
 
 
@@ -184,6 +187,7 @@ class GlobalAttributeUpdate(BaseModel):
     input_type: Optional[str] = None
     description: Optional[str] = None
     question_text: Optional[str] = None
+    offer_question_text: Optional[str] = None
     options_source_category: Optional[str] = None
 
 
@@ -219,6 +223,7 @@ class ItemTypeGlobalAttributeOut(BaseModel):
 
     # Question text from the global attribute (for convenience)
     question_text: Optional[str] = None
+    offer_question_text: Optional[str] = None
 
     # Options from the global attribute
     options: List[GlobalAttributeOptionOut] = []
@@ -261,6 +266,7 @@ class GlobalAttributeWithOptionsCreate(BaseModel):
     input_type: str = "single_select"
     description: Optional[str] = None
     question_text: Optional[str] = None
+    offer_question_text: Optional[str] = None
     options_source_category: Optional[str] = None
     options: List[GlobalAttributeOptionCreate] = []
 

@@ -316,6 +316,44 @@ class ConfiguringItemHandler:
         Returns:
             StateMachineResult if an interceptor handled the input, None to continue.
         """
+        # Group 1: Priority intercepts (done, cancel, quantity, another item)
+        if result := self._check_priority_intercepts(user_input, item, order):
+            return result
+
+        # Group 2: Item addition during config ("and a X", "also X")
+        # Must run BEFORE is_valid_answer check to prevent "blueberry" being
+        # matched as a bread option when user says "and a Blueberry Cream Cheese Sandwich"
+        if isinstance(item, MenuItemTask):
+            if result := self.config_modification_handler.handle_add_item_during_config(
+                user_input, item, order
+            ):
+                return result
+
+        # Compute once: is this a valid answer for the pending field?
+        is_valid = is_valid_answer_for_pending_field(user_input, order.pending_field)
+        if is_valid:
+            logger.debug("Input is valid answer for %s - skipping change/off-topic detection", order.pending_field)
+
+        # Group 3: Modification checks (change request, bundle mod, can-you-make-it,
+        # add modifiers, cross-attr, boolean)
+        if isinstance(item, MenuItemTask):
+            if result := self._check_modification_intercepts(user_input, item, order, is_valid):
+                return result
+
+        # Group 4: Fallback checks (new item parse, off-topic, modifier inquiry)
+        if result := self._check_fallback_intercepts(user_input, item, order, is_valid):
+            return result
+
+        return None
+
+    def _check_priority_intercepts(
+        self, user_input: str, item, order: OrderTask
+    ) -> StateMachineResult | None:
+        """Check for priority intercepts: done ordering, cancellation, quantity change, another item.
+
+        These checks run first because they change the overall order flow
+        (finishing, cancelling, or duplicating) rather than modifying the current item.
+        """
         # Check for "finish my order" / "checkout" during config FIRST.
         # Must run before cancellation and valid-answer checks to prevent
         # partial matches (e.g., "checkout" being interpreted as a config answer).
@@ -348,27 +386,26 @@ class ConfiguringItemHandler:
                 message = f"Let's finish customizing the {item_name} first."
             return StateMachineResult(message=message, order=order)
 
-        # Check for "and a X" / "also X" patterns that add new items mid-config
-        # This must run BEFORE is_valid_answer check to prevent "blueberry" being
-        # matched as a bread option when user says "and a Blueberry Cream Cheese Sandwich"
-        if isinstance(item, MenuItemTask):
-            add_item_result = self.config_modification_handler.handle_add_item_during_config(
-                user_input, item, order
-            )
-            if add_item_result:
-                return add_item_result
+        return None
 
-        # Context-aware check: if input could be a valid answer to the current question,
-        # skip change request and off-topic detection. This prevents "I want avocado" from
-        # being misinterpreted as a change request or off-topic when asked about toppings.
-        is_valid_answer = is_valid_answer_for_pending_field(user_input, order.pending_field)
-        if is_valid_answer:
-            logger.debug("Input is valid answer for %s - skipping change/off-topic detection", order.pending_field)
+    def _check_modification_intercepts(
+        self, user_input: str, item: MenuItemTask, order: OrderTask, is_valid_answer: bool
+    ) -> StateMachineResult | None:
+        """Check for modification intercepts during item configuration.
 
+        Handles modifier changes, bundle child modifications, "can you make it X?",
+        "add X" patterns, cross-attribute matches, and boolean attribute matches.
+
+        Args:
+            user_input: Raw user input string.
+            item: The current MenuItemTask being configured.
+            order: Current order state.
+            is_valid_answer: Whether input could be a valid answer for the pending field.
+        """
         # Check for modifier change requests during configuration
         # If detected, try to apply immediately instead of deferring
         change_request = None if is_valid_answer else self.modifier_change_handler.detect_change_request(user_input)
-        if change_request and isinstance(item, MenuItemTask):
+        if change_request:
             result = self.config_modification_handler.apply_modification_during_config(change_request, item, order)
             if result:
                 return result
@@ -376,7 +413,7 @@ class ConfiguringItemHandler:
 
         # Check for modifications targeting a bundled child item by name
         # e.g., "make the fruit salad a large" while configuring parent omelette
-        if not is_valid_answer and isinstance(item, MenuItemTask):
+        if not is_valid_answer:
             bundle_mod_result = self.config_modification_handler.handle_modify_bundle_child(
                 user_input, item, order
             )
@@ -384,11 +421,9 @@ class ConfiguringItemHandler:
                 return bundle_mod_result
 
         # Check for "can you make it X?" style requests (e.g., "can you make it iced?")
-        # This handles users asking to modify an aspect of the item being configured
         # Skip at customization_checkpoint - let the checkpoint handler use direct_option_matcher
         # which properly handles pricing/upcharges (e.g., "make it 3 eggs" -> upcharge for extra egg)
         if (not is_valid_answer
-            and isinstance(item, MenuItemTask)
             and order.pending_field != PendingField.CUSTOMIZATION_CHECKPOINT):
             can_you_make_it_result = self.config_modification_handler.handle_can_you_make_it(user_input, item, order)
             if can_you_make_it_result:
@@ -396,7 +431,7 @@ class ConfiguringItemHandler:
 
         # Check for "add X" patterns during configuration (e.g., "add bacon and cheese")
         # Parse and apply the modifiers to the current item, then continue with config
-        if not is_valid_answer and isinstance(item, MenuItemTask):
+        if not is_valid_answer:
             add_result = self.config_modification_handler.handle_add_modifiers_during_config(user_input, item, order)
             if add_result:
                 return add_result
@@ -406,34 +441,42 @@ class ConfiguringItemHandler:
         # Runs regardless of is_valid_answer because inputs like "veggie cream cheese" may
         # pass is_valid_answer for cheese (loads_from_ingredients) while actually being a
         # spread answer. The exact_only matching prevents false positives.
-        if isinstance(item, MenuItemTask):
-            cross_attr_result = self.config_modification_handler.handle_cross_attribute_match(
-                user_input, item, order
-            )
-            if cross_attr_result:
-                return cross_attr_result
+        cross_attr_result = self.config_modification_handler.handle_cross_attribute_match(
+            user_input, item, order
+        )
+        if cross_attr_result:
+            return cross_attr_result
 
         # Check for bare boolean attribute values (e.g., "not toasted" while being asked about bread)
-        # This catches boolean answers for non-pending attributes without verb prefixes.
         # Guard: only on short inputs (<=4 words) to avoid intercepting multi-attribute phrases
-        # like "plain bagel toasted scooped with cream cheese".
-        if not is_valid_answer and isinstance(item, MenuItemTask) and len(user_input.split()) <= 4:
+        if not is_valid_answer and len(user_input.split()) <= 4:
             bool_result = self._check_boolean_attribute_match(user_input, item, order)
             if bool_result:
                 return bool_result
 
+        return None
+
+    def _check_fallback_intercepts(
+        self, user_input: str, item, order: OrderTask, is_valid_answer: bool
+    ) -> StateMachineResult | None:
+        """Check for fallback intercepts: new menu item parse, off-topic, modifier inquiry.
+
+        These run last as they handle edge cases that didn't match earlier checks.
+
+        Args:
+            user_input: Raw user input string.
+            item: The current item being configured.
+            order: Current order state.
+            is_valid_answer: Whether input could be a valid answer for the pending field.
+        """
         # Fallback: if input isn't a valid answer and wasn't caught as a modifier,
         # try parsing as a new menu item (without requiring "and a"/"also" prefix).
-        # This handles cases like "a latte" or "can I get a Chai Tea?" during config
-        # being misrouted as an attribute answer.
-        # Guard: only try if input starts with an article, quantity word, or ordering
-        # phrase — bare words like "provolone" or "swiss cheese" are more likely attribute answers.
+        # Guard: only try if input starts with an article, quantity word, or ordering phrase.
         if not is_valid_answer and isinstance(item, MenuItemTask):
             stripped = user_input.strip()
             if re.match(r'^(?:a(?:n)?\s+|(?:\d+|two|three|four|five|six)\s+|(?:can|could)\s+i\s+(?:get|have)\s+)', stripped, re.IGNORECASE):
                 # Don't treat as a new menu item if the non-quantity part is a known
                 # modifier — it's likely an answer to the pending question
-                # (e.g., "7 sugars" when asked about sweeteners)
                 _, remainder = extract_leading_quantity(stripped.lower())
                 remainder = remainder.strip()
                 remainder_is_modifier = False
@@ -449,13 +492,10 @@ class ConfiguringItemHandler:
                     if add_item_fallback:
                         return add_item_fallback
 
-        # Check for off-topic requests during configuration (e.g., "what syrups do you have?", "add vanilla syrup")
+        # Check for off-topic requests during configuration
         # If detected, politely redirect back to the current configuration question
-        # Note: Questions relevant to the current config (e.g., "what cream cheese do you have?" when asked about spread) are allowed
-        # Skip this check if we already determined the input is a valid answer
         if not is_valid_answer and is_off_topic_request(user_input, order.pending_field):
             logger.info("OFF-TOPIC REQUEST: Detected during config: '%s'", user_input[:50])
-            # Get a friendly description of the item being configured
             item_name = item.get_summary() if hasattr(item, 'get_summary') else "your item"
             current_question = self.config_helper_handler.get_current_config_question(order, item)
             if current_question:
@@ -465,10 +505,8 @@ class ConfiguringItemHandler:
             return StateMachineResult(message=msg, order=order)
 
         # Check for modifier inquiries like "what toppings do you have?" that passed the off-topic check
-        # These should be routed to the store_info_handler for proper pagination support
-        # EXCEPT when at customization_checkpoint or in attribute configuration (item_type:attr_slug)
-        # - customization_checkpoint: handle_customization_checkpoint() has proper options inquiry handling
-        # - item_type:attr_slug: handle_attribute_input() has _detect_different_attribute_inquiry()
+        # Route to store_info_handler for proper pagination support
+        # EXCEPT at customization_checkpoint or in attribute configuration (item_type:attr_slug)
         modifier_category = detect_modifier_inquiry(user_input)
         pending_is_attr_config = order.pending_field and ":" in order.pending_field
         if (modifier_category

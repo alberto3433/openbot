@@ -296,6 +296,7 @@ class ItemTypeLoaderMixin:
                     "listen_only": link.listen_only,
                     "display_order": link.display_order,
                     "question_text": attr.question_text,
+                    "offer_question_text": attr.offer_question_text,
                     "options": options,
                     "source": "global",
                     "modifies_ingredient_slug": attr.modifies_ingredient.slug if attr.modifies_ingredient else None,
@@ -496,6 +497,7 @@ class ItemTypeLoaderMixin:
                     "required": link.is_required,
                     "ask": link.ask_in_conversation,
                     "question_text": global_attr.question_text,
+                    "offer_question_text": global_attr.offer_question_text,
                     "input_type": global_attr.input_type,
                     "display_name": global_attr.display_name,
                 })

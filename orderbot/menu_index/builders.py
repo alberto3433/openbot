@@ -245,6 +245,7 @@ def build_item_types_data(
                 "allow_none": link.allow_none,
                 "ask_in_conversation": link.ask_in_conversation,
                 "question_text": global_attr.question_text,
+                "offer_question_text": global_attr.offer_question_text,
                 "is_global": True,  # Flag to indicate this is from global attributes
                 "options": option_dicts,
             }

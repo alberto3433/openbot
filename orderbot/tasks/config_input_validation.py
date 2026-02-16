@@ -283,17 +283,20 @@ def is_off_topic_request(user_input: str, pending_field: str | None = None) -> b
             "what types do you have",
             "what are my options",
             "what are the options",
-            "what options do you have",
+            "what options",
             "what choices",
             "what are my choices",
             "what are the choices",
+            "what can i choose",
+            "what can i get",
         ]
         if any(pattern in input_lower for pattern in generic_option_patterns):
             return False  # Let them ask about options
 
         # Allow "what X do you have?" for any ingredient category (e.g., "what toppings do you have?")
+        # Uses .+ instead of \w+ to match multi-word subjects like "cream cheese"
         # This allows users to inquire about menu options even during item configuration
-        if re.search(r"what \w+ do you have", input_lower):
+        if re.search(r"what .+ do you have", input_lower):
             return False  # Let them ask about any category
 
         # Data-driven keyword matching: if this is an attribute config field,

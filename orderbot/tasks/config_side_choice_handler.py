@@ -15,6 +15,7 @@ from .schemas import OrderPhase, StateMachineResult
 from .config.attribute_resolver import get_unanswered_mandatory
 from .parsers.validators import parse_side_choice_deterministic as parse_side_choice
 from .parsers.deterministic import get_pipeline
+from .handler_config import BaseHandler
 from orderbot.cache import menu_cache
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 _pipeline = get_pipeline()
 
 
-class ConfigSideChoiceHandler:
+class ConfigSideChoiceHandler(BaseHandler):
     """
     Handles component slot choices that create bundled child items.
 
@@ -45,8 +46,7 @@ class ConfigSideChoiceHandler:
         Args:
             config: HandlerConfig with shared dependencies.
         """
-        self.model = config.model
-        self._get_next_question = config.get_next_question
+        super().__init__(config)
 
     def handle_side_choice(
         self,
@@ -142,11 +142,38 @@ class ConfigSideChoiceHandler:
         )
 
         if parsed.wants_cancel:
-            item.mark_skipped()
+            # User declined the side choice — skip it, don't remove the item
+            if parent_item_type:
+                item.selections = [m for m in item.selections if m.get("category") != "side_choice"]
+                item.add_selection("no_side", "side_choice", display_name="No Side")
+
+                # Mark all item-type-based side options as declined on parent
+                # (e.g., if options include "bagel", mark parent's "bagel" attr as declined)
+                parent_attrs = menu_cache.get_item_type_attributes(parent_item_type)
+                for _opt_slug, opt_data in slot_options_by_slug.items():
+                    opt_item_type = opt_data.get("allowed_item_type")
+                    if opt_item_type and opt_item_type in parent_attrs:
+                        item[opt_item_type] = None
+                        logger.info(
+                            "SIDE_CHOICE_DECLINE: Marked parent's '%s' attribute as declined",
+                            opt_item_type,
+                        )
+
+                # Check remaining unanswered mandatory attributes
+                unanswered = get_unanswered_mandatory(item, parent_item_type)
+                if unanswered:
+                    item.mark_in_progress()
+                else:
+                    item.mark_complete()
+
             order.clear_pending()
-            order.set_phase(OrderPhase.TAKING_ITEMS)
+
+            # Let slot orchestrator pick up next question
+            if self._get_next_question:
+                return self._get_next_question(order)
+
             return StateMachineResult(
-                message="No problem, I've removed that. Anything else?",
+                message="No problem! Anything else?",
                 order=order,
             )
 
@@ -188,6 +215,9 @@ class ConfigSideChoiceHandler:
         included_price_cents = chosen_option.get("included_price_cents")
         bundle_included_price = included_price_cents / 100.0 if included_price_cents else None
 
+        # Get default modifiers from slot option configuration (resolved to slugs by cache)
+        default_modifiers = chosen_option.get("default_modifiers", [])
+
         if opt_item_type:
             # Configurable item type (e.g., bagel - needs bread choice)
             child_display_name = menu_cache.get_item_type_display_name(opt_item_type)
@@ -212,7 +242,10 @@ class ConfigSideChoiceHandler:
                 bundle_included_price=bundle_included_price,
             )
 
-            # Apply pre-filled attributes to the child item
+            # Apply default modifiers FIRST (so user-specified values can override)
+            _apply_default_modifiers(child_item, default_modifiers, opt_item_type)
+
+            # Apply pre-filled attributes to the child item (overrides defaults)
             for attr_name, attr_value in pre_filled_attrs.items():
                 if attr_value is not None:
                     child_item[attr_name] = attr_value
@@ -256,6 +289,11 @@ class ConfigSideChoiceHandler:
                 bundle_price_rule=price_rule,
                 bundle_included_price=bundle_included_price,
             )
+
+            # Apply default modifiers for specific menu items too
+            if default_modifiers and child_item_type:
+                _apply_default_modifiers(child_item, default_modifiers, child_item_type)
+
             child_item.mark_complete()  # Specific menu items don't need configuration
 
         # Add the child item to the order
@@ -354,3 +392,57 @@ class ConfigSideChoiceHandler:
 
         # Fallback to component slot slug or display name
         return chosen_option.get("slug") or display_name
+
+
+def _apply_default_modifiers(
+    child_item: MenuItemTask,
+    default_modifiers: list[dict],
+    item_type_slug: str,
+) -> None:
+    """Apply default modifiers from slot option configuration to a child item.
+
+    These are pre-configured defaults (e.g., size=small for included fruit salad,
+    or butter for included bagel) that get applied when the option is selected.
+
+    Args:
+        child_item: The newly created MenuItemTask to apply defaults to.
+        default_modifiers: List of resolved modifier dicts from cache.
+        item_type_slug: The item type slug for attribute lookups.
+    """
+    for default in default_modifiers:
+        mod_type = default.get("type")
+
+        if mod_type == "attribute_option":
+            attr_slug = default.get("attribute_slug")
+            opt_slug = default.get("option_slug")
+            if attr_slug and opt_slug:
+                child_item[attr_slug] = opt_slug
+                logger.info(
+                    "SIDE_CHOICE_DEFAULT: Applied attribute default %s=%s to %s",
+                    attr_slug, opt_slug, child_item.menu_item_name,
+                )
+
+        elif mod_type == "ingredient":
+            ing_slug = default.get("ingredient_slug")
+            ing_category = default.get("ingredient_category")
+            quantity = default.get("quantity", 1)
+            if ing_slug and ing_category:
+                # Find the attribute slug that corresponds to this ingredient category
+                item_attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                target_attr = None
+                for attr_slug, attr_config in item_attrs.items():
+                    if attr_config.get("ingredient_category") == ing_category:
+                        target_attr = attr_slug
+                        break
+
+                if target_attr:
+                    child_item.add_selection(
+                        slug=ing_slug,
+                        category=target_attr,
+                        quantity=quantity,
+                        is_default=True,
+                    )
+                    logger.info(
+                        "SIDE_CHOICE_DEFAULT: Applied ingredient default %s (category=%s) to %s",
+                        ing_slug, target_attr, child_item.menu_item_name,
+                    )

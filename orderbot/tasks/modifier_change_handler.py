@@ -24,6 +24,7 @@ from .normalization import (
 )
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
 from .parsers.quantity_utils import BASIC_WORD_TO_NUM, extract_leading_quantity
+from .handler_config import BaseHandler
 from .utils.text import format_english_list, normalize_text
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
@@ -53,7 +54,7 @@ class ChangeResult:
     applied_attribute: str | None = None
 
 
-class ModifierChangeHandler:
+class ModifierChangeHandler(BaseHandler):
     """
     Handles modifier change requests for order items.
 
@@ -74,7 +75,7 @@ class ModifierChangeHandler:
         Args:
             config: HandlerConfig with shared dependencies.
         """
-        self.pricing = config.pricing
+        super().__init__(config)
 
         # Cache data-driven lookups
         self._target_attr_map: dict[str, str] | None = None

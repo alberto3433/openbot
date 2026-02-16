@@ -27,7 +27,7 @@ from .parsers.constants import (
     DEFAULT_PAGINATION_SIZE,
     get_item_type_display_name,
 )
-from .mixins import MenuDataMixin
+from .handler_config import BaseHandler
 from .utils.text import format_english_list, normalize_text
 from .price_inquiry_handler import PriceInquiryHandler
 
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # NOTE: Pagination uses DEFAULT_PAGINATION_SIZE from parsers.constants (uniform at 5)
 
 
-class MenuInquiryHandler(MenuDataMixin):
+class MenuInquiryHandler(BaseHandler):
     """
     Handles menu-related inquiries.
 
@@ -62,8 +62,7 @@ class MenuInquiryHandler(MenuDataMixin):
             config: HandlerConfig with shared dependencies.
             pagination_handler: Handler for pagination ("show more") requests.
         """
-        self._menu_data = config.menu_data or {}
-        self.pricing = config.pricing
+        super().__init__(config)
         self._price_inquiry_handler = PriceInquiryHandler()
         self.pagination_handler = pagination_handler
 

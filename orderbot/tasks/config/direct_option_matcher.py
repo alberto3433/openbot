@@ -101,6 +101,9 @@ class DirectOptionMatcher:
         # Detect multi-token input (e.g., "pepper and sausage")
         tokens = self._option_matcher.normalizer.tokenize_multi_input(user_clean)
         if len(tokens) > 1:
+            # Further split any space-separated tokens (e.g., "pepper salt sausage"
+            # from "pepper salt sausage and bacon") into individual words
+            tokens = self._expand_space_separated_tokens(tokens, unanswered)
             return self._handle_multi_token_direct_match(
                 user_input, tokens, unanswered, item, order
             )
@@ -162,6 +165,27 @@ class DirectOptionMatcher:
                     count += 1
                     break
         return count
+
+    def _expand_space_separated_tokens(
+        self, tokens: list[str], unanswered: list[dict]
+    ) -> list[str]:
+        """Expand multi-word tokens into individual words when they match options.
+
+        After separator-based splitting, tokens like "pepper salt sausage" (from
+        "pepper salt sausage and bacon") may still contain multiple space-separated
+        options. This expands them using the same exact-match heuristic.
+        """
+        expanded: list[str] = []
+        for token in tokens:
+            if ' ' in token:
+                words = token.split()
+                if len(words) > 1:
+                    exact_hits = self._count_exact_option_matches(words, unanswered)
+                    if exact_hits >= 2:
+                        expanded.extend(words)
+                        continue
+            expanded.append(token)
+        return expanded
 
     def _handle_multi_token_direct_match(
         self,

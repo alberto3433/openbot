@@ -520,6 +520,53 @@ ORDERING_LANGUAGE_PATTERN = re.compile(
 
 
 # =============================================================================
+# Done Ordering During Config Pattern
+# =============================================================================
+
+# Explicit "finish my order" type phrases that are unambiguous even during item configuration.
+# Short patterns like "done" or "that's it" are NOT included because they're ambiguous
+# during config (could mean "done with this item's options"). Only phrases containing
+# "order"/"checkout"/"pay" language are matched here.
+DONE_ORDERING_DURING_CONFIG_PATTERN = re.compile(
+    r"^(?:"
+    # "finish/complete/finalize my order"
+    r"(?:finish|complete|finalize)\s+(?:my|the|this)\s+order"
+    r"|"
+    # "that's it/all for my order"
+    r"that'?s?\s+(?:it|all)\s+(?:for|with)\s+(?:my|the|this)\s+order"
+    r"|"
+    # "done ordering" / "done with my order" / "done with the order"
+    r"done\s+(?:ordering|with\s+(?:my|the|this)\s+order)"
+    r"|"
+    # "i'm done ordering" / "i'm done with my order"
+    r"i'?m\s+done\s+(?:ordering|with\s+(?:my|the|this)\s+order)"
+    r"|"
+    # "place/submit my order"
+    r"(?:place|submit)\s+(?:my|the|this)\s+order"
+    r"|"
+    # "check out" / "checkout"
+    r"check\s*out"
+    r"|"
+    # "ready to pay/checkout/order"
+    r"(?:i'?m\s+)?ready\s+to\s+(?:pay|check\s*out|order|finish)"
+    r"|"
+    # "let's wrap it up" / "finish up" / "wrap up my order"
+    r"(?:let'?s?\s+)?(?:wrap|finish)\s+(?:it\s+)?up"
+    r"|"
+    # "no more items" / "nothing else to add"
+    r"no\s+more\s+items"
+    r"|"
+    r"nothing\s+(?:else|more)\s+to\s+(?:add|order)"
+    r"|"
+    # "I want to pay" / "I'd like to pay" / "can I pay"
+    r"(?:i\s+want|i'?d\s+like|can\s+i|let\s+me)\s+(?:to\s+)?(?:pay|check\s*out)"
+    r")"
+    r"[\s!.,?]*$",
+    re.IGNORECASE
+)
+
+
+# =============================================================================
 # Add Item During Config Pattern
 # =============================================================================
 

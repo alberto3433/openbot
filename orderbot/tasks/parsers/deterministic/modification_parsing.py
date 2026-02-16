@@ -320,6 +320,61 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
 # Add Modifier to Item Parsing
 # =============================================================================
 
+def _match_modifier_before_target(text_lower: str) -> tuple[str | None, str | None]:
+    """Match "add/put MODIFIER to/on the TARGET" patterns.
+
+    Returns (modifier_text, target_item) or (None, None) if no match.
+    """
+    target_patterns = [
+        # "add bacon to the bagel" / "add bacon to the plain bagel"
+        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the|my)\s+(.+?)$",
+        # "add milk to tea" - single-word target, no article required
+        # Using (\w+)$ to capture only single-word targets, avoiding false positives
+        # like "add milk to my order". Excludes "it" which is handled by implicit patterns.
+        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?!it\b)(\w+)$",
+    ]
+
+    for pattern in target_patterns:
+        match = re.match(pattern, text_lower)
+        if match:
+            return match.group(1).strip(), match.group(2).strip()
+
+    return None, None
+
+
+def _match_modifier_no_target(text_lower: str) -> str | None:
+    """Match "add/extra/more MODIFIER" patterns with no explicit target.
+
+    Returns modifier_text or None if no match.
+    """
+    no_target_patterns = [
+        # "add bacon" / "add bacon and cheese"
+        r"^(?:add|put)\s+(.+?)(?:\s+please)?$",
+        # "extra bacon" / "extra cheese"
+        r"^extra\s+(.+?)(?:\s+please)?$",
+        # "more bacon" / "more cheese"
+        r"^more\s+(.+?)(?:\s+please)?$",
+    ]
+
+    for pattern in no_target_patterns:
+        match = re.match(pattern, text_lower)
+        if match:
+            return match.group(1).strip()
+
+    return None
+
+
+def _match_modifier_implicit_target(text_lower: str) -> str | None:
+    """Match "put MODIFIER on it" patterns with implicit target.
+
+    Returns modifier_text or None if no match.
+    """
+    match = re.match(r"^put\s+(.+?)\s+on\s+it(?:\s+please)?$", text_lower)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
 def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
     """Detect requests to add modifiers to an existing item.
 
@@ -345,51 +400,16 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
         ingredients = menu_cache.get_ingredients(category)
         all_modifiers.update(ingredients)
 
-    # === Pattern Group 1: "add/put/extra/more MODIFIER to the TARGET" ===
-    # Captures: modifier(s) and target item
-    target_patterns = [
-        # "add bacon to the bagel" / "add bacon to the plain bagel"
-        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the|my)\s+(.+?)$",
-        # "add milk to tea" - single-word target, no article required
-        # Using (\w+)$ to capture only single-word targets, avoiding false positives
-        # like "add milk to my order". Excludes "it" which is handled by implicit patterns.
-        r"^(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?!it\b)(\w+)$",
-    ]
+    # Try each pattern group in order: modifier-before-target, no-target, implicit-target
+    modifier_text, target_item = _match_modifier_before_target(text_lower)
 
-    modifier_text = None
-    target_item = None
-
-    for pattern in target_patterns:
-        match = re.match(pattern, text_lower)
-        if match:
-            modifier_text = match.group(1).strip()
-            target_item = match.group(2).strip()
-            break
-
-    # === Pattern Group 2: "add/extra/more/put MODIFIER" (no explicit target) ===
     if not modifier_text:
-        no_target_patterns = [
-            # "add bacon" / "add bacon and cheese"
-            r"^(?:add|put)\s+(.+?)(?:\s+please)?$",
-            # "extra bacon" / "extra cheese"
-            r"^extra\s+(.+?)(?:\s+please)?$",
-            # "more bacon" / "more cheese"
-            r"^more\s+(.+?)(?:\s+please)?$",
-        ]
+        modifier_text = _match_modifier_no_target(text_lower)
+        target_item = None
 
-        for pattern in no_target_patterns:
-            match = re.match(pattern, text_lower)
-            if match:
-                modifier_text = match.group(1).strip()
-                target_item = None  # Implicit - apply to last/current item
-                break
-
-    # === Pattern Group 3: "put MODIFIER on it" ===
     if not modifier_text:
-        match = re.match(r"^put\s+(.+?)\s+on\s+it(?:\s+please)?$", text_lower)
-        if match:
-            modifier_text = match.group(1).strip()
-            target_item = None  # "it" means last/current item
+        modifier_text = _match_modifier_implicit_target(text_lower)
+        target_item = None
 
     # No pattern matched
     if not modifier_text:

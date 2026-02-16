@@ -416,11 +416,7 @@ def _should_defer_to_multi_item_parser(text_lower: str, text: str) -> bool:
                 # Strip trailing 's' for singular form check
                 following_word_singular = following_word.rstrip('s') if following_word.endswith('s') else following_word
                 # Check if this word is an item type trigger
-                # get_item_type_triggers() returns dict[slug -> set[triggers]], flatten to set
-                all_triggers_dict = menu_cache.get_item_type_triggers()
-                all_triggers: set[str] = set()
-                for trigger_set in all_triggers_dict.values():
-                    all_triggers.update(t.lower() for t in trigger_set)
+                all_triggers = menu_cache.get_all_triggers_flat()
                 is_item_trigger = (
                     following_word in all_triggers or
                     following_word_singular in all_triggers

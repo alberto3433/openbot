@@ -14,11 +14,14 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from .models import OrderTask, MenuItemTask, parse_pending_field
+from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .normalization import singularize
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
-from .parsers.intent_patterns import ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN, MAKE_IT_N_CONFIG_PATTERN
+from .parsers.intent_patterns import (
+    ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN, MAKE_IT_N_CONFIG_PATTERN,
+    DONE_ORDERING_DURING_CONFIG_PATTERN,
+)
 from .parsers.quantity_utils import parse_make_it_n_quantity, extract_leading_quantity
 from .checkout_messages import ErrorMessages
 from .config_input_validation import (
@@ -318,6 +321,13 @@ class ConfiguringItemHandler:
         Returns:
             StateMachineResult if an interceptor handled the input, None to continue.
         """
+        # Check for "finish my order" / "checkout" during config FIRST.
+        # Must run before cancellation and valid-answer checks to prevent
+        # partial matches (e.g., "checkout" being interpreted as a config answer).
+        done_result = self._check_done_ordering_during_config(user_input, item, order)
+        if done_result:
+            return done_result
+
         # Check for cancellation requests BEFORE routing to field-specific handlers
         # This allows "remove the coffee", "cancel this", "remove the coffees" etc. during configuration
         cancel_result = self.config_helper_handler.check_cancellation_during_config(user_input, item, order)
@@ -470,6 +480,60 @@ class ConfiguringItemHandler:
             )
 
         return None
+
+    def _check_done_ordering_during_config(
+        self, user_input: str, item, order: OrderTask
+    ) -> StateMachineResult | None:
+        """Check for explicit "finish my order" / "checkout" signals during config.
+
+        Only matches unambiguous phrases containing order/checkout/pay language.
+        Short patterns like "done" or "that's it" are intentionally NOT matched
+        because they're ambiguous during configuration (could mean "done with
+        this item's options").
+
+        Args:
+            user_input: Raw user input string.
+            item: The current item being configured.
+            order: Current order state.
+
+        Returns:
+            StateMachineResult if done-ordering detected, None otherwise.
+        """
+        if not DONE_ORDERING_DURING_CONFIG_PATTERN.match(user_input.strip()):
+            return None
+
+        # Guard: must have at least 1 item in the order
+        if not order.items.items:
+            return None
+
+        logger.info(
+            "DONE ORDERING during config: '%s' (configuring %s)",
+            user_input[:50], item.get_display_name() if hasattr(item, 'get_display_name') else "item"
+        )
+
+        # Mark the current item complete with whatever attributes were already set
+        if isinstance(item, MenuItemTask):
+            safe_recalculate_price(
+                self.modifier_change_handler.pricing if self.modifier_change_handler else None,
+                item,
+                "done ordering during config",
+            )
+        item.mark_complete()
+
+        # Also mark any other in-progress items as complete and clear the config queue.
+        # User said "finish my order" — they don't want more config questions.
+        for other_item in order.items.items:
+            if other_item is not item and other_item.status == TaskStatus.IN_PROGRESS:
+                if isinstance(other_item, MenuItemTask):
+                    safe_recalculate_price(
+                        self.modifier_change_handler.pricing if self.modifier_change_handler else None,
+                        other_item,
+                        "done ordering during config (queued item)",
+                    )
+                other_item.mark_complete()
+        order.pending_config_queue = []
+
+        return self.checkout_utils_handler.transition_to_checkout(order)
 
     def _handle_quantity_change_during_config(
         self, user_input: str, item: MenuItemTask, order: OrderTask

@@ -156,14 +156,26 @@ class RealisticOrderScenario(BaseScenario):
         if self._matches_any(resp, ["how many", "quantity"]):
             return "no"
 
-        # Side choice question
+        # Side choice question — "Would you like a bagel or fruit salad with it?"
         if self._matches_any(resp, ["side choice", "for side", "which side",
-                                     "choose a side"]):
-            return self.rng.choice(["no thanks", "no"])
+                                     "choose a side", "bagel or fruit salad",
+                                     "fruit salad or bagel"]):
+            # Pick a specific side or decline (never answer "yes" to an either/or)
+            return self.rng.choice(["no thanks", "bagel", "fruit salad"])
 
-        # Generic yes/no question fallback
+        # Either/or question — extract the options and pick one
+        or_match = re.search(
+            r"would you like (?:a |an )?(.+?) or (?:a |an )?(.+?)(?:\?|with)",
+            resp,
+        )
+        if or_match:
+            option_a = or_match.group(1).strip().rstrip("?")
+            option_b = or_match.group(2).strip().rstrip("?")
+            return self.rng.choice([option_a, option_b, "no thanks"])
+
+        # Generic yes/no question fallback (only for actual yes/no questions)
         if "?" in resp:
-            return self.rng.choice(["no thanks", "yes", "no"])
+            return self.rng.choice(["no thanks", "no"])
 
         # No question detected — stop
         return None

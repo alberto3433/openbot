@@ -82,6 +82,183 @@ def _strip_ordering_prefix(text: str) -> str:
 # Item Indicator Detection
 # =============================================================================
 
+def _try_menu_item_alias_match(
+    text_for_matching: str, text_singularized: str, text_lower: str
+) -> tuple[bool, str | None, str | None]:
+    """Try to match the full text against menu item aliases.
+
+    Checks both original and singularized forms against the alias registry.
+    """
+    resolved = menu_cache.resolve_menu_item_alias(text_for_matching)
+    if not resolved and text_singularized != text_for_matching:
+        resolved = menu_cache.resolve_menu_item_alias(text_singularized)
+    if resolved:
+        # Get the item type from the resolved menu item (not from text triggers)
+        # This ensures "egg and cheese" → "Egg and Cheese Sandwich" → "egg_sandwich"
+        item_type = menu_cache.get_item_type_for_menu_item(resolved)
+        if not item_type:
+            # Fallback to trigger-based detection if menu item lookup fails
+            item_type, _ = _detect_item_type(text_lower)
+        return True, item_type, resolved
+    return False, None, None
+
+
+def _try_word_boundary_match(
+    text_for_matching: str,
+) -> tuple[bool, str | None, str | None]:
+    """Try to match text against menu items using word boundary matching.
+
+    Handles ambiguous cases like "the classic" which matches multiple items.
+    Returns True to indicate an item indicator even if disambiguation is needed later.
+    """
+    word_matches = menu_cache.find_items_by_word_match(text_for_matching)
+    if word_matches:
+        # Multiple matches - pick the first one's item_type (disambiguation happens later)
+        first_match = word_matches[0]
+        item_type = first_match.get("item_type")
+        # Use the search term as resolved_name since we don't have a single match
+        return True, item_type, text_for_matching
+    return False, None, None
+
+
+def _collect_trigger_matches(
+    text_for_matching: str, text_singularized: str, texts_to_try: list[str]
+) -> list[tuple[int, int, str, str]]:
+    """Collect all trigger matches from explicit triggers and implicit item type names.
+
+    Returns list of (position, length, item_type_slug, trigger) tuples.
+    """
+    # Collect explicit trigger matches, deduplicate to first occurrence
+    raw_matches = _find_trigger_matches(text_for_matching)
+    if text_singularized != text_for_matching:
+        raw_matches.extend(_find_trigger_matches(text_singularized))
+
+    seen_triggers: set[tuple[str, str]] = set()
+    matches: list[tuple[int, int, str, str]] = []
+    for item_type_slug, keyword, m in raw_matches:
+        key = (item_type_slug, keyword.lower())
+        if key in seen_triggers:
+            continue
+        seen_triggers.add(key)
+        matches.append((m.start(), len(keyword.lower()), item_type_slug, keyword))
+
+    # Add implicit triggers for item type names themselves
+    # This handles cases where "bagel" type doesn't have "bagel" as explicit trigger
+    # Use get_configurable_item_types() to include all item types, not just those with triggers
+    all_item_types = menu_cache.get_configurable_item_types()
+    for item_type_slug in all_item_types:
+        # Check for the item type name (with underscores replaced by spaces)
+        type_variants = [
+            item_type_slug.lower(),
+            item_type_slug.lower().replace("_", " "),
+        ]
+        for variant in type_variants:
+            # Use word boundary matching to prevent partial matches
+            pattern = rf'\b{re.escape(variant)}\b'
+            for try_text in texts_to_try:
+                match = re.search(pattern, try_text)
+                if match:
+                    pos = match.start()
+                    # Only add if not already matched at this position
+                    existing = [(m[0], m[2]) for m in matches]
+                    if (pos, item_type_slug) not in existing:
+                        matches.append((pos, len(variant), item_type_slug, variant))
+                    break  # Found in one form, no need to try singularized
+
+    return matches
+
+
+def _select_best_trigger_match(
+    matches: list[tuple[int, int, str, str]],
+    all_item_types: set[str],
+) -> tuple[bool, str | None, str | None]:
+    """Select the best match from collected trigger matches using priority scoring.
+
+    Adds implicit item-type matches for triggers that are item type names,
+    then applies priority and position scoring to select the best match.
+    """
+    # Get modifiers and attribute options for deprioritizing modifier-based triggers
+    all_modifiers = menu_cache.get_all_modifier_words()
+    all_attr_options = menu_cache.get_all_attribute_option_words()
+
+    # Item type priority: prefer specific types over generic ones
+    # When trigger is the same word for multiple types, prefer the type
+    # that matches the trigger word itself (e.g., "bagel" -> bagel type)
+    def _type_priority(item_type: str, trigger: str) -> int:
+        """Return priority score (lower = better)."""
+        trigger_lower = trigger.lower()
+        # Best: item type matches the trigger word (bagel -> bagel)
+        if item_type.lower() == trigger_lower:
+            return 0
+        # Also best: trigger is a known item name for this specific item_type
+        # e.g., "latte" is in sized_beverage's item names, so sized_beverage gets high priority
+        # This is fully data-driven - works for any item type, not just beverages
+        item_type_names = menu_cache.get_item_names_by_type(item_type)
+        if trigger_lower in {n.lower() for n in item_type_names}:
+            return 1
+        # Also best: trigger matches another item type name exactly
+        # This means the trigger is likely targeting that specific type, not this one
+        # e.g., "bagel" trigger for "side" type should yield to "bagel" type if it exists
+        if trigger_lower in all_item_types or trigger_lower.replace(" ", "_") in all_item_types:
+            # This item_type doesn't match the trigger, but another type does
+            # Demote this match significantly
+            return 6
+        # Deprioritize triggers that are actually modifiers/attributes (but not coffee types)
+        # e.g., "large" is a size, not an item indicator
+        if trigger_lower in all_modifiers or trigger_lower in all_attr_options:
+            return 5
+        # Good: item type contains the trigger word (e.g., "egg_sandwich" contains "egg")
+        if trigger_lower in item_type.lower():
+            return 1
+        # Generic types have lower priority
+        generic_types = {"side", "snack", "beverage", "menu_item"}
+        if item_type in generic_types:
+            return 4
+        return 2
+
+    # Check if any trigger word matches an item type name
+    # Add implicit match for that item type (with position from the trigger location)
+    for pos, length, item_type, trigger in list(matches):
+        trigger_lower = trigger.lower()
+        if trigger_lower in all_item_types and trigger_lower != item_type:
+            # The trigger word is an item type name, add it as a match
+            matches.append((pos, length, trigger_lower, trigger))
+        trigger_underscore = trigger_lower.replace(" ", "_")
+        if trigger_underscore in all_item_types and trigger_underscore != item_type:
+            matches.append((pos, length, trigger_underscore, trigger))
+
+    # PRIORITY RULES:
+    # 1. Priority 0 matches (trigger == item_type, e.g., "bagel" -> bagel) always win
+    # 2. Among same-priority matches, prefer earlier position
+    # 3. For position < 15, prefer that match unless priority 0 exists elsewhere
+
+    # First, check if any match has priority 0 (trigger matches item type)
+    priority_0_matches = [
+        m for m in matches
+        if _type_priority(m[2], m[3]) == 0
+    ]
+
+    if priority_0_matches:
+        # Sort priority 0 matches by position, then length
+        priority_0_matches.sort(key=lambda x: (x[0], -x[1]))
+        best = priority_0_matches[0]
+        return True, best[2], best[3]
+
+    # No priority 0 matches - use priority + position logic
+    # Sort by priority first, then position (within first 30 chars), then length
+    def _match_score(m):
+        pos, length, item_type, trigger = m
+        priority = _type_priority(item_type, trigger)
+        # Group positions: early (<=15), mid (16-30), late (>30)
+        pos_group = 0 if pos <= 15 else (1 if pos <= 30 else 2)
+        return (priority, pos_group, pos, -length)
+
+    matches.sort(key=_match_score)
+
+    best = matches[0]
+    return True, best[2], best[3]
+
+
 def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     """Check if text contains an item type trigger or matches a menu item.
 
@@ -125,160 +302,28 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     singularized_words = [singularize(w) for w in words]
     text_singularized = " ".join(singularized_words)
 
-    # First, check if entire text matches a menu item (including aliases)
-    # Try both original and singularized forms
-    resolved = menu_cache.resolve_menu_item_alias(text_for_matching)
-    if not resolved and text_singularized != text_for_matching:
-        resolved = menu_cache.resolve_menu_item_alias(text_singularized)
-    if resolved:
-        # Get the item type from the resolved menu item (not from text triggers)
-        # This ensures "egg and cheese" → "Egg and Cheese Sandwich" → "egg_sandwich"
-        item_type = menu_cache.get_item_type_for_menu_item(resolved)
-        if not item_type:
-            # Fallback to trigger-based detection if menu item lookup fails
-            item_type, _ = _detect_item_type(text_lower)
-        return True, item_type, resolved
+    # Strategy 1: Direct menu item alias match
+    result = _try_menu_item_alias_match(text_for_matching, text_singularized, text_lower)
+    if result[0]:
+        return result
 
-    # Second, check if text matches menu items by word boundary (for ambiguous cases)
-    # This handles "the classic" which matches multiple items (The Classic BEC, etc.)
-    # We return True to indicate it's an item indicator, even if disambiguation is needed later
-    word_matches = menu_cache.find_items_by_word_match(text_for_matching)
-    if word_matches:
-        # Multiple matches - pick the first one's item_type (disambiguation happens later)
-        first_match = word_matches[0]
-        item_type = first_match.get("item_type")
-        # Use the search term as resolved_name since we don't have a single match
-        return True, item_type, text_for_matching
+    # Strategy 2: Word boundary match (for ambiguous cases like "the classic")
+    result = _try_word_boundary_match(text_for_matching)
+    if result[0]:
+        return result
 
-    # Check for item type triggers using shared matching function
-    # Try both original and singularized text, deduplicate to first occurrence
+    # Strategy 3: Collect trigger matches (explicit triggers + implicit item type names)
     texts_to_try = [text_for_matching]
     if text_singularized != text_for_matching:
         texts_to_try.append(text_singularized)
 
-    raw_matches = _find_trigger_matches(text_for_matching)
-    if text_singularized != text_for_matching:
-        raw_matches.extend(_find_trigger_matches(text_singularized))
-
-    seen_triggers: set[tuple[str, str]] = set()
-    matches: list[tuple[int, int, str, str]] = []  # (position, length, item_type, trigger)
-    for item_type_slug, keyword, m in raw_matches:
-        key = (item_type_slug, keyword.lower())
-        if key in seen_triggers:
-            continue
-        seen_triggers.add(key)
-        matches.append((m.start(), len(keyword.lower()), item_type_slug, keyword))
-
-    # Add implicit triggers for item type names themselves
-    # This handles cases where "bagel" type doesn't have "bagel" as explicit trigger
-    # Use get_configurable_item_types() to include all item types, not just those with triggers
-    all_item_types = menu_cache.get_configurable_item_types()
-    for item_type_slug in all_item_types:
-        # Check for the item type name (with underscores replaced by spaces)
-        type_variants = [
-            item_type_slug.lower(),
-            item_type_slug.lower().replace("_", " "),
-        ]
-        for variant in type_variants:
-            # Use word boundary matching to prevent partial matches
-            pattern = rf'\b{re.escape(variant)}\b'
-            for try_text in texts_to_try:
-                match = re.search(pattern, try_text)
-                if match:
-                    pos = match.start()
-                    # Only add if not already matched at this position
-                    existing = [(m[0], m[2]) for m in matches]
-                    if (pos, item_type_slug) not in existing:
-                        matches.append((pos, len(variant), item_type_slug, variant))
-                    break  # Found in one form, no need to try singularized
-
+    matches = _collect_trigger_matches(text_for_matching, text_singularized, texts_to_try)
     if not matches:
         return False, None, None
 
-
-    # Get modifiers and attribute options for deprioritizing modifier-based triggers
-    all_modifiers = menu_cache.get_all_modifier_words()
-    all_attr_options = menu_cache.get_all_attribute_option_words()
-
-    # Item type priority: prefer specific types over generic ones
-    # When trigger is the same word for multiple types, prefer the type
-    # that matches the trigger word itself (e.g., "bagel" -> bagel type)
-    def _type_priority(item_type: str, trigger: str) -> int:
-        """Return priority score (lower = better)."""
-        trigger_lower = trigger.lower()
-        # Best: item type matches the trigger word (bagel -> bagel)
-        if item_type.lower() == trigger_lower:
-            return 0
-        # Also best: trigger is a known item name for this specific item_type
-        # e.g., "latte" is in sized_beverage's item names, so sized_beverage gets high priority
-        # This is fully data-driven - works for any item type, not just beverages
-        item_type_names = menu_cache.get_item_names_by_type(item_type)
-        if trigger_lower in {n.lower() for n in item_type_names}:
-            return 1
-        # Also best: trigger matches another item type name exactly
-        # This means the trigger is likely targeting that specific type, not this one
-        # e.g., "bagel" trigger for "side" type should yield to "bagel" type if it exists
-        if trigger_lower in all_item_types or trigger_lower.replace(" ", "_") in all_item_types:
-            # This item_type doesn't match the trigger, but another type does
-            # Demote this match significantly
-            return 6
-        # Deprioritize triggers that are actually modifiers/attributes (but not coffee types)
-        # e.g., "large" is a size, not an item indicator
-        if trigger_lower in all_modifiers or trigger_lower in all_attr_options:
-            return 5
-        # Good: item type contains the trigger word (e.g., "egg_sandwich" contains "egg")
-        if trigger_lower in item_type.lower():
-            return 1
-        # Generic types have lower priority
-        generic_types = {"side", "snack", "beverage", "menu_item"}
-        if item_type in generic_types:
-            return 4
-        return 2
-
-    # Check if any trigger word matches an item type name
-    # Add implicit match for that item type (with position from the trigger location)
-    added_implicit = []
-    for pos, length, item_type, trigger in list(matches):
-        trigger_lower = trigger.lower()
-        if trigger_lower in all_item_types and trigger_lower != item_type:
-            # The trigger word is an item type name, add it as a match
-            matches.append((pos, length, trigger_lower, trigger))
-            added_implicit.append((pos, length, trigger_lower, trigger))
-        trigger_underscore = trigger_lower.replace(" ", "_")
-        if trigger_underscore in all_item_types and trigger_underscore != item_type:
-            matches.append((pos, length, trigger_underscore, trigger))
-            added_implicit.append((pos, length, trigger_underscore, trigger))
-
-    # PRIORITY RULES:
-    # 1. Priority 0 matches (trigger == item_type, e.g., "bagel" -> bagel) always win
-    # 2. Among same-priority matches, prefer earlier position
-    # 3. For position < 15, prefer that match unless priority 0 exists elsewhere
-
-    # First, check if any match has priority 0 (trigger matches item type)
-    priority_0_matches = [
-        m for m in matches
-        if _type_priority(m[2], m[3]) == 0
-    ]
-
-    if priority_0_matches:
-        # Sort priority 0 matches by position, then length
-        priority_0_matches.sort(key=lambda x: (x[0], -x[1]))
-        best = priority_0_matches[0]
-        return True, best[2], best[3]
-
-    # No priority 0 matches - use priority + position logic
-    # Sort by priority first, then position (within first 30 chars), then length
-    def _match_score(m):
-        pos, length, item_type, trigger = m
-        priority = _type_priority(item_type, trigger)
-        # Group positions: early (<=15), mid (16-30), late (>30)
-        pos_group = 0 if pos <= 15 else (1 if pos <= 30 else 2)
-        return (priority, pos_group, pos, -length)
-
-    matches.sort(key=_match_score)
-
-    best = matches[0]
-    return True, best[2], best[3]
+    # Strategy 4: Score and select best trigger match
+    all_item_types = menu_cache.get_configurable_item_types()
+    return _select_best_trigger_match(matches, all_item_types)
 
 
 # =============================================================================
@@ -776,132 +821,22 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     text = user_input.strip()
     text_lower = text.lower()
 
-    # --- Step 1: Check for modifier chain (don't split) ---
-    # e.g., "large iced coffee with sugar and 2 vanilla syrups" should NOT be split
+    # --- Step 1: Check for modifier chains (don't split) ---
     if _is_modifier_chain(text_lower):
         logger.debug("Multi-item: skipping split - detected modifier chain: '%s'", text[:60])
         return None
 
-    # --- Step 1b: Check for "item with modifier and modifier" pattern ---
-    # e.g., "bagel with butter and cream cheese" - the "and" is AFTER "with", suggesting a modifier chain
-    # But NOT "latte with vanilla and a bagel" - after "and" there's an article + item (two items)
-    if " with " in text_lower and " and " in text_lower:
-        with_idx = text_lower.find(" with ")
-        and_idx = text_lower.find(" and ")
-
-        # Only apply this check if "and" comes AFTER "with" (potential modifier chain)
-        if and_idx > with_idx:
-            # Check what comes after "and" - if it's an article followed by an item, it's multi-item
-            after_and = text_lower[and_idx + 5:].strip()  # " and " is 5 chars
-            starts_with_article = any(after_and.startswith(art) for art in ("a ", "an ", "the "))
-
-            if starts_with_article:
-                # Strip article and check for item indicator
-                for art in ("a ", "an ", "the "):
-                    if after_and.startswith(art):
-                        after_and = after_and[len(art):]
-                        break
-                # Check if this contains an item type trigger
-                has_item, _, _ = _has_item_indicator(after_and)
-                if has_item:
-                    # It's "with X and a [item]" - this is multi-item, not modifier chain
-                    logger.debug("Multi-item: proceeding - 'and a [item]' pattern detected: '%s'", text[:60])
-                    # Don't return None, let it proceed to multi-item parsing
-                else:
-                    # After article there's no item - might still be modifier chain
-                    pass
-            else:
-                # No article after "and" - check if it's a modifier chain
-                with_parts = text_lower.split(" with ", 1)
-                if len(with_parts) == 2:
-                    after_with = with_parts[1]
-                    all_modifiers = menu_cache.get_all_modifier_words()
-                    first_after_with = after_with.split()[0] if after_with.split() else ""
-
-                    if first_after_with in all_modifiers:
-                        logger.debug("Multi-item: skipping split - 'with modifier and X' pattern: '%s'", text[:60])
-                        return None
+    if _is_with_modifier_chain(text_lower, text):
+        return None
 
     # --- Step 2: Use smart tokenization to split and classify ---
     tokens = _smart_split_and_tokenize(text_lower)
     if len(tokens) < 2:
-        # Not a multi-item order (single item or nothing)
         return None
 
-    # --- Step 3: Check if tokens are all modifiers (don't split) ---
-    # e.g., "butter, cream cheese, not toasted" should not be split
-    non_modifier_count = sum(1 for t in tokens if t.token_type in ("item", "unknown"))
-    if non_modifier_count < 2:
-        # Check if first token is item and rest are modifiers
-        if tokens and tokens[0].token_type == "item":
-            modifier_types = ("modifier", "attribute", "separator")
-            rest_are_modifiers = all(t.token_type in modifier_types for t in tokens[1:])
-            if rest_are_modifiers:
-                logger.debug("Multi-item: skipping split - item with modifiers: '%s'", text[:60])
-                return None
-
-    # --- Step 3b: Check for item + modifiers that also match as items ---
-    # e.g., "pumpernickel bagel, butter, not toasted" - butter is also a menu item
-    # but in this context it's a modifier for the bagel
-    if tokens and tokens[0].token_type == "item":
-        all_modifiers = menu_cache.get_all_modifier_words()
-        attr_options = menu_cache.get_all_attribute_option_words()
-
-        # Get boolean attribute names (like "toasted", "scooped")
-        # Check all item types that might match the first token (handles ambiguous detection)
-        boolean_attrs: set[str] = set()
-        all_triggers = menu_cache.get_item_type_triggers()
-        first_text = tokens[0].original.lower()
-
-        # Find all item types that have triggers matching words in the first token
-        item_types_to_check: set[str] = set()
-        for item_type_slug, triggers in all_triggers.items():
-            for trigger in triggers:
-                if trigger.lower() in first_text:
-                    item_types_to_check.add(item_type_slug)
-                    break
-
-        # Collect boolean attrs from all matching item types
-        for check_type in item_types_to_check:
-            item_attrs = menu_cache.get_item_type_attributes(check_type)
-            if item_attrs:
-                for attr_name, attr_info in item_attrs.items():
-                    # Boolean attrs have input_type: 'boolean'
-                    if isinstance(attr_info, dict) and attr_info.get("input_type") == "boolean":
-                        boolean_attrs.add(attr_name.lower())
-                        boolean_attrs.add(attr_name.lower().replace("_", " "))
-
-        def _is_potential_modifier(token_text: str) -> bool:
-            """Check if text could be a modifier (ignoring item matches)."""
-            text_clean = token_text.lower().strip()
-            # Remove common words
-            for skip in _SKIP_WORDS:
-                text_clean = text_clean.replace(skip, " ").strip()
-            # Split and check each word
-            words = text_clean.split()
-            for word in words:
-                word = word.strip()
-                if not word or word == "and" or word == "not":
-                    continue
-                # Check if it's a known modifier, attribute option, or boolean attr
-                if word in all_modifiers or word in attr_options or word in boolean_attrs:
-                    continue
-                # Check multi-word phrases
-                if text_clean in all_modifiers or text_clean in attr_options:
-                    continue
-                # Unknown word - not a modifier
-                return False
-            return True
-
-        other_tokens = [t for t in tokens[1:] if t.token_type != "separator"]
-        # Only skip if ALL other tokens could be modifiers (even if also classified as items)
-        # e.g., "butter" is both a menu item AND a spread - in "bagel, butter" context, it's a modifier
-        if other_tokens:
-            # Check if all other tokens are potential modifiers
-            # (This includes items that double as modifiers, like "butter")
-            if all(_is_potential_modifier(t.original) for t in other_tokens):
-                logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
-                return None
+    # --- Step 3: Check if tokens are really modifiers, not separate items ---
+    if _all_tokens_are_modifiers(tokens, text):
+        return None
 
     # --- Step 4: Recombine modifier tokens with their items ---
     combined_tokens = _recombine_tokens(tokens)
@@ -912,7 +847,177 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
     if len(item_tokens) < 2:
         return None
 
-    # --- Step 6: Parse each item token using generic parser ---
+    # --- Step 6: Parse each item token and build response ---
+    return _build_items_from_tokens(item_tokens)
+
+
+# =============================================================================
+# Multi-Item Pipeline Helpers
+# =============================================================================
+
+def _is_with_modifier_chain(text_lower: str, text: str) -> bool:
+    """Check for "item with modifier and modifier" pattern that should not be split.
+
+    Detects patterns like "bagel with butter and cream cheese" where the "and" joins
+    modifiers after "with", not separate items. But allows "latte with vanilla and a
+    bagel" through since it's genuinely multi-item (article + item after "and").
+
+    Returns True if input should be treated as a single item (skip multi-item split).
+    """
+    if " with " not in text_lower or " and " not in text_lower:
+        return False
+
+    with_idx = text_lower.find(" with ")
+    and_idx = text_lower.find(" and ")
+
+    # Only apply this check if "and" comes AFTER "with" (potential modifier chain)
+    if and_idx <= with_idx:
+        return False
+
+    # Check what comes after "and" - if it's an article followed by an item, it's multi-item
+    after_and = text_lower[and_idx + 5:].strip()  # " and " is 5 chars
+    starts_with_article = any(after_and.startswith(art) for art in ("a ", "an ", "the "))
+
+    if starts_with_article:
+        # Strip article and check for item indicator
+        for art in ("a ", "an ", "the "):
+            if after_and.startswith(art):
+                after_and = after_and[len(art):]
+                break
+        # Check if this contains an item type trigger
+        has_item, _, _ = _has_item_indicator(after_and)
+        if has_item:
+            # It's "with X and a [item]" - this is multi-item, not modifier chain
+            logger.debug("Multi-item: proceeding - 'and a [item]' pattern detected: '%s'", text[:60])
+            return False
+        else:
+            # After article there's no item - might still be modifier chain
+            return False
+    else:
+        # No article after "and" - check if it's a modifier chain
+        with_parts = text_lower.split(" with ", 1)
+        if len(with_parts) == 2:
+            after_with = with_parts[1]
+            all_modifiers = menu_cache.get_all_modifier_words()
+            first_after_with = after_with.split()[0] if after_with.split() else ""
+
+            if first_after_with in all_modifiers:
+                logger.debug(
+                    "Multi-item: skipping split - 'with modifier and X' pattern: '%s'", text[:60]
+                )
+                return True
+
+    return False
+
+
+def _all_tokens_are_modifiers(tokens: list["Token"], text: str) -> bool:
+    """Check if tokens that look like separate items are really modifiers for the first item.
+
+    Handles two cases:
+    1. First token is an item and the rest are pure modifier/attribute/separator tokens.
+    2. First token is an item and subsequent tokens are items that double as modifiers
+       (e.g., "butter" is both a menu item and a spread).
+
+    Returns True if the tokens should NOT be treated as a multi-item order.
+    """
+    # Case 1: Check if tokens are all modifiers (don't split)
+    # e.g., "butter, cream cheese, not toasted" should not be split
+    non_modifier_count = sum(1 for t in tokens if t.token_type in ("item", "unknown"))
+    if non_modifier_count < 2:
+        if tokens and tokens[0].token_type == "item":
+            modifier_types = ("modifier", "attribute", "separator")
+            rest_are_modifiers = all(t.token_type in modifier_types for t in tokens[1:])
+            if rest_are_modifiers:
+                logger.debug("Multi-item: skipping split - item with modifiers: '%s'", text[:60])
+                return True
+
+    # Case 2: Check for item + modifiers that also match as items
+    # e.g., "pumpernickel bagel, butter, not toasted" - butter is also a menu item
+    # but in this context it's a modifier for the bagel
+    if tokens and tokens[0].token_type == "item":
+        if _other_tokens_are_potential_modifiers(tokens, text):
+            return True
+
+    return False
+
+
+def _other_tokens_are_potential_modifiers(tokens: list["Token"], text: str) -> bool:
+    """Check if all tokens after the first are potential modifiers for the first item.
+
+    Builds a set of known modifiers, attribute options, and boolean attributes for
+    the first token's item type, then checks if every subsequent non-separator token
+    consists only of those known modifier words.
+
+    Returns True if all other tokens could be modifiers (skip multi-item split).
+    """
+    all_modifiers = menu_cache.get_all_modifier_words()
+    attr_options = menu_cache.get_all_attribute_option_words()
+
+    # Get boolean attribute names (like "toasted", "scooped")
+    # Check all item types that might match the first token (handles ambiguous detection)
+    boolean_attrs: set[str] = set()
+    all_triggers = menu_cache.get_item_type_triggers()
+    first_text = tokens[0].original.lower()
+
+    # Find all item types that have triggers matching words in the first token
+    item_types_to_check: set[str] = set()
+    for item_type_slug, triggers in all_triggers.items():
+        for trigger in triggers:
+            if trigger.lower() in first_text:
+                item_types_to_check.add(item_type_slug)
+                break
+
+    # Collect boolean attrs from all matching item types
+    for check_type in item_types_to_check:
+        item_attrs = menu_cache.get_item_type_attributes(check_type)
+        if item_attrs:
+            for attr_name, attr_info in item_attrs.items():
+                # Boolean attrs have input_type: 'boolean'
+                if isinstance(attr_info, dict) and attr_info.get("input_type") == "boolean":
+                    boolean_attrs.add(attr_name.lower())
+                    boolean_attrs.add(attr_name.lower().replace("_", " "))
+
+    def _is_potential_modifier(token_text: str) -> bool:
+        """Check if text could be a modifier (ignoring item matches)."""
+        text_clean = token_text.lower().strip()
+        # Remove common words
+        for skip in _SKIP_WORDS:
+            text_clean = text_clean.replace(skip, " ").strip()
+        # Split and check each word
+        words = text_clean.split()
+        for word in words:
+            word = word.strip()
+            if not word or word == "and" or word == "not":
+                continue
+            # Check if it's a known modifier, attribute option, or boolean attr
+            if word in all_modifiers or word in attr_options or word in boolean_attrs:
+                continue
+            # Check multi-word phrases
+            if text_clean in all_modifiers or text_clean in attr_options:
+                continue
+            # Unknown word - not a modifier
+            return False
+        return True
+
+    other_tokens = [t for t in tokens[1:] if t.token_type != "separator"]
+    # Only skip if ALL other tokens could be modifiers (even if also classified as items)
+    # e.g., "butter" is both a menu item AND a spread - in "bagel, butter" context, it's a modifier
+    if other_tokens:
+        if all(_is_potential_modifier(t.original) for t in other_tokens):
+            logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
+            return True
+
+    return False
+
+
+def _build_items_from_tokens(item_tokens: list["Token"]) -> OpenInputResponse | None:
+    """Parse item tokens into menu items and build an OpenInputResponse.
+
+    For each item token, attempts to parse it using the generic parser. Falls back
+    to the full deterministic parser if generic parsing fails.
+
+    Returns OpenInputResponse with parsed_items if 2+ items found, else None.
+    """
     parsed_items: list = []
     for token in item_tokens:
         # Use the generic parser with detected item type and resolved name
@@ -938,7 +1043,6 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
                     parsed_items.append(item)
                 logger.debug("Multi-item: fallback parsed '%s'", token.original[:40])
 
-    # --- Step 7: Return if 2+ items found ---
     if len(parsed_items) >= 2:
         logger.info("Multi-item order parsed: %d items", len(parsed_items))
         return OpenInputResponse(parsed_items=parsed_items)

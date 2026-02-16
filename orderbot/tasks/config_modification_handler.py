@@ -228,6 +228,8 @@ class ConfigModificationHandler:
             return None
         try:
             attrs = menu_cache.get_item_type_attributes(item_type)
+
+            # Pass 1: Exact matching on slug, display_name, and aliases
             for attr_slug, attr_config in attrs.items():
                 options = attr_config.get("options", [])
                 for opt in options:
@@ -248,6 +250,26 @@ class ConfigModificationHandler:
                         return self._continue_config_with_message(
                             f"Sure, {opt_name}.", item, order
                         )
+
+            # Pass 2: Partial matching via OptionMatcher
+            # Handles cases like "scrambled well cooked" matching "Scrambled" option
+            # via Phase 3 word-boundary matching (\bscrambled\b in input)
+            matcher = OptionMatcher()
+            for attr_slug, attr_config in attrs.items():
+                options = attr_config.get("options", [])
+                if not options:
+                    continue
+                matched, _ = matcher.match_single(modifier_lower, options)
+                if matched:
+                    opt_slug = matched.get("slug")
+                    logger.info("CAN_YOU_MAKE_IT: Partial match attr %s=%s", attr_slug, opt_slug)
+                    item[attr_slug] = opt_slug
+                    pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+                    safe_recalculate_price(pricing, item, "after attribute change")
+                    opt_name = matched.get("display_name") or opt_slug.replace("_", " ").title()
+                    return self._continue_config_with_message(
+                        f"Sure, {opt_name}.", item, order
+                    )
         except Exception as e:
             logger.debug("Error checking attributes for 'can you make it': %s", e)
         return None

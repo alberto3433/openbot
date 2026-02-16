@@ -160,6 +160,21 @@ class ParsingQueryMixin:
         return {k: v.copy() for k, v in self._item_type_triggers.items()}
 
     @ensure_cache_loaded
+    def get_all_triggers_flat(self) -> set[str]:
+        """Get all item type triggers as a flat set of lowercase strings.
+
+        Returns:
+            Set of all trigger keywords across all item types, lowercased.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        result: set[str] = set()
+        for trigger_set in self._item_type_triggers.values():
+            result.update(t.lower() for t in trigger_set)
+        return result
+
+    @ensure_cache_loaded
     def get_configurable_item_type_slugs(self) -> set[str]:
         """Get slugs of item types that have askable attributes.
 

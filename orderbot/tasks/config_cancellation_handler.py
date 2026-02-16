@@ -15,7 +15,7 @@ from .parsers import CANCEL_ITEM_PATTERN, strip_conversational_fillers
 from .pending_fields import PendingField
 from .parsers.quantity_utils import extract_leading_quantity
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
-from .handler_utils import remove_item_from_order
+from .handler_utils import check_has_active_items, remove_item_from_order
 from .modifier_operations import (
     find_modifier_match,
     remove_modifier_from_item,
@@ -670,13 +670,10 @@ class ConfigCancellationHandler:
             StateMachineResult indicating items were removed or not found.
         """
         # Get all active items to search through
-        active_items = order.items.get_active_items()
-        if not active_items:
+        active_items, error = check_has_active_items(order)
+        if error:
             order.clear_pending()
-            return StateMachineResult(
-                message=ErrorMessages.NO_ITEMS_YET,
-                order=order,
-            )
+            return error
 
         # First, check for ordinal reference (e.g., "second bagel", "3rd coffee")
         ordinal_index, item_type_keyword = extract_ordinal_reference(cancel_desc)

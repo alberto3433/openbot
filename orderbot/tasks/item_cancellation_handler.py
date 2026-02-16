@@ -21,7 +21,7 @@ from orderbot.cache.base import singularize, get_singular_plural_variants
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OpenInputResponse
 from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
-from .handler_utils import get_last_item, remove_item_from_order
+from .handler_utils import check_has_active_items, get_last_item, remove_item_from_order
 from .utils.text import normalize_text, strip_leading_article
 from .modifier_operations import (
     find_modifier_on_any_item,
@@ -251,10 +251,8 @@ class ItemCancellationHandler:
         # Normal item cancellation by description
         if not active_items:
             logger.info("Cancellation requested but no items in cart")
-            return StateMachineResult(
-                message=ErrorMessages.NO_ITEMS_YET,
-                order=order,
-            )
+            _, error = check_has_active_items(order)
+            return error
 
         # Check for ordinal reference (e.g., "second bagel", "3rd coffee")
         result = self._try_ordinal_removal(parsed, order, active_items)

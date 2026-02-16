@@ -298,9 +298,12 @@ class CustomizationCheckpointHandler:
             if user_lower in yes_patterns:
                 options_list = self._format_display_list(unanswered)
                 order.pending_field = PendingField.CUSTOMIZATION_SELECTION
+                # Build quick replies for inline clickable text
+                qr = [{"label": a["display_name"], "value": a["display_name"]} for a in unanswered]
                 return StateMachineResult(
                     message=f"You can add: {options_list}. What would you like?",
                     order=order,
+                    quick_replies=qr,
                 )
 
         # Check if user is ordering a NEW item (e.g., "onion bagel toasted and scooped")
@@ -350,9 +353,12 @@ class CustomizationCheckpointHandler:
 
         # Couldn't match - inform user we don't have what they asked for
         options_list = self._format_display_list(unanswered)
+        # Build quick replies for inline clickable text
+        qr = [{"label": a["display_name"], "value": a["display_name"]} for a in unanswered]
         return StateMachineResult(
             message=f"Sorry, we don't have {user_input}. You can add: {options_list}. What would you like?",
             order=order,
+            quick_replies=qr,
         )
 
     def _handle_declining(

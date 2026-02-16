@@ -88,6 +88,12 @@ class OptionsInquiryHandler:
         if any(phrase in input_lower for phrase in inquiry_phrases):
             return True
 
+        # "what X do you have?" / "what X are there?" - generic inquiry regardless of X
+        # e.g., "what cream cheese do you have?", "what bagels are there?"
+        generic_inquiry_pattern = r"what\s+.+\s+(?:do\s+you\s+have|are\s+there|are\s+available)\s*\??\s*$"
+        if re.search(generic_inquiry_pattern, input_lower):
+            return True
+
         # Also catch "what kind of X do you have?" pattern
         # e.g., "what kind of bread do you have?", "what kinds of toppings do you have?"
         flexible_pattern = r"what\s+kind(s)?\s+of\s+\w+\s+do\s+you\s+have"
@@ -376,4 +382,10 @@ class OptionsInquiryHandler:
         is_first_page = (page == 0)
         message = self.format_options_page(page_options, is_first_page, has_more)
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies for inline clickable text
+        names = [opt["display_name"] for opt in page_options]
+        qr = [{"label": name, "value": name} for name in names]
+        if has_more:
+            qr.append({"label": "more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)

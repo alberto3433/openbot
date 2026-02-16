@@ -97,7 +97,7 @@ def process_message_with_state_machine(
     store_info: Dict = None,
     returning_customer: Dict[str, Any] = None,
     db_session=None,
-) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]:
+) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]], list[dict[str, str]] | None]:
     """
     Process a user message using the state machine.
 
@@ -114,7 +114,7 @@ def process_message_with_state_machine(
         db_session: SQLAlchemy session for database operations (request-scoped)
 
     Returns:
-        Tuple of (reply, updated_order_state_dict, actions)
+        Tuple of (reply, updated_order_state_dict, actions, quick_replies)
     """
     logger.info(
         "STATE MACHINE: Processing message '%s', menu_data has %d keys",
@@ -157,7 +157,7 @@ def process_message_with_state_machine(
         result.is_complete,
     )
 
-    return result.message, updated_dict, actions
+    return result.message, updated_dict, actions, result.quick_replies
 
 
 def _infer_actions_from_result(

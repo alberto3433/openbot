@@ -201,6 +201,7 @@ def chat_message(
             reply=result.reply,
             order_state=result.order_state,
             actions=processed_actions,
+            quick_replies=result.quick_replies,
         )
 
     except ValueError as e:
@@ -263,7 +264,15 @@ def chat_message_stream(
                 for a in result.actions
             ]
 
-            yield f"data: {json.dumps({'done': True, 'reply': result.reply, 'order_state': result.order_state, 'actions': processed_actions})}\n\n"
+            final_event = {
+                'done': True,
+                'reply': result.reply,
+                'order_state': result.order_state,
+                'actions': processed_actions,
+            }
+            if result.quick_replies:
+                final_event['quick_replies'] = result.quick_replies
+            yield f"data: {json.dumps(final_event)}\n\n"
 
         except Exception as e:
             logger.error("MessageProcessor failed in stream: %s", e, exc_info=True)

@@ -171,7 +171,10 @@ class DietaryInquiryHandler(MenuDataMixin):
         item_names = [item.get("name", "Unknown") for item in items]
 
         items_list, new_offset = format_paginated_list(item_names, DEFAULT_PAGINATION_SIZE)
-        if new_offset > 0:
+        has_more = new_offset > 0
+        batch = item_names[:DEFAULT_PAGINATION_SIZE]
+        remaining = len(item_names) - len(batch)
+        if has_more:
             # Save pagination state for "show more" follow-ups
             order.menu_query_pagination = {
                 "type": "dietary_items",
@@ -184,16 +187,23 @@ class DietaryInquiryHandler(MenuDataMixin):
         else:
             order.clear_menu_pagination()
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
         # Build response message
         if category_display:
             return StateMachineResult(
                 message=f"Our {display_name} {category_display} include: {items_list}. Would you like any of these?",
                 order=order,
+                quick_replies=qr,
             )
 
         return StateMachineResult(
             message=f"Our {display_name} options include: {items_list}. Would you like any of these?",
             order=order,
+            quick_replies=qr,
         )
 
     def handle_dietary_item_inquiry(
@@ -426,14 +436,23 @@ class DietaryInquiryHandler(MenuDataMixin):
         item_names = [item.get("name", "Unknown") for item in items]
 
         items_list, new_offset = format_paginated_list(item_names, DEFAULT_PAGINATION_SIZE)
-        if new_offset > 0:
+        has_more = new_offset > 0
+        batch = item_names[:DEFAULT_PAGINATION_SIZE]
+        remaining = len(item_names) - len(batch)
+        if has_more:
             order.set_menu_pagination(f"allergen_{free_property}", new_offset, len(item_names))
         else:
             order.clear_menu_pagination()
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
         return StateMachineResult(
             message=f"Our {allergen_display}-free options include: {items_list}. Would you like any of these?",
             order=order,
+            quick_replies=qr,
         )
 
     def _search_category_items(self, term: str) -> list[dict]:
@@ -529,7 +548,14 @@ class DietaryInquiryHandler(MenuDataMixin):
                     "offset": display_count,
                 }
 
-        return StateMachineResult(message=msg, order=order)
+        # Build quick replies for inline clickable text
+        if len(matches) == 1:
+            qr = [{"label": item_name, "value": item_name}]
+        else:
+            qr = [{"label": name, "value": name} for name in item_names]
+            if has_more:
+                qr.append({"label": f"{len(matches) - display_count} more", "value": "what else?"})
+        return StateMachineResult(message=msg, order=order, quick_replies=qr)
 
     def handle_availability_inquiry(
         self,
@@ -599,7 +625,10 @@ class DietaryInquiryHandler(MenuDataMixin):
                 items_list, new_offset = format_paginated_list(
                     item_names, DEFAULT_PAGINATION_SIZE
                 )
-                if new_offset > 0:
+                has_more = new_offset > 0
+                batch = item_names[:DEFAULT_PAGINATION_SIZE]
+                remaining = len(item_names) - len(batch)
+                if has_more:
                     order.menu_query_pagination = {
                         "type": "availability_items",
                         "items": item_names,
@@ -607,11 +636,17 @@ class DietaryInquiryHandler(MenuDataMixin):
                     }
                 else:
                     order.clear_menu_pagination()
+
+                qr = [{"label": name, "value": name} for name in batch]
+                if has_more:
+                    qr.append({"label": f"{remaining} more", "value": "what else?"})
+
                 return StateMachineResult(
                     message=(
                         f"Yes! We have {items_list}. Would you like any of these?"
                     ),
                     order=order,
+                    quick_replies=qr,
                 )
 
         # Nothing found in menu items — check if the term matches a known ingredient
@@ -636,7 +671,10 @@ class DietaryInquiryHandler(MenuDataMixin):
                 items_list, new_offset = format_paginated_list(
                     ing_names, DEFAULT_PAGINATION_SIZE
                 )
-                if new_offset > 0:
+                has_more = new_offset > 0
+                batch = ing_names[:DEFAULT_PAGINATION_SIZE]
+                remaining = len(ing_names) - len(batch)
+                if has_more:
                     order.menu_query_pagination = {
                         "type": "availability_items",
                         "items": ing_names,
@@ -644,11 +682,17 @@ class DietaryInquiryHandler(MenuDataMixin):
                     }
                 else:
                     order.clear_menu_pagination()
+
+                qr = [{"label": name, "value": name} for name in batch]
+                if has_more:
+                    qr.append({"label": f"{remaining} more", "value": "what else?"})
+
                 return StateMachineResult(
                     message=(
                         f"Yes! We have {items_list}. Would you like any of these?"
                     ),
                     order=order,
+                    quick_replies=qr,
                 )
 
         # Nothing found - use unrecognized handler for curated suggestions

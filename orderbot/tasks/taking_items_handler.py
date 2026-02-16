@@ -674,9 +674,17 @@ class TakingItemsHandler(MenuDataMixin):
                     "offset": display_count,
                 }
 
+        # Build quick replies for inline clickable text
+        if len(matches) == 1:
+            qr = [{"label": item_name, "value": item_name}]
+        else:
+            qr = [{"label": name, "value": name} for name in item_names]
+            if has_more:
+                qr.append({"label": f"{len(matches) - display_count} more", "value": "what else?"})
         return StateMachineResult(
             message=msg,
             order=order,
+            quick_replies=qr,
         )
 
     def _handle_standalone_ingredient(

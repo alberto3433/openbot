@@ -560,9 +560,12 @@ class EarlyPatternHandler:
             f"{i + 1}. {opt['name']}"
             for i, opt in enumerate(order.pending_item_options)
         )
+        # Build quick replies for inline clickable text
+        qr = [{"label": opt["name"], "value": opt["name"]} for opt in order.pending_item_options]
         return StateMachineResult(
             message=f"Which item would you like to add {quantity} more of?\n{options_text}",
             order=order,
+            quick_replies=qr,
         )
 
     def _resolve_quantity_addition_selection(
@@ -625,9 +628,12 @@ class EarlyPatternHandler:
             f"{i + 1}. {opt['name']}"
             for i, opt in enumerate(options)
         )
+        # Build quick replies for inline clickable text
+        qr = [{"label": opt["name"], "value": opt["name"]} for opt in options]
         return StateMachineResult(
             message=f"Sorry, I didn't catch that. Which item would you like {quantity} more of?\n{options_text}",
             order=order,
+            quick_replies=qr,
         )
 
     def handle_all_early_patterns(

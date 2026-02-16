@@ -294,7 +294,7 @@ class MenuInquiryHandler(BaseHandler):
         offset: int,
         show_prices: bool,
         lookup_type: str,
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, list[str]]:
         """Format a batch of items for display.
 
         Args:
@@ -304,11 +304,13 @@ class MenuInquiryHandler(BaseHandler):
             lookup_type: The item type (for price lookups)
 
         Returns:
-            Tuple of (formatted string, has_more_items)
+            Tuple of (formatted string, has_more_items, raw_item_names)
         """
         batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
         remaining = len(items) - (offset + len(batch))
         has_more = remaining > 0
+
+        raw_names = [item.get("name", "Unknown") for item in batch]
 
         if show_prices:
             item_list = []
@@ -321,15 +323,15 @@ class MenuInquiryHandler(BaseHandler):
                     price = item.get('price') or item.get('base_price') or 0
                 item_list.append(f"{name} (${price:.2f})")
         else:
-            item_list = [item.get("name", "Unknown") for item in batch]
+            item_list = list(raw_names)
 
         if has_more:
             # Don't use format_english_list when there's a "more" indicator
             # to avoid "X, and ...and N more" redundancy
             formatted = ", ".join(item_list) + f", and {remaining} more"
-            return formatted, has_more
+            return formatted, has_more, raw_names
 
-        return format_english_list(item_list), has_more
+        return format_english_list(item_list), has_more, raw_names
 
     def handle_more_menu_items(self, order: OrderTask, category: str | None = None) -> StateMachineResult:
         """Handle 'show more' menu requests.
@@ -373,7 +375,8 @@ class MenuInquiryHandler(BaseHandler):
                 group_names = [g["display_name"] for g in display_groups]
                 shown_names = group_names[:max_categories_to_show]
 
-                if len(group_names) > max_categories_to_show:
+                has_more = len(group_names) > max_categories_to_show
+                if has_more:
                     # More categories than we're showing
                     categories_text = format_english_list(shown_names) + ", and more"
                     # Save pagination state for "what else" follow-ups
@@ -386,9 +389,15 @@ class MenuInquiryHandler(BaseHandler):
                     categories_text = format_english_list(shown_names)
                     order.clear_menu_pagination()
 
+                # Build quick replies for inline clickable text
+                qr = [{"label": name, "value": name} for name in shown_names]
+                if has_more:
+                    qr.append({"label": "more", "value": "what else?"})
+
                 return StateMachineResult(
                     message=f"We have a great selection! What are you in the mood for? We have {categories_text}.",
                     order=order,
+                    quick_replies=qr,
                 )
             # Fallback if no display groups configured - use generic message
             return StateMachineResult(
@@ -415,9 +424,13 @@ class MenuInquiryHandler(BaseHandler):
                     categories_text = format_english_list(shown_names) + ", and more"
                 else:
                     categories_text = format_english_list(shown_names)
+                qr = [{"label": name, "value": name} for name in shown_names]
+                if len(group_names) > max_categories_to_show:
+                    qr.append({"label": "more", "value": "what else?"})
                 return StateMachineResult(
                     message=f"We don't have {type_display}, but we do have {categories_text}. What are you in the mood for?",
                     order=order,
+                    quick_replies=qr,
                 )
             return StateMachineResult(
                 message=f"I'm sorry, I don't have any {type_display} on the menu. What else can I help you with?",
@@ -431,17 +444,24 @@ class MenuInquiryHandler(BaseHandler):
         # Use proper pluralization via inflect library
         type_display = pluralize(type_name)
 
-        items_str, has_more = self._format_items_list(items, 0, show_prices, lookup_type)
+        items_str, has_more, batch_names = self._format_items_list(items, 0, show_prices, lookup_type)
 
         # Save pagination state if there are more items
+        remaining = len(items) - DEFAULT_PAGINATION_SIZE
         if has_more:
             order.set_menu_pagination(menu_query_type, DEFAULT_PAGINATION_SIZE, len(items))
         else:
             order.clear_menu_pagination()
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch_names]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
         return StateMachineResult(
             message=f"Our {type_display} include: {items_str}. Would you like any of these?",
             order=order,
+            quick_replies=qr,
         )
 
     def handle_category_clarification(
@@ -540,9 +560,15 @@ class MenuInquiryHandler(BaseHandler):
                 items_list = format_english_list(batch)
                 order.clear_menu_pagination()
 
+            # Build quick replies for inline clickable text
+            qr = [{"label": name, "value": name} for name in batch]
+            if has_more:
+                qr.append({"label": "others", "value": "what else?"})
+
             return StateMachineResult(
                 message=f"What kind? We have {items_list}.",
                 order=order,
+                quick_replies=qr,
             )
 
         # No items in category - generic response
@@ -708,7 +734,13 @@ class MenuInquiryHandler(BaseHandler):
 
         message = f"Our {type_display_name} are: {items_list}. Would you like any of these?"
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in item_names]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
         return StateMachineResult(
             message=message,
             order=order,
+            quick_replies=qr,
         )

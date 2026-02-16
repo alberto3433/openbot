@@ -186,7 +186,10 @@ class PriceInquiryHandler:
 
         options_text = format_english_list(options, conjunction="or")
 
+        # Build quick replies from context labels
+        qr = [{"label": ctx.get("label", ""), "value": ctx.get("label", "")} for ctx in contexts if ctx.get("label")]
         return StateMachineResult(
             message=f"Are you asking about {name} as {options_text}?",
             order=order,
+            quick_replies=qr,
         )

@@ -163,9 +163,12 @@ class DisambiguationHandler:
             len(matching_items)
         )
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": m.get("name", ""), "value": m.get("name", "")} for m in matching_items[:self.MAX_OPTIONS] if m.get("name")]
         return StateMachineResult(
             message=f"We have a few options for {item_name}:\n{options_str}\nWhich would you like?",
             order=order,
+            quick_replies=qr,
         )
 
     def resolve_disambiguation(

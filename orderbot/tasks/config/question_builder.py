@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache.base import pluralize
 from ..models.utilities import is_name_forming_category
-from ..schemas import StateMachineResult, OrderPhase
+from ..schemas import StateMachineResult
 from ..utils.text import format_english_list, number_to_word
 
 if TYPE_CHECKING:
@@ -76,12 +76,11 @@ class QuestionBuilder:
         del item.unavailable_selections[attr_slug]
 
         # Set up order state for receiving the answer
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = f"{item.menu_item_type}:{attr_slug}"
-        order.config_options_page = 0
+        order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr_slug}")
 
-        return StateMachineResult(message=question, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in available] if available else None
+        return StateMachineResult(message=question, order=order, quick_replies=qr)
 
     def calculate_item_ordinal(
         self, item: "MenuItemTask", order: "OrderTask"
@@ -378,7 +377,12 @@ class QuestionBuilder:
             else:
                 message = f"And finally, {options_str}. Would you like any of these?"
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in names]
+        if has_more:
+            qr.append({"label": "more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def advance_unmatched_pagination(self, order: "OrderTask") -> StateMachineResult:
         """Advance to the next page of unmatched options.

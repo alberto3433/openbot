@@ -11,7 +11,7 @@ Extracted from menu_item_config_handler.py to reduce file size.
 import logging
 from typing import TYPE_CHECKING, Callable
 
-from ..schemas import StateMachineResult, OrderPhase
+from ..schemas import StateMachineResult
 from ..parsers.constants import extract_quantity_for_pattern
 from ..parsers.quantity_utils import parse_numeric_input, extract_leading_quantity
 from ..utils import OptionMatchingOrchestrator, OptionMatcher
@@ -684,9 +684,7 @@ class DirectOptionMatcher:
         if quantity is None:
             quantity = 1
 
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = f"{item.menu_item_type}:{attr_slug}"
+        order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr_slug}")
 
         # Use pending_attr_disambiguation pattern (consistent with select_input_handler)
         # This stores quantity so it can be applied when user answers
@@ -697,7 +695,10 @@ class DirectOptionMatcher:
             "item_id": item.id,
         }
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": c["display_name"], "value": c["display_name"]} for c in candidates]
         return StateMachineResult(
             message=f"Which {attr_display} would you like? {options_list}",
             order=order,
+            quick_replies=qr,
         )

@@ -164,9 +164,13 @@ class RecommendationHandler(MenuDataMixin):
         else:
             message = f"Popular options include {item_list}. Would you like one of these?"
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in items]
+
         return StateMachineResult(
             message=message,
             order=order,
+            quick_replies=qr,
         )
 
     def _format_item_type_suggestions(self, order: OrderTask) -> StateMachineResult:
@@ -200,9 +204,15 @@ class RecommendationHandler(MenuDataMixin):
             else:
                 order.clear_menu_pagination()
 
+            # Build quick replies for inline clickable text
+            qr = [{"label": name, "value": name} for name in shown_names]
+            if has_more:
+                qr.append({"label": "more", "value": "what else?"})
+
             return StateMachineResult(
                 message=f"We have a great selection! What are you in the mood for? We have {categories_text}.",
                 order=order,
+                quick_replies=qr,
             )
 
         # Fallback if no display groups configured

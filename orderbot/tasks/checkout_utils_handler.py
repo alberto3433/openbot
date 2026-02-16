@@ -158,9 +158,11 @@ class CheckoutUtilsHandler:
                 order.pending_field = PendingField.ITEM_SELECTION
                 order.set_phase(OrderPhase.CONFIGURING_ITEM)
                 options_str = format_numbered_list(order.pending_item_options)
+                qr = [{"label": o.get("name", ""), "value": o.get("name", "")} for o in order.pending_item_options if o.get("name")]
                 return StateMachineResult(
                     message=f"We have a few options:\n{options_str}\nWhich would you like?",
                     order=order,
+                    quick_replies=qr,
                 )
 
             # Find the target item and check if it still needs configuration
@@ -178,9 +180,7 @@ class CheckoutUtilsHandler:
 
             # If we have item_name and pending_field, use abbreviated question format
             if item_name and pending_field:
-                order.pending_item_id = item_id
-                order.pending_field = pending_field
-                order.set_phase(OrderPhase.CONFIGURING_ITEM)
+                order.setup_pending_config(item_id, pending_field)
                 item_type_slug = None
                 if target_item and isinstance(target_item, MenuItemTask):
                     item_type_slug = target_item.menu_item_type

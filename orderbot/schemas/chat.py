@@ -145,6 +145,8 @@ class ChatMessageResponse(BaseModel):
         reply: Bot's natural language response to display
         order_state: Complete current order (items, customer, totals)
         actions: List of structured actions performed (for UI updates)
+        quick_replies: Inline clickable items in the reply text.
+            Each dict has "label" (text to highlight) and "value" (text to send on click).
     """
     reply: str
     order_state: Dict[str, Any]
@@ -152,6 +154,7 @@ class ChatMessageResponse(BaseModel):
         default_factory=list,
         description="List of actions performed"
     )
+    quick_replies: Optional[List[Dict[str, str]]] = None
 
 
 class ReportSessionRequest(BaseModel):

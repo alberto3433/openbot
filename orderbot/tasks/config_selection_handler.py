@@ -190,9 +190,11 @@ class ConfigSelectionHandler:
         # Reject negative numbers or other invalid input early
         if user_lower.startswith('-') or user_lower.startswith('\u2212'):
             options_str = format_numbered_list(options)
+            qr = [{"label": o.get("name", ""), "value": o.get("name", "")} for o in options if o.get("name")]
             return StateMachineResult(
                 message=f"Please choose a number from 1 to {min(len(options), 6)}:\n{options_str}",
                 order=order,
+                quick_replies=qr,
             )
 
         # Try to match by number (1, 2, 3, "first", "second", etc.)
@@ -209,9 +211,11 @@ class ConfigSelectionHandler:
                     # User selected a number that's out of range - ask again
                     logger.info("ITEM SELECTION: User selected %s but only %d options available", key, len(options))
                     options_str = format_numbered_list(options)
+                    qr = [{"label": o.get("name", ""), "value": o.get("name", "")} for o in options if o.get("name")]
                     return StateMachineResult(
                         message=f"I only have {min(len(options), 6)} options. Please choose:\n{options_str}",
                         order=order,
+                        quick_replies=qr,
                     )
 
         # If not found by number, try to match by name
@@ -232,9 +236,11 @@ class ConfigSelectionHandler:
         if not selected_item:
             # Couldn't determine which one - ask again
             options_str = format_numbered_list(options)
+            qr = [{"label": o.get("name", ""), "value": o.get("name", "")} for o in options if o.get("name")]
             return StateMachineResult(
                 message=f"I didn't catch which one. Please choose:\n{options_str}",
                 order=order,
+                quick_replies=qr,
             )
 
         # Found the selection - clear pending state
@@ -352,12 +358,13 @@ class ConfigSelectionHandler:
                 else:
                     question = f"Would you like a side with your {selected_name}?"
             # Set state to wait for side choice
-            order.set_phase(OrderPhase.CONFIGURING_ITEM)
-            order.pending_item_id = first_item.id
-            order.pending_field = PendingField.SIDE_CHOICE
+            order.setup_pending_config(first_item.id, PendingField.SIDE_CHOICE)
+            # Build quick replies from component slot options
+            qr = [{"label": name, "value": name} for name in option_names] if options else None
             return StateMachineResult(
                 message=question,
                 order=order,
+                quick_replies=qr,
             )
 
         # Check if there are pending parsed items that haven't been added yet

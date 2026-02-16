@@ -557,9 +557,13 @@ class ItemAdderHandler(MenuDataMixin):
                 if side_slot
                 else f"What side would you like with your {canonical_name}?"
             )
+            # Build quick replies from component slot options (data-driven)
+            side_options = menu_cache.get_component_slot_options(category, "side")
+            qr = [{"label": o.get("display_name", o.get("allowed_item_type", "")), "value": o.get("display_name", o.get("allowed_item_type", ""))} for o in side_options] if side_options else None
             return StateMachineResult(
                 message=question,
                 order=order,
+                quick_replies=qr,
             )
         elif uses_db_config and self.menu_item_handler:
             # For deli/egg sandwiches, use DB-driven configuration with customization checkpoint

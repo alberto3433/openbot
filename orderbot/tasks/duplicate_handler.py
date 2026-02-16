@@ -200,9 +200,12 @@ class DuplicateHandler:
             question_parts = [f"another {opt['summary']}" for opt in items]
             question = ", ".join(question_parts) + ", or all the items in your order?"
             question = "I didn't catch that. " + question[0].upper() + question[1:]
+            # Build quick replies from item summaries
+            qr = [{"label": opt["summary"], "value": opt["summary"]} for opt in items]
             return StateMachineResult(
                 message=question,
                 order=order,
+                quick_replies=qr,
             )
 
         # Found the item to duplicate - find it in the order and duplicate it

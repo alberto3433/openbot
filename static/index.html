@@ -578,6 +578,24 @@
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     }
 
+    /* Inline Quick Reply Links */
+    .quick-reply-inline {
+      color: var(--brand-primary);
+      cursor: pointer;
+      text-decoration: none;
+      border-bottom: 1px dashed var(--brand-primary);
+      transition: border-color 0.15s, opacity 0.15s;
+    }
+    .quick-reply-inline:hover {
+      border-bottom-style: solid;
+    }
+    .quick-reply-inline.disabled {
+      color: inherit;
+      cursor: default;
+      border-bottom: none;
+      pointer-events: none;
+    }
+
     /* Typing Indicator */
     .typing-indicator {
       display: flex;
@@ -1623,16 +1641,67 @@
     let orderConfirmed = false;
     let conversationHistory = [];
 
-    function addMessage(role, text) {
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function escapeAttr(str) {
+      return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function disablePreviousQuickReplies() {
+      messagesEl.querySelectorAll(".quick-reply-inline:not(.disabled)").forEach(function(el) {
+        el.classList.add("disabled");
+      });
+    }
+
+    function renderMessageWithQuickReplies(text, quickReplies) {
+      var html = escapeHtml(text);
+      // Sort by label length descending to avoid partial matches
+      var sorted = quickReplies.slice().sort(function(a, b) {
+        return b.label.length - a.label.length;
+      });
+      sorted.forEach(function(qr) {
+        var escapedLabel = escapeHtml(qr.label);
+        // Case-insensitive search to match labels regardless of casing in message
+        var idx = html.toLowerCase().indexOf(escapedLabel.toLowerCase());
+        if (idx !== -1) {
+          var originalText = html.substring(idx, idx + escapedLabel.length);
+          var span = '<span class="quick-reply-inline" data-value="' + escapeAttr(qr.value) + '">' + originalText + '</span>';
+          html = html.substring(0, idx) + span + html.substring(idx + escapedLabel.length);
+        }
+      });
+      return html;
+    }
+
+    function addMessage(role, text, quickReplies) {
+      var hasQuickReplies = quickReplies && quickReplies.length > 0 && role === "assistant";
+      if (hasQuickReplies) {
+        disablePreviousQuickReplies();
+      }
       const row = document.createElement("div");
       row.className = "msg-row " + role;
       const bubble = document.createElement("div");
       bubble.className = "msg-bubble";
-      bubble.textContent = text;
+      if (hasQuickReplies) {
+        bubble.innerHTML = renderMessageWithQuickReplies(text, quickReplies);
+      } else {
+        bubble.textContent = text;
+      }
       row.appendChild(bubble);
       messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+
+    // Event delegation for inline quick reply clicks
+    messagesEl.addEventListener("click", function(e) {
+      var target = e.target.closest(".quick-reply-inline");
+      if (target && !target.classList.contains("disabled")) {
+        sendMessage(target.dataset.value);
+      }
+    });
 
     function showTypingIndicator() {
       if (typingIndicatorEl) return;
@@ -1737,7 +1806,7 @@
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         const data = await resp.json();
         if (data.reply) {
-          addMessage("assistant", data.reply);
+          addMessage("assistant", data.reply, data.quick_replies);
           lastBotMessage = data.reply;
           messageCount++;
           conversationHistory.push({ role: "assistant", content: data.reply });
@@ -1792,7 +1861,12 @@
                 const event = JSON.parse(jsonStr);
                 if (event.done) {
                   fullReply = event.reply || "";
-                  bubble.textContent = fullReply;
+                  if (event.quick_replies && event.quick_replies.length > 0) {
+                    disablePreviousQuickReplies();
+                    bubble.innerHTML = renderMessageWithQuickReplies(fullReply, event.quick_replies);
+                  } else {
+                    bubble.textContent = fullReply;
+                  }
                   if (fullReply) {
                     lastBotMessage = fullReply;
                     messageCount++;
@@ -2163,8 +2237,8 @@
     document.addEventListener("keydown", enableAudioAndPlayGreeting, { once: true });
 
     const originalAddMessage = addMessage;
-    addMessage = function(role, text) {
-      originalAddMessage(role, text);
+    addMessage = function(role, text, quickReplies) {
+      originalAddMessage(role, text, quickReplies);
       if (role === "assistant" && text) speakText(text);
     };
 

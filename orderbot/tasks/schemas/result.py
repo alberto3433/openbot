@@ -14,3 +14,4 @@ class StateMachineResult:
     message: str
     order: OrderTask
     is_complete: bool = False
+    quick_replies: list[dict[str, str]] | None = None

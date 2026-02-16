@@ -23,7 +23,7 @@ from ..selection_utils import (
     find_partial_matches,
     find_numeric_options,
 )
-from ..schemas import StateMachineResult, OrderPhase
+from ..schemas import StateMachineResult
 from ..parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
 from ..parsers.quantity_utils import parse_numeric_input, MAX_MODIFIER_QUANTITY
 from ..utils.text import format_english_list, normalize_text
@@ -189,9 +189,11 @@ class SelectInputHandler:
                     names = [opt["display_name"] for opt in available_options]
                     from ..utils.text import format_english_list
                     options_str = format_english_list(names, conjunction="or")
+                    qr = [{"label": name, "value": name} for name in names]
                     return StateMachineResult(
                         message=f"Sorry, we don't have {unavail_name}. We have {options_str}.",
                         order=order,
+                        quick_replies=qr,
                     )
                 else:
                     return StateMachineResult(
@@ -432,9 +434,12 @@ class SelectInputHandler:
             }
             options_text = self._format_display_list(token_matches)
             attr_display = attr.get("display_name", attr_slug).lower()
+            # Build quick replies for inline clickable text
+            qr = [{"label": o["display_name"], "value": o["display_name"]} for o in token_matches]
             return StateMachineResult(
                 message=f"Which {attr_display}? {options_text}",
                 order=order,
+                quick_replies=qr,
             )
 
         return None
@@ -545,9 +550,12 @@ class SelectInputHandler:
             ).lower()
         else:
             attr_display = attr.get("display_name", attr_slug).lower()
+        # Build quick replies for inline clickable text
+        qr = [{"label": o["display_name"], "value": o["display_name"]} for o in ambiguous_options]
         return StateMachineResult(
             message=f"Which {attr_display}? {options_text}",
             order=order,
+            quick_replies=qr,
         )
 
     def _apply_multi_select_matches(
@@ -722,6 +730,7 @@ class SelectInputHandler:
             if len(available) <= DEFAULT_PAGINATION_SIZE:
                 names = [opt["display_name"] for opt in available]
                 options_str = format_english_list(names, conjunction="or")
+                has_more = False
                 message = (
                     f"Got it, {ack_text}. We don't have {unmatched_text}. "
                     f"We have {options_str}. Would you like any of these?"
@@ -730,13 +739,19 @@ class SelectInputHandler:
                 first_page = available[:DEFAULT_PAGINATION_SIZE]
                 names = [opt["display_name"] for opt in first_page]
                 options_str = format_english_list(names, conjunction="and")
+                has_more = True
                 message = (
                     f"Got it, {ack_text}. We don't have {unmatched_text}. "
                     f"We have {options_str}... and more. Would you like to see more options?"
                 )
                 order.pending_unmatched_pagination["page"] = 1
 
-            return StateMachineResult(message=message, order=order)
+            # Build quick replies for inline clickable text
+            qr = [{"label": name, "value": name} for name in names]
+            if has_more:
+                qr.append({"label": "more", "value": "what else?"})
+
+            return StateMachineResult(message=message, order=order, quick_replies=qr)
 
         return None
 
@@ -924,9 +939,12 @@ class SelectInputHandler:
         )
 
         options_text = self._format_display_list(partial_matches)
+        # Build quick replies for inline clickable text
+        qr = [{"label": o["display_name"], "value": o["display_name"]} for o in partial_matches]
         return StateMachineResult(
             message=f"I found a few options matching that. Did you mean {options_text}?",
             order=order,
+            quick_replies=qr,
         )
 
     def _handle_single_select_fallback(
@@ -1015,22 +1033,28 @@ class SelectInputHandler:
             available = [opt["display_name"] for opt in available_opts]
             if available and len(available) <= DEFAULT_PAGINATION_SIZE:
                 options_str = format_english_list(available, conjunction="or")
+                qr = [{"label": name, "value": name} for name in available]
                 return StateMachineResult(
                     message=f"Sure! Which {attr_name} would you like? {options_str}",
                     order=order,
+                    quick_replies=qr,
                 )
             elif available:
                 first_page = available[:DEFAULT_PAGINATION_SIZE]
                 options_str = format_english_list(first_page)
+                qr = [{"label": name, "value": name} for name in first_page]
+                qr.append({"label": "more", "value": "what else?"})
                 return StateMachineResult(
                     message=f"Sure! We have {options_str}, and more. Which {attr_name} would you like?",
                     order=order,
+                    quick_replies=qr,
                 )
 
         # No match at all - show first page of options directly
         attr_name = attr["display_name"].lower()
         available = [opt for opt in options if opt.get("is_available", True)]
 
+        qr = None
         if not available:
             message = f"Sorry, we don't have {user_input} and there are no {attr_name} options available."
         elif len(available) <= DEFAULT_PAGINATION_SIZE:
@@ -1038,6 +1062,7 @@ class SelectInputHandler:
             names = [opt["display_name"] for opt in available]
             options_str = format_english_list(names, conjunction="or")
             message = f"Sorry, we don't have {user_input}. We have {options_str}."
+            qr = [{"label": name, "value": name} for name in names]
         else:
             # Show first page with pagination
             first_page = available[:DEFAULT_PAGINATION_SIZE]
@@ -1046,8 +1071,10 @@ class SelectInputHandler:
             message = f"Sorry, we don't have {user_input}. We have {options_str}, and more. Do you want one of these or do you want to hear more options?"
             # Set pagination state so "yes" / "more options" works on next turn
             order.config_options_page = 1
+            qr = [{"label": name, "value": name} for name in names]
+            qr.append({"label": "more", "value": "what else?"})
 
-        return StateMachineResult(message=message, order=order)
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def _check_partial_match(
         self,
@@ -1085,10 +1112,14 @@ class SelectInputHandler:
         # Multiple options match - list them for user (with pagination)
         if len(matching_options) <= DEFAULT_PAGINATION_SIZE:
             options_text = self._format_display_list(matching_options)
+            batch_names = [opt["display_name"] for opt in matching_options]
+            has_more = False
             message = f"We have {options_text}. Which would you like?"
         else:
             first_page = matching_options[:DEFAULT_PAGINATION_SIZE]
             options_text = self._format_display_list(first_page)
+            batch_names = [opt["display_name"] for opt in first_page]
+            has_more = True
             remaining = len(matching_options) - DEFAULT_PAGINATION_SIZE
             message = (
                 f"We have {options_text}, and {remaining} more. "
@@ -1103,18 +1134,22 @@ class SelectInputHandler:
             "modifiers": {"_quantity": quantity},
             "item_id": item.id,
         }
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = f"{item.menu_item_type}:{attr_slug}"
+        order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr_slug}")
 
         logger.info(
             "Partial match: user said '%s', term '%s' matched %d options",
             user_input, matched_term, len(matching_options)
         )
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch_names]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
         return StateMachineResult(
             message=message,
             order=order,
+            quick_replies=qr,
         )
 
     def _try_numeric_option_match(

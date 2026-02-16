@@ -55,6 +55,7 @@ class ProcessingResult:
     reply: str
     order_state: Dict[str, Any]
     actions: List[Dict[str, Any]]
+    quick_replies: list[dict[str, str]] | None = None
 
     # Session data for response
     history: List[Dict[str, str]] = field(default_factory=list)
@@ -131,7 +132,7 @@ class MessageProcessor:
             store_info = self._build_store_info(session_store_id)
 
         # 4. Process through state machine
-        reply, updated_order_state, actions = process_message_with_state_machine(
+        reply, updated_order_state, actions, quick_replies = process_message_with_state_machine(
             user_message=ctx.user_message,
             order_state_dict=order_state,
             history=history,
@@ -211,6 +212,7 @@ class MessageProcessor:
             reply=reply,
             order_state=updated_order_state,
             actions=actions,
+            quick_replies=quick_replies,
             history=history,
             order_persisted=order_persisted,
             analytics_logged=analytics_logged,

@@ -131,10 +131,11 @@ class MenuPaginationHandler(MenuDataMixin):
             )
 
         # Format the next batch
-        items_str, has_more = self._format_items_list(items, offset, False, lookup_type)
+        items_str, has_more, batch_names = self._format_items_list(items, offset, False, lookup_type)
 
         # Update pagination state
         new_offset = offset + DEFAULT_PAGINATION_SIZE
+        remaining = len(items) - (offset + len(batch_names))
         if has_more:
             order.set_menu_pagination(category, new_offset, len(items))
         else:
@@ -146,9 +147,15 @@ class MenuPaginationHandler(MenuDataMixin):
         else:
             message = f"We also have: {items_str}. That's all we have. Would you like any of these?"
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch_names]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
         return StateMachineResult(
             message=message,
             order=order,
+            quick_replies=qr,
         )
 
     def _handle_more_ingredient_search_items(
@@ -180,9 +187,10 @@ class MenuPaginationHandler(MenuDataMixin):
 
         # Format the list
         items_list = format_english_list(item_names)
+        has_more = remaining > 0
 
         # Update or clear pagination state
-        if remaining > 0:
+        if has_more:
             order.pending_ingredient_search = {
                 "ingredient": ingredient,
                 "matches": matches,
@@ -193,9 +201,15 @@ class MenuPaginationHandler(MenuDataMixin):
             order.pending_ingredient_search = None
             message = f"We also have: {items_list}. That's all the items with {ingredient}. Which would you like?"
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in item_names]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
         return StateMachineResult(
             message=message,
             order=order,
+            quick_replies=qr,
         )
 
     def _handle_category_as_menu_query(
@@ -296,7 +310,12 @@ class MenuPaginationHandler(MenuDataMixin):
         else:
             message = f"We also have {items_str}. That's all we have. Would you like any?"
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def _handle_more_item_types(
         self,
@@ -352,7 +371,12 @@ class MenuPaginationHandler(MenuDataMixin):
         else:
             message = f"We also have {items_str}. That's everything! What would you like?"
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def _handle_more_attribute_options(
         self,
@@ -413,7 +437,12 @@ class MenuPaginationHandler(MenuDataMixin):
         else:
             message = f"We also have {items_str}. That's all the {attr_display} we have. Would you like any?"
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def _handle_more_dietary_items(
         self,
@@ -476,7 +505,12 @@ class MenuPaginationHandler(MenuDataMixin):
             category_suffix = f" {category}" if category else " options"
             message = f"We also have {items_str}. That's all the {dietary_display}{category_suffix} we have. Would you like any?"
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def _handle_more_availability_items(
         self,
@@ -520,7 +554,12 @@ class MenuPaginationHandler(MenuDataMixin):
         else:
             message = f"We also have {items_str}. That's all we have. Would you like any of these?"
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def _handle_more_display_group_items(
         self,
@@ -566,7 +605,12 @@ class MenuPaginationHandler(MenuDataMixin):
             order.clear_menu_pagination()
             message = f"We also have {items_str}. That's all we have. Would you like any of these?"
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def _normalize_modifier_items(self, items_set: set, category: str) -> list[str]:
         """Normalize and deduplicate modifier items for display.
@@ -622,7 +666,7 @@ class MenuPaginationHandler(MenuDataMixin):
         offset: int,
         show_prices: bool,
         lookup_type: str,
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, list[str]]:
         """Format a batch of items for display.
 
         Delegates to menu_inquiry_handler if available.
@@ -634,7 +678,7 @@ class MenuPaginationHandler(MenuDataMixin):
             lookup_type: The item type (for price lookups)
 
         Returns:
-            Tuple of (formatted string, has_more_items)
+            Tuple of (formatted string, has_more_items, raw_item_names)
         """
         if self.menu_inquiry_handler:
             return self.menu_inquiry_handler._format_items_list(items, offset, show_prices, lookup_type)
@@ -645,7 +689,8 @@ class MenuPaginationHandler(MenuDataMixin):
         has_more = remaining > 0
 
         item_list = [item.get("name", "Unknown") for item in batch]
+        raw_names = list(item_list)
         if has_more:
             item_list.append(f"...and {remaining} more")
 
-        return format_english_list(item_list), has_more
+        return format_english_list(item_list), has_more, raw_names

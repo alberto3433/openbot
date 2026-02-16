@@ -1519,9 +1519,12 @@ class ConfigModificationHandler:
             option_lines.append(f"{i}. {match['name']}{price_str}")
 
         options_str = "\n".join(option_lines)
+        # Build quick replies for inline clickable text
+        qr = [{"label": m["name"], "value": m["name"]} for m in matches[:6] if m.get("name")]
         return StateMachineResult(
             message=f"Which {new_value} would you like?\n{options_str}",
             order=order,
+            quick_replies=qr,
         )
 
     def _start_attribute_option_selection(
@@ -1562,9 +1565,12 @@ class ConfigModificationHandler:
         display_name = attr_config.get("display_name") or attr_slug.replace("_", " ")
         question = f"How would you like your {display_name}?"
 
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in option_names]
         return StateMachineResult(
             message=f"We have {options_text}. {question}",
             order=order,
+            quick_replies=qr,
         )
 
     def _find_target_item_by_suffix(

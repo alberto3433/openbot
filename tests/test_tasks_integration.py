@@ -1456,7 +1456,7 @@ class TestRepeatOrder:
         # Use None to fall back to global menu_data which has all pricing info
         menu_data = None
 
-        reply, updated_state, actions = process_message_with_state_machine(
+        reply, updated_state, actions, _qr = process_message_with_state_machine(
             user_message="repeat my order",
             order_state_dict=order_state,
             history=[],

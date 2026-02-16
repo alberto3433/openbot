@@ -164,18 +164,6 @@ class MenuItemConfigHandler(BaseHandler):
         self._ctx.process_pending_parsed_items = callback
         self._customization_checkpoint_handler._process_pending_parsed_items_callback = callback
 
-    def _setup_config_pending(
-        self, order: OrderTask, item: MenuItemTask, pending_field: str
-    ) -> None:
-        """Set up order state for a pending configuration question.
-
-        Consolidates the repeated pattern of setting phase, item id, field, and page.
-        """
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = pending_field
-        order.config_options_page = 0
-
     def supports_item_type(self, item_type_slug: str | None) -> bool:
         """Check if this handler supports the given item type.
 
@@ -457,13 +445,13 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Store state for handling the user's response
         # pending_field format: "item_type:attr_slug" so the router knows what attribute this is for
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = PendingField.AMBIGUOUS_SELECTION
+        order.setup_pending_config(item.id, PendingField.AMBIGUOUS_SELECTION)
         # Store the ambiguous selection info so we can process the response
         order.pending_config_queue = [ambig]  # Store as list for compatibility
 
-        return StateMachineResult(message=question, order=order)
+        # Build quick replies for inline clickable text
+        qr = [{"label": name, "value": name} for name in option_names]
+        return StateMachineResult(message=question, order=order, quick_replies=qr)
 
     def _ask_attribute_question(
         self, item: MenuItemTask, order: OrderTask, attr: dict,
@@ -511,9 +499,34 @@ class MenuItemConfigHandler(BaseHandler):
                     question = prefix + question
 
         # Set up order state for receiving the answer
-        self._setup_config_pending(order, item, f"{item.menu_item_type}:{attr['slug']}")
+        order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr['slug']}")
 
-        return StateMachineResult(message=question, order=order)
+        # Build quick replies from attribute options (data-driven)
+        # The frontend will only highlight labels that appear in the message text
+        qr = None
+        input_type = attr.get("input_type", "single_select")
+        if input_type in ("single_select", "multi_select"):
+            options = attr.get("options", [])
+            available_opts = [o for o in options if o.get("is_available", True)]
+            if available_opts:
+                qr = [{"label": o["display_name"], "value": o["display_name"]} for o in available_opts]
+
+        # If no attribute options, check component slots (e.g., side_choice → side slot)
+        # Component slot options are stored separately from attribute options
+        if not qr:
+            from orderbot.cache import menu_cache
+            slots = menu_cache.get_component_slots(item.menu_item_type)
+            for _slot_name, slot_config in slots.items():
+                slot_options = slot_config.get("options", [])
+                if slot_options:
+                    qr = [
+                        {"label": o.get("display_name") or o.get("allowed_item_type", ""), "value": o.get("display_name") or o.get("allowed_item_type", "")}
+                        for o in slot_options
+                        if o.get("display_name") or o.get("allowed_item_type")
+                    ]
+                    break  # Use first slot with options
+
+        return StateMachineResult(message=question, order=order, quick_replies=qr)
 
     def _ask_customization_checkpoint(
         self, item: MenuItemTask, order: OrderTask, acknowledgment: str | None = None
@@ -585,14 +598,17 @@ class MenuItemConfigHandler(BaseHandler):
         # Mark that we've reached the checkpoint
         item.customization_offered = True
 
-        self._setup_config_pending(order, item, PendingField.CUSTOMIZATION_CHECKPOINT)
+        order.setup_pending_config(item.id, PendingField.CUSTOMIZATION_CHECKPOINT)
 
         # List available customization options as individual questions
         options_questions = self._format_checkpoint_questions(unanswered_optional)
 
+        # Build quick replies from attribute display names
+        qr = [{"label": a.get("display_name", a["slug"]), "value": a.get("display_name", a["slug"])} for a in unanswered_optional]
         return StateMachineResult(
             message=f"{ack_prefix}Any more changes? {options_questions}",
             order=order,
+            quick_replies=qr,
         )
 
     # =========================================================================
@@ -703,7 +719,7 @@ class MenuItemConfigHandler(BaseHandler):
             if unanswered:
                 # Ask the first unanswered mandatory question
                 first_attr = unanswered[0]
-                self._setup_config_pending(order, item, f"{item_type_slug}:{first_attr['slug']}")
+                order.setup_pending_config(item.id, f"{item_type_slug}:{first_attr['slug']}")
 
                 question = self._build_question_text(first_attr)
 
@@ -822,28 +838,26 @@ class MenuItemConfigHandler(BaseHandler):
         # Reset options page when user provides an actual answer
         order.config_options_page = 0
 
-        # Handle boolean attributes
-        if input_type == "boolean":
-            return self._handle_boolean_input(user_input, item, order, attr)
+        # Dispatch by input_type for non-select types
+        input_type_handlers = {
+            "boolean": self._handle_boolean_input,
+            "quantity": self._handle_quantity_input,
+            "package_multi_select": self._handle_package_input,
+        }
 
-        # Handle quantity attributes (e.g., shots)
-        if input_type == "quantity":
-            return self._handle_quantity_input(user_input, item, order, attr, options)
+        handler = input_type_handlers.get(input_type)
+        if handler:
+            if input_type == "quantity":
+                return handler(user_input, item, order, attr, options)
+            return handler(user_input, item, order, attr)
 
-        # Handle package_multi_select (bagel packages - specify types like "3 plain, 2 everything")
-        if input_type == "package_multi_select":
-            return self._handle_package_input(user_input, item, order, attr)
-
-        # Handle single/multi select
+        # single_select / multi_select need forward delegation check first
         if input_type in ("single_select", "multi_select"):
-            # Check for forward delegation: if any option has forward_to_attribute set,
-            # check if user input matches the target attribute's options
             forward_result = self._check_forward_delegation(
                 user_input, item, order, attr, options, attrs
             )
             if forward_result:
                 return forward_result
-
             return self._handle_select_input(user_input, item, order, attr, options)
 
         # Default: store raw input
@@ -1084,6 +1098,33 @@ class MenuItemConfigHandler(BaseHandler):
             advance_callback=advance_with_capture,
         )
 
+    def _advance_from_pagination(
+        self, pagination: dict, item: MenuItemTask, order: OrderTask,
+        matched_choice: str | None = None,
+    ) -> StateMachineResult:
+        """Look up the attribute from pagination context and advance to next question.
+
+        Consolidates the repeated pattern of resolving attr_slug from pagination
+        state and calling _advance_to_next_question.
+
+        Args:
+            pagination: The pagination state dict (must have 'attr_slug').
+            item: The menu item being configured.
+            order: Current order state.
+            matched_choice: Optional display name of the user's choice (for acknowledgment).
+
+        Returns:
+            StateMachineResult with the next question.
+        """
+        attr_slug = pagination.get("attr_slug")
+        item_type = item.menu_item_type
+        if item_type and attr_slug:
+            attrs = self._get_item_type_attributes(item_type)
+            attr = attrs.get(attr_slug)
+            if attr:
+                return self._advance_to_next_question(item, order, attr, matched_choice)
+        return self._get_next_question(order)
+
     def _handle_unmatched_pagination(
         self,
         user_input: str,
@@ -1115,22 +1156,12 @@ class MenuItemConfigHandler(BaseHandler):
         # Check for "no" - decline options and advance to next question
         if is_negative(user_input):
             self._question_builder.clear_unmatched_pagination(order)
-            # Get the current attribute and advance
-            attr_slug = pagination.get("attr_slug")
-            item_type = item.menu_item_type
-            if item_type and attr_slug:
-                attrs = self._get_item_type_attributes(item_type)
-                attr = attrs.get(attr_slug)
-                if attr:
-                    return self._advance_to_next_question(item, order, attr)
-            # Fallback - just get next question
-            return self._get_next_question(order)
+            return self._advance_from_pagination(pagination, item, order)
 
         # Check if user selected one of the available options
         available = pagination.get("available_options", [])
         matched, _ = self._option_matcher.match_single(user_input, available)
         if matched:
-            # User selected an option - apply it and advance
             self._question_builder.clear_unmatched_pagination(order)
             attr_slug = pagination.get("attr_slug")
 
@@ -1149,16 +1180,9 @@ class MenuItemConfigHandler(BaseHandler):
                 matched["slug"], attr_slug
             )
 
-            # Get the attribute and advance
-            item_type = item.menu_item_type
-            if item_type and attr_slug:
-                attrs = self._get_item_type_attributes(item_type)
-                attr = attrs.get(attr_slug)
-                if attr:
-                    return self._advance_to_next_question(
-                        item, order, attr, matched.get("display_name")
-                    )
-            return self._get_next_question(order)
+            return self._advance_from_pagination(
+                pagination, item, order, matched.get("display_name")
+            )
 
         # Input didn't match pagination flow - clear and let normal handling proceed
         # This handles cases where user ignores the pagination and orders something else
@@ -1270,11 +1294,14 @@ class MenuItemConfigHandler(BaseHandler):
         # List remaining options as individual questions
         options_questions = self._format_checkpoint_questions(unanswered)
 
-        self._setup_config_pending(order, item, PendingField.CUSTOMIZATION_CHECKPOINT)
+        order.setup_pending_config(item.id, PendingField.CUSTOMIZATION_CHECKPOINT)
 
+        # Build quick replies from attribute display names
+        qr = [{"label": a.get("display_name", a["slug"]), "value": a.get("display_name", a["slug"])} for a in unanswered]
         return StateMachineResult(
             message=f"{ack_prefix}Any more changes? {options_questions}",
             order=order,
+            quick_replies=qr,
         )
 
     def handle_customization_checkpoint(
@@ -1306,6 +1333,7 @@ class MenuItemConfigHandler(BaseHandler):
         options = attr.get("options", [])
         db_question = attr.get("question_text")
 
+        qr = None
         if db_question:
             question = db_question
         elif attr.get("input_type") == "boolean":
@@ -1315,15 +1343,17 @@ class MenuItemConfigHandler(BaseHandler):
             if len(options) <= DEFAULT_PAGINATION_SIZE:
                 options_text = self._format_display_list(options)
                 question = f"What kind of {attr['display_name'].lower()}? ({options_text})"
+                # Build quick replies for inline clickable text
+                qr = [{"label": o["display_name"], "value": o["display_name"]} for o in options]
             else:
                 # Too many options - just ask, user can say "what do you have?" to see list
                 question = f"What kind of {attr['display_name'].lower()}?"
         else:
             question = f"What {attr['display_name']}?"
 
-        self._setup_config_pending(order, item, f"{item.menu_item_type}:{attr['slug']}")
+        order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr['slug']}")
 
-        return StateMachineResult(message=question, order=order)
+        return StateMachineResult(message=question, order=order, quick_replies=qr)
 
     def _ask_disambiguation_for_options(
         self,

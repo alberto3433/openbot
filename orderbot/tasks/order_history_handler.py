@@ -213,9 +213,12 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         }
         order.pending_field = PendingField.ORDER_HISTORY_SELECTION
 
+        # Build quick replies from order summaries
+        qr = [{"label": od["summary"], "value": od["summary"]} for od in orders[:5] if od.get("summary")]
         return StateMachineResult(
             message=RESPONSES["history_list"].format(order_list="\n".join(order_list)),
             order=order,
+            quick_replies=qr,
         )
 
     def handle_view_last_order(
@@ -353,10 +356,12 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         order.pending_reorder_items = matching_items
         order.pending_field = PendingField.REORDER_ITEM_SELECTION
 
+        qr = [{"label": name, "value": name} for name in item_names]
         return StateMachineResult(
             message=RESPONSES["multiple_matches"].format(item_type=item_ref)
             + f" {', '.join(item_names)}?",
             order=order,
+            quick_replies=qr,
         )
 
     def handle_reorder_with_modifications(
@@ -478,10 +483,13 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             date_str = self._format_order_date(order_data["order_date"])
             order_list.append(f"{i}. {date_str}: {order_data['summary']}")
 
+        # Build quick replies from order summaries
+        qr = [{"label": od["summary"], "value": od["summary"]} for od in orders[:5] if od.get("summary")]
         return StateMachineResult(
             message=f"I didn't catch that. Which order would you like?\n"
             + "\n".join(order_list),
             order=order,
+            quick_replies=qr,
         )
 
     def handle_reorder_item_selection(
@@ -520,9 +528,11 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
 
         # Didn't understand
         item_names = [item.get("menu_item_name", "item") for item in pending_items]
+        qr = [{"label": name, "value": name} for name in item_names]
         return StateMachineResult(
             message=f"I didn't catch that. Which one would you like: {', '.join(item_names)}?",
             order=order,
+            quick_replies=qr,
         )
 
     def handle_reorder_offer_response(

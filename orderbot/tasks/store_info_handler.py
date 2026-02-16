@@ -270,7 +270,8 @@ class StoreInfoHandler(MenuDataMixin):
                 store_names = [s.get("name", "Store") for s in delivering_stores]
                 stores_str = format_english_list(store_names)
                 message = f"Yes! We can deliver to {location_display} from {stores_str}. Would you like to place a delivery order?"
-            return StateMachineResult(message=message, order=order)
+            qr = [{"label": name, "value": name} for name in store_names] if len(delivering_stores) > 1 else None
+            return StateMachineResult(message=message, order=order, quick_replies=qr)
 
         # No stores deliver to this location
         return StateMachineResult(

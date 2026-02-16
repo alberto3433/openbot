@@ -34,12 +34,14 @@ from .item_modification_handler import ItemModificationHandler
 from .unrecognized_item_handler import UnrecognizedItemHandler
 from .modifier_change_handler import ModifierChangeHandler
 from .mixins import MenuDataMixin
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 
 # Import new sub-handlers
 from .order_detection import (
     looks_like_order_attempt,
     extract_order_item_name,
+    looks_like_availability_question,
+    extract_availability_item_name,
 )
 from .modifier_input_handler import ModifierInputHandler
 from .parsed_item_processor import ParsedItemProcessor
@@ -398,9 +400,12 @@ class TakingItemsHandler(MenuDataMixin):
                 return result
 
         # Handle category clarification
-        result = self._inquiry_router.route_category_clarification(parsed, order)
-        if result:
-            return result
+        category_result = self._inquiry_router.route_category_clarification(parsed, order)
+        if isinstance(category_result, str):
+            # Single item in category - add directly to cart
+            return self.item_adder_handler.add_menu_item(category_result, 1, order)
+        if category_result:
+            return category_result
 
         # Route all inquiry types through InquiryRouter
         result = self._inquiry_router.route_inquiry(parsed, order, raw_user_input)
@@ -447,12 +452,18 @@ class TakingItemsHandler(MenuDataMixin):
         text_stripped = raw_user_input.strip()
         is_order_attempt = looks_like_order_attempt(raw_user_input)
         is_known_unrecognized = self._is_known_unrecognized_item(text_stripped)
+        is_availability = looks_like_availability_question(raw_user_input)
 
-        if not (is_order_attempt or is_known_unrecognized):
+        if not (is_order_attempt or is_known_unrecognized or is_availability):
             return None
 
-        # For order attempts with phrases, extract item name; for bare items, use text directly
-        item_name = extract_order_item_name(raw_user_input) if is_order_attempt else text_stripped
+        # Extract item name based on detected pattern type
+        if is_order_attempt:
+            item_name = extract_order_item_name(raw_user_input)
+        elif is_availability:
+            item_name = extract_availability_item_name(raw_user_input)
+        else:
+            item_name = text_stripped
         if not item_name:
             return None
 
@@ -818,7 +829,7 @@ class TakingItemsHandler(MenuDataMixin):
         bot described it and asked 'Would you like to order one?'.
         """
         suggested_item = order.pending_suggested_item
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
 
         # Clear context first (will be processed either way)
         order.pending_suggested_item = None
@@ -868,7 +879,7 @@ class TakingItemsHandler(MenuDataMixin):
         order.pending_field = None
 
         # Check if user explicitly declined
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
         is_negative = user_lower in ("no", "nope", "nah", "no thanks", "never mind", "nevermind")
 
         if is_negative:

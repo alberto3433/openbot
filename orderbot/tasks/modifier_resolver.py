@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from orderbot.tasks.parsers.constants import ARTICLES
+from orderbot.tasks.utils.text import normalize_text
 
 if TYPE_CHECKING:
     pass
@@ -119,7 +120,7 @@ def normalize_modifier_input(
     Returns:
         Normalized string
     """
-    result = value.lower().strip()
+    result = normalize_text(value)
 
     if strip_articles:
         for article in ARTICLES:
@@ -158,7 +159,7 @@ def resolve_ingredient_category(slug_or_name: str) -> str | None:
     Returns:
         Category slug if found, None otherwise
     """
-    value = slug_or_name.lower().strip()
+    value = normalize_text(slug_or_name)
 
     # Try direct category lookup
     category = menu_cache.get_ingredient_category(value)

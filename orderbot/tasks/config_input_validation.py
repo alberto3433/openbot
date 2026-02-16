@@ -16,6 +16,7 @@ from .pending_fields import PendingField
 from .parsers.inquiry_patterns import OFF_TOPIC_PATTERNS
 from .parsers.quantity_utils import extract_leading_quantity
 from .normalization import strip_ordering_prefix, singularize
+from .utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +253,7 @@ def is_off_topic_request(user_input: str, pending_field: str | None = None) -> b
     Returns:
         True if the request is off-topic and should trigger a redirect
     """
-    input_lower = user_input.lower().strip()
+    input_lower = normalize_text(user_input)
 
     # Get valid config answers from database (cached)
     valid_config_answers = get_cached_config_answers()

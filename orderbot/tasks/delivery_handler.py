@@ -16,6 +16,7 @@ from .slot_orchestrator import SlotOrchestrator, SlotCategory
 from .parsers.validators import parse_delivery_choice_deterministic
 from ..address_service import complete_address
 from .handler_config import BaseHandler
+from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -159,7 +160,7 @@ class DeliveryHandler(BaseHandler):
 
         Called when order.pending_field == ADDRESS_CONFIRMATION.
         """
-        lower_input = user_input.lower().strip()
+        lower_input = normalize_text(user_input)
 
         # Check for affirmative response
         if lower_input in ("yes", "yeah", "yep", "correct", "that's right", "thats right", "right", "yes please", "yea"):

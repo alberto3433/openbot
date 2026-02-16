@@ -15,6 +15,7 @@ from ..schemas import StateMachineResult, OrderPhase
 from ..parsers.constants import extract_quantity_for_pattern
 from ..parsers.quantity_utils import parse_numeric_input, extract_leading_quantity
 from ..utils import OptionMatchingOrchestrator, OptionMatcher
+from ..utils.text import normalize_text
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
@@ -93,7 +94,7 @@ class DirectOptionMatcher:
             StateMachineResult if an option was matched and applied, None otherwise
         """
         # Strip "add" prefix if present to get the core request
-        user_clean = user_input.lower().strip()
+        user_clean = normalize_text(user_input)
         if user_clean.startswith("add "):
             user_clean = user_clean[4:].strip()
 

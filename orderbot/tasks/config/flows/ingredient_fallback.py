@@ -21,7 +21,7 @@ from ...parsers.quantity_utils import (
     extract_additive_quantity,
     QUANTITY_MODIFIER_WORDS,
 )
-from ...utils.text import format_english_list
+from ...utils.text import format_english_list, normalize_text
 
 if TYPE_CHECKING:
     from ...models import OrderTask, MenuItemTask
@@ -79,7 +79,7 @@ class IngredientFallbackHandler:
         Returns:
             StateMachineResult if any ingredients matched, None otherwise
         """
-        user_clean = user_input.lower().strip()
+        user_clean = normalize_text(user_input)
 
         # Only try splitting if there are multiple words
         words = user_clean.split()

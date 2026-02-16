@@ -22,7 +22,7 @@ from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OpenInputResponse
 from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
 from .handler_utils import get_last_item, remove_item_from_order
-from .utils.text import strip_leading_article
+from .utils.text import normalize_text, strip_leading_article
 from .modifier_operations import (
     find_modifier_on_any_item,
     remove_modifier_from_item,
@@ -55,7 +55,7 @@ def extract_ordinal_reference(cancel_desc: str) -> tuple[int | None, str]:
     import re
     from .parsers.selection_patterns import ORDINAL_WORDS
 
-    desc_lower = cancel_desc.lower().strip()
+    desc_lower = normalize_text(cancel_desc)
     words = desc_lower.split()
 
     ordinal_index = None
@@ -295,7 +295,7 @@ class ItemCancellationHandler:
 
         # Check if cancel term matches a modifier CATEGORY (like "cream cheese" → spreads)
         # This handles "remove cream cheese" when the stored value is "blueberry" (the flavor)
-        cancel_term_lower = parsed.cancel_item.lower().strip()
+        cancel_term_lower = normalize_text(parsed.cancel_item)
         # Normalize multiple spaces to single space (common voice transcription artifact)
         cancel_term_lower = ' '.join(cancel_term_lower.split())
         # Strip leading "the " if present

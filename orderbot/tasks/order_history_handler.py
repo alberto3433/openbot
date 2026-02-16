@@ -25,7 +25,7 @@ from .parsers.inquiry_patterns import (
     ORDER_NUMBER_PATTERN,
 )
 from .mixins import ContextMixin, MenuDataMixin
-from .utils.text import parse_selection
+from .utils.text import normalize_text, parse_selection
 from ..cache import menu_cache
 
 if TYPE_CHECKING:
@@ -328,7 +328,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             )
 
         # Find matching items
-        item_ref_lower = item_ref.lower().strip()
+        item_ref_lower = normalize_text(item_ref)
         matching_items = []
         for item in items:
             name = item.get("menu_item_name", "").lower()

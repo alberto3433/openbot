@@ -36,6 +36,7 @@ from .default_ingredients import (
     filter_redundant_default_selections,
 )
 from .builders import ItemBuilder, ItemBuildContext
+from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .context import OrderContext
@@ -197,7 +198,7 @@ class ItemAdderHandler(MenuDataMixin):
                 - item_modifiers: Serialized kwargs for preservation during disambiguation
                 - filter_type: Item type filter for disambiguation lookup
         """
-        item_name_lower = (item_name or "").lower().strip()
+        item_name_lower = normalize_text(item_name)
         category_ref = menu_cache.is_category_reference(item_name_lower) if item_name_lower else None
         is_category_reference = category_ref is not None
         is_empty_name = not item_name_lower
@@ -657,7 +658,7 @@ class ItemAdderHandler(MenuDataMixin):
         # Find the attribute and option that match this ingredient
         # Search through item type's attributes for an option matching the ingredient
         attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
-        pending_lower = pending_ingredient.lower().strip()
+        pending_lower = normalize_text(pending_ingredient)
         pending_slug = pending_lower.replace(' ', '_')
         found_attr_slug = None
         found_option = None

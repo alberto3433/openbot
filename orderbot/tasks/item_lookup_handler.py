@@ -16,6 +16,7 @@ from .mixins import MenuDataMixin
 from .attribute_inference import extract_generic_term
 from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
+from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .menu_lookup import MenuLookup
@@ -76,7 +77,7 @@ class ItemLookupHandler(MenuDataMixin):
             - (None, result): Disambiguation needed, result contains the question
             - (None, None): Item not found
         """
-        item_lower = item_name.lower().strip()
+        item_lower = normalize_text(item_name)
 
         # Check for category reference (e.g., "drink", "beverage", "side", etc.)
         category_slug = menu_cache.is_category_reference(item_lower)

@@ -7,6 +7,7 @@ if user input matches affirmative, negative, or other response patterns.
 """
 
 from orderbot.cache import menu_cache
+from orderbot.tasks.utils.text import normalize_text
 
 __all__ = [
     "is_affirmative",
@@ -55,7 +56,7 @@ def is_affirmative(user_input: str) -> bool:
         >>> is_affirmative("no thanks")
         False
     """
-    user_lower = user_input.lower().strip()
+    user_lower = normalize_text(user_input)
     affirmative_patterns = get_affirmative_patterns()
 
     # Exact match
@@ -93,7 +94,7 @@ def is_negative(user_input: str) -> bool:
         >>> is_negative("yes please")
         False
     """
-    user_lower = user_input.lower().strip()
+    user_lower = normalize_text(user_input)
     negative_patterns = get_negative_patterns()
 
     # Exact match

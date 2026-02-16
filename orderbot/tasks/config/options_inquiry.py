@@ -12,7 +12,7 @@ from typing import Callable, TYPE_CHECKING
 
 from ..schemas import StateMachineResult
 from ..parsers.constants import DEFAULT_PAGINATION_SIZE
-from ..utils.text import format_english_list
+from ..utils.text import format_english_list, normalize_text
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
@@ -64,7 +64,7 @@ class OptionsInquiryHandler:
         Returns:
             True if user is asking about options.
         """
-        input_lower = user_input.lower().strip()
+        input_lower = normalize_text(user_input)
 
         # Generic option inquiry phrases (always match)
         inquiry_phrases = [
@@ -107,7 +107,7 @@ class OptionsInquiryHandler:
         # Context-aware patterns: check if user is asking about the specific topic
         # e.g., "what bread do you have" when we're asking about bread
         if topic:
-            topic_lower = topic.lower().strip()
+            topic_lower = normalize_text(topic)
             # Handle plural forms (bread -> breads)
             topic_plural = topic_lower + "s" if not topic_lower.endswith("s") else topic_lower
 
@@ -169,7 +169,7 @@ class OptionsInquiryHandler:
         if not self._get_optional_attributes:
             return None
 
-        input_lower = user_input.lower().strip()
+        input_lower = normalize_text(user_input)
 
         # Pattern to extract attribute name from "what X do you have?" type questions
         patterns = [
@@ -222,7 +222,7 @@ class OptionsInquiryHandler:
         Returns:
             The matching attribute config dict if found, None otherwise.
         """
-        input_lower = user_input.lower().strip()
+        input_lower = normalize_text(user_input)
 
         # Patterns to extract attribute name from inquiry questions
         inquiry_patterns = [
@@ -267,7 +267,7 @@ class OptionsInquiryHandler:
         Returns:
             True if user wants to see more options.
         """
-        input_lower = user_input.lower().strip()
+        input_lower = normalize_text(user_input)
         show_more_phrases = [
             "what else",
             "any other",

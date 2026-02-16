@@ -24,6 +24,7 @@ from ..parsers.quantity_utils import (
 )
 from .attribute_resolver import get_mandatory_attributes
 from .flows import IngredientFallbackHandler
+from ..utils.text import normalize_text
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
@@ -147,7 +148,7 @@ class CustomizationCheckpointHandler:
         Returns:
             StateMachineResult if handled, None to continue normal flow
         """
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
 
         # Check for "more X" or "extra X" patterns
         remainder = None
@@ -240,7 +241,7 @@ class CustomizationCheckpointHandler:
             StateMachineResult with next question or completion message
         """
         # Strip "make it" prefix - users often say "make it 3 eggs" to customize
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
         if user_lower.startswith("make it "):
             user_input = user_input[8:]  # len("make it ") == 8
             user_lower = user_lower[8:]
@@ -530,7 +531,7 @@ class CustomizationCheckpointHandler:
         Returns:
             StateMachineResult if option matched, None otherwise
         """
-        user_clean = remaining_text.lower().strip()
+        user_clean = normalize_text(remaining_text)
         if user_clean.startswith("add "):
             user_clean = user_clean[4:].strip()
 

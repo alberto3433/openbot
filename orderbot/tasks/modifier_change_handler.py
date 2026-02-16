@@ -24,7 +24,7 @@ from .normalization import (
 )
 from .parsers.constants import CHANGE_REQUEST_PATTERNS
 from .parsers.quantity_utils import BASIC_WORD_TO_NUM, extract_leading_quantity
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from .handler_utils import is_configurable_menu_item, get_last_item
@@ -131,7 +131,7 @@ class ModifierChangeHandler:
         Returns:
             ChangeRequest if detected, None otherwise
         """
-        user_input_lower = user_input.lower().strip()
+        user_input_lower = normalize_text(user_input)
 
         for pattern, group_indices in CHANGE_REQUEST_PATTERNS:
             match = pattern.search(user_input_lower)
@@ -408,7 +408,7 @@ class ModifierChangeHandler:
                     message="I couldn't find that item to change.",
                 )
 
-        new_value_lower = new_value.lower().strip()
+        new_value_lower = normalize_text(new_value)
 
         # Check if item has this attribute
         if isinstance(item, MenuItemTask) and not item.has_attribute(attr_slug):
@@ -621,7 +621,7 @@ class ModifierChangeHandler:
         Returns:
             Tuple of (resolved attribute slug, error message if failed)
         """
-        user_response_lower = user_response.lower().strip()
+        user_response_lower = normalize_text(user_response)
         new_value = pending_clarification.get("new_value", "").lower()
         possible_attributes = pending_clarification.get("possible_attributes", [])
 

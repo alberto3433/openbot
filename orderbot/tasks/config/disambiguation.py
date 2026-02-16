@@ -15,6 +15,7 @@ from ..schemas import StateMachineResult
 from ..parsers.constants import extract_quantity_for_pattern
 from ..utils import OptionMatcher
 from ..response_utils import is_affirmative
+from ..utils.text import normalize_text
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
@@ -75,7 +76,7 @@ class ConfigDisambiguationHandler:
     @staticmethod
     def _is_show_more_request(user_input: str) -> bool:
         """Check if user is asking to see more options (pagination continuation)."""
-        input_lower = user_input.lower().strip()
+        input_lower = normalize_text(user_input)
         show_more_phrases = [
             "what else", "any other", "more options", "other options",
             "what other", "anything else", "show more", "more", "next",

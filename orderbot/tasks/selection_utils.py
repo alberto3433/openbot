@@ -7,6 +7,7 @@ Extracted from select_input_handler.py for reusability.
 
 import logging
 from orderbot.cache.base import singularize
+from orderbot.tasks.utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ def extract_meaningful_words(user_input: str, min_length: int = 3) -> list[str]:
     Returns:
         List of meaningful words with punctuation stripped
     """
-    user_lower = user_input.lower().strip()
+    user_lower = normalize_text(user_input)
     return [
         word.strip("?.,!")
         for word in user_lower.split()

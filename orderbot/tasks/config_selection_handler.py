@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
 from .parsers.selection_patterns import SELECTION_PATTERNS
-from .utils.text import format_numbered_list
+from .utils.text import format_numbered_list, normalize_text
 from .checkout_messages import got_it_anything_else, ErrorMessages
 from .pending_fields import PendingField
 from orderbot.cache import menu_cache
@@ -183,7 +183,7 @@ class ConfigSelectionHandler:
                 order=order,
             )
 
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
         options = order.pending_item_options
         quantity = order.pending_item_quantity or 1
 

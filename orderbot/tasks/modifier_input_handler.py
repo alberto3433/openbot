@@ -20,7 +20,7 @@ from .handler_utils import (
     recalculate_and_summarize,
 )
 from .schemas import StateMachineResult
-from .utils.text import find_first_word_boundary_match
+from .utils.text import find_first_word_boundary_match, normalize_text
 from .modifier_resolver import match_pattern_in_input
 from .checkout_messages import (
     sure_added_to_anything_else,
@@ -426,7 +426,7 @@ class ModifierInputHandler:
         if not raw_user_input:
             return None
 
-        input_lower = raw_user_input.lower().strip()
+        input_lower = normalize_text(raw_user_input)
         active_items = order.items.get_active_items()
 
         if not active_items:

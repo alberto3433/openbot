@@ -18,7 +18,7 @@ from orderbot.constants import FUZZY_MATCH_THRESHOLD, MAX_FUZZY_MATCHES
 
 from .menu_lookup import MenuLookup
 from .normalization import strip_leading_filler_words
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ class UnrecognizedItemHandler:
             category_slug_for_followup is set when asking if user wants
             to hear what items are in a category.
         """
-        item_name_normalized = item_name.lower().strip()
+        item_name_normalized = normalize_text(item_name)
         # Strip filler words for lookup (some, a, an, the)
         item_name_for_lookup = strip_leading_filler_words(item_name_normalized)
         # Strip trailing punctuation (?, !, .)

@@ -15,6 +15,7 @@ from ..models import OrderTask, MenuItemTask
 from ..schemas import StateMachineResult
 from ..response_utils import is_negative, is_affirmative
 from ..parsers.quantity_utils import parse_numeric_input, MAX_MODIFIER_QUANTITY
+from ..utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .context import ConfigHandlerContext
@@ -88,7 +89,7 @@ class QuantityInputHandler:
             StateMachineResult with next question or error message
         """
         attr_slug = attr["slug"]
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
 
         # Get unit option (first available option defines unit price and name)
         available_options = [opt for opt in options if opt.get("is_available", True)]

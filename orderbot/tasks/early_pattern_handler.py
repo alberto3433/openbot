@@ -38,6 +38,7 @@ from .modifier_input_handler import (
     remove_modifiers_by_category,
 )
 from .utils.pricing_utils import safe_recalculate_price
+from .utils.text import normalize_text
 from .checkout_messages import (
     item_added_anything_else,
     sure_added_to_anything_else,
@@ -78,7 +79,7 @@ def _parse_quantity(num_str: str) -> int | None:
     Returns:
         Integer quantity (>= 1) if valid, None otherwise.
     """
-    num_str = num_str.lower().strip()
+    num_str = normalize_text(num_str)
     if num_str.isdigit():
         qty = int(num_str)
         return qty if qty >= 1 else None

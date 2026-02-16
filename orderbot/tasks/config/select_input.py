@@ -26,7 +26,7 @@ from ..selection_utils import (
 from ..schemas import StateMachineResult, OrderPhase
 from ..parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
 from ..parsers.quantity_utils import parse_numeric_input, MAX_MODIFIER_QUANTITY
-from ..utils.text import format_english_list
+from ..utils.text import format_english_list, normalize_text
 from ..utils import OptionMatcher
 from ..response_utils import is_affirmative
 
@@ -115,7 +115,7 @@ class SelectInputHandler:
             StateMachineResult with response or next question
         """
         attr_slug = attr["slug"]
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
         input_type = attr.get("input_type", "single_select")
 
         # Extract quantity from input (e.g., "2 scrambled eggs" -> quantity=2)
@@ -1013,10 +1013,17 @@ class SelectInputHandler:
             # Multiple options - ask which one
             attr_name = attr["display_name"].lower()
             available = [opt["display_name"] for opt in available_opts]
-            if available and len(available) <= 6:
+            if available and len(available) <= DEFAULT_PAGINATION_SIZE:
                 options_str = format_english_list(available, conjunction="or")
                 return StateMachineResult(
-                    message=f"Great! Which {attr_name} would you like? {options_str}",
+                    message=f"Sure! Which {attr_name} would you like? {options_str}",
+                    order=order,
+                )
+            elif available:
+                first_page = available[:DEFAULT_PAGINATION_SIZE]
+                options_str = format_english_list(first_page)
+                return StateMachineResult(
+                    message=f"Sure! We have {options_str}, and more. Which {attr_name} would you like?",
                     order=order,
                 )
 

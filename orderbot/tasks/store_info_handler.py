@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 from .models import OrderTask
 from .schemas import StateMachineResult
 from .mixins import MenuDataMixin
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +212,7 @@ class StoreInfoHandler(MenuDataMixin):
                 order=order,
             )
 
-        query_clean = query.lower().strip()
+        query_clean = normalize_text(query)
 
         # Check if it's a zip code (5 digits)
         zip_match = re.match(r'^(\d{5})$', query_clean)

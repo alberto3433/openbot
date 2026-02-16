@@ -15,6 +15,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
+from orderbot.tasks.utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .models import MenuItemTask
@@ -174,7 +175,7 @@ def extract_generic_term(item_name: str) -> str | None:
     - "Chocolate Chip Cookie" -> "cookie"
     - "Turkey Club" -> None (specific item)
     """
-    item_lower = item_name.lower().strip()
+    item_lower = normalize_text(item_name)
 
     # Check if exact term matches multiple menu items
     matches = menu_cache.search_menu_items_by_name(item_lower)

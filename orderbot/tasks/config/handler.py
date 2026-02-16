@@ -25,7 +25,7 @@ from ..parsers.constants import DEFAULT_PAGINATION_SIZE
 from ..handler_config import BaseHandler
 from ..checkout_messages import got_it_anything_else
 from ..utils import OptionMatcher, InputNormalizer
-from ..utils.text import format_display_list
+from ..utils.text import format_display_list, normalize_text
 from .context import ConfigHandlerContext
 from .select_input import SelectInputHandler
 from .options_inquiry import OptionsInquiryHandler
@@ -318,7 +318,7 @@ class MenuItemConfigHandler(BaseHandler):
         Used when user says "add egg and spread" to match multiple.
         Supports partial matching: "cheese" matches "Extra Cheese", "egg" matches "Add Egg".
         """
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
         matched = []
 
         for attr in attributes:
@@ -1058,8 +1058,8 @@ class MenuItemConfigHandler(BaseHandler):
                 # Check if user input is essentially just the matched option
                 # e.g., "onion" matches "Onion Bagel" -> simple answer, skip capture
                 # e.g., "plain toasted with cream cheese" does NOT match "Plain Bagel" -> capture
-                user_lower = user_input.lower().strip()
-                ack_lower = ack_text.lower().strip()
+                user_lower = normalize_text(user_input)
+                ack_lower = normalize_text(ack_text)
                 # User input is a simple answer if it's contained in the matched option
                 # or if it exactly matches (allowing for minor variations)
                 if user_lower in ack_lower or ack_lower.startswith(user_lower):
@@ -1104,7 +1104,7 @@ class MenuItemConfigHandler(BaseHandler):
         if not pagination:
             return None
 
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
 
         # Check for "yes" / "more" to show next page
         if is_affirmative(user_input) or any(

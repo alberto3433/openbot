@@ -15,6 +15,7 @@ from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult
 from .handler_utils import get_last_item
 from orderbot.cache import menu_cache
+from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -181,7 +182,7 @@ class ConfigChangeHandler:
             # If "unknown" modifier, check if it's a weight/quantity update for last item
             if attr_slug == "unknown":
                 # Check if value looks like a weight specification (e.g., "2 pounds", "half lb")
-                new_value_lower = change_request.new_value.lower().strip()
+                new_value_lower = normalize_text(change_request.new_value)
                 if WEIGHT_QUANTITY_PATTERN.match(new_value_lower):
                     # Check if last item has a priced attribute (like "weight")
                     last_item = get_last_item(active_items)

@@ -19,6 +19,7 @@ from .models import (
 from .parsers.quantity_utils import BASIC_WORD_TO_NUM
 from .schemas import StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
+from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -65,7 +66,7 @@ class OrderUtilsHandler:
 
         Returns StateMachineResult if handled, None otherwise.
         """
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
 
         # Patterns for quantity changes
         # "make it two X", "can you make it 2 X", "two X instead", "change to two X"

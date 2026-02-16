@@ -28,7 +28,7 @@ from .parsers.constants import (
     get_item_type_display_name,
 )
 from .mixins import MenuDataMixin
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 from .price_inquiry_handler import PriceInquiryHandler
 
 if TYPE_CHECKING:
@@ -105,7 +105,7 @@ class MenuInquiryHandler(MenuDataMixin):
         Returns:
             List of matching item type slugs, empty if none found.
         """
-        query_lower = query.lower().strip()
+        query_lower = normalize_text(query)
         singular = singularize(query_lower)
 
         matching = []
@@ -449,11 +449,13 @@ class MenuInquiryHandler(MenuDataMixin):
         self,
         category_slug: str,
         order: OrderTask,
-    ) -> StateMachineResult:
+    ) -> StateMachineResult | str:
         """Handle when user orders a generic category without specifying type.
 
         Generic method that asks what kind of item they want, listing available
-        options from the specified category.
+        options from the specified category. Returns a str (item name) when
+        exactly one item matches after filtering, so the caller can add it
+        directly to the cart.
 
         Args:
             category_slug: The category slug to look up items from (e.g., "soda", "tea",
@@ -485,6 +487,19 @@ class MenuInquiryHandler(MenuDataMixin):
         if not category_items:
             category_items = menu_cache.get_items_by_category(category_slug)
 
+        # Filter out items whose required_match_phrases don't match the category term
+        if category_items:
+            filtered_items = []
+            for item in category_items:
+                required_phrases = item.get("required_match_phrases")
+                if not required_phrases:
+                    filtered_items.append(item)
+                    continue
+                phrases = [p.strip().lower() for p in required_phrases.split(",") if p.strip()]
+                if any(phrase in category_slug.lower() for phrase in phrases):
+                    filtered_items.append(item)
+            category_items = filtered_items
+
         if category_items:
             # Get all item names, filter out empty
             all_item_names = [item.get("name", "") for item in category_items]
@@ -496,6 +511,14 @@ class MenuInquiryHandler(MenuDataMixin):
                     message="I don't have that available right now. What else can I get you?",
                     order=order,
                 )
+
+            if len(all_item_names) == 1:
+                # Single item in category - return name for direct addition
+                logger.info(
+                    "Category clarification: single item '%s' after filtering, adding directly",
+                    all_item_names[0],
+                )
+                return all_item_names[0]
 
             # Paginate: show only DEFAULT_PAGINATION_SIZE items at a time
             batch = all_item_names[:DEFAULT_PAGINATION_SIZE]
@@ -567,7 +590,7 @@ class MenuInquiryHandler(MenuDataMixin):
                 order=order,
             )
 
-        item_query_lower = item_query.lower().strip()
+        item_query_lower = normalize_text(item_query)
 
         # Get item descriptions from menu_data (loaded from database)
         item_descriptions = self.menu_data.get("item_descriptions", {}) if self.menu_data else {}

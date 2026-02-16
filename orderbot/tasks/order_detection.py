@@ -11,7 +11,7 @@ import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 
 if TYPE_CHECKING:
     pass
@@ -20,6 +20,8 @@ __all__ = [
     "ORDER_ATTEMPT_PATTERNS",
     "extract_order_item_name",
     "looks_like_order_attempt",
+    "looks_like_availability_question",
+    "extract_availability_item_name",
     "get_dynamic_help_text",
 ]
 
@@ -67,7 +69,7 @@ def looks_like_order_attempt(text: str) -> bool:
     Returns:
         True if the input looks like an order attempt.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Check for common order phrases
     order_indicators = [
@@ -77,6 +79,44 @@ def looks_like_order_attempt(text: str) -> bool:
         "i need", "i'll get", "i'll order",
     ]
     return any(indicator in text_lower for indicator in order_indicators)
+
+
+# Pattern for availability questions like "do you sell X?", "do sell X?" (typo)
+_AVAILABILITY_PATTERN = re.compile(
+    r"do\s+(?:you\s+)?(?:sell|carry|offer)\s+(?:any\s+)?(.+?)(?:\?|$)",
+    re.IGNORECASE,
+)
+
+
+def looks_like_availability_question(text: str) -> bool:
+    """Check if text looks like a product availability question.
+
+    Catches well-formed ("do you sell X?") and typo ("do sell X?") variants.
+
+    Args:
+        text: User input
+
+    Returns:
+        True if the input looks like an availability question.
+    """
+    return bool(_AVAILABILITY_PATTERN.search(text.strip()))
+
+
+def extract_availability_item_name(text: str) -> str | None:
+    """Extract the item name from an availability question.
+
+    Args:
+        text: User input like "do you sell pepsi?" or "do sell liquor?"
+
+    Returns:
+        The item name (e.g., "pepsi", "liquor") or None.
+    """
+    match = _AVAILABILITY_PATTERN.search(text.strip())
+    if match:
+        item = match.group(1).strip().rstrip('?!.')
+        if item and len(item) > 1:
+            return item
+    return None
 
 
 def get_dynamic_help_text() -> str:

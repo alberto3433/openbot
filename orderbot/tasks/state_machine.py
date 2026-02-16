@@ -40,6 +40,7 @@ from .parsers import (
 )
 from .parsers.quantity_utils import extract_make_it_n_target
 from .handler_utils import get_last_item
+from .utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ def _looks_like_new_order_attempt(user_input: str) -> bool:
     - Attribute option words from database (small, large, iced, hot, etc.)
     - Ordering language phrases (I'd like, can I get, etc.)
     """
-    text = user_input.lower().strip()
+    text = normalize_text(user_input)
 
     # Pattern: explicit ordering language ("I'd like", "can I get", "I want")
     if ORDERING_LANGUAGE_PATTERN.search(text):
@@ -120,7 +121,7 @@ def _check_redirect_to_pending_item(
     """
     # If user input matches a valid answer for this question, don't redirect
     if valid_answers:
-        text_lower = user_input.lower().strip()
+        text_lower = normalize_text(user_input)
         for answer in valid_answers:
             if answer in text_lower:
                 return None

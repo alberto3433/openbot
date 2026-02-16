@@ -19,6 +19,7 @@ from .modifier_utils import extract_modifier_slug_and_quantity
 from .utils.cache_helpers import get_item_type_attributes
 from .utils import OptionMatcher
 from orderbot.cache import menu_cache
+from orderbot.tasks.utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ class PricingEngine(MenuDataMixin):
 
         # If size_name provided, find matching size
         if size_name:
-            size_lower = size_name.lower().strip()
+            size_lower = normalize_text(size_name)
             for sp in size_prices:
                 if sp["size_name"] and sp["size_name"].lower() == size_lower:
                     return sp["price"], sp
@@ -199,7 +200,7 @@ class PricingEngine(MenuDataMixin):
                     size_category_slug, size_name
                 )
                 if display_name:
-                    display_lower = display_name.lower().strip()
+                    display_lower = normalize_text(display_name)
                     for sp in size_prices:
                         if sp["size_name"] and sp["size_name"].lower() == display_lower:
                             return sp["price"], sp
@@ -240,7 +241,7 @@ class PricingEngine(MenuDataMixin):
         base_price = sorted_sizes[0]["price"]
 
         # Find the selected size price
-        size_lower = size_name.lower().strip()
+        size_lower = normalize_text(size_name)
         for sp in size_prices:
             if sp["size_name"] and sp["size_name"].lower() == size_lower:
                 return sp["price"] - base_price
@@ -371,7 +372,7 @@ class PricingEngine(MenuDataMixin):
             return 0.0
 
         normalized = normalize_to_slug(option_value)
-        option_lower = option_value.lower().strip()
+        option_lower = normalize_text(option_value)
 
         if not self._menu_data:
             logger.warning("No menu_data available for attribute upcharge lookup")
@@ -434,7 +435,7 @@ class PricingEngine(MenuDataMixin):
             The ingredient category string (e.g., "cheese") or None if not found
         """
         normalized = normalize_to_slug(option_value)
-        option_lower = option_value.lower().strip()
+        option_lower = normalize_text(option_value)
 
         item_types = self._menu_data.get("item_types", {})
         type_data = item_types.get(item_type, {})
@@ -555,7 +556,7 @@ class PricingEngine(MenuDataMixin):
             return 0.0
 
         normalized = normalize_to_slug(modifier_name)
-        modifier_lower = modifier_name.lower().strip()
+        modifier_lower = normalize_text(modifier_name)
 
         # Use cache helper for validated attribute lookup (raises MenuDataNotLoadedError)
         attributes = get_item_type_attributes(

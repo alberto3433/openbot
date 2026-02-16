@@ -21,7 +21,7 @@ from .models import OrderTask
 from .schemas import StateMachineResult
 from .parsers.constants import DEFAULT_PAGINATION_SIZE
 from .mixins import MenuDataMixin
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 
 if TYPE_CHECKING:
     from .menu_inquiry_handler import MenuInquiryHandler
@@ -208,7 +208,7 @@ class MenuPaginationHandler(MenuDataMixin):
         Uses data-driven ItemType aliases from the database to map category phrases
         to the appropriate menu type and handler.
         """
-        category_lower = category.lower().strip()
+        category_lower = normalize_text(category)
 
         # Use data-driven lookup from ItemType aliases
         category_info = menu_cache.get_category_keyword_mapping(category_lower)

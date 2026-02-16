@@ -2,6 +2,26 @@
 Text formatting utilities for human-readable output.
 """
 
+
+def normalize_text(text: str | None) -> str:
+    """Lowercase and strip whitespace from text for comparison.
+
+    Handles None gracefully by returning empty string.
+
+    Args:
+        text: The text to normalize, or None.
+
+    Returns:
+        Lowercased, stripped string.
+
+    Examples:
+        >>> normalize_text("  Hello World  ")
+        'hello world'
+        >>> normalize_text(None)
+        ''
+    """
+    return (text or "").lower().strip()
+
 # =============================================================================
 # Unified Ordinal Definitions
 # =============================================================================

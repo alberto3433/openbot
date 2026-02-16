@@ -32,6 +32,7 @@ from .config_input_validation import (
 from orderbot.cache import menu_cache
 from .config.parsers.boolean_parser import BooleanParser
 from .utils.pricing_utils import safe_recalculate_price
+from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -249,7 +250,7 @@ class ConfiguringItemHandler:
         matching_options = ambig_info.get("matching_options", [])
 
         # Try to match user input against the options
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
         matched_option = None
 
         for opt in matching_options:

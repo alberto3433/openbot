@@ -136,9 +136,11 @@ class InputNormalizer:
 
         # Also include individual space-separated words from each token
         # This enables "milk sugar" to match "Whole Milk" via "milk" word
+        # Only do this when there's a single token (no explicit separator like "and"/",")
+        # to prevent shared suffix words like "syrup" from over-matching all options
         individual_words = []
-        for token in raw_tokens:
-            words = token.split()
+        if len(raw_tokens) == 1:
+            words = raw_tokens[0].split()
             if len(words) > 1:  # Only add individual words if multi-word token
                 for word in words:
                     if len(word) >= 2:  # Skip very short words

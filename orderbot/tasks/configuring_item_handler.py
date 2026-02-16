@@ -19,7 +19,7 @@ from .normalization import singularize
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.intent_patterns import ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN, MAKE_IT_N_CONFIG_PATTERN
-from .parsers.quantity_utils import parse_make_it_n_quantity
+from .parsers.quantity_utils import parse_make_it_n_quantity, extract_leading_quantity
 from .checkout_messages import ErrorMessages
 from .config_input_validation import (
     detect_modifier_inquiry,
@@ -440,11 +440,23 @@ class ConfiguringItemHandler:
         if not is_valid_answer and isinstance(item, MenuItemTask):
             stripped = user_input.strip()
             if re.match(r'^(?:a(?:n)?\s+|(?:\d+|two|three|four|five|six)\s+|(?:can|could)\s+i\s+(?:get|have)\s+)', stripped, re.IGNORECASE):
-                add_item_fallback = self.config_modification_handler.handle_add_item_during_config(
-                    stripped, item, order, require_prefix=False
-                )
-                if add_item_fallback:
-                    return add_item_fallback
+                # Don't treat as a new menu item if the non-quantity part is a known
+                # modifier — it's likely an answer to the pending question
+                # (e.g., "7 sugars" when asked about sweeteners)
+                _, remainder = extract_leading_quantity(stripped.lower())
+                remainder = remainder.strip()
+                remainder_is_modifier = False
+                if remainder:
+                    for variant in (remainder, singularize(remainder)):
+                        if menu_cache.is_known_modifier(variant):
+                            remainder_is_modifier = True
+                            break
+                if not remainder_is_modifier:
+                    add_item_fallback = self.config_modification_handler.handle_add_item_during_config(
+                        stripped, item, order, require_prefix=False
+                    )
+                    if add_item_fallback:
+                        return add_item_fallback
 
         # Check for off-topic requests during configuration (e.g., "what syrups do you have?", "add vanilla syrup")
         # If detected, politely redirect back to the current configuration question

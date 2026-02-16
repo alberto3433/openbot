@@ -15,7 +15,7 @@ from .models import parse_pending_field
 from .pending_fields import PendingField
 from .parsers.inquiry_patterns import OFF_TOPIC_PATTERNS
 from .parsers.quantity_utils import extract_leading_quantity
-from .normalization import strip_ordering_prefix
+from .normalization import strip_ordering_prefix, singularize
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,8 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
     # Strip leading quantity so "7 sugars" checks "sugars" against options/modifiers
     _, answer_no_qty = extract_leading_quantity(answer_value)
     answer_no_qty = answer_no_qty.strip()
+    # Also try singularized form: "sugars" -> "sugar"
+    answer_no_qty_singular = singularize(answer_no_qty) if answer_no_qty else answer_no_qty
 
     # Parse the pending_field to get item_type and attr_slug
     item_type_slug, attr_slug = parse_pending_field(pending_field)
@@ -85,12 +87,10 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
     if attr_slug in (PendingField.CUSTOMIZATION_CHECKPOINT, PendingField.CUSTOMIZATION_SELECTION):
         # Check if this is a known ingredient (toppings, proteins, cheeses, etc.)
         try:
-            if menu_cache.is_known_modifier(answer_value) or (
-                answer_no_qty and answer_no_qty != answer_value
-                and menu_cache.is_known_modifier(answer_no_qty)
-            ):
-                logger.debug("Found known modifier '%s' during customization", answer_value)
-                return True
+            for val in (answer_value, answer_no_qty, answer_no_qty_singular):
+                if val and menu_cache.is_known_modifier(val):
+                    logger.debug("Found known modifier '%s' during customization", val)
+                    return True
         except Exception as e:
             logger.debug("Error checking ingredient for customization: %s", e)
         return False
@@ -106,26 +106,34 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
         if attr_slug in attrs:
             attr_config = attrs[attr_slug]
             # Check if the value matches any option
+            # Build candidate values: original, quantity-stripped, and singularized
+            candidates = {answer_value}
+            if answer_no_qty:
+                candidates.add(answer_no_qty)
+            if answer_no_qty_singular and answer_no_qty_singular != answer_no_qty:
+                candidates.add(answer_no_qty_singular)
+            candidates.discard("")
+
             for opt in attr_config.get("options", []):
                 opt_name = opt.get("display_name", "").lower()
                 opt_slug = opt.get("slug", "").lower()
-                for val in (answer_value, answer_no_qty):
-                    if not val:
-                        continue
-                    if val == opt_name or val == opt_slug:
+                opt_aliases = {a.lower() for a in opt.get("aliases", [])}
+                for val in candidates:
+                    if val == opt_name or val == opt_slug or val in opt_aliases:
                         return True
                     # Also check if value is contained in option name
                     if opt_name and val in opt_name:
                         return True
 
-            # For ingredient-based attributes, check against ingredients
-            if attr_config.get("loads_from_ingredients"):
-                # Check if this is a known ingredient
-                if menu_cache.is_known_modifier(answer_value) or (
-                    answer_no_qty and answer_no_qty != answer_value
-                    and menu_cache.is_known_modifier(answer_no_qty)
-                ):
-                    return True
+            # For attributes with ingredient-linked options, check against
+            # known modifiers (handles aliases and alternate forms)
+            has_ingredient_options = any(
+                opt.get("ingredient_category") for opt in attr_config.get("options", [])
+            )
+            if has_ingredient_options or attr_config.get("loads_from_ingredients"):
+                for val in candidates:
+                    if menu_cache.is_known_modifier(val):
+                        return True
 
             # For package_multi_select attributes (e.g., "2 plain 3 rainbow 7 onion"),
             # check if input contains quantity+option patterns matching the source category

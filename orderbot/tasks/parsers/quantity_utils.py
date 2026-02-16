@@ -59,6 +59,9 @@ NUM_TO_WORD: dict[int, str] = {
     11: "eleven", 12: "twelve",
 }
 
+# Maximum quantity allowed per individual modifier (e.g., sugars, syrups)
+MAX_MODIFIER_QUANTITY: int = 10
+
 
 # =============================================================================
 # Quantity Extraction Functions

@@ -471,36 +471,21 @@ def _should_defer_to_multi_item_parser(text_lower: str, text: str) -> bool:
     return False
 
 
-def _resolve_item_type_and_menu_item(
-    text: str,
+def _match_item_with_defaults(
     text_lower: str,
-    text_cleaned: str,
-) -> tuple[str, str | None, tuple[int, int] | None, dict] | None:
-    """Resolve the item type and optional menu item from user text.
+) -> tuple[str | None, str | None, tuple[int, int] | None]:
+    """Match text against items with default ingredients (e.g., "The Classic BEC").
 
-    Checks (in order):
-    1. Items with default ingredients (e.g., "The Classic BEC") - by alias matching
-    2. Trigger-based item type detection (e.g., "bagel", "coffee", "latte")
-    3. Option alias fallback (e.g., "earl grey" -> tea with tea_flavor=earl_gray)
-    4. More-specific menu item checks to avoid false positives
+    Items with defaults take precedence over trigger-based detection to prevent
+    cases like "The Classic BEC on a wheat bagel" from matching "bagel" item type
+    due to the "bagel" trigger word.
 
     Args:
-        text: Original user input text
         text_lower: Lowercased user input text
-        text_cleaned: Lowercased text with ordering phrases stripped
 
     Returns:
-        (detected_item_type, matched_item_name, matched_item_span, inferred_attr_values)
-        or None if no configurable item type was detected
+        (matched_item_type, matched_item_name, matched_item_span) or (None, None, None)
     """
-    configurable_slugs = menu_cache.get_configurable_item_type_slugs()
-
-    # 1b. Check for items with default ingredients FIRST - they take precedence over trigger-based detection
-    # This prevents "The Classic BEC on a wheat bagel" from matching "bagel" item type
-    # due to the "bagel" trigger word. Items with defaults should be detected by their aliases.
-    matched_item_name: str | None = None
-    matched_item_type: str | None = None
-    matched_item_span: tuple[int, int] | None = None  # Track span to exclude from attribute extraction
     items_with_defaults_aliases = get_items_with_defaults_aliases()
     # Sort aliases by length (longest first) for most specific match
     sorted_aliases = sorted(items_with_defaults_aliases.keys(), key=len, reverse=True)
@@ -514,129 +499,169 @@ def _resolve_item_type_and_menu_item(
             matched_item_type = menu_cache.get_item_type_for_menu_item(matched_item_name)
             if matched_item_type:
                 logger.info("CONFIGURABLE_ITEM: item with defaults '%s' detected -> type '%s'", matched_item_name, matched_item_type)
-                break
+                return matched_item_type, matched_item_name, matched_item_span
+    return None, None, None
 
-    # 2. Detect which configurable item type this text matches
-    detected_item_type: str | None = matched_item_type  # Use matched item type if found
 
-    # Only do trigger-based detection if no item with defaults was found
-    if not detected_item_type:
-        # Find position of " with " to detect modifier patterns
-        # In "everything bagel with cream cheese", triggers after "with" are modifiers, not main items
-        with_pos = text_lower.find(" with ")
+def _detect_type_by_triggers(
+    text_lower: str,
+    configurable_slugs: set[str],
+) -> str | None:
+    """Detect item type by matching configurable item type trigger keywords.
 
-        # Get all known modifier phrases (including multi-word ones like "cream cheese")
-        # Used to skip triggers that are part of a larger modifier phrase
-        all_modifiers = menu_cache.get_all_modifier_words()
+    Collects all trigger matches with position info and selects the best one using
+    sorting heuristics that prefer triggers before "with", slug matches, longer
+    triggers, and later positions.
 
-        # Collect all matches with position info for smarter selection
-        # Format: (item_type, trigger, length, start_pos, is_before_with, slug_matches)
-        matches: list[tuple[str, str, int, int, bool, bool]] = []
+    Args:
+        text_lower: Lowercased user input text
+        configurable_slugs: Set of configurable item type slugs
 
-        for item_type_slug in configurable_slugs:
-            triggers = menu_cache.get_item_type_triggers(item_type_slug)
-            for trigger in triggers:
-                # Skip common words that appear as triggers from menu item names
-                if trigger.lower() in _SKIP_TRIGGER_WORDS:
+    Returns:
+        The best-matching item type slug, or None if no match found
+    """
+    # Find position of " with " to detect modifier patterns
+    # In "everything bagel with cream cheese", triggers after "with" are modifiers, not main items
+    with_pos = text_lower.find(" with ")
+
+    # Get all known modifier phrases (including multi-word ones like "cream cheese")
+    # Used to skip triggers that are part of a larger modifier phrase
+    all_modifiers = menu_cache.get_all_modifier_words()
+
+    # Collect all matches with position info for smarter selection
+    # Format: (item_type, trigger, length, start_pos, is_before_with, slug_matches)
+    matches: list[tuple[str, str, int, int, bool, bool]] = []
+
+    for item_type_slug in configurable_slugs:
+        triggers = menu_cache.get_item_type_triggers(item_type_slug)
+        for trigger in triggers:
+            # Skip common words that appear as triggers from menu item names
+            if trigger.lower() in _SKIP_TRIGGER_WORDS:
+                continue
+            # Check for word boundary match
+            pattern = rf'\b{re.escape(trigger)}s?\b'
+            match = re.search(pattern, text_lower)
+            if match:
+                start_pos = match.start()
+                end_pos = match.end()
+                trigger_lower = trigger.lower()
+
+                # Skip triggers preceded by negation words ("no", "without", "skip", "not")
+                # "no spread" is a modifier negation, not an item type reference
+                if start_pos > 0:
+                    text_before = text_lower[:start_pos].rstrip()
+                    if text_before:
+                        last_word = text_before.split()[-1] if text_before.split() else ""
+                        if last_word in {"no", "without", "skip", "not"}:
+                            continue
+
+                # Skip if this trigger is part of a known compound modifier phrase
+                # that belongs to an UNRELATED category
+                # e.g., "cream cheese" is a "spread" - skip for "cheese" item type
+                # But "plain bagel" is "bread" - don't skip for "bagel" because bread
+                # is an attribute of the bagel item type
+                is_part_of_modifier = False
+                if start_pos > 0:
+                    # Get the word immediately before this trigger
+                    text_before = text_lower[:start_pos].rstrip()
+                    if text_before:
+                        words_before = text_before.split()
+                        if words_before:
+                            prev_word = words_before[-1]
+                            compound = f"{prev_word} {trigger_lower}"
+                            # Check if this compound is a known modifier
+                            if compound in all_modifiers:
+                                # Check what category this modifier belongs to
+                                compound_category = menu_cache.get_ingredient_category(compound)
+                                if compound_category:
+                                    # Get attributes for this item type
+                                    item_attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                                    # Skip if the compound's category is NOT an attribute of this item type
+                                    # e.g., "spread" is not an attribute of "cheese" item type
+                                    # But "bread" IS an attribute of "bagel" item type
+                                    if compound_category not in item_attrs:
+                                        is_part_of_modifier = True
+                if is_part_of_modifier:
                     continue
-                # Check for word boundary match
-                pattern = rf'\b{re.escape(trigger)}s?\b'
-                match = re.search(pattern, text_lower)
-                if match:
-                    start_pos = match.start()
-                    end_pos = match.end()
-                    trigger_lower = trigger.lower()
 
-                    # Skip triggers preceded by negation words ("no", "without", "skip", "not")
-                    # "no spread" is a modifier negation, not an item type reference
-                    if start_pos > 0:
-                        text_before = text_lower[:start_pos].rstrip()
-                        if text_before:
-                            last_word = text_before.split()[-1] if text_before.split() else ""
-                            if last_word in {"no", "without", "skip", "not"}:
-                                continue
+                # Triggers BEFORE "with" are main items; triggers AFTER are modifiers
+                # If no "with" in text, all triggers are considered main items
+                is_before_with = with_pos == -1 or start_pos < with_pos
+                # Prefer item types where slug matches trigger
+                slug_matches = trigger.lower() == item_type_slug or trigger.lower().rstrip("s") == item_type_slug
+                matches.append((item_type_slug, trigger, len(trigger), start_pos, is_before_with, slug_matches))
 
-                    # Skip if this trigger is part of a known compound modifier phrase
-                    # that belongs to an UNRELATED category
-                    # e.g., "cream cheese" is a "spread" - skip for "cheese" item type
-                    # But "plain bagel" is "bread" - don't skip for "bagel" because bread
-                    # is an attribute of the bagel item type
-                    is_part_of_modifier = False
-                    if start_pos > 0:
-                        # Get the word immediately before this trigger
-                        text_before = text_lower[:start_pos].rstrip()
-                        if text_before:
-                            words_before = text_before.split()
-                            if words_before:
-                                prev_word = words_before[-1]
-                                compound = f"{prev_word} {trigger_lower}"
-                                # Check if this compound is a known modifier
-                                if compound in all_modifiers:
-                                    # Check what category this modifier belongs to
-                                    compound_category = menu_cache.get_ingredient_category(compound)
-                                    if compound_category:
-                                        # Get attributes for this item type
-                                        item_attrs = menu_cache.get_item_type_attributes(item_type_slug)
-                                        # Skip if the compound's category is NOT an attribute of this item type
-                                        # e.g., "spread" is not an attribute of "cheese" item type
-                                        # But "bread" IS an attribute of "bagel" item type
-                                        if compound_category not in item_attrs:
-                                            is_part_of_modifier = True
-                    if is_part_of_modifier:
-                        continue
+    if matches:
+        # Sort by:
+        # (1) is_before_with (True first) - triggers before "with" are main items
+        # (2) slug_matches (True first) - prefer when trigger matches item type slug
+        # (3) length (LONGER first) - prefer specific item names over short adjectives
+        # (4) start_pos (LATER first) - among equal-length triggers, prefer nouns at end
+        # This ensures:
+        # - "bagel" wins over "cheese" in "everything bagel with cream cheese" (via rule 1)
+        # - "latte" wins over "hot" in "hot latte please" (via rule 3/4)
+        # - "coffee" wins over "iced" in "large coffee iced" (via rule 3)
+        matches.sort(key=lambda x: (not x[4], not x[5], -x[2], -x[3]))
+        return matches[0][0]
 
-                    # Triggers BEFORE "with" are main items; triggers AFTER are modifiers
-                    # If no "with" in text, all triggers are considered main items
-                    is_before_with = with_pos == -1 or start_pos < with_pos
-                    # Prefer item types where slug matches trigger
-                    slug_matches = trigger.lower() == item_type_slug or trigger.lower().rstrip("s") == item_type_slug
-                    matches.append((item_type_slug, trigger, len(trigger), start_pos, is_before_with, slug_matches))
+    return None
 
-        if matches:
-            # Sort by:
-            # (1) is_before_with (True first) - triggers before "with" are main items
-            # (2) slug_matches (True first) - prefer when trigger matches item type slug
-            # (3) length (LONGER first) - prefer specific item names over short adjectives
-            # (4) start_pos (LATER first) - among equal-length triggers, prefer nouns at end
-            # This ensures:
-            # - "bagel" wins over "cheese" in "everything bagel with cream cheese" (via rule 1)
-            # - "latte" wins over "hot" in "hot latte please" (via rule 3/4)
-            # - "coffee" wins over "iced" in "large coffee iced" (via rule 3)
-            matches.sort(key=lambda x: (not x[4], not x[5], -x[2], -x[3]))
-            detected_item_type = matches[0][0]
 
-    if not detected_item_type:
-        # Fallback: check if input matches an attribute option alias
-        # This handles "earl grey" -> tea with tea_flavor=earl_gray
-        cleaned_input = text_lower.strip()
-        option_match = menu_cache.get_item_type_from_option_alias(cleaned_input)
-        if option_match:
-            detected_item_type, inferred_attr_slug, inferred_option_slug = option_match
-            logger.info(
-                "CONFIGURABLE_ITEM: inferred type '%s' from option alias '%s' (%s=%s)",
-                detected_item_type, cleaned_input, inferred_attr_slug, inferred_option_slug
-            )
-            # Pre-fill the attribute value - will be merged with extracted values later
-            # Store in a variable to merge after attr_values is populated
-            inferred_attr_values = {inferred_attr_slug: inferred_option_slug}
-        else:
-            return None
-    else:
-        inferred_attr_values = {}
+def _try_option_alias_fallback(
+    text_lower: str,
+) -> tuple[str, dict] | None:
+    """Try to infer item type from attribute option aliases.
 
-    # 2b. Check if the user's text matches more specific menu items
-    # e.g., "bagel chips" should NOT trigger configurable bagel flow if there are
-    # specific menu items like "Bagel Chips - Salt", "Bagel Chips - BBQ", etc.
-    # Use text_cleaned (ordering phrases stripped) for more accurate matching
+    Handles cases like "earl grey" -> tea with tea_flavor=earl_gray, where the
+    input doesn't match any trigger but does match an option alias.
+
+    Args:
+        text_lower: Lowercased user input text
+
+    Returns:
+        (detected_item_type, inferred_attr_values) or None if no match
+    """
+    cleaned_input = text_lower.strip()
+    option_match = menu_cache.get_item_type_from_option_alias(cleaned_input)
+    if option_match:
+        detected_item_type, inferred_attr_slug, inferred_option_slug = option_match
+        logger.info(
+            "CONFIGURABLE_ITEM: inferred type '%s' from option alias '%s' (%s=%s)",
+            detected_item_type, cleaned_input, inferred_attr_slug, inferred_option_slug
+        )
+        inferred_attr_values = {inferred_attr_slug: inferred_option_slug}
+        return detected_item_type, inferred_attr_values
+    return None
+
+
+def _check_more_specific_menu_items(
+    text: str,
+    text_lower: str,
+    text_cleaned: str,
+    detected_item_type: str,
+    configurable_slugs: set[str],
+) -> str | None:
+    """Check if user text matches more specific menu items of a different type.
+
+    This prevents false positives like "bagel chips" triggering configurable bagel
+    flow when there are specific menu items like "Bagel Chips - Salt". Also catches
+    cases like "hot chai tea" where "chai tea" is a complete menu item of type
+    "chai_drink" but trigger word "tea" detected the "tea" type.
+
+    Args:
+        text: Original user input text
+        text_lower: Lowercased user input text
+        text_cleaned: Lowercased text with ordering phrases stripped
+        detected_item_type: The currently detected item type slug
+        configurable_slugs: Set of configurable item type slugs
+
+    Returns:
+        Updated item type slug if type was kept or switched to a more specific
+        configurable type. None to signal that parsing should be rejected
+        (non-configurable match or extra-word specificity match found).
+    """
     more_specific_matches = menu_cache.find_items_by_word_match(text_cleaned)
 
-    # Also check if any complete menu item name (from a different type) appears as a
-    # phrase in the user's input. This catches cases like "hot chai tea" where "chai tea"
-    # is a complete menu item (type: chai_drink) but the trigger word "tea" detected
-    # the "tea" type. We want to defer to the more specific match.
-    # BUT: Skip this check if the menu item name is also an attribute option for the
-    # detected item type (e.g., "bagel" in "ham egg and cheese bagel" is the bread choice,
-    # not a reference to a standalone bagel item).
     text_cleaned_lower = text_cleaned.lower()
     detected_type_attr_options = menu_cache.get_all_attribute_option_slugs_for_item_type(detected_item_type)
 
@@ -644,7 +669,6 @@ def _resolve_item_type_and_menu_item(
         """Check if a word appears in any attribute option for the detected type."""
         word_lower = word.lower()
         for opt in detected_type_attr_options:
-            # Check if word is the option or appears as a word within the option
             if word_lower == opt or word_lower in opt.split('_') or word_lower in opt.split():
                 return True
         return False
@@ -676,8 +700,7 @@ def _resolve_item_type_and_menu_item(
                         "CONFIGURABLE_ITEM: switching type '%s' -> '%s' based on menu item '%s' in '%s'",
                         detected_item_type, item_type, item_name, text[:50]
                     )
-                    detected_item_type = item_type
-                    break
+                    return item_type
                 else:
                     # Non-configurable item - defer to menu item lookup
                     logger.info(
@@ -719,6 +742,61 @@ def _resolve_item_type_and_menu_item(
                         text[:50], matching_extra, match.get("name")
                     )
                     return None
+
+    # Return the original type unchanged
+    return detected_item_type
+
+
+def _resolve_item_type_and_menu_item(
+    text: str,
+    text_lower: str,
+    text_cleaned: str,
+) -> tuple[str, str | None, tuple[int, int] | None, dict] | None:
+    """Resolve the item type and optional menu item from user text.
+
+    Checks (in order):
+    1. Items with default ingredients (e.g., "The Classic BEC") - by alias matching
+    2. Trigger-based item type detection (e.g., "bagel", "coffee", "latte")
+    3. Option alias fallback (e.g., "earl grey" -> tea with tea_flavor=earl_gray)
+    4. More-specific menu item checks to avoid false positives
+
+    Args:
+        text: Original user input text
+        text_lower: Lowercased user input text
+        text_cleaned: Lowercased text with ordering phrases stripped
+
+    Returns:
+        (detected_item_type, matched_item_name, matched_item_span, inferred_attr_values)
+        or None if no configurable item type was detected
+    """
+    configurable_slugs = menu_cache.get_configurable_item_type_slugs()
+
+    # 1. Check for items with default ingredients FIRST
+    matched_item_type, matched_item_name, matched_item_span = _match_item_with_defaults(text_lower)
+
+    # 2. Detect which configurable item type this text matches
+    detected_item_type: str | None = matched_item_type
+
+    # Only do trigger-based detection if no item with defaults was found
+    if not detected_item_type:
+        detected_item_type = _detect_type_by_triggers(text_lower, configurable_slugs)
+
+    # 3. Option alias fallback if no type detected yet
+    inferred_attr_values: dict = {}
+    if not detected_item_type:
+        fallback = _try_option_alias_fallback(text_lower)
+        if fallback:
+            detected_item_type, inferred_attr_values = fallback
+        else:
+            return None
+
+    # 4. Check if the user's text matches more specific menu items
+    resolved_type = _check_more_specific_menu_items(
+        text, text_lower, text_cleaned, detected_item_type, configurable_slugs
+    )
+    if resolved_type is None:
+        return None
+    detected_item_type = resolved_type
 
     return (detected_item_type, matched_item_name, matched_item_span, inferred_attr_values)
 
@@ -805,61 +883,23 @@ def _try_parse_inline_specs(
     return None
 
 
-def _extract_and_build_configurable_item(
+def _extract_attributes_with_exclusions(
     text: str,
-    text_lower: str,
     detected_item_type: str,
-    matched_item_name: str | None,
     matched_item_span: tuple[int, int] | None,
+    item_qty_span: tuple[int, int] | None,
     inferred_attr_values: dict,
-    quantity: int,
-    item_qty_span: tuple[int, int] | None = None,
-) -> OpenInputResponse | None:
-    """Extract attributes, modifiers, and build the final configurable item response.
+) -> tuple:
+    """Extract attributes via pipeline, applying span exclusions and merging inferred values.
 
-    Handles:
-    - Menu item name matching (if not already matched)
-    - Attribute extraction via pipeline
-    - Inferred attribute merging
-    - Unrecognized item text guard
-    - Default menu item fallback
-    - Partial modifier split detection
-    - Food modifier extraction
-    - Special instruction extraction and filtering
-    - Final ParsedItemEntry building
-
-    Args:
-        text: Original user input text
-        text_lower: Lowercased user input text
-        detected_item_type: The detected item type slug
-        matched_item_name: The matched menu item name (if any)
-        matched_item_span: The span of the matched item name in text_lower (if any)
-        inferred_attr_values: Pre-filled attribute values from option alias fallback
-        quantity: The extracted quantity
+    Builds exclude_spans from the matched menu item name and item quantity to prevent
+    attribute extraction from matching words within those spans. Then merges any
+    inferred attribute values (from option alias fallback) into the result.
 
     Returns:
-        OpenInputResponse with parsed_items, or None if unrecognized item text detected
+        (attr_result, attr_matched_spans) where attr_result is an AttributeExtractionResult
+        and attr_matched_spans is a list of (start, end) tuples.
     """
-    # 2e. Early menu item name matching
-    # This finds the specific menu item within the item type (e.g., "Hot Coffee" for coffee).
-    # NOTE: We do NOT use the span from this match for exclusion because menu item NAMES
-    # like "Bagel" are short and don't contain modifier words. The span exclusion is only
-    # needed for ALIASES matched in step 1b (e.g., "ham egg and cheese" contains "cheese"
-    # which shouldn't trigger cheese attribute matching).
-    if not matched_item_name:
-        matched_item_name = _match_menu_item_name_for_type(text, detected_item_type)
-
-    # 4. Extract attribute values using data-driven extraction
-    # This returns all attributes as {slug: value} where value can be:
-    # - string for single_select
-    # - list[{slug, quantity, ...}] for multi_select
-    # - bool for boolean
-    # Also returns matched_spans to pass to modifier extraction to avoid double-extraction
-    #
-    # Build exclude_spans from the matched menu item name to prevent attribute extraction
-    # from matching words within the menu item name. E.g., "ham egg and cheese bagel with
-    # pepper" - the word "cheese" is part of the menu item name "Ham Egg and Cheese Sandwich",
-    # not a request for a specific cheese type.
     from .result_types import TextSpan
     exclude_spans_for_attrs: list[TextSpan] = []
     if matched_item_span:
@@ -884,138 +924,116 @@ def _extract_and_build_configurable_item(
             unmatched=attr_result.unmatched,
         )
 
-    # 5. Use the menu item name found earlier (from step 1b or 2c)
-    # matched_item_name was already set by:
-    # - Step 1b: items_with_defaults_aliases matching
-    # - Step 2c: early menu item name matching via _match_menu_item_name_for_type_with_span
-    item_name = matched_item_name
+    return attr_result, attr_matched_spans
 
-    # 5a. Guard against creating generic items from partial trigger matches
-    # If we detected an item type but no specific menu item matched,
-    # check if there's unrecognized text that could be a missing menu item.
-    # E.g., "iced mocha" - "iced" triggers coffee_based_beverage but "mocha" is unrecognized.
-    # E.g., "large iced mocha" - "large" extracts size, "iced" triggers, but "mocha" is unrecognized.
-    # We check this BEFORE assigning a default, so unrecognized items get proper error handling.
-    if not item_name:
-        if _has_unrecognized_item_text(text, detected_item_type):
-            logger.info(
-                "CONFIGURABLE_ITEM: rejecting generic parse - unrecognized text in '%s' for type '%s'",
-                text[:50], detected_item_type
-            )
-            return None
 
-    # 5b. If no specific menu item matched (and no unrecognized text), try to pick a default
-    # This handles cases like "hot tea" or just "coffee" where we use the type's default item
-    if not item_name:
-        item_name = _get_default_menu_item_for_type(detected_item_type)
-        if item_name:
-            logger.debug(
-                "Using default menu item '%s' for type '%s'",
-                item_name, detected_item_type
-            )
+def _handle_partial_modifier_split(
+    text: str,
+    text_lower: str,
+    detected_item_type: str,
+    item_name: str,
+    quantity: int,
+    has_defaults: bool,
+    special_instructions: list[str],
+) -> OpenInputResponse | None:
+    """Check for and handle partial-modifier split patterns.
 
-    # Check if this item has default ingredients (used for populating defaults)
-    has_defaults = False
-    if item_name:
-        items_with_defaults = get_items_with_defaults_aliases()
-        name_lower = item_name.lower()
-        if name_lower in items_with_defaults or item_name in items_with_defaults.values():
-            has_defaults = True
+    Detects patterns like "4 coffees 2 with milk" where a subset of items should
+    have modifiers applied (2 with milk, 2 plain).
 
-    # 5b. Extract item-level special instructions (e.g., "room for cream", "extra hot")
-    special_instructions = _get_pipeline().extract_special_instructions(text).instructions
+    Returns:
+        OpenInputResponse with split items if a split was detected, None otherwise.
+    """
+    # Try to find the item name in text. Item name like "Hot Coffee" may appear as "coffees".
+    # First try full name match, then try individual words.
+    item_name_lower = item_name.lower()
+    item_name_match = re.search(rf'\b{re.escape(item_name_lower)}s?\b', text_lower)
+    if not item_name_match:
+        # Try matching individual words (e.g., "coffee" from "Hot Coffee")
+        for word in item_name_lower.split():
+            if len(word) >= 3:  # Skip short words like "a", "an", "the"
+                item_name_match = re.search(rf'\b{re.escape(word)}s?\b', text_lower)
+                if item_name_match:
+                    break
+    if not item_name_match:
+        return None
 
-    # 5b-split. Check for partial-modifier split (e.g., "4 coffees 2 with milk")
-    # This handles cases like "4 large hot coffees 2 with milk and sugar" -> 2 with modifiers, 2 plain
-    if quantity > 1 and item_name:
-        # Try to find the item name in text. Item name like "Hot Coffee" may appear as "coffees".
-        # First try full name match, then try individual words.
-        item_name_lower = item_name.lower()
-        item_name_match = re.search(rf'\b{re.escape(item_name_lower)}s?\b', text_lower)
-        if not item_name_match:
-            # Try matching individual words (e.g., "coffee" from "Hot Coffee")
-            for word in item_name_lower.split():
-                if len(word) >= 3:  # Skip short words like "a", "an", "the"
-                    item_name_match = re.search(rf'\b{re.escape(word)}s?\b', text_lower)
-                    if item_name_match:
-                        break
-        if item_name_match:
-            text_after_item = text_lower[item_name_match.end():]
-            split_result = _detect_partial_modifier_split(text_after_item, quantity)
+    text_after_item = text_lower[item_name_match.end():]
+    split_result = _detect_partial_modifier_split(text_after_item, quantity)
+    if not split_result:
+        return None
 
-            if split_result:
-                split_qty, modifier_text = split_result
-                remaining_qty = quantity - split_qty
+    split_qty, modifier_text = split_result
+    remaining_qty = quantity - split_qty
 
-                logger.info(
-                    "PARTIAL_SPLIT: detected %d with '%s', %d unmodified",
-                    split_qty, modifier_text, remaining_qty
-                )
+    logger.info(
+        "PARTIAL_SPLIT: detected %d with '%s', %d unmodified",
+        split_qty, modifier_text, remaining_qty
+    )
 
-                # Extract BASE attributes from text BEFORE the split point
-                # e.g., "4 large hot coffees 2 with milk" -> base text is "4 large hot coffees"
-                text_before_split = text_lower[:item_name_match.end()]
-                base_attr_result = _get_pipeline().extract_attributes(text_before_split, detected_item_type)
+    # Extract BASE attributes from text BEFORE the split point
+    # e.g., "4 large hot coffees 2 with milk" -> base text is "4 large hot coffees"
+    text_before_split = text_lower[:item_name_match.end()]
+    base_attr_result = _get_pipeline().extract_attributes(text_before_split, detected_item_type)
 
-                # Also extract any attribute values from modifier text
-                split_attr_result = _get_pipeline().extract_attributes(modifier_text, detected_item_type)
-                split_matched_spans = [(s.start, s.end) for s in split_attr_result.matched_spans]
+    # Also extract any attribute values from modifier text
+    split_attr_result = _get_pipeline().extract_attributes(modifier_text, detected_item_type)
+    split_matched_spans = [(s.start, s.end) for s in split_attr_result.matched_spans]
 
-                # Extract modifiers from "with X" portion only
-                # Pass exclude_spans to avoid double-extraction of attributes
-                split_modifiers = _get_pipeline().extract_modifiers_raw(modifier_text, detected_item_type, exclude_spans=split_matched_spans)
-                modifier_selections_split: list[Selection] = []
-                for mod in split_modifiers:
-                    category = menu_cache.get_ingredient_category(mod)
-                    mod_qty = extract_quantity_for_pattern(modifier_text, mod)
-                    modifier_selections_split.append(Selection(
-                        slug=mod, category=category, quantity=mod_qty
-                    ))
-
-                # Merge base + split attributes: split overrides base
-                merged_attr_result = base_attr_result.merge_with(split_attr_result)
-
-                # Build items WITH modifiers
-                items_with_mods = build_parsed_item(
-                    item_type=detected_item_type,
-                    item_name=item_name,
-                    quantity=split_qty,
-                    attr_result=merged_attr_result,
-                    modifiers=modifier_selections_split,
-                    original_text=text,
-                    is_signature=has_defaults,
-                    special_instructions=special_instructions,
-                )
-
-                # Build items WITHOUT modifiers (plain)
-                items_plain = build_parsed_item(
-                    item_type=detected_item_type,
-                    item_name=item_name,
-                    quantity=remaining_qty,
-                    attr_result=base_attr_result,
-                    modifiers=[],
-                    original_text=text,
-                    is_signature=has_defaults,
-                    special_instructions=[],
-                )
-
-                return OpenInputResponse(parsed_items=[items_with_mods, items_plain])
-
-    # 5c. Extract food modifiers (proteins, spreads, toppings, etc.)
-    # These are ingredients not handled via attribute_values (which handles items that
-    # overlap with attribute options like bread types, egg styles, etc.)
-    # Pass exclude_spans to avoid double-extraction of text already matched as attributes
-    food_modifiers = _get_pipeline().extract_modifiers_raw(text_lower, detected_item_type, exclude_spans=attr_matched_spans)
-    modifier_selections: list[Selection] = []
-    for mod in food_modifiers:
+    # Extract modifiers from "with X" portion only
+    # Pass exclude_spans to avoid double-extraction of attributes
+    split_modifiers = _get_pipeline().extract_modifiers_raw(modifier_text, detected_item_type, exclude_spans=split_matched_spans)
+    modifier_selections_split: list[Selection] = []
+    for mod in split_modifiers:
         category = menu_cache.get_ingredient_category(mod)
-        quantity = extract_quantity_for_pattern(text_lower, mod)
-        modifier_selections.append(Selection(
-            slug=mod, category=category, quantity=quantity
+        mod_qty = extract_quantity_for_pattern(modifier_text, mod)
+        modifier_selections_split.append(Selection(
+            slug=mod, category=category, quantity=mod_qty
         ))
 
-    # 5d. Filter out special instructions that are already captured as selections
-    # e.g., if "shot" is in attr_result.values, don't keep "extra shot" as an instruction
+    # Merge base + split attributes: split overrides base
+    merged_attr_result = base_attr_result.merge_with(split_attr_result)
+
+    # Build items WITH modifiers
+    items_with_mods = build_parsed_item(
+        item_type=detected_item_type,
+        item_name=item_name,
+        quantity=split_qty,
+        attr_result=merged_attr_result,
+        modifiers=modifier_selections_split,
+        original_text=text,
+        is_signature=has_defaults,
+        special_instructions=special_instructions,
+    )
+
+    # Build items WITHOUT modifiers (plain)
+    items_plain = build_parsed_item(
+        item_type=detected_item_type,
+        item_name=item_name,
+        quantity=remaining_qty,
+        attr_result=base_attr_result,
+        modifiers=[],
+        original_text=text,
+        is_signature=has_defaults,
+        special_instructions=[],
+    )
+
+    return OpenInputResponse(parsed_items=[items_with_mods, items_plain])
+
+
+def _filter_duplicate_instructions(
+    special_instructions: list[str],
+    attr_result,
+    modifier_selections: list[Selection],
+) -> list[str]:
+    """Filter out special instructions already captured as attribute or modifier selections.
+
+    For example, if "shot" is in attr_result.values, the instruction "extra shot" is
+    redundant and should be removed.
+
+    Returns:
+        Filtered list of special instructions with duplicates removed.
+    """
     # Build set of all selection slugs from attr_result.values and modifiers
     captured_slugs: set[str] = set()
     for attr_key, attr_val in attr_result.values.items():
@@ -1056,14 +1074,124 @@ def _extract_and_build_configurable_item(
             logger.debug("Filtering duplicate instruction '%s' - already captured as selection", instr)
             continue
         filtered_instructions.append(instr)
-    special_instructions = filtered_instructions
+    return filtered_instructions
+
+
+def _extract_and_build_configurable_item(
+    text: str,
+    text_lower: str,
+    detected_item_type: str,
+    matched_item_name: str | None,
+    matched_item_span: tuple[int, int] | None,
+    inferred_attr_values: dict,
+    quantity: int,
+    item_qty_span: tuple[int, int] | None = None,
+) -> OpenInputResponse | None:
+    """Extract attributes, modifiers, and build the final configurable item response.
+
+    Coordinates helper methods to:
+    1. Match menu item name (if not already matched)
+    2. Extract attributes via pipeline with span exclusions
+    3. Resolve item name (unrecognized text guard, default fallback)
+    4. Handle partial modifier splits (e.g., "4 coffees 2 with milk")
+    5. Extract food modifiers and special instructions
+    6. Build the final ParsedItemEntry
+
+    Args:
+        text: Original user input text
+        text_lower: Lowercased user input text
+        detected_item_type: The detected item type slug
+        matched_item_name: The matched menu item name (if any)
+        matched_item_span: The span of the matched item name in text_lower (if any)
+        inferred_attr_values: Pre-filled attribute values from option alias fallback
+        quantity: The extracted quantity
+        item_qty_span: The span of the item-level quantity word (if any)
+
+    Returns:
+        OpenInputResponse with parsed_items, or None if unrecognized item text detected
+    """
+    # Early menu item name matching
+    # This finds the specific menu item within the item type (e.g., "Hot Coffee" for coffee).
+    # NOTE: We do NOT use the span from this match for exclusion because menu item NAMES
+    # like "Bagel" are short and don't contain modifier words. The span exclusion is only
+    # needed for ALIASES matched in step 1b (e.g., "ham egg and cheese" contains "cheese"
+    # which shouldn't trigger cheese attribute matching).
+    if not matched_item_name:
+        matched_item_name = _match_menu_item_name_for_type(text, detected_item_type)
+
+    # Extract attributes with span exclusions and merge inferred values
+    attr_result, attr_matched_spans = _extract_attributes_with_exclusions(
+        text, detected_item_type, matched_item_span, item_qty_span, inferred_attr_values,
+    )
+
+    item_name = matched_item_name
+
+    # Guard against creating generic items from partial trigger matches
+    # If we detected an item type but no specific menu item matched,
+    # check if there's unrecognized text that could be a missing menu item.
+    # E.g., "iced mocha" - "iced" triggers coffee_based_beverage but "mocha" is unrecognized.
+    if not item_name:
+        if _has_unrecognized_item_text(text, detected_item_type):
+            logger.info(
+                "CONFIGURABLE_ITEM: rejecting generic parse - unrecognized text in '%s' for type '%s'",
+                text[:50], detected_item_type
+            )
+            return None
+
+    # If no specific menu item matched (and no unrecognized text), try to pick a default
+    # This handles cases like "hot tea" or just "coffee" where we use the type's default item
+    if not item_name:
+        item_name = _get_default_menu_item_for_type(detected_item_type)
+        if item_name:
+            logger.debug(
+                "Using default menu item '%s' for type '%s'",
+                item_name, detected_item_type
+            )
+
+    # Check if this item has default ingredients (used for populating defaults)
+    has_defaults = False
+    if item_name:
+        items_with_defaults = get_items_with_defaults_aliases()
+        name_lower = item_name.lower()
+        if name_lower in items_with_defaults or item_name in items_with_defaults.values():
+            has_defaults = True
+
+    # Extract item-level special instructions (e.g., "room for cream", "extra hot")
+    special_instructions = _get_pipeline().extract_special_instructions(text).instructions
+
+    # Check for partial-modifier split (e.g., "4 coffees 2 with milk")
+    if quantity > 1 and item_name:
+        split_response = _handle_partial_modifier_split(
+            text, text_lower, detected_item_type, item_name,
+            quantity, has_defaults, special_instructions,
+        )
+        if split_response:
+            return split_response
+
+    # Extract food modifiers (proteins, spreads, toppings, etc.)
+    # These are ingredients not handled via attribute_values (which handles items that
+    # overlap with attribute options like bread types, egg styles, etc.)
+    # Pass exclude_spans to avoid double-extraction of text already matched as attributes
+    food_modifiers = _get_pipeline().extract_modifiers_raw(text_lower, detected_item_type, exclude_spans=attr_matched_spans)
+    modifier_selections: list[Selection] = []
+    for mod in food_modifiers:
+        category = menu_cache.get_ingredient_category(mod)
+        quantity = extract_quantity_for_pattern(text_lower, mod)
+        modifier_selections.append(Selection(
+            slug=mod, category=category, quantity=quantity
+        ))
+
+    # Filter out special instructions already captured as selections
+    special_instructions = _filter_duplicate_instructions(
+        special_instructions, attr_result, modifier_selections,
+    )
 
     logger.info(
         "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s",
         detected_item_type, quantity, item_name, list(attr_result.values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions
     )
 
-    # 6. Build ParsedItemEntry using build_parsed_item (converts attr_result to selections)
+    # Build ParsedItemEntry using build_parsed_item (converts attr_result to selections)
     # Create single entry with full quantity - ItemAdderHandler handles threshold logic
     parsed_item = build_parsed_item(
         item_type=detected_item_type,

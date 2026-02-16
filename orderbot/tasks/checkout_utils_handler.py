@@ -115,16 +115,31 @@ class CheckoutUtilsHandler:
         # Check for incomplete items that need configuration
         for item in order.items.items:
             if item.status == TaskStatus.IN_PROGRESS:
-                # Use unified callback for all incomplete items (data-driven)
                 if isinstance(item, MenuItemTask) and self._configure_next_incomplete_item:
                     logger.info("Found incomplete item, using unified handler")
                     return self._configure_next_incomplete_item(order)
-                # No unified callback - log warning
                 logger.warning("Found in-progress item but no unified handler configured: %s",
                               item.menu_item_name if isinstance(item, MenuItemTask) else item)
 
-        # Check if there are items queued for configuration
-        # Loop until we find an incomplete item or queue is empty (defensive safeguard)
+        # Process queued config items
+        result = self._process_config_queue(order)
+        if result:
+            return result
+
+        # Check if we just finished configuring a multi-item order
+        result = self._build_multi_item_summary(order)
+        if result:
+            return result
+
+        # Ask if they want anything else
+        return self._build_anything_else_message(order)
+
+    def _process_config_queue(self, order: OrderTask) -> StateMachineResult | None:
+        """Process queued config items until one needs user input or queue is empty.
+
+        Returns:
+            StateMachineResult if a queued item needs user input, None if queue exhausted.
+        """
         while order.has_queued_config_items():
             next_config = order.pop_next_config_item()
             if not next_config:
@@ -142,7 +157,6 @@ class CheckoutUtilsHandler:
                 logger.info("Processing queued item disambiguation")
                 order.pending_field = PendingField.ITEM_SELECTION
                 order.set_phase(OrderPhase.CONFIGURING_ITEM)
-                # Build the clarification message
                 options_str = format_numbered_list(order.pending_item_options)
                 return StateMachineResult(
                     message=f"We have a few options:\n{options_str}\nWhich would you like?",
@@ -160,23 +174,17 @@ class CheckoutUtilsHandler:
             if target_item and target_item.status == TaskStatus.COMPLETE:
                 logger.info("Skipping already-complete item in queue: id=%s, type=%s",
                            item_id[:8] if item_id else None, item_type)
-                continue  # Pop next item from queue
+                continue
 
-            # If we have item_name and pending_field from multi-item processing,
-            # use abbreviated question format via database lookup
+            # If we have item_name and pending_field, use abbreviated question format
             if item_name and pending_field:
                 order.pending_item_id = item_id
                 order.pending_field = pending_field
                 order.set_phase(OrderPhase.CONFIGURING_ITEM)
-
-                # Get item type for database lookup
                 item_type_slug = None
                 if target_item and isinstance(target_item, MenuItemTask):
                     item_type_slug = target_item.menu_item_type
-
-                # Build question using database lookup
                 question = self._get_question_for_attribute(pending_field, item_name, item_type_slug)
-
                 return StateMachineResult(message=question, order=order)
 
             # Fall back to unified config handler for queued items without names
@@ -184,37 +192,46 @@ class CheckoutUtilsHandler:
                 if self._configure_next_incomplete_item:
                     return self._configure_next_incomplete_item(order)
 
-            # If we get here, item wasn't handled - log and continue to next
             logger.warning("Queued config item not handled: id=%s, type=%s",
                           item_id[:8] if item_id else None, item_type)
 
-        # Check if we just finished configuring a multi-item order
-        # If so, give a summary like "Great, both toasted. Anything else?"
-        if order.multi_item_config_names:
-            config_names = order.multi_item_config_names
-            order.multi_item_config_names = []  # Clear for next time
+        return None
 
-            # Build summary based on the number of items configured
-            num_items = len(config_names)
-            if num_items == 1:
-                summary = f"Great, {config_names[0]} added."
-            elif num_items == 2:
-                summary = f"Great, {format_english_list(config_names)} - both added."
-            else:
-                summary = f"Great, {format_english_list(config_names)} - all added."
+    def _build_multi_item_summary(self, order: OrderTask) -> StateMachineResult | None:
+        """Build summary message after finishing a multi-item configuration.
 
-            order.set_phase(OrderPhase.TAKING_ITEMS)
-            return StateMachineResult(
-                message=f"{summary} Anything else?",
-                order=order,
-            )
+        Returns:
+            StateMachineResult with summary if multi-item config just completed, None otherwise.
+        """
+        if not order.multi_item_config_names:
+            return None
 
-        # Ask if they want anything else
+        config_names = order.multi_item_config_names
+        order.multi_item_config_names = []
+
+        num_items = len(config_names)
+        if num_items == 1:
+            summary = f"Great, {config_names[0]} added."
+        elif num_items == 2:
+            summary = f"Great, {format_english_list(config_names)} - both added."
+        else:
+            summary = f"Great, {format_english_list(config_names)} - all added."
+
+        order.set_phase(OrderPhase.TAKING_ITEMS)
+        return StateMachineResult(
+            message=f"{summary} Anything else?",
+            order=order,
+        )
+
+    def _build_anything_else_message(self, order: OrderTask) -> StateMachineResult:
+        """Build 'anything else?' message with last item summary.
+
+        Returns:
+            StateMachineResult asking what else the user wants.
+        """
         items = order.items.get_active_items()
         if items:
-            # Count consecutive identical items at the end of the list
             last_item = items[-1]
-            # Use get_summary() for all item types (data-driven)
             last_summary = last_item.get_summary()
             count = 0
             for item in reversed(items):
@@ -223,13 +240,11 @@ class CheckoutUtilsHandler:
                 else:
                     break
 
-            # Show quantity if more than 1 identical item
             if count > 1:
                 summary = f"{count} {last_summary}s" if not last_summary.endswith("s") else f"{count} {last_summary}"
             else:
                 summary = last_summary
 
-            # Explicitly set to TAKING_ITEMS - we're asking for more items
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message=got_it_anything_else(summary),

@@ -124,6 +124,8 @@ class ScenarioGenerator:
             return self._generate_menu_inquiry_scenario()
         elif scenario_type == "tricky":
             return self._generate_tricky_scenario()
+        elif scenario_type == "realistic_order":
+            return self._generate_realistic_order_scenario()
         else:
             logger.warning("Unknown scenario type: %s", scenario_type)
             return None
@@ -352,6 +354,48 @@ class ScenarioGenerator:
             logger.debug("Could not load attribute data for %s: %s", item_type_slug, e)
 
         return attribute_options, boolean_attrs
+
+    def _generate_realistic_order_scenario(self) -> BaseScenario | None:
+        """Generate a reactive realistic order scenario (1-2 items, answer config)."""
+        from tests.chaos_monkey.scenarios.realistic_order import RealisticOrderScenario
+
+        if not self._menu_items:
+            return None
+
+        # Pick 1-2 items (70% chance of 1 item, 30% chance of 2)
+        num_items = 1 if self.rng.random() < 0.7 else 2
+        items = self.rng.sample(
+            self._menu_items, min(num_items, len(self._menu_items))
+        )
+
+        # Collect attribute options from all selected item types
+        all_attribute_options: dict[str, list[str]] = {}
+        all_boolean_attrs: list[str] = []
+
+        seen_types: set[str] = set()
+        for item in items:
+            item_type = item.get("item_type", "")
+            if item_type in seen_types:
+                continue
+            seen_types.add(item_type)
+
+            attr_opts, bool_attrs = self._get_attribute_data_for_item_type(item_type)
+            for slug, opts in attr_opts.items():
+                if slug not in all_attribute_options:
+                    all_attribute_options[slug] = []
+                all_attribute_options[slug].extend(
+                    o for o in opts if o not in all_attribute_options[slug]
+                )
+            all_boolean_attrs.extend(
+                b for b in bool_attrs if b not in all_boolean_attrs
+            )
+
+        return RealisticOrderScenario(
+            items=items,
+            attribute_options=all_attribute_options,
+            boolean_attrs=all_boolean_attrs,
+            seed=self.rng.randint(0, 2**31),
+        )
 
     def _generate_tricky_scenario(self) -> BaseScenario | None:
         """Generate a tricky scenario with out-of-place inputs (no filler words)."""

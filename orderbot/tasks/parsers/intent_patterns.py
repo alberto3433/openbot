@@ -169,6 +169,29 @@ _mid_fillers = "|".join(
 MID_SENTENCE_FILLER_PATTERN = re.compile(rf'\b(?:{_mid_fillers})\b', re.IGNORECASE)
 
 
+def strip_leading_fillers(text: str) -> str:
+    """Remove only leading conversational fillers (greetings, hesitations).
+
+    Unlike strip_conversational_fillers(), this does NOT strip mid-sentence
+    words like "also" or "so". Use this when you need to preserve meaningful
+    mid-sentence words after removing greetings like "hi there".
+
+    Args:
+        text: User input text
+
+    Returns:
+        Text with leading conversational fillers removed
+    """
+    result = text
+    while True:
+        match = FILLER_WORDS_PATTERN.match(result)
+        if match:
+            result = result[match.end():].strip()
+        else:
+            break
+    return result
+
+
 def strip_conversational_fillers(text: str) -> str:
     """Remove conversational filler words from the start of user input.
 

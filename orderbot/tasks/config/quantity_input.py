@@ -14,7 +14,7 @@ from orderbot.cache.base import pluralize
 from ..models import OrderTask, MenuItemTask
 from ..schemas import StateMachineResult
 from ..response_utils import is_negative, is_affirmative
-from ..parsers.quantity_utils import parse_numeric_input
+from ..parsers.quantity_utils import parse_numeric_input, MAX_MODIFIER_QUANTITY
 
 if TYPE_CHECKING:
     from .context import ConfigHandlerContext
@@ -102,7 +102,7 @@ class QuantityInputHandler:
         unit_slug = unit_option.get("slug", attr_slug)
 
         # Get max quantity from attribute config
-        max_qty = attr.get("max_selections") or 10
+        max_qty = attr.get("max_selections") or MAX_MODIFIER_QUANTITY
 
         # Check for negative responses (skip)
         is_neg = is_negative(user_input)

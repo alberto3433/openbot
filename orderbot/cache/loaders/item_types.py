@@ -14,15 +14,12 @@ logger = logging.getLogger(__name__)
 class ItemTypeLoaderMixin:
     """Mixin containing item type and attribute loading methods."""
 
-    def _build_global_option_dict(self, opt) -> dict:
-        """Build option dict with aliases from both option and linked ingredient.
+    @staticmethod
+    def _build_option_base(opt) -> dict | None:
+        """Build the common option dict fields from a GlobalAttributeOption.
 
-        Aliases are merged from two sources:
-        1. Option's own alias_records (GlobalAttributeOptionAlias)
-        2. Linked Ingredient's alias_records (IngredientAlias)
-
-        This allows options like "double_shot" to have aliases like "2 shots"
-        without requiring a linked ingredient.
+        Returns None if the option has no valid slug (skipped).
+        Shared by _build_global_option_dict and _preload_all_item_type_attributes.
         """
         # Start with option's own aliases
         aliases = list(opt.aliases) if opt.aliases else []
@@ -38,11 +35,6 @@ class ItemTypeLoaderMixin:
             must_match = opt.ingredient.must_match
             ingredient_category = opt.ingredient.category
 
-        # Derive modifier_category from ingredient at runtime
-        modifier_category_slug = None
-        if opt.ingredient and opt.ingredient.modifier_category:
-            modifier_category_slug = opt.ingredient.modifier_category.slug
-
         # Derive slug/display_name from ingredient when linked
         slug = opt.ingredient.slug if opt.ingredient else opt.slug
         display_name = opt.ingredient.name if opt.ingredient else opt.display_name
@@ -51,7 +43,7 @@ class ItemTypeLoaderMixin:
         if not slug:
             logger.warning(
                 "GlobalAttributeOption id=%d has NULL slug (ingredient_id=%s). Skipping.",
-                opt.id, opt.ingredient_id,
+                opt.id, getattr(opt, 'ingredient_id', None),
             )
             return None
 
@@ -66,12 +58,37 @@ class ItemTypeLoaderMixin:
             "price_modifier": opt.price_modifier,
             "is_default": opt.is_default,
             "is_available": opt.is_available,
-            "aliases": aliases if aliases else None,
+            "aliases": aliases,
             "must_match": must_match,
-            "modifier_category": modifier_category_slug,
             "ingredient_category": ingredient_category,
             "forward_to_attribute": forward_to_attribute,
         }
+
+    def _build_global_option_dict(self, opt) -> dict:
+        """Build option dict with aliases from both option and linked ingredient.
+
+        Aliases are merged from two sources:
+        1. Option's own alias_records (GlobalAttributeOptionAlias)
+        2. Linked Ingredient's alias_records (IngredientAlias)
+
+        This allows options like "double_shot" to have aliases like "2 shots"
+        without requiring a linked ingredient.
+        """
+        base = self._build_option_base(opt)
+        if base is None:
+            return None
+
+        # Derive modifier_category from ingredient at runtime
+        modifier_category_slug = None
+        if opt.ingredient and opt.ingredient.modifier_category:
+            modifier_category_slug = opt.ingredient.modifier_category.slug
+
+        base["modifier_category"] = modifier_category_slug
+        # Global options store None for empty aliases
+        if not base["aliases"]:
+            base["aliases"] = None
+
+        return base
 
     def _load_global_attribute_options_from_bulk(self, bulk_data: dict) -> None:
         """Load global attribute options from pre-loaded bulk data (no N+1 queries).
@@ -262,48 +279,12 @@ class ItemTypeLoaderMixin:
                 # Build options list from eagerly loaded options
                 options = []
                 for opt in sorted(attr.options, key=lambda o: o.display_order):
-                    must_match = None
-                    ingredient_category = None
-                    # Start with option's own aliases (from global_attribute_option_aliases)
-                    aliases = list(opt.aliases) if opt.aliases else []
-                    # Derive slug/display_name from ingredient when linked
-                    slug = opt.slug
-                    display_name = opt.display_name
-                    if opt.ingredient:
-                        slug = opt.ingredient.slug
-                        display_name = opt.ingredient.name
-                        # Add linked ingredient aliases (if any)
-                        if opt.ingredient.aliases:
-                            for ing_alias in opt.ingredient.aliases:
-                                if ing_alias not in aliases:
-                                    aliases.append(ing_alias)
-                        must_match = opt.ingredient.must_match
-                        ingredient_category = opt.ingredient.category
-
-                    # Guard against NULL slug (ingredient-linked option with unloaded ingredient)
-                    if not slug:
-                        logger.warning(
-                            "GlobalAttributeOption id=%d has NULL slug (ingredient_id=%s). Skipping.",
-                            opt.id, getattr(opt, 'ingredient_id', None),
-                        )
+                    base = self._build_option_base(opt)
+                    if base is None:
                         continue
-
-                    # Get forward_to_attribute slug if set
-                    forward_to_attribute = None
-                    if hasattr(opt, 'forward_to_attribute') and opt.forward_to_attribute:
-                        forward_to_attribute = opt.forward_to_attribute.slug
-
-                    options.append({
-                        "slug": slug,
-                        "display_name": display_name or slug,
-                        "price_modifier": float(opt.price_modifier or 0),
-                        "is_default": opt.is_default,
-                        "is_available": opt.is_available,
-                        "aliases": aliases,
-                        "must_match": must_match,
-                        "ingredient_category": ingredient_category,
-                        "forward_to_attribute": forward_to_attribute,
-                    })
+                    # This context needs float-coerced price_modifier
+                    base["price_modifier"] = float(base["price_modifier"] or 0)
+                    options.append(base)
 
                 result[attr.slug] = {
                     "slug": attr.slug,

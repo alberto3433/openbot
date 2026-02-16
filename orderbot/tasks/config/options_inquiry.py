@@ -94,6 +94,16 @@ class OptionsInquiryHandler:
         if re.search(flexible_pattern, input_lower):
             return True
 
+        # "how can you make X?" / "how do you make X?" / "how can I get X?"
+        # "how are X made/prepared?" / "what ways/styles can you make them?"
+        how_patterns = [
+            r"how\s+(?:can|do|would)\s+(?:you|i)\s+(?:make|prepare|do|cook|get|have)",
+            r"how\s+(?:is|are)\s+(?:\w+\s+)?(?:made|prepared|done|cooked)",
+            r"what\s+(?:ways?|styles?)\s+(?:can|do)\s+(?:you|i)",
+        ]
+        if any(re.search(p, input_lower) for p in how_patterns):
+            return True
+
         # Context-aware patterns: check if user is asking about the specific topic
         # e.g., "what bread do you have" when we're asking about bread
         if topic:

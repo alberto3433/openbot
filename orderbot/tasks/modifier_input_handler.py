@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from .parsers.constants import ADD_MODIFIER_PATTERNS
-from .parsers.quantity_utils import extract_additive_quantity
+from .parsers.quantity_utils import extract_additive_quantity, MAX_MODIFIER_QUANTITY
 from .handler_utils import (
     is_configurable_menu_item,
     get_last_item,
@@ -255,6 +255,9 @@ def add_modifiers_from_input(
         if match:
             # Extract quantity and check if additive ("another vanilla", "one more syrup")
             quantity, is_additive = extract_additive_quantity(input_lower, match["pattern"])
+            # Cap per-modifier quantity
+            if quantity > MAX_MODIFIER_QUANTITY:
+                quantity = MAX_MODIFIER_QUANTITY
 
             # Check if modifier already exists (exact slug match)
             existing = None
@@ -264,12 +267,13 @@ def add_modifiers_from_input(
                     break
 
             if existing and is_additive:
-                # Increment existing quantity
+                # Increment existing quantity, capped at max
                 old_qty = existing.get("quantity", 1)
-                existing["quantity"] = old_qty + quantity
+                new_qty = min(old_qty + quantity, MAX_MODIFIER_QUANTITY)
+                existing["quantity"] = new_qty
                 logger.info(
                     "Incremented %s modifier: %s (qty=%d -> %d)",
-                    category, match["slug"], old_qty, old_qty + quantity
+                    category, match["slug"], old_qty, new_qty
                 )
                 made_change = True
             elif not existing:
@@ -322,6 +326,9 @@ def add_modifiers_from_input(
                 # Extract quantity and check if additive ("another shot", "one more shot")
                 pattern = opt_slug_pattern if slug_match else opt_display_pattern
                 quantity, is_additive = extract_additive_quantity(input_lower, pattern)
+                # Cap per-modifier quantity
+                if quantity > MAX_MODIFIER_QUANTITY:
+                    quantity = MAX_MODIFIER_QUANTITY
 
                 # Get price for this option
                 opt_price = opt.get("price") or opt.get("price_modifier") or 0
@@ -330,8 +337,8 @@ def add_modifiers_from_input(
                 existing = item.get_selection(attr_slug)
                 if existing and existing.get("slug") == opt_slug:
                     if is_additive:
-                        # Increment existing quantity
-                        new_qty = existing.get("quantity", 1) + quantity
+                        # Increment existing quantity, capped at max
+                        new_qty = min(existing.get("quantity", 1) + quantity, MAX_MODIFIER_QUANTITY)
                         existing["quantity"] = new_qty
                         # Update unit_price for the additional quantity
                         if opt_price > 0:

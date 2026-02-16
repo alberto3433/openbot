@@ -413,29 +413,9 @@ class TakingItemsHandler(MenuDataMixin):
             return result
 
         if parsed.unclear or parsed.is_greeting:
-            # Check if user is trying to order something we don't recognize
-            # e.g., "I want home fries", "can I have a croissant", or just "pepsi"
-            if parsed.unclear and raw_user_input and self._unrecognized_handler:
-                text_stripped = raw_user_input.strip()
-                is_order_attempt = looks_like_order_attempt(raw_user_input)
-                is_known_unrecognized = self._is_known_unrecognized_item(text_stripped)
-
-                if is_order_attempt or is_known_unrecognized:
-                    # For order attempts with phrases, extract item name; for bare items, use text directly
-                    item_name = extract_order_item_name(raw_user_input) if is_order_attempt else text_stripped
-                    if item_name:
-                        logger.info("Detected order attempt for unrecognized item: '%s'", item_name)
-                        message, category_for_followup = self._unrecognized_handler.get_not_found_response(
-                            item_name, order=order
-                        )
-                        if category_for_followup:
-                            # Track state so "yes" response can list items in this category
-                            order.pending_field = PendingField.CATEGORY_INQUIRY
-                            order.pending_config_queue = [category_for_followup]
-                        return StateMachineResult(
-                            message=message,
-                            order=order,
-                        )
+            result = self._handle_unrecognized_order_attempt(parsed, order, raw_user_input)
+            if result:
+                return result
 
             return StateMachineResult(
                 message="What can I get for you?",
@@ -444,6 +424,48 @@ class TakingItemsHandler(MenuDataMixin):
 
         return StateMachineResult(
             message="I didn't catch that. What would you like to order?",
+            order=order,
+        )
+
+    def _handle_unrecognized_order_attempt(
+        self,
+        parsed: "OpenInputResponse",
+        order: OrderTask,
+        raw_user_input: str | None,
+    ) -> StateMachineResult | None:
+        """Check if user is trying to order something we don't recognize.
+
+        Handles inputs like "I want home fries", "can I have a croissant",
+        or bare item names like "pepsi".
+
+        Returns:
+            StateMachineResult if an unrecognized item was detected, None otherwise.
+        """
+        if not parsed.unclear or not raw_user_input or not self._unrecognized_handler:
+            return None
+
+        text_stripped = raw_user_input.strip()
+        is_order_attempt = looks_like_order_attempt(raw_user_input)
+        is_known_unrecognized = self._is_known_unrecognized_item(text_stripped)
+
+        if not (is_order_attempt or is_known_unrecognized):
+            return None
+
+        # For order attempts with phrases, extract item name; for bare items, use text directly
+        item_name = extract_order_item_name(raw_user_input) if is_order_attempt else text_stripped
+        if not item_name:
+            return None
+
+        logger.info("Detected order attempt for unrecognized item: '%s'", item_name)
+        message, category_for_followup = self._unrecognized_handler.get_not_found_response(
+            item_name, order=order
+        )
+        if category_for_followup:
+            # Track state so "yes" response can list items in this category
+            order.pending_field = PendingField.CATEGORY_INQUIRY
+            order.pending_config_queue = [category_for_followup]
+        return StateMachineResult(
+            message=message,
             order=order,
         )
 

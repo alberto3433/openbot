@@ -25,7 +25,7 @@ from ..selection_utils import (
 )
 from ..schemas import StateMachineResult, OrderPhase
 from ..parsers.constants import extract_quantity_for_pattern, DEFAULT_PAGINATION_SIZE
-from ..parsers.quantity_utils import parse_numeric_input
+from ..parsers.quantity_utils import parse_numeric_input, MAX_MODIFIER_QUANTITY
 from ..utils.text import format_english_list
 from ..utils import OptionMatcher
 from ..response_utils import is_affirmative
@@ -50,6 +50,9 @@ class SelectInputHandler:
         pricing: "PricingEngine | None",
         option_matcher: "OptionMatcher",
         input_normalizer: "InputNormalizer",
+        format_display_list_callback=None,
+        extract_selections_callback=None,
+        extract_qualifier_callback=None,
     ):
         """
         Initialize the select input handler.
@@ -58,10 +61,36 @@ class SelectInputHandler:
             pricing: PricingEngine for price lookups.
             option_matcher: OptionMatcher for matching user input to options.
             input_normalizer: InputNormalizer for extracting quantities.
+            format_display_list_callback: Callback to format options list for display.
+            extract_selections_callback: Callback to extract selections from input.
+            extract_qualifier_callback: Callback to extract qualifiers (extra, light, etc.).
         """
         self.pricing = pricing
         self._option_matcher = option_matcher
         self._input_normalizer = input_normalizer
+        self._format_display_list = format_display_list_callback
+        self._extract_selections = extract_selections_callback
+        self._extract_qualifier = extract_qualifier_callback
+
+    def _resolve_option_price(self, option: dict, item_type: str) -> float:
+        """Look up option price with pricing engine fallback.
+
+        Consolidates the repeated pattern of checking option price fields
+        then falling back to the pricing engine for modifier prices.
+
+        Args:
+            option: The option dict (must have 'slug' key).
+            item_type: The item type slug for pricing engine lookup.
+
+        Returns:
+            The resolved price as a float.
+        """
+        price = OptionMatcher.get_option_price(option)
+        if price == 0 and self.pricing:
+            price = self.pricing.lookup_generic_modifier_price(
+                option["slug"], item_type
+            ) or 0.0
+        return price
 
     def handle_select_input(
         self,
@@ -71,9 +100,6 @@ class SelectInputHandler:
         attr: dict,
         options: list[dict],
         advance_callback,
-        format_display_list_callback,
-        extract_selections_callback,
-        extract_qualifier_callback,
     ) -> StateMachineResult:
         """Handle single/multi select input.
 
@@ -84,9 +110,6 @@ class SelectInputHandler:
             attr: Attribute configuration dict
             options: List of available options
             advance_callback: Callback to advance to next question
-            format_display_list_callback: Callback to format options list
-            extract_selections_callback: Callback to extract selections from input
-            extract_qualifier_callback: Callback to extract qualifiers
 
         Returns:
             StateMachineResult with response or next question
@@ -180,15 +203,13 @@ class SelectInputHandler:
         if input_type == "multi_select":
             return self._handle_multi_select(
                 user_input, user_lower, item, order, attr, attr_slug, available_options,
-                quantity, advance_callback, format_display_list_callback,
-                extract_qualifier_callback,
+                quantity, advance_callback,
             )
 
         # For single_select (or if multi_select found nothing), use single-match logic
         return self._handle_single_select(
             user_input, user_lower, item, order, attr, attr_slug, available_options,
-            quantity, input_type, is_additive, advance_callback, format_display_list_callback,
-            extract_selections_callback, extract_qualifier_callback,
+            quantity, input_type, is_additive, advance_callback,
         )
 
     def _handle_multi_select(
@@ -202,8 +223,6 @@ class SelectInputHandler:
         options: list[dict],
         quantity: int,
         advance_callback,
-        format_display_list_callback,
-        extract_qualifier_callback,
     ) -> StateMachineResult:
         """Handle multi_select input type."""
         match_result = self._option_matcher.match_multiple_with_unmatched(user_input, options)
@@ -219,7 +238,7 @@ class SelectInputHandler:
         # Check if any token matched multiple options - may need disambiguation
         result = self._check_multi_select_disambiguation(
             user_input, matched_options, options, item, order, attr, attr_slug,
-            quantity, format_display_list_callback,
+            quantity,
         )
         if result:
             return result
@@ -227,18 +246,26 @@ class SelectInputHandler:
         if matched_options:
             all_selections, added_selections = self._apply_multi_select_matches(
                 matched_options, item, attr_slug, user_input, quantity,
-                extract_qualifier_callback,
             )
 
             # Build acknowledgment text with quantity
             display_names = []
+            capped_note = None
             for sel in all_selections:
                 name = sel["display_name"]
                 qty = sel.get("quantity", 1)
+                requested = sel.get("requested_quantity")
                 if qty > 1:
                     name = f"{qty} {name}"
+                if requested and requested > qty:
+                    capped_note = (
+                        f"I added {qty} instead of {requested}"
+                        f" — {MAX_MODIFIER_QUANTITY} is the most we can do"
+                    )
                 display_names.append(name)
             ack_text = format_english_list(display_names)
+            if capped_note:
+                ack_text += f" ({capped_note})"
 
             # Check for unmatched tokens that need user response
             result = self._handle_unmatched_tokens(
@@ -252,8 +279,7 @@ class SelectInputHandler:
         # No matches - fall through to single select handling
         return self._handle_single_select_fallback(
             user_input, user_lower, item, order, attr, attr_slug, options,
-            quantity, "multi_select", advance_callback, format_display_list_callback,
-            None, extract_qualifier_callback,
+            quantity, "multi_select", advance_callback,
         )
 
     def _check_multi_select_disambiguation(
@@ -266,24 +292,10 @@ class SelectInputHandler:
         attr: dict,
         attr_slug: str,
         quantity: int,
-        format_display_list_callback,
     ) -> StateMachineResult | None:
         """Check if multi-select matches need disambiguation.
 
-        Handles two cases:
-        - Single token input that matched multiple options (e.g. "syrups")
-        - Multi-token input where one token matched multiple options
-
-        Args:
-            user_input: Original user input string.
-            matched_options: Options matched by the matcher.
-            options: All available options for this attribute.
-            item: The MenuItemTask being configured.
-            order: Current order state.
-            attr: Attribute configuration dict.
-            attr_slug: Attribute slug string.
-            quantity: Extracted quantity from user input.
-            format_display_list_callback: Callback to format options list.
+        Routes to specialized handlers for single-token and multi-token cases.
 
         Returns:
             StateMachineResult if disambiguation is needed, None otherwise.
@@ -293,193 +305,250 @@ class SelectInputHandler:
 
         tokens = self._input_normalizer.tokenize_multi_input(user_input)
 
-        # Case 1: Single token input matched multiple options
-        is_single_token = len(tokens) <= 1
-        if is_single_token:
-            # Check if space-separated words could each match a distinct option
-            # "salt pepper ketchup" = 3 words, 3 matches → no disambiguation needed
-            # "syrups" = 1 word, 3 matches → needs disambiguation
-            # "sugar milk syrup" = 3 words, 6 matches → sugar/milk unambiguous, syrup ambiguous
-            space_words = [w for w in user_input.lower().split() if w.strip()]
-            if len(space_words) < len(matched_options):
-                # Fewer words than matches - check each word individually
-                unambiguous_matches = []
-                first_ambiguous_options = None
-                for word in space_words:
-                    word_matches = self._option_matcher.match_multiple(word, options)
-                    if len(word_matches) == 1:
-                        unambiguous_matches.append(word_matches[0])
-                    elif len(word_matches) > 1 and first_ambiguous_options is None:
-                        first_ambiguous_options = word_matches
+        # Case 1: Single token input matched multiple options (e.g. "syrups")
+        if len(tokens) <= 1:
+            result = self._disambiguate_single_token(
+                user_input, matched_options, options, item, order, attr,
+                attr_slug, quantity,
+            )
+            if result:
+                return result
 
-                # Apply unambiguous matches immediately
-                if unambiguous_matches:
-                    existing_slugs = {
-                        sel.get("slug") for sel in item.get_selections(attr_slug)
-                    }
-                    for match in unambiguous_matches:
-                        if match["slug"] not in existing_slugs:
-                            opt_price = OptionMatcher.get_option_price(match)
-                            if opt_price == 0 and self.pricing:
-                                opt_price = (
-                                    self.pricing.lookup_generic_modifier_price(
-                                        match["slug"], item.menu_item_type
-                                    ) or 0.0
-                                )
-                            item.add_selection(
-                                match["slug"],
-                                attr_slug,
-                                quantity=1,
-                                price=opt_price,
-                                display_name=match["display_name"],
-                                ingredient_category=match.get("ingredient_category"),
-                            )
-                            existing_slugs.add(match["slug"])
-                            logger.info(
-                                "MULTI_SELECT: added unambiguous word match '%s'",
-                                match["display_name"]
-                            )
+        # Case 2: Multi-token input where one token matched multiple options
+        return self._disambiguate_multi_token(
+            tokens, options, item, order, attr, attr_slug, quantity,
+        )
 
-                if first_ambiguous_options is not None:
-                    # Disambiguate only among the ambiguous word's matches
+    def _disambiguate_single_token(
+        self,
+        user_input: str,
+        matched_options: list[dict],
+        options: list[dict],
+        item: MenuItemTask,
+        order: OrderTask,
+        attr: dict,
+        attr_slug: str,
+        quantity: int,
+    ) -> StateMachineResult | None:
+        """Handle disambiguation when input is a single token matching multiple options.
+
+        Checks if space-separated words each match a distinct option:
+        - "salt pepper ketchup" = 3 words, 3 matches -> no disambiguation
+        - "syrups" = 1 word, 3 matches -> needs disambiguation
+        """
+        space_words = [w for w in user_input.lower().split() if w.strip()]
+        if len(space_words) >= len(matched_options):
+            # Each word likely matched a distinct option - no disambiguation needed
+            return None
+
+        # Fewer words than matches - check each word individually
+        unambiguous_matches = []
+        first_ambiguous_options = None
+        for word in space_words:
+            word_matches = self._option_matcher.match_multiple(word, options)
+            if len(word_matches) == 1:
+                unambiguous_matches.append(word_matches[0])
+            elif len(word_matches) > 1 and first_ambiguous_options is None:
+                first_ambiguous_options = word_matches
+
+        # Apply unambiguous matches immediately
+        if unambiguous_matches:
+            existing_slugs = {
+                sel.get("slug") for sel in item.get_selections(attr_slug)
+            }
+            for match in unambiguous_matches:
+                if match["slug"] not in existing_slugs:
+                    opt_price = self._resolve_option_price(match, item.menu_item_type)
+                    item.add_selection(
+                        match["slug"],
+                        attr_slug,
+                        quantity=1,
+                        price=opt_price,
+                        display_name=match["display_name"],
+                        ingredient_category=match.get("ingredient_category"),
+                    )
+                    existing_slugs.add(match["slug"])
                     logger.info(
-                        "MULTI_SELECT DISAMBIGUATION: input '%s' has ambiguous word "
-                        "matching %d options: %s",
-                        user_input, len(first_ambiguous_options),
-                        [o["display_name"] for o in first_ambiguous_options]
+                        "MULTI_SELECT: added unambiguous word match '%s'",
+                        match["display_name"]
                     )
-                    order.pending_attr_disambiguation = {
-                        "options": first_ambiguous_options,
-                        "attr_slug": attr_slug,
-                        "modifiers": {"_quantity": quantity},
-                        "item_id": item.id,
-                    }
-                    options_text = format_display_list_callback(first_ambiguous_options)
-                    # Use the shared ingredient category as the label if all
-                    # ambiguous options belong to the same category (e.g. "syrup")
-                    categories = {
-                        o.get("ingredient_category")
-                        for o in first_ambiguous_options
-                        if o.get("ingredient_category")
-                    }
-                    if len(categories) == 1:
-                        cat_slug = next(iter(categories))
-                        attr_display = menu_cache.get_ingredient_category_display_name(
-                            cat_slug
-                        ).lower()
-                    else:
-                        attr_display = attr.get("display_name", attr_slug).lower()
-                    return StateMachineResult(
-                        message=f"Which {attr_display}? {options_text}",
-                        order=order,
-                    )
-                # All words unambiguous - fall through to add all matched
-            # else: Each word likely matched a distinct option - fall through to add all
 
-        # Case 2: Multi-token input but ONE token matched multiple options
-        # Check each token individually to see if any single token caused multiple matches
+        if first_ambiguous_options is None:
+            # All words unambiguous - no disambiguation needed
+            return None
+
+        # Disambiguate among the ambiguous word's matches
+        return self._build_disambiguation_response(
+            user_input, first_ambiguous_options, attr, attr_slug,
+            quantity, item, order,
+        )
+
+    def _disambiguate_multi_token(
+        self,
+        tokens: list[str],
+        options: list[dict],
+        item: MenuItemTask,
+        order: OrderTask,
+        attr: dict,
+        attr_slug: str,
+        quantity: int,
+    ) -> StateMachineResult | None:
+        """Handle disambiguation when one token in multi-token input matches multiple options.
+
+        For each token, checks if it matched multiple options and whether
+        individual words within the token resolve the ambiguity.
+        """
         for token in tokens:
             token_matches = self._option_matcher.match_multiple(token, options)
-            if len(token_matches) > 1:
-                # Check if each word in the token matches exactly one distinct option
-                # e.g., "milk sugar" → "milk" matches whole_milk, "sugar" matches domino_sugar
-                # This avoids disambiguation when user clearly specified multiple modifiers
-                token_words = [w for w in token.lower().split() if w.strip() and len(w) >= 2]
-                if len(token_words) >= 2:
-                    word_match_counts = []
-                    matched_by_word: set[str] = set()
-                    each_word_single_match = True
-                    for word in token_words:
-                        word_matches = self._option_matcher.match_multiple(word, options)
-                        word_match_counts.append((word, len(word_matches)))
-                        if len(word_matches) == 1:
-                            matched_by_word.add(word_matches[0]["slug"])
-                        elif len(word_matches) > 1:
-                            each_word_single_match = False
+            if len(token_matches) <= 1:
+                continue
 
-                    # Skip disambiguation only if:
-                    # 1. Each word matches exactly one option (or zero)
-                    # 2. The number of distinct options matched equals the total matches
-                    if each_word_single_match and len(matched_by_word) == len(token_matches):
-                        logger.debug(
-                            "MULTI_SELECT: token '%s' words each match distinct option, skipping disambiguation",
-                            token
-                        )
-                        continue
+            # Check if each word in the token matches exactly one distinct option
+            # e.g., "milk sugar" -> "milk" matches whole_milk, "sugar" matches domino_sugar
+            if self._token_words_are_unambiguous(token, token_matches, options):
+                continue
 
-                # This single token matched multiple options - need disambiguation
-                # Extract quantity from token (e.g., "2 syrups" -> 2)
-                token_qty, _ = self._input_normalizer.extract_leading_quantity(token)
-                if token_qty == 1:
-                    token_qty = quantity  # Fall back to overall quantity
+            # This single token matched multiple options - need disambiguation
+            token_qty, _ = self._input_normalizer.extract_leading_quantity(token)
+            if token_qty == 1:
+                token_qty = quantity  # Fall back to overall quantity
 
-                logger.info(
-                    "MULTI_SELECT DISAMBIGUATION: token '%s' matched %d options: %s",
-                    token, len(token_matches), [o["display_name"] for o in token_matches]
-                )
+            logger.info(
+                "MULTI_SELECT DISAMBIGUATION: token '%s' matched %d options: %s",
+                token, len(token_matches), [o["display_name"] for o in token_matches]
+            )
 
-                # Apply non-ambiguous matches first (other tokens that matched exactly one option)
-                for other_token in tokens:
-                    if other_token == token:
-                        continue
-                    other_matches = self._option_matcher.match_multiple(other_token, options)
+            # Apply non-ambiguous matches from other tokens first
+            self._apply_unambiguous_other_tokens(
+                tokens, token, options, item, attr_slug,
+            )
 
-                    # Find the best match for this token
-                    best_match = None
-                    if len(other_matches) == 1:
-                        best_match = other_matches[0]
-                    elif len(other_matches) > 1:
-                        # Multiple matches - check if one has a must_match that matches the token
-                        # e.g., "oat milk" matches oat_milk (must_match=["oat milk"]) and whole_milk (no must_match)
-                        # Prefer oat_milk because it has a specific must_match
-                        other_token_lower = other_token.lower()
-                        for opt in other_matches:
-                            must_match = opt.get("must_match", [])
-                            if must_match:
-                                # Check if any must_match phrase is in the token
-                                for phrase in must_match:
-                                    if phrase.lower() in other_token_lower:
-                                        best_match = opt
-                                        break
-                                if best_match:
-                                    break
-
-                    if best_match:
-                        existing_slugs = {sel.get("slug") for sel in item.get_selections(attr_slug)}
-                        if best_match["slug"] not in existing_slugs:
-                            opt_price = OptionMatcher.get_option_price(best_match)
-                            if opt_price == 0 and self.pricing:
-                                opt_price = self.pricing.lookup_generic_modifier_price(
-                                    best_match["slug"], item.menu_item_type
-                                ) or 0.0
-                            item.add_selection(
-                                best_match["slug"],
-                                attr_slug,
-                                quantity=1,
-                                price=opt_price,
-                                display_name=best_match["display_name"],
-                                ingredient_category=best_match.get("ingredient_category"),
-                            )
-                            logger.info(
-                                "MULTI_SELECT: added unambiguous match '%s' before disambiguation",
-                                best_match["display_name"]
-                            )
-
-                # Store disambiguation state for the ambiguous token
-                order.pending_attr_disambiguation = {
-                    "options": token_matches,
-                    "attr_slug": attr_slug,
-                    "modifiers": {"_quantity": token_qty},
-                    "item_id": item.id,
-                }
-                options_text = format_display_list_callback(token_matches)
-                attr_display = attr.get("display_name", attr_slug).lower()
-                return StateMachineResult(
-                    message=f"Which {attr_display}? {options_text}",
-                    order=order,
-                )
+            # Store disambiguation state for the ambiguous token
+            order.pending_attr_disambiguation = {
+                "options": token_matches,
+                "attr_slug": attr_slug,
+                "modifiers": {"_quantity": token_qty},
+                "item_id": item.id,
+            }
+            options_text = self._format_display_list(token_matches)
+            attr_display = attr.get("display_name", attr_slug).lower()
+            return StateMachineResult(
+                message=f"Which {attr_display}? {options_text}",
+                order=order,
+            )
 
         return None
+
+    def _token_words_are_unambiguous(
+        self, token: str, token_matches: list[dict], options: list[dict]
+    ) -> bool:
+        """Check if individual words in a token each match exactly one distinct option."""
+        token_words = [w for w in token.lower().split() if w.strip() and len(w) >= 2]
+        if len(token_words) < 2:
+            return False
+
+        matched_by_word: set[str] = set()
+        for word in token_words:
+            word_matches = self._option_matcher.match_multiple(word, options)
+            if len(word_matches) == 1:
+                matched_by_word.add(word_matches[0]["slug"])
+            elif len(word_matches) > 1:
+                return False  # A word is ambiguous
+
+        if len(matched_by_word) == len(token_matches):
+            logger.debug(
+                "MULTI_SELECT: token '%s' words each match distinct option, skipping disambiguation",
+                token
+            )
+            return True
+        return False
+
+    def _apply_unambiguous_other_tokens(
+        self,
+        tokens: list[str],
+        ambiguous_token: str,
+        options: list[dict],
+        item: MenuItemTask,
+        attr_slug: str,
+    ) -> None:
+        """Apply non-ambiguous matches from other tokens before disambiguation."""
+        for other_token in tokens:
+            if other_token == ambiguous_token:
+                continue
+            other_matches = self._option_matcher.match_multiple(other_token, options)
+
+            # Find the best match for this token
+            best_match = None
+            if len(other_matches) == 1:
+                best_match = other_matches[0]
+            elif len(other_matches) > 1:
+                # Prefer option with must_match phrase matching the token
+                other_token_lower = other_token.lower()
+                for opt in other_matches:
+                    must_match = opt.get("must_match", [])
+                    if must_match and any(p.lower() in other_token_lower for p in must_match):
+                        best_match = opt
+                        break
+
+            if best_match:
+                existing_slugs = {sel.get("slug") for sel in item.get_selections(attr_slug)}
+                if best_match["slug"] not in existing_slugs:
+                    opt_price = self._resolve_option_price(best_match, item.menu_item_type)
+                    item.add_selection(
+                        best_match["slug"],
+                        attr_slug,
+                        quantity=1,
+                        price=opt_price,
+                        display_name=best_match["display_name"],
+                        ingredient_category=best_match.get("ingredient_category"),
+                    )
+                    logger.info(
+                        "MULTI_SELECT: added unambiguous match '%s' before disambiguation",
+                        best_match["display_name"]
+                    )
+
+    def _build_disambiguation_response(
+        self,
+        user_input: str,
+        ambiguous_options: list[dict],
+        attr: dict,
+        attr_slug: str,
+        quantity: int,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Build a disambiguation response for ambiguous options."""
+        logger.info(
+            "MULTI_SELECT DISAMBIGUATION: input '%s' has ambiguous word "
+            "matching %d options: %s",
+            user_input, len(ambiguous_options),
+            [o["display_name"] for o in ambiguous_options]
+        )
+        order.pending_attr_disambiguation = {
+            "options": ambiguous_options,
+            "attr_slug": attr_slug,
+            "modifiers": {"_quantity": quantity},
+            "item_id": item.id,
+        }
+        options_text = self._format_display_list(ambiguous_options)
+        # Use the shared ingredient category as the label if all
+        # ambiguous options belong to the same category (e.g. "syrup")
+        categories = {
+            o.get("ingredient_category")
+            for o in ambiguous_options
+            if o.get("ingredient_category")
+        }
+        if len(categories) == 1:
+            cat_slug = next(iter(categories))
+            attr_display = menu_cache.get_ingredient_category_display_name(
+                cat_slug
+            ).lower()
+        else:
+            attr_display = attr.get("display_name", attr_slug).lower()
+        return StateMachineResult(
+            message=f"Which {attr_display}? {options_text}",
+            order=order,
+        )
 
     def _apply_multi_select_matches(
         self,
@@ -488,7 +557,6 @@ class SelectInputHandler:
         attr_slug: str,
         user_input: str,
         quantity: int,
-        extract_qualifier_callback,
     ) -> tuple[list[dict], list[dict]]:
         """Apply matched options to the item as selections.
 
@@ -501,7 +569,6 @@ class SelectInputHandler:
             attr_slug: Attribute slug string.
             user_input: Original user input string.
             quantity: Default quantity extracted from user input.
-            extract_qualifier_callback: Callback to extract qualifiers.
 
         Returns:
             Tuple of (all_selections, added_selections) where all_selections
@@ -516,7 +583,7 @@ class SelectInputHandler:
         for opt in matched_options:
             if opt["slug"] not in existing_slugs:
                 # Extract qualifier (extra, light, on the side, etc.)
-                qualifier = extract_qualifier_callback(user_input, opt["display_name"])
+                qualifier = self._extract_qualifier(user_input, opt["display_name"])
 
                 # Only extract numeric quantity if category supports it (has quantity_unit)
                 mod_category = opt.get("ingredient_category") or attr_slug
@@ -535,13 +602,12 @@ class SelectInputHandler:
                                 opt_quantity = alias_qty
                                 break
 
-                opt_price = OptionMatcher.get_option_price(opt)
+                # Cap per-modifier quantity
+                requested_quantity = opt_quantity
+                if opt_quantity > MAX_MODIFIER_QUANTITY:
+                    opt_quantity = MAX_MODIFIER_QUANTITY
 
-                # Look up price from pricing engine if not in option
-                if opt_price == 0 and self.pricing:
-                    opt_price = self.pricing.lookup_generic_modifier_price(
-                        opt["slug"], item.menu_item_type
-                    ) or 0.0
+                opt_price = self._resolve_option_price(opt, item.menu_item_type)
 
                 # Build display name with qualifier if present
                 display_name = opt["display_name"]
@@ -563,6 +629,7 @@ class SelectInputHandler:
                     "price": opt_price,
                     "quantity": opt_quantity,
                     "qualifier": qualifier,
+                    "requested_quantity": requested_quantity,
                 })
 
                 if opt_price > 0:
@@ -686,9 +753,6 @@ class SelectInputHandler:
         input_type: str,
         is_additive: bool,
         advance_callback,
-        format_display_list_callback,
-        extract_selections_callback,
-        extract_qualifier_callback,
     ) -> StateMachineResult:
         """Handle single_select input type."""
         matched, partial_matches = self._option_matcher.match_single(user_input, options)
@@ -696,20 +760,18 @@ class SelectInputHandler:
         if matched:
             return self._apply_single_match(
                 user_input, item, order, attr, attr_slug, matched, quantity,
-                input_type, is_additive, advance_callback, extract_qualifier_callback,
+                input_type, is_additive, advance_callback,
             )
 
         # Multiple partial matches - store disambiguation state and ask
         if partial_matches:
             return self._handle_partial_matches(
                 user_input, item, order, attr_slug, partial_matches, quantity,
-                extract_selections_callback, format_display_list_callback,
             )
 
         return self._handle_single_select_fallback(
             user_input, user_lower, item, order, attr, attr_slug, options,
-            quantity, input_type, advance_callback, format_display_list_callback,
-            extract_selections_callback, extract_qualifier_callback,
+            quantity, input_type, advance_callback,
         )
 
     def _apply_single_match(
@@ -724,11 +786,10 @@ class SelectInputHandler:
         input_type: str,
         is_additive: bool,
         advance_callback,
-        extract_qualifier_callback,
     ) -> StateMachineResult:
         """Apply a single matched option to the item."""
         # Extract qualifier for single match
-        qualifier = extract_qualifier_callback(user_input, matched["display_name"])
+        qualifier = self._extract_qualifier(user_input, matched["display_name"])
         sel_price = matched.get("price") or matched.get("price_modifier") or 0
 
         # Determine the price for this option
@@ -837,14 +898,12 @@ class SelectInputHandler:
         attr_slug: str,
         partial_matches: list[dict],
         quantity: int,
-        extract_selections_callback,
-        format_display_list_callback,
     ) -> StateMachineResult:
         """Handle multiple partial matches - disambiguation."""
         # Extract any selections that should be remembered during disambiguation
         stored_modifiers = {"_quantity": quantity}
-        if extract_selections_callback:
-            extracted_selections = extract_selections_callback(user_input, item.menu_item_type)
+        if self._extract_selections:
+            extracted_selections = self._extract_selections(user_input, item.menu_item_type)
             if extracted_selections:
                 for sel in extracted_selections:
                     stored_modifiers[sel.category] = sel.slug
@@ -864,7 +923,7 @@ class SelectInputHandler:
             attr_slug, [o["display_name"] for o in partial_matches], stored_modifiers
         )
 
-        options_text = format_display_list_callback(partial_matches)
+        options_text = self._format_display_list(partial_matches)
         return StateMachineResult(
             message=f"I found a few options matching that. Did you mean {options_text}?",
             order=order,
@@ -882,14 +941,11 @@ class SelectInputHandler:
         quantity: int,
         input_type: str,
         advance_callback,
-        format_display_list_callback,
-        extract_selections_callback,
-        extract_qualifier_callback,
     ) -> StateMachineResult:
         """Handle fallback cases when no match found."""
         # Check for partial matches on option display names
         partial_result = self._check_partial_match(
-            user_lower, options, item, order, attr_slug, format_display_list_callback,
+            user_lower, options, item, order, attr_slug,
             quantity=quantity
         )
         if partial_result:
@@ -910,7 +966,7 @@ class SelectInputHandler:
             parsed_qty = parse_numeric_input(user_input)
             if parsed_qty is not None and parsed_qty >= 1:
                 single_opt = available_opts[0]
-                opt_price = single_opt.get("price") or single_opt.get("price_modifier") or 0.0
+                opt_price = self._resolve_option_price(single_opt, item.menu_item_type)
                 display_name = single_opt.get("display_name", single_opt["slug"])
 
                 item.add_selection(
@@ -936,7 +992,7 @@ class SelectInputHandler:
             # This handles "Would you like an espresso shot?" -> "yes" -> add 1 shot
             if len(available_opts) == 1:
                 single_opt = available_opts[0]
-                opt_price = single_opt.get("price") or single_opt.get("price_modifier") or 0.0
+                opt_price = self._resolve_option_price(single_opt, item.menu_item_type)
                 display_name = single_opt.get("display_name", single_opt["slug"])
 
                 item.add_selection(
@@ -993,7 +1049,6 @@ class SelectInputHandler:
         item: MenuItemTask,
         order: OrderTask,
         attr_slug: str,
-        format_display_list_callback,
         quantity: int = 1,
     ) -> StateMachineResult | None:
         """
@@ -1022,11 +1077,11 @@ class SelectInputHandler:
 
         # Multiple options match - list them for user (with pagination)
         if len(matching_options) <= DEFAULT_PAGINATION_SIZE:
-            options_text = format_display_list_callback(matching_options)
+            options_text = self._format_display_list(matching_options)
             message = f"We have {options_text}. Which would you like?"
         else:
             first_page = matching_options[:DEFAULT_PAGINATION_SIZE]
-            options_text = format_display_list_callback(first_page)
+            options_text = self._format_display_list(first_page)
             remaining = len(matching_options) - DEFAULT_PAGINATION_SIZE
             message = (
                 f"We have {options_text}, and {remaining} more. "
@@ -1104,7 +1159,7 @@ class SelectInputHandler:
             return None
 
         # Found a match - add the selection
-        opt_price = matched_option.get("price") or matched_option.get("price_modifier") or 0.0
+        opt_price = self._resolve_option_price(matched_option, item.menu_item_type)
         display_name = matched_option.get("display_name", f"{parsed_num}")
 
         item.add_selection(

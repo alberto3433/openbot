@@ -108,15 +108,18 @@ class MenuItemConfigHandler(BaseHandler):
         )
 
         # Initialize sub-handlers using shared context
+        self._selection_extractor = SelectionExtractor(pricing=config.pricing)
         self._select_input_handler = SelectInputHandler(
             pricing=config.pricing,
             option_matcher=self._option_matcher,
             input_normalizer=self._input_normalizer,
+            format_display_list_callback=self._format_display_list,
+            extract_selections_callback=self._selection_extractor.extract_selections_from_input,
+            extract_qualifier_callback=self._extract_qualifier_for_option,
         )
         self._options_inquiry_handler = OptionsInquiryHandler(ctx=self._ctx)
         self._disambiguation_handler = ConfigDisambiguationHandler(ctx=self._ctx)
         self._question_builder = QuestionBuilder()
-        self._selection_extractor = SelectionExtractor(pricing=config.pricing)
         self._direct_option_matcher = DirectOptionMatcher(
             option_matcher=self._option_matcher,
             ctx=self._ctx,
@@ -160,6 +163,18 @@ class MenuItemConfigHandler(BaseHandler):
         # Update the shared context and sub-handler
         self._ctx.process_pending_parsed_items = callback
         self._customization_checkpoint_handler._process_pending_parsed_items_callback = callback
+
+    def _setup_config_pending(
+        self, order: OrderTask, item: MenuItemTask, pending_field: str
+    ) -> None:
+        """Set up order state for a pending configuration question.
+
+        Consolidates the repeated pattern of setting phase, item id, field, and page.
+        """
+        order.set_phase(OrderPhase.CONFIGURING_ITEM)
+        order.pending_item_id = item.id
+        order.pending_field = pending_field
+        order.config_options_page = 0
 
     def supports_item_type(self, item_type_slug: str | None) -> bool:
         """Check if this handler supports the given item type.
@@ -206,6 +221,23 @@ class MenuItemConfigHandler(BaseHandler):
         Delegates to InputNormalizer.
         """
         return self._input_normalizer.extract_leading_quantity(user_input)
+
+    def _resolve_option_price(self, option: dict, item_type: str) -> float:
+        """Look up option price with pricing engine fallback.
+
+        Args:
+            option: The option dict (must have 'slug' key).
+            item_type: The item type slug for pricing engine lookup.
+
+        Returns:
+            The resolved price as a float.
+        """
+        price = OptionMatcher.get_option_price(option)
+        if price == 0 and self.pricing:
+            price = self.pricing.lookup_generic_modifier_price(
+                option["slug"], item_type
+            ) or 0.0
+        return price
 
 
     def _extract_qualifier_for_option(self, user_input: str, option_name: str) -> str | None:
@@ -323,6 +355,20 @@ class MenuItemConfigHandler(BaseHandler):
         Delegates to utils.text.format_display_list.
         """
         return format_display_list(items, key=key, conjunction=conjunction)
+
+    def _build_question_text(self, attr: dict) -> str:
+        """Build question text for an attribute, preferring DB-configured question_text.
+
+        Used for mandatory attribute questions. Optional attributes have
+        additional logic for listing options inline.
+        """
+        db_question = attr.get("question_text")
+        if db_question:
+            return db_question
+        attr_name = attr["display_name"].lower()
+        if attr.get("input_type") == "boolean":
+            return f"Would you like it {attr_name}?"
+        return f"What kind of {attr_name} would you like?"
 
     def _format_checkpoint_questions(self, attrs: list[dict]) -> str:
         """Format unanswered optional attributes as individual questions."""
@@ -465,10 +511,7 @@ class MenuItemConfigHandler(BaseHandler):
                     question = prefix + question
 
         # Set up order state for receiving the answer
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
-        order.config_options_page = 0
+        self._setup_config_pending(order, item, f"{item.menu_item_type}:{attr['slug']}")
 
         return StateMachineResult(message=question, order=order)
 
@@ -542,9 +585,7 @@ class MenuItemConfigHandler(BaseHandler):
         # Mark that we've reached the checkpoint
         item.customization_offered = True
 
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
+        self._setup_config_pending(order, item, PendingField.CUSTOMIZATION_CHECKPOINT)
 
         # List available customization options as individual questions
         options_questions = self._format_checkpoint_questions(unanswered_optional)
@@ -662,20 +703,9 @@ class MenuItemConfigHandler(BaseHandler):
             if unanswered:
                 # Ask the first unanswered mandatory question
                 first_attr = unanswered[0]
-                order.set_phase(OrderPhase.CONFIGURING_ITEM)
-                order.pending_item_id = item.id
-                order.pending_field = f"{item_type_slug}:{first_attr['slug']}"
-                order.config_options_page = 0
+                self._setup_config_pending(order, item, f"{item_type_slug}:{first_attr['slug']}")
 
-                # Get question text
-                db_question = first_attr.get("question_text")
-                attr_name = first_attr["display_name"].lower()
-                if db_question:
-                    question = db_question
-                elif first_attr.get("input_type") == "boolean":
-                    question = f"Would you like it {attr_name}?"
-                else:
-                    question = f"What kind of {attr_name} would you like?"
+                question = self._build_question_text(first_attr)
 
                 # Add ordinal prefix for multi-item
                 if same_type_count > 1:
@@ -1052,9 +1082,6 @@ class MenuItemConfigHandler(BaseHandler):
             attr=attr,
             options=options,
             advance_callback=advance_with_capture,
-            format_display_list_callback=self._format_display_list,
-            extract_selections_callback=self._selection_extractor.extract_selections_from_input,
-            extract_qualifier_callback=self._extract_qualifier_for_option,
         )
 
     def _handle_unmatched_pagination(
@@ -1107,11 +1134,7 @@ class MenuItemConfigHandler(BaseHandler):
             self._question_builder.clear_unmatched_pagination(order)
             attr_slug = pagination.get("attr_slug")
 
-            opt_price = matched.get("price") or matched.get("price_modifier") or 0
-            if opt_price == 0 and self.pricing:
-                opt_price = self.pricing.lookup_generic_modifier_price(
-                    matched["slug"], item.menu_item_type
-                ) or 0.0
+            opt_price = self._resolve_option_price(matched, item.menu_item_type)
 
             item.add_selection(
                 matched["slug"],
@@ -1247,9 +1270,7 @@ class MenuItemConfigHandler(BaseHandler):
         # List remaining options as individual questions
         options_questions = self._format_checkpoint_questions(unanswered)
 
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = PendingField.CUSTOMIZATION_CHECKPOINT
+        self._setup_config_pending(order, item, PendingField.CUSTOMIZATION_CHECKPOINT)
 
         return StateMachineResult(
             message=f"{ack_prefix}Any more changes? {options_questions}",
@@ -1300,9 +1321,7 @@ class MenuItemConfigHandler(BaseHandler):
         else:
             question = f"What {attr['display_name']}?"
 
-        order.set_phase(OrderPhase.CONFIGURING_ITEM)
-        order.pending_item_id = item.id
-        order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
+        self._setup_config_pending(order, item, f"{item.menu_item_type}:{attr['slug']}")
 
         return StateMachineResult(message=question, order=order)
 

@@ -226,13 +226,22 @@ def parse_attribute_inquiry(text: str) -> OpenInputResponse | None:
             # Otherwise "what kind of drinks" would incorrectly be treated as attribute inquiry
             if item_type_slug and signal_normalized:
                 if not _signal_resolves_to_attribute(item_type_slug, signal_normalized):
-                    # Signal doesn't map to an attribute for this item_type
-                    # Fall through to let menu_query handle it (e.g., "what kind of drinks")
+                    # Signal doesn't directly map to an attribute for this item_type.
+                    # Check if item type has askable attributes — if so, let the handler's
+                    # _get_primary_attribute() fallback resolve it (e.g., "flavor" → "bread" for bagels).
+                    attrs = menu_cache.get_item_type_attributes(item_type_slug)
+                    has_askable = any(a.get("ask_in_conversation") for a in attrs.values())
+                    if not has_askable:
+                        # No configurable attributes → let menu_query handle it
+                        logger.debug(
+                            "ATTRIBUTE INQUIRY REJECTED: '%s' - signal '%s' doesn't map to attribute for '%s'",
+                            text[:50], signal_normalized, item_type_slug
+                        )
+                        continue  # Try next pattern or fall through
                     logger.debug(
-                        "ATTRIBUTE INQUIRY REJECTED: '%s' - signal '%s' doesn't map to attribute for '%s'",
+                        "ATTRIBUTE INQUIRY ALLOWED (has askable attrs): '%s' - signal '%s' for '%s'",
                         text[:50], signal_normalized, item_type_slug
                     )
-                    continue  # Try next pattern or fall through
 
             # Need either a resolved item type, attribute slug, OR a standalone signal word
             if item_type_slug or attr_slug_from_text or signal_normalized in ("size", "temperature"):

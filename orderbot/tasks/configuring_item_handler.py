@@ -136,49 +136,26 @@ class ConfiguringItemHandler:
         THIS IS THE KEY: we use state-specific parsers that can ONLY
         interpret input as answers for the pending field. No new items.
         """
-        # Handle generic item selection when multiple options were presented
-        if order.pending_field == PendingField.ITEM_SELECTION:
-            return self.config_selection_handler.handle_item_selection(user_input, order)
-
-        # Handle modifier selection (disambiguation for modifiers like "cream cheese")
-        if order.pending_field == PendingField.MODIFIER_SELECTION:
-            return self.config_selection_handler.handle_modifier_selection(user_input, order)
-
-        # Handle duplicate selection when user said "another one" with multiple items in cart
-        if order.pending_field == PendingField.DUPLICATE_SELECTION:
-            return self._taking_items_handler.handle_duplicate_selection(user_input, order)
-
-        # Handle "same thing" clarification when user has both previous order AND cart items
-        if order.pending_field == PendingField.SAME_THING_CLARIFICATION:
-            return self._taking_items_handler.handle_same_thing_clarification(user_input, order)
-
-        # Handle suggested item confirmation ("Would you like to order one?" -> "yes" / "give me one")
-        if order.pending_field == PendingField.CONFIRM_SUGGESTED_ITEM:
-            return self._taking_items_handler.handle_confirm_suggested_item(user_input, order)
-
-        # Handle ingredient suggestion confirmation ("Would you like one of those?" -> "yes")
-        if order.pending_field == PendingField.CONFIRM_INGREDIENT_SUGGESTION:
-            return self._taking_items_handler.handle_confirm_ingredient_suggestion(user_input, order)
-
-        # Handle dietary follow-up confirmation ("Would you like to see our vegan options?" -> "yes")
-        if order.pending_field == PendingField.CONFIRM_DIETARY_FOLLOWUP:
-            return self._taking_items_handler.handle_confirm_dietary_followup(user_input, order)
-
-        # Handle quantity addition selection ("add 3" with multiple item types in cart)
-        if order.pending_field == PendingField.QUANTITY_ADDITION_SELECTION:
-            return self._taking_items_handler.handle_quantity_addition_selection(user_input, order)
-
-        # Handle ambiguous selection ("Which syrup?" -> "vanilla")
-        if order.pending_field == PendingField.AMBIGUOUS_SELECTION:
-            return self._handle_ambiguous_selection_response(user_input, order)
-
-        # Handle category inquiry follow-up ("Would you like to hear more?" -> "yes")
-        if order.pending_field == PendingField.CATEGORY_INQUIRY:
-            return self._taking_items_handler._handle_category_inquiry_response(user_input, order)
-
-        # Handle item switch confirmation ("can you make it X?" -> similar item found)
-        if order.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
-            return self.config_modification_handler.handle_confirm_item_switch(user_input, order)
+        # Pre-item-lookup dispatch: all handlers take (user_input, order)
+        _dispatch = {
+            PendingField.ITEM_SELECTION: self.config_selection_handler.handle_item_selection,
+            PendingField.MODIFIER_SELECTION: self.config_selection_handler.handle_modifier_selection,
+            PendingField.AMBIGUOUS_SELECTION: self._handle_ambiguous_selection_response,
+            PendingField.CONFIRM_ITEM_SWITCH: self.config_modification_handler.handle_confirm_item_switch,
+        }
+        if self._taking_items_handler:
+            _dispatch.update({
+                PendingField.DUPLICATE_SELECTION: self._taking_items_handler.handle_duplicate_selection,
+                PendingField.SAME_THING_CLARIFICATION: self._taking_items_handler.handle_same_thing_clarification,
+                PendingField.CONFIRM_SUGGESTED_ITEM: self._taking_items_handler.handle_confirm_suggested_item,
+                PendingField.CONFIRM_INGREDIENT_SUGGESTION: self._taking_items_handler.handle_confirm_ingredient_suggestion,
+                PendingField.CONFIRM_DIETARY_FOLLOWUP: self._taking_items_handler.handle_confirm_dietary_followup,
+                PendingField.QUANTITY_ADDITION_SELECTION: self._taking_items_handler.handle_quantity_addition_selection,
+                PendingField.CATEGORY_INQUIRY: self._taking_items_handler._handle_category_inquiry_response,
+            })
+        handler = _dispatch.get(order.pending_field)
+        if handler:
+            return handler(user_input, order)
 
         item = order.items.get_item_by_id(order.pending_item_id)
         if item is None:

@@ -404,52 +404,10 @@ class OrderStateMachine:
         # Check for "make it 2" pattern early (works from any state with items)
         # This must be BEFORE modifier change requests to prevent "actually make that two"
         # from being matched as a modifier change (with "two" parsed as the modifier value)
-        from .parsers.deterministic import MAKE_IT_N_PATTERN
-        make_it_n_match = MAKE_IT_N_PATTERN.match(user_input.strip())
-        if make_it_n_match and order.items.get_item_count() > 0:
-            target_qty = extract_make_it_n_target(make_it_n_match)
-            if target_qty:
-                active_items = order.items.get_active_items()
-                if active_items:
-                    last_item = get_last_item(active_items)
-                    last_item_name = last_item.get_summary()
-
-                    # Count how many of this same item are already in the order
-                    current_count = sum(
-                        1 for item in active_items
-                        if item.get_summary() == last_item_name
-                    )
-
-                    # Only add enough to reach the target
-                    added_count = target_qty - current_count
-
-                    if added_count <= 0:
-                        # Already have enough or more
-                        msg = f"You already have {current_count} {last_item_name}. Anything else?"
-                        order.add_message("assistant", msg)
-                        return StateMachineResult(message=msg, order=order)
-
-                    # Use mark_complete=False so duplicates preserve the original's status
-                    # This ensures incomplete items get configured after the original is done
-                    for _ in range(added_count):
-                        order.items.add_item(last_item.duplicate(mark_complete=False))
-
-                    logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
-
-                    # If mid-configuration, re-ask the pending config question
-                    # instead of "Anything else?"
-                    suffix = "Anything else?"
-                    if order.is_configuring_item() and order.pending_item_id:
-                        config_item = order.items.get_item_by_id(order.pending_item_id)
-                        if config_item:
-                            question = self.config_helper_handler.get_current_config_question(order, config_item)
-                            if question:
-                                suffix = question
-
-                    msg = f"Sure, that's {target_qty} total. {suffix}"
-
-                    order.add_message("assistant", msg)
-                    return StateMachineResult(message=msg, order=order)
+        make_it_n_result = self._handle_make_it_n(user_input, order)
+        if make_it_n_result:
+            order.add_message("assistant", make_it_n_result.message)
+            return make_it_n_result
 
         # Check for modifier change requests (works when not mid-configuration)
         if order.items.get_item_count() > 0 and not order.is_configuring_item():
@@ -488,27 +446,25 @@ class OrderStateMachine:
         # Route to appropriate handler based on phase
         if order.is_configuring_item():
             result = self._handle_configuring_item(user_input, order)
-        elif order.phase == OrderPhase.GREETING.value:
-            result = self._handle_greeting(user_input, order)
-        elif order.phase == OrderPhase.TAKING_ITEMS.value:
-            result = self._handle_taking_items(user_input, order)
-        elif order.phase == OrderPhase.CHECKOUT_DELIVERY.value:
-            result = self.checkout_handler.handle_delivery(user_input, order)
-        elif order.phase == OrderPhase.CHECKOUT_NAME.value:
-            result = self.checkout_handler.handle_name(user_input, order)
-        elif order.phase == OrderPhase.CHECKOUT_CONFIRM.value:
-            result = self.checkout_handler.handle_confirmation(user_input, order)
-        elif order.phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value:
-            result = self.checkout_handler.handle_payment_method(user_input, order)
-        elif order.phase == OrderPhase.CHECKOUT_PHONE.value:
-            result = self.checkout_handler.handle_phone(user_input, order)
-        elif order.phase == OrderPhase.CHECKOUT_EMAIL.value:
-            result = self.checkout_handler.handle_email(user_input, order)
         else:
-            result = StateMachineResult(
-                message="I'm not sure what to do. Can you try again?",
-                order=order,
-            )
+            phase_dispatch = {
+                OrderPhase.GREETING.value: self._handle_greeting,
+                OrderPhase.TAKING_ITEMS.value: self._handle_taking_items,
+                OrderPhase.CHECKOUT_DELIVERY.value: self.checkout_handler.handle_delivery,
+                OrderPhase.CHECKOUT_NAME.value: self.checkout_handler.handle_name,
+                OrderPhase.CHECKOUT_CONFIRM.value: self.checkout_handler.handle_confirmation,
+                OrderPhase.CHECKOUT_PAYMENT_METHOD.value: self.checkout_handler.handle_payment_method,
+                OrderPhase.CHECKOUT_PHONE.value: self.checkout_handler.handle_phone,
+                OrderPhase.CHECKOUT_EMAIL.value: self.checkout_handler.handle_email,
+            }
+            handler = phase_dispatch.get(order.phase)
+            if handler:
+                result = handler(user_input, order)
+            else:
+                result = StateMachineResult(
+                    message="I'm not sure what to do. Can you try again?",
+                    order=order,
+                )
 
         # Add bot message to history
         order.add_message("assistant", result.message)
@@ -566,6 +522,68 @@ class OrderStateMachine:
 
         # Use menu_item_handler for all item types - it handles data-driven configuration
         return self.menu_item_handler.get_first_question(item, order)
+
+    def _handle_make_it_n(
+        self, user_input: str, order: OrderTask
+    ) -> StateMachineResult | None:
+        """Handle 'make it N' quantity duplication pattern.
+
+        Detects patterns like "make it 2", "actually make that three" and
+        duplicates the last item to reach the target quantity.
+
+        Returns:
+            StateMachineResult if handled, None otherwise.
+        """
+        from .parsers.deterministic import MAKE_IT_N_PATTERN
+
+        make_it_n_match = MAKE_IT_N_PATTERN.match(user_input.strip())
+        if not make_it_n_match or order.items.get_item_count() == 0:
+            return None
+
+        target_qty = extract_make_it_n_target(make_it_n_match)
+        if not target_qty:
+            return None
+
+        active_items = order.items.get_active_items()
+        if not active_items:
+            return None
+
+        last_item = get_last_item(active_items)
+        last_item_name = last_item.get_summary()
+
+        # Count how many of this same item are already in the order
+        current_count = sum(
+            1 for item in active_items
+            if item.get_summary() == last_item_name
+        )
+
+        # Only add enough to reach the target
+        added_count = target_qty - current_count
+
+        if added_count <= 0:
+            return StateMachineResult(
+                message=f"You already have {current_count} {last_item_name}. Anything else?",
+                order=order,
+            )
+
+        for _ in range(added_count):
+            order.items.add_item(last_item.duplicate(mark_complete=False))
+
+        logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
+
+        # If mid-configuration, re-ask the pending config question
+        suffix = "Anything else?"
+        if order.is_configuring_item() and order.pending_item_id:
+            config_item = order.items.get_item_by_id(order.pending_item_id)
+            if config_item:
+                question = self.config_helper_handler.get_current_config_question(order, config_item)
+                if question:
+                    suffix = question
+
+        return StateMachineResult(
+            message=f"Sure, that's {target_qty} total. {suffix}",
+            order=order,
+        )
 
     def _handle_greeting(
         self,

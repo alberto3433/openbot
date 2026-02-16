@@ -8,7 +8,12 @@ from typing import Any
 import httpx
 
 from tests.chaos_monkey.config import ChaosMonkeyConfig
-from tests.chaos_monkey.scenarios.base import BaseScenario, ScenarioResult
+from tests.chaos_monkey.scenarios.base import (
+    BaseScenario,
+    ConversationTurn,
+    FailureCategory,
+    ScenarioResult,
+)
 from tests.chaos_monkey.verifier import ResponseVerifier
 
 logger = logging.getLogger(__name__)
@@ -135,6 +140,58 @@ class TestExecutor:
                 turn.passed = False
                 turn.failure_reason = f"Execution error: {str(e)}"
                 break
+
+        # Reactive answer loop: if scenario supports generate_answer(),
+        # keep answering config questions until it returns None
+        if hasattr(scenario, "generate_answer") and all(
+            t.passed for t in turns if t.passed is not None
+        ):
+            last_response = turns[-1].actual_response if turns else None
+            for _ in range(15):  # Safety cap
+                if not last_response:
+                    break
+                answer = scenario.generate_answer(last_response)
+                if answer is None:
+                    break
+
+                try:
+                    self.rate_limiter.wait_if_needed()
+                    response = self._send_message(session_id, answer)
+
+                    auto_turn = ConversationTurn(
+                        user_input=answer,
+                        expected_items_in_cart=[],
+                        allow_disambiguation=True,
+                    )
+                    if response is None:
+                        auto_turn.passed = False
+                        auto_turn.failure_reason = "Failed to send reactive answer"
+                        auto_turn.failure_category = FailureCategory.SYSTEM_ERROR
+                        scenario.turns.append(auto_turn)
+                        break
+
+                    reply = response.get("reply", "")
+                    auto_turn.actual_response = reply
+                    auto_turn.actual_actions = response.get("actions", [])
+                    auto_turn.actual_order_state = response.get("order_state", {})
+
+                    # Only check for system errors on reactive turns
+                    if self.verifier._is_system_error(reply):
+                        auto_turn.passed = False
+                        auto_turn.failure_category = FailureCategory.SYSTEM_ERROR
+                        auto_turn.failure_reason = (
+                            f"System error in reactive answer: {reply[:100]}"
+                        )
+                        scenario.turns.append(auto_turn)
+                        break
+
+                    auto_turn.passed = True
+                    scenario.turns.append(auto_turn)
+                    last_response = reply
+
+                except Exception as e:
+                    logger.error("Error in reactive loop: %s", e, exc_info=True)
+                    break
 
         # Build result
         result = scenario.to_result(session_id)

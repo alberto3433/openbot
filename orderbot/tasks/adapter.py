@@ -98,6 +98,21 @@ _FLOW_STATE_FIELDS: list[tuple[str, object]] = [
 ]
 
 
+def _calculate_subtotal(order: OrderTask) -> float:
+    """Calculate order subtotal from active items.
+
+    Args:
+        order: The OrderTask to calculate subtotal for
+
+    Returns:
+        Sum of (unit_price * quantity) for all active items
+    """
+    return sum(
+        (item.unit_price or 0) * getattr(item, 'quantity', 1)
+        for item in order.items.get_active_items()
+    )
+
+
 def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
     """Restore flow state fields from state_machine_state dict to OrderTask.
 
@@ -262,10 +277,7 @@ def order_task_to_dict(
     if order.checkout.total > 0:
         total_price = order.checkout.total
     else:
-        total_price = sum(
-            (item.unit_price or 0) * getattr(item, 'quantity', 1)
-            for item in order.items.get_active_items()
-        )
+        total_price = _calculate_subtotal(order)
 
     order_dict = {
         "status": status,
@@ -296,10 +308,7 @@ def order_task_to_dict(
         order_dict["payment_link"] = order.payment.payment_link_destination
 
     # Calculate taxes if store_info is available
-    subtotal = sum(
-        (item.unit_price or 0) * getattr(item, 'quantity', 1)
-        for item in order.items.get_active_items()
-    )
+    subtotal = _calculate_subtotal(order)
 
     city_tax = order.checkout.city_tax
     state_tax = order.checkout.state_tax

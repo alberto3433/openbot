@@ -12,7 +12,7 @@ This handler acts as an orchestrator, delegating to specialized handlers:
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .normalization import singularize
@@ -173,24 +173,24 @@ class ConfiguringItemHandler:
         if interceptor_result:
             return interceptor_result
 
-        # Route to field-specific handler
-        if order.pending_field == PendingField.SIDE_CHOICE:
-            return self.config_helper_handler.handle_side_choice(user_input, item, order)
+        # Post-item-lookup dispatch: handlers take (user_input, item, order)
+        _item_dispatch: dict[str, Callable] = {
+            PendingField.SIDE_CHOICE: self.config_helper_handler.handle_side_choice,
+        }
+        if isinstance(item, MenuItemTask) and self.menu_item_handler:
+            _item_dispatch.update({
+                PendingField.CUSTOMIZATION_CHECKPOINT: self.menu_item_handler.handle_customization_checkpoint,
+                PendingField.CUSTOMIZATION_SELECTION: self.menu_item_handler.handle_customization_selection,
+            })
 
-        # Handle menu item configuration (deli sandwiches, etc.)
-        if order.pending_field == PendingField.CUSTOMIZATION_CHECKPOINT:
-            if isinstance(item, MenuItemTask) and self.menu_item_handler:
-                return self.menu_item_handler.handle_customization_checkpoint(user_input, item, order)
-        elif order.pending_field == PendingField.CUSTOMIZATION_SELECTION:
-            if isinstance(item, MenuItemTask) and self.menu_item_handler:
-                return self.menu_item_handler.handle_customization_selection(user_input, item, order)
+        item_handler = _item_dispatch.get(order.pending_field)
+        if item_handler:
+            return item_handler(user_input, item, order)
 
         # Data-driven routing: pending_field format is "item_type:attr_slug"
-        # Parse the pending_field and route to the appropriate handler
         item_type_slug, attr_slug = parse_pending_field(order.pending_field)
         if item_type_slug and attr_slug and isinstance(item, MenuItemTask) and self.menu_item_handler:
-            # Special case: side_choice attribute should use component slot handler
-            # which has the full list of options (bagel + fruit salad)
+            # side_choice attribute uses component slot handler (has full option list)
             if attr_slug == "side_choice" and menu_cache.item_type_has_component_slots(item_type_slug):
                 logger.debug(
                     "Routing side_choice attr to component slot handler for %s",
@@ -203,16 +203,10 @@ class ConfiguringItemHandler:
             )
             return self.menu_item_handler.handle_attribute_input(user_input, item, order, attr_slug)
 
-        # Handle queued menu item configuration (abbreviated flow from checkout_utils_handler)
-        # This is set when a menu item is in the config queue and asked an abbreviated question
-        # like "And what type of bread for the {item_name}?" - we need to capture the answer
-        # and continue with the full configuration flow
-        elif order.pending_field == PendingField.MENU_ITEM_CONFIG:
+        # Queued menu item config (abbreviated flow from checkout_utils_handler)
+        if order.pending_field == PendingField.MENU_ITEM_CONFIG:
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
-                # Capture any attributes mentioned in user input (e.g., bread type)
                 self.menu_item_handler.capture_attributes_from_input(user_input, item)
-                # Continue with full configuration flow - this will ask the next
-                # unanswered mandatory attribute (e.g., toasted) or move to checkout
                 return self.menu_item_handler.get_first_question(item, order)
 
         # Default: unknown pending_field, advance to next question

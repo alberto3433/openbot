@@ -123,7 +123,7 @@ class DuplicateHandler:
 
         pending_info = order.pending_duplicate_selection
         if not pending_info:
-            order.pending_field = None
+            order.clear_pending()
             return StateMachineResult(
                 message=ErrorMessages.WHAT_CAN_I_GET,
                 order=order,
@@ -136,7 +136,7 @@ class DuplicateHandler:
         # Check for "all items" / "everything" response
         if DUPLICATE_ALL_PATTERN.match(text):
             order.pending_duplicate_selection = None
-            order.pending_field = None
+            order.clear_pending()
             active_items = order.items.get_active_items()
             return self._duplicate_all_items(order, active_items)
 
@@ -207,7 +207,7 @@ class DuplicateHandler:
 
         # Found the item to duplicate - find it in the order and duplicate it
         order.pending_duplicate_selection = None
-        order.pending_field = None
+        order.clear_pending()
 
         # Find the actual item by ID
         item_to_duplicate = None
@@ -274,7 +274,7 @@ class DuplicateHandler:
         ]
         if any(pattern in text for pattern in previous_order_patterns):
             order.pending_same_thing_clarification = None
-            order.pending_field = None
+            order.clear_pending()
             return self.checkout_handler.handle_repeat_order(
                 order,
                 returning_customer=self._returning_customer,
@@ -284,7 +284,7 @@ class DuplicateHandler:
         # Check if user wants to duplicate all items in cart
         if DUPLICATE_ALL_PATTERN.match(text) or "all" in text or "everything" in text:
             order.pending_same_thing_clarification = None
-            order.pending_field = None
+            order.clear_pending()
             active_items = order.items.get_active_items()
             return self._duplicate_all_items(order, active_items)
 
@@ -292,7 +292,7 @@ class DuplicateHandler:
         cart_patterns = ["cart", "current", "another", "duplicate", "one more"]
         if any(pattern in text for pattern in cart_patterns):
             order.pending_same_thing_clarification = None
-            order.pending_field = None
+            order.clear_pending()
             active_items = order.items.get_active_items()
 
             if len(active_items) == 1:
@@ -324,7 +324,7 @@ class DuplicateHandler:
 
         if matched_item:
             order.pending_same_thing_clarification = None
-            order.pending_field = None
+            order.clear_pending()
 
             # Find the actual item by ID
             item_to_duplicate = None

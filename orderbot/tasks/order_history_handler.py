@@ -434,7 +434,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         """
         pending_history = getattr(order, "pending_order_history", None)
         if not pending_history:
-            order.pending_field = None
+            order.clear_pending()
             return None
 
         orders = pending_history.get("orders", [])
@@ -444,8 +444,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         if selected_idx is not None and 0 <= selected_idx < len(orders):
             # User selected an order - add its items
             selected_order = orders[selected_idx]
-            order.pending_order_history = None
-            order.pending_field = None
+            order.clear_pending()
 
             items = selected_order.get("items", [])
             if not items:
@@ -510,15 +509,13 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         for item in pending_items:
             name = item.get("menu_item_name", "").lower()
             if text_lower in name or name in text_lower:
-                order.pending_reorder_items = None
-                order.pending_field = None
+                order.clear_pending()
                 return self._add_item_from_history(item, order)
 
         # Try ordinal (1, 2, first, second, etc.)
         selected_idx = parse_selection(user_input, len(pending_items))
         if selected_idx is not None and 0 <= selected_idx < len(pending_items):
-            order.pending_reorder_items = None
-            order.pending_field = None
+            order.clear_pending()
             return self._add_item_from_history(pending_items[selected_idx], order)
 
         # Didn't understand
@@ -546,15 +543,14 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
 
         pending_items = getattr(order, "pending_reorder_offer_items", None)
         if not pending_items:
-            order.pending_field = None
+            order.clear_pending()
             return None
 
         text_lower = user_input.strip().lower()
 
         # Check for affirmative response
         if is_affirmative(text_lower):
-            order.pending_reorder_offer_items = None
-            order.pending_field = None
+            order.clear_pending()
 
             # Add all items from pending offer
             items_added = []
@@ -577,8 +573,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
 
         # Check for negative response
         if is_negative(text_lower):
-            order.pending_reorder_offer_items = None
-            order.pending_field = None
+            order.clear_pending()
             order.set_phase(OrderPhase.TAKING_ITEMS)
 
             return StateMachineResult(
@@ -587,8 +582,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             )
 
         # Didn't understand - clear pending state and fall through to normal processing
-        order.pending_reorder_offer_items = None
-        order.pending_field = None
+        order.clear_pending()
         return None
 
     # =========================================================================

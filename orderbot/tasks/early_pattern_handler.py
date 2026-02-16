@@ -582,9 +582,8 @@ class EarlyPatternHandler:
             StateMachineResult confirming the addition.
         """
         # Clear pending state
-        order.pending_quantity_addition = None
         order.pending_item_options = []
-        order.pending_field = None
+        order.clear_pending()
 
         # Find the template item by menu_item_id
         menu_item_id = selected_option.get("menu_item_id")

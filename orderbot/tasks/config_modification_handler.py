@@ -871,6 +871,91 @@ class ConfigModificationHandler:
 
         return None
 
+    def handle_cross_attribute_match(
+        self,
+        user_input: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Check if user input matches an option from a DIFFERENT attribute than the pending one.
+
+        When asked "What kind of cheese?" and the user says "veggie cream cheese",
+        this detects that the input matches a spread option (not a cheese option)
+        and applies it to the spread attribute, then re-asks the cheese question.
+
+        Uses exact_only matching to avoid false partial matches on unrelated attributes.
+        Aliases (e.g., "veggie cc") are handled by OptionMatcher Phase 0/1.
+
+        Args:
+            user_input: The user's input text
+            item: The item being configured
+            order: The current order state
+
+        Returns:
+            StateMachineResult if a cross-attribute match was found and applied,
+            None if no match or multiple attributes matched (fall through).
+        """
+        pending_field = order.pending_field
+        if not pending_field or ":" not in pending_field:
+            return None
+
+        item_type = item.menu_item_type
+        if not item_type:
+            return None
+
+        _, pending_attr = pending_field.split(":", 1)
+
+        try:
+            all_attrs = menu_cache.get_item_type_attributes(item_type)
+        except Exception:
+            return None
+
+        matcher = OptionMatcher()
+        matched_attr_slug: str | None = None
+        matched_option: dict | None = None
+
+        for attr_slug, attr_config in all_attrs.items():
+            # Skip the pending attribute (that's handled by the normal flow)
+            if attr_slug == pending_attr:
+                continue
+
+            options = attr_config.get("options", [])
+            if not options:
+                continue
+
+            match, _ = matcher.match_single(user_input, options, exact_only=True)
+            if match:
+                if matched_attr_slug is not None:
+                    # Multiple attributes matched — ambiguous, bail out
+                    logger.debug(
+                        "CROSS_ATTR: Multiple attributes matched for '%s' (%s and %s), skipping",
+                        user_input, matched_attr_slug, attr_slug,
+                    )
+                    return None
+                matched_attr_slug = attr_slug
+                matched_option = match
+
+        if not matched_attr_slug or not matched_option:
+            return None
+
+        # Apply the matched option to the correct attribute
+        # Use item[attr] = value (not add_selection) so existing selections are replaced
+        display_name = matched_option.get("display_name") or matched_option["slug"].replace("_", " ").title()
+        item[matched_attr_slug] = matched_option["slug"]
+
+        # Recalculate price
+        pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+        safe_recalculate_price(pricing, item, "after cross-attribute match")
+
+        logger.info(
+            "CROSS_ATTR: Matched '%s' to %s=%s (pending was %s)",
+            user_input, matched_attr_slug, matched_option["slug"], pending_attr,
+        )
+
+        return self._continue_config_with_message(
+            f"Got it, {display_name}.", item, order
+        )
+
     def handle_add_item_during_config(
         self,
         user_input: str,

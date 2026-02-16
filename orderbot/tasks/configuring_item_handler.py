@@ -410,6 +410,18 @@ class ConfiguringItemHandler:
             if add_result:
                 return add_result
 
+        # Check if input matches a DIFFERENT attribute's option (e.g., "veggie cream cheese"
+        # when asked about cheese -> matches spread attribute).
+        # Runs regardless of is_valid_answer because inputs like "veggie cream cheese" may
+        # pass is_valid_answer for cheese (loads_from_ingredients) while actually being a
+        # spread answer. The exact_only matching prevents false positives.
+        if isinstance(item, MenuItemTask):
+            cross_attr_result = self.config_modification_handler.handle_cross_attribute_match(
+                user_input, item, order
+            )
+            if cross_attr_result:
+                return cross_attr_result
+
         # Check for bare boolean attribute values (e.g., "not toasted" while being asked about bread)
         # This catches boolean answers for non-pending attributes without verb prefixes.
         # Guard: only on short inputs (<=4 words) to avoid intercepting multi-attribute phrases

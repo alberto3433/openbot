@@ -65,6 +65,27 @@ class TestExecutor:
         """Close the HTTP client."""
         self.client.close()
 
+    def retry_scenario(self, scenario: BaseScenario) -> ScenarioResult:
+        """Retry a failed scenario against a fresh session to confirm reproducibility.
+
+        Resets all turn result fields, then re-executes via execute_scenario().
+
+        Args:
+            scenario: The scenario to retry (turns are reset in-place).
+
+        Returns:
+            ScenarioResult from the fresh execution.
+        """
+        for turn in scenario.turns:
+            turn.actual_response = None
+            turn.actual_actions = None
+            turn.actual_order_state = None
+            turn.passed = None
+            turn.failure_reason = None
+            turn.failure_category = None
+
+        return self.execute_scenario(scenario)
+
     def execute_scenario(self, scenario: BaseScenario) -> ScenarioResult:
         """Execute a complete scenario.
 

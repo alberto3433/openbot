@@ -124,19 +124,39 @@ class ChaosMonkeyRunner:
 
                     try:
                         result = self.executor.execute_scenario(scenario)
-                        self.reporter.record_result(result)
                         total_scenarios += 1
 
                         if not result.passed:
+                            # Retry to confirm reproducibility
                             logger.info(
-                                "FAIL: %s - %s",
+                                "FAIL (retrying): %s - %s",
                                 result.scenario_name,
                                 result.failure_summary,
                             )
-                            # Generate pytest file for the failure
-                            if self.pytest_generator:
-                                self.pytest_generator.generate_test_file(result)
+                            retry_result = self.executor.retry_scenario(scenario)
+
+                            if retry_result.passed:
+                                # False positive — failure didn't reproduce
+                                logger.info(
+                                    "FALSE POSITIVE: %s (passed on retry)",
+                                    result.scenario_name,
+                                )
+                                self.reporter.record_false_positive()
+                                self.reporter.record_result(retry_result)
+                            else:
+                                # Confirmed failure
+                                logger.info(
+                                    "CONFIRMED FAIL: %s - %s",
+                                    retry_result.scenario_name,
+                                    retry_result.failure_summary,
+                                )
+                                self.reporter.record_result(retry_result)
+                                if self.pytest_generator:
+                                    self.pytest_generator.generate_test_file(
+                                        retry_result
+                                    )
                         else:
+                            self.reporter.record_result(result)
                             logger.debug("PASS: %s", result.scenario_name)
 
                     except Exception as e:
@@ -152,11 +172,12 @@ class ChaosMonkeyRunner:
                 remaining = max(0, end_time - time.time())
                 summary = self.reporter.get_summary()
                 logger.info(
-                    "Progress: %d scenarios (%d passed, %d failed) - "
-                    "%.0f seconds elapsed, %.0f remaining",
+                    "Progress: %d scenarios (%d passed, %d failed, "
+                    "%d false positives) - %.0f seconds elapsed, %.0f remaining",
                     total_scenarios,
                     summary["passed"],
                     summary["failed"],
+                    summary.get("false_positives", 0),
                     elapsed,
                     remaining,
                 )

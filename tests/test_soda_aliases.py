@@ -37,13 +37,13 @@ class TestGetSodaTypes:
         # These are aliases, not the actual item names
         assert "coke" in soda_types  # alias for Coca-Cola
 
-    def test_get_beverage_types_includes_aliases(self):
-        """get_item_names('beverage') should include aliases for non-soda beverages."""
+    def test_get_water_types_includes_aliases(self):
+        """get_item_names('water') should include aliases for water items."""
         from orderbot.cache import menu_cache
-        beverage_types = menu_cache.get_item_names("beverage")
-        # San Pellegrino is item_type='beverage', not 'soda'
-        assert "seltzer" in beverage_types  # alias for San Pellegrino
-        assert "sparkling water" in beverage_types  # alias for San Pellegrino
+        water_types = menu_cache.get_item_names("water")
+        # San Pellegrino is item_type='water'
+        assert "seltzer" in water_types  # alias for San Pellegrino
+        assert "sparkling water" in water_types  # alias for San Pellegrino
 
     def test_get_soda_types_excludes_nonexistent_items(self):
         """get_item_names('soda') should not include items not in the database."""
@@ -161,8 +161,8 @@ class TestSodaAliasesIntegration:
     def test_water_aliases(self):
         """Water should be recognized by various terms."""
         from orderbot.cache import menu_cache
-        beverage_types = menu_cache.get_item_names("beverage")
-        assert "bottled water" in beverage_types
-        assert "water" in beverage_types
-        assert "sparkling water" in beverage_types
-        assert "seltzer" in beverage_types
+        water_types = menu_cache.get_item_names("water")
+        assert "bottled water" in water_types
+        assert "water" in water_types
+        assert "sparkling water" in water_types
+        assert "seltzer" in water_types

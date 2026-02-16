@@ -25,7 +25,9 @@ def test_coffee_filtering_excludes_boxed_coffee():
     # Get coffee items (simulating coffee_config_handler.py behavior)
     items_by_type = lookup.menu_data.get("items_by_type", {})
     sized_items = items_by_type.get("coffee_based_beverage", [])
-    cold_items = items_by_type.get("beverage", [])
+    # Collect from all non-configurable beverage sub-types
+    bottled_types = ["juice", "water", "smoothie", "kombucha", "energy_drink", "bottled_tea", "other_bottled"]
+    cold_items = [item for bt in bottled_types for item in items_by_type.get(bt, [])]
     all_drinks = sized_items + cold_items
 
     coffee_type_lower = "coffee"

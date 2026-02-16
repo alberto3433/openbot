@@ -39,7 +39,10 @@ def test_is_soda_drink(drink_type: str | None) -> bool:
 
     # Check exact match only - database includes aliases so substring matching is unnecessary
     # and causes false positives (e.g., "coffee" matching "bottled coffee")
-    # Check both "soda" and "beverage" item types (sodas are non-configurable drinks)
-    soda_types = menu_cache.get_item_names("soda")
-    beverage_types = menu_cache.get_item_names("beverage")
-    return drink_lower in soda_types or drink_lower in beverage_types
+    # Check soda and all non-configurable beverage sub-types
+    non_config_types = ["soda", "juice", "water", "smoothie", "kombucha",
+                        "energy_drink", "bottled_tea", "other_bottled"]
+    for item_type in non_config_types:
+        if drink_lower in menu_cache.get_item_names(item_type):
+            return True
+    return False

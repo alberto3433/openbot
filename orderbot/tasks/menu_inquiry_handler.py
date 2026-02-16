@@ -137,8 +137,24 @@ class MenuInquiryHandler(MenuDataMixin):
         """
         items_by_type = self.menu_data.get("items_by_type", {}) if self.menu_data else {}
 
-        # Check for item type matches first (more specific than display groups)
-        # This ensures "teas" matches tea/iced_tea item types before falling back to broader groups
+        # Check display groups first (e.g., "breads", "sandwiches", "drinks")
+        # Display groups aggregate multiple item types and handle hierarchical queries
+        display_group = menu_cache.get_display_group_by_slug(menu_query_type)
+        if display_group:
+            item_type_slugs = menu_cache.get_item_types_in_display_group(display_group["slug"])
+            if item_type_slugs:
+                # Collect items from all item types in this display group
+                items = []
+                for item_type_slug in item_type_slugs:
+                    items.extend(items_by_type.get(item_type_slug, []))
+                if items:
+                    logger.info(
+                        "Menu query: '%s' matched display group with %d item types, %d total items",
+                        menu_query_type, len(item_type_slugs), len(items)
+                    )
+                    return items, display_group["slug"]
+
+        # Check for item type matches (slug-based matching)
         matching_item_types = self._find_matching_item_types(menu_query_type, items_by_type)
         if matching_item_types:
             items = []
@@ -165,23 +181,6 @@ class MenuInquiryHandler(MenuDataMixin):
                 )
                 # Use first matching type as the category key for pagination
                 return items, matching_item_types[0]
-
-        # Check if query matches a display group (e.g., "breads", "sandwiches", "drinks")
-        # Display groups aggregate multiple item types
-        display_group = menu_cache.get_display_group_by_slug(menu_query_type)
-        if display_group:
-            item_type_slugs = menu_cache.get_item_types_in_display_group(display_group["slug"])
-            if item_type_slugs:
-                # Collect items from all item types in this display group
-                items = []
-                for item_type_slug in item_type_slugs:
-                    items.extend(items_by_type.get(item_type_slug, []))
-                if items:
-                    logger.info(
-                        "Menu query: '%s' matched display group with %d item types, %d total items",
-                        menu_query_type, len(item_type_slugs), len(items)
-                    )
-                    return items, display_group["slug"]
 
         # Look up category info from DB-loaded cache
         # This ensures "beverage" maps to sized_beverage/espresso_based_beverage per DB config

@@ -14,6 +14,7 @@ from orderbot.cache import menu_cache
 from .models import parse_pending_field
 from .pending_fields import PendingField
 from .parsers.inquiry_patterns import OFF_TOPIC_PATTERNS
+from .parsers.quantity_utils import extract_leading_quantity
 from .normalization import strip_ordering_prefix
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,10 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
     if not answer_value:
         return False
 
+    # Strip leading quantity so "7 sugars" checks "sugars" against options/modifiers
+    _, answer_no_qty = extract_leading_quantity(answer_value)
+    answer_no_qty = answer_no_qty.strip()
+
     # Parse the pending_field to get item_type and attr_slug
     item_type_slug, attr_slug = parse_pending_field(pending_field)
 
@@ -80,7 +85,10 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
     if attr_slug in (PendingField.CUSTOMIZATION_CHECKPOINT, PendingField.CUSTOMIZATION_SELECTION):
         # Check if this is a known ingredient (toppings, proteins, cheeses, etc.)
         try:
-            if menu_cache.is_known_modifier(answer_value):
+            if menu_cache.is_known_modifier(answer_value) or (
+                answer_no_qty and answer_no_qty != answer_value
+                and menu_cache.is_known_modifier(answer_no_qty)
+            ):
                 logger.debug("Found known modifier '%s' during customization", answer_value)
                 return True
         except Exception as e:
@@ -101,16 +109,22 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
             for opt in attr_config.get("options", []):
                 opt_name = opt.get("display_name", "").lower()
                 opt_slug = opt.get("slug", "").lower()
-                if answer_value == opt_name or answer_value == opt_slug:
-                    return True
-                # Also check if answer_value is contained in option name
-                if opt_name and answer_value in opt_name:
-                    return True
+                for val in (answer_value, answer_no_qty):
+                    if not val:
+                        continue
+                    if val == opt_name or val == opt_slug:
+                        return True
+                    # Also check if value is contained in option name
+                    if opt_name and val in opt_name:
+                        return True
 
             # For ingredient-based attributes, check against ingredients
             if attr_config.get("loads_from_ingredients"):
                 # Check if this is a known ingredient
-                if menu_cache.is_known_modifier(answer_value):
+                if menu_cache.is_known_modifier(answer_value) or (
+                    answer_no_qty and answer_no_qty != answer_value
+                    and menu_cache.is_known_modifier(answer_no_qty)
+                ):
                     return True
 
             # For package_multi_select attributes (e.g., "2 plain 3 rainbow 7 onion"),

@@ -753,10 +753,14 @@ def _extract_modifiers_generic(
     # This lets us detect when an ingredient (or its alias) overlaps with attribute options
     # Example: oat_milk option has aliases ["oat milk", "oat"], so we add all of them
     attr_option_slugs: set[str] = set()
+    # Also track canonical attribute option slugs (raw, lowercased) for ingredient-level dedup
+    attr_option_canonical_slugs: set[str] = set()
     item_type_attrs = menu_cache.get_item_type_attributes(item_type)
     for attr_config in item_type_attrs.values():
         for opt in attr_config.get("options", []):
             slug = opt.get("slug", "")
+            if slug:
+                attr_option_canonical_slugs.add(slug.lower())
             # Normalize: "oat_milk" -> "oat milk"
             attr_option_slugs.add(slug.replace("_", " ").lower())
             # Also add all aliases (e.g., "oat" for oat_milk)
@@ -772,6 +776,10 @@ def _extract_modifiers_generic(
     # This ensures we only extract modifiers that make sense for this item type
     valid_ingredients_by_category = menu_cache.get_ingredients_by_category_for_item_type(item_type)
 
+    # Track matched modifier spans to prevent overlapping matches within this function
+    # (e.g., ingredient name and alias matching the same text region)
+    found_modifier_spans: list[tuple[int, int]] = []
+
     # Extract modifiers from categories that aren't handled as attributes
     for category in menu_cache.get_ordered_ingredient_categories(modifier_type):
         # Skip categories that are directly used as attributes for this item type
@@ -784,6 +792,15 @@ def _extract_modifiers_generic(
         if not valid_ingredients:
             continue
 
+        # Build pattern -> ingredient slug mapping for this category
+        # Used to check if an ingredient alias maps to an attribute option
+        ingredient_details = menu_cache.get_ingredient_details(category)
+        pattern_to_slug: dict[str, str] = {}
+        for detail in ingredient_details:
+            detail_slug = detail.get("slug", "").lower()
+            for pattern in detail.get("patterns", []):
+                pattern_to_slug[pattern.lower()] = detail_slug
+
         for ingredient in valid_ingredients:
             ing_lower = ingredient.lower()
             # Skip ingredients that overlap with attribute options - those are handled
@@ -791,12 +808,22 @@ def _extract_modifiers_generic(
             if ing_lower in attr_option_slugs or ing_lower.replace(" ", "_") in attr_option_slugs:
                 continue
 
+            # Skip if this ingredient's canonical slug matches an attribute option slug
+            # This catches cases where the ingredient alias differs from the attribute
+            # option alias but they refer to the same thing (e.g., ingredient alias
+            # "jalapeño cream" for ingredient slug "jalapeno_cc" which is also an
+            # attribute option)
+            canonical_slug = pattern_to_slug.get(ing_lower, "")
+            if canonical_slug and canonical_slug in attr_option_canonical_slugs:
+                continue
+
             # Find position of ingredient in text and check for span overlap
             pos = text_lower.find(ing_lower)
             if pos != -1:
                 end_pos = pos + len(ing_lower)
-                if not _spans_overlap(pos, end_pos, exclude_spans):
+                if not _spans_overlap(pos, end_pos, exclude_spans, found_modifier_spans):
                     found_modifiers.append(ing_lower)
+                    found_modifier_spans.append((pos, end_pos))
 
     return found_modifiers
 

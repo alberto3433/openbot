@@ -69,6 +69,63 @@ logger = logging.getLogger(__name__)
 _pipeline = get_pipeline()
 
 
+def _filter_duplicate_modifications(
+    additions: list[dict[str, str]],
+    attr_result: "AttributeExtractionResult",
+    item_type: str | None,
+) -> list[dict[str, str]]:
+    """Remove modifier additions that duplicate already-extracted attribute options.
+
+    When both attribute extraction and modification extraction match the same
+    ingredient (e.g., "jalapeño cream" matches both as a spread attribute option
+    and as an ingredient modifier), remove the modifier to avoid duplicates.
+
+    Resolves modifier slugs to canonical ingredient slugs via ingredient details
+    and checks against the set of attribute option slugs already extracted.
+    """
+    if not item_type or not additions:
+        return additions
+
+    # Collect canonical slugs of attribute options that were extracted
+    extracted_option_slugs: set[str] = set()
+    for value in attr_result.values.values():
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    slug = item.get("slug", "")
+                    if slug:
+                        extracted_option_slugs.add(slug.lower())
+        elif isinstance(value, str):
+            extracted_option_slugs.add(value.lower())
+
+    if not extracted_option_slugs:
+        return additions
+
+    # Build pattern -> ingredient slug mapping to resolve modifier aliases
+    pattern_to_slug: dict[str, str] = {}
+    ingredients_by_cat = menu_cache.get_ingredients_by_category_for_item_type(item_type)
+    for cat in ingredients_by_cat:
+        for detail in menu_cache.get_ingredient_details(cat):
+            detail_slug = detail.get("slug", "").lower()
+            for pattern in detail.get("patterns", []):
+                pattern_to_slug[pattern.lower()] = detail_slug
+
+    filtered = []
+    for add in additions:
+        mod_slug = add.get("slug", "").lower()
+        # Resolve to canonical ingredient slug
+        canonical_slug = pattern_to_slug.get(mod_slug, mod_slug)
+        if canonical_slug in extracted_option_slugs:
+            logger.debug(
+                "Filtered duplicate modification '%s' (canonical: %s) - already an attribute option",
+                mod_slug, canonical_slug,
+            )
+            continue
+        filtered.append(add)
+
+    return filtered
+
+
 # =============================================================================
 # Order Type Detection (Pickup/Delivery)
 # =============================================================================
@@ -788,6 +845,13 @@ def _try_parse_new_items(
             exclude_spans = [TextSpan(start=menu_item_span[0], end=menu_item_span[1])] if menu_item_span else None
             attr_result = _pipeline.extract_attributes(text, item_type_for_mods, exclude_spans)
         modifications = _extract_menu_item_modifications(text, item_type_for_mods)
+        # Deduplicate: remove modifications whose ingredient is already matched
+        # as an attribute option (e.g., "jalapeño cream" modifier when attribute
+        # extraction already matched it as spread → jalapeno_cc)
+        if attr_result and modifications.get("additions"):
+            modifications["additions"] = _filter_duplicate_modifications(
+                modifications["additions"], attr_result, item_type_for_mods
+            )
         # Look up is_signature from database (data-driven, no special handling)
         is_sig = menu_cache.item_has_default_ingredients(menu_item)
         attr_keys = list(attr_result.values.keys()) if attr_result else []

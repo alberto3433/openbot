@@ -98,6 +98,25 @@ class DirectOptionMatcher:
         if user_clean.startswith("add "):
             user_clean = user_clean[4:].strip()
 
+        # Detect multi-token input (e.g., "pepper and sausage")
+        tokens = self._option_matcher.normalizer.tokenize_multi_input(user_clean)
+        if len(tokens) > 1:
+            return self._handle_multi_token_direct_match(
+                user_input, tokens, unanswered, item, order
+            )
+
+        # Fallback: detect space-separated options (e.g., "pepper salt sausage bacon").
+        # tokenize_multi_input preserves spaces for compound names like "oat milk",
+        # so we only split on spaces when 2+ individual words exactly match options.
+        if ' ' in user_clean:
+            space_tokens = user_clean.split()
+            if len(space_tokens) > 1:
+                exact_hits = self._count_exact_option_matches(space_tokens, unanswered)
+                if exact_hits >= 2:
+                    return self._handle_multi_token_direct_match(
+                        user_input, space_tokens, unanswered, item, order
+                    )
+
         # Try to match against options in each unanswered attribute
         for attr in unanswered:
             attr_slug = attr["slug"]
@@ -119,6 +138,163 @@ class DirectOptionMatcher:
                 )
                 if result:
                     return result
+
+        return None
+
+    def _count_exact_option_matches(
+        self, tokens: list[str], unanswered: list[dict]
+    ) -> int:
+        """Count how many tokens exactly match an option across unanswered attributes.
+
+        Uses exact-only matching (no partial) to avoid false positives from
+        compound names like 'oat milk' being split into 'oat' + 'milk'.
+        """
+        count = 0
+        for token in tokens:
+            for attr in unanswered:
+                options = attr.get("options", [])
+                if not options:
+                    continue
+                matched, _ = self._option_matcher.match_single(
+                    token, options, exact_only=True
+                )
+                if matched:
+                    count += 1
+                    break
+        return count
+
+    def _handle_multi_token_direct_match(
+        self,
+        user_input: str,
+        tokens: list[str],
+        unanswered: list[dict],
+        item: "MenuItemTask",
+        order: "OrderTask",
+    ) -> StateMachineResult | None:
+        """Handle multi-token input like 'pepper and sausage' across attributes.
+
+        Each token is matched independently against all unanswered attributes,
+        allowing tokens to resolve to different attribute categories.
+
+        Args:
+            user_input: Original user input (for qualifier extraction)
+            tokens: Pre-split tokens (e.g., ["pepper", "sausage"])
+            unanswered: List of unanswered optional attributes
+            item: The menu item being configured
+            order: The order task
+
+        Returns:
+            StateMachineResult if any token matched, None otherwise
+        """
+        display_parts: list[str] = []
+        user_lower = user_input.lower()
+
+        for token in tokens:
+            token_clean = token.strip()
+            if not token_clean:
+                continue
+
+            # Strip quantity prefixes for matching
+            match_input = token_clean
+            quantity_prefixes = ["extra ", "additional ", "more ", "double ", "triple "]
+            for prefix in quantity_prefixes:
+                if match_input.startswith(prefix):
+                    match_input = match_input[len(prefix):].strip()
+                    break
+
+            for attr in unanswered:
+                attr_slug = attr["slug"]
+                options = attr.get("options", [])
+                if not options:
+                    continue
+
+                input_type = attr.get("input_type", "single_select")
+
+                if input_type == "multi_select":
+                    matched, disambiguation = (
+                        self._option_matcher.match_multiple_with_disambiguation(
+                            match_input, options
+                        )
+                    )
+
+                    if disambiguation:
+                        # Ambiguous token — ask user to clarify before continuing
+                        return self._ask_disambiguation_for_options(
+                            item, order, attr, disambiguation, token_clean
+                        )
+
+                    if not matched:
+                        continue
+
+                    existing_selections = item.get_selections(attr_slug)
+                    existing_slugs = {sel.get("slug") for sel in existing_selections}
+
+                    for opt in matched:
+                        if opt["slug"] in existing_slugs:
+                            continue
+
+                        opt_name = opt["display_name"]
+                        qualifier = self._extract_qualifier(user_input, opt_name)
+                        opt_quantity = extract_quantity_for_pattern(
+                            user_lower, opt_name.lower()
+                        )
+                        if opt_quantity == 1:
+                            opt_quantity = extract_quantity_for_pattern(
+                                user_lower, opt["slug"].replace("_", " ")
+                            )
+
+                        display_name = (
+                            f"{opt_name} ({qualifier})" if qualifier else opt_name
+                        )
+                        display = (
+                            f"{opt_quantity} {display_name}"
+                            if opt_quantity > 1
+                            else display_name
+                        )
+                        display_parts.append(display)
+
+                        item.add_selection(
+                            opt["slug"],
+                            attr_slug,
+                            quantity=opt_quantity,
+                            display_name=display_name,
+                        )
+
+                    break  # Token matched in this attribute, move to next token
+
+                else:
+                    # single_select
+                    matched_opt, _ = self._match_option(match_input, options)
+                    if not matched_opt:
+                        continue
+
+                    opt_name = matched_opt["display_name"]
+                    qualifier = self._extract_qualifier(user_input, opt_name)
+
+                    display_name = (
+                        f"{opt_name} ({qualifier})" if qualifier else opt_name
+                    )
+                    display_parts.append(display_name)
+
+                    item.remove_selection(attr_slug)
+                    item.add_selection(
+                        matched_opt["slug"],
+                        attr_slug,
+                        quantity=1,
+                        display_name=display_name,
+                    )
+
+                    break  # Token matched, move to next token
+
+        if display_parts:
+            logger.info(
+                "Multi-token direct match: added %s (item %s)",
+                display_parts, item.id
+            )
+            display_text = ", ".join(display_parts)
+            return self._ask_more_customizations(
+                item, order, f"{display_text} added"
+            )
 
         return None
 
@@ -198,12 +374,10 @@ class DirectOptionMatcher:
             display_parts.append(display)
 
             # Add selection using unified API (with qualifier in display_name)
-            opt_price = OptionMatcher.get_option_price(opt)
             item.add_selection(
                 opt["slug"],
                 attr_slug,
                 quantity=opt_quantity,
-                price=opt_price,
                 display_name=display_name_with_qualifier,
             )
 
@@ -327,7 +501,6 @@ class DirectOptionMatcher:
                 matched_opt["slug"],
                 attr_slug,
                 quantity=1,
-                price=opt_price,
                 display_name=display_name,
             )
             logger.info(
@@ -346,18 +519,16 @@ class DirectOptionMatcher:
                 target_slug = str(parsed_num)
                 for opt in options:
                     if opt["slug"] == target_slug:
-                        opt_price = OptionMatcher.get_option_price(opt)
                         display_name = opt.get("display_name", f"{parsed_num}")
                         item.add_selection(
                             opt["slug"],
                             attr_slug,
                             quantity=1,
-                            price=opt_price,
                             display_name=display_name,
                         )
                         logger.info(
-                            "CHECKPOINT NUMERIC: %s=%s (price=$%.2f) from input '%s'",
-                            attr_slug, opt["slug"], opt_price, user_input
+                            "CHECKPOINT NUMERIC: %s=%s from input '%s'",
+                            attr_slug, opt["slug"], user_input
                         )
                         # Check for remaining options and re-offer or complete
                         return self._ask_more_customizations(item, order, f"{display_name} added")

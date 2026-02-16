@@ -31,6 +31,7 @@ from .modifier_operations import (
 )
 from .config.attribute_resolver import get_mandatory_attributes
 from .utils.pricing_utils import safe_recalculate_price
+from .parsers.quantity_utils import extract_leading_quantity
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -290,6 +291,19 @@ class ItemCancellationHandler:
                     parsed.cancel_item, category_mapping.get("slug")
                 )
                 return None  # Skip modifier removal, let item removal handle it
+
+        # Check if cancel term matches a cart item's menu_item_name — if so, skip modifier
+        # removal. Prevents "Remove the Ham Egg and Cheese Sandwich" from stripping "ham"
+        # as a modifier instead of removing the whole item.
+        cancel_lower = parsed.cancel_item.lower().strip()
+        for item in active_items:
+            item_name = getattr(item, 'menu_item_name', '') or ''
+            if item_name and item_name.lower() == cancel_lower:
+                logger.info(
+                    "Cancellation: '%s' matches cart item name '%s' - skipping modifier removal",
+                    parsed.cancel_item, item_name,
+                )
+                return None
 
         # Check if cancel term matches a modifier CATEGORY (like "cream cheese" → spreads)
         # This handles "remove cream cheese" when the stored value is "blueberry" (the flavor)
@@ -594,6 +608,13 @@ class ItemCancellationHandler:
         """Handle name-based removal: 'cancel the coke', 'remove the bagel'."""
         cancel_item_desc = parsed.cancel_item.lower()
 
+        # Check for leading quantity: "one iced latte" → decrement by 1
+        is_decrement = False
+        leading_qty, remainder = extract_leading_quantity(cancel_item_desc)
+        if leading_qty == 1 and remainder:
+            is_decrement = True
+            cancel_item_desc = remainder
+
         # Check if plural removal (e.g., "coffees", "bagels")
         singular_desc = singularize(cancel_item_desc)
         is_plural = singular_desc != cancel_item_desc.lower()
@@ -656,6 +677,19 @@ class ItemCancellationHandler:
                     break
 
         if items_to_remove:
+            # Quantity decrement: "Remove one X" with qty > 1 → just decrease quantity
+            if is_decrement and len(items_to_remove) == 1:
+                item = items_to_remove[0]
+                if getattr(item, 'quantity', 1) > 1:
+                    item.quantity -= 1
+                    item_name = item.get_summary()
+                    logger.info("Cancellation: decremented qty of '%s' to %d", item_name, item.quantity)
+                    return StateMachineResult(
+                        message=f"OK, removed one {item_name}. Anything else?",
+                        order=order,
+                    )
+                # qty == 1: fall through to full removal below
+
             removed_names = []
             for item in items_to_remove:
                 removed_names.append(item.get_summary())

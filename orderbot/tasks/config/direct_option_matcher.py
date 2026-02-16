@@ -334,11 +334,13 @@ class DirectOptionMatcher:
     ) -> StateMachineResult | None:
         """Handle multi-select option matching with disambiguation."""
         # Strip quantity prefixes for matching (preserve original for quantity extraction later)
+        had_quantity_prefix = False
         match_input = user_clean
         quantity_prefixes = ["extra ", "additional ", "more ", "double ", "triple "]
         for prefix in quantity_prefixes:
             if match_input.startswith(prefix):
                 match_input = match_input[len(prefix):].strip()
+                had_quantity_prefix = True
                 break
 
         # Use disambiguation-aware matching with cleaned input
@@ -364,7 +366,8 @@ class DirectOptionMatcher:
         # This handles "make it blueberry cream cheese" when plain cream cheese exists.
         # The "make it X" phrase implies transformation/change, not addition.
         # If user wanted to add, they would say "add X" or list multiple items.
-        is_replacement = len(matched) == 1 and existing_selections
+        # Exception: quantity prefixes ("extra avocado") mean "more of the same", not replace.
+        is_replacement = len(matched) == 1 and existing_selections and not had_quantity_prefix
         if is_replacement:
             # Clear existing selections before adding the new one
             item.remove_selection(attr_slug)
@@ -372,6 +375,40 @@ class DirectOptionMatcher:
 
         display_parts = []
         user_lower = user_input.lower()
+
+        # Handle quantity prefix on existing selections (e.g., "extra avocado" when avocado exists)
+        # Updates the existing modifier's quantity and tracks _base_quantity for pricing.
+        if had_quantity_prefix and not is_replacement:
+            for opt in matched:
+                if opt["slug"] in existing_slugs:
+                    existing_mod = next(
+                        (m for m in item.selections if m.get("slug") == opt["slug"]),
+                        None
+                    )
+                    if existing_mod:
+                        opt_name = opt["display_name"]
+                        opt_quantity = extract_quantity_for_pattern(user_lower, opt_name.lower())
+                        if opt_quantity == 1:
+                            opt_quantity = extract_quantity_for_pattern(
+                                user_lower, opt["slug"].replace("_", " ")
+                            )
+                        # Track base quantity for pricing (first N are free)
+                        base_qty = existing_mod.get("_base_quantity", existing_mod.get("quantity", 1))
+                        existing_mod["_base_quantity"] = base_qty
+                        existing_mod["quantity"] = opt_quantity
+                        # Update display name with quantity prefix so to_dict()
+                        # recognizes it and doesn't re-pluralize
+                        qualifier = self._extract_qualifier(user_input, opt_name)
+                        display_name = f"{opt_name} ({qualifier})" if qualifier else opt_name
+                        display = f"{opt_quantity} {display_name}" if opt_quantity > 1 else display_name
+                        existing_mod["display_name"] = display
+                        display_parts.append(display)
+
+            # If all matched options were handled as quantity updates, return early
+            if display_parts:
+                display_text = ", ".join(display_parts)
+                return self._ask_more_customizations(item, order, f"Changed to {display_text}")
+
         for opt in matched:
             if opt["slug"] in existing_slugs:
                 continue  # Skip already added

@@ -209,6 +209,9 @@ class UnifiedItemConverter:
                 # Preserve is_default flag for signature items' default ingredients
                 if mod.get("is_default"):
                     selection["is_default"] = True
+                # Preserve _base_quantity for user-modified default ingredients
+                if mod.get("_base_quantity"):
+                    selection["_base_quantity"] = mod["_base_quantity"]
                 selections.append(selection)
 
         # Add from attribute_values only if NOT already in stored_modifiers
@@ -386,7 +389,8 @@ class UnifiedItemConverter:
 
             mod_display = mod.get("display_name") or format_slug_for_display(mod_slug, mod_category)
             is_included_default = mod.get("is_default") or mod_slug in default_ingredient_slugs
-            mod_price = 0.0 if is_included_default else (mod.get("price", 0) or 0.0)
+            has_extra_quantity = mod.get("_base_quantity", 0) > 0
+            mod_price = 0.0 if (is_included_default and not has_extra_quantity) else (mod.get("price", 0) or 0.0)
             mod_quantity = mod.get("quantity", 1) or 1
 
             # Handle quantity display
@@ -422,12 +426,17 @@ class UnifiedItemConverter:
         bundle_price_rule = getattr(item, 'bundle_price_rule', None)
         bundle_included_price = getattr(item, 'bundle_included_price', None)
         is_fully_included = bundle_price_rule == 'included' and bundle_included_price is None
+        is_differential_bundle = bundle_price_rule == 'included' and bundle_included_price is not None
 
         # Get base_price from pricing engine if available, or from item
         # Data-driven: lookup by menu_item_name and variant attribute (if present)
         if is_fully_included:
             # Bundle-included items have $0 base price
             base_price = 0.0
+        elif is_differential_bundle:
+            # For differential bundles, use unit_price (already calculated as the effective price).
+            # e.g., large fruit salad: unit_price = $4.95 - $2.95 = $2.00
+            base_price = item.unit_price or 0.0
         else:
             base_price = getattr(item, 'base_price', None)
             if base_price is None and pricing and hasattr(pricing, 'lookup_base_price') and menu_item_name:

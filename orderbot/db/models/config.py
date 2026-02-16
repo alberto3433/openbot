@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -427,6 +428,10 @@ class ComponentSlotOption(Base):
     # Amount included in parent's price (in cents) for differential pricing
     # NULL = entire base is free (e.g., bagel), value = amount included (e.g., 795 for small fruit salad)
     included_price_cents = Column(Integer, nullable=True)
+
+    # Default modifiers to pre-apply when this option is selected as a child item
+    # Format: [{"type": "attribute_option", "global_attribute_option_id": 42}, ...]
+    default_modifiers = Column(JSONB, nullable=True, default=None)
 
     # Display
     display_name = Column(String(100))  # e.g., "Bagel", "Fruit Salad"

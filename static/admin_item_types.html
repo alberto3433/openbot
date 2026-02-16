@@ -566,6 +566,44 @@
       border-radius: 6px;
       border: 1px dashed var(--border-light);
     }
+    .default-modifiers-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding: 4px 0 2px 12px;
+      font-size: 11px;
+    }
+    .default-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-light);
+      border-radius: 10px;
+      padding: 2px 8px;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .default-chip .chip-remove {
+      cursor: pointer;
+      color: var(--text-tertiary);
+      font-weight: bold;
+      font-size: 11px;
+      line-height: 1;
+    }
+    .default-chip .chip-remove:hover {
+      color: var(--error-text);
+    }
+    .add-default-link {
+      font-size: 10px;
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .add-default-link:hover {
+      text-decoration: underline;
+    }
 
     /* Modal Form overrides for dark mode */
     [data-theme="dark"] .field input[type="text"],
@@ -1020,6 +1058,60 @@
     </div>
   </div>
 
+  <!-- Add Default Modifier Modal -->
+  <div class="modal-overlay" id="addDefaultModal">
+    <div class="modal" style="max-width: 450px;">
+      <div class="modal-header">
+        <h2>Add Default Modifier</h2>
+        <button class="close-btn" id="addDefaultModalClose"><span class="icon"><i data-lucide="x"></i></span></button>
+      </div>
+      <div class="modal-body">
+        <form id="addDefaultForm">
+          <input type="hidden" id="defaultOptionId" />
+
+          <div class="form-group">
+            <label for="defaultType">Type *</label>
+            <select id="defaultType">
+              <option value="">-- Select type --</option>
+              <option value="attribute_option">Attribute Value</option>
+              <option value="ingredient">Ingredient</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="defaultAttrGroup" style="display: none;">
+            <label for="defaultAttribute">Attribute *</label>
+            <select id="defaultAttribute">
+              <option value="">-- Select attribute --</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="defaultAttrOptionGroup" style="display: none;">
+            <label for="defaultAttrOption">Value *</label>
+            <select id="defaultAttrOption">
+              <option value="">-- Select value --</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="defaultIngredientGroup" style="display: none;">
+            <label for="defaultIngredientSearch">Search Ingredient *</label>
+            <input type="text" id="defaultIngredientSearch" placeholder="Type to search..." />
+            <select id="defaultIngredient" size="5" style="margin-top: 8px; width: 100%;">
+            </select>
+          </div>
+
+          <div class="form-group" id="defaultQuantityGroup" style="display: none;">
+            <label for="defaultQuantity">Quantity</label>
+            <input type="number" id="defaultQuantity" min="1" value="1" />
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="addDefaultCancelBtn">Cancel</button>
+        <button type="button" class="btn primary" id="addDefaultSaveBtn">Add Default</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/admin_common.js"></script>
   <script>
     // API base URLs
@@ -1050,6 +1142,9 @@
     let deletingSlotId = null;
     let availableItemTypesForSlots = [];
     let availableMenuItems = [];
+    let editingDefaultOptionId = null;
+    let editingDefaultOptionItemTypeId = null;
+    let editingDefaultOptionAttrs = [];  // cached attributes for the option's item type
 
     // DOM elements
     const toastContainer = document.getElementById("toastContainer");
@@ -1063,6 +1158,7 @@
     const attributesList = document.getElementById("attributesList");
     const attributeModal = document.getElementById("attributeModal");
     const deleteModal = document.getElementById("deleteModal");
+    const addDefaultModal = document.getElementById("addDefaultModal");
     const slotModal = document.getElementById("slotModal");
     const slotOptionModal = document.getElementById("slotOptionModal");
     const deleteSlotModal = document.getElementById("deleteSlotModal");
@@ -1839,14 +1935,39 @@
         else if (opt.price_rule === "full_price") priceText = "Full Price";
         else if (opt.price_rule === "fixed" && opt.fixed_price) priceText = `$${(opt.fixed_price / 100).toFixed(2)}`;
 
+        // Render default modifier chips
+        const defaults = opt.default_modifiers || [];
+        const defaultChips = defaults.map((dm, idx) => {
+          let label = "";
+          if (dm.type === "attribute_option") {
+            label = `${dm.attribute_display_name || dm.attribute_slug}: ${dm.option_display_name || dm.option_slug}`;
+          } else if (dm.type === "ingredient") {
+            label = dm.ingredient_name || "Ingredient";
+            if (dm.quantity > 1) label += ` x${dm.quantity}`;
+          }
+          return `<span class="default-chip">${escapeHtml(label)}<span class="chip-remove" onclick="removeDefaultModifier(${opt.id}, ${idx})">&times;</span></span>`;
+        }).join("");
+
+        const hasItemType = opt.resolved_item_type_id;
+        const addDefaultLink = hasItemType
+          ? `<span class="add-default-link" onclick="openAddDefaultModal(${opt.id}, ${opt.resolved_item_type_id})">+ Add Default</span>`
+          : '';
+
+        const defaultsRow = (defaults.length > 0 || hasItemType)
+          ? `<div class="default-modifiers-row">${defaultChips}${addDefaultLink}</div>`
+          : '';
+
         return `
-          <div class="slot-option-row">
-            <div class="slot-option-info">
-              <span>${escapeHtml(opt.display_name || typeName)}</span>
-              <span class="slot-option-type">${typeLabel}</span>
-              <span class="slot-option-price">${priceText}</span>
+          <div>
+            <div class="slot-option-row">
+              <div class="slot-option-info">
+                <span>${escapeHtml(opt.display_name || typeName)}</span>
+                <span class="slot-option-type">${typeLabel}</span>
+                <span class="slot-option-price">${priceText}</span>
+              </div>
+              <button class="attr-btn danger" onclick="deleteSlotOption(${opt.id})" style="padding: 2px 6px; font-size: 10px;">X</button>
             </div>
-            <button class="attr-btn danger" onclick="deleteSlotOption(${opt.id})" style="padding: 2px 6px; font-size: 10px;">X</button>
+            ${defaultsRow}
           </div>
         `;
       }).join("");
@@ -2169,6 +2290,224 @@
       }
     }
 
+    // =============================================================================
+    // Default Modifiers
+    // =============================================================================
+
+    async function openAddDefaultModal(optionId, itemTypeId) {
+      editingDefaultOptionId = optionId;
+      editingDefaultOptionItemTypeId = itemTypeId;
+      editingDefaultOptionAttrs = [];
+
+      // Reset form
+      document.getElementById("defaultOptionId").value = optionId;
+      document.getElementById("defaultType").value = "";
+      document.getElementById("defaultAttrGroup").style.display = "none";
+      document.getElementById("defaultAttrOptionGroup").style.display = "none";
+      document.getElementById("defaultIngredientGroup").style.display = "none";
+      document.getElementById("defaultQuantityGroup").style.display = "none";
+
+      // Load attributes for this item type
+      try {
+        const response = await authFetch(`${ITEM_TYPE_GLOBAL_ATTRS_API}/${itemTypeId}/global-attributes`);
+        if (response.ok) {
+          editingDefaultOptionAttrs = await response.json();
+          const attrSelect = document.getElementById("defaultAttribute");
+          attrSelect.innerHTML = '<option value="">-- Select attribute --</option>' +
+            editingDefaultOptionAttrs.map(a =>
+              `<option value="${a.global_attribute_id}">${escapeHtml(a.global_attribute_display_name || a.global_attribute_slug)}</option>`
+            ).join("");
+        }
+      } catch (error) {
+        console.error("Failed to load attributes for default modifier:", error);
+      }
+
+      addDefaultModal.classList.add("active");
+    }
+
+    function closeAddDefaultModal() {
+      addDefaultModal.classList.remove("active");
+      editingDefaultOptionId = null;
+      editingDefaultOptionItemTypeId = null;
+    }
+
+    function onDefaultTypeChange(e) {
+      const val = e.target.value;
+      document.getElementById("defaultAttrGroup").style.display = val === "attribute_option" ? "block" : "none";
+      document.getElementById("defaultAttrOptionGroup").style.display = "none";
+      document.getElementById("defaultIngredientGroup").style.display = val === "ingredient" ? "block" : "none";
+      document.getElementById("defaultQuantityGroup").style.display = val === "ingredient" ? "block" : "none";
+    }
+
+    function onDefaultAttributeChange(e) {
+      const attrId = parseInt(e.target.value);
+      const optionSelect = document.getElementById("defaultAttrOption");
+      optionSelect.innerHTML = '<option value="">-- Select value --</option>';
+
+      if (!attrId) {
+        document.getElementById("defaultAttrOptionGroup").style.display = "none";
+        return;
+      }
+
+      // Find the attribute and populate its options
+      const attr = editingDefaultOptionAttrs.find(a => a.global_attribute_id === attrId);
+      if (attr && attr.options) {
+        optionSelect.innerHTML = '<option value="">-- Select value --</option>' +
+          attr.options.map(o =>
+            `<option value="${o.id}">${escapeHtml(o.display_name || o.slug)}</option>`
+          ).join("");
+        document.getElementById("defaultAttrOptionGroup").style.display = "block";
+      }
+    }
+
+    let _allIngredientsCache = null;
+    async function searchIngredientsForDefault(query) {
+      if (!query || query.length < 2) return;
+      try {
+        // Cache the full ingredient list on first search
+        if (!_allIngredientsCache) {
+          const response = await authFetch(`/api/v1/admin/ingredients/list`);
+          if (response.ok) {
+            _allIngredientsCache = await response.json();
+          }
+        }
+        if (!_allIngredientsCache) return;
+
+        const q = query.toLowerCase();
+        const filtered = _allIngredientsCache.filter(ing =>
+          ing.name.toLowerCase().includes(q) || (ing.category || "").toLowerCase().includes(q)
+        ).slice(0, 20);
+
+        const select = document.getElementById("defaultIngredient");
+        select.innerHTML = filtered.map(ing =>
+          `<option value="${ing.id}">${escapeHtml(ing.name)} (${escapeHtml(ing.category || '')})</option>`
+        ).join("");
+      } catch (error) {
+        console.error("Failed to search ingredients:", error);
+      }
+    }
+
+    async function saveDefaultModifier() {
+      const optionId = editingDefaultOptionId;
+      const type = document.getElementById("defaultType").value;
+
+      if (!type) {
+        showToast("Please select a type", "error");
+        return;
+      }
+
+      // Find current option to get existing defaults
+      let currentOption = null;
+      for (const slot of componentSlots) {
+        const opt = (slot.options || []).find(o => o.id === optionId);
+        if (opt) { currentOption = opt; break; }
+      }
+
+      // Build the new entry
+      let newEntry = {};
+      if (type === "attribute_option") {
+        const gaoId = parseInt(document.getElementById("defaultAttrOption").value);
+        if (!gaoId) {
+          showToast("Please select an attribute value", "error");
+          return;
+        }
+        newEntry = { type: "attribute_option", global_attribute_option_id: gaoId };
+      } else if (type === "ingredient") {
+        const ingId = parseInt(document.getElementById("defaultIngredient").value);
+        if (!ingId) {
+          showToast("Please select an ingredient", "error");
+          return;
+        }
+        const qty = parseInt(document.getElementById("defaultQuantity").value) || 1;
+        newEntry = { type: "ingredient", ingredient_id: ingId, quantity: qty };
+      }
+
+      // Build the full list: existing raw entries + new entry
+      // We need to reconstruct raw entries from resolved ones
+      const existingRaw = _resolvedToRaw(currentOption?.default_modifiers || []);
+      existingRaw.push(newEntry);
+
+      const saveBtn = document.getElementById("addDefaultSaveBtn");
+      setSaveButtonState(saveBtn, "saving");
+
+      try {
+        const response = await authFetch(`${COMPONENT_SLOTS_API}/options/${optionId}/default-modifiers`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(existingRaw),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        setSaveButtonState(saveBtn, "saved", "Add Default");
+        showToast("Default modifier added", "success");
+        closeAddDefaultModal();
+
+        // Reload slot options to refresh the display
+        await reloadAllSlotOptions();
+      } catch (error) {
+        console.error("Failed to save default modifier:", error);
+        setSaveButtonState(saveBtn, "error", "Add Default");
+        showToast(`Failed to save: ${error.message}`, "error");
+      }
+    }
+
+    async function removeDefaultModifier(optionId, index) {
+      // Find current option
+      let currentOption = null;
+      for (const slot of componentSlots) {
+        const opt = (slot.options || []).find(o => o.id === optionId);
+        if (opt) { currentOption = opt; break; }
+      }
+
+      if (!currentOption) return;
+
+      // Remove the entry at index
+      const existingRaw = _resolvedToRaw(currentOption.default_modifiers || []);
+      existingRaw.splice(index, 1);
+
+      try {
+        const response = await authFetch(`${COMPONENT_SLOTS_API}/options/${optionId}/default-modifiers`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(existingRaw),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `HTTP ${response.status}`);
+        }
+
+        showToast("Default modifier removed", "success");
+        await reloadAllSlotOptions();
+      } catch (error) {
+        console.error("Failed to remove default modifier:", error);
+        showToast(`Failed to remove: ${error.message}`, "error");
+      }
+    }
+
+    // Convert resolved modifiers (from API GET) back to raw format (for API PUT)
+    function _resolvedToRaw(resolvedList) {
+      return (resolvedList || []).map(dm => {
+        if (dm.type === "attribute_option") {
+          return { type: "attribute_option", global_attribute_option_id: dm.global_attribute_option_id };
+        } else if (dm.type === "ingredient") {
+          return { type: "ingredient", ingredient_id: dm.ingredient_id, quantity: dm.quantity || 1 };
+        }
+        return dm;
+      });
+    }
+
+    async function reloadAllSlotOptions() {
+      for (const slot of componentSlots) {
+        slot.options = await loadSlotOptions(slot.id);
+      }
+      renderComponentSlots();
+    }
+
     // Event listeners
     document.getElementById("newItemTypeBtn").addEventListener("click", () => {
       currentIndex = -1;
@@ -2236,6 +2575,19 @@
     document.getElementById("deleteSlotCancelBtn").addEventListener("click", closeDeleteSlotModal);
     document.getElementById("deleteSlotConfirmBtn").addEventListener("click", deleteSlot);
 
+    // Add default modifier modal
+    document.getElementById("addDefaultModalClose").addEventListener("click", closeAddDefaultModal);
+    document.getElementById("addDefaultCancelBtn").addEventListener("click", closeAddDefaultModal);
+    document.getElementById("addDefaultSaveBtn").addEventListener("click", saveDefaultModifier);
+    document.getElementById("defaultType").addEventListener("change", onDefaultTypeChange);
+    document.getElementById("defaultAttribute").addEventListener("change", onDefaultAttributeChange);
+
+    let defaultIngSearchTimeout;
+    document.getElementById("defaultIngredientSearch").addEventListener("input", (e) => {
+      clearTimeout(defaultIngSearchTimeout);
+      defaultIngSearchTimeout = setTimeout(() => searchIngredientsForDefault(e.target.value), 300);
+    });
+
     // Close modals on overlay click
     attributeModal.addEventListener("click", (e) => {
       if (e.target === attributeModal) closeAttributeModal();
@@ -2251,6 +2603,9 @@
     });
     deleteSlotModal.addEventListener("click", (e) => {
       if (e.target === deleteSlotModal) closeDeleteSlotModal();
+    });
+    addDefaultModal.addEventListener("click", (e) => {
+      if (e.target === addDefaultModal) closeAddDefaultModal();
     });
 
     // Close modals on Escape key
@@ -2270,6 +2625,9 @@
         }
         if (deleteSlotModal.classList.contains("active")) {
           closeDeleteSlotModal();
+        }
+        if (addDefaultModal.classList.contains("active")) {
+          closeAddDefaultModal();
         }
       }
     });

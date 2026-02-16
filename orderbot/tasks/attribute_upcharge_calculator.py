@@ -155,32 +155,42 @@ class AttributeUpchargeCalculator:
                 )
                 quantity = matching_modifier.get("quantity", 1) if matching_modifier else 1
 
+                # Account for base quantity (default items included in base price).
+                # _base_quantity tracks original default quantity before user modifications
+                # (e.g., "extra avocado" sets quantity=2, _base_quantity=1 → charge for 1).
+                base_quantity = matching_modifier.get("_base_quantity", 0) if matching_modifier else 0
+                effective_quantity = max(0, quantity - base_quantity) if base_quantity > 0 else quantity
+
                 # Default ingredients in included categories are always free.
                 # Check this BEFORE upcharge lookup so premium calculations
                 # don't accidentally charge defaults (e.g., corned beef on The Reuben).
+                # Exception: if user asked for extra (effective_quantity > 0), charge for extras.
                 is_default = matching_modifier.get("is_default", False) if matching_modifier else False
                 if is_default and included_categories:
                     option_category = self._pricing._get_option_ingredient_category(
                         item_type, attr_slug, item_val
                     )
                     if option_category and option_category in included_categories:
-                        priced_slugs.add(item_val_normalized)
-                        if matching_modifier:
-                            matching_modifier["price"] = 0.0
-                        continue
+                        if base_quantity == 0:
+                            # Default ingredient, not user-modified → entirely free
+                            priced_slugs.add(item_val_normalized)
+                            if matching_modifier:
+                                matching_modifier["price"] = 0.0
+                            continue
+                        # else: user asked for extra → fall through to charge for extras
 
                 # Look up upcharge from DB - single source of truth
                 upcharge = self._pricing.lookup_attribute_option_upcharge(
                     item_type, attr_slug, item_val, included_categories
                 )
                 if upcharge > 0:
-                    total += upcharge * quantity
+                    total += upcharge * effective_quantity
                     priced_slugs.add(item_val_normalized)
                     if matching_modifier:
                         matching_modifier["price"] = upcharge
                 else:
                     price = self._pricing.lookup_modifier_price(item_val, item_type)
-                    total += price * quantity
+                    total += price * effective_quantity
                     priced_slugs.add(item_val_normalized)
                     if matching_modifier:
                         matching_modifier["price"] = price

@@ -6,11 +6,15 @@ For example, an omelette can include a "side" slot that accepts bagels or fruit 
 """
 
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
 from ..db.models import (
+    GlobalAttributeOption,
+    GlobalAttribute,
+    Ingredient,
     ItemType,
     ItemTypeComponentSlot,
     ComponentSlotOption,
@@ -241,10 +245,25 @@ def get_slot_options(slot_id: int, db: Session = Depends(get_db)):
             option_data["allowed_item_type_id"] = opt.allowed_item_type_id
             option_data["allowed_item_type_slug"] = opt.allowed_item_type.slug
             option_data["allowed_item_type_name"] = opt.allowed_item_type.display_name
+            option_data["resolved_item_type_id"] = opt.allowed_item_type_id
+            option_data["resolved_item_type_slug"] = opt.allowed_item_type.slug
 
         if opt.allowed_menu_item:
             option_data["allowed_menu_item_id"] = opt.allowed_menu_item_id
             option_data["allowed_menu_item_name"] = opt.allowed_menu_item.name
+            # Resolve item type from the menu item
+            option_data["resolved_item_type_id"] = opt.allowed_menu_item.item_type_id
+            if opt.allowed_menu_item.item_type_id:
+                mi_item_type = db.query(ItemType).filter(
+                    ItemType.id == opt.allowed_menu_item.item_type_id
+                ).first()
+                if mi_item_type:
+                    option_data["resolved_item_type_slug"] = mi_item_type.slug
+
+        # Resolve default_modifiers with display names
+        option_data["default_modifiers"] = _resolve_default_modifiers(
+            opt.default_modifiers, db
+        )
 
         options.append(option_data)
 
@@ -368,6 +387,124 @@ def delete_slot_option(option_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"success": True, "message": "Deleted option"}
+
+
+# =============================================================================
+# Default Modifiers
+# =============================================================================
+
+@admin_component_slots_router.put("/options/{option_id}/default-modifiers")
+def update_default_modifiers(
+    option_id: int,
+    modifiers: list = Body(...),
+    db: Session = Depends(get_db),
+):
+    """Set default modifiers for a slot option.
+
+    Accepts a JSON array of default modifier entries:
+    - {"type": "attribute_option", "global_attribute_option_id": 42}
+    - {"type": "ingredient", "ingredient_id": 15, "quantity": 1}
+    """
+    option = db.query(ComponentSlotOption).filter(
+        ComponentSlotOption.id == option_id
+    ).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="Option not found")
+
+    # Validate each entry
+    validated = []
+    for entry in modifiers:
+        entry_type = entry.get("type")
+        if entry_type == "attribute_option":
+            gao_id = entry.get("global_attribute_option_id")
+            if not gao_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="attribute_option entry requires global_attribute_option_id"
+                )
+            gao = db.query(GlobalAttributeOption).filter(
+                GlobalAttributeOption.id == gao_id
+            ).first()
+            if not gao:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"GlobalAttributeOption {gao_id} not found"
+                )
+            validated.append({
+                "type": "attribute_option",
+                "global_attribute_option_id": gao_id,
+            })
+        elif entry_type == "ingredient":
+            ing_id = entry.get("ingredient_id")
+            if not ing_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="ingredient entry requires ingredient_id"
+                )
+            ing = db.query(Ingredient).filter(Ingredient.id == ing_id).first()
+            if not ing:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Ingredient {ing_id} not found"
+                )
+            validated.append({
+                "type": "ingredient",
+                "ingredient_id": ing_id,
+                "quantity": entry.get("quantity", 1),
+            })
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown modifier type: {entry_type}"
+            )
+
+    option.default_modifiers = validated if validated else None
+    db.commit()
+    db.refresh(option)
+
+    return _resolve_default_modifiers(option.default_modifiers, db)
+
+
+def _resolve_default_modifiers(
+    raw_modifiers: list | None,
+    db: Session,
+) -> list[dict]:
+    """Resolve default modifier IDs to display names for the frontend."""
+    if not raw_modifiers:
+        return []
+
+    resolved = []
+    for entry in raw_modifiers:
+        entry_type = entry.get("type")
+
+        if entry_type == "attribute_option":
+            gao_id = entry.get("global_attribute_option_id")
+            gao = db.query(GlobalAttributeOption).options(
+                joinedload(GlobalAttributeOption.attribute)
+            ).filter(GlobalAttributeOption.id == gao_id).first()
+            if gao:
+                resolved.append({
+                    "type": "attribute_option",
+                    "global_attribute_option_id": gao_id,
+                    "attribute_slug": gao.attribute.slug if gao.attribute else None,
+                    "attribute_display_name": gao.attribute.display_name if gao.attribute else None,
+                    "option_slug": gao.slug,
+                    "option_display_name": gao.display_name,
+                })
+
+        elif entry_type == "ingredient":
+            ing_id = entry.get("ingredient_id")
+            ing = db.query(Ingredient).filter(Ingredient.id == ing_id).first()
+            if ing:
+                resolved.append({
+                    "type": "ingredient",
+                    "ingredient_id": ing_id,
+                    "ingredient_name": ing.name,
+                    "ingredient_category": ing.category,
+                    "quantity": entry.get("quantity", 1),
+                })
+
+    return resolved
 
 
 # =============================================================================

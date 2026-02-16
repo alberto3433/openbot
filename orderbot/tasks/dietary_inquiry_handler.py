@@ -13,6 +13,7 @@ Extracted as a specialized handler for dietary/allergen concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
@@ -39,6 +40,13 @@ DIETARY_DISPLAY_NAMES = {
     "is_dairy_free": "dairy-free",
     "is_kosher": "kosher",
 }
+
+# Pattern to detect "something/anything with X" in availability queries
+_SOMETHING_WITH_RE = re.compile(
+    r"(?:something|anything|items?|stuff)\s+with\s+(.+)",
+    re.IGNORECASE,
+)
+
 
 def _allergen_display_name(allergen_type: str) -> str:
     """Derive display name from allergen property (e.g., 'contains_eggs' -> 'eggs')."""
@@ -464,6 +472,65 @@ class DietaryInquiryHandler(MenuDataMixin):
 
         return []
 
+    def _handle_ingredient_items_search(
+        self,
+        ingredient_term: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Search for menu items containing a given ingredient and return a listing.
+
+        Uses the ingredient_to_items mapping to find menu items that contain
+        the specified ingredient. Mirrors the response format from
+        TakingItemsHandler._handle_ingredient_search().
+
+        Args:
+            ingredient_term: The ingredient to search for (e.g., "ham", "bacon")
+            order: Current order state
+
+        Returns:
+            StateMachineResult listing matching items, or None if no items found.
+        """
+        ingredient_to_items = self._menu_data.get("ingredient_to_items", {})
+        matches = ingredient_to_items.get(ingredient_term.lower(), [])
+
+        if not matches:
+            return None
+
+        if len(matches) == 1:
+            item_name = matches[0].get("name", "that item")
+            desc = matches[0].get("description", "")
+            msg = f"For items with {ingredient_term}, we have the {item_name}"
+            if desc:
+                msg += f" ({desc})"
+            msg += ". Would you like one?"
+            order.pending_suggested_item = item_name
+            order.pending_field = PendingField.CONFIRM_SUGGESTED_ITEM
+        else:
+            display_count = min(6, len(matches))
+            item_names = [m.get("name", "item") for m in matches[:display_count]]
+            has_more = len(matches) > display_count
+
+            if len(item_names) == 1:
+                items_list = item_names[0]
+            elif len(item_names) == 2:
+                items_list = f"{item_names[0]} or {item_names[1]}"
+            elif has_more:
+                items_list = ", ".join(item_names)
+                items_list += f", and {len(matches) - display_count} more"
+            else:
+                items_list = format_english_list(item_names, conjunction="or")
+
+            msg = f"For items with {ingredient_term}, we have: {items_list}. Which would you like?"
+
+            if has_more:
+                order.pending_ingredient_search = {
+                    "ingredient": ingredient_term,
+                    "matches": matches,
+                    "offset": display_count,
+                }
+
+        return StateMachineResult(message=msg, order=order)
+
     def handle_availability_inquiry(
         self,
         item_name: str,
@@ -478,6 +545,15 @@ class DietaryInquiryHandler(MenuDataMixin):
         Returns:
             StateMachineResult with availability information
         """
+        # Detect "something/anything with X" and list items containing that ingredient
+        something_match = _SOMETHING_WITH_RE.search(item_name)
+        if something_match:
+            ingredient_term = something_match.group(1).strip()
+            result = self._handle_ingredient_items_search(ingredient_term, order)
+            if result:
+                return result
+            # Fall through to normal availability logic if no items found
+
         # Try exact alias resolution first
         canonical_name = menu_cache.resolve_menu_item_alias(item_name)
 
@@ -544,6 +620,11 @@ class DietaryInquiryHandler(MenuDataMixin):
             if len(ingredient_matches) == 1:
                 ing = ingredient_matches[0]
                 ing_name = ing.get("name", item_name)
+                # Try listing menu items that contain this ingredient
+                result = self._handle_ingredient_items_search(ing_name, order)
+                if result:
+                    return result
+                # Fallback if no menu items found for this ingredient
                 return StateMachineResult(
                     message=(
                         f"Yes, we have {ing_name}! Would you like to order something with {ing_name}?"

@@ -17,7 +17,7 @@ _QUESTION_PREFIX_RE = re.compile(
     r"^(?:"
     r"what(?:'s|'s|\s+is|\s+are)\s+(?:your|the)\s+"
     r"|what\s+"
-    r"|do\s+you\s+have\s+(?:any\s+)?"
+    r"|do\s+you\s+(?:have|sell|carry|offer|make)\s+(?:any\s+)?"
     r"|show\s+me\s+(?:your|the)\s+"
     r"|tell\s+me\s+about\s+(?:your|the)\s+"
     r"|can\s+i\s+see\s+(?:your|the)\s+"
@@ -171,7 +171,7 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
         re.compile(r"what\s+(.+?)\s+do\s+you\s+(?:have|sell|carry|offer|make)", re.IGNORECASE),
         re.compile(r"what\s+(?:kind\s+of\s+)?(.+?)\s+(?:do\s+you|have\s+you)\s+got", re.IGNORECASE),
         re.compile(r"what\s+(?:are\s+)?(?:your|the)\s+(.+?)(?:\s+options)?(?:\?|$)", re.IGNORECASE),
-        re.compile(r"do\s+you\s+have\s+(?:any\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
+        re.compile(r"do\s+you\s+(?:have|sell|carry|offer|make)\s+(?:any\s+)?(.+?)(?:\?|$)", re.IGNORECASE),
         # "tell me about your X" / "tell me about the X"
         re.compile(r"tell\s+me\s+about\s+(?:your|the)\s+(.+?)(?:\?|$)", re.IGNORECASE),
         # "show me your X" / "list your X"

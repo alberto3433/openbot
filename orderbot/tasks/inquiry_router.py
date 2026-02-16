@@ -8,10 +8,17 @@ Extracted from taking_items_handler.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from .schemas import StateMachineResult
 from .order_detection import get_dynamic_help_text
+
+# Pattern to detect "something/anything/items with X" in menu query terms
+_INGREDIENT_QUERY_RE = re.compile(
+    r"^(?:something|anything|items?|stuff)\s+with\s+(.+)",
+    re.IGNORECASE,
+)
 
 if TYPE_CHECKING:
     from .schemas import OpenInputResponse
@@ -158,6 +165,15 @@ class InquiryRouter:
             )
 
         if parsed.menu_query:
+            # Check if query is really "items with X" (ingredient search)
+            query_type = parsed.menu_query_type or ""
+            ingredient_match = _INGREDIENT_QUERY_RE.match(query_type)
+            if ingredient_match and self.dietary_inquiry_handler:
+                result = self.dietary_inquiry_handler._handle_ingredient_items_search(
+                    ingredient_match.group(1).strip(), order
+                )
+                if result:
+                    return result
             return self.menu_inquiry_handler.handle_menu_query(parsed.menu_query_type, order, show_prices=parsed.asks_about_price)
 
         if parsed.wants_more_menu_items:
@@ -197,7 +213,7 @@ class InquiryRouter:
         self,
         parsed: "OpenInputResponse",
         order: "OrderTask",
-    ) -> StateMachineResult | None:
+    ) -> StateMachineResult | str | None:
         """Route category clarification requests.
 
         Args:
@@ -205,7 +221,8 @@ class InquiryRouter:
             order: The current order task.
 
         Returns:
-            StateMachineResult if handled, None otherwise.
+            StateMachineResult if disambiguation needed, str (item name) if
+            single item matched and should be added directly, None otherwise.
         """
         if parsed.needs_category_clarification:
             return self.menu_inquiry_handler.handle_category_clarification(

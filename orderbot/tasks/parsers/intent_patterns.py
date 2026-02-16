@@ -430,6 +430,48 @@ def parse_can_you_make_it(text: str) -> str | None:
     return None
 
 
+# "make the [ITEM] (a) [MODIFIER]" pattern for modifying a specific named item
+# e.g., "make the fruit salad a large", "can you make the fruit salad a large?"
+# "change the fruit salad to a large", "upgrade the bagel to plain"
+# Captures two groups: (item_name, modifier)
+MAKE_NAMED_ITEM_PATTERN = re.compile(
+    r"^(?:"
+    # "make the [ITEM] (a) [MOD]"
+    r"(?:can|could)\s+you\s+make\s+the\s+(.+?)\s+(?:a\s+)?(\w+)"
+    r"|"
+    r"make\s+the\s+(.+?)\s+(?:a\s+)?(\w+)"
+    r"|"
+    # "change/upgrade the [ITEM] to (a) [MOD]"
+    r"(?:change|upgrade|switch)\s+the\s+(.+?)\s+to\s+(?:a\s+)?(\w+)"
+    r")"
+    r"[\s?!.,]*$",
+    re.IGNORECASE
+)
+
+
+def parse_make_named_item(text: str) -> tuple[str, str] | None:
+    """Parse 'make the [item] a [modifier]' style requests.
+
+    Args:
+        text: User input text.
+
+    Returns:
+        Tuple of (item_name, modifier) if matched, None otherwise.
+    """
+    match = MAKE_NAMED_ITEM_PATTERN.match(text.strip())
+    if not match:
+        return None
+    groups = match.groups()
+    # Groups come in pairs: (item1, mod1, item2, mod2, item3, mod3)
+    for i in range(0, len(groups), 2):
+        if groups[i] is not None and groups[i + 1] is not None:
+            item_name = groups[i].strip().rstrip('?.,!')
+            modifier = groups[i + 1].strip().rstrip('?.,!')
+            if item_name and modifier:
+                return (item_name, modifier)
+    return None
+
+
 # =============================================================================
 # Order/Tax Status Patterns
 # =============================================================================

@@ -374,6 +374,15 @@ class ConfiguringItemHandler:
                 return result
             # If couldn't apply, fall through to normal processing
 
+        # Check for modifications targeting a bundled child item by name
+        # e.g., "make the fruit salad a large" while configuring parent omelette
+        if not is_valid_answer and isinstance(item, MenuItemTask):
+            bundle_mod_result = self.config_modification_handler.handle_modify_bundle_child(
+                user_input, item, order
+            )
+            if bundle_mod_result:
+                return bundle_mod_result
+
         # Check for "can you make it X?" style requests (e.g., "can you make it iced?")
         # This handles users asking to modify an aspect of the item being configured
         # Skip at customization_checkpoint - let the checkpoint handler use direct_option_matcher

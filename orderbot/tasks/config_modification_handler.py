@@ -14,6 +14,7 @@ from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.intent_patterns import (
     parse_can_you_make_it,
+    parse_make_named_item,
     strip_conversational_fillers,
     strip_leading_fillers,
 )
@@ -201,6 +202,156 @@ class ConfigModificationHandler:
             message="Sorry, we don't have that option.",
             order=order,
         )
+
+    def handle_modify_bundle_child(
+        self,
+        user_input: str,
+        parent_item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle modifications targeting a bundled child item by name.
+
+        When the user says "make the fruit salad a large" while configuring
+        the parent omelette, this finds the fruit salad child item and
+        applies the "large" modifier to it.
+
+        Args:
+            user_input: The user's input text.
+            parent_item: The parent item currently being configured.
+            order: The current order state.
+
+        Returns:
+            StateMachineResult if handled, None if not a named-item modification
+            or no matching bundle child found.
+        """
+        parsed = parse_make_named_item(user_input)
+        if not parsed:
+            return None
+
+        item_name, modifier = parsed
+        logger.info(
+            "BUNDLE_CHILD_MOD: Detected named item modification: item='%s', modifier='%s'",
+            item_name, modifier,
+        )
+
+        # Search for a bundled child matching the item name
+        child = self._find_bundle_child_by_name(item_name, parent_item, order)
+        if not child:
+            logger.debug(
+                "BUNDLE_CHILD_MOD: No bundle child matching '%s' found", item_name,
+            )
+            return None
+
+        logger.info(
+            "BUNDLE_CHILD_MOD: Found bundle child '%s' (id=%s), applying modifier '%s'",
+            child.menu_item_name, child.id[:8], modifier,
+        )
+
+        # Try to apply the modifier as an attribute option on the child item
+        modifier_lower = modifier.lower()
+        applied_name = self._apply_attribute_option_to_item(modifier_lower, child)
+        if applied_name:
+            # Recalculate price on the child after the attribute change
+            pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+            safe_recalculate_price(pricing, child, "after bundle child attribute change")
+            # Continue config for the PARENT item (not the child)
+            return self._continue_config_with_message(
+                f"Sure, {applied_name}.", parent_item, order
+            )
+
+        logger.debug(
+            "BUNDLE_CHILD_MOD: Modifier '%s' did not match any attribute on child '%s'",
+            modifier, child.menu_item_name,
+        )
+        return None
+
+    def _apply_attribute_option_to_item(
+        self,
+        modifier_lower: str,
+        item: MenuItemTask,
+    ) -> str | None:
+        """Try to match and apply an attribute option to an item without continuing config.
+
+        Unlike _try_match_attribute_option, this only applies the change and returns
+        the matched option display name. Does not build a StateMachineResult.
+
+        Args:
+            modifier_lower: The modifier text, lowercased.
+            item: The item to apply the option to.
+
+        Returns:
+            The display name of the matched option if applied, None if no match.
+        """
+        item_type = item.menu_item_type
+        if not item_type:
+            return None
+        try:
+            attrs = menu_cache.get_item_type_attributes(item_type)
+
+            # Pass 1: Exact matching on slug, display_name, and aliases
+            for attr_slug, attr_config in attrs.items():
+                options = attr_config.get("options", [])
+                for opt in options:
+                    opt_slug = opt.get("slug", "").lower()
+                    opt_display = opt.get("display_name", "").lower()
+                    aliases = opt.get("aliases") or []
+                    alias_list = [a.strip().lower() for a in aliases] if aliases else []
+                    if modifier_lower == opt_slug or modifier_lower == opt_display or modifier_lower in alias_list:
+                        item[attr_slug] = opt.get("slug")
+                        return opt.get("display_name") or opt.get("slug", "").replace("_", " ").title()
+
+            # Pass 2: Partial matching via OptionMatcher
+            matcher = OptionMatcher()
+            for attr_slug, attr_config in attrs.items():
+                options = attr_config.get("options", [])
+                if not options:
+                    continue
+                matched, _ = matcher.match_single(modifier_lower, options)
+                if matched:
+                    item[attr_slug] = matched.get("slug")
+                    return matched.get("display_name") or matched.get("slug", "").replace("_", " ").title()
+        except Exception as e:
+            logger.debug("Error matching attribute option: %s", e)
+        return None
+
+    def _find_bundle_child_by_name(
+        self,
+        item_name: str,
+        parent_item: MenuItemTask,
+        order: OrderTask,
+    ) -> MenuItemTask | None:
+        """Find a bundled child item matching the given name.
+
+        Searches children of the parent item for a case-insensitive
+        partial match on menu_item_name or menu_item_type.
+
+        Args:
+            item_name: The item name to search for (e.g., "fruit salad").
+            parent_item: The parent bundle item.
+            order: The current order state.
+
+        Returns:
+            The matching MenuItemTask child, or None.
+        """
+        if not parent_item.bundle_id:
+            return None
+
+        children = order.items.get_bundle_children(parent_item.id)
+        if not children:
+            return None
+
+        name_lower = item_name.lower()
+        for child in children:
+            child_name = (child.menu_item_name or "").lower()
+            child_type = (child.menu_item_type or "").lower()
+            # Exact or substring match on name or type
+            if (name_lower in child_name
+                    or child_name in name_lower
+                    or name_lower == child_type
+                    or name_lower in child_type):
+                return child
+
+        return None
 
     def _try_match_attribute_option(
         self,

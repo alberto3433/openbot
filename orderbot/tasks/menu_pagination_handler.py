@@ -112,16 +112,16 @@ class MenuPaginationHandler(MenuDataMixin):
         category = pagination.get("category")
         offset = pagination.get("offset", 0)
 
-        # Try to get menu items for this category
-        items, lookup_type = self._get_items_for_category(category)
+        # Check modifier categories FIRST (more specific than display groups)
+        # A category like "spread" can match both a modifier category and a display group;
+        # if pagination was set by a modifier inquiry, we want modifier items, not display group items
+        modifier_categories = menu_cache.get_modifier_categories_for_inquiry()
+        if category in modifier_categories:
+            get_items = lambda: menu_cache.get_modifier_category_items(category)
+            return self._handle_more_modifier_items(category, get_items, offset, order)
 
-        # If no menu items found, check if this is a modifier category
-        if not items:
-            modifier_categories = menu_cache.get_modifier_categories_for_inquiry()
-            if category in modifier_categories:
-                # Use generic data-driven getter for modifier items
-                get_items = lambda: menu_cache.get_modifier_category_items(category)
-                return self._handle_more_modifier_items(category, get_items, offset, order)
+        # Try to get menu items for this category (display groups, item types, etc.)
+        items, lookup_type = self._get_items_for_category(category)
 
         if not items or offset >= len(items):
             # No more items to show

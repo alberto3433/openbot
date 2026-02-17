@@ -670,22 +670,16 @@ class SelectInputHandler:
                     other_option_positions=other_positions,
                 )
 
-                # Only extract numeric quantity if category supports it (has quantity_unit)
-                mod_category = opt.get("ingredient_category") or attr_slug
-                quantity_unit = menu_cache.get_ingredient_category_quantity_unit(mod_category)
-
-                opt_quantity = 1
-                if quantity_unit:
-                    # Extract quantity specific to this option
-                    opt_quantity = extract_quantity_for_pattern(user_lower, opt["display_name"].lower())
-                    if opt_quantity == 1:
-                        opt_quantity = extract_quantity_for_pattern(user_lower, opt["slug"].replace("_", " "))
-                    if opt_quantity == 1 and opt.get("aliases"):
-                        for alias in opt["aliases"]:
-                            alias_qty = extract_quantity_for_pattern(user_lower, alias.lower())
-                            if alias_qty > 1:
-                                opt_quantity = alias_qty
-                                break
+                # Extract quantity specific to this option (e.g., "2 shots", "two splendas")
+                opt_quantity = extract_quantity_for_pattern(user_lower, opt["display_name"].lower())
+                if opt_quantity == 1:
+                    opt_quantity = extract_quantity_for_pattern(user_lower, opt["slug"].replace("_", " "))
+                if opt_quantity == 1 and opt.get("aliases"):
+                    for alias in opt["aliases"]:
+                        alias_qty = extract_quantity_for_pattern(user_lower, alias.lower())
+                        if alias_qty > 1:
+                            opt_quantity = alias_qty
+                            break
 
                 # Cap per-modifier quantity
                 requested_quantity = opt_quantity
@@ -883,6 +877,12 @@ class SelectInputHandler:
         """Apply a single matched option to the item."""
         # Extract qualifier for single match
         qualifier = self._extract_qualifier(user_input, matched["display_name"])
+
+        # Extract quantity specific to matched option (e.g., "yes 2 shots" → qty=2)
+        # This catches cases where leading quantity extraction failed due to prefix words
+        pattern_qty = extract_quantity_for_pattern(user_input, matched["slug"].replace("_", " "))
+        if pattern_qty > quantity:
+            quantity = pattern_qty
         sel_price = matched.get("price") or matched.get("price_modifier") or 0
 
         # Determine the price for this option
@@ -1086,22 +1086,26 @@ class SelectInputHandler:
 
             # If there's exactly ONE option, auto-select it
             # This handles "Would you like an espresso shot?" -> "yes" -> add 1 shot
+            # Also handles "yes 2 shots" -> add 2 shots
             if len(available_opts) == 1:
                 single_opt = available_opts[0]
                 opt_price = self._resolve_option_price(single_opt, item.menu_item_type)
                 display_name = single_opt.get("display_name", single_opt["slug"])
 
+                # Extract quantity from input (e.g., "yes 2 shots" → qty=2)
+                qty = extract_quantity_for_pattern(user_input, single_opt["slug"])
+
                 item.add_selection(
                     single_opt["slug"],
                     attr_slug,
-                    quantity=1,
+                    quantity=qty,
                     price=opt_price,
                     display_name=display_name,
                 )
 
                 logger.info(
-                    "AFFIRMATIVE_SINGLE_OPTION: auto-selected %s=%s for 'yes' response",
-                    attr_slug, single_opt["slug"]
+                    "AFFIRMATIVE_SINGLE_OPTION: auto-selected %s=%s qty=%d for 'yes' response",
+                    attr_slug, single_opt["slug"], qty
                 )
 
                 return advance_callback(item, order, attr, display_name)

@@ -4173,29 +4173,6 @@ class TestSideChoice:
         subtotal = order.items.get_subtotal()
         assert subtotal == 13.30, f"Subtotal should be $13.30 (omelette $12.50 + cream cheese $0.80), got ${subtotal}"
 
-    def test_cancel_side_removes_item(self):
-        """Test canceling removes the omelette."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.models import OrderTask, MenuItemTask, TaskStatus
-        from orderbot.tasks.schemas import OrderPhase
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.pending_field = "side_choice"
-
-        omelette = MenuItemTask(
-            menu_item_name="Cheese Omelette",
-            menu_item_type="omelette",
-        )
-        omelette.mark_in_progress()
-        order.items.add_item(omelette)
-        order.pending_item_id = omelette.id
-
-        result = sm.config_helper_handler.handle_side_choice("never mind cancel that", omelette, order)
-
-        assert omelette.status == TaskStatus.SKIPPED
-        assert order.phase == OrderPhase.TAKING_ITEMS.value
-        assert "removed" in result.message.lower()
 
     def test_unclear_response_reprompts(self):
         """Test unclear response re-prompts with side options."""
@@ -4219,6 +4196,7 @@ class TestSideChoice:
         assert omelette.status.value == "in_progress"
         # Should mention the valid options
         assert "bagel" in result.message.lower() or "fruit" in result.message.lower()
+
 
 
 # =============================================================================

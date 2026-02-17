@@ -22,6 +22,7 @@ from .parsers.intent_patterns import (
     ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN, MAKE_IT_N_CONFIG_PATTERN,
     DONE_ORDERING_DURING_CONFIG_PATTERN,
 )
+from .parsers.inquiry_patterns import MORE_MENU_ITEMS_PATTERNS
 from .parsers.quantity_utils import parse_make_it_n_quantity, extract_leading_quantity
 from .checkout_messages import ErrorMessages
 from .config_input_validation import (
@@ -501,18 +502,33 @@ class ConfiguringItemHandler:
                 msg = f"Let's finish with your {item_name} first."
             return StateMachineResult(message=msg, order=order)
 
+        # Check for "show more" pagination requests (e.g., "what else?" after modifier inquiry)
+        # Route to the menu pagination handler if we have active pagination state
+        if (order.get_menu_pagination()
+            and self._taking_items_handler
+            and self._taking_items_handler.menu_inquiry_handler
+            and any(p.search(user_input) for p in MORE_MENU_ITEMS_PATTERNS)):
+            logger.info("PAGINATION during config: routing 'show more' to menu inquiry handler")
+            return self._taking_items_handler.menu_inquiry_handler.handle_more_menu_items(order)
+
         # Check for modifier inquiries like "what toppings do you have?" that passed the off-topic check
         # Route to store_info_handler for proper pagination support
         # EXCEPT at customization_checkpoint
         modifier_category = detect_modifier_inquiry(user_input)
         pending_is_attr_config = order.pending_field and ":" in order.pending_field
 
-        # During attr config, only route if it's a known modifier category
-        # (prevents "what shots do you have?" from bypassing config options display)
+        # During attr config, only route to modifier inquiry if it's a known modifier
+        # category AND it's NOT the currently pending attribute (so the config handler
+        # can show its own attribute options with proper pagination)
         if pending_is_attr_config and modifier_category:
-            resolved = menu_cache.get_modifier_category_by_alias(modifier_category)
-            if not resolved:
+            _, pending_attr_slug = parse_pending_field(order.pending_field)
+            if modifier_category == pending_attr_slug:
+                # Matches current attribute - let config handler show attribute options
                 modifier_category = None
+            else:
+                resolved = menu_cache.get_modifier_category_by_alias(modifier_category)
+                if not resolved:
+                    modifier_category = None
 
         if (modifier_category
             and self._taking_items_handler

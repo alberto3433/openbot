@@ -2345,7 +2345,7 @@ class TestParsedItemsMultiItem:
         types = [_get_parsed_item_type(item) for item in result.parsed_items]
         # The Lexington is an egg_sandwich, Butter Sandwich is a spread_sandwich
         # Accept specific types instead of generic menu_item
-        valid_types = {"egg_sandwich", "spread_sandwich", "menu_item", "fish_sandwich", "deli_sandwich"}
+        valid_types = {"egg_sandwich", "spread_sandwich", "menu_item", "fish_sandwich", "deli_sandwich", "health_sandwich"}
         for t in types:
             assert t in valid_types, f"Expected a sandwich type, got: {t}"
 

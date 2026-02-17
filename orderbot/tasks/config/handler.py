@@ -578,21 +578,32 @@ class MenuItemConfigHandler(BaseHandler):
             qr.append({"label": "Yes", "value": "yes"})
             qr.append({"label": "No", "value": "no"})
 
+        # For select attributes where no QR label matches the question text,
+        # linkify the attribute display name itself so users can click to see options
+        # (e.g., "spread" in "Any spread on that?" → "what kind of spread do you have?")
+        if qr and input_type in ("single_select", "multi_select"):
+            base_lower = base_question.lower()
+            has_match = any(e["label"].lower() in base_lower for e in qr)
+            if not has_match:
+                display = attr.get("display_name") or attr["slug"]
+                if display.lower() in base_lower:
+                    qr = [{"label": display, "value": f"What kind of {display} do you have?"}]
+
         # Source 2: Component slot options (e.g., side_choice → side slot)
-        # Only used when the attribute has no options of its own (slot-backed attributes).
-        # Adding them unconditionally would pollute unrelated questions (e.g., "What cheese?"
-        # would show side options like "Fruit Salad" which also appear in the ingredient listing).
-        if not qr:
-            slots = menu_cache.get_component_slots(item.menu_item_type)
-            for _slot_name, slot_config in slots.items():
-                for o in slot_config.get("options", []):
-                    label = o.get("display_name")
-                    if not label and o.get("allowed_item_type"):
-                        label = menu_cache.get_item_type_display_name(o["allowed_item_type"])
-                    if not label:
-                        label = o.get("allowed_item_type", "")
-                    if label:
-                        qr.append({"label": label, "value": label})
+        # Always merge slot options so both attribute options AND slot display names
+        # are clickable. Quick replies are inline-only (frontend only highlights text
+        # that appears in the message), so extra labels are harmless — they simply
+        # won't be highlighted. Deduplication below removes any duplicates.
+        slots = menu_cache.get_component_slots(item.menu_item_type)
+        for _slot_name, slot_config in slots.items():
+            for o in slot_config.get("options", []):
+                label = o.get("display_name")
+                if not label and o.get("allowed_item_type"):
+                    label = menu_cache.get_item_type_display_name(o["allowed_item_type"])
+                if not label:
+                    label = o.get("allowed_item_type", "")
+                if label:
+                    qr.append({"label": label, "value": label})
 
         # Deduplicate by label (case-insensitive), preserving order
         seen: set[str] = set()

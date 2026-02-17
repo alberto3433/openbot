@@ -12,9 +12,8 @@ import logging
 from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending_field
-from .pending_fields import PendingField
 from .schemas import OrderPhase, StateMachineResult
-from .utils.text import format_english_list, format_numbered_list
+from .utils.text import format_english_list
 from .checkout_messages import got_it_anything_else, CheckoutMessages
 from ..cache import menu_cache
 
@@ -24,6 +23,11 @@ if TYPE_CHECKING:
     from .context import OrderContext
 
 logger = logging.getLogger(__name__)
+
+_PICKUP_DELIVERY_QR = [
+    {"label": "Pickup", "value": "Pickup"},
+    {"label": "Delivery", "value": "Delivery"},
+]
 
 
 class CheckoutUtilsHandler:
@@ -146,24 +150,10 @@ class CheckoutUtilsHandler:
                 break
 
             item_id = next_config.get("item_id")
-            item_type = next_config.get("item_type")
             item_name = next_config.get("item_name")
             pending_field = next_config.get("pending_field")
-            logger.info("Processing queued config item: id=%s, type=%s, name=%s, field=%s",
-                        item_id[:8] if item_id else None, item_type, item_name, pending_field)
-
-            # Handle item disambiguation (when a keyword matched multiple menu items)
-            if item_type == "item_disambiguation" and order.pending_item_options:
-                logger.info("Processing queued item disambiguation")
-                order.pending_field = PendingField.ITEM_SELECTION
-                order.set_phase(OrderPhase.CONFIGURING_ITEM)
-                options_str = format_numbered_list(order.pending_item_options)
-                qr = [{"label": o.get("name", ""), "value": o.get("name", "")} for o in order.pending_item_options if o.get("name")]
-                return StateMachineResult(
-                    message=f"We have a few options:\n{options_str}\nWhich would you like?",
-                    order=order,
-                    quick_replies=qr,
-                )
+            logger.info("Processing queued config item: id=%s, name=%s, field=%s",
+                        item_id[:8] if item_id else None, item_name, pending_field)
 
             # Find the target item and check if it still needs configuration
             target_item = None
@@ -301,12 +291,14 @@ class CheckoutUtilsHandler:
                 return StateMachineResult(
                     message=self.get_delivery_question(),
                     order=order,
+                    quick_replies=_PICKUP_DELIVERY_QR,
                 )
         else:
             # Default: ask for delivery method
             return StateMachineResult(
                 message=self.get_delivery_question(),
                 order=order,
+                quick_replies=_PICKUP_DELIVERY_QR,
             )
 
     def get_delivery_question(self) -> str:

@@ -229,8 +229,8 @@ class TestGlutenFreeSpeedMenuE2E:
         # User orders BEC
         result = sm.process("I want a classic BEC", order)
 
-        # Find the speed menu item (now MenuItemTask with is_signature=True)
-        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
+        # Find the speed menu item (MenuItemTask with default ingredients)
+        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and i.has_default_ingredients()]
         assert len(speed_items) == 1, f"Should have 1 speed menu item, got {len(speed_items)}"
 
         # Answer cheese question if asked
@@ -246,7 +246,7 @@ class TestGlutenFreeSpeedMenuE2E:
             result = sm.process("yes", result.order)
 
         # Verify gluten free upcharge applied
-        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
+        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and i.has_default_ingredients()]
         assert len(speed_items) == 1
 
         item = speed_items[0]
@@ -278,7 +278,7 @@ class TestGlutenFreeSpeedMenuE2E:
             result = sm.process("yes", result.order)
 
         # Verify no upcharge for plain bagel
-        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
+        speed_items = [i for i in result.order.items.items if isinstance(i, MenuItemTask) and i.has_default_ingredients()]
         assert len(speed_items) == 1
 
         item = speed_items[0]
@@ -291,11 +291,10 @@ class TestGlutenFreeSpeedMenuE2E:
         """
         order = OrderTask()
 
-        # Create a completed speed menu item with gluten free (now MenuItemTask with is_signature=True)
+        # Create a completed speed menu item with gluten free
         item = MenuItemTask(
             menu_item_name="The Classic BEC",
             menu_item_id=123,  # Integer ID
-            is_signature=True,
             unit_price=10.80,  # $10.00 base + $0.80 gluten free
         )
         # Set attributes via selections API (Pydantic doesn't call property setters during __init__)

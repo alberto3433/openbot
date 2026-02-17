@@ -6,7 +6,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 """
 
 import logging
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from orderbot.cache.base import pluralize
@@ -37,27 +37,15 @@ class QuantityInputHandler:
 
     def __init__(
         self,
-        ctx: "ConfigHandlerContext | None" = None,
-        # Legacy parameter for backward compatibility (deprecated)
-        advance_callback: Callable[
-            [MenuItemTask, OrderTask, dict, str | None], StateMachineResult
-        ] | None = None,
+        ctx: "ConfigHandlerContext",
     ):
         """
         Initialize the quantity input handler.
 
         Args:
-            ctx: ConfigHandlerContext with shared dependencies. If provided,
-                 individual callback parameters are ignored.
-
-        Deprecated args (use ctx instead):
-            advance_callback: Callback to advance to next question after handling input.
+            ctx: ConfigHandlerContext with shared dependencies.
         """
-        if ctx is not None:
-            self._advance_to_next_question = ctx.advance_to_next_question
-        else:
-            # Legacy: individual parameter
-            self._advance_to_next_question = advance_callback
+        self._advance_to_next_question = ctx.advance_to_next_question
 
     def handle_quantity_input(
         self,

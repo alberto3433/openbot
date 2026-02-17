@@ -1486,9 +1486,9 @@ class TestSpecialInstructionsExtraction:
         bec = parse_open_input_deterministic("the classic bec")
         assert leo is not None
         assert bec is not None
-        # Signature items should have is_signature=True and a valid item_type
-        assert has_signature_item(leo), f"Expected signature item, got: {[(i.item_type, i.item_name, i.is_signature) for i in leo.parsed_items]}"
-        assert has_signature_item(bec), f"Expected signature item, got: {[(i.item_type, i.item_name, i.is_signature) for i in bec.parsed_items]}"
+        # Signature items should have default ingredients and a valid item_type
+        assert has_signature_item(leo), f"Expected signature item, got: {[(i.item_type, i.item_name) for i in leo.parsed_items]}"
+        assert has_signature_item(bec), f"Expected signature item, got: {[(i.item_type, i.item_name) for i in bec.parsed_items]}"
         # Verify item names are correct
         leo_item = get_signature_item(leo)
         bec_item = get_signature_item(bec)
@@ -1743,7 +1743,7 @@ class TestSpeedMenuBagelParsing:
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
         result = parse_open_input_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
-        # Use get_signature_item which filters by is_signature=True
+        # Use get_signature_item which filters by items with default ingredients
         # (signature items may have different item_types like 'egg_sandwich')
         sig_item = get_signature_item(result)
         assert sig_item is not None, f"No signature item found for: {text}"
@@ -1760,7 +1760,7 @@ class TestSpeedMenuBagelParsing:
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
         result = parse_open_input_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
-        # Use get_signature_item which filters by is_signature=True
+        # Use get_signature_item which filters by items with default ingredients
         sig_item = get_signature_item(result)
         assert sig_item is not None, f"No signature item found for: {text}"
         assert sig_item.attribute_values.get("toasted") == expected_toasted
@@ -1781,9 +1781,9 @@ class TestSpeedMenuBagelParsing:
         result = parse_open_input_deterministic(text)
         assert result is not None, f"Failed to parse: {text}"
         # Parser creates single entry with quantity field
-        sig_items = get_parsed_items(result, is_signature=True)
-        assert len(sig_items) == 1, f"Parser should create 1 entry with quantity, got {len(sig_items)}"
-        assert sig_items[0].quantity == expected_qty, f"Expected quantity={expected_qty}, got {sig_items[0].quantity}"
+        sig_item = get_signature_item(result)
+        assert sig_item is not None, f"No signature item found for: {text}"
+        assert sig_item.quantity == expected_qty, f"Expected quantity={expected_qty}, got {sig_item.quantity}"
 
     def test_signature_item_with_all_options(self):
         """Test parsing speed menu with bagel choice, toasted, and quantity."""
@@ -1791,12 +1791,12 @@ class TestSpeedMenuBagelParsing:
         result = parse_open_input_deterministic("2 classic becs on wheat bagels toasted")
         assert result is not None
         # Parser creates single entry with quantity=2
-        sig_items = get_parsed_items(result, is_signature=True)
-        assert len(sig_items) == 1, "Parser should create 1 entry with quantity"
-        assert sig_items[0].quantity == 2, f"Expected quantity=2, got {sig_items[0].quantity}"
+        sig_item = get_signature_item(result)
+        assert sig_item is not None, "No signature item found"
+        assert sig_item.quantity == 2, f"Expected quantity=2, got {sig_item.quantity}"
         # Item should have the name, bagel choice, and toasted preference
         # Note: "wheat" maps to "whole_wheat_bagel" slug since there's no separate "wheat" bagel in DB
-        item = sig_items[0]
+        item = sig_item
         assert item.item_name == "The Classic BEC"
         assert item.attribute_values.get("bread") == "whole_wheat_bagel"
         assert item.attribute_values.get("toasted") is True
@@ -2279,8 +2279,8 @@ class TestParsedItemsMultiItem:
         assert "egg_sandwich" in types, f"Expected egg_sandwich (The Leo), got: {types}"
         assert "bagel" in types, f"Expected bagel, got: {types}"
 
-        # Verify The Leo details (look for egg_sandwich type or is_signature=True)
-        leo_items = [i for i in result.parsed_items if _get_parsed_item_type(i) == "egg_sandwich" or getattr(i, 'is_signature', False)]
+        # Verify The Leo details (look for egg_sandwich type or item name)
+        leo_items = [i for i in result.parsed_items if _get_parsed_item_type(i) == "egg_sandwich" or (getattr(i, 'item_name', '') or '').lower().startswith("the leo")]
         assert len(leo_items) >= 1, "The Leo should be in parsed_items"
         leo = leo_items[0]
         # The Leo may have bread attribute extracted

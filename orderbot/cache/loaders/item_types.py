@@ -27,6 +27,7 @@ class ItemTypeLoaderMixin:
         # Add linked ingredient aliases (if any)
         must_match = None
         ingredient_category = None
+        ingredient_subcategory = None
         if opt.ingredient:
             if opt.ingredient.aliases:
                 for ing_alias in opt.ingredient.aliases:
@@ -34,6 +35,7 @@ class ItemTypeLoaderMixin:
                         aliases.append(ing_alias)
             must_match = opt.ingredient.must_match
             ingredient_category = opt.ingredient.category
+            ingredient_subcategory = opt.ingredient.subcategory
 
         # Derive slug/display_name from ingredient when linked
         slug = opt.ingredient.slug if opt.ingredient else opt.slug
@@ -61,6 +63,7 @@ class ItemTypeLoaderMixin:
             "aliases": aliases,
             "must_match": must_match,
             "ingredient_category": ingredient_category,
+            "ingredient_subcategory": ingredient_subcategory,
             "forward_to_attribute": forward_to_attribute,
         }
 
@@ -286,6 +289,20 @@ class ItemTypeLoaderMixin:
                     base["price_modifier"] = float(base["price_modifier"] or 0)
                     options.append(base)
 
+                # Filter options by subcategory if configured on the link
+                subcategory_filter = getattr(link, 'option_subcategory_filter', None)
+                if subcategory_filter:
+                    options = [
+                        o for o in options
+                        if o.get("ingredient_subcategory") == subcategory_filter
+                    ]
+
+                # Override question_text when subcategory filter narrows the options
+                question_text = attr.question_text
+                if subcategory_filter:
+                    subcategory_display = subcategory_filter.replace("_", " ")
+                    question_text = f"What kind of {subcategory_display}?"
+
                 result[attr.slug] = {
                     "slug": attr.slug,
                     "display_name": attr.display_name,
@@ -295,10 +312,11 @@ class ItemTypeLoaderMixin:
                     "ask_in_conversation": link.ask_in_conversation,
                     "listen_only": link.listen_only,
                     "display_order": link.display_order,
-                    "question_text": attr.question_text,
+                    "question_text": question_text,
                     "offer_question_text": attr.offer_question_text,
                     "options": options,
                     "source": "global",
+                    "option_subcategory_filter": subcategory_filter,
                     "modifies_ingredient_slug": attr.modifies_ingredient.slug if attr.modifies_ingredient else None,
                 }
                 field_to_slug_map[attr.slug] = attr.slug

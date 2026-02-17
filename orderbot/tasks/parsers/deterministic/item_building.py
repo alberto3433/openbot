@@ -22,7 +22,6 @@ def build_parsed_item(
     quantity: int = 1,
     selections: list[Selection] | None = None,
     original_text: str | None = None,
-    is_signature: bool = False,
     weight_unit: str | None = None,
     special_instructions: list[str] | None = None,
     attribute_values: dict | None = None,
@@ -44,7 +43,6 @@ def build_parsed_item(
         quantity: Number of items
         selections: List of Selection objects (preferred)
         original_text: Original user input (for disambiguation context)
-        is_signature: Whether this is a signature/speed menu item
         weight_unit: For by-pound items (e.g., "1/4 lb")
         special_instructions: List of special instruction strings (e.g., "room for cream")
         attribute_values: Dict of attribute slug -> value (converted to selections).
@@ -149,7 +147,6 @@ def build_parsed_item(
         quantity=quantity,
         selections=final_selections,
         original_text=original_text,
-        is_signature=is_signature,
         weight_unit=weight_unit,
         unavailable_selections=unavailable_selections,
         unmatched_selections=unmatched_selections,

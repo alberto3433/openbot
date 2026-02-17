@@ -8,7 +8,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 """
 
 import logging
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from ..schemas import StateMachineResult
@@ -41,37 +41,18 @@ class ConfigDisambiguationHandler:
 
     def __init__(
         self,
-        ctx: "ConfigHandlerContext | None" = None,
-        # Legacy parameters for backward compatibility (deprecated)
-        get_item_type_attributes: Callable[[str], dict] | None = None,
-        format_display_list: Callable[[list[dict]], str] | None = None,
-        extract_qualifier_for_option: Callable[[str, str], str | None] | None = None,
-        advance_to_next_question: Callable[["MenuItemTask", "OrderTask", dict, str], StateMachineResult] | None = None,
-        get_next_question: Callable[["OrderTask"], StateMachineResult] | None = None,
+        ctx: "ConfigHandlerContext",
     ) -> None:
         """Initialize the disambiguation handler.
 
         Args:
-            ctx: ConfigHandlerContext with shared dependencies. If provided,
-                 individual callback parameters are ignored.
-
-        Deprecated args (use ctx instead):
-            get_item_type_attributes, format_display_list, extract_qualifier_for_option,
-            advance_to_next_question, get_next_question
+            ctx: ConfigHandlerContext with shared dependencies.
         """
-        if ctx is not None:
-            self._get_item_type_attributes = ctx.get_item_type_attributes
-            self._format_display_list = ctx.format_display_list
-            self._extract_qualifier_for_option = ctx.extract_qualifier_for_option
-            self._advance_to_next_question = ctx.advance_to_next_question
-            self._get_next_question = ctx.get_next_question
-        else:
-            # Legacy: individual parameters
-            self._get_item_type_attributes = get_item_type_attributes
-            self._format_display_list = format_display_list
-            self._extract_qualifier_for_option = extract_qualifier_for_option
-            self._advance_to_next_question = advance_to_next_question
-            self._get_next_question = get_next_question
+        self._get_item_type_attributes = ctx.get_item_type_attributes
+        self._format_display_list = ctx.format_display_list
+        self._extract_qualifier_for_option = ctx.extract_qualifier_for_option
+        self._advance_to_next_question = ctx.advance_to_next_question
+        self._get_next_question = ctx.get_next_question
 
     @staticmethod
     def _is_show_more_request(user_input: str) -> bool:
@@ -140,10 +121,10 @@ class ConfigDisambiguationHandler:
         ):
             return None
 
-        options = disambiguation.get("options", [])
-        attr_slug = disambiguation.get("attr_slug")
-        stored_modifiers = disambiguation.get("modifiers", {})
-        item_id = disambiguation.get("item_id")
+        options = disambiguation.options
+        attr_slug = disambiguation.attr_slug
+        stored_modifiers = disambiguation.modifiers
+        item_id = disambiguation.item_id
 
         # Find the item being configured
         item = order.items.get_item_by_id(item_id) if item_id else None

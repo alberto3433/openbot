@@ -601,20 +601,25 @@
             <div class="hint">Display name for the ingredient</div>
           </div>
           <div class="field">
-            <label for="ingredientCategory">Category *</label>
-            <select id="ingredientCategory">
-              <!-- Populated dynamically from API -->
+            <label for="ingredientSubcategory">Subcategory *</label>
+            <select id="ingredientSubcategory">
+              <!-- Populated dynamically with optgroups per category -->
             </select>
-            <div class="hint">Type of ingredient for grouping</div>
+            <div class="hint">Category is derived automatically from the subcategory</div>
           </div>
         </div>
 
-        <div class="field">
-          <label for="ingredientUnit">Unit</label>
-          <select id="ingredientUnit">
-            <!-- Populated dynamically from API -->
-          </select>
-          <div class="hint">Unit of measurement</div>
+        <div class="field-row">
+          <div class="field">
+            <label for="ingredientUnit">Unit</label>
+            <select id="ingredientUnit">
+              <!-- Populated dynamically from API -->
+            </select>
+            <div class="hint">Unit of measurement</div>
+          </div>
+          <div class="field" style="visibility: hidden;">
+            <!-- Spacer to keep grid alignment -->
+          </div>
         </div>
 
         <div class="field">
@@ -1036,28 +1041,56 @@
       }
     }
 
-    // Load ingredient categories for dropdown
-    async function loadCategories() {
-      const categorySelect = document.getElementById("ingredientCategory");
+    // Load all subcategories into the dropdown, grouped by category via <optgroup>
+    async function loadAllSubcategories() {
+      const subcatSelect = document.getElementById("ingredientSubcategory");
       try {
-        const resp = await authFetch("/api/v1/admin/ingredient-categories");
-        if (!resp.ok) {
-          const errorText = await resp.text();
-          throw new Error(`HTTP ${resp.status}: ${errorText}`);
+        // Fetch categories (for display names) and all subcategories in parallel
+        const [catResp, subcatResp] = await Promise.all([
+          authFetch("/api/v1/admin/ingredient-categories"),
+          authFetch("/api/v1/admin/ingredient-subcategories"),
+        ]);
+        if (!catResp.ok || !subcatResp.ok) {
+          throw new Error("Failed to load categories or subcategories");
         }
-        const data = await resp.json();
-        const categories = data.categories || data;
-        console.log("Loaded categories:", categories);
-        categorySelect.innerHTML = "";
-        categories.forEach(cat => {
-          const opt = document.createElement("option");
-          opt.value = cat.slug;
-          opt.textContent = cat.display_name;
-          categorySelect.appendChild(opt);
+        const catData = await catResp.json();
+        const subcatData = await subcatResp.json();
+        const categories = catData.categories || catData;
+        const subcategories = subcatData.subcategories || [];
+
+        // Build a map of category_slug -> display_name
+        const catDisplayNames = {};
+        categories.forEach(cat => { catDisplayNames[cat.slug] = cat.display_name; });
+
+        // Group subcategories by category_slug
+        const grouped = {};
+        subcategories.forEach(sub => {
+          if (!grouped[sub.category_slug]) grouped[sub.category_slug] = [];
+          grouped[sub.category_slug].push(sub);
         });
+
+        // Build optgroup dropdown
+        subcatSelect.innerHTML = "";
+        // Sort category slugs by their display_order (use categories array order)
+        const catOrder = categories.map(c => c.slug);
+        catOrder.forEach(catSlug => {
+          const subs = grouped[catSlug];
+          if (!subs || subs.length === 0) return;
+          const optgroup = document.createElement("optgroup");
+          optgroup.label = catDisplayNames[catSlug] || catSlug;
+          subs.forEach(sub => {
+            const opt = document.createElement("option");
+            opt.value = sub.slug;
+            opt.textContent = sub.display_name;
+            optgroup.appendChild(opt);
+          });
+          subcatSelect.appendChild(optgroup);
+        });
+
+        console.log("Loaded subcategories with optgroups:", subcategories.length);
       } catch (err) {
-        console.error("Failed to load categories:", err);
-        showToast(`Failed to load categories: ${err.message}`, "error");
+        console.error("Failed to load subcategories:", err);
+        showToast(`Failed to load subcategories: ${err.message}`, "error");
       }
     }
 
@@ -1170,12 +1203,12 @@
       detailTitle.textContent = "New Ingredient";
       document.getElementById("ingredientId").value = "";
       document.getElementById("ingredientName").value = "";
-      // Select first available category from dropdown
-      const categorySelect = document.getElementById("ingredientCategory");
-      if (categorySelect.options.length > 0) {
-        categorySelect.selectedIndex = 0;
-      }
       document.getElementById("ingredientUnit").value = "serving";
+      // Reset subcategory to first option (subcats already loaded with optgroups)
+      const subcatSelect = document.getElementById("ingredientSubcategory");
+      if (subcatSelect.options.length > 0) {
+        subcatSelect.selectedIndex = 0;
+      }
       clearTags(aliasesContainer, aliasInput);
       clearTags(mustMatchContainer, mustMatchInput);
       updateAvailabilityButton(true);
@@ -1229,7 +1262,9 @@
       detailTitle.textContent = ingredient.name;
       document.getElementById("ingredientId").value = ingredient.id;
       document.getElementById("ingredientName").value = ingredient.name;
-      document.getElementById("ingredientCategory").value = ingredient.category;
+
+      // Set subcategory (optgroups already loaded)
+      document.getElementById("ingredientSubcategory").value = ingredient.subcategory || "";
 
       // Set unit dropdown value
       const unitSelect = document.getElementById("ingredientUnit");
@@ -1317,8 +1352,8 @@
     async function saveIngredient() {
       const saveBtn = document.getElementById("saveBtn");
       const name = document.getElementById("ingredientName").value.trim();
-      const category = document.getElementById("ingredientCategory").value;
-      const unit = document.getElementById("ingredientUnit").value.trim() || "piece";
+      const unit = document.getElementById("ingredientUnit").value.trim() || "serving";
+      const subcategory = document.getElementById("ingredientSubcategory").value.trim();
 
       if (!name) {
         showToast("Please enter an ingredient name", "error");
@@ -1335,13 +1370,18 @@
         return;
       }
 
+      if (!subcategory) {
+        showToast("Please select a subcategory", "error");
+        return;
+      }
+
       const aliasValues = getTagValues(aliasesContainer);
       const mustMatchValues = getTagValues(mustMatchContainer);
 
       const payload = {
         name: name,
-        category: category,
         unit: unit,
+        subcategory: subcategory,
         // Send empty string to clear aliases, not null (null means "don't update")
         aliases: aliasValues.join(","),
         must_match: mustMatchValues.join(",")
@@ -1505,7 +1545,7 @@
     async function init() {
       await loadStores();
       await loadUnits();
-      await loadCategories();
+      await loadAllSubcategories();
       loadIngredients();
     }
     init();

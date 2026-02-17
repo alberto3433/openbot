@@ -130,7 +130,6 @@ class ItemBuilder:
             menu_item_id=ctx.menu_item_id,
             unit_price=ctx.price,
             menu_item_type=ctx.item_type,
-            is_signature=ctx.is_signature,
             quantity=item_quantity,
         )
 

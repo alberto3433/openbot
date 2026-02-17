@@ -240,137 +240,32 @@ class ConfigCancellationHandler:
 
         # During regular config, "no X" where X is an already-set attribute
         # means remove that attribute, not the entire item.
-        # E.g., "no toasted" while being asked about bread → remove toasted=True
         if isinstance(current_item, MenuItemTask):
-            item_type_attrs = menu_cache.get_item_type_attributes(current_item.menu_item_type)
-            cancel_variants = get_singular_plural_variants(cancel_desc)
-            for attr_slug, attr_data in item_type_attrs.items():
-                attr_display_lower = (attr_data.get("display_name") or "").lower()
-                if attr_slug in cancel_variants or attr_display_lower in cancel_variants:
-                    current_value = current_item.attribute_values.get(attr_slug)
-                    if current_value is not None:
-                        current_item[attr_slug] = None
-                        safe_recalculate_price(
-                            self.pricing, current_item, "after attribute removal via cancel"
-                        )
-                        display_name = (
-                            attr_data.get("display_name") or format_slug_for_display(attr_slug)
-                        )
-                        logger.info(
-                            "Removed attribute '%s' from %s during config",
-                            attr_slug, current_item.menu_item_name,
-                        )
-                        question = self._get_current_config_question(order, current_item)
-                        if question:
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {display_name}. {question}",
-                                order=order,
-                            )
-                        return StateMachineResult(
-                            message=f"OK, I've removed the {display_name}. Anything else?",
-                            order=order,
-                        )
+            result = self._try_remove_attribute_by_name(cancel_desc, current_item, order)
+            if result:
+                return result
 
         # At customization checkpoint, "no X" where X is an attribute display name
-        # is a decline, not a removal. E.g., "no condiments" when the bot asked
-        # "You can add Condiments" means "I don't want condiments".
+        # is a decline, not a removal (unless the attribute already has a value).
         if order.pending_field in (
             PendingField.CUSTOMIZATION_CHECKPOINT,
             PendingField.CUSTOMIZATION_SELECTION,
         ) and isinstance(current_item, MenuItemTask):
-            item_type_attrs = menu_cache.get_item_type_attributes(current_item.menu_item_type)
-            cancel_variants = get_singular_plural_variants(cancel_desc)
-            for attr_slug, attr_data in item_type_attrs.items():
-                attr_display_lower = (attr_data.get("display_name") or "").lower()
-                if attr_slug in cancel_variants or attr_display_lower in cancel_variants:
-                    # Check if this attribute already has a value — if so, this is a
-                    # removal request ("remove the cheese"), not a decline ("no condiments")
-                    current_value = current_item.attribute_values.get(attr_slug)
-                    if current_value is not None:
-                        current_item[attr_slug] = None
-                        safe_recalculate_price(
-                            self.pricing, current_item, "after attribute removal via cancel"
-                        )
-                        display_name = (
-                            attr_data.get("display_name") or format_slug_for_display(attr_slug)
-                        )
-                        logger.info(
-                            "Removed attribute '%s' from %s",
-                            attr_slug, current_item.menu_item_name,
-                        )
-                        question = self._get_current_config_question(order, current_item)
-                        if question:
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {display_name}. {question}",
-                                order=order,
-                            )
-                        return StateMachineResult(
-                            message=f"OK, I've removed the {display_name}. Anything else?",
-                            order=order,
-                        )
-                    # Attribute not set yet — defer to checkpoint handler (decline)
-                    logger.info(
-                        "Cancel during config: '%s' matches attribute '%s' at customization "
-                        "checkpoint - deferring to checkpoint handler",
-                        cancel_desc, attr_slug,
-                    )
-                    return None
+            result = self._try_remove_attribute_by_name(
+                cancel_desc, current_item, order, defer_if_unset=True
+            )
+            if result:
+                return result
 
         # Handle "this" or "it" - cancel the current item being configured
-        if cancel_desc in ("this", "it", "that", "this one", "that one"):
-            item_name = current_item.get_summary()
-            current_item.mark_skipped()
-            order.clear_pending()
-            order.set_phase(OrderPhase.TAKING_ITEMS)
-            remaining = order.items.get_active_items()
+        result = self._try_cancel_current_item(cancel_desc, current_item, order)
+        if result:
+            return result
 
-            # Check for remaining incomplete items that need configuration
-            if remaining and self._configure_next_incomplete_item:
-                for item in remaining:
-                    if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
-                        # Get the next config question and prepend removal confirmation
-                        config_result = self._configure_next_incomplete_item(order)
-                        return StateMachineResult(
-                            message=f"OK, I've removed the {item_name}. {config_result.message}",
-                            order=order,
-                        )
-
-            if remaining:
-                return StateMachineResult(
-                    message=ok_removed_anything_else(item_name),
-                    order=order,
-                )
-            else:
-                return StateMachineResult(
-                    message=f"OK, I've removed the {item_name}. What would you like to order?",
-                    order=order,
-                )
-
-        # Handle "cancel everything", "cancel all", "remove all", etc. - clear entire order
-        all_items_phrases = {
-            "all", "everything", "all of it", "the order", "my order",
-            "the whole order", "my whole order", "all items", "all the items",
-            "the whole thing", "it all", "them all",
-            "order", "whole order", "whole thing"
-        }
-        if cancel_desc.lower() in all_items_phrases:
-            active_items = order.items.get_active_items()
-            if active_items:
-                num_items = len(active_items)
-                for item in active_items:
-                    remove_item_from_order(order, item)
-                order.clear_pending()
-                order.set_phase(OrderPhase.TAKING_ITEMS)
-                logger.info("Cancel during config: cleared ALL %d items from cart", num_items)
-                return StateMachineResult(
-                    message="OK, I've cleared your order. What would you like to order?",
-                    order=order,
-                )
-            else:
-                return StateMachineResult(
-                    message="Your order is already empty. What would you like to order?",
-                    order=order,
-                )
+        # Handle "cancel everything", "cancel all", "remove all", etc.
+        result = self._try_cancel_all_items(cancel_desc, order)
+        if result:
+            return result
 
         # Check if cancel_desc matches an ITEM TYPE (e.g., "bagels", "coffees")
         # If so, skip modifier removal - user wants to remove items, not modifiers
@@ -421,6 +316,132 @@ class ConfigCancellationHandler:
 
         # Find and remove matching items (ordinal, plural, category, name)
         return self._find_and_remove_matching_items(cancel_desc, current_item, order)
+
+    def _try_remove_attribute_by_name(
+        self,
+        cancel_desc: str,
+        current_item: MenuItemTask,
+        order: OrderTask,
+        *,
+        defer_if_unset: bool = False,
+    ) -> StateMachineResult | None:
+        """Try to match cancel_desc to an attribute name and remove its value.
+
+        Args:
+            cancel_desc: Normalized cancellation description.
+            current_item: The item currently being configured.
+            order: The current order task.
+            defer_if_unset: If True and attribute matches but has no value,
+                return None (defer to another handler). Used at customization checkpoint.
+
+        Returns:
+            StateMachineResult if attribute was removed, None to continue.
+        """
+        item_type_attrs = menu_cache.get_item_type_attributes(current_item.menu_item_type)
+        cancel_variants = get_singular_plural_variants(cancel_desc)
+        for attr_slug, attr_data in item_type_attrs.items():
+            attr_display_lower = (attr_data.get("display_name") or "").lower()
+            if attr_slug in cancel_variants or attr_display_lower in cancel_variants:
+                current_value = current_item.attribute_values.get(attr_slug)
+                if current_value is not None:
+                    current_item[attr_slug] = None
+                    safe_recalculate_price(
+                        self.pricing, current_item, "after attribute removal via cancel"
+                    )
+                    display_name = (
+                        attr_data.get("display_name") or format_slug_for_display(attr_slug)
+                    )
+                    logger.info(
+                        "Removed attribute '%s' from %s during config",
+                        attr_slug, current_item.menu_item_name,
+                    )
+                    question = self._get_current_config_question(order, current_item)
+                    if question:
+                        return StateMachineResult(
+                            message=f"OK, I've removed the {display_name}. {question}",
+                            order=order,
+                        )
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {display_name}. Anything else?",
+                        order=order,
+                    )
+                if defer_if_unset:
+                    logger.info(
+                        "Cancel during config: '%s' matches attribute '%s' at customization "
+                        "checkpoint - deferring to checkpoint handler",
+                        cancel_desc, attr_slug,
+                    )
+                    return None
+        return None
+
+    def _try_cancel_current_item(
+        self,
+        cancel_desc: str,
+        current_item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle 'cancel this/it/that' — remove the current item."""
+        if cancel_desc not in ("this", "it", "that", "this one", "that one"):
+            return None
+
+        item_name = current_item.get_summary()
+        current_item.mark_skipped()
+        order.clear_pending()
+        order.set_phase(OrderPhase.TAKING_ITEMS)
+        remaining = order.items.get_active_items()
+
+        if remaining and self._configure_next_incomplete_item:
+            for item in remaining:
+                if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                    config_result = self._configure_next_incomplete_item(order)
+                    return StateMachineResult(
+                        message=f"OK, I've removed the {item_name}. {config_result.message}",
+                        order=order,
+                    )
+
+        if remaining:
+            return StateMachineResult(
+                message=ok_removed_anything_else(item_name),
+                order=order,
+            )
+        else:
+            return StateMachineResult(
+                message=f"OK, I've removed the {item_name}. What would you like to order?",
+                order=order,
+            )
+
+    def _try_cancel_all_items(
+        self,
+        cancel_desc: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle 'cancel everything/all' — clear entire order."""
+        all_items_phrases = {
+            "all", "everything", "all of it", "the order", "my order",
+            "the whole order", "my whole order", "all items", "all the items",
+            "the whole thing", "it all", "them all",
+            "order", "whole order", "whole thing"
+        }
+        if cancel_desc.lower() not in all_items_phrases:
+            return None
+
+        active_items = order.items.get_active_items()
+        if active_items:
+            num_items = len(active_items)
+            for item in active_items:
+                remove_item_from_order(order, item)
+            order.clear_pending()
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+            logger.info("Cancel during config: cleared ALL %d items from cart", num_items)
+            return StateMachineResult(
+                message="OK, I've cleared your order. What would you like to order?",
+                order=order,
+            )
+        else:
+            return StateMachineResult(
+                message="Your order is already empty. What would you like to order?",
+                order=order,
+            )
 
     def _try_remove_modifier_by_reference(
         self,

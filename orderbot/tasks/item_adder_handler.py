@@ -388,7 +388,7 @@ class ItemAdderHandler(MenuDataMixin):
             kwargs: Original kwargs with item details
 
         Returns:
-            Dict with name, item_type, base_price, id, is_signature
+            Dict with name, item_type, base_price, id, skip_config
         """
         return self._item_builder.build_menu_item_dict(item_type, item_name, kwargs)
 
@@ -480,7 +480,6 @@ class ItemAdderHandler(MenuDataMixin):
         price = menu_item.get("base_price", 0.0)
         menu_item_id = menu_item.get("id")
         category = menu_item.get("item_type", "")  # item_type slug like "spread_sandwich"
-        is_signature = menu_item.get("is_signature", False)  # Signature item like "The Classic BEC"
 
         # Check if item type has component slots (data-driven, e.g., omelette includes a side)
         has_component_slots = menu_cache.item_type_has_component_slots(category) if category else False
@@ -515,12 +514,11 @@ class ItemAdderHandler(MenuDataMixin):
                 unit_price=price,
                 menu_item_type=item_type,
                 modifications=modifications or [],  # User modifications like "with mayo and mustard"
-                is_signature=is_signature,  # Signature item flag from menu data
             )
             # Populate default ingredients for items that have them defined
             # This must happen before applying user selections so user selections
             # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
-            # Check if item has default ingredients (more reliable than is_signature flag)
+            # Check if item has default ingredients
             if menu_item_id:
                 populate_default_ingredients(item)
             # Apply pre-filled attributes
@@ -916,7 +914,7 @@ class ItemAdderHandler(MenuDataMixin):
             pending_result = self.menu_item_handler._process_pending_parsed_items_callback(order)
             if pending_result:
                 # Queue this item for later and return the pending result
-                order.queue_item_for_config(first_item.id, ctx.item_type, item_name=ctx.canonical_name)
+                order.queue_item_for_config(first_item.id, item_name=ctx.canonical_name)
                 logger.info(
                     "Queued newly selected item %s (%s) - processing pending parsed items first",
                     ctx.canonical_name, first_item.id[:8]
@@ -928,7 +926,7 @@ class ItemAdderHandler(MenuDataMixin):
         if order.has_queued_config_items():
             from .handler_utils import process_next_queued_item
             # Queue this item for later
-            order.queue_item_for_config(first_item.id, ctx.item_type, item_name=ctx.canonical_name)
+            order.queue_item_for_config(first_item.id, item_name=ctx.canonical_name)
             logger.info(
                 "Queued newly selected item %s (%s) - processing queued item first",
                 ctx.canonical_name, first_item.id[:8]

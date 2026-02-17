@@ -222,6 +222,7 @@ def serialize_item_type_link(
         offer_question_text=global_attr.offer_question_text,
         min_selections=link.min_selections,
         max_selections=link.max_selections,
+        option_subcategory_filter=link.option_subcategory_filter,
         options=options_out,
         created_at=link.created_at,
         updated_at=link.updated_at,

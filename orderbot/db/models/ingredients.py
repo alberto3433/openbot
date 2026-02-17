@@ -38,6 +38,9 @@ class Ingredient(Base):
     name = Column(String, unique=True, nullable=False)
     slug = Column(String(100), unique=True, nullable=False, index=True)  # Canonical identifier
     category = Column(String, ForeignKey("ingredient_categories.slug"), nullable=False)
+    subcategory_id = Column(
+        Integer, ForeignKey("ingredient_subcategories.id"), nullable=False, index=True
+    )
     unit_id = Column(Integer, ForeignKey("ingredient_units.id"), nullable=False)
     track_inventory = Column(Boolean, nullable=False, default=True)
     # NOTE: Pricing for ingredients is managed via GlobalAttributeOption.price_modifier,
@@ -73,6 +76,9 @@ class Ingredient(Base):
     # FK-based relationship to IngredientCategory
     category_rel = relationship("IngredientCategory", foreign_keys=[category])
 
+    # FK-based relationship to IngredientSubcategory
+    subcategory_rel = relationship("IngredientSubcategory", foreign_keys=[subcategory_id])
+
     # Viewonly relationship to ModifierCategory via shared ingredient_categories.slug
     # Both Ingredient.category and ModifierCategory.ingredient_category FK to
     # ingredient_categories.slug; this join bridges them for runtime lookups.
@@ -82,6 +88,11 @@ class Ingredient(Base):
         uselist=False,
         viewonly=True,
     )
+
+    @property
+    def subcategory(self) -> str:
+        """Get subcategory slug from relationship (for API/cache compatibility)."""
+        return self.subcategory_rel.slug if self.subcategory_rel else ""
 
     @property
     def aliases(self) -> list[str]:
@@ -125,6 +136,24 @@ class IngredientMustMatch(Base):
     )
 
     ingredient = relationship("Ingredient", back_populates="must_match_records")
+
+
+class IngredientSubcategory(Base):
+    """Subcategory within an ingredient category (e.g., 'bagel' under 'bread')."""
+    __tablename__ = "ingredient_subcategories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String(50), unique=True, nullable=False, index=True)
+    display_name = Column(String(100), nullable=False)
+    category_slug = Column(
+        String(50), ForeignKey("ingredient_categories.slug"), nullable=False, index=True
+    )
+    display_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    category = relationship("IngredientCategory", backref="subcategories")
 
 
 class IngredientCategory(Base):

@@ -26,6 +26,7 @@ from orderbot.constants import (
     SCORE_WORD_MATCH_BASE,
     SCORE_WORD_MATCH_BONUS,
 )
+from .models.pending_states import PendingDuplicateSelection, PendingSameThingClarification
 from .pending_fields import PendingField
 from .schemas import StateMachineResult
 from .checkout_messages import ErrorMessages, item_added_anything_else, duplicated_order_anything_else
@@ -129,8 +130,8 @@ class DuplicateHandler:
                 order=order,
             )
 
-        items = pending_info.get("items", [])
-        count = pending_info.get("count", 1)
+        items = pending_info.items
+        count = pending_info.count
         text = user_input.strip().lower()
 
         # Check for "all items" / "everything" response
@@ -267,7 +268,7 @@ class DuplicateHandler:
                 order=order,
             )
 
-        cart_items = pending_info.get("cart_items", [])
+        cart_items = pending_info.cart_items
         text = user_input.strip().lower()
 
         # Check if user wants to repeat previous order
@@ -311,10 +312,10 @@ class DuplicateHandler:
             else:
                 # Multiple items - ask which one
                 item_options = build_item_options_list(active_items)
-                order.pending_duplicate_selection = {
-                    "count": 1,
-                    "items": item_options,
-                }
+                order.pending_duplicate_selection = PendingDuplicateSelection(
+                    count=1,
+                    items=item_options,
+                )
                 order.pending_field = PendingField.DUPLICATE_SELECTION
                 question = build_item_selection_question(item_options, "all the items")
                 return StateMachineResult(
@@ -404,10 +405,10 @@ class DuplicateHandler:
             item_options = build_item_options_list(active_items)
 
             # Store pending state
-            order.pending_duplicate_selection = {
-                "count": added_count,
-                "items": item_options,
-            }
+            order.pending_duplicate_selection = PendingDuplicateSelection(
+                count=added_count,
+                items=item_options,
+            )
             order.pending_field = PendingField.DUPLICATE_SELECTION
 
             # Build the question text
@@ -527,10 +528,10 @@ class DuplicateHandler:
         if has_previous_order and has_cart_items:
             item_options = build_item_options_list(active_items)
 
-            order.pending_same_thing_clarification = {
-                "has_previous_order": True,
-                "cart_items": item_options,
-            }
+            order.pending_same_thing_clarification = PendingSameThingClarification(
+                has_previous_order=True,
+                cart_items=item_options,
+            )
             order.pending_field = PendingField.SAME_THING_CLARIFICATION
 
             # Build the question
@@ -568,10 +569,10 @@ class DuplicateHandler:
             else:
                 # Multiple items - ask which one to duplicate
                 item_options = build_item_options_list(active_items)
-                order.pending_duplicate_selection = {
-                    "count": 1,
-                    "items": item_options,
-                }
+                order.pending_duplicate_selection = PendingDuplicateSelection(
+                    count=1,
+                    items=item_options,
+                )
                 order.pending_field = PendingField.DUPLICATE_SELECTION
                 question = build_item_selection_question(item_options)
                 logger.info("'Same thing' with %d cart items: asking which to duplicate", len(active_items))

@@ -13,7 +13,7 @@ Designed to be generic and work with any item type that has DB-defined attribute
 
 import logging
 import re
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from orderbot.constants import QUALIFIER_PROXIMITY_THRESHOLD
@@ -47,6 +47,9 @@ from .attribute_resolver import (
     get_unanswered_mandatory,
     get_unanswered_optional,
 )
+
+if TYPE_CHECKING:
+    from ..models.pending_states import PendingUnmatchedPagination
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +124,8 @@ class MenuItemConfigHandler(BaseHandler):
         self._disambiguation_handler = ConfigDisambiguationHandler(ctx=self._ctx)
         self._question_builder = QuestionBuilder()
         self._direct_option_matcher = DirectOptionMatcher(
-            option_matcher=self._option_matcher,
             ctx=self._ctx,
+            option_matcher=self._option_matcher,
         )
         self._quantity_input_handler = QuantityInputHandler(ctx=self._ctx)
         self._package_input_handler = PackageInputHandler(
@@ -1167,7 +1170,7 @@ class MenuItemConfigHandler(BaseHandler):
         )
 
     def _advance_from_pagination(
-        self, pagination: dict, item: MenuItemTask, order: OrderTask,
+        self, pagination: "PendingUnmatchedPagination", item: MenuItemTask, order: OrderTask,
         matched_choice: str | None = None,
     ) -> StateMachineResult:
         """Look up the attribute from pagination context and advance to next question.
@@ -1176,7 +1179,7 @@ class MenuItemConfigHandler(BaseHandler):
         state and calling _advance_to_next_question.
 
         Args:
-            pagination: The pagination state dict (must have 'attr_slug').
+            pagination: The pagination state model (must have 'attr_slug').
             item: The menu item being configured.
             order: Current order state.
             matched_choice: Optional display name of the user's choice (for acknowledgment).
@@ -1184,7 +1187,7 @@ class MenuItemConfigHandler(BaseHandler):
         Returns:
             StateMachineResult with the next question.
         """
-        attr_slug = pagination.get("attr_slug")
+        attr_slug = pagination.attr_slug
         item_type = item.menu_item_type
         if item_type and attr_slug:
             attrs = self._get_item_type_attributes(item_type)
@@ -1227,11 +1230,11 @@ class MenuItemConfigHandler(BaseHandler):
             return self._advance_from_pagination(pagination, item, order)
 
         # Check if user selected one of the available options
-        available = pagination.get("available_options", [])
+        available = pagination.available_options
         matched, _ = self._option_matcher.match_single(user_input, available)
         if matched:
             self._question_builder.clear_unmatched_pagination(order)
-            attr_slug = pagination.get("attr_slug")
+            attr_slug = pagination.attr_slug
 
             opt_price = self._resolve_option_price(matched, item.menu_item_type)
 

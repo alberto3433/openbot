@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from .option_matcher import OptionMatcher
 from .input_normalizer import InputNormalizer
+from ..models.pending_states import PendingAttrDisambiguation
 from ..parsers.quantity_utils import extract_leading_quantity
 from .text import format_english_list
 
@@ -243,12 +244,12 @@ class OptionMatchingOrchestrator:
             attr_slug: The attribute slug being configured
             result: The MatchResult with disambiguation candidates
         """
-        order.pending_attr_disambiguation = {
-            "options": result.disambiguation_candidates,
-            "attr_slug": attr_slug,
-            "modifiers": {"_quantity": result.quantity},
-            "item_id": item.id,
-        }
+        order.pending_attr_disambiguation = PendingAttrDisambiguation(
+            options=result.disambiguation_candidates,
+            attr_slug=attr_slug,
+            modifiers={"_quantity": result.quantity},
+            item_id=item.id,
+        )
 
     def clear_disambiguation_state(self, order: "OrderTask") -> None:
         """Clear any pending disambiguation state on the order."""

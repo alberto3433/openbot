@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from orderbot.cache import menu_cache
 
 from ..models import OrderTask, MenuItemTask
+from ..models.pending_states import PendingAttrDisambiguation, PendingUnmatchedPagination
 from ..selection_utils import (
     extract_meaningful_words,
     find_partial_matches,
@@ -453,12 +454,12 @@ class SelectInputHandler:
             )
 
             # Store disambiguation state for the ambiguous token
-            order.pending_attr_disambiguation = {
-                "options": token_matches,
-                "attr_slug": attr_slug,
-                "modifiers": {"_quantity": token_qty},
-                "item_id": item.id,
-            }
+            order.pending_attr_disambiguation = PendingAttrDisambiguation(
+                options=token_matches,
+                attr_slug=attr_slug,
+                modifiers={"_quantity": token_qty},
+                item_id=item.id,
+            )
             options_text = self._format_display_list(token_matches)
             attr_display = attr.get("display_name", attr_slug).lower()
             # Build quick replies for inline clickable text
@@ -556,12 +557,12 @@ class SelectInputHandler:
             user_input, len(ambiguous_options),
             [o["display_name"] for o in ambiguous_options]
         )
-        order.pending_attr_disambiguation = {
-            "options": ambiguous_options,
-            "attr_slug": attr_slug,
-            "modifiers": {"_quantity": quantity},
-            "item_id": item.id,
-        }
+        order.pending_attr_disambiguation = PendingAttrDisambiguation(
+            options=ambiguous_options,
+            attr_slug=attr_slug,
+            modifiers={"_quantity": quantity},
+            item_id=item.id,
+        )
         options_text = self._format_display_list(ambiguous_options)
         # Use the shared ingredient category as the label if all
         # ambiguous options belong to the same category (e.g. "syrup")
@@ -797,13 +798,13 @@ class SelectInputHandler:
                 return advance_callback(item, order, attr, ack_text)
 
             # Store pagination state for "yes"/"more" handling
-            order.pending_unmatched_pagination = {
-                "unmatched_text": unmatched_text,
-                "attr_slug": attr_slug,
-                "available_options": available,
-                "page": 0,
-                "item_id": item.id,
-            }
+            order.pending_unmatched_pagination = PendingUnmatchedPagination(
+                unmatched_text=unmatched_text,
+                attr_slug=attr_slug,
+                available_options=available,
+                page=0,
+                item_id=item.id,
+            )
 
             # Build options list with pagination
             if len(available) <= DEFAULT_PAGINATION_SIZE:
@@ -823,10 +824,11 @@ class SelectInputHandler:
                     f"Got it, {ack_text}. We don't have {unmatched_text}. "
                     f"We have {options_str}... and more. Would you like to see more options?"
                 )
-                order.pending_unmatched_pagination["page"] = 1
+                order.pending_unmatched_pagination.page = 1
 
             # Build quick replies for inline clickable text
-            qr = [{"label": name, "value": name} for name in names]
+            from ..handler_utils import build_quick_replies
+            qr = build_quick_replies(names)
             if has_more:
                 qr.append({"label": "more", "value": "what else?"})
 
@@ -1005,12 +1007,12 @@ class SelectInputHandler:
                         stored_modifiers[f"{sel.category}_quantity"] = sel.quantity
 
         # Store disambiguation state
-        order.pending_attr_disambiguation = {
-            "options": partial_matches,
-            "attr_slug": attr_slug,
-            "modifiers": stored_modifiers,
-            "item_id": item.id,
-        }
+        order.pending_attr_disambiguation = PendingAttrDisambiguation(
+            options=partial_matches,
+            attr_slug=attr_slug,
+            modifiers=stored_modifiers,
+            item_id=item.id,
+        )
 
         logger.info(
             "DISAMBIGUATION STARTED: attr=%s, options=%s, stored_mods=%s",
@@ -1207,12 +1209,12 @@ class SelectInputHandler:
             order.config_options_page = 1
 
         # Store disambiguation state (including quantity from original input)
-        order.pending_attr_disambiguation = {
-            "options": matching_options,
-            "attr_slug": attr_slug,
-            "modifiers": {"_quantity": quantity},
-            "item_id": item.id,
-        }
+        order.pending_attr_disambiguation = PendingAttrDisambiguation(
+            options=matching_options,
+            attr_slug=attr_slug,
+            modifiers={"_quantity": quantity},
+            item_id=item.id,
+        )
         order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr_slug}")
 
         logger.info(

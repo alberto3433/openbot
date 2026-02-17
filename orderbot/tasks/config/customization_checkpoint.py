@@ -9,7 +9,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 
 import logging
 import re
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
     from .options_inquiry import OptionsInquiryHandler
     from .context import ConfigHandlerContext
-    from ..utils import OptionMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -53,78 +52,28 @@ class CustomizationCheckpointHandler:
     def __init__(
         self,
         options_inquiry_handler: "OptionsInquiryHandler",
-        ctx: "ConfigHandlerContext | None" = None,
-        # Legacy parameters for backward compatibility (deprecated)
-        option_matcher: "OptionMatcher | None" = None,
-        recalculate_item_price: Callable[["MenuItemTask"], None] | None = None,
-        get_unanswered_optional: Callable[["MenuItemTask", str], list[dict]] | None = None,
-        get_optional_attributes: Callable[[str], list[dict]] | None = None,
-        format_display_list: Callable[[list[dict]], str] | None = None,
-        match_attribute_from_input: Callable[[str, list[dict]], list[dict]] | None = None,
-        extract_quantity_from_input: Callable[[str], tuple[int, str]] | None = None,
-        ask_disambiguation_for_options: Callable[
-            ["MenuItemTask", "OrderTask", dict, dict, str], StateMachineResult
-        ] | None = None,
-        ask_customization_checkpoint: Callable[
-            ["MenuItemTask", "OrderTask", str | None], StateMachineResult
-        ] | None = None,
-        ask_optional_attribute: Callable[
-            ["MenuItemTask", "OrderTask", dict], StateMachineResult
-        ] | None = None,
-        try_direct_option_match: Callable[
-            [str, list[dict], "MenuItemTask", "OrderTask"], StateMachineResult | None
-        ] | None = None,
-        get_next_question: Callable[["OrderTask"], StateMachineResult | None] | None = None,
-        process_pending_parsed_items_callback: Callable[
-            ["OrderTask"], StateMachineResult | None
-        ] | None = None,
+        ctx: "ConfigHandlerContext",
     ) -> None:
         """Initialize the customization checkpoint handler.
 
         Args:
             options_inquiry_handler: Handler for options inquiry questions.
-            ctx: ConfigHandlerContext with shared dependencies. If provided,
-                 individual callback parameters are ignored.
-
-        Deprecated args (use ctx instead):
-            option_matcher, recalculate_item_price, get_unanswered_optional,
-            get_optional_attributes, format_display_list, match_attribute_from_input,
-            extract_quantity_from_input, ask_disambiguation_for_options,
-            ask_customization_checkpoint, ask_optional_attribute, try_direct_option_match,
-            get_next_question, process_pending_parsed_items_callback
+            ctx: ConfigHandlerContext with shared dependencies.
         """
         self._options_inquiry_handler = options_inquiry_handler
-
-        # Use context if provided, otherwise fall back to individual parameters
-        if ctx is not None:
-            self._option_matcher = ctx.option_matcher
-            self._recalculate_item_price = ctx.recalculate_item_price
-            self._get_unanswered_optional = ctx.get_unanswered_optional
-            self._get_optional_attributes = ctx.get_optional_attributes
-            self._format_display_list = ctx.format_display_list
-            self._match_attribute_from_input = ctx.match_attribute_from_input
-            self._extract_quantity_from_input = ctx.extract_quantity_from_input
-            self._ask_disambiguation_for_options = ctx.ask_disambiguation_for_options
-            self._ask_customization_checkpoint = ctx.ask_customization_checkpoint
-            self._ask_optional_attribute = ctx.ask_optional_attribute
-            self._try_direct_option_match = ctx.try_direct_option_match
-            self._get_next_question = ctx.get_next_question
-            self._process_pending_parsed_items_callback = ctx.process_pending_parsed_items
-        else:
-            # Legacy: individual parameters
-            self._option_matcher = option_matcher
-            self._recalculate_item_price = recalculate_item_price
-            self._get_unanswered_optional = get_unanswered_optional
-            self._get_optional_attributes = get_optional_attributes
-            self._format_display_list = format_display_list
-            self._match_attribute_from_input = match_attribute_from_input
-            self._extract_quantity_from_input = extract_quantity_from_input
-            self._ask_disambiguation_for_options = ask_disambiguation_for_options
-            self._ask_customization_checkpoint = ask_customization_checkpoint
-            self._ask_optional_attribute = ask_optional_attribute
-            self._try_direct_option_match = try_direct_option_match
-            self._get_next_question = get_next_question
-            self._process_pending_parsed_items_callback = process_pending_parsed_items_callback
+        self._option_matcher = ctx.option_matcher
+        self._recalculate_item_price = ctx.recalculate_item_price
+        self._get_unanswered_optional = ctx.get_unanswered_optional
+        self._get_optional_attributes = ctx.get_optional_attributes
+        self._format_display_list = ctx.format_display_list
+        self._match_attribute_from_input = ctx.match_attribute_from_input
+        self._extract_quantity_from_input = ctx.extract_quantity_from_input
+        self._ask_disambiguation_for_options = ctx.ask_disambiguation_for_options
+        self._ask_customization_checkpoint = ctx.ask_customization_checkpoint
+        self._ask_optional_attribute = ctx.ask_optional_attribute
+        self._try_direct_option_match = ctx.try_direct_option_match
+        self._get_next_question = ctx.get_next_question
+        self._process_pending_parsed_items_callback = ctx.process_pending_parsed_items
 
         # Initialize the ingredient fallback handler
         self._ingredient_fallback_handler = IngredientFallbackHandler(

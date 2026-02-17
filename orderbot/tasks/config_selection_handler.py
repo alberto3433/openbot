@@ -117,7 +117,7 @@ class ConfigSelectionHandler:
                 for item_id, display_name, item_type in added_items:
                     item = order.items.get_item_by_id(item_id)
                     if item and item.status == TaskStatus.IN_PROGRESS:
-                        order.queue_item_for_config(item_id, item_type, item_name=display_name)
+                        order.queue_item_for_config(item_id, item_name=display_name)
                 return disambiguation_result
 
             # Track newly added items
@@ -148,7 +148,7 @@ class ConfigSelectionHandler:
 
         # Queue items 2+ for later configuration
         for item_id, item_name, item_type in items_needing_config[1:]:
-            order.queue_item_for_config(item_id, item_type, item_name=item_name)
+            order.queue_item_for_config(item_id, item_name=item_name)
             logger.info("Queued pending item %s (%s) for config", item_name, item_id[:8])
 
         # Start configuration for the first item
@@ -293,14 +293,11 @@ class ConfigSelectionHandler:
 
         # For configurable items (sized_beverage, bagel, etc.), route through proper config flow
         if is_configurable and self.item_adder_handler:
-            # Check if selected item is a signature item (e.g., "The Classic BEC")
-            is_signature = menu_cache.item_has_default_ingredients(selected_name)
             menu_item = {
                 "name": selected_name,
                 "id": selected_id,
                 "base_price": selected_price,
                 "item_type": selected_item_type,
-                "is_signature": is_signature,
             }
             return self.item_adder_handler._create_configurable_item(
                 menu_item=menu_item,

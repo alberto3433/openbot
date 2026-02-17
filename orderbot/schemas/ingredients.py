@@ -111,6 +111,7 @@ class IngredientOut(BaseModel):
     unit: str
     track_inventory: bool
     is_available: bool
+    subcategory: str
     aliases: list[str] = []
     must_match: list[str] = []
     abbreviation: Optional[str] = None
@@ -120,10 +121,12 @@ class IngredientCreate(BaseModel):
     """
     Request model for creating a new ingredient.
 
+    Category is auto-derived from the subcategory's parent category.
+
     Attributes:
         name: Display name (required)
-        category: Category for grouping (required)
-        unit: Unit of measurement (default: "piece")
+        subcategory: Subcategory slug (required) - category is derived from this
+        unit: Unit of measurement (default: "serving")
         track_inventory: Enable inventory counting (default: False)
         is_available: Initial availability (default: True)
         aliases: Comma-separated synonyms for matching (optional)
@@ -133,14 +136,14 @@ class IngredientCreate(BaseModel):
     Example:
         {
             "name": "Provolone",
-            "category": "cheese",
+            "subcategory": "cheese",
             "unit": "slice",
             "is_available": true,
             "aliases": "prov, provolone cheese"
         }
     """
     name: str
-    category: str
+    subcategory: str
     unit: str = "serving"
     track_inventory: bool = False
     is_available: bool = True
@@ -154,22 +157,23 @@ class IngredientUpdate(BaseModel):
     Request model for updating an ingredient.
 
     All fields are optional - only provided fields will be updated.
+    When subcategory is updated, category is auto-derived from it.
 
     Attributes:
         name: New display name
-        category: New category
         unit: New unit of measurement
         track_inventory: Update inventory tracking
         is_available: Update global availability (to 86 or un-86)
+        subcategory: New subcategory slug (category auto-derived)
         aliases: Comma-separated synonyms for matching
         must_match: Comma-separated strings - at least one must be in input for this to match
         abbreviation: Short form expanded before parsing (e.g., "cc" for "cream cheese")
     """
     name: Optional[str] = None
-    category: Optional[str] = None
     unit: Optional[str] = None
     track_inventory: Optional[bool] = None
     is_available: Optional[bool] = None
+    subcategory: Optional[str] = None
     aliases: Optional[str] = None
     must_match: Optional[str] = None
     abbreviation: Optional[str] = None

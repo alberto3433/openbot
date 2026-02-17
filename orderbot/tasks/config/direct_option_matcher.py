@@ -9,11 +9,12 @@ Extracted from menu_item_config_handler.py to reduce file size.
 """
 
 import logging
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from ..schemas import StateMachineResult
 from ..parsers.constants import extract_quantity_for_pattern
 from ..parsers.quantity_utils import parse_numeric_input, extract_leading_quantity
+from ..models.pending_states import PendingAttrDisambiguation
 from ..utils import OptionMatchingOrchestrator, OptionMatcher
 from ..utils.text import normalize_text
 
@@ -35,41 +36,22 @@ class DirectOptionMatcher:
 
     def __init__(
         self,
+        ctx: "ConfigHandlerContext",
         option_matcher: "OptionMatcher | None" = None,
-        ctx: "ConfigHandlerContext | None" = None,
-        # Legacy parameters for backward compatibility (deprecated)
-        extract_qualifier_callback: Callable[[str, str], str | None] | None = None,
-        match_option_callback: Callable[[str, list[dict]], tuple[dict | None, list[dict]]] | None = None,
-        ask_more_customizations_callback: Callable[["MenuItemTask", "OrderTask", str | None], StateMachineResult] | None = None,
     ):
         """
         Initialize the direct option matcher.
 
         Args:
+            ctx: ConfigHandlerContext with shared dependencies.
             option_matcher: OptionMatcher instance for matching logic.
-            ctx: ConfigHandlerContext with shared dependencies. If provided,
-                 individual callback parameters are ignored.
-
-        Deprecated args (use ctx instead):
-            extract_qualifier_callback, match_option_callback, ask_more_customizations_callback
+                Defaults to ctx.option_matcher if not provided.
         """
-        # Option matcher can come from ctx or be passed directly
-        if ctx is not None and ctx.option_matcher is not None:
-            self._option_matcher = ctx.option_matcher
-        else:
-            self._option_matcher = option_matcher
-
+        self._option_matcher = ctx.option_matcher or option_matcher
         self._orchestrator = OptionMatchingOrchestrator(option_matcher=self._option_matcher)
-
-        if ctx is not None:
-            self._extract_qualifier = ctx.extract_qualifier_for_option
-            self._match_option = ctx.option_matcher.match_single if ctx.option_matcher else match_option_callback
-            self._ask_more_customizations = ctx.ask_more_customizations
-        else:
-            # Legacy: individual parameters
-            self._extract_qualifier = extract_qualifier_callback
-            self._match_option = match_option_callback
-            self._ask_more_customizations = ask_more_customizations_callback
+        self._extract_qualifier = ctx.extract_qualifier_for_option
+        self._match_option = ctx.option_matcher.match_single if ctx.option_matcher else None
+        self._ask_more_customizations = ctx.ask_more_customizations
 
     def try_direct_option_match(
         self,
@@ -688,12 +670,12 @@ class DirectOptionMatcher:
 
         # Use pending_attr_disambiguation pattern (consistent with select_input_handler)
         # This stores quantity so it can be applied when user answers
-        order.pending_attr_disambiguation = {
-            "options": candidates,
-            "attr_slug": attr_slug,
-            "modifiers": {"_quantity": quantity},
-            "item_id": item.id,
-        }
+        order.pending_attr_disambiguation = PendingAttrDisambiguation(
+            options=candidates,
+            attr_slug=attr_slug,
+            modifiers={"_quantity": quantity},
+            item_id=item.id,
+        )
 
         # Build quick replies for inline clickable text
         qr = [{"label": c["display_name"], "value": c["display_name"]} for c in candidates]

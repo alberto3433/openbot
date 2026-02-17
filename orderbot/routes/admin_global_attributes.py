@@ -1080,6 +1080,7 @@ def link_global_attribute_to_item_type(
         listen_only=payload.listen_only,
         min_selections=payload.min_selections,
         max_selections=payload.max_selections,
+        option_subcategory_filter=payload.option_subcategory_filter,
     )
     db.add(link)
     db.commit()
@@ -1133,6 +1134,8 @@ def update_item_type_global_attribute_link(
         link.min_selections = payload.min_selections
     if payload.max_selections is not None:
         link.max_selections = payload.max_selections
+    if "option_subcategory_filter" in payload.model_fields_set:
+        link.option_subcategory_filter = payload.option_subcategory_filter
 
     db.commit()
     db.refresh(link)

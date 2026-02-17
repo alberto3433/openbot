@@ -465,7 +465,6 @@ def _resolve_another_as_menu_item(
     menu_item, qty, _ = _extract_menu_item_from_text(item_keyword)
     if menu_item:
         item_type_for_item = menu_cache.get_item_type_for_menu_item(menu_item)
-        is_sig = menu_cache.item_has_default_ingredients(menu_item)
         logger.info(
             "Deterministic parse: 'another %s' matched menu item '%s'",
             item_keyword, menu_item,
@@ -475,7 +474,6 @@ def _resolve_another_as_menu_item(
                 item_type=item_type_for_item or "menu_item",
                 item_name=menu_item,
                 quantity=1,
-                is_signature=is_sig,
             )
             for _ in range(qty)
         ]
@@ -515,7 +513,6 @@ def _find_exact_word_match_item(
         if match_name.lower() == item_keyword_lower:
             item_name = m.get("name")
             item_type_for_item = m.get("item_type")
-            is_sig = menu_cache.item_has_default_ingredients(item_name)
             logger.info(
                 "Deterministic parse: 'another %s' exact match menu item '%s'",
                 item_keyword, item_name,
@@ -525,7 +522,6 @@ def _find_exact_word_match_item(
                     item_type=item_type_for_item or "menu_item",
                     item_name=item_name,
                     quantity=1,
-                    is_signature=is_sig,
                 )
             ]
             return OpenInputResponse(parsed_items=parsed_items)
@@ -897,10 +893,8 @@ def _try_parse_new_items(
             modifications["additions"] = _filter_duplicate_modifications(
                 modifications["additions"], attr_result, item_type_for_mods
             )
-        # Look up is_signature from database (data-driven, no special handling)
-        is_sig = menu_cache.item_has_default_ingredients(menu_item)
         attr_keys = list(attr_result.values.keys()) if attr_result else []
-        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s, is_signature=%s)", text[:50], menu_item, qty, attr_keys, modifications, is_sig)
+        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, attr_keys, modifications)
         # Convert structured modifications to Selection objects
         mod_list = []
         for add in modifications.get("additions", []):
@@ -915,7 +909,6 @@ def _try_parse_new_items(
                 original_text=text,
                 attr_result=attr_result,
                 modifiers=mod_list,
-                is_signature=is_sig,
             )
             for _ in range(qty)
         ]

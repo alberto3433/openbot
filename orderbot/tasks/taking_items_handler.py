@@ -34,6 +34,7 @@ from .item_modification_handler import ItemModificationHandler
 from .unrecognized_item_handler import UnrecognizedItemHandler
 from .modifier_change_handler import ModifierChangeHandler
 from .mixins import MenuDataMixin
+from .models.pending_states import PendingDietaryFollowup, PendingIngredientSearch, PendingIngredientSuggestion
 from .utils.text import format_english_list, normalize_text
 
 # Import new sub-handlers
@@ -668,11 +669,11 @@ class TakingItemsHandler(MenuDataMixin):
 
             # Store pagination state for "what else" follow-up
             if has_more:
-                order.pending_ingredient_search = {
-                    "ingredient": ingredient,
-                    "matches": matches,
-                    "offset": display_count,
-                }
+                order.pending_ingredient_search = PendingIngredientSearch(
+                    ingredient=ingredient,
+                    matches=matches,
+                    offset=display_count,
+                )
 
         # Build quick replies for inline clickable text
         if len(matches) == 1:
@@ -741,10 +742,10 @@ class TakingItemsHandler(MenuDataMixin):
         msg = f"We could make you a {items_list} with {ingredient}. Would you like one of those?"
 
         # Store context for follow-up confirmation
-        order.pending_ingredient_suggestion = {
-            "ingredient": ingredient,
-            "suggested_items": sample_items,
-        }
+        order.pending_ingredient_suggestion = PendingIngredientSuggestion(
+            ingredient=ingredient,
+            suggested_items=sample_items,
+        )
         order.pending_field = PendingField.CONFIRM_INGREDIENT_SUGGESTION
 
         return StateMachineResult(
@@ -879,8 +880,8 @@ class TakingItemsHandler(MenuDataMixin):
         3. User says "no" or something unrelated → process without ingredient
         """
         suggestion = order.pending_ingredient_suggestion
-        ingredient = suggestion.get("ingredient", "") if suggestion else ""
-        suggested_items = suggestion.get("suggested_items", []) if suggestion else []
+        ingredient = suggestion.ingredient if suggestion else ""
+        suggested_items = suggestion.suggested_items if suggestion else []
 
         # Clear suggestion context
         order.pending_ingredient_suggestion = None
@@ -935,8 +936,8 @@ class TakingItemsHandler(MenuDataMixin):
         2. User says "no" or something else → process as normal taking_items input
         """
         followup = order.pending_dietary_followup
-        dietary_type = followup.get("dietary_type", "") if followup else ""
-        category = followup.get("category") if followup else None
+        dietary_type = followup.dietary_type if followup else ""
+        category = followup.category if followup else None
 
         # Clear follow-up context
         order.pending_dietary_followup = None

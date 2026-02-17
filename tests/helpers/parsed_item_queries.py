@@ -8,15 +8,15 @@ IMPORTANT: These helpers are ONLY for tests. They must NOT be imported
 by any code in sandwich_bot/ - production code must be data-driven.
 """
 
+from orderbot.cache import menu_cache
 
-def get_parsed_items(result, item_type: str = None, is_signature: bool = None,
-                     item_name: str = None) -> list:
+
+def get_parsed_items(result, item_type: str = None, item_name: str = None) -> list:
     """Get all parsed items matching the criteria.
 
     Args:
         result: OpenInputResponse object
         item_type: Filter by item_type (e.g., "bagel", "coffee_based_beverage", "menu_item", "side")
-        is_signature: Filter by is_signature flag
         item_name: Filter by item_name (case-insensitive substring match)
 
     Returns:
@@ -32,10 +32,6 @@ def get_parsed_items(result, item_type: str = None, is_signature: bool = None,
             actual_type = getattr(item, 'item_type', None)
             if actual_type != item_type:
                 continue
-        # Filter by is_signature
-        if is_signature is not None:
-            if not hasattr(item, 'is_signature') or item.is_signature != is_signature:
-                continue
         # Filter by item_name (case-insensitive substring)
         if item_name is not None:
             if not hasattr(item, 'item_name') or item.item_name is None:
@@ -46,70 +42,77 @@ def get_parsed_items(result, item_type: str = None, is_signature: bool = None,
     return matches
 
 
-def get_parsed_item(result, item_type: str = None, is_signature: bool = None,
-                    item_name: str = None):
+def get_parsed_item(result, item_type: str = None, item_name: str = None):
     """Get first parsed item matching the criteria, or None.
 
     Args:
         result: OpenInputResponse object
         item_type: Filter by item_type
-        is_signature: Filter by is_signature flag
         item_name: Filter by item_name (case-insensitive substring match)
 
     Returns:
         First matching ParsedItemEntry or None
     """
-    matches = get_parsed_items(result, item_type, is_signature, item_name)
+    matches = get_parsed_items(result, item_type, item_name)
     return matches[0] if matches else None
 
 
-def has_parsed_item(result, item_type: str = None, is_signature: bool = None,
-                    item_name: str = None) -> bool:
+def has_parsed_item(result, item_type: str = None, item_name: str = None) -> bool:
     """Check if any parsed item matches the criteria.
 
     Args:
         result: OpenInputResponse object
         item_type: Filter by item_type
-        is_signature: Filter by is_signature flag
         item_name: Filter by item_name (case-insensitive substring match)
 
     Returns:
         True if at least one item matches
     """
-    return len(get_parsed_items(result, item_type, is_signature, item_name)) > 0
+    return len(get_parsed_items(result, item_type, item_name)) > 0
 
 
-def count_parsed_items(result, item_type: str = None, is_signature: bool = None,
-                       item_name: str = None) -> int:
+def count_parsed_items(result, item_type: str = None, item_name: str = None) -> int:
     """Count parsed items matching the criteria.
 
     Args:
         result: OpenInputResponse object
         item_type: Filter by item_type
-        is_signature: Filter by is_signature flag
         item_name: Filter by item_name (case-insensitive substring match)
 
     Returns:
         Number of matching items
     """
-    return len(get_parsed_items(result, item_type, is_signature, item_name))
+    return len(get_parsed_items(result, item_type, item_name))
+
+
+def _item_has_defaults(item) -> bool:
+    """Check if a parsed item has default ingredients by looking up the menu cache."""
+    name = getattr(item, 'item_name', None)
+    if name:
+        try:
+            return menu_cache.item_has_default_ingredients(name)
+        except Exception:
+            pass
+    return False
 
 
 def get_item_with_defaults(result):
     """Shorthand to get the first item with default ingredients from parsed_items.
 
-    Items with default ingredients have is_signature=True in their parsed representation.
-    This includes items like "The Classic BEC" that have predefined ingredient configurations.
+    Items with default ingredients are identified by checking the menu cache
+    for items that have predefined ingredient configurations (e.g., "The Classic BEC").
     """
-    return get_parsed_item(result, is_signature=True)
+    if not hasattr(result, 'parsed_items'):
+        return None
+    for item in result.parsed_items:
+        if _item_has_defaults(item):
+            return item
+    return None
 
 
 def has_item_with_defaults(result) -> bool:
-    """Shorthand to check if any item with default ingredients exists.
-
-    Items with default ingredients have is_signature=True in their parsed representation.
-    """
-    return has_parsed_item(result, is_signature=True)
+    """Shorthand to check if any item with default ingredients exists."""
+    return get_item_with_defaults(result) is not None
 
 
 # Backward compatibility aliases

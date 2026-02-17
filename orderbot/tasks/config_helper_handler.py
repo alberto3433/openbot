@@ -82,7 +82,6 @@ class ConfigHelperHandler:
         if self._change_handler is None:
             from .config_change_handler import ConfigChangeHandler
             self._change_handler = ConfigChangeHandler(
-                self.config,
                 modifier_change_handler=self.modifier_change_handler,
             )
         return self._change_handler

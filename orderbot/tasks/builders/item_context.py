@@ -71,9 +71,6 @@ class ItemBuildContext:
     item_type: str | None = field(init=False, default=None)
     """Item type slug from database."""
 
-    is_signature: bool = field(init=False, default=False)
-    """Whether this is a signature (pre-configured) item."""
-
     skip_config: bool = field(init=False, default=False)
     """Whether to skip configuration for this item."""
 
@@ -92,6 +89,5 @@ class ItemBuildContext:
         self.price = self.menu_item.get("base_price", 0.0)
         self.menu_item_id = self.menu_item.get("id")
         self.item_type = self.menu_item.get("item_type")
-        self.is_signature = self.menu_item.get("is_signature", False)
         self.skip_config = self.menu_item.get("skip_config", False)
         self.size_category_slug = self.menu_item.get("size_category_slug")

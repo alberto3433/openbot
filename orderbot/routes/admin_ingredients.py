@@ -71,6 +71,7 @@ from ..db.models import (
     Ingredient,
     IngredientMustMatch,
     IngredientStoreAvailability,
+    IngredientSubcategory,
     IngredientUnit,
     MenuItem,
     MenuItemIngredient,
@@ -146,6 +147,23 @@ def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> i
         opt.display_name = None
 
     return len(matching_options)
+
+
+def _resolve_subcategory(db: Session, subcategory_slug: str) -> "IngredientSubcategory":
+    """Look up an IngredientSubcategory by slug.
+
+    Returns:
+        The IngredientSubcategory row (has .id, .slug, .category_slug).
+
+    Raises:
+        HTTPException 400 if subcategory doesn't exist.
+    """
+    subcat = db.query(IngredientSubcategory).filter(
+        IngredientSubcategory.slug == subcategory_slug
+    ).first()
+    if not subcat:
+        raise HTTPException(status_code=400, detail=f"Invalid subcategory: '{subcategory_slug}'")
+    return subcat
 
 
 # =============================================================================
@@ -237,10 +255,13 @@ def create_ingredient(
     if not unit_obj:
         raise HTTPException(status_code=400, detail=f"Invalid unit: {payload.unit}")
 
+    subcat = _resolve_subcategory(db, payload.subcategory)
+
     ingredient = Ingredient(
         name=payload.name,
         slug=payload.name.lower().replace(" ", "_"),
-        category=payload.category.lower(),
+        category=subcat.category_slug,
+        subcategory_id=subcat.id,
         unit_id=unit_obj.id,
         track_inventory=payload.track_inventory,
         is_available=payload.is_available,
@@ -476,8 +497,6 @@ def update_ingredient(
 
     if payload.name is not None:
         ingredient.name = payload.name
-    if payload.category is not None:
-        ingredient.category = payload.category.lower()
     if payload.unit is not None:
         unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
         if not unit_obj:
@@ -497,6 +516,10 @@ def update_ingredient(
             logger.info("Auto-linked %d GlobalAttributeOptions after must_match update", linked_count)
     if "abbreviation" in payload.model_fields_set:
         ingredient.abbreviation = payload.abbreviation
+    if "subcategory" in payload.model_fields_set and payload.subcategory is not None:
+        subcat = _resolve_subcategory(db, payload.subcategory)
+        ingredient.subcategory_id = subcat.id
+        ingredient.category = subcat.category_slug
 
     db.commit()
     db.refresh(ingredient)

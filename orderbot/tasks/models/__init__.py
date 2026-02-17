@@ -49,6 +49,18 @@ from .container_tasks import (
     OrderTask,
 )
 
+from .pending_states import (
+    PendingSwitchItem,
+    PendingAttrDisambiguation,
+    PendingChangeClarification,
+    PendingUnmatchedPagination,
+    PendingIngredientSuggestion,
+    PendingDuplicateSelection,
+    PendingSameThingClarification,
+    PendingIngredientSearch,
+    PendingDietaryFollowup,
+)
+
 __all__ = [
     # Base
     "TaskStatus",

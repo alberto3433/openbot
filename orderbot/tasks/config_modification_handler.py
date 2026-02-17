@@ -11,6 +11,7 @@ import re
 from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
+from .models.pending_states import PendingSwitchItem
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.intent_patterns import (
     parse_can_you_make_it,
@@ -630,7 +631,7 @@ class ConfigModificationHandler:
             item.menu_item_name,
             modifier,
         )
-        order.pending_switch_item = similar_item
+        order.pending_switch_item = PendingSwitchItem(**similar_item)
         order.pending_field = PendingField.CONFIRM_ITEM_SWITCH
         return StateMachineResult(
             message=(
@@ -678,7 +679,7 @@ class ConfigModificationHandler:
             # Add the new item via item_adder_handler
             if self.item_adder_handler:
                 return self.item_adder_handler.add_menu_item(
-                    switch_item.get("name", "item"),
+                    switch_item.name,
                     order,
                     quantity=1,
                 )
@@ -686,7 +687,7 @@ class ConfigModificationHandler:
             # Fallback - just acknowledge
             order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
-                message=got_it_anything_else(switch_item.get('name')),
+                message=got_it_anything_else(switch_item.name),
                 order=order,
             )
         else:
@@ -1457,7 +1458,6 @@ class ConfigModificationHandler:
             if new_item.status == TaskStatus.IN_PROGRESS:
                 order.queue_item_for_config(
                     new_item.id,
-                    new_item.menu_item_type,
                     item_name=new_item.get_display_name()
                 )
                 logger.info(
@@ -1605,7 +1605,8 @@ class ConfigModificationHandler:
         question = f"How would you like your {display_name}?"
 
         # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in option_names]
+        from .handler_utils import build_quick_replies
+        qr = build_quick_replies(option_names)
         return StateMachineResult(
             message=f"We have {options_text}. {question}",
             order=order,

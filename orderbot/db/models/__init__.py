@@ -48,6 +48,7 @@ from .ingredients import (
     IngredientCategory,
     IngredientMustMatch,
     IngredientStoreAvailability,
+    IngredientSubcategory,
     IngredientUnit,
 )
 
@@ -107,6 +108,7 @@ __all__ = [
     "IngredientAlias",
     "IngredientMustMatch",
     "IngredientCategory",
+    "IngredientSubcategory",
     "IngredientStoreAvailability",
     # Orders
     "NotificationLog",

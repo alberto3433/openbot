@@ -2352,11 +2352,11 @@ class TestBagelWithCoffeeConfig:
                            if isinstance(p, dict) and p.get('item_type') == 'bagel']
         total_bagels = len(bagels_in_items) + len(bagels_in_pending)
 
-        # Count signature items (The Classic BEC)
+        # Count signature items (The Classic BEC) - items with default ingredients
         signature_items = [i for i in order.items.items
-                          if isinstance(i, MenuItemTask) and getattr(i, 'is_signature', False)]
+                          if isinstance(i, MenuItemTask) and i.has_default_ingredients()]
         signature_in_pending = [p for p in order.pending_parsed_items
-                               if isinstance(p, dict) and p.get('is_signature', False)]
+                               if isinstance(p, dict) and p.get('item_name', '') in ['The Classic BEC']]
 
         # Also check for egg_sandwich items (The Classic BEC type)
         egg_sandwich_items = [i for i in order.items.items
@@ -4162,7 +4162,7 @@ class TestSideChoice:
         assert child.unit_price == 0.0, f"Plain bagel should be $0, got ${child.unit_price}"
 
         # Add cream cheese spread (which has an upcharge)
-        child.add_selection("plain_cream_cheese", "spread", price=0.80)
+        child.add_selection("plain_cream_cheese", "spread")
         child.attribute_values["spread"] = "plain_cream_cheese"
         sm.pricing.recalculate_item_price(child)
 
@@ -6567,8 +6567,8 @@ class TestIngredientSearchPagination:
         assert "chicken item 6" in result1.message.lower()
         assert "and 4 more" in result1.message.lower()
         assert result1.order.pending_ingredient_search is not None
-        assert result1.order.pending_ingredient_search["ingredient"] == "chicken"
-        assert result1.order.pending_ingredient_search["offset"] == 6
+        assert result1.order.pending_ingredient_search.ingredient == "chicken"
+        assert result1.order.pending_ingredient_search.offset == 6
 
         # Second request - "what else" shows remaining 4 items
         result2 = sm.process("what else", result1.order)

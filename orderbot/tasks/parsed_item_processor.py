@@ -338,69 +338,84 @@ class ParsedItemProcessor:
 
         # If disambiguation is pending, handle it now after processing all other items
         if pending_disambiguation:
-            # Queue any items that were added and need configuration
-            for item_id, display_name, item_type in added_items:
-                item = order.items.get_item_by_id(item_id)
-                if item and item.status == TaskStatus.IN_PROGRESS:
-                    order.queue_item_for_config(item_id, item_type, item_name=display_name)
-                    logger.info("Queued %s (%s) for config before disambiguation", display_name, item_id[:8])
-
-            # Build message that acknowledges all items (both added and needing disambiguation)
-            # Consolidate identical items: ["cookie", "cookie"] -> ["two cookies"]
-            from collections import Counter
-            item_counts: Counter[str] = Counter()
-            for p in parsed.parsed_items:
-                name = p.item_name or menu_cache.get_item_type_display_name(p.item_type) or p.item_type
-                item_counts[name] += p.quantity if p.quantity > 1 else 1
-
-            all_item_names = []
-            for name, count in item_counts.items():
-                if count > 1:
-                    # Pluralize: "cookie" -> "two cookies"
-                    from orderbot.cache.base import pluralize
-                    plural_name = pluralize(name) if not name.endswith('s') else name
-                    from orderbot.tasks.parsers.quantity_utils import NUM_TO_WORD
-                    count_word = NUM_TO_WORD.get(count, str(count))
-                    all_item_names.append(f"{count_word} {plural_name}")
-                else:
-                    all_item_names.append(name)
-
-            # Modify the disambiguation message to acknowledge the full order
-            msg = pending_disambiguation.message
-            if len(parsed.parsed_items) > 1:
-                full_order_summary = format_english_list(all_item_names)
-                # Handle "We have a few options for X" format
-                if msg.startswith("We have a few options for "):
-                    # "We have a few options for the classic:\n1. ..."
-                    # -> "Got it, the classic and a latte. We have a few options for the classic:\n1. ..."
-                    msg = f"Got it, {full_order_summary}. {msg}"
-                elif msg.startswith("Got it, for the "):
-                    rest = msg[16:]
-                    period_pos = rest.find(". ")
-                    if period_pos != -1:
-                        item_ref = rest[:period_pos]
-                        question = rest[period_pos + 2:]
-                        if question:
-                            question = question[0].lower() + question[1:]
-                        rest = f"{item_ref}, {question}"
-                    msg = f"Got it, {full_order_summary}. For the {rest}"
-                elif msg.startswith("Got it, "):
-                    msg = f"Got it, {full_order_summary}. " + msg[8:].capitalize()
-
-                pending_disambiguation = StateMachineResult(
-                    message=msg,
-                    order=pending_disambiguation.order,
-                )
-
-            logger.info("Returning disambiguation result after adding %d other items", len(added_items))
-            return pending_disambiguation
+            return self._build_disambiguation_response(
+                pending_disambiguation, added_items, parsed, order,
+            )
 
         if not summaries:
             return None
 
-        # Find items that need configuration (IN_PROGRESS status)
-        # Data-driven: let MenuItemConfigHandler determine what to ask
-        items_needing_config: list[tuple[str, str, str]] = []  # (item_id, display_name, item_type)
+        return self._start_item_configuration(added_items, summaries, order)
+
+    def _build_disambiguation_response(
+        self,
+        pending_disambiguation: StateMachineResult,
+        added_items: list[tuple[str, str, str]],
+        parsed: "OpenInputResponse",
+        order: "OrderTask",
+    ) -> StateMachineResult:
+        """Queue added items for config and augment disambiguation message."""
+        # Queue any items that were added and need configuration
+        for item_id, display_name, item_type in added_items:
+            item = order.items.get_item_by_id(item_id)
+            if item and item.status == TaskStatus.IN_PROGRESS:
+                order.queue_item_for_config(item_id, item_name=display_name)
+                logger.info("Queued %s (%s) for config before disambiguation", display_name, item_id[:8])
+
+        # Build message that acknowledges all items (both added and needing disambiguation)
+        # Consolidate identical items: ["cookie", "cookie"] -> ["two cookies"]
+        from collections import Counter
+        item_counts: Counter[str] = Counter()
+        for p in parsed.parsed_items:
+            name = p.item_name or menu_cache.get_item_type_display_name(p.item_type) or p.item_type
+            item_counts[name] += p.quantity if p.quantity > 1 else 1
+
+        all_item_names = []
+        for name, count in item_counts.items():
+            if count > 1:
+                from orderbot.cache.base import pluralize
+                plural_name = pluralize(name) if not name.endswith('s') else name
+                from orderbot.tasks.parsers.quantity_utils import NUM_TO_WORD
+                count_word = NUM_TO_WORD.get(count, str(count))
+                all_item_names.append(f"{count_word} {plural_name}")
+            else:
+                all_item_names.append(name)
+
+        # Modify the disambiguation message to acknowledge the full order
+        msg = pending_disambiguation.message
+        if len(parsed.parsed_items) > 1:
+            full_order_summary = format_english_list(all_item_names)
+            if msg.startswith("We have a few options for "):
+                msg = f"Got it, {full_order_summary}. {msg}"
+            elif msg.startswith("Got it, for the "):
+                rest = msg[16:]
+                period_pos = rest.find(". ")
+                if period_pos != -1:
+                    item_ref = rest[:period_pos]
+                    question = rest[period_pos + 2:]
+                    if question:
+                        question = question[0].lower() + question[1:]
+                    rest = f"{item_ref}, {question}"
+                msg = f"Got it, {full_order_summary}. For the {rest}"
+            elif msg.startswith("Got it, "):
+                msg = f"Got it, {full_order_summary}. " + msg[8:].capitalize()
+
+            pending_disambiguation = StateMachineResult(
+                message=msg,
+                order=pending_disambiguation.order,
+            )
+
+        logger.info("Returning disambiguation result after adding %d other items", len(added_items))
+        return pending_disambiguation
+
+    def _start_item_configuration(
+        self,
+        added_items: list[tuple[str, str, str]],
+        summaries: list[str],
+        order: "OrderTask",
+    ) -> StateMachineResult:
+        """Find items needing config, queue them, and delegate first question."""
+        items_needing_config: list[tuple[str, str, str]] = []
         for item_id, display_name, item_type in added_items:
             item = order.items.get_item_by_id(item_id)
             if item and item.status == TaskStatus.IN_PROGRESS:
@@ -408,7 +423,6 @@ class ParsedItemProcessor:
 
         logger.info("Items needing configuration: %d", len(items_needing_config))
 
-        # If no items need configuration, return simple confirmation
         if not items_needing_config:
             items_str = format_english_list(summaries)
             return StateMachineResult(message=got_it_anything_else(items_str), order=order)
@@ -416,7 +430,7 @@ class ParsedItemProcessor:
         # Queue items 2+ for later configuration
         order.multi_item_config_names = [name for _, name, _ in items_needing_config]
         for item_id, item_name, item_type in items_needing_config[1:]:
-            order.queue_item_for_config(item_id, item_type, item_name=item_name)
+            order.queue_item_for_config(item_id, item_name=item_name)
             logger.info("Queued %s (%s) for config", item_name, item_id[:8])
 
         # Get first item and delegate question to MenuItemConfigHandler

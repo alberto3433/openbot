@@ -160,12 +160,11 @@ class UnifiedItemConverter:
             "modifiers", "free_details", "base_price",
             "line_total", "item_config", "attribute_values", "customization_offered",
             "display_name", "item_modifiers",  # item_modifiers handled separately
-            "is_signature",  # Metadata, not a configurable attribute
             "special_instructions",  # Handled separately, not an attribute
             "item_total",  # Computed field, not a configurable attribute
             # Bundle fields - stored separately, not attributes
             "bundle_id", "bundle_parent_item_id", "bundle_slot",
-            "bundle_price_rule", "bundle_included_price", "side_of_item_id",
+            "bundle_price_rule", "bundle_included_price",
         }
         for source in (item_dict, item_config):
             for key, value in source.items():
@@ -279,7 +278,6 @@ class UnifiedItemConverter:
             quantity=item_dict.get("quantity", 1),
             selections=selections,  # Use actual field name, not deprecated property alias
             customization_offered=item_dict.get("customization_offered", False),
-            is_signature=item_config.get("is_signature", item_dict.get("is_signature", False)),
             special_instructions=item_dict.get("special_instructions") or [],
             # Bundle fields - restore from item_config first, fallback to item_dict
             bundle_id=item_config.get("bundle_id") or item_dict.get("bundle_id"),
@@ -290,6 +288,94 @@ class UnifiedItemConverter:
         )
         self._restore_common_fields(menu_item, item_dict)
         return menu_item
+
+    def _build_selection_modifiers(
+        self,
+        item: "MenuItemTask",
+        item_attrs: dict,
+        default_ingredient_slugs: set[str],
+    ) -> list[dict]:
+        """Process item selections into display modifier dicts with prices."""
+        import re
+
+        result = []
+        item_modifiers = item.selections or []
+
+        for mod in item_modifiers:
+            # Skip name-forming categories (e.g., bread) - already in display name
+            # Exception: items with default ingredients keep their fixed name,
+            # so show bread as a sub-line (e.g., "The Classic BEC" shows "Bialy" as sub-line)
+            mod_category = mod.get("category", "")
+            if menu_cache.is_name_forming_category(mod_category):
+                if not item.has_default_ingredients_resolved():
+                    continue
+
+            # Skip attribute selections that modify ingredients (shown via the updated modifier)
+            attr_config = item_attrs.get(mod_category, {})
+            if attr_config.get("modifies_ingredient_slug") and not mod.get("is_default"):
+                continue
+
+            mod_slug = mod.get("slug", "")
+
+            # Skip declined/negative selections
+            if mod_slug in (DECLINED_SLUG, NO_SLUG):
+                continue
+
+            mod_display = mod.get("display_name") or format_slug_for_display(mod_slug, mod_category)
+            is_included_default = mod.get("is_default") or mod_slug in default_ingredient_slugs
+            has_extra_quantity = mod.get("_base_quantity", 0) > 0
+            mod_price = 0.0 if (is_included_default and not has_extra_quantity) else (mod.get("price", 0) or 0.0)
+            mod_quantity = mod.get("quantity", 1) or 1
+
+            if mod_quantity > 1:
+                leading_qty_match = re.match(r'^(\d+)\s+', mod_display)
+                if leading_qty_match and int(leading_qty_match.group(1)) == mod_quantity:
+                    pass
+                else:
+                    ing_category = mod.get("ingredient_category") or mod_category
+                    quantity_unit = menu_cache.get_ingredient_category_quantity_unit(ing_category)
+                    if quantity_unit:
+                        unit_plural = quantity_unit + "s" if mod_quantity > 1 else quantity_unit
+                        mod_display = f"{mod_quantity} {unit_plural} of {mod_display}"
+                    else:
+                        mod_display = f"{mod_quantity} {_pluralize_display_name(mod_display)}"
+                    mod_price = mod_price * mod_quantity
+
+            if mod_display:
+                result.append({"name": mod_display, "price": mod_price})
+
+        return result
+
+    def _compute_base_price(
+        self,
+        item: ItemTask,
+        pricing: "PricingEngine | None",
+        menu_item_name: str | None,
+        attribute_values: dict,
+    ) -> float:
+        """Determine base price from bundle rules, pricing engine, or unit_price."""
+        bundle_price_rule = getattr(item, 'bundle_price_rule', None)
+        bundle_included_price = getattr(item, 'bundle_included_price', None)
+        is_fully_included = bundle_price_rule == 'included' and bundle_included_price is None
+        is_differential_bundle = bundle_price_rule == 'included' and bundle_included_price is not None
+
+        if is_fully_included:
+            return 0.0
+        elif is_differential_bundle:
+            return item.unit_price or 0.0
+        else:
+            base_price = getattr(item, 'base_price', None)
+            if base_price is None and pricing and hasattr(pricing, 'lookup_base_price') and menu_item_name:
+                try:
+                    menu_item = pricing._lookup_menu_item(menu_item_name)
+                    variant_attr = menu_item.get("size_category_slug") if menu_item and menu_item.get("size_prices") else None
+                    variant_value = attribute_values.get(variant_attr) if variant_attr else None
+                    base_price = pricing.lookup_base_price(menu_item_name, variant_value)
+                except (ValueError, KeyError):
+                    pass
+            if base_price is None:
+                base_price = item.unit_price or 0.0
+            return base_price
 
     def to_dict(
         self,
@@ -317,7 +403,7 @@ class UnifiedItemConverter:
         display_name = item.get_display_name()
 
         # Add "(side)" suffix for items that are sides of another item
-        is_side_item = getattr(item, 'side_of_item_id', None) is not None
+        is_side_item = getattr(item, 'bundle_parent_item_id', None) is not None
         if is_side_item:
             display_name = f"{display_name} (side)"
 
@@ -354,103 +440,13 @@ class UnifiedItemConverter:
             except Exception:
                 pass
 
-        for mod in item_modifiers:
-            # Skip name-forming categories (e.g., bread) - already in display name
-            # Exception: items with default ingredients keep their fixed name,
-            # so show bread as a sub-line (e.g., "The Classic BEC" shows "Bialy" as sub-line)
-            # Also check database for defaults (e.g., Maple Raisin Walnut Cream Cheese
-            # Sandwich has defaults in DB but they may not map to selections)
-            mod_category = mod.get("category", "")
-            if menu_cache.is_name_forming_category(mod_category):
-                has_defaults = item.has_default_ingredients()
-                if not has_defaults and item.menu_item_id:
-                    try:
-                        db_defaults = menu_cache.get_menu_item_default_ingredients(
-                            item.menu_item_id
-                        )
-                        has_defaults = bool(db_defaults)
-                    except Exception:
-                        pass
-                if not has_defaults:
-                    continue
-
-            # Skip attribute selections that modify ingredients (shown via the updated modifier)
-            # e.g., skip "egg_quantity=3_eggs" since the egg modifier already shows "3 Eggs"
-            # BUT: keep default ingredients (is_default=True) - they should always display
-            attr_config = item_attrs.get(mod_category, {})
-            if attr_config.get("modifies_ingredient_slug") and not mod.get("is_default"):
-                continue
-
-            mod_slug = mod.get("slug", "")
-
-            # Skip declined/negative selections - only show positive selections
-            if mod_slug in (DECLINED_SLUG, NO_SLUG):
-                continue
-
-            mod_display = mod.get("display_name") or format_slug_for_display(mod_slug, mod_category)
-            is_included_default = mod.get("is_default") or mod_slug in default_ingredient_slugs
-            has_extra_quantity = mod.get("_base_quantity", 0) > 0
-            mod_price = 0.0 if (is_included_default and not has_extra_quantity) else (mod.get("price", 0) or 0.0)
-            mod_quantity = mod.get("quantity", 1) or 1
-
-            # Handle quantity display
-            if mod_quantity > 1:
-                # Check if display name already includes the quantity (e.g., "3 Eggs")
-                # In that case, don't re-format and don't multiply price
-                import re
-                leading_qty_match = re.match(r'^(\d+)\s+', mod_display)
-                if leading_qty_match and int(leading_qty_match.group(1)) == mod_quantity:
-                    # Display name already has quantity prefix - don't re-format
-                    # Price is already the total upcharge, not per-unit
-                    pass
-                else:
-                    # Use ingredient_category for quantity unit lookup (e.g., "syrup" has "pump")
-                    # Fall back to mod_category if ingredient_category not set
-                    ing_category = mod.get("ingredient_category") or mod_category
-                    quantity_unit = menu_cache.get_ingredient_category_quantity_unit(ing_category)
-                    if quantity_unit:
-                        # Format: "2 pumps of Vanilla Syrup"
-                        unit_plural = quantity_unit + "s" if mod_quantity > 1 else quantity_unit
-                        mod_display = f"{mod_quantity} {unit_plural} of {mod_display}"
-                    else:
-                        # Fallback: "2 Vanilla Syrups"
-                        mod_display = f"{mod_quantity} {_pluralize_display_name(mod_display)}"
-                    mod_price = mod_price * mod_quantity
-
-            if mod_display:
-                modifiers.append({"name": mod_display, "price": mod_price})
+        modifiers.extend(
+            self._build_selection_modifiers(item, item_attrs, default_ingredient_slugs)
+        )
 
         customization_offered = getattr(item, 'customization_offered', False)
 
-        # Check for bundle-included items: full inclusion means $0 base price
-        bundle_price_rule = getattr(item, 'bundle_price_rule', None)
-        bundle_included_price = getattr(item, 'bundle_included_price', None)
-        is_fully_included = bundle_price_rule == 'included' and bundle_included_price is None
-        is_differential_bundle = bundle_price_rule == 'included' and bundle_included_price is not None
-
-        # Get base_price from pricing engine if available, or from item
-        # Data-driven: lookup by menu_item_name and variant attribute (if present)
-        if is_fully_included:
-            # Bundle-included items have $0 base price
-            base_price = 0.0
-        elif is_differential_bundle:
-            # For differential bundles, use unit_price (already calculated as the effective price).
-            # e.g., large fruit salad: unit_price = $4.95 - $2.95 = $2.00
-            base_price = item.unit_price or 0.0
-        else:
-            base_price = getattr(item, 'base_price', None)
-            if base_price is None and pricing and hasattr(pricing, 'lookup_base_price') and menu_item_name:
-                try:
-                    # Derive variant attribute from menu_item's size_category_slug
-                    menu_item = pricing._lookup_menu_item(menu_item_name)
-                    variant_attr = menu_item.get("size_category_slug") if menu_item and menu_item.get("size_prices") else None
-                    variant_value = attribute_values.get(variant_attr) if variant_attr else None
-                    base_price = pricing.lookup_base_price(menu_item_name, variant_value)
-                except (ValueError, KeyError):
-                    # Item not in menu data, will fall back to unit_price
-                    pass
-            if base_price is None:
-                base_price = item.unit_price or 0.0
+        base_price = self._compute_base_price(item, pricing, menu_item_name, attribute_values)
 
         result = self._build_common_dict_fields(item)
 
@@ -512,7 +508,6 @@ class UnifiedItemConverter:
             "attribute_values": attribute_values,
             "base_price": base_price,
             "item_total": item_total,
-            "is_signature": getattr(item, 'is_signature', False),
             # Bundle fields for persistence
             "bundle_id": bundle_id,
             "bundle_parent_item_id": bundle_parent_item_id,

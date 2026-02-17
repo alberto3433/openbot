@@ -8,7 +8,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 """
 
 import re
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from ..schemas import StateMachineResult
 from ..parsers.constants import DEFAULT_PAGINATION_SIZE
@@ -34,24 +34,14 @@ class OptionsInquiryHandler:
 
     def __init__(
         self,
-        ctx: "ConfigHandlerContext | None" = None,
-        # Legacy parameter for backward compatibility (deprecated)
-        get_optional_attributes: Callable[[str], list[dict]] | None = None,
+        ctx: "ConfigHandlerContext",
     ) -> None:
         """Initialize the options inquiry handler.
 
         Args:
-            ctx: ConfigHandlerContext with shared dependencies. If provided,
-                 individual callback parameters are ignored.
-
-        Deprecated args (use ctx instead):
-            get_optional_attributes: Callback to get optional attributes for an item type.
+            ctx: ConfigHandlerContext with shared dependencies.
         """
-        if ctx is not None:
-            self._get_optional_attributes = ctx.get_optional_attributes
-        else:
-            # Legacy: individual parameter
-            self._get_optional_attributes = get_optional_attributes
+        self._get_optional_attributes = ctx.get_optional_attributes
 
     def is_options_inquiry(self, user_input: str, topic: str | None = None) -> bool:
         """Check if user is asking about available options.

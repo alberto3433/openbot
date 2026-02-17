@@ -586,7 +586,7 @@ class TestModifiersConsistency:
             },
         )
         # Add spread as a selection with price
-        item.add_selection(slug="cream cheese", category="spread", price=1.50)
+        item.add_selection(slug="cream cheese", category="spread")
         order.items.add_item(item)
 
         result = order_task_to_dict(order, pricing=create_test_pricing())

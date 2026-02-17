@@ -875,6 +875,12 @@
             <div class="hint">Edit on the Global Attributes page (shared across all item types)</div>
           </div>
 
+          <div class="form-group">
+            <label for="attrSubcategoryFilter">Option Subcategory Filter</label>
+            <input type="text" id="attrSubcategoryFilter" placeholder="e.g., bagel, wrap, cream_cheese" />
+            <div class="hint">Filter options to only those whose ingredient has this subcategory</div>
+          </div>
+
           <div class="attr-form-row" id="multiSelectOptions" style="display: none;">
             <div class="form-group">
               <label for="attrMinSelections">Min Selections</label>
@@ -1419,6 +1425,7 @@
               ${link.is_required ? '<span class="attr-badge required">Required</span>' : ''}
               ${link.ask_in_conversation ? '<span class="attr-badge ask">Ask</span>' : ''}
               ${link.listen_only ? '<span class="attr-badge listen-only">Listen Only</span>' : ''}
+              ${link.option_subcategory_filter ? `<span class="attr-badge type">${escapeHtml(link.option_subcategory_filter)}</span>` : ''}
               <span class="attr-badge options">${(link.options || []).length} options</span>
             </div>
           </div>
@@ -1761,6 +1768,7 @@
       document.getElementById("attrQuestionText").value = link.question_text || '';
       document.getElementById("attrMinSelections").value = link.min_selections || '';
       document.getElementById("attrMaxSelections").value = link.max_selections || '';
+      document.getElementById("attrSubcategoryFilter").value = link.option_subcategory_filter || '';
 
       attributeModal.classList.add("active");
     }
@@ -1782,7 +1790,8 @@
         ask_in_conversation: document.getElementById("attrAskInConversation").checked,
         listen_only: document.getElementById("attrListenOnly").checked,
         min_selections: parseInt(document.getElementById("attrMinSelections").value) || null,
-        max_selections: parseInt(document.getElementById("attrMaxSelections").value) || null
+        max_selections: parseInt(document.getElementById("attrMaxSelections").value) || null,
+        option_subcategory_filter: document.getElementById("attrSubcategoryFilter").value.trim() || null
       };
 
       setSaveButtonState(saveBtn, "saving");

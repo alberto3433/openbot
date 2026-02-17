@@ -373,7 +373,6 @@ def _parse_item_generic(
         quantity=quantity,
         attr_result=attr_result,
         modifiers=modifier_selections,
-        is_signature=has_defaults,  # Items with defaults need default ingredient population
         original_text=text,
         special_instructions=special_instructions,
     )
@@ -853,7 +852,6 @@ def _try_parse_inline_specs(
                             quantity=spec["quantity"],
                             attribute_values={spec["attr_slug"]: spec["attr_value"]},
                             original_text=text,
-                            is_signature=False,
                         )
                         parsed_items.append(item_entry)
 
@@ -865,7 +863,6 @@ def _try_parse_inline_specs(
                             item_name=matched_item_name,
                             quantity=remaining_qty,
                             original_text=text,
-                            is_signature=False,
                         )
                         parsed_items.append(unspecified_entry)
 
@@ -998,7 +995,6 @@ def _handle_partial_modifier_split(
         attr_result=merged_attr_result,
         modifiers=modifier_selections_split,
         original_text=text,
-        is_signature=has_defaults,
         special_instructions=special_instructions,
     )
 
@@ -1010,7 +1006,6 @@ def _handle_partial_modifier_split(
         attr_result=base_attr_result,
         modifiers=[],
         original_text=text,
-        is_signature=has_defaults,
         special_instructions=[],
     )
 
@@ -1196,7 +1191,6 @@ def _extract_and_build_configurable_item(
         attr_result=attr_result,
         modifiers=modifier_selections,
         original_text=text,
-        is_signature=has_defaults,  # Items with defaults need default ingredient population
         special_instructions=special_instructions,
     )
 

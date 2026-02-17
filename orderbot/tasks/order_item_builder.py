@@ -17,11 +17,11 @@ Architecture Layer: ITEM CREATION (during order flow)
 │                        Item creation builder                                │
 │                                                                             │
 │   OrderItemBuilder: Creates initial item dict from parser output            │
-│   • Looks up menu item by name (gets DB id, is_signature, etc.)            │
+│   • Looks up menu item by name (gets DB id, etc.)                          │
 │   • Resolves base price from PricingEngine                                 │
 │   • Detects if item type is configurable (needs questions)                 │
 │                                                                             │
-│   Output: Dict with name, item_type, base_price, id, is_signature          │
+│   Output: Dict with name, item_type, base_price, id, skip_config           │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ (dict becomes MenuItemTask.from_dict)
@@ -95,7 +95,7 @@ class OrderItemBuilder:
             kwargs: Original kwargs with item details
 
         Returns:
-            Dict with name, item_type, base_price, id, is_signature, skip_config
+            Dict with name, item_type, base_price, id, skip_config
         """
         # Use item_name from kwargs if provided (may have been canonicalized)
         lookup_name = kwargs.get("item_name") or item_name
@@ -108,7 +108,6 @@ class OrderItemBuilder:
                 "item_type": menu_data.get("item_type") or item_type,
                 "base_price": menu_data.get("base_price", 0),
                 "id": menu_data.get("id"),
-                "is_signature": menu_data.get("is_signature", False),
                 "skip_config": menu_data.get("skip_config", False),
             }
             # Include size_category_slug for items with variant pricing
@@ -141,7 +140,6 @@ class OrderItemBuilder:
                 "item_type": item_type,
                 "base_price": base_price,
                 "id": None,
-                "is_signature": False,
                 "skip_config": False,
             }
 
@@ -154,7 +152,6 @@ class OrderItemBuilder:
                     "item_type": item_type,
                     "base_price": base_price,
                     "id": None,
-                    "is_signature": False,
                     "skip_config": False,
                 }
             except ValueError:
@@ -167,6 +164,5 @@ class OrderItemBuilder:
             "item_type": item_type,
             "base_price": 0,
             "id": None,
-            "is_signature": False,
             "skip_config": False,
         }

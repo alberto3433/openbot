@@ -954,8 +954,8 @@ class TestSyrupDisambiguationWithMultiInput:
             "Expected pending disambiguation to be set"
         )
         disambig = result.order.pending_attr_disambiguation
-        assert disambig.get("attr_slug") == "milk_sweetener_syrup", (
-            f"Expected attr_slug='milk_sweetener_syrup', got: {disambig.get('attr_slug')}"
+        assert disambig.attr_slug == "milk_sweetener_syrup", (
+            f"Expected attr_slug='milk_sweetener_syrup', got: {disambig.attr_slug}"
         )
 
         # Should NOT have added all syrups
@@ -1007,8 +1007,8 @@ class TestSyrupDisambiguationWithMultiInput:
         # Should have disambiguation pending with quantity=2
         assert result.order.pending_attr_disambiguation is not None
         disambig = result.order.pending_attr_disambiguation
-        assert disambig.get("modifiers", {}).get("_quantity", 1) == 2, (
-            f"Expected quantity 2 in disambiguation, got: {disambig.get('modifiers')}"
+        assert disambig.modifiers.get("_quantity", 1) == 2, (
+            f"Expected quantity 2 in disambiguation, got: {disambig.modifiers}"
         )
 
     def test_2_vanilla_syrups_no_disambiguation(self):

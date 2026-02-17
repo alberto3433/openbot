@@ -22,6 +22,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def build_quick_replies(names: list[str]) -> list[dict[str, str]]:
+    """Build quick reply dicts from a list of display names.
+
+    Covers the most common pattern: label and value are both the name.
+    For custom label/value mappings, use a list comprehension instead.
+    """
+    return [{"label": name, "value": name} for name in names]
+
+
 def build_item_options_list(active_items: list) -> list[dict]:
     """Build a list of item options for selection UI.
 

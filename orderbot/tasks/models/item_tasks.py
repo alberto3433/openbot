@@ -74,8 +74,6 @@ class MenuItemTask(ItemTask):
     modifications: list[str] = Field(default_factory=list)  # User modifications
     removed_ingredients: list[str] = Field(default_factory=list)  # Default ingredients that were removed
 
-    is_signature: bool = False  # Whether this is a signature/featured menu item
-
     # Track unavailable options user attempted to select
     # Map of attr_slug -> {attempted_slug, attempted_display}
     # Used to show helpful "We don't have X - we have Y or Z" messages
@@ -101,10 +99,6 @@ class MenuItemTask(ItemTask):
     # Track if user explicitly declined customization in their initial order
     # e.g., "plain bagel with cream cheese nothing else"
     customization_declined: bool = False
-
-    # Side item linking - if this item is a side (e.g., bagel with omelette),
-    # this holds the ID of the parent item
-    side_of_item_id: str | None = None
 
     # Item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions: list[str] = Field(default_factory=list)
@@ -292,7 +286,7 @@ class MenuItemTask(ItemTask):
         slug: str,
         category: str,
         quantity: int = 1,
-        price: float = 0.0,  # DEPRECATED: Price is now calculated in recalculate_item_price()
+        price: float = 0.0,  # Accepted for caller compat; ignored (pricing engine sets prices)
         display_name: str | None = None,
         ingredient_category: str | None = None,
         is_default: bool = False,
@@ -301,16 +295,11 @@ class MenuItemTask(ItemTask):
     ) -> None:
         """Add a selection to the item.
 
-        Note: The `price` parameter is DEPRECATED and ignored. Prices are now
-        calculated centrally in PricingEngine.recalculate_item_price() using
-        GlobalAttributeOption.price_modifier as the single source of truth.
-        This prevents double-counting bugs from storing prices at multiple points.
-
         Args:
             slug: Selected option identifier (e.g., "plain", "bacon", "yes")
             category: What type of selection (e.g., "bread", "protein", "toasted")
             quantity: How many (default 1)
-            price: DEPRECATED - ignored, kept for backward compatibility
+            price: Ignored. Prices are calculated in recalculate_item_price().
             display_name: Human-readable name (looked up from cache if not provided)
             ingredient_category: The ingredient's category (e.g., "syrup", "sweetener")
                 for quantity unit lookup. Different from category (attribute slug).
@@ -357,12 +346,11 @@ class MenuItemTask(ItemTask):
             else:
                 display_name = format_slug_for_display(slug)
 
-        # Build selection entry - price starts at 0, calculated later in recalculate_item_price()
+        # Build selection entry - price calculated later in recalculate_item_price()
         selection = {
             "slug": slug,
             "category": category,
             "quantity": quantity,
-            "price": 0.0,  # Always 0 - real price calculated in recalculate_item_price()
             "display_name": display_name,
         }
         if ingredient_category:
@@ -408,20 +396,12 @@ class MenuItemTask(ItemTask):
                         if new_qty > 0:
                             # Decrement quantity instead of removing
                             sel["quantity"] = new_qty
-                            # Subtract price for removed quantity
-                            price = sel.get("price", 0)
-                            if price > 0:
-                                self.unit_price -= price * decrement_by
                             removed_any = True
                             i += 1  # Move to next, we didn't remove this one
                             continue
                         # new_qty <= 0: fall through to remove the entire selection
 
-                    removed = self.selections.pop(i)
-                    # Subtract price from unit_price
-                    price = removed.get("price", 0)
-                    if price > 0:
-                        self.unit_price -= price * removed.get("quantity", 1)
+                    self.selections.pop(i)
                     removed_any = True
                     continue  # Don't increment i since we removed an element
             i += 1
@@ -450,11 +430,7 @@ class MenuItemTask(ItemTask):
             slug_match = target_slug in sel.get("slug", "").replace("_", " ").lower()
             display_match = target_slug in sel.get("display_name", "").lower()
             if slug_match or display_match:
-                removed = self.selections.pop(i)
-                # Subtract price from unit_price
-                price = removed.get("price", 0)
-                if price > 0:
-                    self.unit_price -= price * removed.get("quantity", 1)
+                self.selections.pop(i)
                 removed_any = True
                 continue  # Don't increment i since we removed an element
             i += 1
@@ -673,10 +649,29 @@ class MenuItemTask(ItemTask):
         a pre-configured item (like signature sandwiches or omelettes) whose
         name should remain fixed and ingredients shown as sub-lines.
 
-        This is more data-driven than checking is_signature flag - it's based
+        This is data-driven - it's based
         on whether the item actually has menu_item_ingredients defined.
         """
         return any(mod.get("is_default", False) for mod in self.selections)
+
+    def has_default_ingredients_resolved(self) -> bool:
+        """Check if this item has default ingredients, checking both selections and DB.
+
+        Unlike has_default_ingredients() which only checks loaded selections,
+        this also checks the database for items where defaults exist but weren't
+        mapped to selections (e.g., Maple Raisin Walnut Cream Cheese Sandwich).
+        """
+        if self.has_default_ingredients():
+            return True
+        if self.menu_item_id:
+            try:
+                db_defaults = menu_cache.get_menu_item_default_ingredients(
+                    self.menu_item_id
+                )
+                return bool(db_defaults)
+            except (MenuDataNotLoadedError, Exception):
+                pass
+        return False
 
     def get_display_name(self) -> str:
         """Get display name for this menu item.
@@ -702,22 +697,8 @@ class MenuItemTask(ItemTask):
         """Get the base display name without unit suffix."""
         # Items with default ingredients keep their fixed name
         # (e.g., "The Classic BEC", "The Leo Omelette")
-        # Check both selections AND database - defaults may exist in DB
-        # even if they weren't successfully mapped to selections
-        if self.has_default_ingredients():
+        if self.has_default_ingredients_resolved():
             return self.menu_item_name
-
-        # Also check database for defaults (e.g., Maple Raisin Walnut Cream
-        # Cheese Sandwich has defaults but they may not map to attributes)
-        if self.menu_item_id:
-            try:
-                db_defaults = menu_cache.get_menu_item_default_ingredients(
-                    self.menu_item_id
-                )
-                if db_defaults:
-                    return self.menu_item_name
-            except MenuDataNotLoadedError:
-                pass  # Fall through to name-forming logic
 
         # Check for name-forming category modifiers (e.g., bread type)
         for sel in self.selections:

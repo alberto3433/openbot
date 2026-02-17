@@ -12,6 +12,7 @@ import re
 from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
+from .models.pending_states import PendingChangeClarification
 from .schemas import StateMachineResult
 from .handler_utils import get_last_item
 from orderbot.cache import menu_cache
@@ -19,7 +20,6 @@ from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
-    from .handler_config import HandlerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +46,12 @@ class ConfigChangeHandler:
 
     def __init__(
         self,
-        config: "HandlerConfig",
         modifier_change_handler: "ModifierChangeHandler | None" = None,
     ):
         """
         Initialize the change handler.
 
         Args:
-            config: HandlerConfig with shared dependencies.
             modifier_change_handler: Handler for modifier changes.
         """
         self.modifier_change_handler = modifier_change_handler
@@ -87,7 +85,7 @@ class ConfigChangeHandler:
             # Couldn't understand the response
             logger.info("CHANGE CLARIFICATION: Couldn't understand response '%s'", user_input)
             # Build a generic clarification message from the possible attributes
-            possible_attrs = clarification.get("possible_attributes", [])
+            possible_attrs = clarification.possible_attributes
             if possible_attrs and len(possible_attrs) >= 2:
                 # Format: "Would you like to change the X or the Y?"
                 attr_names = [a.replace("_", " ") for a in possible_attrs]
@@ -103,9 +101,9 @@ class ConfigChangeHandler:
         order.pending_change_clarification = None
 
         # Apply the change
-        item_id = clarification.get("item_id")
-        new_value = clarification.get("new_value", "")
-        target = clarification.get("target")
+        item_id = clarification.item_id
+        new_value = clarification.new_value
+        target = clarification.target
 
         result = self.modifier_change_handler.apply_change(
             order=order,
@@ -161,12 +159,12 @@ class ConfigChangeHandler:
             item_id = last_item.id if last_item else None
 
             # Store clarification state
-            order.pending_change_clarification = {
-                "new_value": change_request.new_value,
-                "possible_attributes": list(change_request.possible_attributes),
-                "item_id": item_id,
-                "target": change_request.target,
-            }
+            order.pending_change_clarification = PendingChangeClarification(
+                new_value=change_request.new_value,
+                possible_attributes=list(change_request.possible_attributes),
+                item_id=item_id,
+                target=change_request.target,
+            )
 
             msg = self.modifier_change_handler.generate_clarification_message(change_request)
             return StateMachineResult(message=msg, order=order)

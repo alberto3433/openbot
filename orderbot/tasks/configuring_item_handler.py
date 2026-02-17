@@ -118,17 +118,6 @@ class ConfiguringItemHandler:
         """
         return self.config_selection_handler.handle_item_selection(user_input, order)
 
-    def _handle_modifier_selection(
-        self,
-        user_input: str,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Delegate to config_selection_handler for modifier selection.
-
-        This method is kept for backward compatibility with tests.
-        """
-        return self.config_selection_handler.handle_modifier_selection(user_input, order)
-
     def handle_configuring_item(
         self,
         user_input: str,

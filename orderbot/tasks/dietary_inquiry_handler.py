@@ -23,6 +23,7 @@ from .schemas import StateMachineResult
 from .mixins import MenuDataMixin
 from .utils.text import format_english_list, format_paginated_list
 from .parsers.constants import DEFAULT_PAGINATION_SIZE
+from .models.pending_states import PendingDietaryFollowup, PendingIngredientSearch
 from .pending_fields import PendingField
 
 if TYPE_CHECKING:
@@ -188,7 +189,8 @@ class DietaryInquiryHandler(MenuDataMixin):
             order.clear_menu_pagination()
 
         # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
+        from .handler_utils import build_quick_replies
+        qr = build_quick_replies(batch)
         if has_more:
             qr.append({"label": f"{remaining} more", "value": "what else?"})
 
@@ -264,10 +266,10 @@ class DietaryInquiryHandler(MenuDataMixin):
             )
         else:
             # Set pending state so we can handle "yes" response
-            order.pending_dietary_followup = {
-                "dietary_type": dietary_type,
-                "category": None,
-            }
+            order.pending_dietary_followup = PendingDietaryFollowup(
+                dietary_type=dietary_type,
+                category=None,
+            )
             order.pending_field = PendingField.CONFIRM_DIETARY_FOLLOWUP
             return StateMachineResult(
                 message=(
@@ -445,7 +447,7 @@ class DietaryInquiryHandler(MenuDataMixin):
             order.clear_menu_pagination()
 
         # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
+        qr = build_quick_replies(batch)
         if has_more:
             qr.append({"label": f"{remaining} more", "value": "what else?"})
 
@@ -542,11 +544,11 @@ class DietaryInquiryHandler(MenuDataMixin):
             msg = f"For items with {ingredient_term}, we have: {items_list}. Which would you like?"
 
             if has_more:
-                order.pending_ingredient_search = {
-                    "ingredient": ingredient_term,
-                    "matches": matches,
-                    "offset": display_count,
-                }
+                order.pending_ingredient_search = PendingIngredientSearch(
+                    ingredient=ingredient_term,
+                    matches=matches,
+                    offset=display_count,
+                )
 
         # Build quick replies for inline clickable text
         if len(matches) == 1:

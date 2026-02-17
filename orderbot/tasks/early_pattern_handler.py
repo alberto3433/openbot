@@ -23,7 +23,7 @@ from orderbot.cache import menu_cache
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult
 from .parsers.deterministic import MAKE_IT_N_PATTERN
-from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity
+from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity, BASIC_WORD_TO_NUM
 from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.intent_patterns import strip_conversational_fillers
 from .handler_utils import (
@@ -63,13 +63,6 @@ ADD_QUANTITY_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Word-to-number mapping for quantity parsing
-_WORD_TO_NUM: dict[str, int] = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-}
-
-
 def _parse_quantity(num_str: str) -> int | None:
     """Parse quantity from numeric or word string.
 
@@ -83,7 +76,7 @@ def _parse_quantity(num_str: str) -> int | None:
     if num_str.isdigit():
         qty = int(num_str)
         return qty if qty >= 1 else None
-    return _WORD_TO_NUM.get(num_str)
+    return BASIC_WORD_TO_NUM.get(num_str)
 
 
 def apply_qualifier_to_selection(item: MenuItemTask, input_lower: str) -> bool:

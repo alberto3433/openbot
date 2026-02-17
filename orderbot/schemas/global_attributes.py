@@ -225,6 +225,9 @@ class ItemTypeGlobalAttributeOut(BaseModel):
     question_text: Optional[str] = None
     offer_question_text: Optional[str] = None
 
+    # Subcategory filter for narrowing options per item type
+    option_subcategory_filter: Optional[str] = None
+
     # Options from the global attribute
     options: List[GlobalAttributeOptionOut] = []
 
@@ -242,6 +245,7 @@ class ItemTypeGlobalAttributeLinkCreate(BaseModel):
     listen_only: bool = False
     min_selections: Optional[int] = None
     max_selections: Optional[int] = None
+    option_subcategory_filter: Optional[str] = None
 
 
 class ItemTypeGlobalAttributeLinkUpdate(BaseModel):
@@ -253,6 +257,7 @@ class ItemTypeGlobalAttributeLinkUpdate(BaseModel):
     listen_only: Optional[bool] = None
     min_selections: Optional[int] = None
     max_selections: Optional[int] = None
+    option_subcategory_filter: Optional[str] = None
 
 
 # =============================================================================

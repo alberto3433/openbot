@@ -282,6 +282,11 @@ class ItemTypeGlobalAttribute(Base):
     ask_in_conversation = Column(Boolean, nullable=False, default=True)  # Should prompt user
     listen_only = Column(Boolean, nullable=False, default=False)  # Never ask, only capture if volunteered
 
+    # When set, filter attribute options to only those whose linked ingredient
+    # has this subcategory. Enables per-item-type option narrowing.
+    # e.g., bagel item type + bread attribute -> filter to subcategory "bagel"
+    option_subcategory_filter = Column(String(50), nullable=True)
+
     # For multi_select types
     min_selections = Column(Integer, nullable=True)
     max_selections = Column(Integer, nullable=True)

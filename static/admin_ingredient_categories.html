@@ -94,6 +94,113 @@
       font-size: 13px;
       color: var(--text-primary);
     }
+    /* Subcategory expand/collapse */
+    .expand-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 4px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      transition: transform 0.2s;
+    }
+    .expand-btn:hover {
+      color: var(--text-primary);
+    }
+    .expand-btn.expanded {
+      transform: rotate(90deg);
+    }
+    .subcategory-row td {
+      padding: 0 !important;
+      background: var(--bg-tertiary);
+    }
+    .subcategory-panel {
+      padding: 12px 16px 12px 40px;
+    }
+    .subcategory-panel .subcat-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .subcat-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .subcat-item:last-of-type {
+      border-bottom: none;
+    }
+    .subcat-item code {
+      min-width: 120px;
+    }
+    .subcat-item .subcat-name {
+      flex: 1;
+      color: var(--text-primary);
+    }
+    .subcat-item .subcat-order {
+      width: 40px;
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+    .subcat-item .subcat-actions {
+      display: flex;
+      gap: 4px;
+    }
+    .subcat-add-form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-light);
+    }
+    .subcat-add-form input {
+      padding: 6px 10px;
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      font-size: 13px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+    }
+    .subcat-add-form input:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+    }
+    .subcat-add-form input.slug-input { width: 120px; }
+    .subcat-add-form input.name-input { width: 140px; }
+    .subcat-add-form input.order-input { width: 50px; }
+    .subcat-empty {
+      font-size: 13px;
+      color: var(--text-tertiary);
+      font-style: italic;
+      padding: 4px 0;
+    }
+    /* Inline edit row */
+    .subcat-edit-form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+    }
+    .subcat-edit-form input {
+      padding: 5px 8px;
+      border: 1px solid var(--input-focus-border);
+      border-radius: 6px;
+      font-size: 13px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+    }
+    .subcat-edit-form input.slug-input { width: 120px; }
+    .subcat-edit-form input.name-input { width: 140px; }
+    .subcat-edit-form input.order-input { width: 50px; }
+
     /* Help section styles */
     .help-text {
       font-size: 13px;
@@ -190,6 +297,7 @@
         <table id="categoriesTable" style="display: none;">
           <thead>
             <tr>
+              <th style="width: 30px;"></th>
               <th>Slug</th>
               <th>Display Name</th>
               <th>Modifier Type</th>
@@ -271,8 +379,11 @@
 
   <script>
     const API_BASE = "/api/v1/admin/ingredient-categories";
+    const SUBCAT_API = "/api/v1/admin/ingredient-subcategories";
     let categories = [];
     let currentFilter = "all";
+    let subcategoriesCache = {};  // category_slug -> subcategory array
+    let expandedCategories = new Set();
 
     // Toast container reference
     const toastContainer = document.getElementById("toastContainer");
@@ -382,17 +493,240 @@
       empty.style.display = "none";
       table.style.display = "table";
 
-      tbody.innerHTML = filtered.map(c => `
-        <tr>
-          <td><code>${escapeHtml(c.slug)}</code></td>
-          <td>${escapeHtml(c.display_name)}</td>
-          <td>${getModifierTypeBadge(c.modifier_type)}</td>
-          <td>${c.display_order}</td>
-          <td>
-            <button class="btn small" onclick="openEditModal(${c.id})">Edit</button>
-          </td>
-        </tr>
-      `).join("");
+      let html = '';
+      filtered.forEach(c => {
+        const isExpanded = expandedCategories.has(c.slug);
+        html += `
+          <tr>
+            <td>
+              <button class="expand-btn${isExpanded ? ' expanded' : ''}"
+                      onclick="toggleSubcategories('${escapeHtml(c.slug)}')"
+                      title="Show subcategories">&#9654;</button>
+            </td>
+            <td><code>${escapeHtml(c.slug)}</code></td>
+            <td>${escapeHtml(c.display_name)}</td>
+            <td>${getModifierTypeBadge(c.modifier_type)}</td>
+            <td>${c.display_order}</td>
+            <td>
+              <button class="btn small" onclick="openEditModal(${c.id})">Edit</button>
+            </td>
+          </tr>
+          <tr class="subcategory-row" id="subcat-row-${escapeHtml(c.slug)}"
+              style="display: ${isExpanded ? 'table-row' : 'none'};">
+            <td colspan="6">
+              <div class="subcategory-panel" id="subcat-panel-${escapeHtml(c.slug)}">
+                <div class="subcat-header">Subcategories</div>
+                <div id="subcat-list-${escapeHtml(c.slug)}">
+                  ${isExpanded ? '' : '<span class="subcat-empty">Loading...</span>'}
+                </div>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+      tbody.innerHTML = html;
+
+      // Re-render subcategories for any already-expanded categories
+      expandedCategories.forEach(slug => {
+        if (subcategoriesCache[slug]) {
+          renderSubcategoriesInline(slug);
+        }
+      });
+    }
+
+    // Toggle subcategory panel for a category
+    async function toggleSubcategories(categorySlug) {
+      const row = document.getElementById(`subcat-row-${categorySlug}`);
+      const btn = row.previousElementSibling.querySelector('.expand-btn');
+
+      if (expandedCategories.has(categorySlug)) {
+        // Collapse
+        expandedCategories.delete(categorySlug);
+        row.style.display = 'none';
+        btn.classList.remove('expanded');
+      } else {
+        // Expand
+        expandedCategories.add(categorySlug);
+        row.style.display = 'table-row';
+        btn.classList.add('expanded');
+
+        // Lazy-load on first expand
+        if (!subcategoriesCache[categorySlug]) {
+          await loadSubcategories(categorySlug);
+        }
+        renderSubcategoriesInline(categorySlug);
+      }
+    }
+
+    // Fetch subcategories from API and cache
+    async function loadSubcategories(categorySlug) {
+      try {
+        const resp = await fetch(
+          `${SUBCAT_API}?category_slug=${encodeURIComponent(categorySlug)}`,
+          { credentials: 'include' }
+        );
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        subcategoriesCache[categorySlug] = data.subcategories || [];
+      } catch (err) {
+        console.error("Failed to load subcategories:", err);
+        subcategoriesCache[categorySlug] = [];
+      }
+    }
+
+    // Render subcategory list + add form inside the panel
+    function renderSubcategoriesInline(categorySlug) {
+      const container = document.getElementById(`subcat-list-${categorySlug}`);
+      if (!container) return;
+
+      const subs = subcategoriesCache[categorySlug] || [];
+      let html = '';
+
+      if (subs.length === 0) {
+        html += '<div class="subcat-empty">No subcategories defined</div>';
+      } else {
+        subs.forEach(sub => {
+          html += `
+            <div class="subcat-item" id="subcat-item-${sub.id}">
+              <code>${escapeHtml(sub.slug)}</code>
+              <span class="subcat-name">${escapeHtml(sub.display_name)}</span>
+              <span class="subcat-order">${sub.display_order}</span>
+              <span class="subcat-actions">
+                <button class="btn small" onclick="editSubcategory(${sub.id}, '${escapeHtml(categorySlug)}')">Edit</button>
+                <button class="btn small danger" onclick="deleteSubcategory(${sub.id}, '${escapeHtml(categorySlug)}')">Del</button>
+              </span>
+            </div>
+          `;
+        });
+      }
+
+      // Add form
+      html += `
+        <div class="subcat-add-form">
+          <input type="text" class="slug-input" id="subcat-add-slug-${categorySlug}" placeholder="slug" />
+          <input type="text" class="name-input" id="subcat-add-name-${categorySlug}" placeholder="Display Name" />
+          <input type="number" class="order-input" id="subcat-add-order-${categorySlug}" placeholder="0" value="0" min="0" />
+          <button class="btn small primary" onclick="addSubcategory('${escapeHtml(categorySlug)}')">Add</button>
+        </div>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    // Add a new subcategory
+    async function addSubcategory(categorySlug) {
+      const slugEl = document.getElementById(`subcat-add-slug-${categorySlug}`);
+      const nameEl = document.getElementById(`subcat-add-name-${categorySlug}`);
+      const orderEl = document.getElementById(`subcat-add-order-${categorySlug}`);
+
+      const slug = slugEl.value.trim().toLowerCase();
+      const display_name = nameEl.value.trim();
+      const display_order = parseInt(orderEl.value) || 0;
+
+      if (!slug || !display_name) {
+        showToast("Slug and Display Name are required", "error");
+        return;
+      }
+      if (!/^[a-z0-9_-]+$/.test(slug)) {
+        showToast("Slug must be lowercase letters, numbers, hyphens, underscores", "error");
+        return;
+      }
+
+      try {
+        const resp = await fetch(SUBCAT_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug, display_name, category_slug: categorySlug, display_order }),
+          credentials: 'include',
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        showToast(`Subcategory "${display_name}" added`, "success");
+        await loadSubcategories(categorySlug);
+        renderSubcategoriesInline(categorySlug);
+      } catch (err) {
+        console.error("Failed to add subcategory:", err);
+        showToast(`Failed to add: ${err.message}`, "error");
+      }
+    }
+
+    // Switch a subcategory item to inline edit mode
+    function editSubcategory(id, categorySlug) {
+      const subs = subcategoriesCache[categorySlug] || [];
+      const sub = subs.find(s => s.id === id);
+      if (!sub) return;
+
+      const el = document.getElementById(`subcat-item-${id}`);
+      if (!el) return;
+
+      el.outerHTML = `
+        <div class="subcat-edit-form" id="subcat-edit-${id}">
+          <input type="text" class="slug-input" id="subcat-edit-slug-${id}" value="${escapeHtml(sub.slug)}" />
+          <input type="text" class="name-input" id="subcat-edit-name-${id}" value="${escapeHtml(sub.display_name)}" />
+          <input type="number" class="order-input" id="subcat-edit-order-${id}" value="${sub.display_order}" min="0" />
+          <button class="btn small primary" onclick="saveSubcategoryEdit(${id}, '${escapeHtml(categorySlug)}')">Save</button>
+          <button class="btn small" onclick="renderSubcategoriesInline('${escapeHtml(categorySlug)}')">Cancel</button>
+        </div>
+      `;
+    }
+
+    // Save inline edit for a subcategory
+    async function saveSubcategoryEdit(id, categorySlug) {
+      const slug = document.getElementById(`subcat-edit-slug-${id}`).value.trim().toLowerCase();
+      const display_name = document.getElementById(`subcat-edit-name-${id}`).value.trim();
+      const display_order = parseInt(document.getElementById(`subcat-edit-order-${id}`).value) || 0;
+
+      if (!slug || !display_name) {
+        showToast("Slug and Display Name are required", "error");
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${SUBCAT_API}/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slug, display_name, display_order }),
+          credentials: 'include',
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        showToast(`Subcategory "${display_name}" updated`, "success");
+        await loadSubcategories(categorySlug);
+        renderSubcategoriesInline(categorySlug);
+      } catch (err) {
+        console.error("Failed to update subcategory:", err);
+        showToast(`Failed to update: ${err.message}`, "error");
+      }
+    }
+
+    // Delete a subcategory
+    async function deleteSubcategory(id, categorySlug) {
+      const subs = subcategoriesCache[categorySlug] || [];
+      const sub = subs.find(s => s.id === id);
+      const name = sub ? sub.display_name : `#${id}`;
+
+      if (!confirm(`Delete subcategory "${name}"? Ingredients using it must be reassigned first.`)) return;
+
+      try {
+        const resp = await fetch(`${SUBCAT_API}/${id}`, {
+          method: "DELETE",
+          credentials: 'include',
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        showToast(`Subcategory "${name}" deleted`, "success");
+        await loadSubcategories(categorySlug);
+        renderSubcategoriesInline(categorySlug);
+      } catch (err) {
+        console.error("Failed to delete subcategory:", err);
+        showToast(`Failed to delete: ${err.message}`, "error");
+      }
     }
 
     // Get modifier type badge HTML

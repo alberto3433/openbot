@@ -15,8 +15,12 @@ option aliases via menu_cache.resolve_option_by_alias().
 import logging
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .models import MenuItemTask
+
+if TYPE_CHECKING:
+    from .models.pending_states import PendingChangeClarification
 from .normalization import (
     resolve_to_canonical,
     get_attribute_display_name as _get_attr_display_name_from_db,
@@ -607,7 +611,7 @@ class ModifierChangeHandler(BaseHandler):
             return f"Got it, {display_value} {display_name}."
 
     def resolve_clarification(
-        self, pending_clarification: dict, user_response: str
+        self, pending_clarification: "PendingChangeClarification", user_response: str
     ) -> tuple[str | None, str | None]:
         """
         Resolve a pending clarification based on user response.
@@ -616,15 +620,15 @@ class ModifierChangeHandler(BaseHandler):
         response matches an attribute alias from the database.
 
         Args:
-            pending_clarification: Dict with new_value and possible_attributes
+            pending_clarification: Pydantic model with new_value and possible_attributes
             user_response: User's response to the clarification question
 
         Returns:
             Tuple of (resolved attribute slug, error message if failed)
         """
         user_response_lower = normalize_text(user_response)
-        new_value = pending_clarification.get("new_value", "").lower()
-        possible_attributes = pending_clarification.get("possible_attributes", [])
+        new_value = pending_clarification.new_value.lower()
+        possible_attributes = pending_clarification.possible_attributes
 
         # Get data-driven mapping of keywords to attribute slugs
         target_attr_map = self._get_target_attr_map()

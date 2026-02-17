@@ -29,7 +29,6 @@ class DeliveryMethodTask(BaseTask):
 
     order_type: Literal["pickup", "delivery"] | None = None
     address: AddressTask = Field(default_factory=AddressTask)
-    store_location_confirmed: bool = False
 
     def is_complete(self) -> bool:
         """Check if delivery method is complete."""
@@ -87,4 +86,3 @@ class PaymentTask(BaseTask):
     method: Literal["in_store", "cash_delivery", "card_link"] | None = None
     payment_link_sent: bool = False
     payment_link_destination: str | None = None  # email or phone
-    payment_received: bool = False

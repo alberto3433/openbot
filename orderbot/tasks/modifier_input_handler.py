@@ -340,9 +340,7 @@ def add_modifiers_from_input(
                         # Increment existing quantity, capped at max
                         new_qty = min(existing.get("quantity", 1) + quantity, MAX_MODIFIER_QUANTITY)
                         existing["quantity"] = new_qty
-                        # Update unit_price for the additional quantity
-                        if opt_price > 0:
-                            item.unit_price = (item.unit_price or 0.0) + (opt_price * quantity)
+                        # Price is recalculated by the caller via safe_recalculate_price
                         logger.info(
                             "Incremented attribute option: %s=%s (qty=%d -> %d, price=$%.2f)",
                             attr_slug, opt_slug, new_qty - quantity, new_qty, opt_price

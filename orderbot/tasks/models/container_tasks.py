@@ -19,6 +19,17 @@ from .order_flow import (
     PaymentTask,
 )
 from .item_tasks import ItemTask, MenuItemTask
+from .pending_states import (
+    PendingSwitchItem,
+    PendingAttrDisambiguation,
+    PendingChangeClarification,
+    PendingUnmatchedPagination,
+    PendingIngredientSuggestion,
+    PendingDuplicateSelection,
+    PendingSameThingClarification,
+    PendingIngredientSearch,
+    PendingDietaryFollowup,
+)
 
 if TYPE_CHECKING:
     from orderbot.tasks.schemas import OrderPhase
@@ -236,7 +247,7 @@ class OrderTask(BaseTask):
     last_bot_message: str | None = None  # For context
 
     # Queue of items that need configuration after the current one is done
-    # Each entry is a dict with: item_id, item_type
+    # Each entry is a dict with: item_id, item_name, pending_field
     pending_config_queue: list[dict] = Field(default_factory=list)
 
     # Parsed items that haven't been added yet (waiting for disambiguation to resolve)
@@ -261,40 +272,25 @@ class OrderTask(BaseTask):
     # Quantity stored during item disambiguation
     pending_item_quantity: int = Field(default=1)
 
-    # Pending modifier change clarification
-    # Used when user says "change it to blueberry" and we need to clarify bagel vs spread
-    # Dict with: new_value, possible_attributes (list of attribute slugs), item_id
-    pending_change_clarification: dict | None = None
+    pending_change_clarification: PendingChangeClarification | None = None
 
-    # Pending duplicate selection
-    # Used when user says "another one" with multiple items in cart
-    # Dict with: count (int - how many to duplicate), items (list of item summaries for question)
-    pending_duplicate_selection: dict | None = None
+    pending_duplicate_selection: PendingDuplicateSelection | None = None
 
-    # Pending "same thing" disambiguation
-    # Used when user says "same thing" and we have both a previous order AND items in cart
-    # Dict with: has_previous_order (bool), cart_items (list of item summaries)
-    pending_same_thing_clarification: dict | None = None
+    pending_same_thing_clarification: PendingSameThingClarification | None = None
 
     # Pending suggested item from menu inquiry
     # Set when bot describes an item and asks "Would you like to order one?"
     # Stores the menu item name (e.g., "The Lexington") for confirmation
     pending_suggested_item: str | None = None
 
-    # Pending ingredient suggestion when user orders just a modifier (e.g., "I want caramel syrup")
-    # Dict with: ingredient (str), suggested_items (list of item names)
-    # Used to suggest items that can have this modifier
-    pending_ingredient_suggestion: dict | None = None
+    pending_ingredient_suggestion: PendingIngredientSuggestion | None = None
 
     # Pending ingredient to apply to the next item added
     # Set when user confirms ingredient suggestion (e.g., "I want caramel syrup" -> "yes" -> "iced coffee")
     # The ingredient name will be applied as a modifier when the next item is added
     pending_ingredient_to_apply: str | None = None
 
-    # Pending item switch when user asks "can you make it X?" and we find a similar item
-    # Dict with menu item info: {id, name, base_price, item_type}
-    # Used to offer switching from current item to a similar one with requested modifier
-    pending_switch_item: dict | None = None
+    pending_switch_item: PendingSwitchItem | None = None
 
     # Pending item replacement during disambiguation
     # When user says "make it blueberry" and multiple same-type items match,
@@ -306,10 +302,7 @@ class OrderTask(BaseTask):
     # Used when user asks "what other X do you have?" or "more X"
     menu_query_pagination: dict | None = None
 
-    # Ingredient search pagination state for "what else" follow-up
-    # Dict with: ingredient (str), matches (list of item dicts), offset (int)
-    # Used when user says "chicken" and we show items, then they say "what else"
-    pending_ingredient_search: dict | None = None
+    pending_ingredient_search: PendingIngredientSearch | None = None
 
     # Configuration options page for "what else" during field configuration
     # Tracks which page of options (e.g., bagel types) we're showing
@@ -324,25 +317,9 @@ class OrderTask(BaseTask):
     # This is a transient field that should not be serialized
     last_add_error: Any | None = Field(default=None, exclude=True)
 
-    # Generic attribute disambiguation state for MenuItemConfigHandler
-    # Used when user input matches multiple options for an attribute (e.g., "walnut" matches
-    # "honey walnut" and "maple raisin walnut" for cream cheese spread)
-    # Dict with:
-    #   - options: list[dict] - the options to choose from
-    #   - attr_slug: str - the attribute being disambiguated
-    #   - modifiers: dict - extracted modifiers to apply after resolution
-    #   - item_id: str - the item being configured
-    pending_attr_disambiguation: dict | None = None
+    pending_attr_disambiguation: PendingAttrDisambiguation | None = None
 
-    # Unmatched token pagination state
-    # Used when user mentions a token that doesn't match any option (e.g., "honey" for coffee)
-    # Dict with:
-    #   - unmatched_text: str - the unmatched token(s) formatted for display
-    #   - attr_slug: str - the attribute with the unmatched token
-    #   - available_options: list[dict] - options to paginate through
-    #   - page: int - current page number (0-indexed)
-    #   - item_id: str - the item being configured
-    pending_unmatched_pagination: dict | None = None
+    pending_unmatched_pagination: PendingUnmatchedPagination | None = None
 
     # Modifier disambiguation state (stores which item to add modifier to)
     # Used when "cream cheese" matches multiple options (Plain, Scallion, etc.)
@@ -368,11 +345,7 @@ class OrderTask(BaseTask):
     # List of item dicts from the last order that user can confirm to reorder
     pending_reorder_offer_items: list[dict] | None = None
 
-    # Pending dietary follow-up state
-    # Used when user asks "is X vegan?" and we offer to show vegan options instead
-    # Dict with: dietary_type (str), category (str | None)
-    # Example: {"dietary_type": "is_vegan", "category": None}
-    pending_dietary_followup: dict | None = None
+    pending_dietary_followup: PendingDietaryFollowup | None = None
 
     # Pending quantity addition state
     # Used when user says "add 3" with multiple item types in cart
@@ -488,7 +461,6 @@ class OrderTask(BaseTask):
     def queue_item_for_config(
         self,
         item_id: str,
-        item_type: str,
         item_name: str | None = None,
         pending_field: str | None = None,
     ) -> None:
@@ -496,7 +468,6 @@ class OrderTask(BaseTask):
 
         Args:
             item_id: The item's unique ID
-            item_type: Type of item (bagel, coffee, signature_item, etc.)
             item_name: Display name for abbreviated follow-up questions
             pending_field: The field to configure (toasted, bread, etc.)
         """
@@ -506,7 +477,6 @@ class OrderTask(BaseTask):
                 return
         self.pending_config_queue.append({
             "item_id": item_id,
-            "item_type": item_type,
             "item_name": item_name,
             "pending_field": pending_field,
         })

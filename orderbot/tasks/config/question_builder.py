@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache.base import pluralize
+from ..models.pending_states import PendingUnmatchedPagination
 from ..models.utilities import is_name_forming_category
 from ..schemas import StateMachineResult
 from ..utils.text import format_english_list, number_to_word
@@ -79,7 +80,8 @@ class QuestionBuilder:
         order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr_slug}")
 
         # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in available] if available else None
+        from ..handler_utils import build_quick_replies
+        qr = build_quick_replies(available) if available else None
         return StateMachineResult(message=question, order=order, quick_replies=qr)
 
     def calculate_item_ordinal(
@@ -316,13 +318,13 @@ class QuestionBuilder:
             return None
 
         # Store pagination state
-        order.pending_unmatched_pagination = {
-            "unmatched_text": unmatched_text,
-            "attr_slug": attr_slug,
-            "available_options": available,
-            "page": 0,
-            "item_id": item.id,
-        }
+        order.pending_unmatched_pagination = PendingUnmatchedPagination(
+            unmatched_text=unmatched_text,
+            attr_slug=attr_slug,
+            available_options=available,
+            page=0,
+            item_id=item.id,
+        )
 
         # Build first page message
         return self._build_unmatched_page_message(order, is_first=True)
@@ -348,9 +350,9 @@ class QuestionBuilder:
                 order=order,
             )
 
-        unmatched_text = pagination["unmatched_text"]
-        available = pagination["available_options"]
-        page = pagination["page"]
+        unmatched_text = pagination.unmatched_text
+        available = pagination.available_options
+        page = pagination.page
 
         page_size = DEFAULT_PAGINATION_SIZE
         start_idx = page * page_size
@@ -404,7 +406,7 @@ class QuestionBuilder:
             )
 
         # Increment page
-        pagination["page"] += 1
+        pagination.page += 1
         order.pending_unmatched_pagination = pagination
 
         return self._build_unmatched_page_message(order, is_first=False)

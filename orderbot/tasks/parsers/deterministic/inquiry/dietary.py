@@ -11,6 +11,8 @@ Handles parsing of:
 
 import logging
 
+from .....cache import menu_cache
+from .....cache.base import singularize
 from ....schemas import OpenInputResponse
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import (
@@ -90,6 +92,36 @@ def parse_dietary_category_inquiry(text: str) -> OpenInputResponse | None:
                 continue
 
             if dietary_property and category_term:
+                # For bare patterns (dietary term at start, no inquiry framing
+                # like "any", "do you have", "show me"), check if the category
+                # term is a configurable item type trigger. "Gluten Free Bagel"
+                # should be parsed as a bagel order with bread="gluten_free",
+                # not a dietary inquiry for "bagel" category.
+                # Framed inquiries like "any gluten-free bagels?" are kept.
+                if match.start(1) == 0:
+                    all_triggers = menu_cache.get_all_triggers_flat()
+                    category_words = category_term.lower().split()
+                    if any(
+                        w in all_triggers or singularize(w) in all_triggers
+                        for w in category_words
+                    ):
+                        logger.info(
+                            "DIETARY CATEGORY SKIP: '%s' -> category '%s' matches item type trigger",
+                            text[:50], category_term,
+                        )
+                        return None
+
+                # Check if the full text is a known menu item name.
+                # "Gluten Free Sesame Bagel" is a specific menu item, not a
+                # dietary query for "sesame bagel" category.
+                full_matches = menu_cache.find_items_by_word_match(text_lower)
+                if any(m.get("name", "").lower() == text_lower for m in full_matches):
+                    logger.info(
+                        "DIETARY CATEGORY SKIP: '%s' is a known menu item, not a dietary inquiry",
+                        text[:50],
+                    )
+                    return None
+
                 logger.info(
                     "DIETARY CATEGORY INQUIRY: '%s' -> dietary_type=%s, category=%s",
                     text[:50], dietary_property, category_term

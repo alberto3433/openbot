@@ -659,11 +659,6 @@ class PricingEngine(MenuDataMixin):
                 return 0.0, False, None, included_categories
             # Differential pricing: calculate actual base price first, then subtract included amount
 
-        # Legacy support: side items have base_price = 0
-        is_side_item = getattr(item, 'side_of_item_id', None) is not None
-        if is_side_item:
-            return 0.0, False, None, included_categories
-
         # Check for variant-based pricing (e.g., size_prices)
         size_prices = menu_item.get("size_prices") if menu_item else None
 

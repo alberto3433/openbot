@@ -18,6 +18,7 @@ from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 
 from .models import OrderTask
+from .models.pending_states import PendingIngredientSearch
 from .schemas import StateMachineResult
 from .parsers.constants import DEFAULT_PAGINATION_SIZE
 from .mixins import MenuDataMixin
@@ -161,15 +162,15 @@ class MenuPaginationHandler(MenuDataMixin):
     def _handle_more_ingredient_search_items(
         self,
         order: OrderTask,
-        ingredient_search: dict,
+        ingredient_search: "PendingIngredientSearch",
     ) -> StateMachineResult:
         """Handle 'show more' for ingredient search results.
 
         Shows the next batch of items that contain the searched ingredient.
         """
-        ingredient = ingredient_search.get("ingredient", "that ingredient")
-        matches = ingredient_search.get("matches", [])
-        offset = ingredient_search.get("offset", 0)
+        ingredient = ingredient_search.ingredient
+        matches = ingredient_search.matches
+        offset = ingredient_search.offset
 
         if offset >= len(matches):
             # No more items to show
@@ -191,11 +192,11 @@ class MenuPaginationHandler(MenuDataMixin):
 
         # Update or clear pagination state
         if has_more:
-            order.pending_ingredient_search = {
-                "ingredient": ingredient,
-                "matches": matches,
-                "offset": offset + batch_size,
-            }
+            order.pending_ingredient_search = PendingIngredientSearch(
+                ingredient=ingredient,
+                matches=matches,
+                offset=offset + batch_size,
+            )
             message = f"We also have: {items_list}, and {remaining} more. Which would you like?"
         else:
             order.pending_ingredient_search = None

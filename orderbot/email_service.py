@@ -46,6 +46,117 @@ def is_email_configured() -> bool:
     return bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SES_FROM_EMAIL)
 
 
+def _build_order_details_section(
+    customer_name: Optional[str],
+    customer_phone: Optional[str],
+    order_type: Optional[str],
+) -> tuple[str, str]:
+    """Build order details text and HTML sections. Returns (text, html)."""
+    if not customer_name and not customer_phone and not order_type:
+        return "", ""
+
+    text = "\nOrder Details:\n"
+    html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Order Details</h3>"
+    html += "<table style='border-collapse: collapse; width: 100%; max-width: 400px;'>"
+
+    if customer_name:
+        text += f"  Name: {customer_name}\n"
+        html += f"<tr><td style='padding: 4px 8px; color: #666;'>Name:</td><td style='padding: 4px 8px;'>{customer_name}</td></tr>"
+    if customer_phone:
+        text += f"  Phone: {customer_phone}\n"
+        html += f"<tr><td style='padding: 4px 8px; color: #666;'>Phone:</td><td style='padding: 4px 8px;'>{customer_phone}</td></tr>"
+    if order_type:
+        text += f"  Order Type: {order_type.title()}\n"
+        html += f"<tr><td style='padding: 4px 8px; color: #666;'>Order Type:</td><td style='padding: 4px 8px;'>{order_type.title()}</td></tr>"
+
+    html += "</table>"
+    return text, html
+
+
+def _build_items_section(
+    items: list,
+    subtotal: Optional[float],
+    city_tax: Optional[float],
+    state_tax: Optional[float],
+    delivery_fee: Optional[float],
+    amount: float,
+) -> tuple[str, str]:
+    """Build items list with totals as text and HTML. Returns (text, html)."""
+    if not items:
+        return "", ""
+
+    text = "\nItems:\n"
+    html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Items</h3>"
+    html += "<table style='border-collapse: collapse; width: 100%; max-width: 500px; border: 1px solid #eee;'>"
+    html += "<tr style='background: #f5f5f5;'><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Item</th><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Details</th><th style='padding: 8px; text-align: right; border-bottom: 1px solid #ddd;'>Price</th></tr>"
+
+    for item in items:
+        item_name = item.get("display_name") or item.get("menu_item_name", "Item")
+        quantity = item.get("quantity", 1)
+        line_total = item.get("line_total", 0)
+        base_price = item.get("base_price") or item.get("unit_price") or line_total
+
+        modifiers = item.get("modifiers") or []
+        priced_modifiers = [m for m in modifiers if m.get("price", 0) > 0]
+        free_modifiers = [m.get("name", "") for m in modifiers if m.get("price", 0) == 0 and m.get("name")]
+        free_details = list(item.get("free_details") or []) + free_modifiers
+        details_str = ", ".join(free_details) if free_details else ""
+
+        if priced_modifiers:
+            free_details_str = " • ".join(free_details) if free_details else ""
+            text += f"  {quantity}x {item_name} - ${base_price:.2f}\n"
+            if free_details_str:
+                text += f"    {free_details_str}\n"
+            for mod in priced_modifiers:
+                mod_price = mod.get("price", 0)
+                text += f"    + {mod['name']} ${mod_price:.2f}\n"
+
+            html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
+            html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{free_details_str}</td>"
+            html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${base_price:.2f}</td></tr>"
+            for mod in priced_modifiers:
+                mod_price = mod.get("price", 0)
+                html += f"<tr><td style='padding: 8px 8px 8px 24px; border-bottom: 1px solid #eee; color: #666;'>+ {mod['name']}</td>"
+                html += f"<td style='padding: 8px; border-bottom: 1px solid #eee;'></td>"
+                html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: #666;'>${mod_price:.2f}</td></tr>"
+        else:
+            text += f"  {quantity}x {item_name}"
+            if details_str:
+                text += f" ({details_str})"
+            text += f" - ${line_total:.2f}\n"
+
+            html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
+            html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{details_str}</td>"
+            html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${line_total:.2f}</td></tr>"
+
+    # Build totals section
+    if subtotal is not None:
+        html += f"<tr><td colspan='2' style='padding: 8px; text-align: right; border-top: 1px solid #ddd;'>Subtotal:</td><td style='padding: 8px; text-align: right; border-top: 1px solid #ddd;'>${subtotal:.2f}</td></tr>"
+        text += f"\nSubtotal: ${subtotal:.2f}\n"
+
+        if city_tax and city_tax > 0 and state_tax and state_tax > 0:
+            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>City Tax:</td><td style='padding: 8px; text-align: right;'>${city_tax:.2f}</td></tr>"
+            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>State Tax:</td><td style='padding: 8px; text-align: right;'>${state_tax:.2f}</td></tr>"
+            text += f"City Tax: ${city_tax:.2f}\n"
+            text += f"State Tax: ${state_tax:.2f}\n"
+        elif city_tax and city_tax > 0:
+            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Tax:</td><td style='padding: 8px; text-align: right;'>${city_tax:.2f}</td></tr>"
+            text += f"Tax: ${city_tax:.2f}\n"
+        elif state_tax and state_tax > 0:
+            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Tax:</td><td style='padding: 8px; text-align: right;'>${state_tax:.2f}</td></tr>"
+            text += f"Tax: ${state_tax:.2f}\n"
+
+        if delivery_fee and delivery_fee > 0:
+            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Delivery Fee:</td><td style='padding: 8px; text-align: right;'>${delivery_fee:.2f}</td></tr>"
+            text += f"Delivery Fee: ${delivery_fee:.2f}\n"
+
+    html += f"<tr style='background: #f9f9f9;'><td colspan='2' style='padding: 8px; text-align: right;'><strong>Total:</strong></td><td style='padding: 8px; text-align: right;'><strong>${amount:.2f}</strong></td></tr>"
+    html += "</table>"
+    text += f"Total: ${amount:.2f}\n"
+
+    return text, html
+
+
 def send_payment_link_email(
     to_email: str,
     order_id: int,
@@ -89,120 +200,13 @@ def send_payment_link_email(
     # Build the email content
     greeting = f"Hi {customer_name}," if customer_name else "Hi,"
 
-    # Build order details section
-    order_details_text = ""
-    order_details_html = ""
-
-    if customer_name or customer_phone or order_type:
-        order_details_text = "\nOrder Details:\n"
-        order_details_html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Order Details</h3>"
-        order_details_html += "<table style='border-collapse: collapse; width: 100%; max-width: 400px;'>"
-
-        if customer_name:
-            order_details_text += f"  Name: {customer_name}\n"
-            order_details_html += f"<tr><td style='padding: 4px 8px; color: #666;'>Name:</td><td style='padding: 4px 8px;'>{customer_name}</td></tr>"
-        if customer_phone:
-            order_details_text += f"  Phone: {customer_phone}\n"
-            order_details_html += f"<tr><td style='padding: 4px 8px; color: #666;'>Phone:</td><td style='padding: 4px 8px;'>{customer_phone}</td></tr>"
-        if order_type:
-            order_details_text += f"  Order Type: {order_type.title()}\n"
-            order_details_html += f"<tr><td style='padding: 4px 8px; color: #666;'>Order Type:</td><td style='padding: 4px 8px;'>{order_type.title()}</td></tr>"
-
-        order_details_html += "</table>"
-
-    # Build items section
-    items_text = ""
-    items_html = ""
-
-    if items:
-        items_text = "\nItems:\n"
-        items_html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Items</h3>"
-        items_html += "<table style='border-collapse: collapse; width: 100%; max-width: 500px; border: 1px solid #eee;'>"
-        items_html += "<tr style='background: #f5f5f5;'><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Item</th><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Details</th><th style='padding: 8px; text-align: right; border-bottom: 1px solid #ddd;'>Price</th></tr>"
-
-        for item in items:
-            # Use pre-computed display fields from adapter (data-driven)
-            item_name = item.get("display_name") or item.get("menu_item_name", "Item")
-            quantity = item.get("quantity", 1)
-            line_total = item.get("line_total", 0)
-            base_price = item.get("base_price") or item.get("unit_price") or line_total
-
-            # Get pre-computed modifiers list from adapter
-            modifiers = item.get("modifiers") or []
-
-            # Separate priced modifiers (shown as line items) from free ones (shown as details)
-            priced_modifiers = [m for m in modifiers if m.get("price", 0) > 0]
-            free_modifiers = [m.get("name", "") for m in modifiers if m.get("price", 0) == 0 and m.get("name")]
-
-            # Combine with any explicit free_details from adapter
-            free_details = list(item.get("free_details") or []) + free_modifiers
-            details_str = ", ".join(free_details) if free_details else ""
-
-            if priced_modifiers:
-                # Itemized display: show base item, then free details, then priced modifiers
-                free_details_str = " • ".join(free_details) if free_details else ""
-
-                # Plain text - show base item, then free details, then priced modifiers
-                items_text += f"  {quantity}x {item_name} - ${base_price:.2f}\n"
-                if free_details_str:
-                    items_text += f"    {free_details_str}\n"
-                for mod in priced_modifiers:
-                    mod_price = mod.get("price", 0)
-                    items_text += f"    + {mod['name']} ${mod_price:.2f}\n"
-
-                # HTML - show base item row, free details, then priced modifier rows
-                items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
-                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{free_details_str}</td>"
-                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${base_price:.2f}</td></tr>"
-                for mod in priced_modifiers:
-                    mod_price = mod.get("price", 0)
-                    items_html += f"<tr><td style='padding: 8px 8px 8px 24px; border-bottom: 1px solid #eee; color: #666;'>+ {mod['name']}</td>"
-                    items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee;'></td>"
-                    items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: #666;'>${mod_price:.2f}</td></tr>"
-            else:
-                # Standard item display (no priced modifiers)
-                # Plain text
-                items_text += f"  {quantity}x {item_name}"
-                if details_str:
-                    items_text += f" ({details_str})"
-                items_text += f" - ${line_total:.2f}\n"
-
-                # HTML
-                items_html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
-                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{details_str}</td>"
-                items_html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${line_total:.2f}</td></tr>"
-
-        # Build totals section
-        # Subtotal row (if provided)
-        if subtotal is not None:
-            items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right; border-top: 1px solid #ddd;'>Subtotal:</td><td style='padding: 8px; text-align: right; border-top: 1px solid #ddd;'>${subtotal:.2f}</td></tr>"
-            items_text += f"\nSubtotal: ${subtotal:.2f}\n"
-
-            # Tax rows (only show non-zero taxes)
-            if city_tax and city_tax > 0 and state_tax and state_tax > 0:
-                # Both taxes - show breakdown
-                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>City Tax:</td><td style='padding: 8px; text-align: right;'>${city_tax:.2f}</td></tr>"
-                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>State Tax:</td><td style='padding: 8px; text-align: right;'>${state_tax:.2f}</td></tr>"
-                items_text += f"City Tax: ${city_tax:.2f}\n"
-                items_text += f"State Tax: ${state_tax:.2f}\n"
-            elif city_tax and city_tax > 0:
-                # Only city tax
-                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Tax:</td><td style='padding: 8px; text-align: right;'>${city_tax:.2f}</td></tr>"
-                items_text += f"Tax: ${city_tax:.2f}\n"
-            elif state_tax and state_tax > 0:
-                # Only state tax
-                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Tax:</td><td style='padding: 8px; text-align: right;'>${state_tax:.2f}</td></tr>"
-                items_text += f"Tax: ${state_tax:.2f}\n"
-
-            # Delivery fee (only show if > 0)
-            if delivery_fee and delivery_fee > 0:
-                items_html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Delivery Fee:</td><td style='padding: 8px; text-align: right;'>${delivery_fee:.2f}</td></tr>"
-                items_text += f"Delivery Fee: ${delivery_fee:.2f}\n"
-
-        # Total row
-        items_html += f"<tr style='background: #f9f9f9;'><td colspan='2' style='padding: 8px; text-align: right;'><strong>Total:</strong></td><td style='padding: 8px; text-align: right;'><strong>${amount:.2f}</strong></td></tr>"
-        items_html += "</table>"
-        items_text += f"Total: ${amount:.2f}\n"
+    # Build order details and items sections
+    order_details_text, order_details_html = _build_order_details_section(
+        customer_name, customer_phone, order_type,
+    )
+    items_text, items_html = _build_items_section(
+        items, subtotal, city_tax, state_tax, delivery_fee, amount,
+    )
 
     subject = f"Payment Link for Your {store_name} Order #{order_id}"
 

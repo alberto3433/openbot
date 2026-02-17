@@ -204,6 +204,36 @@ TOAST_WEBHOOK_SECRET: str = os.getenv("TOAST_WEBHOOK_SECRET", "")
 
 
 # =============================================================================
+# Database Pool Configuration
+# =============================================================================
+# Connection pool settings for SQLAlchemy engine. Tuned for Neon PostgreSQL
+# with connection pooler. Keep pool small per process; fail fast on exhaustion.
+
+DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "2"))
+DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "3"))
+DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "10"))
+DB_POOL_RECYCLE_SECONDS: int = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "300"))
+DB_CONNECT_TIMEOUT: int = int(os.getenv("DB_CONNECT_TIMEOUT", "10"))
+
+
+# =============================================================================
+# HTTP/API Configuration
+# =============================================================================
+# Default timeout for outbound HTTP requests (address service, Toast API, etc.)
+
+HTTP_REQUEST_TIMEOUT: float = float(os.getenv("HTTP_REQUEST_TIMEOUT", "10.0"))
+STRIPE_CHECKOUT_EXPIRY_SECONDS: int = int(os.getenv("STRIPE_CHECKOUT_EXPIRY_SECONDS", "1800"))
+
+
+# =============================================================================
+# Toast POS Timing Configuration
+# =============================================================================
+# Buffer before token expiry to trigger re-authentication
+
+TOAST_TOKEN_BUFFER_SECONDS: int = int(os.getenv("TOAST_TOKEN_BUFFER_SECONDS", "300"))
+
+
+# =============================================================================
 # Admin UI Page Mappings
 # =============================================================================
 # Maps URL paths to HTML files for the protected admin interface.

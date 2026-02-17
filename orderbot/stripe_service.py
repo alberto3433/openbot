@@ -14,7 +14,7 @@ Environment variables:
 import logging
 from typing import Any
 
-from .config import STRIPE_SECRET_KEY, BASE_URL
+from .config import STRIPE_SECRET_KEY, STRIPE_CHECKOUT_EXPIRY_SECONDS, BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def create_checkout_session(
             success_url=success_url,
             cancel_url=cancel_url,
             metadata={"order_id": str(order_id)},
-            expires_after={"seconds": 1800},  # 30 minutes
+            expires_after={"seconds": STRIPE_CHECKOUT_EXPIRY_SECONDS},
         )
 
         logger.info(

@@ -15,6 +15,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
+from orderbot.config import (
+    DB_POOL_SIZE,
+    DB_MAX_OVERFLOW,
+    DB_POOL_TIMEOUT,
+    DB_POOL_RECYCLE_SECONDS,
+    DB_CONNECT_TIMEOUT,
+)
 
 # Database URL must be set via environment variable
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -24,12 +31,12 @@ if not DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=2,           # Keep pool small per process
-    max_overflow=3,        # Limited overflow connections
-    pool_timeout=10,       # Fail fast if no connection available
-    pool_recycle=300,      # Recycle connections every 5 min
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_timeout=DB_POOL_TIMEOUT,
+    pool_recycle=DB_POOL_RECYCLE_SECONDS,
     connect_args={
-        "connect_timeout": 10,  # 10 second connection timeout
+        "connect_timeout": DB_CONNECT_TIMEOUT,
         # NOTE: statement_timeout not supported by Neon's connection pooler
     },
     echo=False,

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from ..config import TOAST_WEBHOOK_SECRET
 from ..db import get_db
 from ..db.models import Order
+from ..schemas.enums import ToastOrderStatus
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def _handle_order_status(event: dict, db: Session) -> None:
             changed_by="toast_webhook",
             note=f"Toast status: {toast_status}",
         )
-        order.toast_order_status = "synced"
+        order.toast_order_status = ToastOrderStatus.SYNCED
         db.commit()
         logger.info(
             "Order #%d transitioned to '%s' via Toast webhook (Toast status: %s)",

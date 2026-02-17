@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from .base import Base
-from ...schemas.enums import OrderStatus
+from ...schemas.enums import OrderStatus, PaymentStatus, NotificationStatus, ToastOrderStatus
 
 
 class Order(Base):
@@ -46,7 +46,7 @@ class Order(Base):
     delivery_address = Column(String, nullable=True)  # Address for delivery orders
 
     # Payment tracking
-    payment_status = Column(String, nullable=False, default="unpaid")  # "unpaid", "pending_payment", "paid"
+    payment_status = Column(String, nullable=False, default=PaymentStatus.UNPAID)  # "unpaid", "pending_payment", "paid"
     payment_method = Column(String, nullable=True)  # "cash", "card_in_store", "card_phone", "card_link"
 
     # Stripe payment integration
@@ -125,7 +125,7 @@ class NotificationLog(Base):
     notification_type = Column(String, nullable=False)  # "sms" or "email"
     event = Column(String, nullable=False)  # "order_confirmed", "order_ready", "order_cancelled", "payment_received"
     recipient = Column(String, nullable=False)  # Phone number or email
-    status = Column(String, nullable=False, default="sent")  # "sent", "failed", "pending"
+    status = Column(String, nullable=False, default=NotificationStatus.SENT)  # "sent", "failed", "pending"
     provider_message_id = Column(String, nullable=True)  # AWS SNS/SES message ID
     error_message = Column(Text, nullable=True)
     sent_at = Column(DateTime(timezone=True), nullable=True)

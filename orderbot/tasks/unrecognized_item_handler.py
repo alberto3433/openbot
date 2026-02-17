@@ -12,9 +12,12 @@ This module is order-state aware, adjusting responses based on cart contents.
 
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 from orderbot.constants import FUZZY_MATCH_THRESHOLD, MAX_FUZZY_MATCHES
+from orderbot.exceptions import MenuDataNotLoadedError
 
 from .menu_lookup import MenuLookup
 from .normalization import strip_leading_filler_words
@@ -225,7 +228,7 @@ class UnrecognizedItemHandler:
                         self._db_session.commit()
                         return self._extract_suggestion_data(s)
 
-        except Exception as e:
+        except (SQLAlchemyError, KeyError, ValueError, AttributeError) as e:
             logger.warning("Failed to query curated suggestions: %s", e)
 
         return None
@@ -419,7 +422,7 @@ class UnrecognizedItemHandler:
 
             return good_matches
 
-        except Exception as e:
+        except (ValueError, KeyError, TypeError, AttributeError, MenuDataNotLoadedError) as e:
             logger.warning("Fuzzy matching failed: %s", e)
             return []
 
@@ -454,7 +457,7 @@ class UnrecognizedItemHandler:
 
             return infer_item_category(normalized_input, categories)
 
-        except Exception as e:
+        except (ValueError, KeyError, ConnectionError, TimeoutError, MenuDataNotLoadedError) as e:
             logger.warning("LLM category inference failed: %s", e)
             return None
 
@@ -585,9 +588,9 @@ class UnrecognizedItemHandler:
             self._db_session.add(log_entry)
             self._db_session.commit()
 
-        except Exception as e:
+        except (SQLAlchemyError, KeyError, ValueError, TypeError) as e:
             logger.warning("Failed to log unrecognized item: %s", e)
             try:
                 self._db_session.rollback()
-            except Exception:
+            except SQLAlchemyError:
                 pass

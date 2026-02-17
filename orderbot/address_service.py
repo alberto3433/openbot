@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 import requests
 
+from orderbot.config import HTTP_REQUEST_TIMEOUT
+
 logger = logging.getLogger(__name__)
 
 # Nominatim API endpoint
@@ -26,7 +28,7 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "ZuckersOrderBot/1.0 (delivery address validation)"
 
 # Request timeout in seconds
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = HTTP_REQUEST_TIMEOUT
 
 # Regex pattern to match apartment/unit numbers
 # Matches: #3A, Apt 3A, Apt. 3A, Apartment 3A, Unit 3A, Suite 100, Ste 100, Floor 3, Fl 3

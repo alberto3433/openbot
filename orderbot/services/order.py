@@ -46,7 +46,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..db.models import Order, OrderItem, OrderStatusHistory, Store
-from ..schemas.enums import OrderStatus
+from ..schemas.enums import OrderStatus, PaymentStatus, ToastOrderStatus
 
 
 logger = logging.getLogger(__name__)
@@ -422,7 +422,7 @@ def update_order_stripe_session(
         return False
 
     order.stripe_checkout_session_id = stripe_session_id
-    order.payment_status = "pending_payment"
+    order.payment_status = PaymentStatus.PENDING_PAYMENT
     db.commit()
     logger.info("Order #%d linked to Stripe session %s", order_id, stripe_session_id)
     return True
@@ -572,7 +572,7 @@ def update_order_toast_status(
     order.toast_order_status = toast_status
     if toast_guid:
         order.toast_order_guid = toast_guid
-    if toast_status == "submitted":
+    if toast_status == ToastOrderStatus.SUBMITTED:
         order.toast_submitted_at = datetime.now(timezone.utc)
 
     db.commit()

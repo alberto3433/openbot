@@ -17,14 +17,28 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+try:
+    from httpx import HTTPError as HttpxHTTPError
+except ImportError:
+    HttpxHTTPError = None
+
+# Build exception tuple for httpx operations (HTTPError may not be available)
+_httpx_errors: tuple[type[Exception], ...] = (ConnectionError, TimeoutError, ValueError, OSError)
+if HttpxHTTPError is not None:
+    _httpx_errors = (HttpxHTTPError,) + _httpx_errors
+
 from ..config import (
+    HTTP_REQUEST_TIMEOUT,
     TOAST_API_BASE_URL,
     TOAST_CLIENT_ID,
     TOAST_CLIENT_SECRET,
     TOAST_RESTAURANT_GUID,
+    TOAST_TOKEN_BUFFER_SECONDS,
 )
+from ..schemas.enums import ToastOrderStatus
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +46,8 @@ logger = logging.getLogger(__name__)
 _auth_token: Optional[str] = None
 _token_expires_at: float = 0.0
 
-# Token lifetime: refresh 5 minutes before actual expiry
-_TOKEN_BUFFER_SECONDS = 300
+# Token lifetime: refresh before actual expiry
+_TOKEN_BUFFER_SECONDS = TOAST_TOKEN_BUFFER_SECONDS
 
 
 def is_toast_configured() -> bool:
@@ -74,7 +88,7 @@ def _authenticate() -> Optional[str]:
     }
 
     try:
-        resp = httpx.post(url, json=payload, timeout=10.0)
+        resp = httpx.post(url, json=payload, timeout=HTTP_REQUEST_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
 
@@ -86,7 +100,7 @@ def _authenticate() -> Optional[str]:
         logger.info("Toast auth token obtained (expires in %ds)", expires_in)
         return _auth_token
 
-    except Exception as e:
+    except _httpx_errors as e:
         logger.error("Toast authentication failed: %s", e)
         _auth_token = None
         _token_expires_at = 0.0
@@ -128,7 +142,7 @@ def _make_request(
     }
 
     try:
-        resp = httpx.request(method, url, headers=headers, json=json_body, timeout=15.0)
+        resp = httpx.request(method, url, headers=headers, json=json_body, timeout=HTTP_REQUEST_TIMEOUT)
 
         # Handle 401 by re-authenticating once
         if resp.status_code == 401 and retry_auth:
@@ -141,7 +155,7 @@ def _make_request(
         resp.raise_for_status()
         return resp.json()
 
-    except Exception as e:
+    except _httpx_errors as e:
         logger.error("Toast API request failed (%s %s): %s", method, path, e)
         return None
 
@@ -172,7 +186,7 @@ def submit_order(
         return None
 
     # Mark order as pending Toast sync
-    _update_toast_status(db, db_order_id, "pending_sync")
+    _update_toast_status(db, db_order_id, ToastOrderStatus.PENDING_SYNC)
 
     try:
         from .order_builder import build_toast_order
@@ -180,25 +194,25 @@ def submit_order(
 
         if payload is None:
             logger.warning("Toast order payload build failed for order #%d", db_order_id)
-            _update_toast_status(db, db_order_id, "failed")
+            _update_toast_status(db, db_order_id, ToastOrderStatus.FAILED)
             return None
 
         result = _make_request("POST", "/orders/v2/orders", json_body=payload)
 
         if result:
             toast_guid = result.get("guid")
-            _update_toast_status(db, db_order_id, "submitted", toast_guid=toast_guid)
+            _update_toast_status(db, db_order_id, ToastOrderStatus.SUBMITTED, toast_guid=toast_guid)
             logger.info(
                 "Order #%d submitted to Toast (guid: %s)", db_order_id, toast_guid
             )
             return result
         else:
-            _update_toast_status(db, db_order_id, "failed")
+            _update_toast_status(db, db_order_id, ToastOrderStatus.FAILED)
             return None
 
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, ConnectionError, TimeoutError) as e:
         logger.error("Failed to submit order #%d to Toast: %s", db_order_id, e)
-        _update_toast_status(db, db_order_id, "failed")
+        _update_toast_status(db, db_order_id, ToastOrderStatus.FAILED)
         return None
 
 
@@ -250,13 +264,13 @@ def _update_toast_status(
         order.toast_order_status = status
         if toast_guid:
             order.toast_order_guid = toast_guid
-        if status == "submitted":
+        if status == ToastOrderStatus.SUBMITTED:
             order.toast_submitted_at = datetime.now(timezone.utc)
 
         db.commit()
-    except Exception as e:
+    except (SQLAlchemyError, KeyError, ValueError, AttributeError) as e:
         logger.error("Failed to update Toast status for order #%d: %s", order_id, e)
         try:
             db.rollback()
-        except Exception:
+        except SQLAlchemyError:
             pass

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .db.models import NotificationLog, Order
 from .email_service import send_payment_link_email, is_email_configured
+from .schemas.enums import NotificationStatus
 from .sms_service import send_sms, is_sms_configured
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ def _log_notification(
         status=status,
         provider_message_id=provider_message_id,
         error_message=error_message,
-        sent_at=datetime.now(timezone.utc) if status == "sent" else None,
+        sent_at=datetime.now(timezone.utc) if status == NotificationStatus.SENT else None,
     )
     db.add(entry)
     try:
@@ -65,7 +66,7 @@ def notify_payment_received(
         sid = send_sms(order.phone, sms_body)
         _log_notification(
             db, order.id, "sms", "payment_received", order.phone,
-            status="sent" if sid else "failed",
+            status=NotificationStatus.SENT if sid else NotificationStatus.FAILED,
             provider_message_id=sid,
         )
 
@@ -96,7 +97,7 @@ def notify_order_ready(
         sid = send_sms(order.phone, sms_body)
         _log_notification(
             db, order.id, "sms", "order_ready", order.phone,
-            status="sent" if sid else "failed",
+            status=NotificationStatus.SENT if sid else NotificationStatus.FAILED,
             provider_message_id=sid,
         )
 
@@ -128,7 +129,7 @@ def notify_order_cancelled(
         sid = send_sms(order.phone, sms_body)
         _log_notification(
             db, order.id, "sms", "order_cancelled", order.phone,
-            status="sent" if sid else "failed",
+            status=NotificationStatus.SENT if sid else NotificationStatus.FAILED,
             provider_message_id=sid,
         )
 
@@ -177,13 +178,14 @@ def _send_simple_email(
         )
 
         _log_notification(
-            db, order.id, "email", event, order.customer_email, status="sent",
+            db, order.id, "email", event, order.customer_email,
+            status=NotificationStatus.SENT,
         )
         logger.info("%s email sent to %s for order #%d", event, order.customer_email, order.id)
 
     except Exception as e:
         _log_notification(
             db, order.id, "email", event, order.customer_email,
-            status="failed", error_message=str(e),
+            status=NotificationStatus.FAILED, error_message=str(e),
         )
         logger.error("Failed to send %s email for order #%d: %s", event, order.id, e)

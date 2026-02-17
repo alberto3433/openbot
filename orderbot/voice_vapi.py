@@ -467,7 +467,7 @@ async def vapi_chat_completions(
     """
     try:
         data = await request.json()
-    except Exception as e:
+    except (ValueError, KeyError, TypeError) as e:
         logger.error("Failed to parse Vapi request JSON: %s", e)
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
@@ -587,7 +587,7 @@ async def vapi_chat_completions(
         if include_menu:
             session_data["menu_version"] = current_menu_version
 
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, AttributeError, ConnectionError, TimeoutError) as e:
         logger.error("MessageProcessor failed for voice session: %s", e, exc_info=True)
         error_reply = "I'm sorry, I'm having trouble right now. Could you please repeat that?"
         if stream:
@@ -674,7 +674,7 @@ async def vapi_webhook(
     """
     try:
         data = await request.json()
-    except Exception as e:
+    except (ValueError, KeyError, TypeError) as e:
         logger.error("Failed to parse Vapi webhook JSON: %s", e)
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
@@ -719,7 +719,7 @@ async def vapi_webhook(
                     duration=duration,
                     transcript=transcript,
                 )
-            except Exception as e:
+            except (ValueError, KeyError, TypeError, OSError) as e:
                 logger.error("Failed to save call analytics: %s", e)
         else:
             logger.warning("No phone number in end-of-call-report, cannot save analytics")

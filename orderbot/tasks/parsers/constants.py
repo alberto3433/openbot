@@ -57,8 +57,9 @@ from .selection_patterns import (
 # All filler/skip word definitions are consolidated here to avoid duplication
 # and inconsistency across the codebase.
 #
-# Note: Basic skip words (SKIP_WORDS_BASIC, etc.) are defined in cache/base.py
-# to avoid circular imports, and re-exported here.
+# Note: Basic skip words (SKIP_WORDS_BASIC, etc.), ARTICLES, ORDERING_PREFIXES,
+# CONNECTORS, PREPOSITIONS, and POLITENESS_WORDS are imported from
+# orderbot/tasks/shared_constants.py (a pure module with no project imports).
 
 # Category 0: MID_SENTENCE_HESITATION_FILLERS - Strip from ANYWHERE in input
 # Pure hesitation sounds that never appear in food/menu item names.
@@ -108,34 +109,23 @@ HESITATION_FILLERS = frozenset({
     "scratch that",
 })
 
-# Category 2: ORDERING_PREFIXES - Strip from START of input only
-# Phrases that begin orders but don't add meaning
-ORDERING_PREFIXES = frozenset({
-    "i want", "i'd like", "i need", "i'll have", "i'll take",
-    "can i get", "can i have", "could i get", "could i have",
-    "give me", "gimme", "get me", "make it", "let's go with", "let's do",
-    "just", "some",
-})
-
-# Category 3: ARTICLES_AND_CONNECTORS - Context-dependent
-# Sometimes stripped, sometimes needed for item name matching
-ARTICLES = frozenset({'the', 'a', 'an', 'some'})
-CONNECTORS = frozenset({'and', 'or', 'with', 'plus'})
-PREPOSITIONS = frozenset({'on', 'in', 'to', 'of', 'for'})
-
-# Category 4: POLITENESS_WORDS - Strip anywhere in input
-POLITENESS_WORDS = frozenset({'please', 'thanks', 'thank you', 'thx'})
-
-# =============================================================================
-# Combined Skip Word Sets for Different Contexts
-# =============================================================================
-# Import base skip words from cache.base to avoid circular imports
-# (cache.base cannot import from here, so the canonical definitions live there)
-from orderbot.cache.base import (
+# Category 2–4: Shared constants imported from the pure shared_constants module.
+# Previously defined inline here and/or imported from cache.base. Consolidated
+# into shared_constants.py to eliminate duplication and circular import chains.
+from orderbot.tasks.shared_constants import (
+    ORDERING_PREFIXES,
+    ARTICLES,
+    CONNECTORS,
+    PREPOSITIONS,
+    POLITENESS_WORDS,
     SKIP_WORDS_BASIC,
     SKIP_WORDS_CONJUNCTIONS,
     SKIP_WORDS_PREPOSITIONS,
 )
+
+# =============================================================================
+# Combined Skip Word Sets for Different Contexts
+# =============================================================================
 
 # Additional filler words for parsing
 SKIP_WORDS_FILLER = frozenset({'please', 'thanks', 'it', 'that', 'yes', 'no'})

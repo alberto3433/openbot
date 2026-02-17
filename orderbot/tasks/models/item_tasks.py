@@ -16,7 +16,7 @@ from orderbot.tasks.normalization import format_slug_for_display
 from .utilities import (
     pluralize_display_name,
     is_name_forming_category,
-    _get_is_price_metadata_key,
+    _is_price_metadata_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -502,7 +502,7 @@ class MenuItemTask(ItemTask):
         # This is for backward compat when code sets attribute_values directly
         for key, val in value.items():
             # Skip metadata keys
-            if _get_is_price_metadata_key()(key):
+            if _is_price_metadata_key(key):
                 continue
 
             # Remove existing selections for this category

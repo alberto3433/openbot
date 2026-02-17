@@ -143,7 +143,7 @@ class QuestionBuilder:
         """
         input_type = attr.get("input_type", "single_select")
         attr_name = attr["display_name"].lower()
-        if (attr.get("allow_none") or has_default_value) and attr.get("offer_question_text"):
+        if attr.get("allow_none") and attr.get("offer_question_text") and not has_default_value:
             db_question = attr["offer_question_text"]
         else:
             db_question = attr.get("question_text")
@@ -237,7 +237,7 @@ class QuestionBuilder:
                     item_desc = f"the {ordinal} {item_display}"
                 else:
                     item_desc = f"the {item_display}"
-                if (attr.get("allow_none") or has_default_value) and attr.get("offer_question_text"):
+                if attr.get("allow_none") and attr.get("offer_question_text") and not has_default_value:
                     db_question = attr["offer_question_text"]
                 else:
                     db_question = attr.get("question_text")

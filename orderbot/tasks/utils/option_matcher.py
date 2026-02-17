@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from orderbot.cache import menu_cache
 from .input_normalizer import InputNormalizer
 from .text import ORDINAL_PATTERNS, word_boundary_match
-from ..normalization import strip_filler_words
+from ..normalization import strip_filler_words, normalize_to_slug
 
 logger = logging.getLogger(__name__)
 
@@ -812,8 +812,6 @@ class OptionMatcher:
             >>> OptionMatcher.normalize_option({"slug": "oat-milk", "display_name": "Oat Milk"})
             ("oat_milk", "oat_milk")
         """
-        # Import here to avoid circular imports
-        from ..normalization import normalize_to_slug
         opt_slug = normalize_to_slug(option.get("slug") or "")
         opt_name = normalize_to_slug(option.get("display_name") or "")
         return opt_slug, opt_name

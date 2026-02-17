@@ -23,7 +23,7 @@ from .utilities import (
     parse_pending_field,
     pluralize_display_name,
     is_name_forming_category,
-    _get_is_price_metadata_key,
+    _is_price_metadata_key,
 )
 
 # Private alias used by item_converters.py
@@ -72,7 +72,7 @@ __all__ = [
     "is_name_forming_category",
     # Private utilities
     "_pluralize_display_name",
-    "_get_is_price_metadata_key",
+    "_is_price_metadata_key",
     # Item tasks
     "ItemTask",
     "MenuItemTask",

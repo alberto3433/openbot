@@ -60,6 +60,7 @@ import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..config import get_rate_limit_chat, get_random_store_id
@@ -206,7 +207,7 @@ def chat_message(
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
+    except (KeyError, TypeError, AttributeError, SQLAlchemyError) as e:
         logger.error("MessageProcessor failed: %s", str(e), exc_info=True)
         return ChatMessageResponse(
             reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
@@ -275,7 +276,7 @@ def chat_message_stream(
                 final_event['quick_replies'] = result.quick_replies
             yield f"data: {json.dumps(final_event)}\n\n"
 
-        except Exception as e:
+        except (ValueError, KeyError, TypeError, AttributeError, SQLAlchemyError) as e:
             logger.error("MessageProcessor failed in stream: %s", e, exc_info=True)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
@@ -393,7 +394,7 @@ def report_session(
 
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, ConnectionError, TimeoutError, OSError) as e:
         logger.error("Report endpoint failed for session %s: %s",
                      payload.session_id[:8], str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to send report")

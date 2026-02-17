@@ -7,20 +7,12 @@ import logging
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 
+# Import from shared_constants (a pure module with zero project dependencies).
+# Previously this was a lazy import to avoid circular dependency through
+# utils/__init__.py -> option_matcher -> parsers -> schemas -> models.
+from orderbot.tasks.shared_constants import is_price_metadata_key as _is_price_metadata_key
+
 logger = logging.getLogger(__name__)
-
-# Late import to avoid circular dependency through utils/__init__.py
-# (utils -> option_matcher -> parsers -> schemas -> models)
-_is_price_metadata_key = None
-
-
-def _get_is_price_metadata_key():
-    """Lazy import of is_price_metadata_key to avoid circular imports."""
-    global _is_price_metadata_key
-    if _is_price_metadata_key is None:
-        from orderbot.tasks.utils.constants import is_price_metadata_key
-        _is_price_metadata_key = is_price_metadata_key
-    return _is_price_metadata_key
 
 
 def pluralize_display_name(display_name: str) -> str:

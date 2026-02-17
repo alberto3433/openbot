@@ -111,18 +111,13 @@ def strip_ordering_prefix(user_input: str) -> str:
     return stripped.strip()
 
 
-# Filler word definitions for strip_filler_words and strip_leading_filler_words
-# Cannot import from parsers/constants.py due to circular import:
-#   normalization.py -> parsers/constants.py -> parsers/__init__.py -> normalization.py
-# Canonical definition: parsers/constants.py:ARTICLES
-_ARTICLES = frozenset({'the', 'a', 'an', 'some'})
-_ORDERING_PREFIXES = frozenset({
-    "i want", "i'd like", "i need", "i'll have", "i'll take",
-    "can i get", "can i have", "could i get", "could i have",
-    "give me", "gimme", "get me", "make it", "let's go with", "let's do",
-    "just", "some",
-})
-_POLITENESS_WORDS = frozenset({'please', 'thanks', 'thank you', 'thx'})
+# Shared constants imported from the pure shared_constants module
+# (previously duplicated here to avoid circular imports with parsers/constants.py)
+from orderbot.tasks.shared_constants import (
+    ARTICLES as _ARTICLES,
+    ORDERING_PREFIXES as _ORDERING_PREFIXES,
+    POLITENESS_WORDS as _POLITENESS_WORDS,
+)
 
 
 def strip_filler_words(user_input: str) -> str:
@@ -132,8 +127,7 @@ def strip_filler_words(user_input: str) -> str:
     affect the core meaning. Simpler than strip_ordering_prefix() - use
     this for disambiguation matching where you just need clean tokens.
 
-    Uses consolidated filler word definitions from parsers/constants.py
-    (local copies to avoid circular imports).
+    Uses consolidated filler word definitions from shared_constants.py.
 
     Handles patterns like:
     - "the bacon" -> "bacon"
@@ -184,7 +178,7 @@ def strip_leading_filler_words(text: str) -> str:
     Unlike strip_filler_words(), this only removes words at the beginning,
     preserving words like "the" that may appear in item names.
 
-    Uses _ARTICLES (local copy from parsers/constants.py).
+    Uses _ARTICLES from shared_constants.py.
 
     Handles patterns like:
     - "some hash browns" -> "hash browns"

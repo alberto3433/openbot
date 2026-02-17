@@ -129,9 +129,11 @@ def normalize_for_matching(text: str) -> str:
 # =============================================================================
 # Skip Words for Text Processing
 # =============================================================================
-# These are the canonical definitions for basic skip words.
-# They are defined here (not in parsers/constants.py) to avoid circular imports.
-# parsers/constants.py imports these and adds more comprehensive filler word sets.
+# These basic skip word sets are also defined in orderbot/tasks/shared_constants.py.
+# They are kept here as well for backward compatibility with code that imports
+# from cache.base. The canonical single-source-of-truth for new code is
+# shared_constants.py, but duplicating these three simple frozensets avoids
+# creating a circular import (cache -> tasks -> cache).
 SKIP_WORDS_BASIC = frozenset({'the', 'a', 'an'})
 SKIP_WORDS_CONJUNCTIONS = frozenset({'and', 'or', 'with'})
 SKIP_WORDS_PREPOSITIONS = frozenset({'on', 'in', 'to', 'of'})

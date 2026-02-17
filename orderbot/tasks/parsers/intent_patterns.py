@@ -78,6 +78,8 @@ CANCEL_ITEM_PATTERN = re.compile(
     r"|"
     r"clear\s+(?:the\s+)?(.+?)[\s!.,]*$"
     r"|"
+    r"empty\s+(?:the\s+)?(?:my\s+)?(.+?)[\s!.,]*$"
+    r"|"
     r"take\s+(?:(?:off|out)(?:\s+of)?\s+)?(?:the\s+)?(.+?)(?:\s+off)?[\s!.,]*$"
     r"|"
     r"never\s*mind\s+(?:the\s+)?(.+?)[\s!.,]*$"

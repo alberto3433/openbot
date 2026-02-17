@@ -94,6 +94,8 @@ RECOMMENDATION_GENERAL_PATTERNS = [
     re.compile(r"recommend\s+(?:something\s+)?for\s+(?:breakfast|lunch|dinner|brunch)", re.IGNORECASE),
     # Specials inquiry - "do you have any specials today?", "any specials?"
     re.compile(r"(?:do\s+you\s+have\s+)?(?:any\s+)?specials?\s*(?:today|right\s+now)?\??$", re.IGNORECASE),
+    # "give me a recommendation" / "I need a recommendation" / "I'd like a recommendation"
+    re.compile(r"(?:give\s+me|i(?:'?d)?\s+(?:need|want|like))\s+(?:a\s+|some\s+)?recommendations?\s*\??$", re.IGNORECASE),
 ]
 
 # Term-extracting recommendation patterns - data-driven item/type lookup

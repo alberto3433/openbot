@@ -766,7 +766,9 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
                 "the whole order", "my whole order", "all items", "all the items",
                 "the whole thing", "it all", "them all",
                 # Without "the" prefix (pattern strips "the")
-                "order", "whole order", "whole thing"
+                "order", "whole order", "whole thing",
+                # Cart-based phrases
+                "cart", "the cart", "my cart",
             }
             if cancel_item.lower() in all_items_phrases:
                 logger.info("Deterministic parse: cancel ALL items detected (phrase='%s')", cancel_item)

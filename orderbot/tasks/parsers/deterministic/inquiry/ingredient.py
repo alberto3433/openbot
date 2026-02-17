@@ -200,34 +200,65 @@ def parse_ingredient_search(
     # - "what has chicken"
     # - "do you have anything with chicken"
 
-    # Pattern 0: "what menu items do you have with egg whites?"
-    # Also: "what items have egg whites?", "which items contain egg whites?"
-    #        "what comes with egg whites?", "what do you have with egg whites?"
+    # Pattern 0: Explicit ingredient-based menu queries.
+    # These are questions where the user is asking what items contain a specific ingredient.
     _ITEMS_WITH_INGREDIENT_PATTERNS = [
+        # "what menu items do you have with X?" / "what items do you sell with X?"
         re.compile(
             r'^what\s+(?:menu\s+)?items?\s+do\s+you\s+(?:have|sell|carry|offer|make)'
             r'\s+(?:with|that\s+(?:has|have|contain|contains?))\s+(.+?)\s*[?.]?$',
             re.IGNORECASE,
         ),
+        # "what menu items have X?" / "what items contain X?"
         re.compile(
             r'^what\s+(?:menu\s+)?items?\s+(?:have|has|contain|contains?)\s+(.+?)\s*[?.]?$',
             re.IGNORECASE,
         ),
+        # "which items have X?" / "which items contain X?"
         re.compile(
             r'^which\s+(?:menu\s+)?items?\s+(?:have|has|contain|contains?)\s+(.+?)\s*[?.]?$',
             re.IGNORECASE,
         ),
+        # "what do you have with X?" / "what do you sell with X?"
         re.compile(
             r'^what\s+do\s+you\s+(?:have|sell|carry|offer|make)'
             r'\s+(?:with|that\s+(?:has|have|contain|contains?))\s+(.+?)\s*[?.]?$',
             re.IGNORECASE,
         ),
+        # "what comes with X?" / "what is made with X?"
         re.compile(
             r'^what\s+(?:comes|is\s+made)\s+with\s+(.+?)\s*[?.]?$',
             re.IGNORECASE,
         ),
+        # "any items with X?" / "do you have any items with X?"
         re.compile(
             r'^(?:do\s+you\s+have\s+)?(?:any\s+)?(?:menu\s+)?items?\s+with\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        # "what's on the menu with X?" / "what is on the menu with X?"
+        re.compile(
+            r'^what(?:\'?s|\s+is)\s+on\s+(?:the|your)\s+menu\s+with\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        # "what can I get with X?" / "what can I order with X?"
+        re.compile(
+            r'^what\s+can\s+i\s+(?:get|order|have)\s+with\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        # "what options do you have with X?" / "what choices have X?"
+        re.compile(
+            r'^what\s+(?:options?|choices?)\s+(?:do\s+you\s+have\s+)?'
+            r'(?:with|that\s+(?:has|have|contain|contains?))\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        # "show me items with X" / "list items with X"
+        re.compile(
+            r'^(?:show|list)\s+(?:me\s+)?(?:(?:the|your|all)\s+)?(?:menu\s+)?items?\s+with\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        # "anything on the menu with X?"
+        re.compile(
+            r'^(?:is\s+there\s+)?anything\s+(?:on\s+(?:the|your)\s+menu\s+)?with\s+(.+?)\s*[?.]?$',
             re.IGNORECASE,
         ),
     ]

@@ -6,7 +6,7 @@ forcing them into a rigid base class structure.
 
 import logging
 import re
-from typing import Pattern, Match
+from re import Pattern, Match
 
 from ....schemas import OpenInputResponse
 from ...constants import clean_extracted_text

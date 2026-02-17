@@ -51,6 +51,7 @@ from .models import (
 from .models.pending_states import PendingDietaryFollowup
 from .item_converters import _unified_converter
 from .pricing import PricingEngine
+from ..schemas.enums import OrderStatus
 from ..services.tax_utils import calculate_order_total
 
 logger = logging.getLogger(__name__)
@@ -239,7 +240,7 @@ def dict_to_order_task(order_dict: dict[str, Any], session_id: str | None = None
 
     # Convert checkout state
     checkout_data = order_dict.get("checkout_state", {})
-    if checkout_data.get("confirmed") or order_dict.get("status") == "confirmed":
+    if checkout_data.get("confirmed") or order_dict.get("status") == OrderStatus.CONFIRMED:
         order.checkout.confirmed = True
         order.checkout.mark_complete()
     if checkout_data.get("order_reviewed"):
@@ -290,11 +291,11 @@ def order_task_to_dict(
 
     # Determine status
     if order.checkout.confirmed:
-        status = "confirmed"
+        status = OrderStatus.CONFIRMED
     elif order.items.get_item_count() > 0:
         status = "collecting_items"
     else:
-        status = "pending"
+        status = OrderStatus.PENDING
 
     # Calculate total
     if order.checkout.total > 0:

@@ -11,7 +11,6 @@ based on available contact info and sends the notification.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -24,13 +23,13 @@ logger = logging.getLogger(__name__)
 
 def _log_notification(
     db: Session,
-    order_id: Optional[int],
+    order_id: int | None,
     notification_type: str,
     event: str,
     recipient: str,
     status: str,
-    provider_message_id: Optional[str] = None,
-    error_message: Optional[str] = None,
+    provider_message_id: str | None = None,
+    error_message: str | None = None,
 ) -> None:
     """Record a notification attempt in the database."""
     entry = NotificationLog(

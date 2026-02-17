@@ -19,6 +19,11 @@ from ..constants import (
     HELP_PATTERNS,
     REPEAT_ORDER_PATTERNS,
     match_small_talk,
+    CANCEL_LAST_ITEM,
+    CANCEL_ALL_ITEMS,
+    REDUCE_TO_ONE,
+    make_last_n_sentinel,
+    make_reduce_to_one_sentinel,
 )
 from ..intent_patterns import (
     strip_conversational_fillers,
@@ -431,9 +436,9 @@ def _try_parse_quantity_change(text: str) -> OpenInputResponse | None:
 
         # Return special cancel_item value to signal quantity reduction
         if item_type:
-            cancel_value = f"__reduce_to_one_{item_type}__"
+            cancel_value = make_reduce_to_one_sentinel(item_type)
         else:
-            cancel_value = "__reduce_to_one__"
+            cancel_value = REDUCE_TO_ONE
 
         logger.info(
             "Deterministic parse: 'just/only one' detected, reducing to 1 (item_type=%s)",
@@ -765,7 +770,7 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
             }
             if cancel_item.lower() in all_items_phrases:
                 logger.info("Deterministic parse: cancel ALL items detected (phrase='%s')", cancel_item)
-                return OpenInputResponse(cancel_item="__all_items__")
+                return OpenInputResponse(cancel_item=CANCEL_ALL_ITEMS)
             # Handle pronouns that refer to the last item
             last_item_pronouns = {
                 "that", "it", "this", "last", "the last one", "the last item", "last one", "last item",
@@ -774,7 +779,7 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
             }
             if cancel_item.lower() in last_item_pronouns:
                 logger.info("Deterministic parse: cancellation of last item detected (pronoun='%s')", cancel_item)
-                return OpenInputResponse(cancel_item="__last_item__")
+                return OpenInputResponse(cancel_item=CANCEL_LAST_ITEM)
 
             # Handle "last N" or "last N items" - remove the last N items from cart
             last_n_match = re.match(
@@ -791,7 +796,7 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
                     count = BASIC_WORD_TO_NUM.get(num_str, 0)
                 if count >= 1:
                     logger.info("Deterministic parse: remove last %d items detected", count)
-                    return OpenInputResponse(cancel_item=f"__last_n_items_{count}__")
+                    return OpenInputResponse(cancel_item=make_last_n_sentinel(count))
 
             # Handle "N" or "N more" or "N items" - remove N items from the end
             # e.g., "remove 2", "remove 2 more", "remove two items"
@@ -809,7 +814,7 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
                     count = BASIC_WORD_TO_NUM.get(num_str, 0)
                 if count >= 1:
                     logger.info("Deterministic parse: remove %d items detected", count)
-                    return OpenInputResponse(cancel_item=f"__last_n_items_{count}__")
+                    return OpenInputResponse(cancel_item=make_last_n_sentinel(count))
 
             logger.info("Deterministic parse: cancellation detected, item='%s'", cancel_item)
             return OpenInputResponse(cancel_item=cancel_item)

@@ -106,7 +106,7 @@ class OrderUtilsHandler:
 
         for item in active_items:
             item_summary = item.get_summary().lower()
-            item_type = getattr(item, 'drink_type', '') or getattr(item, 'menu_item_name', '') or ''
+            item_type = (item.menu_item_name if isinstance(item, MenuItemTask) else '') or ''
             item_type_lower = item_type.lower()
 
             # Check if item_name matches

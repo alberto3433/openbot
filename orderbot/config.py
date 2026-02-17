@@ -55,8 +55,6 @@ Usage:
 
 import os
 import random
-from typing import List
-
 
 # =============================================================================
 # Store Configuration
@@ -66,7 +64,7 @@ from typing import List
 
 # Default store IDs used when no specific store is requested
 # These are Zucker's NYC locations used as defaults
-DEFAULT_STORE_IDS: List[str] = [
+DEFAULT_STORE_IDS: list[str] = [
     "zuckers_tribeca",
     "zuckers_grandcentral",
     "zuckers_bryantpark",
@@ -145,7 +143,7 @@ MAX_MESSAGE_LENGTH: int = int(os.getenv("MAX_MESSAGE_LENGTH", "2000"))
 # Format: comma-separated list of origins, e.g., "https://myshop.com,https://admin.myshop.com"
 # Default "*" allows all origins (suitable for development only)
 _cors_origins_env = os.getenv("CORS_ORIGINS", "")
-CORS_ORIGINS: List[str] = [
+CORS_ORIGINS: list[str] = [
     origin.strip()
     for origin in _cors_origins_env.split(",")
     if origin.strip()

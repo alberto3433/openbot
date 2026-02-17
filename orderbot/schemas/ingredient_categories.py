@@ -25,7 +25,7 @@ Categories are classified by how they're used:
 """
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -49,7 +49,7 @@ class IngredientCategoryBase(BaseModel):
         max_length=100,
         description="Human-readable name (e.g., 'Proteins', 'Toppings')"
     )
-    modifier_type: Optional[ModifierType] = Field(
+    modifier_type: ModifierType | None = Field(
         None,
         description="How this category is used: 'food', 'beverage', or null"
     )
@@ -70,23 +70,23 @@ class IngredientCategoryUpdate(BaseModel):
 
     All fields are optional - only provided fields will be updated.
     """
-    slug: Optional[str] = Field(
+    slug: str | None = Field(
         None,
         min_length=1,
         max_length=50,
         description="Unique identifier slug"
     )
-    display_name: Optional[str] = Field(
+    display_name: str | None = Field(
         None,
         min_length=1,
         max_length=100,
         description="Human-readable name"
     )
-    modifier_type: Optional[str] = Field(
+    modifier_type: str | None = Field(
         None,
         description="How this category is used: 'food', 'beverage', or empty string for null"
     )
-    display_order: Optional[int] = Field(
+    display_order: int | None = Field(
         None,
         ge=0,
         description="Order for display in UI"

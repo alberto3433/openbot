@@ -41,11 +41,12 @@ specific configurations.
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from ..db.models import Order, OrderItem, OrderStatusHistory, Store
+from ..schemas.enums import OrderStatus
 
 
 logger = logging.getLogger(__name__)
@@ -95,8 +96,8 @@ def _first_non_empty(*vals: Any) -> str | None:
 
 
 def _extract_customer_info(
-    order_state: Dict[str, Any],
-    slots: Dict[str, Any],
+    order_state: dict[str, Any],
+    slots: dict[str, Any],
     include_pickup_time: bool = False,
 ) -> CustomerInfo:
     """Extract customer information from order state and slots.
@@ -208,7 +209,7 @@ def _calculate_order_totals(
     )
 
 
-def _update_checkout_state(order_state: Dict[str, Any], totals: OrderTotals) -> None:
+def _update_checkout_state(order_state: dict[str, Any], totals: OrderTotals) -> None:
     """Update checkout_state in order_state with calculated totals.
 
     Args:
@@ -225,10 +226,10 @@ def _update_checkout_state(order_state: Dict[str, Any], totals: OrderTotals) -> 
 
 def persist_pending_order(
     db: Session,
-    order_state: Dict[str, Any],
-    slots: Optional[Dict[str, Any]] = None,
-    store_id: Optional[str] = None,
-) -> Optional[Order]:
+    order_state: dict[str, Any],
+    slots: dict[str, Any] | None = None,
+    store_id: str | None = None,
+) -> Order | None:
     """
     Persist an order in pending_payment status (before confirmation).
 
@@ -267,7 +268,7 @@ def persist_pending_order(
 
     # Create order with pending_payment status
     order = Order(
-        status="pending_payment",
+        status=OrderStatus.PENDING_PAYMENT,
         customer_name=customer.name,
         phone=customer.phone,
         customer_email=customer.email,
@@ -297,10 +298,10 @@ def persist_pending_order(
 
 def persist_confirmed_order(
     db: Session,
-    order_state: Dict[str, Any],
-    slots: Optional[Dict[str, Any]] = None,
-    store_id: Optional[str] = None,
-) -> Optional[Order]:
+    order_state: dict[str, Any],
+    slots: dict[str, Any] | None = None,
+    store_id: str | None = None,
+) -> Order | None:
     """
     Persist a confirmed order + its items to the database.
 
@@ -317,7 +318,7 @@ def persist_confirmed_order(
     Returns:
         The created or updated Order object, or None if order not confirmed
     """
-    if order_state.get("status") != "confirmed":
+    if order_state.get("status") != OrderStatus.CONFIRMED:
         return None  # nothing to persist
 
     slots = slots or {}
@@ -342,7 +343,7 @@ def persist_confirmed_order(
 
     # Create or update Order row
     existing_id = order_state.get("db_order_id")
-    order: Optional[Order] = None
+    order: Order | None = None
 
     if existing_id:
         order = db.get(Order, existing_id)
@@ -351,7 +352,7 @@ def persist_confirmed_order(
 
     if order:
         # Update existing order
-        order.status = "confirmed"
+        order.status = OrderStatus.CONFIRMED
         order.customer_name = customer.name
         order.phone = customer.phone
         order.customer_email = customer.email
@@ -369,7 +370,7 @@ def persist_confirmed_order(
     else:
         # Create new order
         order = Order(
-            status="confirmed",
+            status=OrderStatus.CONFIRMED,
             customer_name=customer.name,
             phone=customer.phone,
             customer_email=customer.email,
@@ -432,14 +433,14 @@ def update_order_stripe_session(
 # =============================================================================
 
 # Valid forward transitions: status -> set of allowed next statuses
-VALID_TRANSITIONS: Dict[str, set] = {
-    "pending": {"pending_payment", "confirmed", "cancelled"},
-    "pending_payment": {"confirmed", "cancelled"},
-    "confirmed": {"preparing", "cancelled"},
-    "preparing": {"ready", "cancelled"},
-    "ready": {"completed", "cancelled"},
-    "completed": set(),  # Terminal state
-    "cancelled": set(),  # Terminal state
+VALID_TRANSITIONS: dict[str, set] = {
+    OrderStatus.PENDING: {OrderStatus.PENDING_PAYMENT, OrderStatus.CONFIRMED, OrderStatus.CANCELLED},
+    OrderStatus.PENDING_PAYMENT: {OrderStatus.CONFIRMED, OrderStatus.CANCELLED},
+    OrderStatus.CONFIRMED: {OrderStatus.PREPARING, OrderStatus.CANCELLED},
+    OrderStatus.PREPARING: {OrderStatus.READY, OrderStatus.CANCELLED},
+    OrderStatus.READY: {OrderStatus.COMPLETED, OrderStatus.CANCELLED},
+    OrderStatus.COMPLETED: set(),  # Terminal state
+    OrderStatus.CANCELLED: set(),  # Terminal state
 }
 
 
@@ -452,9 +453,9 @@ def transition_order_status(
     db: Session,
     order_id: int,
     new_status: str,
-    changed_by: Optional[str] = None,
-    note: Optional[str] = None,
-    cancellation_reason: Optional[str] = None,
+    changed_by: str | None = None,
+    note: str | None = None,
+    cancellation_reason: str | None = None,
 ) -> Order:
     """Transition an order to a new status with validation.
 
@@ -495,11 +496,11 @@ def transition_order_status(
     order.status = new_status
 
     # Set timestamp columns based on new status
-    if new_status == "ready":
+    if new_status == OrderStatus.READY:
         order.ready_at = now
-    elif new_status == "completed":
+    elif new_status == OrderStatus.COMPLETED:
         order.completed_at = now
-    elif new_status == "cancelled":
+    elif new_status == OrderStatus.CANCELLED:
         order.cancelled_at = now
         if cancellation_reason:
             order.cancellation_reason = cancellation_reason
@@ -538,9 +539,9 @@ def _send_transition_notifications(db: Session, order: Order, new_status: str) -
         company = db.query(Company).first()
         store_name = company.name if company else "OrderBot"
 
-        if new_status == "ready":
+        if new_status == OrderStatus.READY:
             notify_order_ready(db, order, store_name)
-        elif new_status == "cancelled":
+        elif new_status == OrderStatus.CANCELLED:
             notify_order_cancelled(db, order, store_name)
     except Exception as e:
         logger.error("Failed to send transition notification for order #%d: %s", order.id, e)
@@ -550,7 +551,7 @@ def update_order_toast_status(
     db: Session,
     order_id: int,
     toast_status: str,
-    toast_guid: Optional[str] = None,
+    toast_guid: str | None = None,
 ) -> bool:
     """Update Toast POS tracking fields on an order.
 

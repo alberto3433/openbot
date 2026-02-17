@@ -60,7 +60,7 @@ Usage:
 """
 
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -112,17 +112,17 @@ class CompanyOut(BaseModel):
     id: int
     name: str
     bot_persona_name: str
-    tagline: Optional[str] = None
-    headquarters_address: Optional[str] = None
-    corporate_phone: Optional[str] = None
-    corporate_email: Optional[str] = None
-    website: Optional[str] = None
-    instagram_handle: Optional[str] = None
-    feedback_form_url: Optional[str] = None
-    logo_url: Optional[str] = None
-    business_hours: Optional[Dict[str, Any]] = None
+    tagline: str | None = None
+    headquarters_address: str | None = None
+    corporate_phone: str | None = None
+    corporate_email: str | None = None
+    website: str | None = None
+    instagram_handle: str | None = None
+    feedback_form_url: str | None = None
+    logo_url: str | None = None
+    business_hours: dict[str, Any] | None = None
     primary_item_type: str = "Sandwich"
-    signature_item_label: Optional[str] = None
+    signature_item_label: str | None = None
 
     # Payment Methods
     accepts_credit_cards: bool = True
@@ -135,7 +135,7 @@ class CompanyOut(BaseModel):
 
     # Dietary & Certification Info
     is_kosher: bool = False
-    kosher_certification: Optional[str] = None
+    kosher_certification: str | None = None
     is_halal: bool = False
     has_vegetarian_options: bool = True
     has_vegan_options: bool = True
@@ -148,10 +148,10 @@ class CompanyOut(BaseModel):
 
     # Catering
     offers_catering: bool = False
-    catering_minimum_order: Optional[Decimal] = None
-    catering_advance_notice_hours: Optional[int] = None
-    catering_phone: Optional[str] = None
-    catering_email: Optional[str] = None
+    catering_minimum_order: Decimal | None = None
+    catering_advance_notice_hours: int | None = None
+    catering_phone: str | None = None
+    catering_email: str | None = None
 
 
 class CompanyUpdate(BaseModel):
@@ -197,44 +197,44 @@ class CompanyUpdate(BaseModel):
             "accepts_google_pay": True
         }
     """
-    name: Optional[str] = None
-    bot_persona_name: Optional[str] = None
-    tagline: Optional[str] = None
-    headquarters_address: Optional[str] = None
-    corporate_phone: Optional[str] = None
-    corporate_email: Optional[str] = None
-    website: Optional[str] = None
-    instagram_handle: Optional[str] = None
-    feedback_form_url: Optional[str] = None
-    logo_url: Optional[str] = None
-    business_hours: Optional[Dict[str, Any]] = None
-    signature_item_label: Optional[str] = None
+    name: str | None = None
+    bot_persona_name: str | None = None
+    tagline: str | None = None
+    headquarters_address: str | None = None
+    corporate_phone: str | None = None
+    corporate_email: str | None = None
+    website: str | None = None
+    instagram_handle: str | None = None
+    feedback_form_url: str | None = None
+    logo_url: str | None = None
+    business_hours: dict[str, Any] | None = None
+    signature_item_label: str | None = None
 
     # Payment Methods
-    accepts_credit_cards: Optional[bool] = None
-    accepts_debit_cards: Optional[bool] = None
-    accepts_cash: Optional[bool] = None
-    accepts_apple_pay: Optional[bool] = None
-    accepts_google_pay: Optional[bool] = None
-    accepts_venmo: Optional[bool] = None
-    accepts_paypal: Optional[bool] = None
+    accepts_credit_cards: bool | None = None
+    accepts_debit_cards: bool | None = None
+    accepts_cash: bool | None = None
+    accepts_apple_pay: bool | None = None
+    accepts_google_pay: bool | None = None
+    accepts_venmo: bool | None = None
+    accepts_paypal: bool | None = None
 
     # Dietary & Certification Info
-    is_kosher: Optional[bool] = None
-    kosher_certification: Optional[str] = None
-    is_halal: Optional[bool] = None
-    has_vegetarian_options: Optional[bool] = None
-    has_vegan_options: Optional[bool] = None
-    has_gluten_free_options: Optional[bool] = None
+    is_kosher: bool | None = None
+    kosher_certification: str | None = None
+    is_halal: bool | None = None
+    has_vegetarian_options: bool | None = None
+    has_vegan_options: bool | None = None
+    has_gluten_free_options: bool | None = None
 
     # Amenities
-    wifi_available: Optional[bool] = None
-    wheelchair_accessible: Optional[bool] = None
-    outdoor_seating: Optional[bool] = None
+    wifi_available: bool | None = None
+    wheelchair_accessible: bool | None = None
+    outdoor_seating: bool | None = None
 
     # Catering
-    offers_catering: Optional[bool] = None
-    catering_minimum_order: Optional[Decimal] = None
-    catering_advance_notice_hours: Optional[int] = None
-    catering_phone: Optional[str] = None
-    catering_email: Optional[str] = None
+    offers_catering: bool | None = None
+    catering_minimum_order: Decimal | None = None
+    catering_advance_notice_hours: int | None = None
+    catering_phone: str | None = None
+    catering_email: str | None = None

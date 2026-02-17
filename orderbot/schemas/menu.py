@@ -51,8 +51,6 @@ Usage:
     new_item = MenuItemOut.model_validate(db_item)
 """
 
-from typing import List, Optional
-
 from pydantic import BaseModel, ConfigDict
 
 
@@ -100,38 +98,38 @@ class MenuItemOut(BaseModel):
 
     id: int
     name: str
-    description: Optional[str] = None
-    category: Optional[str] = None  # DEPRECATED - derived from item_type.display_name
+    description: str | None = None
+    category: str | None = None  # DEPRECATED - derived from item_type.display_name
     is_signature: bool
     base_price: float
     available_qty: int
-    item_type_id: Optional[int] = None
+    item_type_id: int | None = None
     aliases: list[str] = []
-    abbreviation: Optional[str] = None
-    required_match_phrases: Optional[str] = None
-    size_category_id: Optional[int] = None
-    size_prices: List[SizePriceOut] = []
-    ingredients: List[MenuItemIngredientOut] = []
+    abbreviation: str | None = None
+    required_match_phrases: str | None = None
+    size_category_id: int | None = None
+    size_prices: list[SizePriceOut] = []
+    ingredients: list[MenuItemIngredientOut] = []
 
     # Dietary attributes (computed from ingredients when available, else stored values)
-    is_vegan: Optional[bool] = None
-    is_vegetarian: Optional[bool] = None
-    is_gluten_free: Optional[bool] = None
-    is_dairy_free: Optional[bool] = None
-    is_kosher: Optional[bool] = None
+    is_vegan: bool | None = None
+    is_vegetarian: bool | None = None
+    is_gluten_free: bool | None = None
+    is_dairy_free: bool | None = None
+    is_kosher: bool | None = None
 
     # Allergen attributes
-    contains_eggs: Optional[bool] = None
-    contains_fish: Optional[bool] = None
-    contains_sesame: Optional[bool] = None
-    contains_nuts: Optional[bool] = None
+    contains_eggs: bool | None = None
+    contains_fish: bool | None = None
+    contains_sesame: bool | None = None
+    contains_nuts: bool | None = None
 
     # True when item has ingredients defined (dietary values are computed, not editable)
     has_ingredients: bool = False
 
     # Unit of sale
     unit_type: str = "each"  # each, by_weight, dozen, pack
-    quantity_per_unit: Optional[int] = None  # Number of items per unit (for packs)
+    quantity_per_unit: int | None = None  # Number of items per unit (for packs)
 
 
 class SizePriceInput(BaseModel):
@@ -165,33 +163,33 @@ class MenuItemCreate(BaseModel):
         }
     """
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     is_signature: bool = False
-    base_price: Optional[float] = None
+    base_price: float | None = None
     available_qty: int = 0
-    item_type_id: Optional[int] = None
-    aliases: Optional[str] = None
-    abbreviation: Optional[str] = None
-    required_match_phrases: Optional[str] = None
-    size_category_id: Optional[int] = None
-    size_prices: Optional[List[SizePriceInput]] = None
+    item_type_id: int | None = None
+    aliases: str | None = None
+    abbreviation: str | None = None
+    required_match_phrases: str | None = None
+    size_category_id: int | None = None
+    size_prices: list[SizePriceInput] | None = None
 
     # Dietary attributes (used as fallback when no ingredients defined)
-    is_vegan: Optional[bool] = None
-    is_vegetarian: Optional[bool] = None
-    is_gluten_free: Optional[bool] = None
-    is_dairy_free: Optional[bool] = None
-    is_kosher: Optional[bool] = None
+    is_vegan: bool | None = None
+    is_vegetarian: bool | None = None
+    is_gluten_free: bool | None = None
+    is_dairy_free: bool | None = None
+    is_kosher: bool | None = None
 
     # Allergen attributes
-    contains_eggs: Optional[bool] = None
-    contains_fish: Optional[bool] = None
-    contains_sesame: Optional[bool] = None
-    contains_nuts: Optional[bool] = None
+    contains_eggs: bool | None = None
+    contains_fish: bool | None = None
+    contains_sesame: bool | None = None
+    contains_nuts: bool | None = None
 
     # Unit of sale
-    unit_type: Optional[str] = None  # each, by_weight, dozen, pack
-    quantity_per_unit: Optional[int] = None  # Number of items per unit (for packs)
+    unit_type: str | None = None  # each, by_weight, dozen, pack
+    quantity_per_unit: int | None = None  # Number of items per unit (for packs)
 
 
 class MenuItemUpdate(BaseModel):
@@ -218,32 +216,32 @@ class MenuItemUpdate(BaseModel):
         # Update multiple fields
         {"name": "Super Veggie Delight", "base_price": 12.99}
     """
-    name: Optional[str] = None
-    description: Optional[str] = None
-    is_signature: Optional[bool] = None
-    base_price: Optional[float] = None
-    available_qty: Optional[int] = None
-    item_type_id: Optional[int] = None
-    aliases: Optional[str] = None
-    abbreviation: Optional[str] = None
-    required_match_phrases: Optional[str] = None
-    size_category_id: Optional[int] = None
-    size_prices: Optional[List[SizePriceInput]] = None
-    ingredients: Optional[List[MenuItemIngredientInput]] = None
+    name: str | None = None
+    description: str | None = None
+    is_signature: bool | None = None
+    base_price: float | None = None
+    available_qty: int | None = None
+    item_type_id: int | None = None
+    aliases: str | None = None
+    abbreviation: str | None = None
+    required_match_phrases: str | None = None
+    size_category_id: int | None = None
+    size_prices: list[SizePriceInput] | None = None
+    ingredients: list[MenuItemIngredientInput] | None = None
 
     # Dietary attributes (used as fallback when no ingredients defined)
-    is_vegan: Optional[bool] = None
-    is_vegetarian: Optional[bool] = None
-    is_gluten_free: Optional[bool] = None
-    is_dairy_free: Optional[bool] = None
-    is_kosher: Optional[bool] = None
+    is_vegan: bool | None = None
+    is_vegetarian: bool | None = None
+    is_gluten_free: bool | None = None
+    is_dairy_free: bool | None = None
+    is_kosher: bool | None = None
 
     # Allergen attributes
-    contains_eggs: Optional[bool] = None
-    contains_fish: Optional[bool] = None
-    contains_sesame: Optional[bool] = None
-    contains_nuts: Optional[bool] = None
+    contains_eggs: bool | None = None
+    contains_fish: bool | None = None
+    contains_sesame: bool | None = None
+    contains_nuts: bool | None = None
 
     # Unit of sale
-    unit_type: Optional[str] = None  # each, by_weight, dozen, pack
-    quantity_per_unit: Optional[int] = None  # Number of items per unit (for packs)
+    unit_type: str | None = None  # each, by_weight, dozen, pack
+    quantity_per_unit: int | None = None  # Number of items per unit (for packs)

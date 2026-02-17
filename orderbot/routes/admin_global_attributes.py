@@ -32,8 +32,6 @@ All endpoints require admin authentication via HTTP Basic Auth.
 """
 
 import logging
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -92,12 +90,12 @@ admin_item_type_global_attrs_router = APIRouter(
 # Global Attribute Endpoints
 # =============================================================================
 
-@admin_global_attributes_router.get("", response_model=List[GlobalAttributeListOut])
+@admin_global_attributes_router.get("", response_model=list[GlobalAttributeListOut])
 def list_global_attributes(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    input_type: Optional[str] = Query(None, description="Filter by input type"),
-) -> List[GlobalAttributeListOut]:
+    input_type: str | None = Query(None, description="Filter by input type"),
+) -> list[GlobalAttributeListOut]:
     """List all global attributes."""
     # Eager load relationships to get counts without N+1 queries
     query = db.query(GlobalAttribute).options(
@@ -348,14 +346,14 @@ def delete_global_attribute(
 
 @admin_global_attributes_router.get(
     "/{attr_id}/options",
-    response_model=List[GlobalAttributeOptionOut],
+    response_model=list[GlobalAttributeOptionOut],
     summary="List options for an attribute"
 )
 def list_global_attribute_options(
     attr_id: int,
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[GlobalAttributeOptionOut]:
+) -> list[GlobalAttributeOptionOut]:
     """List all options for a global attribute."""
     attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
     if not attr:
@@ -801,7 +799,7 @@ def list_unlinked_ingredients(
     attr_id: int,
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[dict]:
+) -> list[dict]:
     """
     List all ingredients that are NOT yet linked to options for this attribute.
 
@@ -842,7 +840,7 @@ def list_unlinked_ingredients(
 
 @admin_global_attributes_router.get(
     "/{attr_id}/options/{option_id}/skip-rules",
-    response_model=List[SkipRuleOut],
+    response_model=list[SkipRuleOut],
     summary="List skip rules for an option"
 )
 def list_option_skip_rules(
@@ -850,7 +848,7 @@ def list_option_skip_rules(
     option_id: int,
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[SkipRuleOut]:
+) -> list[SkipRuleOut]:
     """List all skip rules for a global attribute option."""
     # Verify attribute exists
     attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
@@ -1004,14 +1002,14 @@ def delete_option_skip_rule(
 
 @admin_item_type_global_attrs_router.get(
     "/{item_type_id}/global-attributes",
-    response_model=List[ItemTypeGlobalAttributeOut],
+    response_model=list[ItemTypeGlobalAttributeOut],
     summary="List global attributes linked to item type"
 )
 def list_item_type_global_attributes(
     item_type_id: int,
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[ItemTypeGlobalAttributeOut]:
+) -> list[ItemTypeGlobalAttributeOut]:
     """List all global attributes linked to an item type."""
     item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
     if not item_type:

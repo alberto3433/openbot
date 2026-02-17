@@ -21,9 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 def _get_pipeline():
-    """Get the shared extraction pipeline (lazy import to avoid circular dependency)."""
+    """Lazy import to avoid circular dependency: pipeline → item_parsing → split_quantity_parsing → pipeline."""
     from .pipeline import get_pipeline
     return get_pipeline()
+
 
 # Module-level cache for split-indicator patterns built from database
 _SPLIT_INDICATOR_PATTERNS_CACHE: list[str] | None = None

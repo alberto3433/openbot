@@ -6,7 +6,6 @@ Contains methods for response patterns, parsing helpers, and text matching.
 
 import re
 import logging
-from typing import Pattern
 
 from .base import ensure_cache_loaded, _SMART_QUOTE_MAP
 
@@ -116,7 +115,7 @@ class ParsingQueryMixin:
         return self.is_response_type(text, "greeting")
 
     @ensure_cache_loaded
-    def get_standalone_instruction_patterns(self) -> list[Pattern]:
+    def get_standalone_instruction_patterns(self) -> list[re.Pattern]:
         """Get compiled patterns for standalone instructions.
 
         Returns individual patterns (without ^ and $ anchors) that can be used

@@ -11,6 +11,7 @@ import logging
 import re
 
 from orderbot.cache import menu_cache
+from orderbot.exceptions import MenuDataNotLoadedError
 from .models import parse_pending_field
 from .pending_fields import PendingField
 from .parsers.inquiry_patterns import OFF_TOPIC_PATTERNS
@@ -93,7 +94,7 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
                 if val and menu_cache.is_known_modifier(val):
                     logger.debug("Found known modifier '%s' during customization", val)
                     return True
-        except Exception as e:
+        except (KeyError, ValueError, MenuDataNotLoadedError) as e:
             logger.debug("Error checking ingredient for customization: %s", e)
         return False
 
@@ -153,7 +154,7 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
             if sibling_config.get("input_type") == "package_multi_select":
                 if _looks_like_package_contents(answer_value, sibling_slug):
                     return True
-    except Exception as e:
+    except (KeyError, ValueError, MenuDataNotLoadedError) as e:
         logger.debug("Error checking valid answer for %s: %s", pending_field, e)
 
     return False
@@ -309,7 +310,7 @@ def is_off_topic_request(user_input: str, pending_field: str | None = None) -> b
                 )
                 if any(kw in input_lower for kw in relevant_keywords):
                     return False  # Question is relevant to the current attribute
-            except Exception as e:
+            except (KeyError, ValueError, MenuDataNotLoadedError) as e:
                 logger.debug("Keyword lookup failed for %s.%s: %s", item_type_slug, attr_slug, e)
 
             # Also allow templatized questions: "what {attr} do you have?"
@@ -340,14 +341,14 @@ def is_off_topic_request(user_input: str, pending_field: str | None = None) -> b
                             opt_name = opt.get("display_name", "").lower()
                             if opt_name and opt_name in input_lower:
                                 return False
-            except Exception as e:
+            except (KeyError, ValueError, MenuDataNotLoadedError) as e:
                 logger.debug("Customization options lookup failed for %s: %s", item_type_slug, e)
             # Allow ingredient category names (data-driven from database)
             try:
                 category_names = menu_cache.get_all_ingredient_categories()
                 if any(cat in input_lower for cat in category_names):
                     return False
-            except Exception as e:
+            except (KeyError, ValueError, MenuDataNotLoadedError) as e:
                 logger.debug("Ingredient category lookup failed: %s", e)
 
     # Check if it matches any off-topic pattern

@@ -24,7 +24,7 @@ Example Suggestions:
 """
 
 from datetime import datetime
-from typing import Optional, List, Any
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -49,12 +49,12 @@ class UnrecognizedSuggestionOut(BaseModel):
     id: int
     input_pattern: str
     match_type: str
-    suggested_item_type_id: Optional[int] = None
-    suggested_item_type_slug: Optional[str] = None
-    suggested_menu_item_names: Optional[List[str]] = None
+    suggested_item_type_id: int | None = None
+    suggested_item_type_slug: str | None = None
+    suggested_menu_item_names: list[str] | None = None
     hit_count: int
     is_active: bool
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
     @classmethod
     def from_db(cls, db_obj) -> "UnrecognizedSuggestionOut":
@@ -100,8 +100,8 @@ class UnrecognizedSuggestionCreate(BaseModel):
     """
     input_pattern: str
     match_type: str = "exact"
-    suggested_item_type_slug: Optional[str] = None
-    suggested_menu_item_names: Optional[List[str]] = None
+    suggested_item_type_slug: str | None = None
+    suggested_menu_item_names: list[str] | None = None
     is_active: bool = True
 
 
@@ -111,11 +111,11 @@ class UnrecognizedSuggestionUpdate(BaseModel):
 
     All fields optional - only provided fields are updated.
     """
-    input_pattern: Optional[str] = None
-    match_type: Optional[str] = None
-    suggested_item_type_slug: Optional[str] = None
-    suggested_menu_item_names: Optional[List[str]] = None
-    is_active: Optional[bool] = None
+    input_pattern: str | None = None
+    match_type: str | None = None
+    suggested_item_type_slug: str | None = None
+    suggested_menu_item_names: list[str] | None = None
+    is_active: bool | None = None
 
 
 class UnrecognizedSuggestionStats(BaseModel):
@@ -127,7 +127,7 @@ class UnrecognizedSuggestionStats(BaseModel):
     total_hits: int
     by_match_type: dict[str, int]
     by_category: dict[str, int]
-    top_hits: List[dict[str, Any]]
+    top_hits: list[dict[str, Any]]
 
 
 class UnrecognizedLogEntry(BaseModel):
@@ -142,11 +142,11 @@ class UnrecognizedLogEntry(BaseModel):
     id: int
     user_input: str
     normalized_input: str
-    session_id: Optional[str] = None
+    session_id: str | None = None
     order_item_count: int
     fallback_level: str  # "curated", "fuzzy", "llm", "generic"
-    inferred_category: Optional[str] = None
-    created_at: Optional[datetime] = None
+    inferred_category: str | None = None
+    created_at: datetime | None = None
 
 
 class UnrecognizedLogStats(BaseModel):
@@ -156,8 +156,8 @@ class UnrecognizedLogStats(BaseModel):
     total_requests: int
     by_fallback_level: dict[str, int]
     by_inferred_category: dict[str, int]
-    top_unrecognized: List[dict[str, Any]]
-    recent_entries: List[UnrecognizedLogEntry]
+    top_unrecognized: list[dict[str, Any]]
+    recent_entries: list[UnrecognizedLogEntry]
 
 
 # =============================================================================
@@ -183,7 +183,7 @@ class UnrecognizedOptionSuggestionOut(BaseModel):
     attribute_slug: str
     suggested_display_name: str
     is_active: bool
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
 
 class UnrecognizedOptionSuggestionCreate(BaseModel):
@@ -209,10 +209,10 @@ class UnrecognizedOptionSuggestionUpdate(BaseModel):
 
     All fields optional - only provided fields are updated.
     """
-    input_pattern: Optional[str] = None
-    attribute_slug: Optional[str] = None
-    suggested_display_name: Optional[str] = None
-    is_active: Optional[bool] = None
+    input_pattern: str | None = None
+    attribute_slug: str | None = None
+    suggested_display_name: str | None = None
+    is_active: bool | None = None
 
 
 class UnrecognizedOptionSuggestionStats(BaseModel):

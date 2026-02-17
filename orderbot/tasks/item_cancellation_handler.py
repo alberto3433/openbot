@@ -37,6 +37,14 @@ from .modifier_operations import (
 from .config.attribute_resolver import get_mandatory_attributes
 from .utils.pricing_utils import safe_recalculate_price
 from .parsers.quantity_utils import extract_leading_quantity
+from .parsers.constants import (
+    CANCEL_LAST_ITEM,
+    CANCEL_ALL_ITEMS,
+    REDUCE_TO_ONE,
+    REDUCE_TO_ONE_PREFIX,
+    parse_last_n_sentinel,
+    parse_reduce_to_one_sentinel,
+)
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -122,9 +130,9 @@ def find_nth_item_of_type(
     count = 0
     for idx, item in enumerate(active_items):
         item_summary = item.get_summary().lower()
-        item_name = getattr(item, 'menu_item_name', '') or ''
+        item_name = (item.menu_item_name if isinstance(item, MenuItemTask) else '') or ''
         item_name_lower = item_name.lower()
-        menu_item_type = getattr(item, 'menu_item_type', '') or ''
+        menu_item_type = (item.menu_item_type if isinstance(item, MenuItemTask) else '') or ''
 
         # Check for matches
         matches = False
@@ -278,7 +286,7 @@ class ItemCancellationHandler:
         # as a modifier instead of removing the whole item.
         cancel_lower = parsed.cancel_item.lower().strip()
         for item in active_items:
-            item_name = getattr(item, 'menu_item_name', '') or ''
+            item_name = (item.menu_item_name if isinstance(item, MenuItemTask) else '') or ''
             if item_name and item_name.lower() == cancel_lower:
                 logger.info(
                     "Cancellation: '%s' matches cart item name '%s' - skipping modifier removal",
@@ -381,7 +389,7 @@ class ItemCancellationHandler:
         active_items: list,
     ) -> StateMachineResult | None:
         """Handle 'cancel that', 'remove it', etc."""
-        if parsed.cancel_item != "__last_item__" or not active_items:
+        if parsed.cancel_item != CANCEL_LAST_ITEM or not active_items:
             return None
 
         last_item = get_last_item(active_items)
@@ -399,7 +407,7 @@ class ItemCancellationHandler:
         active_items: list,
     ) -> StateMachineResult | None:
         """Handle 'remove all', 'cancel everything', etc."""
-        if parsed.cancel_item != "__all_items__":
+        if parsed.cancel_item != CANCEL_ALL_ITEMS:
             return None
 
         if active_items:
@@ -424,12 +432,9 @@ class ItemCancellationHandler:
         active_items: list,
     ) -> StateMachineResult | None:
         """Handle 'remove the last 2', 'cancel last three items', etc."""
-        import re
-        match = re.match(r"^__last_n_items_(\d+)__$", parsed.cancel_item)
-        if not match:
+        count = parse_last_n_sentinel(parsed.cancel_item)
+        if count is None:
             return None
-
-        count = int(match.group(1))
 
         if not active_items:
             return StateMachineResult(
@@ -472,7 +477,7 @@ class ItemCancellationHandler:
         active_items: list,
     ) -> StateMachineResult | None:
         """Handle 'just one bagel', 'only one', etc."""
-        if not parsed.cancel_item.startswith("__reduce_to_one"):
+        if not parsed.cancel_item.startswith(REDUCE_TO_ONE_PREFIX):
             return None
 
         if not active_items:
@@ -482,10 +487,8 @@ class ItemCancellationHandler:
             )
 
         item_type = None
-        if parsed.cancel_item != "__reduce_to_one__":
-            parts = parsed.cancel_item.replace("__", "").replace("reduce_to_one_", "")
-            if parts:
-                item_type = parts.strip()
+        if parsed.cancel_item != REDUCE_TO_ONE:
+            item_type = parse_reduce_to_one_sentinel(parsed.cancel_item)
 
         items_to_check = active_items
         if item_type:
@@ -619,10 +622,10 @@ class ItemCancellationHandler:
         items_to_remove = []
         for item in reversed(active_items):
             item_summary = item.get_summary().lower()
-            item_name = getattr(item, 'menu_item_name', '') or ''
+            item_name = (item.menu_item_name if isinstance(item, MenuItemTask) else '') or ''
             item_name_lower = item_name.lower()
-            item_type = getattr(item, 'item_type', '') or ''
-            menu_item_type = getattr(item, 'menu_item_type', '') or ''
+            item_type = item.item_type or ''
+            menu_item_type = (item.menu_item_type if isinstance(item, MenuItemTask) else '') or ''
 
             # Check for matches using all variants
             matches = False
@@ -661,7 +664,7 @@ class ItemCancellationHandler:
             # Quantity decrement: "Remove one X" with qty > 1 → just decrease quantity
             if is_decrement and len(items_to_remove) == 1:
                 item = items_to_remove[0]
-                if getattr(item, 'quantity', 1) > 1:
+                if item.quantity > 1:
                     item.quantity -= 1
                     item_name = item.get_summary()
                     logger.info("Cancellation: decremented qty of '%s' to %d", item_name, item.quantity)

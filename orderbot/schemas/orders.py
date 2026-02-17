@@ -52,7 +52,7 @@ Usage:
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -82,11 +82,11 @@ class OrderItemOut(BaseModel):
 
     id: int
     menu_item_name: str
-    display_name: Optional[str] = None
-    item_type: Optional[str] = None
-    modifiers: Optional[List[Dict[str, Any]]] = None
-    base_price: Optional[float] = None
-    notes: Optional[str] = None
+    display_name: str | None = None
+    item_type: str | None = None
+    modifiers: list[dict[str, Any]] | None = None
+    base_price: float | None = None
+    notes: str | None = None
     quantity: int
     unit_price: float
     line_total: float
@@ -145,23 +145,23 @@ class OrderSummaryOut(BaseModel):
 
     id: int
     status: str
-    customer_name: Optional[str] = None
-    phone: Optional[str] = None
-    customer_email: Optional[str] = None
-    pickup_time: Optional[str] = None
-    subtotal: Optional[float] = None
-    city_tax: Optional[float] = None
-    state_tax: Optional[float] = None
-    delivery_fee: Optional[float] = None
+    customer_name: str | None = None
+    phone: str | None = None
+    customer_email: str | None = None
+    pickup_time: str | None = None
+    subtotal: float | None = None
+    city_tax: float | None = None
+    state_tax: float | None = None
+    delivery_fee: float | None = None
     total_price: float
-    store_id: Optional[str] = None
-    order_type: Optional[str] = None
-    delivery_address: Optional[str] = None
-    payment_status: Optional[str] = None
-    payment_method: Optional[str] = None
-    estimated_ready_at: Optional[Union[str, datetime]] = None
-    staff_notes: Optional[str] = None
-    created_at: Optional[Union[str, datetime]] = None
+    store_id: str | None = None
+    order_type: str | None = None
+    delivery_address: str | None = None
+    payment_status: str | None = None
+    payment_method: str | None = None
+    estimated_ready_at: str | datetime | None = None
+    staff_notes: str | None = None
+    created_at: str | datetime | None = None
 
 
 class OrderDetailOut(BaseModel):
@@ -180,36 +180,36 @@ class OrderDetailOut(BaseModel):
 
     id: int
     status: str
-    customer_name: Optional[str] = None
-    phone: Optional[str] = None
-    customer_email: Optional[str] = None
-    pickup_time: Optional[str] = None
-    subtotal: Optional[float] = None
-    city_tax: Optional[float] = None
-    state_tax: Optional[float] = None
-    delivery_fee: Optional[float] = None
+    customer_name: str | None = None
+    phone: str | None = None
+    customer_email: str | None = None
+    pickup_time: str | None = None
+    subtotal: float | None = None
+    city_tax: float | None = None
+    state_tax: float | None = None
+    delivery_fee: float | None = None
     total_price: float
-    store_id: Optional[str] = None
-    order_type: Optional[str] = None
-    delivery_address: Optional[str] = None
-    payment_status: Optional[str] = None
-    payment_method: Optional[str] = None
-    estimated_ready_at: Optional[Union[str, datetime]] = None
-    ready_at: Optional[Union[str, datetime]] = None
-    completed_at: Optional[Union[str, datetime]] = None
-    cancelled_at: Optional[Union[str, datetime]] = None
-    cancellation_reason: Optional[str] = None
-    staff_notes: Optional[str] = None
-    created_at: Union[str, datetime]
-    updated_at: Optional[Union[str, datetime]] = None
-    items: List[OrderItemOut]
+    store_id: str | None = None
+    order_type: str | None = None
+    delivery_address: str | None = None
+    payment_status: str | None = None
+    payment_method: str | None = None
+    estimated_ready_at: str | datetime | None = None
+    ready_at: str | datetime | None = None
+    completed_at: str | datetime | None = None
+    cancelled_at: str | datetime | None = None
+    cancellation_reason: str | None = None
+    staff_notes: str | None = None
+    created_at: str | datetime
+    updated_at: str | datetime | None = None
+    items: list[OrderItemOut]
 
 
 class OrderStatusUpdateIn(BaseModel):
     """Request body for updating an order's status."""
     status: str
-    note: Optional[str] = None
-    cancellation_reason: Optional[str] = None
+    note: str | None = None
+    cancellation_reason: str | None = None
 
 
 class OrderEstimatedTimeIn(BaseModel):
@@ -227,11 +227,11 @@ class OrderStatusHistoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    from_status: Optional[str] = None
+    from_status: str | None = None
     to_status: str
-    changed_by: Optional[str] = None
-    note: Optional[str] = None
-    created_at: Union[str, datetime]
+    changed_by: str | None = None
+    note: str | None = None
+    created_at: str | datetime
 
 
 class OrderListResponse(PaginatedListResponse[OrderSummaryOut]):

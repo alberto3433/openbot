@@ -95,8 +95,6 @@ Usage:
     large = AttributeOptionCreate(slug="large", display_name="Large", price_modifier=1.00)
 """
 
-from typing import List, Optional
-
 from pydantic import BaseModel, ConfigDict
 
 
@@ -174,12 +172,12 @@ class AttributeOptionUpdate(BaseModel):
         is_available: Update availability
         display_order: New sort order
     """
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
-    price_modifier: Optional[float] = None
-    is_default: Optional[bool] = None
-    is_available: Optional[bool] = None
-    display_order: Optional[int] = None
+    slug: str | None = None
+    display_name: str | None = None
+    price_modifier: float | None = None
+    is_default: bool | None = None
+    is_available: bool | None = None
+    display_order: int | None = None
 
 
 # =============================================================================
@@ -320,10 +318,10 @@ class ItemTypeOut(BaseModel):
     skip_config: bool = False
     menu_display_group_id: int
     menu_display_group_name: str
-    overall_category_name: Optional[str] = None  # Inherited from display group
+    overall_category_name: str | None = None  # Inherited from display group
     menu_item_count: int = 0
     global_attribute_count: int = 0
-    global_attributes: List[GlobalAttributeRef] = []
+    global_attributes: list[GlobalAttributeRef] = []
     aliases: list[str] = []
 
 
@@ -353,7 +351,7 @@ class ItemTypeCreate(BaseModel):
     slug: str
     display_name: str
     menu_display_group_id: int
-    aliases: Optional[str] = None  # Comma-separated aliases
+    aliases: str | None = None  # Comma-separated aliases
 
 
 class ItemTypeUpdate(BaseModel):
@@ -373,10 +371,10 @@ class ItemTypeUpdate(BaseModel):
         menu_display_group_id: FK to menu_display_groups table
         aliases: Comma-separated synonyms for matching
     """
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
-    menu_display_group_id: Optional[int] = None
-    aliases: Optional[str] = None  # Comma-separated aliases
+    slug: str | None = None
+    display_name: str | None = None
+    menu_display_group_id: int | None = None
+    aliases: str | None = None  # Comma-separated aliases
 
 
 # =============================================================================
@@ -406,10 +404,10 @@ class ModifierCategoryOut(BaseModel):
     slug: str
     display_name: str
     aliases: list[str] = []
-    description: Optional[str] = None
-    prompt_suffix: Optional[str] = None
+    description: str | None = None
+    prompt_suffix: str | None = None
     loads_from_ingredients: bool = False
-    ingredient_category: Optional[str] = None
+    ingredient_category: str | None = None
 
 
 class ModifierCategoryCreate(BaseModel):
@@ -447,11 +445,11 @@ class ModifierCategoryCreate(BaseModel):
     """
     slug: str
     display_name: str
-    aliases: Optional[str] = None
-    description: Optional[str] = None
+    aliases: str | None = None
+    description: str | None = None
     prompt_suffix: str = "What would you like?"
     loads_from_ingredients: bool = False
-    ingredient_category: Optional[str] = None
+    ingredient_category: str | None = None
 
 
 class ModifierCategoryUpdate(BaseModel):
@@ -469,10 +467,10 @@ class ModifierCategoryUpdate(BaseModel):
         loads_from_ingredients: Update database-backed flag
         ingredient_category: New ingredient category
     """
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
-    aliases: Optional[str] = None
-    description: Optional[str] = None
-    prompt_suffix: Optional[str] = None
-    loads_from_ingredients: Optional[bool] = None
-    ingredient_category: Optional[str] = None
+    slug: str | None = None
+    display_name: str | None = None
+    aliases: str | None = None
+    description: str | None = None
+    prompt_suffix: str | None = None
+    loads_from_ingredients: bool | None = None
+    ingredient_category: str | None = None

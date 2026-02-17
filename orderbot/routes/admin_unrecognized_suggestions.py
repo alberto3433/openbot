@@ -27,8 +27,6 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -77,14 +75,14 @@ VALID_MATCH_TYPES = {"exact", "prefix", "contains"}
 # Suggestions Endpoints
 # =============================================================================
 
-@admin_unrecognized_suggestions_router.get("", response_model=List[UnrecognizedSuggestionOut])
+@admin_unrecognized_suggestions_router.get("", response_model=list[UnrecognizedSuggestionOut])
 def list_suggestions(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    match_type: Optional[str] = Query(None, description="Filter by match type"),
-    category: Optional[str] = Query(None, description="Filter by item type slug"),
+    match_type: str | None = Query(None, description="Filter by match type"),
+    category: str | None = Query(None, description="Filter by item type slug"),
     active_only: bool = Query(False, description="Only show active suggestions"),
-) -> List[UnrecognizedSuggestionOut]:
+) -> list[UnrecognizedSuggestionOut]:
     """List all unrecognized item suggestions."""
     query = db.query(UnrecognizedItemSuggestion)
 
@@ -156,11 +154,11 @@ def get_suggestion_stats(
     )
 
 
-@admin_unrecognized_suggestions_router.get("/lookups/item-types", response_model=List[dict])
+@admin_unrecognized_suggestions_router.get("/lookups/item-types", response_model=list[dict])
 def get_item_types_for_dropdown(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[dict]:
+) -> list[dict]:
     """Get all item types for dropdown selection."""
     item_types = db.query(ItemType).order_by(ItemType.display_name).all()
     return [
@@ -169,11 +167,11 @@ def get_item_types_for_dropdown(
     ]
 
 
-@admin_unrecognized_suggestions_router.get("/lookups/menu-items", response_model=List[dict])
+@admin_unrecognized_suggestions_router.get("/lookups/menu-items", response_model=list[dict])
 def get_menu_items_for_dropdown(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[dict]:
+) -> list[dict]:
     """Get all menu items for dropdown selection."""
     menu_items = db.query(MenuItem).order_by(MenuItem.name).all()
     return [
@@ -390,14 +388,14 @@ def delete_suggestion(
 # Log Endpoints (Analytics)
 # =============================================================================
 
-@admin_unrecognized_logs_router.get("", response_model=List[UnrecognizedLogEntry])
+@admin_unrecognized_logs_router.get("", response_model=list[UnrecognizedLogEntry])
 def list_logs(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    fallback_level: Optional[str] = Query(None, description="Filter by fallback level"),
+    fallback_level: str | None = Query(None, description="Filter by fallback level"),
     limit: int = Query(100, ge=1, le=1000, description="Max entries to return"),
     days: int = Query(7, ge=1, le=90, description="Days of history to include"),
-) -> List[UnrecognizedLogEntry]:
+) -> list[UnrecognizedLogEntry]:
     """List unrecognized item log entries."""
     cutoff = datetime.utcnow() - timedelta(days=days)
     query = db.query(UnrecognizedItemLog).filter(
@@ -509,13 +507,13 @@ def clear_old_logs(
 # Option Suggestions Endpoints
 # =============================================================================
 
-@admin_unrecognized_option_suggestions_router.get("", response_model=List[UnrecognizedOptionSuggestionOut])
+@admin_unrecognized_option_suggestions_router.get("", response_model=list[UnrecognizedOptionSuggestionOut])
 def list_option_suggestions(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    attribute_slug: Optional[str] = Query(None, description="Filter by attribute slug"),
+    attribute_slug: str | None = Query(None, description="Filter by attribute slug"),
     active_only: bool = Query(False, description="Only show active suggestions"),
-) -> List[UnrecognizedOptionSuggestionOut]:
+) -> list[UnrecognizedOptionSuggestionOut]:
     """List all unrecognized option suggestions."""
     query = db.query(UnrecognizedOptionSuggestion)
 
@@ -556,11 +554,11 @@ def get_option_suggestion_stats(
     )
 
 
-@admin_unrecognized_option_suggestions_router.get("/lookups/attributes", response_model=List[dict])
+@admin_unrecognized_option_suggestions_router.get("/lookups/attributes", response_model=list[dict])
 def get_attributes_for_dropdown(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[dict]:
+) -> list[dict]:
     """Get all global attributes for dropdown selection."""
     attributes = db.query(GlobalAttribute).order_by(GlobalAttribute.display_name).all()
     return [

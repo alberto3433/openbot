@@ -127,7 +127,8 @@ class QuestionBuilder:
 
     def build_base_question(
         self, attr: dict, item_ref: str, ordinal: str,
-        has_duplicates: bool, multi_count: int
+        has_duplicates: bool, multi_count: int,
+        has_default_value: bool = False,
     ) -> str:
         """
         Build the base question text based on input type and item context.
@@ -138,10 +139,11 @@ class QuestionBuilder:
             ordinal: "first", "second", etc.
             has_duplicates: True if same item appears multiple times
             multi_count: Total number of items being configured
+            has_default_value: True if the attribute only has auto-populated defaults
         """
         input_type = attr.get("input_type", "single_select")
         attr_name = attr["display_name"].lower()
-        if attr.get("allow_none") and attr.get("offer_question_text"):
+        if (attr.get("allow_none") or has_default_value) and attr.get("offer_question_text"):
             db_question = attr["offer_question_text"]
         else:
             db_question = attr.get("question_text")
@@ -180,7 +182,8 @@ class QuestionBuilder:
 
     def build_first_question_prefix(
         self, item: "MenuItemTask", order: "OrderTask", attr: dict,
-        ordinal: str, item_num: int, has_duplicates: bool
+        ordinal: str, item_num: int, has_duplicates: bool,
+        has_default_value: bool = False,
     ) -> str | None:
         """
         Build acknowledgment prefix for the first question of each item.
@@ -234,7 +237,7 @@ class QuestionBuilder:
                     item_desc = f"the {ordinal} {item_display}"
                 else:
                     item_desc = f"the {item_display}"
-                if attr.get("allow_none") and attr.get("offer_question_text"):
+                if (attr.get("allow_none") or has_default_value) and attr.get("offer_question_text"):
                     db_question = attr["offer_question_text"]
                 else:
                     db_question = attr.get("question_text")

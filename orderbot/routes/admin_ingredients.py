@@ -59,8 +59,6 @@ Usage:
 """
 
 import logging
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
@@ -100,7 +98,7 @@ admin_ingredients_router = APIRouter(
 )
 
 
-def _set_ingredient_must_match(db: Session, ingredient: Ingredient, must_match_str: Optional[str]) -> None:
+def _set_ingredient_must_match(db: Session, ingredient: Ingredient, must_match_str: str | None) -> None:
     """
     Set ingredient must_match from a comma-separated string.
     Clears existing must_match entries and creates new ones from the input string.
@@ -170,11 +168,11 @@ def _resolve_subcategory(db: Session, subcategory_slug: str) -> "IngredientSubca
 # Ingredient Unit Endpoints
 # =============================================================================
 
-@admin_ingredients_router.get("/units", response_model=List[str])
+@admin_ingredients_router.get("/units", response_model=list[str])
 def list_ingredient_units(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[str]:
+) -> list[str]:
     """List all available ingredient units for dropdown selection."""
     units = db.query(IngredientUnit).order_by(IngredientUnit.name).all()
     return [u.name for u in units]
@@ -184,12 +182,12 @@ def list_ingredient_units(
 # Ingredient Endpoints
 # =============================================================================
 
-@admin_ingredients_router.get("/list", response_model=List[IngredientListOut])
+@admin_ingredients_router.get("/list", response_model=list[IngredientListOut])
 def list_ingredients_minimal(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    store_id: Optional[str] = Query(None, description="Store ID for availability"),
-) -> List[IngredientListOut]:
+    store_id: str | None = Query(None, description="Store ID for availability"),
+) -> list[IngredientListOut]:
     """Lightweight list for sidebar - minimal fields for fast loading."""
     ingredients = db.query(Ingredient).order_by(Ingredient.category, Ingredient.name).all()
     store_avail_map = batch_load_store_availability(db, store_id, "ingredient")
@@ -207,13 +205,13 @@ def list_ingredients_minimal(
     return result
 
 
-@admin_ingredients_router.get("", response_model=List[IngredientStoreAvailabilityOut])
+@admin_ingredients_router.get("", response_model=list[IngredientStoreAvailabilityOut])
 def list_ingredients(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    store_id: Optional[str] = Query(None, description="Store ID for availability"),
-) -> List[IngredientStoreAvailabilityOut]:
+    category: str | None = Query(None, description="Filter by category"),
+    store_id: str | None = Query(None, description="Store ID for availability"),
+) -> list[IngredientStoreAvailabilityOut]:
     """List all ingredients with store-specific availability."""
     query = db.query(Ingredient)
     if category:
@@ -285,12 +283,12 @@ def create_ingredient(
     return IngredientOut.model_validate(ingredient)
 
 
-@admin_ingredients_router.get("/unavailable", response_model=List[IngredientStoreAvailabilityOut])
+@admin_ingredients_router.get("/unavailable", response_model=list[IngredientStoreAvailabilityOut])
 def list_unavailable_ingredients(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    store_id: Optional[str] = Query(None, description="Store ID"),
-) -> List[IngredientStoreAvailabilityOut]:
+    store_id: str | None = Query(None, description="Store ID"),
+) -> list[IngredientStoreAvailabilityOut]:
     """List all 86'd ingredients for a store."""
     if store_id:
         store_unavail = db.query(IngredientStoreAvailability).filter(
@@ -317,12 +315,12 @@ def list_unavailable_ingredients(
     ) for ing in ingredients]
 
 
-@admin_ingredients_router.get("/menu-items", response_model=List[MenuItemStoreAvailabilityOut])
+@admin_ingredients_router.get("/menu-items", response_model=list[MenuItemStoreAvailabilityOut])
 def list_menu_items_availability(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    store_id: Optional[str] = Query(None, description="Store ID"),
-) -> List[MenuItemStoreAvailabilityOut]:
+    store_id: str | None = Query(None, description="Store ID"),
+) -> list[MenuItemStoreAvailabilityOut]:
     """List all menu items with store-specific availability."""
     items = db.query(MenuItem).options(joinedload(MenuItem.item_type)).order_by(MenuItem.name).all()
     store_avail_map = batch_load_store_availability(db, store_id, "menu_item")
@@ -343,12 +341,12 @@ def list_menu_items_availability(
     return result
 
 
-@admin_ingredients_router.get("/menu-items/unavailable", response_model=List[MenuItemStoreAvailabilityOut])
+@admin_ingredients_router.get("/menu-items/unavailable", response_model=list[MenuItemStoreAvailabilityOut])
 def list_unavailable_menu_items(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    store_id: Optional[str] = Query(None, description="Store ID"),
-) -> List[MenuItemStoreAvailabilityOut]:
+    store_id: str | None = Query(None, description="Store ID"),
+) -> list[MenuItemStoreAvailabilityOut]:
     """List all 86'd menu items for a store."""
     if store_id:
         store_unavail = db.query(MenuItemStoreAvailability).filter(

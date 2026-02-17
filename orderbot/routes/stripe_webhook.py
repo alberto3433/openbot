@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from ..config import STRIPE_WEBHOOK_SECRET
 from ..db import get_db
 from ..db.models import Order
+from ..schemas.enums import OrderStatus
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +104,8 @@ def _handle_checkout_completed(session_data: dict, db: Session) -> None:
     order.paid_at = datetime.now(timezone.utc)
 
     # If order was pending_payment, move to confirmed now that payment is received
-    if order.status == "pending_payment":
-        order.status = "confirmed"
+    if order.status == OrderStatus.PENDING_PAYMENT:
+        order.status = OrderStatus.CONFIRMED
 
     db.commit()
     logger.info(
@@ -143,7 +144,7 @@ def _handle_checkout_expired(session_data: dict, db: Session) -> None:
         return
 
     # Only revert if still in pending_payment state (don't affect already-confirmed orders)
-    if order.status == "pending_payment" and order.payment_status != "paid":
+    if order.status == OrderStatus.PENDING_PAYMENT and order.payment_status != "paid":
         order.payment_status = "expired"
         db.commit()
         logger.info("Order #%d checkout session expired: %s", order_id, session_id)

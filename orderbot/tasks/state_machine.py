@@ -316,7 +316,7 @@ class OrderStateMachine:
         Returns a result if a pending state handled the input, None to
         fall through to normal processing.
         """
-        if getattr(order, "pending_order_history", None):
+        if order.pending_order_history:
             result = self.order_history_handler.handle_order_history_selection(
                 user_input, order
             )
@@ -324,7 +324,7 @@ class OrderStateMachine:
                 order.add_message("assistant", result.message)
                 return result
 
-        if getattr(order, "pending_reorder_items", None):
+        if order.pending_reorder_items:
             result = self.order_history_handler.handle_reorder_item_selection(
                 user_input, order
             )
@@ -332,7 +332,7 @@ class OrderStateMachine:
                 order.add_message("assistant", result.message)
                 return result
 
-        if getattr(order, "pending_reorder_offer_items", None):
+        if order.pending_reorder_offer_items:
             result = self.order_history_handler.handle_reorder_offer_response(
                 user_input, order
             )
@@ -340,7 +340,7 @@ class OrderStateMachine:
                 order.add_message("assistant", result.message)
                 return result
 
-        if getattr(order, "pending_change_clarification", None):
+        if order.pending_change_clarification:
             result = self.config_helper_handler.handle_change_clarification_response(
                 user_input, order
             )

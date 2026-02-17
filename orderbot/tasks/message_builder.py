@@ -63,7 +63,7 @@ class MessageBuilder:
         item_data: dict[str, dict] = defaultdict(lambda: {"count": 0, "total_price": 0.0})
         for item in order.items.get_active_items():
             summary = item.get_summary()
-            price = item.unit_price * getattr(item, 'quantity', 1)
+            price = item.unit_price * item.quantity
             item_data[summary]["count"] += 1
             item_data[summary]["total_price"] += price
 

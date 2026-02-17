@@ -28,7 +28,6 @@ Pattern Types:
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -48,7 +47,7 @@ class ResponsePatternOut(BaseModel):
     id: int
     pattern_type: str
     pattern: str
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
 
 class ResponsePatternCreate(BaseModel):
@@ -79,8 +78,8 @@ class ResponsePatternUpdate(BaseModel):
         pattern_type: New pattern type
         pattern: New pattern text
     """
-    pattern_type: Optional[str] = None
-    pattern: Optional[str] = None
+    pattern_type: str | None = None
+    pattern: str | None = None
 
 
 class ResponsePatternTypeStats(BaseModel):

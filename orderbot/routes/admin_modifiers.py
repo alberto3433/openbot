@@ -31,7 +31,7 @@ Structure:
 """
 
 import logging
-from typing import Any, List
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -160,21 +160,21 @@ _item_type_crud = CRUDRouterFactory(
 # Additional Endpoints (not covered by factory)
 # =============================================================================
 
-@admin_modifiers_router.get("/overall-categories", response_model=List[OverallCategoryOut])
+@admin_modifiers_router.get("/overall-categories", response_model=list[OverallCategoryOut])
 def list_overall_categories(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[OverallCategoryOut]:
+) -> list[OverallCategoryOut]:
     """List all overall categories (e.g., Food, Beverage)."""
     categories = db.query(OverallCategory).order_by(OverallCategory.display_name).all()
     return [OverallCategoryOut.model_validate(c) for c in categories]
 
 
-@admin_modifiers_router.get("/menu-display-groups", response_model=List[dict])
+@admin_modifiers_router.get("/menu-display-groups", response_model=list[dict])
 def list_menu_display_groups(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[dict]:
+) -> list[dict]:
     """List all menu display groups for dropdown selection."""
     groups = db.query(MenuDisplayGroup).order_by(MenuDisplayGroup.display_order).all()
     return [
@@ -183,11 +183,11 @@ def list_menu_display_groups(
     ]
 
 
-@admin_modifiers_router.get("/item-types/list", response_model=List[ItemTypeListOut])
+@admin_modifiers_router.get("/item-types/list", response_model=list[ItemTypeListOut])
 def list_item_types_minimal(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[ItemTypeListOut]:
+) -> list[ItemTypeListOut]:
     """Lightweight list for sidebar with counts using efficient subqueries."""
     # Subquery for menu item counts
     menu_count_subq = (

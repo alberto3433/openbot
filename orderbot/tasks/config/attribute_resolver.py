@@ -19,36 +19,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def get_item_type_attributes(item_type_slug: str) -> dict:
-    """
-    Get item type attributes from centralized cache.
-
-    Uses menu_cache as the single source of truth for all item type
-    attributes (both item-type-specific and global attributes).
-
-    Returns dict with structure:
-    {
-        "bread": {
-            "slug": "bread",
-            "display_name": "Bread",
-            "question_text": "What kind of bread?",
-            "ask_in_conversation": True,
-            "input_type": "single_select",
-            "display_order": 1,
-            "options": [{"slug": "plain", "display_name": "Plain", "price": 0}, ...]
-        },
-        ...
-    }
-    """
-    return menu_cache.get_item_type_attributes(item_type_slug)
-
-
 def get_mandatory_attributes(item_type_slug: str) -> list[dict]:
     """Get mandatory attributes (ask_in_conversation=True) in display order.
 
     Excludes listen_only attributes which are never asked.
     """
-    attrs = get_item_type_attributes(item_type_slug)
+    attrs = menu_cache.get_item_type_attributes(item_type_slug)
     mandatory = [
         attr for attr in attrs.values()
         if attr.get("ask_in_conversation", False)
@@ -62,7 +38,7 @@ def get_optional_attributes(item_type_slug: str) -> list[dict]:
 
     Excludes listen_only attributes which are never asked.
     """
-    attrs = get_item_type_attributes(item_type_slug)
+    attrs = menu_cache.get_item_type_attributes(item_type_slug)
     optional = [
         attr for attr in attrs.values()
         if not attr.get("ask_in_conversation", True)
@@ -127,7 +103,7 @@ def get_unanswered_mandatory(
 
     # If user explicitly declined customization (e.g., "nothing else" in initial order),
     # accept all defaults and skip all mandatory questions
-    if getattr(item, "customization_declined", False):
+    if item.customization_declined:
         logger.info(
             "GET_UNANSWERED_MANDATORY: item_type=%s, customization_declined=True - skipping all",
             item_type_slug,

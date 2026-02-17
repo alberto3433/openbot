@@ -14,7 +14,6 @@ Environment variables:
 """
 
 import logging
-from typing import Optional
 
 from .config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SNS_FROM_NUMBER
 
@@ -47,7 +46,7 @@ def is_sms_configured() -> bool:
     return bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SNS_FROM_NUMBER)
 
 
-def send_sms(to_number: str, body: str) -> Optional[str]:
+def send_sms(to_number: str, body: str) -> str | None:
     """Send an SMS message via AWS SNS.
 
     Args:

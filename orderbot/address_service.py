@@ -14,7 +14,6 @@ Attribution: Results from OpenStreetMap must be attributed
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 import requests
 
@@ -76,8 +75,8 @@ def strip_apartment_number(address: str) -> tuple[str, str | None]:
 class CompletedAddress:
     """A validated and completed address."""
     full_address: str
-    house_number: Optional[str]
-    street: Optional[str]
+    house_number: str | None
+    street: str | None
     city: str
     state: str
     zip_code: str
@@ -109,11 +108,11 @@ class AddressCompletionResult:
     """Result of address completion attempt."""
     success: bool
     addresses: list[CompletedAddress]
-    error_message: Optional[str] = None
+    error_message: str | None = None
     needs_clarification: bool = False
 
     @property
-    def single_match(self) -> Optional[CompletedAddress]:
+    def single_match(self) -> CompletedAddress | None:
         """Return the address if there's exactly one match."""
         if len(self.addresses) == 1:
             return self.addresses[0]
@@ -309,7 +308,7 @@ def _query_nominatim(
     return matches
 
 
-def _extract_zip_code(address: str) -> Optional[str]:
+def _extract_zip_code(address: str) -> str | None:
     """Extract a 5-digit ZIP code from an address string."""
     if not address:
         return None
@@ -326,7 +325,7 @@ def geocode_to_zip(
     address: str,
     city: str = "New York",
     state: str = "NY",
-) -> Optional[str]:
+) -> str | None:
     """
     Geocode an address and return just the ZIP code.
 

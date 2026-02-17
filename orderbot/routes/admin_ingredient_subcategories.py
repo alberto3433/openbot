@@ -16,8 +16,6 @@ Endpoints:
 """
 
 import logging
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -43,7 +41,7 @@ admin_ingredient_subcategories_router = APIRouter(
 def list_subcategories(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    category_slug: Optional[str] = Query(None, description="Filter by parent category slug"),
+    category_slug: str | None = Query(None, description="Filter by parent category slug"),
 ) -> IngredientSubcategoryList:
     """List all ingredient subcategories, optionally filtered by category."""
     query = db.query(IngredientSubcategory)

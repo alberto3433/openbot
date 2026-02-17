@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, AsyncIterator
+from collections.abc import AsyncIterator
 
 from dotenv import load_dotenv
 
@@ -42,9 +42,9 @@ class Voice:
     """Represents a TTS voice option."""
     id: str
     name: str
-    gender: Optional[str] = None
-    accent: Optional[str] = None
-    description: Optional[str] = None
+    gender: str | None = None
+    accent: str | None = None
+    description: str | None = None
 
 
 class BaseTTSProvider(ABC):
@@ -57,14 +57,14 @@ class BaseTTSProvider(ABC):
 
     @property
     @abstractmethod
-    def voices(self) -> List[Voice]:
+    def voices(self) -> list[Voice]:
         """List of available voices."""
 
     @abstractmethod
     async def synthesize(
         self,
         text: str,
-        voice_id: Optional[str] = None,
+        voice_id: str | None = None,
         speed: float = 1.0,
     ) -> bytes:
         """
@@ -82,7 +82,7 @@ class BaseTTSProvider(ABC):
     async def synthesize_stream(
         self,
         text: str,
-        voice_id: Optional[str] = None,
+        voice_id: str | None = None,
         speed: float = 1.0,
     ) -> AsyncIterator[bytes]:
         """
@@ -108,7 +108,7 @@ class OpenAITTSProvider(BaseTTSProvider):
         Voice("shimmer", "Shimmer", "female", "American", "Clear and pleasant"),
     ]
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "tts-1"):
+    def __init__(self, api_key: str | None = None, model: str = "tts-1"):
         """
         Initialize OpenAI TTS provider.
 
@@ -134,13 +134,13 @@ class OpenAITTSProvider(BaseTTSProvider):
         return "OpenAI"
 
     @property
-    def voices(self) -> List[Voice]:
+    def voices(self) -> list[Voice]:
         return self.VOICES
 
     async def synthesize(
         self,
         text: str,
-        voice_id: Optional[str] = None,
+        voice_id: str | None = None,
         speed: float = 1.0,
     ) -> bytes:
         """Synthesize text using OpenAI TTS API."""
@@ -180,7 +180,7 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
     ElevenLabs offers the highest quality voices with more customization.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("ELEVENLABS_API_KEY")
         if not self.api_key:
             raise ValueError("ElevenLabs API key not found. Set ELEVENLABS_API_KEY environment variable.")
@@ -201,13 +201,13 @@ class ElevenLabsTTSProvider(BaseTTSProvider):
         return "ElevenLabs"
 
     @property
-    def voices(self) -> List[Voice]:
+    def voices(self) -> list[Voice]:
         return self._voices
 
     async def synthesize(
         self,
         text: str,
-        voice_id: Optional[str] = None,
+        voice_id: str | None = None,
         speed: float = 1.0,
     ) -> bytes:
         """Synthesize text using ElevenLabs API."""
@@ -245,11 +245,11 @@ _PROVIDERS = {
 }
 
 # Cached provider instance
-_provider_instance: Optional[BaseTTSProvider] = None
+_provider_instance: BaseTTSProvider | None = None
 
 
 def get_tts_provider(
-    provider_type: Optional[TTSProvider] = None,
+    provider_type: TTSProvider | None = None,
     **kwargs
 ) -> BaseTTSProvider:
     """

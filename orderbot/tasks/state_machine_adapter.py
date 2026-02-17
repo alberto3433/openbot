@@ -191,7 +191,7 @@ def _infer_actions_from_result(
                 item_type = "unknown"  # Generic placeholder for logging/debugging only
 
             # All items are already handled by the state machine.
-            # Use "conversation" intent to prevent duplicate processing by order_logic.
+            # Use "conversation" intent to prevent duplicate processing.
             # The state machine has already added the item to order_state, so we don't
             # want apply_intent_to_order_state to add another copy.
             intent = "conversation"

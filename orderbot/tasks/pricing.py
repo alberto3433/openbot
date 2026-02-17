@@ -650,8 +650,8 @@ class PricingEngine(MenuDataMixin):
             )
 
         # Check bundle pricing rules (replaces legacy side_of_item_id check)
-        bundle_price_rule = getattr(item, 'bundle_price_rule', None)
-        bundle_included_price = getattr(item, 'bundle_included_price', None)
+        bundle_price_rule = item.bundle_price_rule
+        bundle_included_price = item.bundle_included_price
 
         if bundle_price_rule == 'included':
             if bundle_included_price is None:
@@ -771,10 +771,10 @@ class PricingEngine(MenuDataMixin):
             ValueError: If item_type is not set on the item
         """
         # Require item_type - no fallbacks
-        item_type = getattr(item, 'menu_item_type', None)
+        item_type = item.menu_item_type
         if not item_type:
             raise ValueError(
-                f"Cannot recalculate price for '{getattr(item, 'menu_item_name', 'unknown')}': "
+                f"Cannot recalculate price for '{item.menu_item_name}': "
                 "menu_item_type is required but not set on item."
             )
 

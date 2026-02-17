@@ -23,21 +23,6 @@ def _get_is_price_metadata_key():
     return _is_price_metadata_key
 
 
-def format_slug_for_display(slug: str) -> str:
-    """Convert a slug to human-readable display name.
-
-    This is a local version to avoid circular imports with normalization.py.
-    Converts underscores to spaces and applies title case.
-
-    Args:
-        slug: The slug to format (e.g., "garlic_bagel", "vanilla_syrup")
-
-    Returns:
-        Human-readable display name (e.g., "Garlic Bagel", "Vanilla Syrup")
-    """
-    return slug.replace("_", " ").title()
-
-
 def pluralize_display_name(display_name: str) -> str:
     """Pluralize a display name by pluralizing the last word.
 

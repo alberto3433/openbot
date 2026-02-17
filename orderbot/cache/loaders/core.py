@@ -8,6 +8,7 @@ Inherits from all specialized loader mixins.
 import logging
 import time
 
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .menu_items import MenuItemLoaderMixin
@@ -250,7 +251,7 @@ class LoaderMixin(
                 .filter(ModifierQualifier.is_active == True)  # noqa: E712
                 .all()
             )
-        except Exception:
+        except (OperationalError, ProgrammingError):
             modifier_qualifiers = []
 
         # 11. Load modifier categories (with aliases eagerly loaded)
@@ -303,7 +304,7 @@ class LoaderMixin(
                 )
                 .all()
             )
-        except Exception:
+        except (OperationalError, ProgrammingError):
             # Table may not exist yet if migrations haven't run
             option_skip_rules = []
 
@@ -314,7 +315,7 @@ class LoaderMixin(
                 .filter(UnrecognizedOptionSuggestion.is_active == True)  # noqa: E712
                 .all()
             )
-        except Exception:
+        except (OperationalError, ProgrammingError):
             # Table may not exist yet if migrations haven't run
             unrecognized_option_suggestions = []
 
@@ -326,7 +327,7 @@ class LoaderMixin(
                 .order_by(MenuDisplayGroup.display_order)
                 .all()
             )
-        except Exception:
+        except (OperationalError, ProgrammingError):
             # Table may not exist yet if migrations haven't run
             menu_display_groups = []
 

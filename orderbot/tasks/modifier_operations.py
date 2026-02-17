@@ -94,7 +94,7 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
         MenuDataNotLoadedError: If item has no menu_item_type or no modifier fields in database
     """
     if isinstance(item, MenuItemTask):
-        item_type = getattr(item, 'menu_item_type', None)
+        item_type = item.menu_item_type
         if not item_type:
             raise MenuDataNotLoadedError(
                 f"MenuItemTask '{item.menu_item_name}' has no menu_item_type set. "
@@ -132,7 +132,7 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
 
     logger.debug(
         "find_modifier_match: searching for '%s' in %d fields on %s",
-        normalized_input, len(fields), getattr(item, 'menu_item_name', 'unknown')
+        normalized_input, len(fields), item.menu_item_name if isinstance(item, MenuItemTask) else 'unknown'
     )
 
     for field in fields:
@@ -214,8 +214,8 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
 
     # For MenuItemTask, also check attribute_values dictionary
     if isinstance(item, MenuItemTask):
-        attribute_values = getattr(item, 'attribute_values', None)
-        if attribute_values and isinstance(attribute_values, dict):
+        attribute_values = item.attribute_values
+        if attribute_values:
             # Get singular/plural variants for matching (e.g., "eggs" -> ["eggs", "egg"])
             input_variants = get_singular_plural_variants(normalized_input)
 
@@ -485,7 +485,7 @@ def remove_modifier_from_item(
 
     # Path 1: MenuItemTask attribute_values
     if match.attribute_key and isinstance(item, MenuItemTask):
-        attribute_values = getattr(item, 'attribute_values', None)
+        attribute_values = item.attribute_values
         if not attribute_values or match.attribute_key not in attribute_values:
             return ModifierRemovalResult(
                 success=False,
@@ -570,12 +570,14 @@ def find_default_ingredient_match(
         DefaultIngredientMatch if found, None otherwise
     """
     # Only MenuItemTask has menu_item_id
-    menu_item_id = getattr(item, 'menu_item_id', None)
+    if not isinstance(item, MenuItemTask):
+        return None
+    menu_item_id = item.menu_item_id
     if not menu_item_id:
         return None
 
     # Check if already in removed_ingredients (can't remove twice)
-    removed_ingredients = getattr(item, 'removed_ingredients', [])
+    removed_ingredients = item.removed_ingredients
     normalized_input = _normalize_modifier_name(user_input)
     normalized_input = strip_leading_article(normalized_input)
 
@@ -668,7 +670,7 @@ def remove_default_ingredient_from_item(
         "Removed default ingredient '%s' from %s (menu_item_id=%s)",
         match.ingredient_name,
         type(item).__name__,
-        getattr(item, 'menu_item_id', None)
+        item.menu_item_id if isinstance(item, MenuItemTask) else None
     )
 
     return DefaultIngredientRemovalResult(

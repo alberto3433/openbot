@@ -9,7 +9,7 @@ import logging
 
 from orderbot.cache import menu_cache
 
-from .models import OrderTask
+from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult
 from .utils.text import format_english_list
 
@@ -46,7 +46,7 @@ class PriceInquiryHandler:
         current_item_type = None
         pending_item = order.get_pending_item() if hasattr(order, 'get_pending_item') else None
         if pending_item:
-            current_item_type = getattr(pending_item, 'menu_item_type', None)
+            current_item_type = pending_item.menu_item_type if isinstance(pending_item, MenuItemTask) else None
 
         last_menu_category = None
         pagination = order.get_menu_pagination() if hasattr(order, 'get_menu_pagination') else None

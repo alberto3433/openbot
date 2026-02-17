@@ -303,7 +303,7 @@ class TestLLMCategoryInferenceModule:
         mock_client.chat.completions.create.return_value = mock_response
 
         with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
-            with patch('openai.OpenAI', return_value=mock_client):
+            with patch('orderbot.tasks.parsers.llm_category_inference._get_openai_client', return_value=mock_client):
                 result = infer_item_category(
                     "unknown",
                     [{"slug": "pastry", "display_name": "Pastries"}]

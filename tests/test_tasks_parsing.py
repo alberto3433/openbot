@@ -70,6 +70,13 @@ from orderbot.tasks.parsers import (
     TAX_QUESTION_PATTERN,
     ORDER_STATUS_PATTERN,
 )
+from orderbot.tasks.parsers.constants import (
+    CANCEL_LAST_ITEM,
+    CANCEL_ALL_ITEMS,
+    REDUCE_TO_ONE,
+    REDUCE_TO_ONE_PREFIX,
+    make_reduce_to_one_sentinel,
+)
 from orderbot.tasks.parsers.deterministic import ExtractionPipeline
 
 # Create a module-level pipeline for attribute extraction tests
@@ -763,8 +770,8 @@ class TestCancellationPatternDetection:
         """Test that 'cancel that' and similar pronouns trigger last item cancellation."""
         result = parse_open_input_deterministic(text)
         assert result is not None, f"Expected pattern match for: {text}"
-        assert result.cancel_item == "__last_item__", \
-            f"Expected cancel_item='__last_item__' but got '{result.cancel_item}' for: {text}"
+        assert result.cancel_item == CANCEL_LAST_ITEM, \
+            f"Expected cancel_item='{CANCEL_LAST_ITEM}' but got '{result.cancel_item}' for: {text}"
 
     @pytest.mark.parametrize("text", [
         "actually cancel that",
@@ -810,15 +817,15 @@ class TestCancellationPatternDetection:
         """Test that 'remove all' and similar phrases trigger full order cancellation."""
         result = parse_open_input_deterministic(text)
         assert result is not None, f"Expected pattern match for: {text}"
-        assert result.cancel_item == "__all_items__", \
-            f"Expected cancel_item='__all_items__' but got '{result.cancel_item}' for: {text}"
+        assert result.cancel_item == CANCEL_ALL_ITEMS, \
+            f"Expected cancel_item='{CANCEL_ALL_ITEMS}' but got '{result.cancel_item}' for: {text}"
 
     @pytest.mark.parametrize("text,expected_item", [
         # "delete X" patterns (new verb)
         ("delete the bagel", "bagel"),
         ("delete the coke", "coke"),
         ("delete the coffee", "coffee"),
-        ("delete my order", "__all_items__"),
+        ("delete my order", CANCEL_ALL_ITEMS),
     ])
     def test_delete_pattern_detected(self, text, expected_item):
         """Test that 'delete X' patterns are properly detected as cancellation."""
@@ -861,32 +868,32 @@ class TestReduceToOnePatternDetection:
 
     @pytest.mark.parametrize("text,expected_type", [
         # "actually just one bagel"
-        ("actually just one bagel", "__reduce_to_one_bagel__"),
-        ("actually only one bagel", "__reduce_to_one_bagel__"),
-        ("actually just one coffee", "__reduce_to_one_coffee__"),
-        ("actually just 1 bagel", "__reduce_to_one_bagel__"),
+        ("actually just one bagel", make_reduce_to_one_sentinel("bagel")),
+        ("actually only one bagel", make_reduce_to_one_sentinel("bagel")),
+        ("actually just one coffee", make_reduce_to_one_sentinel("coffee")),
+        ("actually just 1 bagel", make_reduce_to_one_sentinel("bagel")),
         # "just one bagel"
-        ("just one bagel", "__reduce_to_one_bagel__"),
-        ("only one bagel", "__reduce_to_one_bagel__"),
-        ("just one coffee", "__reduce_to_one_coffee__"),
-        ("only one coffee", "__reduce_to_one_coffee__"),
+        ("just one bagel", make_reduce_to_one_sentinel("bagel")),
+        ("only one bagel", make_reduce_to_one_sentinel("bagel")),
+        ("just one coffee", make_reduce_to_one_sentinel("coffee")),
+        ("only one coffee", make_reduce_to_one_sentinel("coffee")),
         # "just one" / "only one" (no item type)
-        ("just one", "__reduce_to_one__"),
-        ("only one", "__reduce_to_one__"),
-        ("just 1", "__reduce_to_one__"),
+        ("just one", REDUCE_TO_ONE),
+        ("only one", REDUCE_TO_ONE),
+        ("just 1", REDUCE_TO_ONE),
         # "make it just one"
-        ("make it just one", "__reduce_to_one__"),
-        ("make it only one bagel", "__reduce_to_one_bagel__"),
-        ("make that just one", "__reduce_to_one__"),
+        ("make it just one", REDUCE_TO_ONE),
+        ("make it only one bagel", make_reduce_to_one_sentinel("bagel")),
+        ("make that just one", REDUCE_TO_ONE),
         # "i only want one"
-        ("i only want one", "__reduce_to_one__"),
-        ("i just want one bagel", "__reduce_to_one_bagel__"),
-        ("i only need one", "__reduce_to_one__"),
+        ("i only want one", REDUCE_TO_ONE),
+        ("i just want one bagel", make_reduce_to_one_sentinel("bagel")),
+        ("i only need one", REDUCE_TO_ONE),
         # "one is enough"
-        ("one is enough", "__reduce_to_one__"),
-        ("one bagel is enough", "__reduce_to_one_bagel__"),
-        ("one is fine", "__reduce_to_one__"),
-        ("one is good", "__reduce_to_one__"),
+        ("one is enough", REDUCE_TO_ONE),
+        ("one bagel is enough", make_reduce_to_one_sentinel("bagel")),
+        ("one is fine", REDUCE_TO_ONE),
+        ("one is good", REDUCE_TO_ONE),
     ])
     def test_reduce_to_one_patterns_detected(self, text, expected_type):
         """Test that 'just one' / 'only one' patterns are parsed as reduce-to-one."""
@@ -910,7 +917,7 @@ class TestReduceToOnePatternDetection:
         """Test that ordering patterns are not matched as reduce-to-one."""
         result = parse_open_input_deterministic(text)
         if result is not None and result.cancel_item:
-            assert not result.cancel_item.startswith("__reduce_to_one"), \
+            assert not result.cancel_item.startswith(REDUCE_TO_ONE_PREFIX), \
                 f"Unexpected reduce-to-one match for: {text}"
 
 
@@ -2343,9 +2350,9 @@ class TestParsedItemsMultiItem:
         assert len(result.parsed_items) >= 2
 
         types = [_get_parsed_item_type(item) for item in result.parsed_items]
-        # The Lexington is an egg_sandwich, Butter Sandwich is a spread_sandwich
+        # The Lexington is a healthy_sandwich, Butter Sandwich is a spread_sandwich
         # Accept specific types instead of generic menu_item
-        valid_types = {"egg_sandwich", "spread_sandwich", "menu_item", "fish_sandwich", "deli_sandwich", "health_sandwich"}
+        valid_types = {"egg_sandwich", "spread_sandwich", "menu_item", "fish_sandwich", "deli_sandwich", "healthy_sandwich"}
         for t in types:
             assert t in valid_types, f"Expected a sandwich type, got: {t}"
 

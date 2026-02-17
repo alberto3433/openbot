@@ -4,8 +4,6 @@ Global Attribute Serializers.
 Provides serialization functions for GlobalAttribute and related models.
 """
 
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from orderbot.db.models import (
@@ -26,7 +24,7 @@ from orderbot.schemas.global_attributes import (
 
 def serialize_global_attribute_option(
     opt: GlobalAttributeOption,
-    db: Optional[Session] = None
+    db: Session | None = None
 ) -> GlobalAttributeOptionOut:
     """Convert GlobalAttributeOption model to response schema.
 

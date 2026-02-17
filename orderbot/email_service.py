@@ -13,7 +13,6 @@ Environment variables:
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import List, Optional
 
 from .config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SES_FROM_EMAIL
 
@@ -47,9 +46,9 @@ def is_email_configured() -> bool:
 
 
 def _build_order_details_section(
-    customer_name: Optional[str],
-    customer_phone: Optional[str],
-    order_type: Optional[str],
+    customer_name: str | None,
+    customer_phone: str | None,
+    order_type: str | None,
 ) -> tuple[str, str]:
     """Build order details text and HTML sections. Returns (text, html)."""
     if not customer_name and not customer_phone and not order_type:
@@ -75,10 +74,10 @@ def _build_order_details_section(
 
 def _build_items_section(
     items: list,
-    subtotal: Optional[float],
-    city_tax: Optional[float],
-    state_tax: Optional[float],
-    delivery_fee: Optional[float],
+    subtotal: float | None,
+    city_tax: float | None,
+    state_tax: float | None,
+    delivery_fee: float | None,
     amount: float,
 ) -> tuple[str, str]:
     """Build items list with totals as text and HTML. Returns (text, html)."""
@@ -162,15 +161,15 @@ def send_payment_link_email(
     order_id: int,
     amount: float,
     store_name: str,
-    customer_name: Optional[str] = None,
-    customer_phone: Optional[str] = None,
-    order_type: Optional[str] = None,
-    items: Optional[list] = None,
-    subtotal: Optional[float] = None,
-    city_tax: Optional[float] = None,
-    state_tax: Optional[float] = None,
-    delivery_fee: Optional[float] = None,
-    payment_url: Optional[str] = None,
+    customer_name: str | None = None,
+    customer_phone: str | None = None,
+    order_type: str | None = None,
+    items: list | None = None,
+    subtotal: float | None = None,
+    city_tax: float | None = None,
+    state_tax: float | None = None,
+    delivery_fee: float | None = None,
+    payment_url: str | None = None,
 ) -> dict:
     """
     Send an email with a payment link to the customer.
@@ -306,14 +305,14 @@ Thanks,
 
 def send_report_email(
     session_id: str,
-    store_id: Optional[str] = None,
-    caller_id: Optional[str] = None,
-    customer_name: Optional[str] = None,
-    customer_phone: Optional[str] = None,
-    recent_messages: Optional[List[dict]] = None,
-    order_status: Optional[str] = None,
+    store_id: str | None = None,
+    caller_id: str | None = None,
+    customer_name: str | None = None,
+    customer_phone: str | None = None,
+    recent_messages: list[dict] | None = None,
+    order_status: str | None = None,
     item_count: int = 0,
-    items: Optional[List[dict]] = None,
+    items: list[dict] | None = None,
 ) -> dict:
     """
     Send a conversation report email to the review team.

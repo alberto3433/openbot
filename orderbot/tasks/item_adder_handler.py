@@ -432,7 +432,7 @@ class ItemAdderHandler(MenuDataMixin):
 
         # If item not found, provide helpful suggestions using hybrid handler
         if not menu_item:
-            session_id = getattr(order, 'session_id', None)
+            session_id = order.session_id
             message, category_for_followup = self._unrecognized_handler.get_not_found_response(
                 item_name, order=order, session_id=session_id
             )
@@ -573,8 +573,7 @@ class ItemAdderHandler(MenuDataMixin):
         else:
             # Mark all items complete (non-omelettes don't need configuration)
             for item in order.items.items:
-                # Use getattr to safely access menu_item_name on any item type
-                if getattr(item, 'menu_item_name', None) == canonical_name and item.status == TaskStatus.IN_PROGRESS:
+                if isinstance(item, MenuItemTask) and item.menu_item_name == canonical_name and item.status == TaskStatus.IN_PROGRESS:
                     item.mark_complete()
             return self._get_next_question(order)
 

@@ -39,7 +39,7 @@ the system asks the user for clarification rather than guessing.
 """
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -83,23 +83,23 @@ class ModifierQualifierUpdate(BaseModel):
 
     All fields are optional - only provided fields will be updated.
     """
-    pattern: Optional[str] = Field(
+    pattern: str | None = Field(
         None,
         min_length=1,
         max_length=100,
         description="The pattern to match"
     )
-    normalized_form: Optional[str] = Field(
+    normalized_form: str | None = Field(
         None,
         min_length=1,
         max_length=50,
         description="The display form"
     )
-    category: Optional[QualifierCategory] = Field(
+    category: QualifierCategory | None = Field(
         None,
         description="Category for conflict detection"
     )
-    is_active: Optional[bool] = Field(
+    is_active: bool | None = Field(
         None,
         description="Whether this qualifier is active"
     )

@@ -14,7 +14,6 @@ Endpoint Coverage:
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -54,19 +53,19 @@ class IngredientSubcategoryCreate(IngredientSubcategoryBase):
 class IngredientSubcategoryUpdate(BaseModel):
     """Request model for updating an ingredient subcategory. All fields optional."""
 
-    slug: Optional[str] = Field(
+    slug: str | None = Field(
         None,
         min_length=1,
         max_length=50,
         description="Unique identifier slug"
     )
-    display_name: Optional[str] = Field(
+    display_name: str | None = Field(
         None,
         min_length=1,
         max_length=100,
         description="Human-readable name"
     )
-    display_order: Optional[int] = Field(
+    display_order: int | None = Field(
         None,
         ge=0,
         description="Order for display in UI"

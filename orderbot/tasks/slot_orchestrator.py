@@ -19,6 +19,7 @@ from .models import (
 )
 from .checkout_messages import CheckoutMessages
 from ..cache import menu_cache
+from ..schemas.enums import OrderStatus
 
 logger = logging.getLogger(__name__)
 
@@ -400,7 +401,7 @@ def sync_db_order_to_task(db_order: Any, order_task: OrderTask) -> None:
 
     # Sync order status to checkout
     if hasattr(db_order, "status"):
-        if db_order.status == "confirmed":
+        if db_order.status == OrderStatus.CONFIRMED:
             order_task.checkout.confirmed = True
 
     # Note: Items are synced separately since they require more complex mapping

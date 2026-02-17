@@ -82,7 +82,7 @@ import logging
 import random
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -100,7 +100,7 @@ logger = logging.getLogger(__name__)
 # In-memory cache for active sessions. Structure:
 # {session_id: {"data": {...session_data...}, "last_access": timestamp}}
 
-SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+SESSION_CACHE: dict[str, dict[str, Any]] = {}
 _cache_lock = threading.Lock()
 
 
@@ -176,7 +176,7 @@ def _evict_oldest_sessions(count: int) -> None:
 # Public Session Management Functions
 # =============================================================================
 
-def get_or_create_session(db: Session, session_id: str) -> Optional[Dict[str, Any]]:
+def get_or_create_session(db: Session, session_id: str) -> dict[str, Any] | None:
     """
     Get session data from cache or database.
 
@@ -245,7 +245,7 @@ def get_or_create_session(db: Session, session_id: str) -> Optional[Dict[str, An
     return None
 
 
-def save_session(db: Session, session_id: str, session_data: Dict[str, Any]) -> None:
+def save_session(db: Session, session_id: str, session_data: dict[str, Any]) -> None:
     """
     Save session data to both cache and database.
 

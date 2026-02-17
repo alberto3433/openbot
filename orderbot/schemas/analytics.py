@@ -71,7 +71,7 @@ Usage:
     )
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -114,14 +114,14 @@ class SessionAnalyticsOut(BaseModel):
     item_count: int
     cart_total: float
     order_status: str
-    conversation_history: Optional[List[Dict[str, str]]] = None
-    last_bot_message: Optional[str] = None
-    last_user_message: Optional[str] = None
-    reason: Optional[str] = None
-    session_duration_seconds: Optional[int] = None
-    customer_name: Optional[str] = None
-    customer_phone: Optional[str] = None
-    store_id: Optional[str] = None
+    conversation_history: list[dict[str, str]] | None = None
+    last_bot_message: str | None = None
+    last_user_message: str | None = None
+    reason: str | None = None
+    session_duration_seconds: int | None = None
+    customer_name: str | None = None
+    customer_phone: str | None = None
+    store_id: str | None = None
     ended_at: str
 
 
@@ -170,7 +170,7 @@ class AnalyticsSummary(BaseModel):
     abandoned_with_items: int
     total_revenue: float
     total_lost_revenue: float
-    avg_session_duration: Optional[float] = None
+    avg_session_duration: float | None = None
     completion_rate: float
-    abandonment_by_reason: Dict[str, int]
-    recent_trend: List[Dict[str, Any]]
+    abandonment_by_reason: dict[str, int]
+    recent_trend: list[dict[str, Any]]

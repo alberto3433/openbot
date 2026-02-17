@@ -12,7 +12,7 @@ Environment variables:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .config import STRIPE_SECRET_KEY, BASE_URL
 
@@ -43,11 +43,11 @@ def is_stripe_configured() -> bool:
 
 def create_checkout_session(
     order_id: int,
-    line_items: List[Dict[str, Any]],
-    customer_email: Optional[str] = None,
-    success_url: Optional[str] = None,
-    cancel_url: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    line_items: list[dict[str, Any]],
+    customer_email: str | None = None,
+    success_url: str | None = None,
+    cancel_url: str | None = None,
+) -> dict[str, Any] | None:
     """
     Create a Stripe Checkout Session for an order.
 
@@ -117,7 +117,7 @@ def create_checkout_session(
         return None
 
 
-def get_checkout_session(session_id: str) -> Optional[Dict[str, Any]]:
+def get_checkout_session(session_id: str) -> dict[str, Any] | None:
     """
     Retrieve a Stripe Checkout Session by ID.
 

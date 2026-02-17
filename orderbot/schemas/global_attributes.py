@@ -19,7 +19,6 @@ Endpoint Coverage:
 """
 
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -50,20 +49,20 @@ class GlobalAttributeOptionOut(BaseModel):
     is_available: bool = True
     display_order: int = 0
     # Link to ingredient for normalized must_match/aliases lookup
-    ingredient_id: Optional[int] = None
-    ingredient_name: Optional[str] = None  # Display name from linked ingredient
+    ingredient_id: int | None = None
+    ingredient_name: str | None = None  # Display name from linked ingredient
     # Modifier category is derived from ingredient.category at runtime
-    modifier_category_name: Optional[str] = None  # Display name from linked ingredient's category
+    modifier_category_name: str | None = None  # Display name from linked ingredient's category
     # Option aliases (comma-separated for display, stored in global_attribute_option_aliases table)
-    aliases: Optional[str] = None
+    aliases: str | None = None
     # Skip rules - attributes to skip when this option is selected
-    skip_rules: List[SkipRuleOutBasic] = []
+    skip_rules: list[SkipRuleOutBasic] = []
     # Forward delegation - when user input matches target attribute's options,
     # auto-select this option and forward to target attribute
-    forward_to_attribute_id: Optional[int] = None
-    forward_to_attribute_slug: Optional[str] = None  # Slug for display
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    forward_to_attribute_id: int | None = None
+    forward_to_attribute_slug: str | None = None  # Slug for display
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class GlobalAttributeOptionCreate(BaseModel):
@@ -73,38 +72,38 @@ class GlobalAttributeOptionCreate(BaseModel):
     the ingredient and should not be sent. When no ingredient is linked,
     slug and display_name are required.
     """
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
+    slug: str | None = None
+    display_name: str | None = None
     price_modifier: float = 0.0
     is_default: bool = False
     is_available: bool = True
     display_order: int = 0
     # Link to ingredient (optional) - when set, slug/display_name derived from ingredient
     # modifier_category is also derived from ingredient.category at runtime
-    ingredient_id: Optional[int] = None
+    ingredient_id: int | None = None
     # Option aliases (comma-separated string) - stored in global_attribute_option_aliases table
-    aliases: Optional[str] = None
+    aliases: str | None = None
     # Forward delegation - target attribute to forward to when input matches its options
-    forward_to_attribute_id: Optional[int] = None
+    forward_to_attribute_id: int | None = None
 
 
 class GlobalAttributeOptionUpdate(BaseModel):
     """Request model for updating a global attribute option."""
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
-    price_modifier: Optional[float] = None
-    is_default: Optional[bool] = None
-    is_available: Optional[bool] = None
-    display_order: Optional[int] = None
+    slug: str | None = None
+    display_name: str | None = None
+    price_modifier: float | None = None
+    is_default: bool | None = None
+    is_available: bool | None = None
+    display_order: int | None = None
     # Link to ingredient - when set, must_match/aliases are read from ingredient
     # modifier_category is also derived from ingredient.category at runtime
     # Set to null to unlink
-    ingredient_id: Optional[int] = None
+    ingredient_id: int | None = None
     # Option aliases (comma-separated string) - replaces existing aliases
-    aliases: Optional[str] = None
+    aliases: str | None = None
     # Forward delegation - target attribute to forward to when input matches its options
     # Set to null to unlink
-    forward_to_attribute_id: Optional[int] = None
+    forward_to_attribute_id: int | None = None
 
 
 # =============================================================================
@@ -136,19 +135,19 @@ class GlobalAttributeOut(BaseModel):
     slug: str
     display_name: str
     input_type: str  # 'single_select', 'multi_select', 'boolean'
-    description: Optional[str] = None
-    question_text: Optional[str] = None  # Question to ask user for this attribute
-    offer_question_text: Optional[str] = None  # Question when offering at checkpoint
+    description: str | None = None
+    question_text: str | None = None  # Question to ask user for this attribute
+    offer_question_text: str | None = None  # Question when offering at checkpoint
     # Options source category (for package_multi_select input types)
     # Specifies which ingredient category provides the options for this attribute.
-    options_source_category: Optional[str] = None
-    options: List[GlobalAttributeOptionOut] = []
+    options_source_category: str | None = None
+    options: list[GlobalAttributeOptionOut] = []
     # Count of item types using this attribute
     item_type_count: int = 0
     # List of item types using this attribute (for detail view)
-    linked_item_types: List[LinkedItemTypeInfo] = []
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    linked_item_types: list[LinkedItemTypeInfo] = []
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class GlobalAttributeListOut(BaseModel):
@@ -159,14 +158,14 @@ class GlobalAttributeListOut(BaseModel):
     slug: str
     display_name: str
     input_type: str
-    description: Optional[str] = None
-    question_text: Optional[str] = None
-    offer_question_text: Optional[str] = None
-    options_source_category: Optional[str] = None
+    description: str | None = None
+    question_text: str | None = None
+    offer_question_text: str | None = None
+    options_source_category: str | None = None
     option_count: int = 0
     item_type_count: int = 0
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class GlobalAttributeCreate(BaseModel):
@@ -174,21 +173,21 @@ class GlobalAttributeCreate(BaseModel):
     slug: str
     display_name: str
     input_type: str = "single_select"
-    description: Optional[str] = None
-    question_text: Optional[str] = None
-    offer_question_text: Optional[str] = None
-    options_source_category: Optional[str] = None
+    description: str | None = None
+    question_text: str | None = None
+    offer_question_text: str | None = None
+    options_source_category: str | None = None
 
 
 class GlobalAttributeUpdate(BaseModel):
     """Request model for updating a global attribute."""
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
-    input_type: Optional[str] = None
-    description: Optional[str] = None
-    question_text: Optional[str] = None
-    offer_question_text: Optional[str] = None
-    options_source_category: Optional[str] = None
+    slug: str | None = None
+    display_name: str | None = None
+    input_type: str | None = None
+    description: str | None = None
+    question_text: str | None = None
+    offer_question_text: str | None = None
+    options_source_category: str | None = None
 
 
 # =============================================================================
@@ -206,7 +205,7 @@ class ItemTypeGlobalAttributeOut(BaseModel):
 
     id: int
     item_type_id: int
-    item_type_slug: Optional[str] = None
+    item_type_slug: str | None = None
     global_attribute_id: int
     global_attribute_slug: str
     global_attribute_display_name: str
@@ -218,21 +217,21 @@ class ItemTypeGlobalAttributeOut(BaseModel):
     allow_none: bool = True
     ask_in_conversation: bool = True
     listen_only: bool = False
-    min_selections: Optional[int] = None
-    max_selections: Optional[int] = None
+    min_selections: int | None = None
+    max_selections: int | None = None
 
     # Question text from the global attribute (for convenience)
-    question_text: Optional[str] = None
-    offer_question_text: Optional[str] = None
+    question_text: str | None = None
+    offer_question_text: str | None = None
 
     # Subcategory filter for narrowing options per item type
-    option_subcategory_filter: Optional[str] = None
+    option_subcategory_filter: str | None = None
 
     # Options from the global attribute
-    options: List[GlobalAttributeOptionOut] = []
+    options: list[GlobalAttributeOptionOut] = []
 
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class ItemTypeGlobalAttributeLinkCreate(BaseModel):
@@ -243,21 +242,21 @@ class ItemTypeGlobalAttributeLinkCreate(BaseModel):
     allow_none: bool = True
     ask_in_conversation: bool = True
     listen_only: bool = False
-    min_selections: Optional[int] = None
-    max_selections: Optional[int] = None
-    option_subcategory_filter: Optional[str] = None
+    min_selections: int | None = None
+    max_selections: int | None = None
+    option_subcategory_filter: str | None = None
 
 
 class ItemTypeGlobalAttributeLinkUpdate(BaseModel):
     """Request model for updating an item type's global attribute link."""
-    display_order: Optional[int] = None
-    is_required: Optional[bool] = None
-    allow_none: Optional[bool] = None
-    ask_in_conversation: Optional[bool] = None
-    listen_only: Optional[bool] = None
-    min_selections: Optional[int] = None
-    max_selections: Optional[int] = None
-    option_subcategory_filter: Optional[str] = None
+    display_order: int | None = None
+    is_required: bool | None = None
+    allow_none: bool | None = None
+    ask_in_conversation: bool | None = None
+    listen_only: bool | None = None
+    min_selections: int | None = None
+    max_selections: int | None = None
+    option_subcategory_filter: str | None = None
 
 
 # =============================================================================
@@ -269,11 +268,11 @@ class GlobalAttributeWithOptionsCreate(BaseModel):
     slug: str
     display_name: str
     input_type: str = "single_select"
-    description: Optional[str] = None
-    question_text: Optional[str] = None
-    offer_question_text: Optional[str] = None
-    options_source_category: Optional[str] = None
-    options: List[GlobalAttributeOptionCreate] = []
+    description: str | None = None
+    question_text: str | None = None
+    offer_question_text: str | None = None
+    options_source_category: str | None = None
+    options: list[GlobalAttributeOptionCreate] = []
 
 
 # =============================================================================

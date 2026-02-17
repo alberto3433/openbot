@@ -58,8 +58,6 @@ looks up previous orders to personalize the experience:
 import json
 import logging
 import uuid
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -67,6 +65,7 @@ from sqlalchemy.orm import Session
 from ..config import get_rate_limit_chat, get_random_store_id
 from ..db import get_db
 from ..db.models import SessionAnalytics
+from ..schemas.enums import OrderStatus
 from ..services.session import get_or_create_session, save_session
 from ..services.customer_service import lookup_customer_by_phone
 from ..services.helpers import get_primary_item_type_name
@@ -103,8 +102,8 @@ from ..rate_limiting import limiter
 def chat_start(
     request: Request,
     db: Session = Depends(get_db),
-    caller_id: Optional[str] = Query(None, description="Simulated caller ID / phone number"),
-    store_id: Optional[str] = Query(None, description="Store identifier"),
+    caller_id: str | None = Query(None, description="Simulated caller ID / phone number"),
+    store_id: str | None = Query(None, description="Store identifier"),
 ) -> ChatStartResponse:
     """
     Start a new chat session.
@@ -146,7 +145,7 @@ def chat_start(
     session_data = {
         "history": [{"role": "assistant", "content": welcome}],
         "order": {
-            "status": "pending",
+            "status": OrderStatus.PENDING,
             "items": [],
             "customer": {
                 "name": returning_customer.get("name") if returning_customer else None,
@@ -304,7 +303,7 @@ def log_abandoned_session(
 
     Called by frontend when user leaves before completing their order.
     """
-    if payload.order_status == "confirmed":
+    if payload.order_status == OrderStatus.CONFIRMED:
         logger.debug("Skipping abandon log for confirmed order: %s", payload.session_id[:8])
         return None
 
@@ -360,7 +359,7 @@ def report_session(
     store_id = session.get("store_id")
     caller_id = session.get("caller_id")
     order = session.get("order", {})
-    order_status = order.get("status", "pending")
+    order_status = order.get("status", OrderStatus.PENDING)
     items = order.get("items", [])
     item_count = len(items)
     customer = order.get("customer", {})

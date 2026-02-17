@@ -65,7 +65,6 @@ import logging
 import pathlib
 import uuid
 from contextlib import asynccontextmanager, contextmanager
-from typing import Dict
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -288,7 +287,7 @@ def root(request: Request):
 
 
 @app.get("/health", tags=["Health"])
-def health() -> Dict[str, str]:
+def health() -> dict[str, str]:
     """Health check endpoint. Returns ok if the service is running."""
     return {"status": "ok", "version": __version__}
 

@@ -43,8 +43,6 @@ Usage:
 """
 
 import logging
-from typing import List
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -66,10 +64,10 @@ public_company_router = APIRouter(prefix="/company", tags=["Company"])
 # Public Store Endpoints
 # =============================================================================
 
-@public_stores_router.get("", response_model=List[StoreOut])
+@public_stores_router.get("", response_model=list[StoreOut])
 def list_public_stores(
     db: Session = Depends(get_db),
-) -> List[StoreOut]:
+) -> list[StoreOut]:
     """
     List active store locations (public).
 

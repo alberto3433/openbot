@@ -17,8 +17,6 @@ Endpoint Coverage:
 - DELETE /admin/menu-display-groups/{id}: Delete a group
 """
 
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 from .base import OrmModel
@@ -44,11 +42,11 @@ class MenuDisplayGroupBase(BaseModel):
         ge=0,
         description="Sort order for display (lower numbers appear first)"
     )
-    overall_category_id: Optional[int] = Field(
+    overall_category_id: int | None = Field(
         None,
         description="FK to overall_categories"
     )
-    parent_id: Optional[int] = Field(
+    parent_id: int | None = Field(
         None,
         description="FK to parent display group for hierarchy"
     )
@@ -68,32 +66,32 @@ class MenuDisplayGroupUpdate(BaseModel):
 
     All fields are optional - only provided fields will be updated.
     """
-    display_name: Optional[str] = Field(
+    display_name: str | None = Field(
         None,
         min_length=1,
         max_length=100,
         description="Display name"
     )
-    slug: Optional[str] = Field(
+    slug: str | None = Field(
         None,
         min_length=1,
         max_length=50,
         description="Unique identifier slug"
     )
-    display_order: Optional[int] = Field(
+    display_order: int | None = Field(
         None,
         ge=0,
         description="Sort order for display"
     )
-    overall_category_id: Optional[int] = Field(
+    overall_category_id: int | None = Field(
         None,
         description="FK to overall_categories"
     )
-    parent_id: Optional[int] = Field(
+    parent_id: int | None = Field(
         None,
         description="FK to parent display group for hierarchy (null to clear)"
     )
-    aliases: Optional[list[str]] = Field(
+    aliases: list[str] | None = Field(
         None,
         description="List of aliases (replaces existing aliases if provided)"
     )
@@ -106,19 +104,19 @@ class MenuDisplayGroupOut(OrmModel):
     slug: str
     display_name: str
     display_order: int
-    overall_category_id: Optional[int] = Field(
+    overall_category_id: int | None = Field(
         None,
         description="FK to overall_categories"
     )
-    overall_category_name: Optional[str] = Field(
+    overall_category_name: str | None = Field(
         None,
         description="Display name of the overall category"
     )
-    parent_id: Optional[int] = Field(
+    parent_id: int | None = Field(
         None,
         description="FK to parent display group"
     )
-    parent_name: Optional[str] = Field(
+    parent_name: str | None = Field(
         None,
         description="Display name of the parent group"
     )

@@ -23,8 +23,6 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -32,6 +30,7 @@ from sqlalchemy.orm import Session
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import Order, OrderStatusHistory
+from ..schemas.enums import OrderStatus
 from ..schemas.orders import (
     OrderSummaryOut,
     OrderDetailOut,
@@ -54,7 +53,7 @@ logger = logging.getLogger(__name__)
 admin_orders_router = APIRouter(prefix="/admin/orders", tags=["Admin - Orders"])
 
 
-def _format_dt(dt: Optional[datetime]) -> Optional[str]:
+def _format_dt(dt: datetime | None) -> str | None:
     """Format a datetime to ISO string with Z suffix, or None."""
     if dt is None:
         return None
@@ -85,7 +84,7 @@ def get_order_counts(
 def list_orders(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    status: Optional[str] = Query(
+    status: str | None = Query(
         None,
         description="Filter by status: pending, confirmed, preparing, ready, completed, cancelled",
     ),
@@ -95,7 +94,7 @@ def list_orders(
     """Return a paginated list of orders sorted by creation date (newest first)."""
     query = db.query(Order)
 
-    valid_statuses = {"pending", "confirmed", "pending_payment", "preparing", "ready", "completed", "cancelled"}
+    valid_statuses = {s.value for s in OrderStatus}
     if status in valid_statuses:
         query = query.filter(Order.status == status)
 
@@ -257,12 +256,12 @@ def update_staff_notes(
     return {"order_id": order.id, "staff_notes": order.staff_notes}
 
 
-@admin_orders_router.get("/{order_id}/history", response_model=List[OrderStatusHistoryOut])
+@admin_orders_router.get("/{order_id}/history", response_model=list[OrderStatusHistoryOut])
 def get_order_history(
     order_id: int,
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[OrderStatusHistoryOut]:
+) -> list[OrderStatusHistoryOut]:
     """Get the status transition history for an order."""
     order = db.get(Order, order_id)
     if not order:

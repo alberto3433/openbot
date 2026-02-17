@@ -74,7 +74,6 @@ Usage:
 """
 
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -117,17 +116,17 @@ class StoreOut(BaseModel):
     state: str
     zip_code: str
     phone: str
-    hours: Optional[str] = None
+    hours: str | None = None
     timezone: str = "America/New_York"
     status: str
-    payment_methods: List[str] = []
+    payment_methods: list[str] = []
     city_tax_rate: float = 0.0
     state_tax_rate: float = 0.0
-    delivery_zip_codes: List[str] = []
+    delivery_zip_codes: list[str] = []
     delivery_fee: float = 2.99
-    deleted_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    deleted_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class StoreCreate(BaseModel):
@@ -173,13 +172,13 @@ class StoreCreate(BaseModel):
     state: str
     zip_code: str
     phone: str
-    hours: Optional[str] = None
+    hours: str | None = None
     timezone: str = "America/New_York"
     status: str = "open"
-    payment_methods: List[str] = ["cash", "credit"]
+    payment_methods: list[str] = ["cash", "credit"]
     city_tax_rate: float = 0.0
     state_tax_rate: float = 0.0
-    delivery_zip_codes: List[str] = []
+    delivery_zip_codes: list[str] = []
     delivery_fee: float = 2.99
 
 
@@ -212,17 +211,17 @@ class StoreUpdate(BaseModel):
         # Update tax rates
         {"city_tax_rate": 0.0475, "state_tax_rate": 0.04}
     """
-    name: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    zip_code: Optional[str] = None
-    phone: Optional[str] = None
-    hours: Optional[str] = None
-    timezone: Optional[str] = None
-    status: Optional[str] = None
-    payment_methods: Optional[List[str]] = None
-    city_tax_rate: Optional[float] = None
-    state_tax_rate: Optional[float] = None
-    delivery_zip_codes: Optional[List[str]] = None
-    delivery_fee: Optional[float] = None
+    name: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    zip_code: str | None = None
+    phone: str | None = None
+    hours: str | None = None
+    timezone: str | None = None
+    status: str | None = None
+    payment_methods: list[str] | None = None
+    city_tax_rate: float | None = None
+    state_tax_rate: float | None = None
+    delivery_zip_codes: list[str] | None = None
+    delivery_fee: float | None = None

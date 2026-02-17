@@ -12,7 +12,7 @@ Functions:
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -203,7 +203,7 @@ def validate_aliases(
 def sync_entity_aliases(
     db: Session,
     entity: Any,
-    aliases_str: Optional[str],
+    aliases_str: str | None,
     entity_type: str,
 ) -> None:
     """

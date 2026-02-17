@@ -16,7 +16,7 @@ import logging
 import time
 import uuid
 import os
-from typing import Any, Dict, Optional, List
+from typing import Any
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, HTTPException
@@ -28,6 +28,7 @@ from .db import get_db
 from .db.models import ChatSession, Store, Company, SessionAnalytics
 from .menu_index import get_menu_version
 from .cache import menu_cache
+from .schemas.enums import OrderStatus
 from .services.customer_service import lookup_customer_by_phone
 
 
@@ -42,7 +43,7 @@ VAPI_SECRET_KEY = os.getenv("VAPI_SECRET_KEY", "")  # Optional: for webhook auth
 
 # Phone number to session mapping with TTL
 # Structure: {phone_number: {"session_id": str, "last_access": float, "store_id": str}}
-_phone_sessions: Dict[str, Dict[str, Any]] = {}
+_phone_sessions: dict[str, dict[str, Any]] = {}
 PHONE_SESSION_TTL_SECONDS = int(os.getenv("VAPI_SESSION_TTL", "1800"))  # 30 minutes default
 
 
@@ -56,14 +57,14 @@ class VapiMessage(BaseModel):
 
 class VapiCallCustomer(BaseModel):
     """Customer info from Vapi call object."""
-    number: Optional[str] = None
-    name: Optional[str] = None
+    number: str | None = None
+    name: str | None = None
 
 
 class VapiCall(BaseModel):
     """Vapi call object with metadata."""
-    id: Optional[str] = None
-    customer: Optional[VapiCallCustomer] = None
+    id: str | None = None
+    customer: VapiCallCustomer | None = None
 
 
 class VapiChatCompletionRequest(BaseModel):
@@ -74,13 +75,13 @@ class VapiChatCompletionRequest(BaseModel):
     """
     model_config = ConfigDict(extra="allow")  # Allow additional fields from Vapi
 
-    model: Optional[str] = "gpt-4"
-    messages: List[VapiMessage] = Field(default_factory=list)
+    model: str | None = "gpt-4"
+    messages: list[VapiMessage] = Field(default_factory=list)
     stream: bool = False
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    temperature: float | None = None
+    max_tokens: int | None = None
     # Vapi-specific fields
-    call: Optional[VapiCall] = None
+    call: VapiCall | None = None
 
 
 class VapiWebhookMessage(BaseModel):
@@ -88,9 +89,9 @@ class VapiWebhookMessage(BaseModel):
     model_config = ConfigDict(extra="allow")  # Additional fields vary by message type
 
     type: str
-    call: Optional[Dict[str, Any]] = None
-    artifact: Optional[Dict[str, Any]] = None
-    endedReason: Optional[str] = None
+    call: dict[str, Any] | None = None
+    artifact: dict[str, Any] | None = None
+    endedReason: str | None = None
 
 
 class VapiWebhookRequest(BaseModel):
@@ -117,7 +118,7 @@ def _cleanup_expired_phone_sessions() -> int:
 def _get_or_create_phone_session(
     db: Session,
     phone_number: str,
-    store_id: Optional[str] = None,
+    store_id: str | None = None,
 ) -> str:
     """
     Get existing session for phone number or create a new one.
@@ -156,10 +157,10 @@ def _get_or_create_phone_session(
     if existing_db_session:
         # Check if session is still active (not confirmed, has history)
         order_state = existing_db_session.order_state or {}
-        order_status = order_state.get("status", "pending")
+        order_status = order_state.get("status", OrderStatus.PENDING)
 
         # Resume if order is not yet confirmed (still in progress)
-        if order_status not in ("confirmed",):
+        if order_status not in (OrderStatus.CONFIRMED,):
             session_id = existing_db_session.session_id
 
             # Rebuild session data from database
@@ -215,7 +216,7 @@ def _get_or_create_phone_session(
     session_data = {
         "history": [{"role": "assistant", "content": welcome}],
         "order": {
-            "status": "pending",
+            "status": OrderStatus.PENDING,
             "items": [],
             "customer": {
                 "name": returning_customer.get("name") if returning_customer else None,
@@ -256,7 +257,7 @@ def _get_or_create_phone_session(
     return session_id
 
 
-def _get_session_data(db: Session, session_id: str) -> Optional[Dict[str, Any]]:
+def _get_session_data(db: Session, session_id: str) -> dict[str, Any] | None:
     """Get session data from cache or database."""
     # Check phone session cache first
     for phone, data in _phone_sessions.items():
@@ -281,8 +282,8 @@ def _save_call_analytics(
     db: Session,
     phone_number: str,
     ended_reason: str,
-    duration: Optional[int] = None,
-    transcript: Optional[str] = None,
+    duration: int | None = None,
+    transcript: str | None = None,
 ) -> None:
     """
     Save voice call analytics to SessionAnalytics table.
@@ -329,12 +330,12 @@ def _save_call_analytics(
     store_id = session_data.get("store_id")
 
     items = order_state.get("items", [])
-    order_status = order_state.get("status", "pending")
+    order_status = order_state.get("status", OrderStatus.PENDING)
     cart_total = order_state.get("total_price", 0.0)
     customer = order_state.get("customer", {})
 
     # Determine session status
-    if order_status == "confirmed":
+    if order_status == OrderStatus.CONFIRMED:
         status = "completed"
         reason = None
     else:
@@ -629,7 +630,7 @@ async def vapi_chat_completions(
         return _build_completion_response(reply)
 
 
-def _build_completion_response(content: str, model: str = "sammy-bot") -> Dict[str, Any]:
+def _build_completion_response(content: str, model: str = "sammy-bot") -> dict[str, Any]:
     """Build a non-streaming OpenAI-compatible completion response."""
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",

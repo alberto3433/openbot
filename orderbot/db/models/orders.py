@@ -18,13 +18,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from .base import Base
+from ...schemas.enums import OrderStatus
 
 
 class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
-    status = Column(String, nullable=False, default="confirmed", index=True)  # e.g., pending/confirmed/preparing/ready/completed/cancelled
+    status = Column(String, nullable=False, default=OrderStatus.CONFIRMED, index=True)
     customer_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
     customer_email = Column(String, nullable=True)  # Email for payment links

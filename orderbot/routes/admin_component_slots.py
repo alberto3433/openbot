@@ -5,8 +5,6 @@ Component slots allow item types to include configurable sub-items.
 For example, an omelette can include a "side" slot that accepts bagels or fruit salad.
 """
 
-from typing import Optional
-
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
@@ -100,8 +98,8 @@ def get_item_type_slots(item_type_id: int, db: Session = Depends(get_db)):
 def create_component_slot(
     item_type_id: int,
     slot_name: str,
-    display_name: Optional[str] = None,
-    prompt_text: Optional[str] = None,
+    display_name: str | None = None,
+    prompt_text: str | None = None,
     is_required: bool = True,
     min_quantity: int = 1,
     max_quantity: int = 1,
@@ -155,13 +153,13 @@ def create_component_slot(
 @admin_component_slots_router.put("/slots/{slot_id}")
 def update_component_slot(
     slot_id: int,
-    slot_name: Optional[str] = None,
-    display_name: Optional[str] = None,
-    prompt_text: Optional[str] = None,
-    is_required: Optional[bool] = None,
-    min_quantity: Optional[int] = None,
-    max_quantity: Optional[int] = None,
-    display_order: Optional[int] = None,
+    slot_name: str | None = None,
+    display_name: str | None = None,
+    prompt_text: str | None = None,
+    is_required: bool | None = None,
+    min_quantity: int | None = None,
+    max_quantity: int | None = None,
+    display_order: int | None = None,
     db: Session = Depends(get_db),
 ):
     """Update a component slot."""
@@ -280,11 +278,11 @@ def get_slot_options(slot_id: int, db: Session = Depends(get_db)):
 @admin_component_slots_router.post("/slots/{slot_id}/options")
 def add_slot_option(
     slot_id: int,
-    allowed_item_type_id: Optional[int] = None,
-    allowed_menu_item_id: Optional[int] = None,
+    allowed_item_type_id: int | None = None,
+    allowed_menu_item_id: int | None = None,
     price_rule: str = "included",
-    fixed_price: Optional[int] = None,
-    display_name: Optional[str] = None,
+    fixed_price: int | None = None,
+    display_name: str | None = None,
     display_order: int = 0,
     db: Session = Depends(get_db),
 ):
@@ -342,10 +340,10 @@ def add_slot_option(
 @admin_component_slots_router.put("/options/{option_id}")
 def update_slot_option(
     option_id: int,
-    price_rule: Optional[str] = None,
-    fixed_price: Optional[int] = None,
-    display_name: Optional[str] = None,
-    display_order: Optional[int] = None,
+    price_rule: str | None = None,
+    fixed_price: int | None = None,
+    display_name: str | None = None,
+    display_order: int | None = None,
     db: Session = Depends(get_db),
 ):
     """Update a slot option."""
@@ -527,7 +525,7 @@ def list_available_item_types(db: Session = Depends(get_db)):
 
 @admin_component_slots_router.get("/available-menu-items")
 def list_available_menu_items(
-    search: Optional[str] = None,
+    search: str | None = None,
     limit: int = 50,
     db: Session = Depends(get_db),
 ):

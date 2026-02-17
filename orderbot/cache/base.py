@@ -14,7 +14,7 @@ import threading
 from collections import defaultdict
 from datetime import datetime
 from functools import wraps
-from typing import Any, Callable, Pattern, TypeVar
+from typing import Any, Callable, TypeVar
 
 import inflect
 
@@ -387,7 +387,7 @@ class BaseCacheMixin:
         # Response patterns for recognizing user intent
         self._response_patterns: dict[str, set[str]] = {}  # pattern_type -> set of exact patterns
         self._response_regex_raw: dict[str, list[str]] = {}  # pattern_type -> list of raw regex strings
-        self._response_regex_compiled: dict[str, Pattern | None] = {}  # pattern_type -> compiled combined regex
+        self._response_regex_compiled: dict[str, re.Pattern | None] = {}  # pattern_type -> compiled combined regex
 
         # Modifier qualifiers (extra, light, on the side, etc.)
         self._modifier_qualifiers: dict[str, dict] = {}  # pattern -> {normalized_form, category}

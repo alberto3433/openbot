@@ -438,7 +438,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         Returns:
             StateMachineResult with appropriate action.
         """
-        pending_history = getattr(order, "pending_order_history", None)
+        pending_history = order.pending_order_history
         if not pending_history:
             order.clear_pending()
             return None
@@ -507,7 +507,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         Returns:
             StateMachineResult with appropriate action.
         """
-        pending_items = getattr(order, "pending_reorder_items", None)
+        pending_items = order.pending_reorder_items
         if not pending_items:
             order.pending_field = None
             return None
@@ -552,7 +552,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
         """
         from .response_utils import is_affirmative, is_negative
 
-        pending_items = getattr(order, "pending_reorder_offer_items", None)
+        pending_items = order.pending_reorder_offer_items
         if not pending_items:
             order.clear_pending()
             return None

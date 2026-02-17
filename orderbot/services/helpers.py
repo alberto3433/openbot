@@ -10,7 +10,7 @@ Functions in this module:
 """
 
 import logging
-from typing import Dict, Iterable, Optional
+from collections.abc import Iterable
 
 from sqlalchemy.orm import Session
 
@@ -74,9 +74,9 @@ def get_primary_item_type_name(db: Session) -> str:
 
 def batch_load_store_availability(
     db: Session,
-    store_id: Optional[str],
+    store_id: str | None,
     entity_type: str,
-) -> Dict[int, bool]:
+) -> dict[int, bool]:
     """
     Batch-load store availability for a list of entities in a single query.
 

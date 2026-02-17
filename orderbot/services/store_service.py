@@ -13,7 +13,7 @@ Functions:
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # Store Info Cache
 # =============================================================================
 
-_store_info_cache: Dict[str, Dict[str, Any]] = {}
-_store_info_cache_time: Dict[str, float] = {}
+_store_info_cache: dict[str, dict[str, Any]] = {}
+_store_info_cache_time: dict[str, float] = {}
 _STORE_CACHE_TTL = 300  # 5 minutes
 
 
@@ -61,9 +61,9 @@ def get_or_create_company(db: Session) -> Company:
 
 def build_store_info(
     db: Session,
-    store_id: Optional[str],
-    company_name: Optional[str] = None,
-) -> Dict[str, Any]:
+    store_id: str | None,
+    company_name: str | None = None,
+) -> dict[str, Any]:
     """
     Build store info dict with tax rates, delivery zones, and location details.
 
@@ -154,7 +154,7 @@ def build_store_info(
     return store_info
 
 
-def invalidate_store_cache(store_id: Optional[str] = None) -> None:
+def invalidate_store_cache(store_id: str | None = None) -> None:
     """
     Invalidate the store info cache.
 

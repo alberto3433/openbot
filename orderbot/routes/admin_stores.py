@@ -68,8 +68,6 @@ Usage:
 import logging
 import uuid
 from datetime import datetime
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -90,11 +88,11 @@ admin_stores_router = APIRouter(prefix="/admin/stores", tags=["Admin - Stores"])
 # Store Endpoints
 # =============================================================================
 
-@admin_stores_router.get("", response_model=List[StoreOut])
+@admin_stores_router.get("", response_model=list[StoreOut])
 def list_stores(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[StoreOut]:
+) -> list[StoreOut]:
     """List all stores including soft-deleted ones."""
     stores = db.query(Store).order_by(Store.name).all()
     return [StoreOut.model_validate(s) for s in stores]

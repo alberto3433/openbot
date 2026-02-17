@@ -46,7 +46,7 @@ Usage:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -87,8 +87,8 @@ admin_menu_router = APIRouter(prefix="/admin/menu", tags=["Admin - Menu"])
 def _set_menu_item_size_prices(
     db: Session,
     item: MenuItem,
-    size_category_id: Optional[int],
-    size_prices: Optional[List],
+    size_category_id: int | None,
+    size_prices: list | None,
 ) -> None:
     """
     Set menu item size pricing.
@@ -148,7 +148,7 @@ def _set_menu_item_size_prices(
 def _set_menu_item_ingredients(
     db: Session,
     item: MenuItem,
-    ingredients: Optional[List[dict]],
+    ingredients: list[dict] | None,
 ) -> None:
     """
     Set menu item ingredients from a list of ingredient dicts.
@@ -194,11 +194,11 @@ def _set_menu_item_ingredients(
 # Menu Endpoints
 # =============================================================================
 
-@admin_menu_router.get("", response_model=List[MenuItemOut])
+@admin_menu_router.get("", response_model=list[MenuItemOut])
 def admin_menu(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[MenuItemOut]:
+) -> list[MenuItemOut]:
     """List all menu items. Requires admin authentication."""
     items = (
         db.query(MenuItem)
@@ -414,10 +414,10 @@ def delete_menu_item(
 # Cache Management Endpoints
 # =============================================================================
 
-@admin_menu_router.get("/cache/status", response_model=Dict[str, Any])
+@admin_menu_router.get("/cache/status", response_model=dict[str, Any])
 def get_cache_status(
     _admin: str = Depends(verify_admin_credentials),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get menu data cache status.
 
@@ -432,11 +432,11 @@ def get_cache_status(
     return menu_cache.get_status()
 
 
-@admin_menu_router.post("/cache/refresh", response_model=Dict[str, Any])
+@admin_menu_router.post("/cache/refresh", response_model=dict[str, Any])
 def refresh_cache(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Manually refresh the menu data cache.
 

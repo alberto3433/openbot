@@ -16,7 +16,7 @@ request/response format handling done in the endpoint itself.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from .db.models import SessionAnalytics, Company
 from .cache import menu_cache
 from .email_service import send_payment_link_email
+from .schemas.enums import OrderStatus
 from .tasks.state_machine_adapter import process_message_with_state_machine
 from .services.customer_service import lookup_customer_by_phone
 from .services.store_service import build_store_info
@@ -42,24 +43,24 @@ class ProcessingContext:
     session_id: str
 
     # Optional context
-    caller_id: Optional[str] = None
-    store_id: Optional[str] = None
-    item_id: Optional[str] = None
+    caller_id: str | None = None
+    store_id: str | None = None
+    item_id: str | None = None
 
     # Pre-loaded session (optional - if not provided, will be loaded)
-    session: Optional[Dict[str, Any]] = None
+    session: dict[str, Any] | None = None
 
 
 @dataclass
 class ProcessingResult:
     """Output from message processing."""
     reply: str
-    order_state: Dict[str, Any]
-    actions: List[Dict[str, Any]]
+    order_state: dict[str, Any]
+    actions: list[dict[str, Any]]
     quick_replies: list[dict[str, str]] | None = None
 
     # Session data for response
-    history: List[Dict[str, str]] = field(default_factory=list)
+    history: list[dict[str, str]] = field(default_factory=list)
 
     # Status flags
     order_persisted: bool = False
@@ -67,7 +68,7 @@ class ProcessingResult:
     payment_email_sent: bool = False
 
     # The full session (for endpoints that need it)
-    session: Dict[str, Any] = field(default_factory=dict)
+    session: dict[str, Any] = field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------
@@ -97,7 +98,7 @@ class MessageProcessor:
 
     def __init__(self, db: Session):
         self.db = db
-        self._company: Optional[Company] = None
+        self._company: Company | None = None
 
     def process(self, ctx: ProcessingContext) -> ProcessingResult:
         """
@@ -164,7 +165,7 @@ class MessageProcessor:
         analytics_logged = False
         payment_sent = False
 
-        order_is_confirmed = updated_order_state.get("status") == "confirmed"
+        order_is_confirmed = updated_order_state.get("status") == OrderStatus.CONFIRMED
         has_customer_info = customer_name and (customer_phone or customer_email)
         order_not_yet_logged = updated_order_state.get("_confirmed_logged") is not True
 
@@ -226,13 +227,13 @@ class MessageProcessor:
     # Session Management
     # -------------------------------------------------------------------------
 
-    def _get_or_create_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def _get_or_create_session(self, session_id: str) -> dict[str, Any] | None:
         """Load session from database."""
         # Import here to avoid circular dependency
         from .services.session import get_or_create_session
         return get_or_create_session(self.db, session_id)
 
-    def _save_session(self, session_id: str, session_data: Dict[str, Any]) -> None:
+    def _save_session(self, session_id: str, session_data: dict[str, Any]) -> None:
         """Save session to database."""
         # Import here to avoid circular dependency
         from .services.session import save_session
@@ -242,7 +243,7 @@ class MessageProcessor:
     # Customer Lookup
     # -------------------------------------------------------------------------
 
-    def _lookup_customer_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
+    def _lookup_customer_by_phone(self, phone: str) -> dict[str, Any] | None:
         """Look up returning customer by phone number.
 
         Delegates to the shared lookup_customer_by_phone helper in services.helpers.
@@ -253,14 +254,14 @@ class MessageProcessor:
     # Store Info
     # -------------------------------------------------------------------------
 
-    def _build_store_info(self, store_id: Optional[str]) -> Dict[str, Any]:
+    def _build_store_info(self, store_id: str | None) -> dict[str, Any]:
         """Build store info with tax rates, delivery zip codes, hours, address, etc.
 
         Delegates to the shared build_store_info helper in services.helpers.
         """
         return build_store_info(self.db, store_id)
 
-    def _get_company(self) -> Optional[Company]:
+    def _get_company(self) -> Company | None:
         """Get or cache company info."""
         if self._company is None:
             self._company = self.db.query(Company).first()
@@ -277,8 +278,8 @@ class MessageProcessor:
 
     def _persist_order(
         self,
-        order_state: Dict[str, Any],
-        store_id: Optional[str] = None,
+        order_state: dict[str, Any],
+        store_id: str | None = None,
     ) -> bool:
         """Persist confirmed order to database."""
         try:
@@ -293,7 +294,7 @@ class MessageProcessor:
         except SQLAlchemyError:
             logger.exception("Database error persisting order")
             return False
-        except Exception:
+        except (ValueError, KeyError, TypeError):
             logger.exception("Failed to persist order")
             return False
 
@@ -301,7 +302,7 @@ class MessageProcessor:
     # Toast POS Submission
     # -------------------------------------------------------------------------
 
-    def _submit_to_toast(self, order_state: Dict[str, Any]) -> bool:
+    def _submit_to_toast(self, order_state: dict[str, Any]) -> bool:
         """Submit confirmed order to Toast POS. Best-effort: never raises."""
         try:
             from .toast.service import is_toast_configured, submit_order
@@ -322,7 +323,7 @@ class MessageProcessor:
                 order_state.get("db_order_id"),
             )
             return False
-        except Exception:
+        except (ValueError, KeyError, TypeError, ConnectionError):
             logger.exception(
                 "Unexpected error submitting order #%s to Toast",
                 order_state.get("db_order_id"),
@@ -336,12 +337,12 @@ class MessageProcessor:
     def _log_analytics(
         self,
         ctx: ProcessingContext,
-        order_state: Dict[str, Any],
-        history: List[Dict[str, str]],
+        order_state: dict[str, Any],
+        history: list[dict[str, str]],
         reply: str,
-        customer_name: Optional[str],
-        customer_phone: Optional[str],
-        store_id: Optional[str],
+        customer_name: str | None,
+        customer_phone: str | None,
+        store_id: str | None,
     ) -> bool:
         """Log completed session to analytics."""
         try:
@@ -353,7 +354,7 @@ class MessageProcessor:
                 had_items_in_cart=len(items) > 0,
                 item_count=len(items),
                 cart_total=order_state.get("total_price", 0.0),
-                order_status="confirmed",
+                order_status=OrderStatus.CONFIRMED,
                 conversation_history=history,
                 last_bot_message=reply[:500] if reply else None,
                 last_user_message=ctx.user_message[:500] if ctx.user_message else None,
@@ -369,7 +370,7 @@ class MessageProcessor:
         except SQLAlchemyError:
             logger.exception("Database error logging session analytics")
             return False
-        except Exception:
+        except (ValueError, KeyError, TypeError):
             logger.exception("Failed to log session analytics")
             return False
 
@@ -379,10 +380,10 @@ class MessageProcessor:
 
     def _send_payment_email(
         self,
-        order_state: Dict[str, Any],
+        order_state: dict[str, Any],
         customer_email: str,
-        customer_name: Optional[str],
-        customer_phone: Optional[str],
+        customer_name: str | None,
+        customer_phone: str | None,
     ) -> bool:
         """Create Stripe checkout session (if configured) and send payment link email."""
         try:
@@ -430,17 +431,17 @@ class MessageProcessor:
         except (OSError, ValueError):
             logger.exception("Failed to send payment email")
             return False
-        except Exception:
+        except (KeyError, TypeError, SQLAlchemyError):
             logger.exception("Unexpected error sending payment email")
             return False
 
     def _create_stripe_session(
         self,
         order_id: int,
-        items: List[Dict[str, Any]],
+        items: list[dict[str, Any]],
         order_total: float,
         customer_email: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Create a Stripe Checkout Session and link it to the order.
 
         Returns dict with 'session_id' and 'url' on success, None if Stripe
@@ -491,11 +492,11 @@ class MessageProcessor:
         except (OSError, SQLAlchemyError, ValueError):
             logger.exception("Failed to create Stripe session for order #%d", order_id)
             return None
-        except Exception:
+        except (KeyError, TypeError, ImportError):
             logger.exception("Unexpected error creating Stripe session for order #%d", order_id)
             return None
 
     @staticmethod
-    def _get_order_state_checkout(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _get_order_state_checkout(items: list[dict[str, Any]]) -> dict[str, Any]:
         """Helper to get checkout state from items."""
         return {}

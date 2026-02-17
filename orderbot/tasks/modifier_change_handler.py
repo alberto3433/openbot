@@ -228,7 +228,7 @@ class ModifierChangeHandler(BaseHandler):
                     attrs = menu_cache.get_item_type_attributes(item_type_slug)
                     if potential_attr in attrs:
                         return False, [potential_attr]
-            except Exception:
+            except (KeyError, ValueError, MenuDataNotLoadedError):
                 pass
 
         # If target is explicitly specified, use that attribute
@@ -264,7 +264,7 @@ class ModifierChangeHandler(BaseHandler):
                         seen.add(slug)
                         unique_slugs.append(slug)
                 return True, unique_slugs
-        except Exception:
+        except (KeyError, ValueError, MenuDataNotLoadedError):
             # Attribute option check failed - fall through to try alternate parsing
             pass
 
@@ -310,7 +310,7 @@ class ModifierChangeHandler(BaseHandler):
             try:
                 if menu_cache.find_all_categories_for_ingredient(singular):
                     return singular
-            except Exception:
+            except (KeyError, ValueError, MenuDataNotLoadedError):
                 # Cache lookup failed - continue without verification
                 pass
 

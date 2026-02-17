@@ -40,10 +40,7 @@ from .attribute_capture import capture_attributes_from_input
 from .parsers import BooleanParser
 from .customization_checkpoint import CustomizationCheckpointHandler
 from .attribute_resolver import (
-    get_item_type_attributes,
-    get_mandatory_attributes,
     get_optional_attributes,
-    get_skipped_attributes,
     get_unanswered_mandatory,
     get_unanswered_optional,
 )
@@ -85,27 +82,27 @@ class MenuItemConfigHandler(BaseHandler):
             pricing=config.pricing,
             option_matcher=self._option_matcher,
             input_normalizer=self._input_normalizer,
-            # Attribute resolution
-            get_item_type_attributes=self._get_item_type_attributes,
-            get_optional_attributes=self._get_optional_attributes,
-            get_unanswered_optional=self._get_unanswered_optional,
-            # Display/formatting
-            format_display_list=self._format_display_list,
+            # Attribute resolution (direct references to attribute_resolver functions / menu_cache)
+            get_item_type_attributes=menu_cache.get_item_type_attributes,
+            get_optional_attributes=get_optional_attributes,
+            get_unanswered_optional=get_unanswered_optional,
+            # Display/formatting (direct reference to utils.text function)
+            format_display_list=format_display_list,
             # Navigation
             advance_to_next_question=self._advance_to_next_question,
             get_next_question=self._get_next_question,
             # Matching
             match_attribute_from_input=self._match_attribute_from_input,
-            extract_quantity_from_input=self._extract_quantity_from_input,
+            extract_quantity_from_input=self._input_normalizer.extract_leading_quantity,
             extract_qualifier_for_option=self._extract_qualifier_for_option,
             # Price
             recalculate_item_price=self._recalculate_item_price,
-            # Question/action callbacks
-            ask_disambiguation_for_options=self._ask_disambiguation_for_options,
+            # Question/action callbacks (disambiguation/direct match set after _direct_option_matcher init)
+            ask_disambiguation_for_options=None,
             ask_customization_checkpoint=self._ask_customization_checkpoint,
             ask_optional_attribute=self._ask_optional_attribute,
             ask_more_customizations=self._ask_more_customizations,
-            try_direct_option_match=self._try_direct_option_match,
+            try_direct_option_match=None,
             # Optional callback (set via property setter)
             process_pending_parsed_items=None,
         )
@@ -116,7 +113,7 @@ class MenuItemConfigHandler(BaseHandler):
             pricing=config.pricing,
             option_matcher=self._option_matcher,
             input_normalizer=self._input_normalizer,
-            format_display_list_callback=self._format_display_list,
+            format_display_list_callback=format_display_list,
             extract_selections_callback=self._selection_extractor.extract_selections_from_input,
             extract_qualifier_callback=self._extract_qualifier_for_option,
         )
@@ -127,6 +124,9 @@ class MenuItemConfigHandler(BaseHandler):
             ctx=self._ctx,
             option_matcher=self._option_matcher,
         )
+        # Set disambiguation/direct match callbacks now that _direct_option_matcher exists
+        self._ctx.ask_disambiguation_for_options = self._direct_option_matcher._ask_disambiguation_for_options
+        self._ctx.try_direct_option_match = self._direct_option_matcher.try_direct_option_match
         self._quantity_input_handler = QuantityInputHandler(ctx=self._ctx)
         self._package_input_handler = PackageInputHandler(
             option_matcher=self._option_matcher,
@@ -175,43 +175,6 @@ class MenuItemConfigHandler(BaseHandler):
         if not item_type_slug:
             return False
         return item_type_slug in menu_cache.get_configurable_item_types()
-
-    def _get_item_type_attributes(self, item_type_slug: str) -> dict:
-        """Get item type attributes. Delegates to attribute_resolver."""
-        return get_item_type_attributes(item_type_slug)
-
-    def _get_mandatory_attributes(self, item_type_slug: str) -> list[dict]:
-        """Get mandatory attributes. Delegates to attribute_resolver."""
-        return get_mandatory_attributes(item_type_slug)
-
-    def _get_optional_attributes(self, item_type_slug: str) -> list[dict]:
-        """Get optional attributes. Delegates to attribute_resolver."""
-        return get_optional_attributes(item_type_slug)
-
-    def _get_unanswered_mandatory(
-        self, item: MenuItemTask, item_type_slug: str
-    ) -> list[dict]:
-        """Get unanswered mandatory attributes. Delegates to attribute_resolver."""
-        return get_unanswered_mandatory(item, item_type_slug)
-
-    def _get_skipped_attributes(self, item: MenuItemTask) -> set[str]:
-        """Get skipped attributes. Delegates to attribute_resolver."""
-        return get_skipped_attributes(item)
-
-    def _get_unanswered_optional(
-        self, item: MenuItemTask, item_type_slug: str
-    ) -> list[dict]:
-        """Get unanswered optional attributes. Delegates to attribute_resolver."""
-        return get_unanswered_optional(item, item_type_slug)
-
-    def _extract_quantity_from_input(self, user_input: str) -> tuple[int, str]:
-        """
-        Extract quantity from user input.
-
-        Returns (quantity, remaining_text) tuple.
-        Delegates to InputNormalizer.
-        """
-        return self._input_normalizer.extract_leading_quantity(user_input)
 
     def _resolve_option_price(self, option: dict, item_type: str) -> float:
         """Look up option price with pricing engine fallback.
@@ -357,18 +320,6 @@ class MenuItemConfigHandler(BaseHandler):
 
         return matched
 
-    def _format_display_list(
-        self,
-        items: list[dict],
-        key: str = "display_name",
-        conjunction: str = "or",
-    ) -> str:
-        """Format a list of items for display.
-
-        Delegates to utils.text.format_display_list.
-        """
-        return format_display_list(items, key=key, conjunction=conjunction)
-
     def _build_question_text(self, attr: dict) -> str:
         """Build question text for an attribute, preferring DB-configured question_text.
 
@@ -428,7 +379,7 @@ class MenuItemConfigHandler(BaseHandler):
             return ambig_result
 
         # Find first unanswered mandatory attribute
-        unanswered = self._get_unanswered_mandatory(item, item_type)
+        unanswered = get_unanswered_mandatory(item, item_type)
         if not unanswered:
             # No mandatory questions, go to checkpoint
             return self._ask_customization_checkpoint(item, order)
@@ -508,6 +459,15 @@ class MenuItemConfigHandler(BaseHandler):
         if unmatched_result:
             return unmatched_result
 
+        # Check if this attribute only has auto-populated default values
+        # (not user-selected). If so, use the "offer" question to let user confirm/change.
+        selections = item.get_selections(attr["slug"])
+        has_only_defaults = bool(selections) and all(
+            sel.get("is_default", False) if isinstance(sel, dict)
+            else getattr(sel, "is_default", False)
+            for sel in selections
+        )
+
         # Calculate ordinal position and context for multi-item orders
         ordinal, item_num, has_duplicates = self._question_builder.calculate_item_ordinal(item, order)
         multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
@@ -515,14 +475,16 @@ class MenuItemConfigHandler(BaseHandler):
 
         # Build base question text
         base_question = self._question_builder.build_base_question(
-            attr, item_ref, ordinal, has_duplicates, multi_count
+            attr, item_ref, ordinal, has_duplicates, multi_count,
+            has_default_value=has_only_defaults,
         )
         question = base_question
 
         # Add acknowledgment prefix for first question of each item
         if is_first_question:
             prefix = self._question_builder.build_first_question_prefix(
-                item, order, attr, ordinal, item_num, has_duplicates
+                item, order, attr, ordinal, item_num, has_duplicates,
+                has_default_value=has_only_defaults,
             )
             if prefix:
                 # For subsequent items in multi-item, prefix IS the full question
@@ -648,7 +610,7 @@ class MenuItemConfigHandler(BaseHandler):
             acknowledgment: Optional acknowledgment message to prepend (e.g., "Butter added")
         """
         item_type = item.menu_item_type
-        unanswered_optional = self._get_unanswered_optional(item, item_type)
+        unanswered_optional = get_unanswered_optional(item, item_type)
 
         # Always recalculate price after adding a modifier
         # This ensures upcharges are applied immediately, not just when config is complete
@@ -824,7 +786,7 @@ class MenuItemConfigHandler(BaseHandler):
                 item_desc = f"your {item.menu_item_name}"
 
             # Get unanswered mandatory attributes
-            unanswered = self._get_unanswered_mandatory(item, item_type_slug)
+            unanswered = get_unanswered_mandatory(item, item_type_slug)
 
             if unanswered:
                 first_attr = unanswered[0]
@@ -902,7 +864,7 @@ class MenuItemConfigHandler(BaseHandler):
         # which includes partial matching (e.g., "syrup" lists all syrup options)
 
         item_type = item.menu_item_type
-        attrs = self._get_item_type_attributes(item_type)
+        attrs = menu_cache.get_item_type_attributes(item_type)
         attr = attrs.get(attr_slug)
 
         if not attr:
@@ -1224,7 +1186,7 @@ class MenuItemConfigHandler(BaseHandler):
         attr_slug = pagination.attr_slug
         item_type = item.menu_item_type
         if item_type and attr_slug:
-            attrs = self._get_item_type_attributes(item_type)
+            attrs = menu_cache.get_item_type_attributes(item_type)
             attr = attrs.get(attr_slug)
             if attr:
                 return self._advance_to_next_question(item, order, attr, matched_choice)
@@ -1322,7 +1284,7 @@ class MenuItemConfigHandler(BaseHandler):
         # Check if we're in mandatory phase or optional phase
         if current_attr.get("ask_in_conversation", True):
             # Just answered a mandatory question, check for more
-            unanswered_mandatory = self._get_unanswered_mandatory(item, item_type)
+            unanswered_mandatory = get_unanswered_mandatory(item, item_type)
             if unanswered_mandatory:
                 next_attr = unanswered_mandatory[0]
                 result = self._ask_attribute_question(item, order, next_attr)
@@ -1360,7 +1322,7 @@ class MenuItemConfigHandler(BaseHandler):
             matched_choice: The display name of the choice just made (for acknowledgment)
         """
         item_type = item.menu_item_type
-        unanswered = self._get_unanswered_optional(item, item_type)
+        unanswered = get_unanswered_optional(item, item_type)
 
         # Always recalculate price after adding a modifier
         # This ensures upcharges are applied immediately, not just when config is complete
@@ -1446,7 +1408,7 @@ class MenuItemConfigHandler(BaseHandler):
         elif options:
             # Only list options if there are few enough to be helpful
             if len(options) <= DEFAULT_PAGINATION_SIZE:
-                options_text = self._format_display_list(options)
+                options_text = format_display_list(options)
                 question = f"What kind of {attr['display_name'].lower()}? ({options_text})"
                 # Build quick replies for inline clickable text
                 qr = [{"label": o["display_name"], "value": o["display_name"]} for o in options]
@@ -1459,38 +1421,6 @@ class MenuItemConfigHandler(BaseHandler):
         order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr['slug']}")
 
         return StateMachineResult(message=question, order=order, quick_replies=qr)
-
-    def _ask_disambiguation_for_options(
-        self,
-        item: MenuItemTask,
-        order: OrderTask,
-        attr: dict,
-        candidates: list[dict],
-        original_input: str,
-    ) -> StateMachineResult:
-        """Ask user to clarify which option they meant when input is ambiguous.
-
-        Delegates to DirectOptionMatcher for the actual implementation.
-        """
-        return self._direct_option_matcher._ask_disambiguation_for_options(
-            item, order, attr, candidates, original_input
-        )
-
-    def _try_direct_option_match(
-        self,
-        user_input: str,
-        unanswered: list[dict],
-        item: MenuItemTask,
-        order: OrderTask,
-    ) -> StateMachineResult | None:
-        """
-        Try to match user input directly to option values within attributes.
-
-        Delegates to DirectOptionMatcher for the actual matching logic.
-        """
-        return self._direct_option_matcher.try_direct_option_match(
-            user_input, unanswered, item, order
-        )
 
     # =========================================================================
     # Proactive Attribute Capture
@@ -1519,7 +1449,7 @@ class MenuItemConfigHandler(BaseHandler):
         if not item_type or not self.supports_item_type(item_type):
             return
 
-        attrs = self._get_item_type_attributes(item_type)
+        attrs = menu_cache.get_item_type_attributes(item_type)
         capture_attributes_from_input(
             user_input, item, attrs, self._option_matcher, skip_attribute=skip_attribute
         )

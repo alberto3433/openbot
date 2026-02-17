@@ -60,8 +60,6 @@ Usage:
 """
 
 import logging
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
@@ -81,7 +79,7 @@ tts_router = APIRouter(prefix="/tts", tags=["Text-to-Speech"])
 class SynthesizeRequest(BaseModel):
     """Request model for speech synthesis."""
     text: str
-    voice: Optional[str] = None
+    voice: str | None = None
     speed: float = 1.0
 
 
@@ -89,9 +87,9 @@ class VoiceInfo(BaseModel):
     """Information about an available voice."""
     id: str
     name: str
-    gender: Optional[str] = None
-    accent: Optional[str] = None
-    description: Optional[str] = None
+    gender: str | None = None
+    accent: str | None = None
+    description: str | None = None
 
 
 class VoicesResponse(BaseModel):

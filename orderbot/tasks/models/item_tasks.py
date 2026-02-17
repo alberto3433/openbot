@@ -12,8 +12,8 @@ from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 
 from .base import BaseTask
+from orderbot.tasks.normalization import format_slug_for_display
 from .utilities import (
-    format_slug_for_display,
     pluralize_display_name,
     is_name_forming_category,
     _get_is_price_metadata_key,

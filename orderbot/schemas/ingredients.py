@@ -59,8 +59,6 @@ Usage:
     )
 """
 
-from typing import Optional
-
 from pydantic import BaseModel, ConfigDict
 
 
@@ -114,7 +112,7 @@ class IngredientOut(BaseModel):
     subcategory: str
     aliases: list[str] = []
     must_match: list[str] = []
-    abbreviation: Optional[str] = None
+    abbreviation: str | None = None
 
 
 class IngredientCreate(BaseModel):
@@ -147,9 +145,9 @@ class IngredientCreate(BaseModel):
     unit: str = "serving"
     track_inventory: bool = False
     is_available: bool = True
-    aliases: Optional[str] = None
-    must_match: Optional[str] = None
-    abbreviation: Optional[str] = None
+    aliases: str | None = None
+    must_match: str | None = None
+    abbreviation: str | None = None
 
 
 class IngredientUpdate(BaseModel):
@@ -169,14 +167,14 @@ class IngredientUpdate(BaseModel):
         must_match: Comma-separated strings - at least one must be in input for this to match
         abbreviation: Short form expanded before parsing (e.g., "cc" for "cream cheese")
     """
-    name: Optional[str] = None
-    unit: Optional[str] = None
-    track_inventory: Optional[bool] = None
-    is_available: Optional[bool] = None
-    subcategory: Optional[str] = None
-    aliases: Optional[str] = None
-    must_match: Optional[str] = None
-    abbreviation: Optional[str] = None
+    name: str | None = None
+    unit: str | None = None
+    track_inventory: bool | None = None
+    is_available: bool | None = None
+    subcategory: str | None = None
+    aliases: str | None = None
+    must_match: str | None = None
+    abbreviation: str | None = None
 
 
 class IngredientAvailabilityUpdate(BaseModel):
@@ -202,7 +200,7 @@ class IngredientAvailabilityUpdate(BaseModel):
         {"is_available": true}
     """
     is_available: bool
-    store_id: Optional[str] = None
+    store_id: str | None = None
 
 
 class IngredientStoreAvailabilityOut(BaseModel):
@@ -254,7 +252,7 @@ class MenuItemStoreAvailabilityOut(BaseModel):
 
     id: int
     name: str
-    category: Optional[str] = None  # Derived from item_type.display_name
+    category: str | None = None  # Derived from item_type.display_name
     base_price: float
     is_available: bool
 
@@ -275,4 +273,4 @@ class MenuItemAvailabilityUpdate(BaseModel):
         {"is_available": false, "store_id": "store_eb_001"}
     """
     is_available: bool
-    store_id: Optional[str] = None
+    store_id: str | None = None

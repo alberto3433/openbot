@@ -40,8 +40,6 @@ Usage:
 """
 
 import logging
-from typing import List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -67,12 +65,12 @@ admin_response_patterns_router = APIRouter(
 VALID_PATTERN_TYPES = {"affirmative", "negative", "cancel", "done"}
 
 
-@admin_response_patterns_router.get("", response_model=List[ResponsePatternOut])
+@admin_response_patterns_router.get("", response_model=list[ResponsePatternOut])
 def list_response_patterns(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    pattern_type: Optional[str] = Query(None, description="Filter by pattern type"),
-) -> List[ResponsePatternOut]:
+    pattern_type: str | None = Query(None, description="Filter by pattern type"),
+) -> list[ResponsePatternOut]:
     """List all response patterns, optionally filtered by type."""
     query = db.query(ResponsePattern)
 
@@ -97,11 +95,11 @@ def list_response_patterns(
     ]
 
 
-@admin_response_patterns_router.get("/stats", response_model=List[ResponsePatternTypeStats])
+@admin_response_patterns_router.get("/stats", response_model=list[ResponsePatternTypeStats])
 def get_response_pattern_stats(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> List[ResponsePatternTypeStats]:
+) -> list[ResponsePatternTypeStats]:
     """Get pattern counts and examples for each type."""
     result = []
 

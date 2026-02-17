@@ -57,7 +57,7 @@ Usage:
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
@@ -90,7 +90,7 @@ admin_analytics_router = APIRouter(
 def list_sessions(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-    status: Optional[str] = Query(None, description="Filter: completed, abandoned"),
+    status: str | None = Query(None, description="Filter: completed, abandoned"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
 ) -> SessionAnalyticsListResponse:
@@ -206,12 +206,12 @@ def get_summary(
         SessionAnalytics.status == "abandoned"
     ).group_by(SessionAnalytics.reason).all()
 
-    abandonment_by_reason: Dict[str, int] = {
+    abandonment_by_reason: dict[str, int] = {
         reason or "unknown": count for reason, count in reason_counts
     }
 
     # Recent trend (last 7 days)
-    recent_trend: List[Dict[str, Any]] = []
+    recent_trend: list[dict[str, Any]] = []
     for i in range(6, -1, -1):
         day = datetime.utcnow().date() - timedelta(days=i)
         day_start = datetime.combine(day, datetime.min.time())

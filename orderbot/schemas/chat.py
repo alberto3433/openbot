@@ -46,7 +46,7 @@ These schemas are used as type annotations on route functions:
         return ChatMessageResponse(...)
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -67,11 +67,11 @@ class ReturningCustomerInfo(BaseModel):
         last_order_items: Items from their most recent order (for "usual" feature)
         last_order_date: ISO format date of last order
     """
-    name: Optional[str] = None
-    phone: Optional[str] = None
+    name: str | None = None
+    phone: str | None = None
     order_count: int = 0
-    last_order_items: List[Dict[str, Any]] = []
-    last_order_date: Optional[str] = None
+    last_order_items: list[dict[str, Any]] = []
+    last_order_date: str | None = None
 
 
 class ChatStartResponse(BaseModel):
@@ -88,7 +88,7 @@ class ChatStartResponse(BaseModel):
     """
     session_id: str
     message: str
-    returning_customer: Optional[ReturningCustomerInfo] = None
+    returning_customer: ReturningCustomerInfo | None = None
 
 
 class ChatMessageRequest(BaseModel):
@@ -132,7 +132,7 @@ class ActionOut(BaseModel):
         slots: Key-value pairs with action details (varies by intent)
     """
     intent: str
-    slots: Dict[str, Any]
+    slots: dict[str, Any]
 
 
 class ChatMessageResponse(BaseModel):
@@ -150,12 +150,12 @@ class ChatMessageResponse(BaseModel):
             Each dict has "label" (text to highlight) and "value" (text to send on click).
     """
     reply: str
-    order_state: Dict[str, Any]
-    actions: List[ActionOut] = Field(
+    order_state: dict[str, Any]
+    actions: list[ActionOut] = Field(
         default_factory=list,
         description="List of actions performed"
     )
-    quick_replies: Optional[List[Dict[str, str]]] = None
+    quick_replies: list[dict[str, str]] | None = None
 
 
 class ReportSessionRequest(BaseModel):
@@ -199,9 +199,9 @@ class AbandonedSessionRequest(BaseModel):
     item_count: int = 0
     cart_total: float = 0.0
     order_status: str = "pending"
-    last_bot_message: Optional[str] = None
-    last_user_message: Optional[str] = None
+    last_bot_message: str | None = None
+    last_user_message: str | None = None
     reason: str = "browser_close"  # browser_close, refresh, navigation
-    session_duration_seconds: Optional[int] = None
-    conversation_history: Optional[List[Dict[str, str]]] = None
-    store_id: Optional[str] = None
+    session_duration_seconds: int | None = None
+    conversation_history: list[dict[str, str]] | None = None
+    store_id: str | None = None

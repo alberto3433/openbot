@@ -200,7 +200,7 @@ class ItemReplacementHandler:
         for parsed_item in parsed.parsed_items:
             if not hasattr(parsed_item, 'attribute_values'):
                 continue
-            parsed_attrs = getattr(parsed_item, 'attribute_values', {}) or {}
+            parsed_attrs = parsed_item.attribute_values or {}
             for attr_slug, new_value in parsed_attrs.items():
                 if not new_value:
                     continue

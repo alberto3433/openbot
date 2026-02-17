@@ -32,7 +32,6 @@ Size Prices (managed via menu item endpoints):
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -56,7 +55,7 @@ class SizeCategoryBase(BaseModel):
         max_length=50,
         description="Unique identifier slug (e.g., 'size', 'weight', 'quantity')"
     )
-    question_text: Optional[str] = Field(
+    question_text: str | None = Field(
         None,
         max_length=200,
         description="Question to ask customer (e.g., 'What size?', 'How much would you like?')"
@@ -73,19 +72,19 @@ class SizeCategoryUpdate(BaseModel):
 
     All fields are optional - only provided fields will be updated.
     """
-    name: Optional[str] = Field(
+    name: str | None = Field(
         None,
         min_length=1,
         max_length=100,
         description="Display name"
     )
-    slug: Optional[str] = Field(
+    slug: str | None = Field(
         None,
         min_length=1,
         max_length=50,
         description="Unique identifier slug"
     )
-    question_text: Optional[str] = Field(
+    question_text: str | None = Field(
         None,
         max_length=200,
         description="Question to ask customer"
@@ -146,17 +145,17 @@ class SizeUpdate(BaseModel):
 
     All fields are optional - only provided fields will be updated.
     """
-    name: Optional[str] = Field(
+    name: str | None = Field(
         None,
         min_length=1,
         max_length=100,
         description="Size name"
     )
-    category_id: Optional[int] = Field(
+    category_id: int | None = Field(
         None,
         description="ID of the size category"
     )
-    display_order: Optional[int] = Field(
+    display_order: int | None = Field(
         None,
         description="Display order"
     )
@@ -173,7 +172,7 @@ class SizeOut(BaseModel):
     name: str
     display_order: int
     created_at: datetime
-    category_name: Optional[str] = Field(
+    category_name: str | None = Field(
         None,
         description="Name of the category this size belongs to"
     )
@@ -232,11 +231,11 @@ class SizePriceOut(BaseModel):
     size_id: int
     price: float
     created_at: datetime
-    size_name: Optional[str] = Field(
+    size_name: str | None = Field(
         None,
         description="Name of the size"
     )
-    size_display_order: Optional[int] = Field(
+    size_display_order: int | None = Field(
         None,
         description="Display order of the size"
     )
@@ -247,8 +246,8 @@ class SizePriceList(BaseModel):
 
     menu_item_id: int
     menu_item_name: str
-    size_category_id: Optional[int] = None
-    size_category_name: Optional[str] = None
+    size_category_id: int | None = None
+    size_category_name: str | None = None
     prices: list[SizePriceOut]
     total: int
 

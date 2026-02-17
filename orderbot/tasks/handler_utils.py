@@ -43,7 +43,7 @@ def get_option_display_name(option: dict) -> str:
     Returns:
         Human-readable display name
     """
-    from .models.utilities import format_slug_for_display
+    from .normalization import format_slug_for_display
     return option.get("display_name") or format_slug_for_display(option.get("slug", ""))
 
 

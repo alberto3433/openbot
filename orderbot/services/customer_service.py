@@ -11,7 +11,7 @@ Functions:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -60,7 +60,7 @@ def _get_normalized_phone_filter(phone_column):
     )
 
 
-def _order_item_to_dict(item) -> Dict[str, Any]:
+def _order_item_to_dict(item) -> dict[str, Any]:
     """Convert an OrderItem ORM object to a dict for API responses.
 
     Args:
@@ -69,7 +69,7 @@ def _order_item_to_dict(item) -> Dict[str, Any]:
     Returns:
         Dict with menu_item_name, quantity, price, and any item_config fields
     """
-    item_data: Dict[str, Any] = {
+    item_data: dict[str, Any] = {
         "menu_item_name": item.menu_item_name,
         "quantity": item.quantity,
         "price": item.unit_price,
@@ -79,7 +79,7 @@ def _order_item_to_dict(item) -> Dict[str, Any]:
     return item_data
 
 
-def lookup_customer_by_phone(db: Session, phone: str) -> Optional[Dict[str, Any]]:
+def lookup_customer_by_phone(db: Session, phone: str) -> dict[str, Any] | None:
     """
     Look up a returning customer by phone number.
 
@@ -158,7 +158,7 @@ def lookup_customer_order_history(
     phone: str,
     days: int = 90,
     limit: int = 10,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Look up a customer's full order history by phone number.
 
@@ -228,7 +228,7 @@ def lookup_customer_order_history(
     }
 
     # Build order list with summaries
-    order_list: List[Dict[str, Any]] = []
+    order_list: list[dict[str, Any]] = []
     for order in orders:
         items = [_order_item_to_dict(item) for item in order.items]
         summary = build_order_items_summary(order.items)
@@ -253,7 +253,7 @@ def get_order_by_id(
     db: Session,
     order_id: int,
     phone: str,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Get a specific order by ID, verifying phone ownership for security.
 

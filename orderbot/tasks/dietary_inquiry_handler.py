@@ -701,8 +701,8 @@ class DietaryInquiryHandler(MenuDataMixin):
                 item_name, order=order
             )
             if category_slug:
-                order.pending_menu_category = category_slug
-                order.pending_field = PendingField.CONFIRM_MENU_CATEGORY
+                order.pending_field = PendingField.CATEGORY_INQUIRY
+                order.pending_config_queue = [category_slug]
             return StateMachineResult(message=message, order=order)
 
         # Fallback if no unrecognized handler

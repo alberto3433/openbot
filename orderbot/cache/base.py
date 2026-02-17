@@ -202,6 +202,10 @@ def pluralize(word: str) -> str:
     if not word:
         return word
 
+    # Skip if already plural (e.g., "snacks", "drinks") to avoid double-pluralization
+    if _inflect_engine.singular_noun(word):
+        return word
+
     # Use inflect to get the plural form
     result = _inflect_engine.plural_noun(word)
     return result if result else word + 's'

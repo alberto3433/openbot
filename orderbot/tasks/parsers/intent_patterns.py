@@ -552,10 +552,10 @@ ADD_N_MORE_PATTERN = re.compile(
 
 ORDERING_LANGUAGE_PATTERN = re.compile(
     r"(?:"
-    r"i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)"
-    r"|(?:can|could|may)\s+i\s+(?:get|have)"
+    r"i(?:'?d|\s*would)?\s*(?:also\s+)?(?:like|want|need|take|have|get)"
+    r"|(?:can|could|may)\s+i\s+(?:also\s+)?(?:get|have)"
     r"|give\s+me"
-    r"|let\s*(?:me|'s)\s*(?:get|have)"
+    r"|let\s*(?:me|'s)\s*(?:also\s+)?(?:get|have)"
     r")",
     re.IGNORECASE
 )

@@ -445,6 +445,10 @@ class CustomizationCheckpointHandler:
         item.mark_complete()
         order.clear_pending()
 
+        # Track item count before processing pending items so we can
+        # acknowledge newly-added items (e.g., "no can I also have a coke?")
+        items_before = len(order.items.items)
+
         # Check if there are pending parsed items that haven't been added yet
         # This handles the case where disambiguation was triggered and remaining items
         # in the order were stored (e.g., "bagel and latte" - latte is stored while
@@ -463,8 +467,16 @@ class CustomizationCheckpointHandler:
 
         # No more items to configure - go back to taking items
         order.set_phase(OrderPhase.TAKING_ITEMS)
+
+        # Build summary including any items added from compound input
+        new_items = order.items.items[items_before:]
+        added_names = [ni.get_display_name() for ni in new_items]
+        summary = item.get_summary()
+        if added_names:
+            summary += ", and " + ", ".join(added_names)
+
         return StateMachineResult(
-            message=got_it_anything_else(item.get_summary()),
+            message=got_it_anything_else(summary),
             order=order,
         )
 

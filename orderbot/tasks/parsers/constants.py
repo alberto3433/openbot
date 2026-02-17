@@ -184,8 +184,8 @@ QUALIFIER_PATTERNS = [
     (r'\bheavy\s+(?:on\s+(?:the\s+)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'extra'),
     # "a splash of X" / "splash of X"
     (r'\b(?:a\s+)?splash\s+of\s+(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'a splash of'),
-    # "a little X" / "just a little X"
-    (r'\b(?:just\s+)?a\s+little\s+(?:bit\s+of\s+)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'a little'),
+    # "a little X" / "just a little X" / "little bit of X"
+    (r'\b(?:just\s+)?(?:a\s+)?little\s+(?:bit\s+(?:of\s+)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'a little'),
     # "no X" / "hold the X" / "without X"
     (r'\b(?:no\s+|hold\s+the\s+|without\s+)(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'no'),
     # "X on the side" - captures single-word modifiers like sugar, cream, milk
@@ -547,6 +547,42 @@ def find_item_by_unit_type(item_name: str, unit_type: str) -> tuple[str, str] | 
     cache = _get_menu_cache()
     if cache:
         return cache.find_item_by_unit_type(item_name, unit_type)
+    return None
+
+
+# ── Cancellation sentinel constants ──────────────────────────────────
+CANCEL_LAST_ITEM = "__last_item__"
+CANCEL_ALL_ITEMS = "__all_items__"
+CANCEL_LAST_N_PREFIX = "__last_n_items_"
+REDUCE_TO_ONE = "__reduce_to_one__"
+REDUCE_TO_ONE_PREFIX = "__reduce_to_one_"
+
+
+def make_last_n_sentinel(count: int) -> str:
+    """Build a 'cancel last N items' sentinel, e.g. '__last_n_items_3__'."""
+    return f"{CANCEL_LAST_N_PREFIX}{count}__"
+
+
+def parse_last_n_sentinel(value: str) -> int | None:
+    """Extract N from '__last_n_items_N__', or return None."""
+    if value.startswith(CANCEL_LAST_N_PREFIX) and value.endswith("__"):
+        try:
+            return int(value[len(CANCEL_LAST_N_PREFIX):-2])
+        except ValueError:
+            return None
+    return None
+
+
+def make_reduce_to_one_sentinel(item_type: str) -> str:
+    """Build a 'reduce to one' sentinel, e.g. '__reduce_to_one_bagel__'."""
+    return f"{REDUCE_TO_ONE_PREFIX}{item_type}__"
+
+
+def parse_reduce_to_one_sentinel(value: str) -> str | None:
+    """Extract item_type from '__reduce_to_one_<type>__', or return None."""
+    if value.startswith(REDUCE_TO_ONE_PREFIX) and value.endswith("__"):
+        inner = value[len(REDUCE_TO_ONE_PREFIX):-2]
+        return inner if inner else None
     return None
 
 

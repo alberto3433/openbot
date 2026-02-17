@@ -618,8 +618,9 @@ class MenuItemConfigHandler(BaseHandler):
         # Build acknowledgment prefix if provided
         ack_prefix = f"Got it, {acknowledgment}. " if acknowledgment else ""
 
-        if not unanswered_optional:
-            # No optional attributes available - price already recalculated above, complete
+        if not unanswered_optional or item.customization_declined:
+            # No optional attributes available (or user explicitly declined customization
+            # e.g., "nothing else" in initial input) - complete the item
             item.customization_offered = True
             item.mark_complete()
             order.clear_pending()

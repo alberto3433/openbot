@@ -98,6 +98,10 @@ class MenuItemTask(ItemTask):
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
 
+    # Track if user explicitly declined customization in their initial order
+    # e.g., "plain bagel with cream cheese nothing else"
+    customization_declined: bool = False
+
     # Side item linking - if this item is a side (e.g., bagel with omelette),
     # this holds the ID of the parent item
     side_of_item_id: str | None = None

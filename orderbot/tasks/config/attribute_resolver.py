@@ -125,6 +125,15 @@ def get_unanswered_mandatory(
     """
     mandatory = get_mandatory_attributes(item_type_slug)
 
+    # If user explicitly declined customization (e.g., "nothing else" in initial order),
+    # accept all defaults and skip all mandatory questions
+    if getattr(item, "customization_declined", False):
+        logger.info(
+            "GET_UNANSWERED_MANDATORY: item_type=%s, customization_declined=True - skipping all",
+            item_type_slug,
+        )
+        return []
+
     # Get attributes to skip based on current selections
     skipped_attrs = get_skipped_attributes(item)
 

@@ -859,6 +859,18 @@ class ItemAdderHandler(MenuDataMixin):
             if first_item is None:
                 first_item = item
 
+        # Check if user's input had a trailing "done" signal (e.g., "nothing else")
+        # If so, mark all items in this batch so optional customization is skipped
+        if first_item and ctx.user_input:
+            from .response_utils import has_trailing_done_signal
+            if has_trailing_done_signal(ctx.user_input):
+                for item_in_order in ctx.order.items.items:
+                    if item_in_order.id == first_item.id or (
+                        item_count > 1 and item_in_order.menu_item_name == first_item.menu_item_name
+                        and not item_in_order.is_complete()
+                    ):
+                        item_in_order.customization_declined = True
+
         return first_item
 
     def _start_configuration_flow(

@@ -13,6 +13,7 @@ __all__ = [
     "is_affirmative",
     "is_negative",
     "is_skip_response",
+    "has_trailing_done_signal",
     "get_affirmative_patterns",
     "get_negative_patterns",
 ]
@@ -109,6 +110,28 @@ def is_negative(user_input: str) -> bool:
         if len(user_lower) < 20 and pattern in user_lower.split():
             return True
 
+    return False
+
+
+def has_trailing_done_signal(text: str) -> bool:
+    """Check if text ends with a 'done' signal phrase (e.g., 'nothing else', 'that's it').
+
+    Tests the last 1-5 words of the input against menu_cache.is_done(),
+    which uses DB-stored response_pattern entries (pattern_type='done').
+
+    Args:
+        text: The user's input text
+
+    Returns:
+        True if the text ends with a done signal, False otherwise
+    """
+    words = normalize_text(text).split()
+    if not words:
+        return False
+    for n in range(1, min(6, len(words) + 1)):
+        tail = " ".join(words[-n:])
+        if menu_cache.is_done(tail):
+            return True
     return False
 
 

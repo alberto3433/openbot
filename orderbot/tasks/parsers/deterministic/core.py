@@ -912,6 +912,7 @@ def _try_parse_new_items(
                 item_type=item_type_for_mods or "menu_item",
                 item_name=menu_item,
                 quantity=1,
+                original_text=text,
                 attr_result=attr_result,
                 modifiers=mod_list,
                 is_signature=is_sig,

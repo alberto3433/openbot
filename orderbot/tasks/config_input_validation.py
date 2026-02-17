@@ -28,9 +28,10 @@ __all__ = [
 ]
 
 # Pattern to detect modifier inquiries like "what toppings do you have?"
+# Also handles "what kind of syrups do you have?" (kind/type/sort of prefix)
 # Captures the category (e.g., "toppings", "sweeteners", "spreads")
 _MODIFIER_INQUIRY_PATTERN = re.compile(
-    r"what (\w+(?:\s+\w+)?)\s+do\s+you\s+(?:have|offer|carry)",
+    r"what\s+(?:(?:kinds?|types?|sorts?)\s+of\s+)?(\w+(?:\s+\w+)?)\s+do\s+you\s+(?:have|offer|carry)",
     re.IGNORECASE
 )
 

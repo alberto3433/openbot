@@ -1263,6 +1263,25 @@ def parse_open_input(
         )
     # Strip greetings/fillers early so ALL paths get clean text
     user_input = strip_conversational_fillers(user_input.strip())
+
+    # Check for "make it N [item]" quantity pattern BEFORE replacement patterns
+    # e.g., "make it two bagels" should duplicate the configured bagel, not replace it
+    make_n_item_match = MAKE_IT_N_WITH_ITEM_PATTERN.match(user_input)
+    if make_n_item_match:
+        num_str = make_n_item_match.group(1).lower()
+        target_qty = parse_make_it_n_quantity(num_str)
+        if target_qty is not None:
+            item_ref = make_n_item_match.group(2).strip()
+            additional = target_qty - 1
+            logger.info(
+                "Quantity-with-item detected early, target=%d, item_ref='%s', adding %d more",
+                target_qty, item_ref, additional,
+            )
+            return OpenInputResponse(
+                duplicate_last_item=additional,
+                duplicate_by_reference=item_ref,
+            )
+
     # Check for replacement patterns FIRST, before configurable item parsing
     # This ensures "No, I said plain bagel" triggers replacement, not a new item
     replace_match = REPLACE_ITEM_PATTERN.match(user_input)

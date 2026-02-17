@@ -316,6 +316,9 @@ def build_modifier_categories(db: Session) -> dict[str, Any]:
             if alias:
                 keyword_to_category[alias] = cat.slug
 
+        # Also add the slug itself as a keyword (e.g., "syrups" -> "syrups")
+        keyword_to_category[cat.slug] = cat.slug
+
         # Build category data
         cat_info: dict[str, Any] = {
             "display_name": cat.display_name,

@@ -97,6 +97,7 @@ def process_message_with_state_machine(
     store_info: dict | None = None,
     returning_customer: dict[str, Any] | None = None,
     db_session=None,
+    item_id: str | None = None,
 ) -> tuple[str, dict[str, Any], list[dict[str, Any]], list[dict[str, str]] | None]:
     """
     Process a user message using the state machine.
@@ -140,6 +141,7 @@ def process_message_with_state_machine(
         returning_customer=returning_customer,
         store_info=store_info,
         db_session=db_session,
+        item_id=item_id,
     )
 
     # Convert state back to dict (phase and pending fields are stored in OrderTask)

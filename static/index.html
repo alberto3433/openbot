@@ -1730,7 +1730,17 @@
         // Case-insensitive search — use lastIndexOf so we match the label in the
         // question/options part of the message, not in the acknowledgment prefix
         // (e.g. "Got it, for the American Cheese with 1/4 lb. How much? 1/4 pound?")
-        var idx = html.toLowerCase().lastIndexOf(escapedLabel.toLowerCase());
+        var lowerHtml = html.toLowerCase();
+        var lowerLabel = escapedLabel.toLowerCase();
+        var idx = lowerHtml.lastIndexOf(lowerLabel);
+        // Walk backwards to find a match at a word boundary (not inside another word)
+        while (idx !== -1) {
+          var before = idx > 0 ? html.charAt(idx - 1) : ' ';
+          var after = idx + escapedLabel.length < html.length ? html.charAt(idx + escapedLabel.length) : ' ';
+          var wordChar = /[a-zA-Z0-9]/;
+          if (!wordChar.test(before) && !wordChar.test(after)) break;
+          idx = lowerHtml.lastIndexOf(lowerLabel, idx - 1);
+        }
         if (idx !== -1) {
           var originalText = html.substring(idx, idx + escapedLabel.length);
           var span = '<span class="quick-reply-inline" data-value="' + escapeAttr(qr.value) + '">' + originalText + '</span>';
@@ -1853,7 +1863,7 @@
       }
     }
 
-    async function sendMessage(text) {
+    async function sendMessage(text, opts) {
       if (!sessionId) return;
       addMessage("user", text);
       lastUserMessage = text;
@@ -1861,16 +1871,18 @@
       conversationHistory.push({ role: "user", content: text });
       setStatus("Sending...");
       showTypingIndicator();
-      if (USE_STREAMING) await sendMessageStreaming(text);
-      else await sendMessageNonStreaming(text);
+      if (USE_STREAMING) await sendMessageStreaming(text, opts);
+      else await sendMessageNonStreaming(text, opts);
     }
 
-    async function sendMessageNonStreaming(text) {
+    async function sendMessageNonStreaming(text, opts) {
       try {
+        const payload = { session_id: sessionId, message: text };
+        if (opts && opts.itemId) payload.item_id = opts.itemId;
         const resp = await fetch("/api/v1/chat/message", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, message: text }),
+          body: JSON.stringify(payload),
         });
         hideTypingIndicator();
         if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -1894,14 +1906,16 @@
       }
     }
 
-    async function sendMessageStreaming(text) {
+    async function sendMessageStreaming(text, opts) {
       let streamingMessageEl = null;
       let fullReply = "";
       try {
+        const payload = { session_id: sessionId, message: text };
+        if (opts && opts.itemId) payload.item_id = opts.itemId;
         const resp = await fetch("/api/v1/chat/message/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, message: text }),
+          body: JSON.stringify(payload),
         });
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         hideTypingIndicator();
@@ -2479,9 +2493,9 @@
       const hasFreeDetails = item.free_details && item.free_details.length > 0;
       const hasRemovedIngredients = item.removed_ingredients && item.removed_ingredients.length > 0;
 
-      const itemName = item.menu_item_name || name;
+      const itemName = name;
       const removeBtnHtml = showRemoveBtn
-        ? `<button class="order-item-remove-btn" data-item-name="${itemName.replace(/"/g, '&quot;')}" data-item-qty="${qty}" title="Remove"><i data-lucide="x"></i></button>`
+        ? `<button class="order-item-remove-btn" data-item-name="${itemName.replace(/"/g, '&quot;')}" data-item-qty="${qty}" data-item-id="${item.id || ''}" title="Remove"><i data-lucide="x"></i></button>`
         : '';
 
       let html = "";
@@ -2664,6 +2678,7 @@
 
         const itemName = removeBtn.dataset.itemName;
         const itemQty = parseInt(removeBtn.dataset.itemQty, 10) || 1;
+        const itemId = removeBtn.dataset.itemId;
 
         // Gray out the item
         orderItem.classList.add("pending-removal");
@@ -2680,7 +2695,7 @@
           const msg = itemQty > 1
             ? `Remove one ${itemName}`
             : `Remove the ${itemName}`;
-          sendMessage(msg);
+          sendMessage(msg, itemId ? { itemId } : undefined);
         }, 4000);
 
         pendingRemovals.set(orderItem, { timerId });
@@ -2705,14 +2720,14 @@
     });
 
     const origSendMessageNonStreaming = sendMessageNonStreaming;
-    sendMessageNonStreaming = async function(text) {
-      await origSendMessageNonStreaming(text);
+    sendMessageNonStreaming = async function(text, opts) {
+      await origSendMessageNonStreaming(text, opts);
       renderOrderPanel(orderState);
     };
 
     const origSendMessageStreaming = sendMessageStreaming;
-    sendMessageStreaming = async function(text) {
-      await origSendMessageStreaming(text);
+    sendMessageStreaming = async function(text, opts) {
+      await origSendMessageStreaming(text, opts);
       renderOrderPanel(orderState);
     };
 

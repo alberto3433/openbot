@@ -7,7 +7,7 @@ Extracted from config_helper_handler.py for better separation of concerns.
 
 import logging
 import re
-from typing import Optional, Callable, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import OrderPhase, StateMachineResult
@@ -156,7 +156,7 @@ class ConfigCancellationHandler:
         user_input: str,
         current_item: MenuItemTask,
         order: OrderTask,
-    ) -> Optional[StateMachineResult]:
+    ) -> StateMachineResult | None:
         """
         Check if user wants to cancel/remove items while in configuration phase.
 

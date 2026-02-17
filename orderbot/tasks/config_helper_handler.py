@@ -11,7 +11,7 @@ the current question text from the database.
 """
 
 import logging
-from typing import Optional, Callable, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask
 from .pending_fields import PendingField
@@ -91,7 +91,7 @@ class ConfigHelperHandler:
         user_input: str,
         current_item: MenuItemTask,
         order: OrderTask,
-    ) -> Optional[StateMachineResult]:
+    ) -> StateMachineResult | None:
         """Delegate to cancellation_handler for cancellation during config.
 
         This method is kept for backward compatibility.

@@ -17,6 +17,7 @@ import re
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import singularize
 from orderbot.constants import (
     SCORE_EXACT_MATCH,
     SCORE_NORMALIZED_EXACT,
@@ -41,6 +42,7 @@ from .parsers.inquiry_patterns import (
     MODIFICATION_EXTRACTOR,
     REORDER_ITEM_PATTERNS,
 )
+from .parsers.deterministic import DUPLICATE_ALL_PATTERN
 
 if TYPE_CHECKING:
     from .models import OrderTask
@@ -120,8 +122,6 @@ class DuplicateHandler:
         Returns:
             StateMachineResult with appropriate message.
         """
-        from .parsers.deterministic import DUPLICATE_ALL_PATTERN
-
         pending_info = order.pending_duplicate_selection
         if not pending_info:
             order.clear_pending()
@@ -449,20 +449,27 @@ class DuplicateHandler:
             return None
 
         # Find cart item matching the reference (most recent first)
+        # Try both original and singularized form (e.g., "bagels" -> "bagel")
+        item_ref_singular = singularize(item_ref)
+        ref_candidates = [item_ref] if item_ref == item_ref_singular else [item_ref, item_ref_singular]
+
         matched_item = None
         for item in reversed(active_items):
             item_name = item.get_display_name().lower()
-            # Use word-boundary matching to find the reference in item name
-            # e.g., "chips" matches "Kettle Chips", "bag of chips" matches "Bag of Chips"
-            if re.search(rf'\b{re.escape(item_ref)}\b', item_name):
-                matched_item = item
-                break
-            # Also check if item_ref is a subset of words in item_name
-            # e.g., "chips" in "Bag of Kettle Chips"
-            item_words = set(item_name.split())
-            ref_words = set(item_ref.split())
-            if ref_words and ref_words.issubset(item_words):
-                matched_item = item
+            for ref in ref_candidates:
+                # Use word-boundary matching to find the reference in item name
+                # e.g., "chips" matches "Kettle Chips", "bagel" matches "Plain Bagel"
+                if re.search(rf'\b{re.escape(ref)}\b', item_name):
+                    matched_item = item
+                    break
+                # Also check if ref is a subset of words in item_name
+                # e.g., "chips" in "Bag of Kettle Chips"
+                item_words = set(item_name.split())
+                ref_words = set(ref.split())
+                if ref_words and ref_words.issubset(item_words):
+                    matched_item = item
+                    break
+            if matched_item:
                 break
 
         if not matched_item:

@@ -14,6 +14,7 @@ an exception is raised to fail fast and make the configuration problem visible.
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from .models import (
     ItemTask,
@@ -449,7 +450,7 @@ def _remove_from_field_list(
 def _remove_from_field_single(
     item: ItemTask,
     field: ModifierField,
-    current_value: any,
+    current_value: Any,
 ) -> ModifierRemovalResult:
     """Remove a single-value modifier field."""
     removed_value = str(current_value)

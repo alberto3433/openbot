@@ -385,17 +385,22 @@ class MenuItemConfigHandler(BaseHandler):
             return f"Would you like it {attr_name}?"
         return f"What kind of {attr_name} would you like?"
 
-    def _format_checkpoint_questions(self, attrs: list[dict]) -> str:
-        """Format unanswered optional attributes as individual questions."""
+    def _format_checkpoint_questions(self, attrs: list[dict]) -> tuple[str, list[dict[str, str]]]:
+        """Format unanswered optional attributes as individual questions with quick replies."""
         questions = []
+        quick_replies = []
         for attr in attrs:
             q = attr.get("offer_question_text") or attr.get("question_text")
-            if q:
-                questions.append(q)
-            else:
+            if not q:
                 display = attr.get("display_name") or attr["slug"]
-                questions.append(f"Add {display}?")
-        return " ".join(questions)
+                q = f"Add {display}?"
+            questions.append(q)
+            display = attr.get("display_name") or attr["slug"]
+            quick_replies.append({
+                "label": q,
+                "value": f"What kind of {display} do you have?",
+            })
+        return " ".join(questions), quick_replies
 
     # =========================================================================
     # Main Entry Point
@@ -548,6 +553,26 @@ class MenuItemConfigHandler(BaseHandler):
             else:
                 for o in available_opts:
                     qr.append({"label": o["display_name"], "value": o["display_name"]})
+                # For multi_select with category-grouped options, use category-level
+                # quick replies when the question mentions those categories.
+                # e.g., "Any milk, sweetener, or syrup?" -> clicking "milk" sends
+                # "What kind of milk do you have?" which triggers options inquiry.
+                if input_type == "multi_select":
+                    categories = list(dict.fromkeys(
+                        o.get("ingredient_category") for o in available_opts
+                        if o.get("ingredient_category")
+                    ))
+                    if len(categories) > 1:
+                        base_lower = base_question.lower()
+                        cat_qr = []
+                        for cat in categories:
+                            if cat.lower() in base_lower:
+                                cat_qr.append({
+                                    "label": cat,
+                                    "value": f"What kind of {cat} do you have?",
+                                })
+                        if cat_qr:
+                            qr = cat_qr
         elif input_type == "boolean":
             question += " Yes or no?"
             qr.append({"label": "Yes", "value": "yes"})
@@ -675,11 +700,12 @@ class MenuItemConfigHandler(BaseHandler):
         order.setup_pending_config(item.id, PendingField.CUSTOMIZATION_CHECKPOINT)
 
         # List available customization options as individual questions
-        options_questions = self._format_checkpoint_questions(unanswered_optional)
+        options_questions, quick_replies = self._format_checkpoint_questions(unanswered_optional)
 
         return StateMachineResult(
             message=f"{ack_prefix}Any more changes? {options_questions}",
             order=order,
+            quick_replies=quick_replies,
         )
 
     # =========================================================================
@@ -1363,16 +1389,14 @@ class MenuItemConfigHandler(BaseHandler):
             )
 
         # List remaining options as individual questions
-        options_questions = self._format_checkpoint_questions(unanswered)
+        options_questions, quick_replies = self._format_checkpoint_questions(unanswered)
 
         order.setup_pending_config(item.id, PendingField.CUSTOMIZATION_CHECKPOINT)
 
-        # Build quick replies from attribute display names
-        qr = [{"label": a.get("display_name", a["slug"]), "value": a.get("display_name", a["slug"])} for a in unanswered]
         return StateMachineResult(
             message=f"{ack_prefix}Any more changes? {options_questions}",
             order=order,
-            quick_replies=qr,
+            quick_replies=quick_replies,
         )
 
     def handle_customization_checkpoint(

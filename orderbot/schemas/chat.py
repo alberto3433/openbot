@@ -107,6 +107,7 @@ class ChatMessageRequest(BaseModel):
     """
     session_id: str
     message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
+    item_id: str | None = Field(default=None, description="Item ID for targeted cart operations")
 
 
 class ActionOut(BaseModel):

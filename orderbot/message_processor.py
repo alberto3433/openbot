@@ -44,6 +44,7 @@ class ProcessingContext:
     # Optional context
     caller_id: Optional[str] = None
     store_id: Optional[str] = None
+    item_id: Optional[str] = None
 
     # Pre-loaded session (optional - if not provided, will be loaded)
     session: Optional[Dict[str, Any]] = None
@@ -141,6 +142,7 @@ class MessageProcessor:
             store_info=store_info,
             returning_customer=returning_customer,
             db_session=self.db,
+            item_id=ctx.item_id,
         )
 
         # 5. Update history

@@ -307,6 +307,9 @@ class IngredientLoaderMixin:
             for alias in aliases:
                 modifier_category_alias_to_slug[alias.lower()] = cat.slug
 
+            # Also add the slug itself as an alias
+            modifier_category_alias_to_slug[cat.slug.lower()] = cat.slug
+
         self._modifier_categories = modifier_categories
         self._modifier_category_alias_to_slug = modifier_category_alias_to_slug
 

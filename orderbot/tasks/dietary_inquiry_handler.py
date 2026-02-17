@@ -152,6 +152,12 @@ class DietaryInquiryHandler(MenuDataMixin):
                 )
 
             if category_display:
+                # Set pending state so "yes" routes back to show all dietary options
+                order.pending_dietary_followup = PendingDietaryFollowup(
+                    dietary_type=dietary_type,
+                    category=None,
+                )
+                order.pending_field = PendingField.CONFIRM_DIETARY_FOLLOWUP
                 return StateMachineResult(
                     message=(
                         f"I don't see any {display_name} {category_display} on our menu right now. "

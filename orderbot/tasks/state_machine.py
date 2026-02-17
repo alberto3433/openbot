@@ -358,6 +358,7 @@ class OrderStateMachine:
         returning_customer: dict | None = None,
         store_info: dict | None = None,
         db_session=None,
+        item_id: str | None = None,
     ) -> StateMachineResult:
         """
         Process user input through the state machine.
@@ -368,6 +369,7 @@ class OrderStateMachine:
             returning_customer: Returning customer data (name, phone, last_order_items)
             store_info: Store configuration (delivery_zip_codes, tax rates, etc.)
             db_session: SQLAlchemy session for database operations (request-scoped)
+            item_id: Optional item ID for targeted cart operations (e.g., remove by ID)
 
         Returns:
             StateMachineResult with response message and updated order
@@ -383,6 +385,14 @@ class OrderStateMachine:
 
         # Update all handlers with unified context
         self._update_handler_context(store_info, returning_customer, db_session)
+
+        # ID-based removal: bypass parsing entirely when item_id is provided
+        if item_id:
+            result = self._handle_id_based_removal(item_id, order)
+            if result:
+                order.add_message("user", user_input)
+                order.add_message("assistant", result.message)
+                return result
 
         # Add user message to history
         order.add_message("user", user_input)
@@ -596,6 +606,53 @@ class OrderStateMachine:
         return StateMachineResult(
             message=f"Sure, that's {target_qty} total. {suffix}",
             order=order,
+        )
+
+    def _handle_id_based_removal(
+        self,
+        item_id: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle removal of a specific item by its unique ID.
+
+        Called when the frontend passes an item_id (e.g., from the cart X button).
+        Bypasses text-based parsing entirely for exact item targeting.
+
+        Args:
+            item_id: The unique ID of the item to remove
+            order: The current order task
+
+        Returns:
+            StateMachineResult if handled, None if item_id is invalid
+        """
+        from .handler_utils import build_removal_response
+
+        item = order.items.get_active_item_by_id(item_id)
+        if item is None:
+            return StateMachineResult(
+                message="That item has already been removed. Anything else?",
+                order=order,
+            )
+
+        removed_name = item.get_summary()
+
+        # If the item being removed is currently being configured, clear pending state
+        if order.pending_item_id == item_id:
+            order.clear_pending()
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+
+        # Also remove from pending config queue if present
+        order.pending_config_queue = [
+            entry for entry in order.pending_config_queue
+            if not (isinstance(entry, dict) and entry.get("item_id") == item_id)
+        ]
+
+        order.items.remove_item_with_bundle(item_id)
+
+        return build_removal_response(
+            order,
+            removed_name,
+            configure_next_incomplete=self._configure_next_incomplete_item,
         )
 
     def _handle_greeting(

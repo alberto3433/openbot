@@ -190,6 +190,7 @@ def chat_message(
         result = processor.process(ProcessingContext(
             user_message=req.message,
             session_id=req.session_id,
+            item_id=req.item_id,
         ))
 
         processed_actions = [
@@ -251,6 +252,7 @@ def chat_message_stream(
                 session_id=req.session_id,
                 caller_id=session_caller_id,
                 store_id=session_store_id,
+                item_id=req.item_id,
                 session=session,
             ))
 

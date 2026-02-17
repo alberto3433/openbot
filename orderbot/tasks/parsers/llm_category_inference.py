@@ -15,7 +15,6 @@ Key differences from llm_parsers.py:
 
 import os
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ def infer_item_category(
     item_name: str,
     categories: list[dict],
     timeout: float = 5.0,
-) -> Optional[str]:
+) -> str | None:
     """
     Use LLM to infer which menu category an unknown item likely belongs to.
 

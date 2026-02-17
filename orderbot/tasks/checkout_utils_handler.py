@@ -165,7 +165,7 @@ class CheckoutUtilsHandler:
             # Defensive check: skip if item is already complete
             if target_item and target_item.status == TaskStatus.COMPLETE:
                 logger.info("Skipping already-complete item in queue: id=%s, type=%s",
-                           item_id[:8] if item_id else None, item_type)
+                           item_id[:8] if item_id else None, target_item.menu_item_type)
                 continue
 
             # If we have item_name and pending_field, use abbreviated question format

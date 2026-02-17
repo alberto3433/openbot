@@ -2240,7 +2240,7 @@ class TestBagelWithCoffeeConfig:
         # Bagels should be queued for configuration (all items added upfront)
         assert order.pending_config_queue, "Expected items in pending_config_queue"
         bagel_queued = [p for p in order.pending_config_queue
-                        if isinstance(p, dict) and p.get('item_type') == 'bagel']
+                        if isinstance(p, dict) and p.get('item_name') == 'Plain']
         assert len(bagel_queued) >= 1, f"Expected bagels in pending_config_queue, got: {order.pending_config_queue}"
 
         # Counter to track how many bagels and coffees we've configured

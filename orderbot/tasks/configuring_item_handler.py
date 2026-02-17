@@ -495,14 +495,21 @@ class ConfiguringItemHandler:
 
         # Check for modifier inquiries like "what toppings do you have?" that passed the off-topic check
         # Route to store_info_handler for proper pagination support
-        # EXCEPT at customization_checkpoint or in attribute configuration (item_type:attr_slug)
+        # EXCEPT at customization_checkpoint
         modifier_category = detect_modifier_inquiry(user_input)
         pending_is_attr_config = order.pending_field and ":" in order.pending_field
+
+        # During attr config, only route if it's a known modifier category
+        # (prevents "what shots do you have?" from bypassing config options display)
+        if pending_is_attr_config and modifier_category:
+            resolved = menu_cache.get_modifier_category_by_alias(modifier_category)
+            if not resolved:
+                modifier_category = None
+
         if (modifier_category
             and self._taking_items_handler
             and self._taking_items_handler.store_info_handler
-            and order.pending_field != PendingField.CUSTOMIZATION_CHECKPOINT
-            and not pending_is_attr_config):
+            and order.pending_field != PendingField.CUSTOMIZATION_CHECKPOINT):
             logger.info("MODIFIER INQUIRY during config: category='%s'", modifier_category)
             return self._taking_items_handler.store_info_handler.handle_modifier_inquiry(
                 None,  # item_type - not specified

@@ -1,3 +1,3 @@
 """Orderbot - AI-powered ordering chatbot."""
 
-__version__ = "2.7.1074"
+__version__ = "2.7.1076"

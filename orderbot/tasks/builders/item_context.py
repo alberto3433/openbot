@@ -40,11 +40,11 @@ class ItemBuildContext:
     extracted_selections: "list[Selection] | None" = None
     """List of Selection objects to apply (optional)."""
 
-    unavailable_selections: dict | None = None
+    unavailable_selections: dict[str, Any] | None = None
     """Dict of attr_slug -> {attempted_slug, attempted_display}
     for options user tried that aren't available."""
 
-    unmatched_selections: dict | None = None
+    unmatched_selections: dict[str, Any] | None = None
     """Dict of attr_slug -> {tokens: list[str]}
     for tokens user mentioned that don't match any option."""
 

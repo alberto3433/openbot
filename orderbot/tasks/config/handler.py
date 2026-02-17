@@ -519,17 +519,20 @@ class MenuItemConfigHandler(BaseHandler):
             qr.append({"label": "No", "value": "no"})
 
         # Source 2: Component slot options (e.g., side_choice → side slot)
-        # These are authoritative for side choices and similar slot-backed attributes
-        slots = menu_cache.get_component_slots(item.menu_item_type)
-        for _slot_name, slot_config in slots.items():
-            for o in slot_config.get("options", []):
-                label = o.get("display_name")
-                if not label and o.get("allowed_item_type"):
-                    label = menu_cache.get_item_type_display_name(o["allowed_item_type"])
-                if not label:
-                    label = o.get("allowed_item_type", "")
-                if label:
-                    qr.append({"label": label, "value": label})
+        # Only used when the attribute has no options of its own (slot-backed attributes).
+        # Adding them unconditionally would pollute unrelated questions (e.g., "What cheese?"
+        # would show side options like "Fruit Salad" which also appear in the ingredient listing).
+        if not qr:
+            slots = menu_cache.get_component_slots(item.menu_item_type)
+            for _slot_name, slot_config in slots.items():
+                for o in slot_config.get("options", []):
+                    label = o.get("display_name")
+                    if not label and o.get("allowed_item_type"):
+                        label = menu_cache.get_item_type_display_name(o["allowed_item_type"])
+                    if not label:
+                        label = o.get("allowed_item_type", "")
+                    if label:
+                        qr.append({"label": label, "value": label})
 
         # Deduplicate by label (case-insensitive), preserving order
         seen: set[str] = set()

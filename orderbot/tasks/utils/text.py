@@ -285,6 +285,27 @@ def strip_leading_article(text: str) -> str:
     return text
 
 
+def word_boundary_match(needle: str, haystack: str) -> bool:
+    """Check if needle appears as a whole word/phrase in haystack using word boundaries.
+
+    Args:
+        needle: The word/phrase to search for (will be regex-escaped).
+        haystack: The text to search in.
+
+    Returns:
+        True if needle appears with word boundaries in haystack.
+
+    Examples:
+        >>> word_boundary_match("ham", "ham and cheese")
+        True
+        >>> word_boundary_match("ham", "graham cracker")
+        False
+    """
+    import re
+
+    return bool(re.search(rf'\b{re.escape(needle)}\b', haystack))
+
+
 def find_first_word_boundary_match(
     text: str,
     candidates: list[str] | set[str],
@@ -310,10 +331,8 @@ def find_first_word_boundary_match(
         >>> find_first_word_boundary_match("veggie omelette", ["egg", "veggie"])
         'veggie'  # Not 'egg' because word boundary prevents matching 'egg' in 'veggie'
     """
-    import re
-
     for candidate in sorted(candidates, key=len, reverse=True):
-        if re.search(rf'\b{re.escape(candidate)}\b', text):
+        if word_boundary_match(candidate, text):
             if normalize_func:
                 return normalize_func(candidate)
             return candidate

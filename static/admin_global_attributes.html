@@ -512,8 +512,12 @@
                 <div class="info-value" id="detailDescription">--</div>
               </div>
               <div class="info-item" style="margin-top: 12px;" id="questionTextRow">
-                <div class="info-label">Question Text</div>
+                <div class="info-label">Question (attribute present)</div>
                 <div class="info-value" id="detailQuestionText">--</div>
+              </div>
+              <div class="info-item" style="margin-top: 12px;" id="offerQuestionTextRow">
+                <div class="info-label">Question (attribute absent)</div>
+                <div class="info-value" id="detailOfferQuestionText">--</div>
               </div>
             </div>
 
@@ -576,9 +580,14 @@
             <textarea id="attrDescription" rows="2" placeholder="Optional description of this attribute"></textarea>
           </div>
           <div class="form-group">
-            <label for="attrQuestionText">Question Text</label>
-            <input type="text" id="attrQuestionText" placeholder="e.g., What type of spread would you like?" />
-            <div class="hint">Question asked during conversation when configuring this attribute</div>
+            <label for="attrQuestionText">Question (attribute present)</label>
+            <input type="text" id="attrQuestionText" placeholder="e.g., What kind of cheese?" />
+            <div class="hint">Asked when configuring an attribute the item already has</div>
+          </div>
+          <div class="form-group">
+            <label for="attrOfferQuestionText">Question (attribute absent)</label>
+            <input type="text" id="attrOfferQuestionText" placeholder="e.g., Any cheese?" />
+            <div class="hint">Asked when offering an optional attribute at the customization checkpoint. Falls back to the above if empty.</div>
           </div>
         </form>
       </div>
@@ -923,11 +932,22 @@
         document.getElementById("descriptionRow").style.display = "none";
       }
 
+      document.getElementById("questionTextRow").style.display = "block";
       if (attr.question_text) {
-        document.getElementById("questionTextRow").style.display = "block";
         document.getElementById("detailQuestionText").textContent = attr.question_text;
+        document.getElementById("detailQuestionText").style.opacity = "1";
       } else {
-        document.getElementById("questionTextRow").style.display = "none";
+        document.getElementById("detailQuestionText").textContent = "(not set)";
+        document.getElementById("detailQuestionText").style.opacity = "0.5";
+      }
+
+      document.getElementById("offerQuestionTextRow").style.display = "block";
+      if (attr.offer_question_text) {
+        document.getElementById("detailOfferQuestionText").textContent = attr.offer_question_text;
+        document.getElementById("detailOfferQuestionText").style.opacity = "1";
+      } else {
+        document.getElementById("detailOfferQuestionText").textContent = "(falls back to above)";
+        document.getElementById("detailOfferQuestionText").style.opacity = "0.5";
       }
 
       // Render options
@@ -1017,10 +1037,12 @@
         document.getElementById("attrInputType").value = attr.input_type;
         document.getElementById("attrDescription").value = attr.description || "";
         document.getElementById("attrQuestionText").value = attr.question_text || "";
+        document.getElementById("attrOfferQuestionText").value = attr.offer_question_text || "";
       } else {
         document.getElementById("attrModalTitle").textContent = "Add Global Attribute";
         document.getElementById("attrId").value = "";
         document.getElementById("attrQuestionText").value = "";
+        document.getElementById("attrOfferQuestionText").value = "";
       }
 
       modal.classList.add("active");
@@ -1037,6 +1059,7 @@
       const inputType = document.getElementById("attrInputType").value;
       const description = document.getElementById("attrDescription").value.trim();
       const questionText = document.getElementById("attrQuestionText").value.trim();
+      const offerQuestionText = document.getElementById("attrOfferQuestionText").value.trim();
 
       if (!slug || !displayName) {
         showToast("Slug and display name are required", "error");
@@ -1053,7 +1076,8 @@
         display_name: displayName,
         input_type: inputType,
         description: description || null,
-        question_text: questionText || null
+        question_text: questionText || null,
+        offer_question_text: offerQuestionText || null
       };
       const saveBtn = document.getElementById("attrSaveBtn");
       saveBtn.classList.add("saving");

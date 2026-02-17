@@ -513,6 +513,10 @@ class MenuItemConfigHandler(BaseHandler):
             available_opts = [o for o in options if o.get("is_available", True)]
             for o in available_opts:
                 qr.append({"label": o["display_name"], "value": o["display_name"]})
+        elif input_type == "boolean":
+            question += " Yes or no?"
+            qr.append({"label": "Yes", "value": "yes"})
+            qr.append({"label": "No", "value": "no"})
 
         # Source 2: Component slot options (e.g., side_choice → side slot)
         # These are authoritative for side choices and similar slot-backed attributes

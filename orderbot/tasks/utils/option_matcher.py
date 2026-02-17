@@ -8,11 +8,10 @@ Also supports ordinal matching for numbered list disambiguation.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 
 from .input_normalizer import InputNormalizer
-from .text import ORDINAL_PATTERNS
+from .text import ORDINAL_PATTERNS, word_boundary_match
 from ..normalization import strip_filler_words
 
 logger = logging.getLogger(__name__)
@@ -728,8 +727,7 @@ class OptionMatcher:
 
     def _is_whole_word_match(self, needle: str, haystack: str) -> bool:
         """Check if needle appears as a whole word/phrase in haystack."""
-        pattern = r'\b' + re.escape(needle) + r'\b'
-        return bool(re.search(pattern, haystack))
+        return word_boundary_match(needle, haystack)
 
     def _passes_must_match(self, user_input: str, opt: dict) -> bool:
         """

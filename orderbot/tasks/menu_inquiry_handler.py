@@ -390,7 +390,8 @@ class MenuInquiryHandler(BaseHandler):
                     order.clear_menu_pagination()
 
                 # Build quick replies for inline clickable text
-                qr = [{"label": name, "value": name} for name in shown_names]
+                # Clicking a category sends a natural question like "What sandwiches do you have?"
+                qr = [{"label": name, "value": f"What {name.lower()} do you have?"} for name in shown_names]
                 if has_more:
                     qr.append({"label": "more", "value": "what else?"})
 
@@ -424,7 +425,7 @@ class MenuInquiryHandler(BaseHandler):
                     categories_text = format_english_list(shown_names) + ", and more"
                 else:
                     categories_text = format_english_list(shown_names)
-                qr = [{"label": name, "value": name} for name in shown_names]
+                qr = [{"label": name, "value": f"What {name.lower()} do you have?"} for name in shown_names]
                 if len(group_names) > max_categories_to_show:
                     qr.append({"label": "more", "value": "what else?"})
                 return StateMachineResult(

@@ -345,6 +345,13 @@ def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | Non
     if dietary_result:
         return dietary_result
 
+    # Check for ingredient-based menu search BEFORE menu query
+    # "what menu items do you have with egg whites?" should find items containing
+    # that ingredient, not be treated as a generic menu category query
+    ingredient_search_result = parse_ingredient_search(text, ctx.ingredient_to_items)
+    if ingredient_search_result:
+        return ingredient_search_result
+
     # Check for menu category queries ("what sweets do you have?", "what desserts do you have?")
     menu_query_result = parse_menu_query(text)
     if menu_query_result:
@@ -371,12 +378,6 @@ def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | Non
     )
     if modifier_inquiry_result:
         return modifier_inquiry_result
-
-    # Check for ingredient-based menu search
-    # When user says "chicken" or "something with bacon", show matching items
-    ingredient_search_result = parse_ingredient_search(text, ctx.ingredient_to_items)
-    if ingredient_search_result:
-        return ingredient_search_result
 
     # Check for by-the-pound orders EARLY
     # Must be checked BEFORE spread/salad sandwich matching to prevent
@@ -940,6 +941,45 @@ def _try_parse_new_items(
 # Main Deterministic Parser
 # =============================================================================
 
+def _strip_noise_phrases(text: str) -> str:
+    """Strip container words, indifference phrases, and conditional phrases.
+
+    Removes patterns like:
+    - "a bottle of orange juice" -> "orange juice"
+    - "coffee or whatever" -> "coffee"
+    - "bagel if you have it" -> "bagel"
+    """
+    # Strip container/packaging words that don't affect item identification
+    # e.g., "a bottle of orange juice" -> "a  orange juice" -> parsers match "orange juice"
+    # Only strips "container of" patterns (requires "of" to avoid false positives)
+    text = re.sub(
+        r'\b(?:bottles?|glasses?|cups?|cans?|boxes?|cartons?|bags?|packs?|jars?|jugs?)\s+of\s+',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
+    # Strip trailing indifference/flexibility phrases that don't affect item identification
+    # e.g., "orange juice or whatever they have" -> "orange juice"
+    # e.g., "a coffee or something" -> "a coffee"
+    text = re.sub(
+        r'\s+or\s+(?:whatever(?:\s+(?:you|they|you guys)\s+(?:have|got|recommend))?'
+        r'|something(?:\s+like\s+that)?'
+        r'|anything(?:\s+(?:like\s+that|similar|really|works?))?'
+        r')\s*$',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
+    # Also strip "if you have it/that", "if that's available", "if possible", etc.
+    text = re.sub(
+        r'\s+if\s+(?:you\s+have\s+(?:it|that|any|some)'
+        r'|that(?:\'s|\s+is)\s+(?:available|okay|ok|fine|possible)'
+        r'|possible'
+        r')\s*$',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
+    return text
+
+
 def parse_open_input_deterministic(
     user_input: str,
     modifier_category_keywords: dict[str, str] | None = None,
@@ -986,32 +1026,8 @@ def parse_open_input_deterministic(
     # e.g., "actually, make it two" -> "make it two"
     text = strip_conversational_fillers(text)
 
-    # Strip container/packaging words that don't affect item identification
-    # e.g., "a bottle of orange juice" -> "a  orange juice" -> parsers match "orange juice"
-    # Only strips "container of" patterns (requires "of" to avoid false positives)
-    text = re.sub(
-        r'\b(?:bottles?|glasses?|cups?|cans?|boxes?|cartons?|bags?|packs?|jars?|jugs?)\s+of\s+',
-        '', text, flags=re.IGNORECASE
-    ).strip()
-
-    # Strip trailing indifference/flexibility phrases that don't affect item identification
-    # e.g., "orange juice or whatever they have" -> "orange juice"
-    # e.g., "a coffee or something" -> "a coffee"
-    text = re.sub(
-        r'\s+or\s+(?:whatever(?:\s+(?:you|they|you guys)\s+(?:have|got|recommend))?'
-        r'|something(?:\s+like\s+that)?'
-        r'|anything(?:\s+(?:like\s+that|similar|really|works?))?'
-        r')\s*$',
-        '', text, flags=re.IGNORECASE
-    ).strip()
-    # Also strip "if you have it/that", "if that's available", "if possible", etc.
-    text = re.sub(
-        r'\s+if\s+(?:you\s+have\s+(?:it|that|any|some)'
-        r'|that(?:\'s|\s+is)\s+(?:available|okay|ok|fine|possible)'
-        r'|possible'
-        r')\s*$',
-        '', text, flags=re.IGNORECASE
-    ).strip()
+    # Strip container words, indifference phrases, and conditional phrases
+    text = _strip_noise_phrases(text)
 
     # Check for order type mentions (pickup/delivery)
     order_type = _extract_order_type(text)

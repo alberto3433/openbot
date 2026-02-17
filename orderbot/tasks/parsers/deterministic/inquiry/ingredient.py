@@ -192,6 +192,60 @@ def parse_ingredient_search(
     # - "what has chicken"
     # - "do you have anything with chicken"
 
+    # Pattern 0: "what menu items do you have with egg whites?"
+    # Also: "what items have egg whites?", "which items contain egg whites?"
+    #        "what comes with egg whites?", "what do you have with egg whites?"
+    _ITEMS_WITH_INGREDIENT_PATTERNS = [
+        re.compile(
+            r'^what\s+(?:menu\s+)?items?\s+do\s+you\s+(?:have|sell|carry|offer|make)'
+            r'\s+(?:with|that\s+(?:has|have|contain|contains?))\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r'^what\s+(?:menu\s+)?items?\s+(?:have|has|contain|contains?)\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r'^which\s+(?:menu\s+)?items?\s+(?:have|has|contain|contains?)\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r'^what\s+do\s+you\s+(?:have|sell|carry|offer|make)'
+            r'\s+(?:with|that\s+(?:has|have|contain|contains?))\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r'^what\s+(?:comes|is\s+made)\s+with\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r'^(?:do\s+you\s+have\s+)?(?:any\s+)?(?:menu\s+)?items?\s+with\s+(.+?)\s*[?.]?$',
+            re.IGNORECASE,
+        ),
+    ]
+    for pat in _ITEMS_WITH_INGREDIENT_PATTERNS:
+        m = pat.match(text_lower)
+        if m:
+            raw_ingredient = m.group(1).strip().rstrip('?.')
+            # Try exact multi-word match first, then individual words
+            if raw_ingredient in ingredient_to_items:
+                result = _build_ingredient_search_response(
+                    raw_ingredient, ingredient_to_items[raw_ingredient],
+                    text_lower, "items_with",
+                )
+                if result:
+                    return result
+            # Fallback: try last word (e.g., "egg whites" -> "whites" not useful,
+            # but "fresh bacon" -> "bacon" might work)
+            for word in raw_ingredient.split():
+                if word in ingredient_to_items:
+                    result = _build_ingredient_search_response(
+                        word, ingredient_to_items[word],
+                        text_lower, "items_with_word",
+                    )
+                    if result:
+                        return result
+
     # Pattern 1: "something/anything/items with [ingredient]"
     with_pattern = _get_with_pattern()
     with_match = with_pattern.match(text_lower)

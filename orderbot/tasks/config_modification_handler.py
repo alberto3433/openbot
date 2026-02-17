@@ -1293,6 +1293,91 @@ class ConfigModificationHandler:
             f"Got it, {display_name}.", item, order
         )
 
+    def _extract_add_item_text(
+        self, user_input: str, require_prefix: bool,
+    ) -> tuple[str, "OpenInputResponse"] | None:
+        """Extract and parse item text from an 'add item during config' input.
+
+        Handles prefix matching with progressive filler stripping, then parses
+        the cleaned text via parse_open_input_deterministic.
+
+        Args:
+            user_input: The user's raw input.
+            require_prefix: If True, input must have an ordering prefix to match.
+
+        Returns:
+            (item_text, parsed_input) tuple, or None if input doesn't match.
+        """
+        from .parsers.intent_patterns import ADD_ITEM_DURING_CONFIG_PREFIX
+        from .parsers import parse_open_input_deterministic
+
+        # Try prefix match on raw input first (preserves "also" before filler stripping)
+        raw_input = user_input.strip()
+        prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(raw_input)
+        if prefix_match:
+            item_text = raw_input[prefix_match.end():].strip()
+        else:
+            # Strip only leading fillers but preserve mid-sentence words like "also"
+            leading_stripped = strip_leading_fillers(raw_input)
+            prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(leading_stripped)
+            if prefix_match:
+                item_text = leading_stripped[prefix_match.end():].strip()
+            else:
+                # Full filler stripping for cases like "um and a latte"
+                cleaned_input = strip_conversational_fillers(raw_input)
+                prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(cleaned_input)
+                if not prefix_match:
+                    if require_prefix:
+                        return None
+                    item_text = cleaned_input
+                else:
+                    item_text = cleaned_input[prefix_match.end():].strip()
+
+        # Strip conversational fillers from item text after prefix removal
+        item_text = strip_conversational_fillers(item_text)
+        if not item_text:
+            return None
+
+        logger.info(
+            "ADD_ITEM_DURING_CONFIG: Detected prefix, parsing item text: '%s'",
+            item_text[:50]
+        )
+
+        parsed = parse_open_input_deterministic(item_text)
+        if not parsed or not parsed.parsed_items:
+            logger.debug("ADD_ITEM_DURING_CONFIG: No items parsed from '%s'", item_text[:50])
+            return None
+
+        logger.info(
+            "ADD_ITEM_DURING_CONFIG: Parsed %d item(s): %s",
+            len(parsed.parsed_items),
+            [p.item_name or p.item_type for p in parsed.parsed_items]
+        )
+        return item_text, parsed
+
+    def _build_add_during_config_ack(
+        self,
+        added_names: list[str],
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Build acknowledgment response after adding items during config.
+
+        Re-asks the current configuration question for the original item.
+        """
+        from .utils.text import format_english_list
+
+        current_item_name = item.get_display_name()
+        current_question = self.config_helper_handler.get_current_config_question(order, item)
+        added_text = format_english_list(added_names)
+
+        if current_question:
+            message = f"Got it, I've added {added_text}. Now, for your {current_item_name}, {current_question.lower()}"
+        else:
+            message = f"Got it, I've added {added_text}."
+
+        return StateMachineResult(message=message, order=order)
+
     def handle_add_item_during_config(
         self,
         user_input: str,
@@ -1313,102 +1398,44 @@ class ConfigModificationHandler:
             user_input: The user's input (e.g., "and a latte", "also two bagels")
             item: The item being configured
             order: The current order state
+            require_prefix: If True, input must have an ordering prefix to match.
 
         Returns:
             StateMachineResult if new items were added, None if not an add-item pattern
         """
-        from .parsers.intent_patterns import ADD_ITEM_DURING_CONFIG_PREFIX
-        from .parsers import parse_open_input_deterministic
         from .parsed_item_processor import ParsedItemProcessor
         from .models import TaskStatus
-        from .utils.text import format_english_list
 
-        # Step 1: Try prefix match on raw input first (preserves "also" before filler stripping)
-        # e.g., "Can I also get a Chai Tea" — "also" would be stripped by filler removal
-        raw_input = user_input.strip()
-        prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(raw_input)
-        if prefix_match:
-            item_text = raw_input[prefix_match.end():].strip()
-        else:
-            # Step 1.5: Strip only leading fillers (greetings, hesitations) but preserve
-            # mid-sentence words like "also" that are meaningful prefixes.
-            # e.g., "hi there, Also a Vitamin Water" -> "Also a Vitamin Water"
-            leading_stripped = strip_leading_fillers(raw_input)
-            prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(leading_stripped)
-            if prefix_match:
-                item_text = leading_stripped[prefix_match.end():].strip()
-            else:
-                # Step 2: Full filler stripping for cases like "um and a latte"
-                cleaned_input = strip_conversational_fillers(raw_input)
-                prefix_match = ADD_ITEM_DURING_CONFIG_PREFIX.match(cleaned_input)
-                if not prefix_match:
-                    if require_prefix:
-                        return None
-                    # No prefix — parse full input as item text
-                    item_text = cleaned_input
-                else:
-                    item_text = cleaned_input[prefix_match.end():].strip()
-
-        # Step 3: Strip conversational fillers from item text after prefix removal
-        # e.g., "Also hmm add tofu scallion" -> prefix strips "Also " -> "hmm add tofu scallion"
-        # -> strip fillers -> "add tofu scallion"
-        item_text = strip_conversational_fillers(item_text)
-
-        # Validate item text is non-empty
-        if not item_text:
+        # Extract and parse item text
+        extracted = self._extract_add_item_text(user_input, require_prefix)
+        if not extracted:
             return None
+        item_text, parsed = extracted
 
-        logger.info(
-            "ADD_ITEM_DURING_CONFIG: Detected prefix, parsing item text: '%s'",
-            item_text[:50]
-        )
-
-        parsed = parse_open_input_deterministic(item_text)
-        if not parsed or not parsed.parsed_items:
-            logger.debug("ADD_ITEM_DURING_CONFIG: No items parsed from '%s'", item_text[:50])
-            return None
-
-        logger.info(
-            "ADD_ITEM_DURING_CONFIG: Parsed %d item(s): %s",
-            len(parsed.parsed_items),
-            [p.item_name or p.item_type for p in parsed.parsed_items]
-        )
-
-        # Step 3: Save current config state - we need to restore this after adding items
-        # because process_items() will change pending_field/pending_item_id to the new item
+        # Save current config state before process_items() changes it
         original_pending_field = order.pending_field
         original_pending_item_id = order.pending_item_id
-        current_item_name = item.get_display_name()
 
-        # Step 4: Use ParsedItemProcessor to add items (reuse existing logic)
+        # Use ParsedItemProcessor to add items (reuse existing logic)
         processor = ParsedItemProcessor(
             item_adder_handler=self.item_adder_handler,
             pricing=self._taking_items_handler.pricing if self._taking_items_handler else None,
         )
 
-        # Track items added for the acknowledgment message
         items_before = len(order.items.items)
-
-        # Process items - this handles adding, queuing for config, pricing, etc.
         result = processor.process_items(parsed, order)
-
         items_after = len(order.items.items)
         items_added = items_after - items_before
 
         if items_added == 0:
-            # No items were added (possibly disambiguation needed)
-            # Return the result from process_items if it has a message
             if result and result.message:
                 return result
             return None
 
-        # Step 5: Queue ALL new items for later configuration and restore original config state
-        # process_items() starts configuring the first new item, but we want to continue
-        # configuring the ORIGINAL item (The Cheesesteak), not the new one (Blueberry Sandwich)
+        # Queue new items for later configuration
         new_items = order.items.items[items_before:]
         for new_item in new_items:
             if new_item.status == TaskStatus.IN_PROGRESS:
-                # Queue for later configuration
                 order.queue_item_for_config(
                     new_item.id,
                     new_item.menu_item_type,
@@ -1419,28 +1446,17 @@ class ConfigModificationHandler:
                     new_item.get_display_name(), new_item.id[:8]
                 )
 
-        # Restore original config state so we continue with the original item
+        # Restore original config state
         order.pending_field = original_pending_field
         order.pending_item_id = original_pending_item_id
 
-        # Step 6: Build response acknowledging addition + re-ask current question
-        added_names = [p.item_name or p.item_type for p in parsed.parsed_items]
-        current_question = self.config_helper_handler.get_current_config_question(order, item)
-
-        # Format the added items
-        added_text = format_english_list(added_names)
-
-        if current_question:
-            message = f"Got it, I've added {added_text}. Now, for your {current_item_name}, {current_question.lower()}"
-        else:
-            message = f"Got it, I've added {added_text}."
-
         logger.info(
             "ADD_ITEM_DURING_CONFIG: Added %d item(s), continuing config for %s",
-            items_added, current_item_name
+            items_added, item.get_display_name()
         )
 
-        return StateMachineResult(message=message, order=order)
+        added_names = [p.item_name or p.item_type for p in parsed.parsed_items]
+        return self._build_add_during_config_ack(added_names, item, order)
 
     def _replace_or_add_modifier(self, item: MenuItemTask, match: dict) -> None:
         """Replace existing modifier of same category, or add if none exists.

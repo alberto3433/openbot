@@ -238,6 +238,10 @@ ATTRIBUTE_INQUIRY_PATTERNS = [
     (re.compile(r"what\s+(\w+)\s+(type|types|flavor|flavors|kind|kinds|option|options|variety|varieties|choice|choices)\s+(?:are\s+there|are\s+available|do\s+you\s+(?:offer|carry))", re.IGNORECASE), 1, 2),
     # "what flavors of bagels are there?" / "what types of bagels are available?"
     (re.compile(r"what\s+(type|types|flavor|flavors|kind|kinds|option|options|variety|varieties|choice|choices)\s+of\s+(\w+)\s+(?:are\s+there|are\s+available|do\s+you\s+(?:offer|carry))", re.IGNORECASE), 2, 1),
+    # "what options do you have for bagels?" - signal before "do you have for" item
+    (re.compile(r"what\s+(type|types|flavor|flavors|kind|kinds|option|options|variety|varieties|choice|choices)\s+do\s+you\s+have\s+(?:for|in|with)\s+(\w+)", re.IGNORECASE), 2, 1),
+    # "what are your bagel choices?" / "what are your bagels choices?"
+    (re.compile(r"what\s+(?:are\s+)?(?:your|the)\s+(\w+)\s+(type|types|flavor|flavors|kind|kinds|option|options|variety|varieties|choice|choices)", re.IGNORECASE), 1, 2),
 ]
 
 

@@ -12,13 +12,12 @@ Provides:
 - Modifier matching on items
 """
 
-import re
 import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from orderbot.tasks.parsers.constants import ARTICLES
-from orderbot.tasks.utils.text import normalize_text
+from orderbot.tasks.utils.text import normalize_text, word_boundary_match
 
 if TYPE_CHECKING:
     pass
@@ -52,7 +51,7 @@ def match_pattern_in_input(pattern: str, input_lower: str) -> bool:
     Returns:
         True if pattern matches with word boundaries
     """
-    return bool(re.search(rf'\b{re.escape(pattern)}\b', input_lower))
+    return word_boundary_match(pattern, input_lower)
 
 
 def match_any_pattern_in_input(

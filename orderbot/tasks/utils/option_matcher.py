@@ -8,6 +8,7 @@ Also supports ordinal matching for numbered list disambiguation.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from orderbot.cache import menu_cache
@@ -315,14 +316,18 @@ class OptionMatcher:
         # over options that only matched via partial word overlap.
         # e.g., "strawberry cream cheese" exactly matches "Strawberry Cream Cheese"
         # but only word-matches "Plain Cream Cheese" via "cream"/"cheese".
+        # Also try with leading article stripped (e.g., "the strawberry cream cheese").
         if len(matched) > 1:
+            _article_re = re.compile(r'^(?:the|a|an)\s+', re.IGNORECASE)
+            raw_no_article = _article_re.sub('', user_raw_lower)
+            norm_no_article = _article_re.sub('', user_lower)
             exact = [
                 opt for opt in matched
-                if opt.get("display_name", "").lower() == user_raw_lower
-                or opt["slug"].replace("_", " ") == user_raw_lower
+                if opt.get("display_name", "").lower() in (user_raw_lower, raw_no_article)
+                or opt["slug"].replace("_", " ") in (user_raw_lower, raw_no_article)
                 or self.normalizer.normalize_for_matching(
                     opt.get("display_name", "")
-                ) == user_lower
+                ) in (user_lower, norm_no_article)
             ]
             if len(exact) == 1:
                 matched = exact

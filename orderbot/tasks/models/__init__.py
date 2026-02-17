@@ -26,10 +26,8 @@ from .utilities import (
     _get_is_price_metadata_key,
 )
 
-# Also expose as private names for backwards compatibility
-_format_slug_for_display = format_slug_for_display
+# Private alias used by item_converters.py
 _pluralize_display_name = pluralize_display_name
-_is_name_forming_category = is_name_forming_category
 
 from .item_tasks import (
     ItemTask,
@@ -59,6 +57,7 @@ from .pending_states import (
     PendingSameThingClarification,
     PendingIngredientSearch,
     PendingDietaryFollowup,
+    PendingOrderHistory,
 )
 
 __all__ = [
@@ -71,10 +70,8 @@ __all__ = [
     "format_slug_for_display",
     "pluralize_display_name",
     "is_name_forming_category",
-    # Private utilities (backwards compat)
-    "_format_slug_for_display",
+    # Private utilities
     "_pluralize_display_name",
-    "_is_name_forming_category",
     "_get_is_price_metadata_key",
     # Item tasks
     "ItemTask",

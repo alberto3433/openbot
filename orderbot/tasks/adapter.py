@@ -40,7 +40,7 @@ Related Modules:
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from .models import (
     TaskStatus,
@@ -120,8 +120,20 @@ def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
         sm_state: The state_machine_state dict from order_dict
         order: The OrderTask to populate
     """
+    from .models.pending_states import PendingOrderHistory
+
+    # Map field names to Pydantic model classes for dict→model coercion on restore
+    _PYDANTIC_FIELDS: dict[str, type] = {
+        "pending_order_history": PendingOrderHistory,
+    }
+
     for field_name, default in _FLOW_STATE_FIELDS:
-        setattr(order, field_name, sm_state.get(field_name, default))
+        value = sm_state.get(field_name, default)
+        # Coerce raw dicts back to Pydantic models after JSON round-trip
+        model_cls = _PYDANTIC_FIELDS.get(field_name)
+        if model_cls and isinstance(value, dict):
+            value = model_cls.model_validate(value)
+        setattr(order, field_name, value)
 
 
 def _build_flow_state_dict(order: OrderTask) -> dict:
@@ -140,7 +152,7 @@ def _build_flow_state_dict(order: OrderTask) -> dict:
 # State Conversion: Dict -> OrderTask
 # -----------------------------------------------------------------------------
 
-def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> OrderTask:
+def dict_to_order_task(order_dict: dict[str, Any], session_id: str | None = None) -> OrderTask:
     """
     Convert a dict-based order state to OrderTask.
 
@@ -239,9 +251,9 @@ def dict_to_order_task(order_dict: Dict[str, Any], session_id: str = None) -> Or
 
 def order_task_to_dict(
     order: OrderTask,
-    store_info: Dict = None,
-    pricing: PricingEngine = None,
-) -> Dict[str, Any]:
+    store_info: dict | None = None,
+    pricing: PricingEngine | None = None,
+) -> dict[str, Any]:
     """
     Convert an OrderTask to dict format for API responses and persistence.
 

@@ -10,6 +10,7 @@ for common handler operations.
 """
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from .utils.pricing_utils import safe_recalculate_price
@@ -29,6 +30,21 @@ def build_quick_replies(names: list[str]) -> list[dict[str, str]]:
     For custom label/value mappings, use a list comprehension instead.
     """
     return [{"label": name, "value": name} for name in names]
+
+
+def get_option_display_name(option: dict) -> str:
+    """Get human-readable display name for an attribute option.
+
+    Falls back to formatting the slug if no display_name is set.
+
+    Args:
+        option: Option dict with 'display_name' and/or 'slug' keys
+
+    Returns:
+        Human-readable display name
+    """
+    from .models.utilities import format_slug_for_display
+    return option.get("display_name") or format_slug_for_display(option.get("slug", ""))
 
 
 def build_item_options_list(active_items: list) -> list[dict]:
@@ -102,7 +118,7 @@ def check_has_active_items(order: "OrderTask") -> tuple[list, "StateMachineResul
     return active_items, None
 
 
-def get_last_item(items: list) -> any:
+def get_last_item(items: list) -> "ItemTask | None":
     """Safely get the last item from a list.
 
     Handles empty lists gracefully by returning None instead of raising IndexError.
@@ -268,7 +284,7 @@ def match_item_from_options(
     return None
 
 
-def is_configurable_menu_item(item: any) -> bool:
+def is_configurable_menu_item(item: object) -> bool:
     """Check if item is a configurable MenuItemTask with a type.
 
     Common check used before accessing menu_item_type or applying
@@ -286,7 +302,7 @@ def is_configurable_menu_item(item: any) -> bool:
 
 def recalculate_and_summarize(
     item: "MenuItemTask",
-    pricing: any = None,
+    pricing: "PricingEngine | None" = None,
 ) -> str:
     """Recalculate item price and return its summary.
 
@@ -376,5 +392,98 @@ def process_next_queued_item(
             next_config["item_id"][:8]
         )
         return menu_item_handler.get_first_question(next_item, order)
+
+    return None
+
+
+def build_removal_response(
+    order: "OrderTask",
+    removed_name: str,
+    configure_next_incomplete: Callable[["OrderTask"], "StateMachineResult"] | None = None,
+) -> "StateMachineResult":
+    """Build response after item removal, continuing config if needed.
+
+    Shared logic for item_cancellation_handler and config_cancellation_handler.
+    Checks remaining items and either continues configuration for an incomplete
+    item, asks "Anything else?", or prompts for a new order.
+
+    Args:
+        order: The current order task
+        removed_name: Display name of the removed item
+        configure_next_incomplete: Optional callback to get config question
+            for the next incomplete item
+
+    Returns:
+        StateMachineResult with appropriate message
+    """
+    from .models import MenuItemTask, TaskStatus
+    from .schemas import StateMachineResult
+    from .checkout_messages import ok_removed_anything_else
+
+    remaining = order.items.get_active_items()
+
+    if remaining and configure_next_incomplete:
+        for item in remaining:
+            if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
+                config_result = configure_next_incomplete(order)
+                return StateMachineResult(
+                    message=f"OK, I've removed the {removed_name}. {config_result.message}",
+                    order=order,
+                )
+
+    if remaining:
+        return StateMachineResult(
+            message=ok_removed_anything_else(removed_name),
+            order=order,
+        )
+    else:
+        return StateMachineResult(
+            message=f"OK, I've removed the {removed_name}. What would you like to order?",
+            order=order,
+        )
+
+
+def find_attr_option_match(
+    modifier_lower: str,
+    attrs: dict,
+    use_fuzzy: bool = True,
+) -> tuple[str, dict] | None:
+    """Find first attribute option matching modifier_lower.
+
+    Two-pass matching used by config_modification_handler:
+    Pass 1: exact slug/display_name/alias match.
+    Pass 2 (if use_fuzzy): OptionMatcher partial match.
+
+    Args:
+        modifier_lower: The modifier text, lowercased.
+        attrs: Dict of attr_slug → attr_config from menu_cache.
+        use_fuzzy: Whether to try OptionMatcher partial matching.
+
+    Returns:
+        Tuple of (attr_slug, matched_option_dict) or None if no match.
+    """
+    from .utils.option_matcher import OptionMatcher
+
+    # Pass 1: Exact matching on slug, display_name, and aliases
+    for attr_slug, attr_config in attrs.items():
+        options = attr_config.get("options", [])
+        for opt in options:
+            opt_slug = opt.get("slug", "").lower()
+            opt_display = opt.get("display_name", "").lower()
+            aliases = opt.get("aliases") or []
+            alias_list = [a.strip().lower() for a in aliases] if aliases else []
+            if modifier_lower == opt_slug or modifier_lower == opt_display or modifier_lower in alias_list:
+                return (attr_slug, opt)
+
+    # Pass 2: Partial matching via OptionMatcher
+    if use_fuzzy:
+        matcher = OptionMatcher()
+        for attr_slug, attr_config in attrs.items():
+            options = attr_config.get("options", [])
+            if not options:
+                continue
+            matched, _ = matcher.match_single(modifier_lower, options)
+            if matched:
+                return (attr_slug, matched)
 
     return None

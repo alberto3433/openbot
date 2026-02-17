@@ -5,6 +5,7 @@ Contains ItemsTask (container for order items) and OrderTask (root task).
 """
 
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 import uuid
@@ -29,6 +30,7 @@ from .pending_states import (
     PendingSameThingClarification,
     PendingIngredientSearch,
     PendingDietaryFollowup,
+    PendingOrderHistory,
 )
 
 if TYPE_CHECKING:
@@ -57,7 +59,7 @@ class ItemsTask(BaseTask):
         if 0 <= index < len(self.items):
             self.items[index].mark_skipped()
 
-    def _filter_active(self, filter_func: callable = None) -> list["ItemTask"]:
+    def _filter_active(self, filter_func: "Callable[[ItemTask], bool] | None" = None) -> list["ItemTask"]:
         """Get active items, optionally filtered by a predicate.
 
         Args:
@@ -72,14 +74,6 @@ class ItemsTask(BaseTask):
     def get_active_items(self) -> list["ItemTask"]:
         """Get items that are not skipped."""
         return self._filter_active()
-
-    def get_active_menu_items(self) -> list[MenuItemTask]:
-        """Get active items that are MenuItemTask instances.
-
-        This is a convenience method for code that needs to filter
-        active items to only MenuItemTask (excluding other item types).
-        """
-        return self._filter_active(lambda i: isinstance(i, MenuItemTask))
 
     def get_current_item(self) -> "ItemTask | None":
         """Get the item currently being worked on (first in_progress)."""
@@ -148,21 +142,6 @@ class ItemsTask(BaseTask):
             and item.bundle_parent_item_id == parent_item_id
         ]
 
-    def get_bundle_items(self, bundle_id: str) -> list[MenuItemTask]:
-        """Get all items in a bundle (parent and children).
-
-        Args:
-            bundle_id: The bundle's unique ID
-
-        Returns:
-            List of all MenuItemTask items in this bundle
-        """
-        return [
-            item for item in self.items
-            if isinstance(item, MenuItemTask)
-            and item.bundle_id == bundle_id
-        ]
-
     def remove_item_with_bundle(self, item_id: str) -> list["ItemTask"]:
         """Remove an item and all its bundle children.
 
@@ -196,31 +175,6 @@ class ItemsTask(BaseTask):
 
         return removed
 
-    def get_unfilled_bundle_slots(self, parent_item_id: str) -> list[str]:
-        """Get slot names that haven't been filled for a bundle parent.
-
-        This requires checking what slots are defined for the parent's item type
-        vs what children have been added.
-
-        Args:
-            parent_item_id: The parent item's ID
-
-        Returns:
-            List of slot names that still need to be filled
-        """
-        parent = self.get_item_by_id(parent_item_id)
-        if not parent or not isinstance(parent, MenuItemTask):
-            return []
-
-        # Get children and their slots
-        children = self.get_bundle_children(parent_item_id)
-        filled_slots = {child.bundle_slot for child in children if child.bundle_slot}
-
-        # We need to check what slots are required - this will be done via menu_cache
-        # For now, just return what we know (caller will check against required slots)
-        return list(filled_slots)
-
-
 class OrderTask(BaseTask):
     """Root task representing the entire order."""
 
@@ -248,7 +202,7 @@ class OrderTask(BaseTask):
 
     # Queue of items that need configuration after the current one is done
     # Each entry is a dict with: item_id, item_name, pending_field
-    pending_config_queue: list[dict] = Field(default_factory=list)
+    pending_config_queue: list[dict | str] = Field(default_factory=list)
 
     # Parsed items that haven't been added yet (waiting for disambiguation to resolve)
     # When user says "latte and bagel" and latte triggers disambiguation,
@@ -333,7 +287,7 @@ class OrderTask(BaseTask):
     # Order history selection state
     # Used when user asks "what did I order before?" and we show a list
     # Dict with: orders (list of order dicts with items and summary)
-    pending_order_history: dict | None = None
+    pending_order_history: PendingOrderHistory | None = None
 
     # Reorder item selection state
     # Used when user says "just the bagel from last time" and there are multiple matches

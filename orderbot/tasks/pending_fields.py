@@ -5,8 +5,10 @@ These constants replace string literals scattered across handler files,
 providing a single source of truth for pending field names.
 """
 
+from enum import Enum
 
-class PendingField:
+
+class PendingField(str, Enum):
     """Constants for pending_field values used in order state routing."""
 
     ITEM_SELECTION = "item_selection"

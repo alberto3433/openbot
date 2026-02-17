@@ -15,7 +15,7 @@ from .parsers import CANCEL_ITEM_PATTERN, strip_conversational_fillers
 from .pending_fields import PendingField
 from .parsers.quantity_utils import extract_leading_quantity
 from .item_cancellation_handler import extract_ordinal_reference, find_nth_item_of_type
-from .handler_utils import check_has_active_items, remove_item_from_order
+from .handler_utils import check_has_active_items, remove_item_from_order, build_removal_response
 from .modifier_operations import (
     find_modifier_match,
     remove_modifier_from_item,
@@ -388,27 +388,9 @@ class ConfigCancellationHandler:
         current_item.mark_skipped()
         order.clear_pending()
         order.set_phase(OrderPhase.TAKING_ITEMS)
-        remaining = order.items.get_active_items()
-
-        if remaining and self._configure_next_incomplete_item:
-            for item in remaining:
-                if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
-                    config_result = self._configure_next_incomplete_item(order)
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {item_name}. {config_result.message}",
-                        order=order,
-                    )
-
-        if remaining:
-            return StateMachineResult(
-                message=ok_removed_anything_else(item_name),
-                order=order,
-            )
-        else:
-            return StateMachineResult(
-                message=f"OK, I've removed the {item_name}. What would you like to order?",
-                order=order,
-            )
+        return build_removal_response(
+            order, item_name, self._configure_next_incomplete_item
+        )
 
     def _try_cancel_all_items(
         self,
@@ -716,28 +698,9 @@ class ConfigCancellationHandler:
                     item_type_keyword, ordinal_index, removed_name
                 )
 
-                remaining = order.items.get_active_items()
-
-                # Check for remaining incomplete items that need configuration
-                if remaining and self._configure_next_incomplete_item:
-                    for item in remaining:
-                        if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
-                            config_result = self._configure_next_incomplete_item(order)
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {removed_name}. {config_result.message}",
-                                order=order,
-                            )
-
-                if remaining:
-                    return StateMachineResult(
-                        message=ok_removed_anything_else(removed_name),
-                        order=order,
-                    )
-                else:
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {removed_name}. What would you like to order?",
-                        order=order,
-                    )
+                return build_removal_response(
+                    order, removed_name, self._configure_next_incomplete_item
+                )
             else:
                 # Ordinal item not found
                 return StateMachineResult(
@@ -766,35 +729,41 @@ class ConfigCancellationHandler:
                 mapped_item_type = category_mapping.get("slug")
                 break
 
-        for item in active_items:
+        def _item_matches(item, cancel_variants, cancel_desc, mapped_item_type) -> bool:
+            """Check if an item matches the cancellation description."""
             item_summary = item.get_summary().lower()
             item_name = getattr(item, 'menu_item_name', '') or ''
             item_name_lower = item_name.lower()
             item_type = getattr(item, 'item_type', '') or ''
             menu_item_type = getattr(item, 'menu_item_type', '') or ''
 
-            # Check for matches using all variants
-            matches = False
             if any(v in item_summary for v in cancel_variants):
-                matches = True
-            elif item_name_lower and any(v in item_name_lower for v in cancel_variants):
-                matches = True
-            elif item_name_lower and item_name_lower in cancel_desc:
-                matches = True
-            # Check item_type for things like "coffee" -> matches item_type="coffee"
-            elif item_type and any(v == item_type for v in cancel_variants):
-                matches = True
-            # Check menu_item_type (e.g., "sized_beverage", "bagel")
-            elif menu_item_type and any(v == menu_item_type for v in cancel_variants):
-                matches = True
-            # Check if user's category term maps to this item's type (e.g., "coffee" -> "sized_beverage")
-            elif mapped_item_type and menu_item_type == mapped_item_type:
-                matches = True
-            if matches:
-                items_to_remove.append(item)
-                # If not plural, only remove one item
-                if not is_plural:
-                    break
+                return True
+            if item_name_lower and any(v in item_name_lower for v in cancel_variants):
+                return True
+            if item_name_lower and item_name_lower in cancel_desc:
+                return True
+            if item_type and any(v == item_type for v in cancel_variants):
+                return True
+            if menu_item_type and any(v == menu_item_type for v in cancel_variants):
+                return True
+            if mapped_item_type and menu_item_type == mapped_item_type:
+                return True
+            return False
+
+        # For singular removal during config, prioritize the item being configured.
+        # When user says "remove the bagel" while configuring an Onion Bagel, they
+        # most likely mean the one they're actively configuring, not a different bagel.
+        if not is_plural and current_item and _item_matches(
+            current_item, cancel_variants, cancel_desc, mapped_item_type
+        ):
+            items_to_remove.append(current_item)
+        else:
+            for item in active_items:
+                if _item_matches(item, cancel_variants, cancel_desc, mapped_item_type):
+                    items_to_remove.append(item)
+                    if not is_plural:
+                        break
 
         if items_to_remove:
             # Remove the items
@@ -807,15 +776,16 @@ class ConfigCancellationHandler:
             order.clear_pending()
             order.set_phase(OrderPhase.TAKING_ITEMS)
 
-            # Build response message
-            remaining = order.items.get_active_items()
-            if len(removed_names) == 1:
-                removed_str = f"the {removed_names[0]}"
-            else:
-                removed_str = f"the {len(removed_names)} {singular_desc}s"
-
             logger.info("Removed %d item(s) during config: %s", len(removed_names), removed_names)
 
+            if len(removed_names) == 1:
+                return build_removal_response(
+                    order, removed_names[0], self._configure_next_incomplete_item
+                )
+
+            # Multiple items removed - custom message format
+            removed_str = f"the {len(removed_names)} {singular_desc}s"
+            remaining = order.items.get_active_items()
             if remaining:
                 return StateMachineResult(
                     message=f"OK, I've removed {removed_str}. Anything else?",

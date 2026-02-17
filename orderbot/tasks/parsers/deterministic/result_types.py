@@ -39,10 +39,6 @@ class TextSpan:
         """Check if this span overlaps with another."""
         return not (self.end <= other.start or self.start >= other.end)
 
-    def overlaps_any(self, spans: list["TextSpan"]) -> bool:
-        """Check if this span overlaps with any in a list."""
-        return any(self.overlaps(s) for s in spans)
-
     def __iter__(self):
         """Allow unpacking as (start, end) tuple."""
         return iter((self.start, self.end))

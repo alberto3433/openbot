@@ -24,7 +24,6 @@ from .models import (
 )
 
 from .field_config import (
-    ItemTypeConfig,
     MenuFieldConfig,
     get_field_config,
     get_default_value,
@@ -50,7 +49,6 @@ __all__ = [
     "ItemsTask",
     "OrderTask",
     # Field config
-    "ItemTypeConfig",
     "MenuFieldConfig",
     "get_field_config",
     "get_default_value",

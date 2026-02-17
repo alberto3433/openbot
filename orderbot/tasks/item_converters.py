@@ -50,7 +50,7 @@ Related Modules:
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from .models import (
     TaskStatus,
@@ -93,7 +93,7 @@ class UnifiedItemConverter:
         """The item type string this converter handles."""
         return "menu_item"
 
-    def _restore_common_fields(self, item: ItemTask, item_dict: Dict[str, Any]) -> None:
+    def _restore_common_fields(self, item: ItemTask, item_dict: dict[str, Any]) -> None:
         """Restore common fields shared by all item types."""
         if item_dict.get("id"):
             item.id = item_dict["id"]
@@ -102,7 +102,7 @@ class UnifiedItemConverter:
         if item_dict.get("unit_price"):
             item.unit_price = item_dict["unit_price"]
 
-    def _build_common_dict_fields(self, item: ItemTask) -> Dict[str, Any]:
+    def _build_common_dict_fields(self, item: ItemTask) -> dict[str, Any]:
         """Build common dict fields shared by all item types."""
         return {
             "item_type": self.item_type,
@@ -113,7 +113,7 @@ class UnifiedItemConverter:
             "line_total": (item.unit_price or 0) * item.quantity,
         }
 
-    def from_dict(self, item_dict: Dict[str, Any]) -> MenuItemTask:
+    def from_dict(self, item_dict: dict[str, Any]) -> MenuItemTask:
         """Convert dict to MenuItemTask using data-driven attribute handling."""
         item_config = item_dict.get("item_config") or {}
 
@@ -381,7 +381,7 @@ class UnifiedItemConverter:
         self,
         item: ItemTask,
         pricing: "PricingEngine | None" = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Convert ItemTask to dict using data-driven attribute handling.
 
         Note: This method does NOT call recalculate_item_price(). Prices should be

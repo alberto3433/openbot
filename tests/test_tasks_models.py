@@ -104,20 +104,6 @@ class TestBaseTask:
         task.mark_skipped()
         assert task.status == TaskStatus.SKIPPED
 
-    def test_is_actionable(self):
-        """Task is actionable if pending or in progress."""
-        task = BaseTask()
-        assert task.is_actionable() is True
-
-        task.mark_in_progress()
-        assert task.is_actionable() is True
-
-        task.mark_complete()
-        assert task.is_actionable() is False
-
-        task.status = TaskStatus.SKIPPED
-        assert task.is_actionable() is False
-
 
 # =============================================================================
 # Bagel MenuItemTask Tests (formerly BagelItemTask)

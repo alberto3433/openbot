@@ -19,13 +19,6 @@ from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 
 
-class ItemTypeConfig(BaseModel):
-    """Configuration for a specific item type (bagel, coffee, etc.)."""
-
-    item_type: str
-    display_name: str
-    fields: dict[str, FieldConfig] = Field(default_factory=dict)
-
 
 
 # =============================================================================

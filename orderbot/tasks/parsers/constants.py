@@ -24,6 +24,16 @@ logger = logging.getLogger(__name__)
 DEFAULT_PAGINATION_SIZE = 5
 
 # =============================================================================
+# Weight Quantity Patterns
+# =============================================================================
+
+# Matches "half a pound", "a half pound", "1/2 lb", etc.
+HALF_POUND_PATTERN = re.compile(
+    r"^(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?$|^1\s*/\s*2\s*(?:pound|lb)s?$",
+    re.IGNORECASE,
+)
+
+# =============================================================================
 # Quantity Extraction (imported from quantity_utils for single source of truth)
 # Re-exported for other modules that import from constants
 # =============================================================================

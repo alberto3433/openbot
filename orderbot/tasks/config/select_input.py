@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 
+from ..parsers.constants import HALF_POUND_PATTERN
 from ..models import OrderTask, MenuItemTask
 from ..models.pending_states import PendingAttrDisambiguation, PendingUnmatchedPagination
 from ..selection_utils import (
@@ -113,11 +114,7 @@ class SelectInputHandler:
         if attr_slug != "weight":
             return None
 
-        half_pound_pattern = re.compile(
-            r"^(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?$|^1\s*/\s*2\s*(?:pound|lb)s?$",
-            re.IGNORECASE
-        )
-        if not half_pound_pattern.match(user_lower.strip()):
+        if not HALF_POUND_PATTERN.match(user_lower.strip()):
             return None
 
         # Look up the quarter pound option

@@ -21,7 +21,12 @@ from orderbot.cache.base import singularize, get_singular_plural_variants
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OpenInputResponse
 from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
-from .handler_utils import check_has_active_items, get_last_item, remove_item_from_order
+from .handler_utils import (
+    check_has_active_items,
+    get_last_item,
+    remove_item_from_order,
+    build_removal_response,
+)
 from .utils.text import normalize_text, strip_leading_article
 from .modifier_operations import (
     find_modifier_on_any_item,
@@ -172,34 +177,10 @@ class ItemCancellationHandler:
         removed_name: str,
         has_remaining_items: bool,
     ) -> StateMachineResult:
-        """Build response after item removal, continuing config if needed.
-
-        If there are remaining incomplete items (status=IN_PROGRESS), returns
-        the next configuration question for that item. Otherwise returns
-        "Anything else?" or "What would you like to order?".
-        """
-        # Check for incomplete items that need configuration
-        if has_remaining_items and self._configure_next_incomplete_item:
-            for item in order.items.get_active_items():
-                if isinstance(item, MenuItemTask) and item.status == TaskStatus.IN_PROGRESS:
-                    # Get the next config question and prepend removal confirmation
-                    config_result = self._configure_next_incomplete_item(order)
-                    return StateMachineResult(
-                        message=f"OK, I've removed the {removed_name}. {config_result.message}",
-                        order=order,
-                    )
-
-        # No incomplete items - ask "Anything else?" or "What would you like?"
-        if has_remaining_items:
-            return StateMachineResult(
-                message=ok_removed_anything_else(removed_name),
-                order=order,
-            )
-        else:
-            return StateMachineResult(
-                message=f"OK, I've removed the {removed_name}. What would you like to order?",
-                order=order,
-            )
+        """Build response after item removal, continuing config if needed."""
+        return build_removal_response(
+            order, removed_name, self._configure_next_incomplete_item
+        )
 
     def handle_item_cancellation(
         self,

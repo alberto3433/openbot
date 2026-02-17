@@ -71,3 +71,8 @@ class PendingDietaryFollowup(BaseModel):
     """State for dietary follow-up (e.g., 'is X vegan?' -> offer vegan options)."""
     dietary_type: str
     category: str | None
+
+
+class PendingOrderHistory(BaseModel):
+    """State for order history selection (e.g., 'what did I order before?')."""
+    orders: list[dict]

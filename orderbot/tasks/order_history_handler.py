@@ -13,6 +13,7 @@ import re
 from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
+from .models.pending_states import PendingOrderHistory
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.inquiry_patterns import (
@@ -208,9 +209,9 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             order_list.append(f"{i}. {date_str}: {order_data['summary']} (${total:.2f})")
 
         # Store order history for selection
-        order.pending_order_history = {
-            "orders": orders[:5],
-        }
+        order.pending_order_history = PendingOrderHistory(
+            orders=orders[:5],
+        )
         order.pending_field = PendingField.ORDER_HISTORY_SELECTION
 
         # Build quick replies from order summaries
@@ -442,7 +443,7 @@ class OrderHistoryHandler(ContextMixin, MenuDataMixin):
             order.clear_pending()
             return None
 
-        orders = pending_history.get("orders", [])
+        orders = pending_history.orders
         # Try to parse order selection
         selected_idx = parse_selection(user_input, len(orders))
 

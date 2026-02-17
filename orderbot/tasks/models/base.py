@@ -76,10 +76,6 @@ class BaseTask(BaseModel):
         """Check if this task is complete."""
         return self.status == TaskStatus.COMPLETE
 
-    def is_actionable(self) -> bool:
-        """Check if this task can be worked on."""
-        return self.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
-
     def get_missing_required_fields(self, field_configs: dict[str, FieldConfig]) -> list[FieldConfig]:
         """Get list of required fields that are missing values."""
         missing = []

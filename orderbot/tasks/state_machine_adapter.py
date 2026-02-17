@@ -44,7 +44,7 @@ Related Modules:
 """
 
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from .state_machine import (
     OrderStateMachine,
@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 _state_machine: OrderStateMachine | None = None
 
 
-def get_state_machine(menu_data: Dict = None) -> OrderStateMachine:
+def get_state_machine(menu_data: dict | None = None) -> OrderStateMachine:
     """
     Get or create the global OrderStateMachine instance.
 
@@ -90,14 +90,14 @@ def get_state_machine(menu_data: Dict = None) -> OrderStateMachine:
 
 def process_message_with_state_machine(
     user_message: str,
-    order_state_dict: Dict[str, Any],
-    history: List[Dict[str, str]],
-    session_id: str = None,
-    menu_data: Dict = None,
-    store_info: Dict = None,
-    returning_customer: Dict[str, Any] = None,
+    order_state_dict: dict[str, Any],
+    history: list[dict[str, str]],
+    session_id: str | None = None,
+    menu_data: dict | None = None,
+    store_info: dict | None = None,
+    returning_customer: dict[str, Any] | None = None,
     db_session=None,
-) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]], list[dict[str, str]] | None]:
+) -> tuple[str, dict[str, Any], list[dict[str, Any]], list[dict[str, str]] | None]:
     """
     Process a user message using the state machine.
 
@@ -161,10 +161,10 @@ def process_message_with_state_machine(
 
 
 def _infer_actions_from_result(
-    old_state: Dict[str, Any],
-    new_state: Dict[str, Any],
+    old_state: dict[str, Any],
+    new_state: dict[str, Any],
     result: StateMachineResult,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Infer actions taken by comparing old and new state.
 

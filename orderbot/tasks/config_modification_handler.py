@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
 from .models.pending_states import PendingSwitchItem
+from .parsers.constants import HALF_POUND_PATTERN
 from .schemas import StateMachineResult, OrderPhase
 from .parsers.intent_patterns import (
     parse_can_you_make_it,
@@ -283,34 +284,18 @@ class ConfigModificationHandler:
         Returns:
             The display name of the matched option if applied, None if no match.
         """
+        from .handler_utils import find_attr_option_match, get_option_display_name
+
         item_type = item.menu_item_type
         if not item_type:
             return None
         try:
             attrs = menu_cache.get_item_type_attributes(item_type)
-
-            # Pass 1: Exact matching on slug, display_name, and aliases
-            for attr_slug, attr_config in attrs.items():
-                options = attr_config.get("options", [])
-                for opt in options:
-                    opt_slug = opt.get("slug", "").lower()
-                    opt_display = opt.get("display_name", "").lower()
-                    aliases = opt.get("aliases") or []
-                    alias_list = [a.strip().lower() for a in aliases] if aliases else []
-                    if modifier_lower == opt_slug or modifier_lower == opt_display or modifier_lower in alias_list:
-                        item[attr_slug] = opt.get("slug")
-                        return opt.get("display_name") or opt.get("slug", "").replace("_", " ").title()
-
-            # Pass 2: Partial matching via OptionMatcher
-            matcher = OptionMatcher()
-            for attr_slug, attr_config in attrs.items():
-                options = attr_config.get("options", [])
-                if not options:
-                    continue
-                matched, _ = matcher.match_single(modifier_lower, options)
-                if matched:
-                    item[attr_slug] = matched.get("slug")
-                    return matched.get("display_name") or matched.get("slug", "").replace("_", " ").title()
+            result = find_attr_option_match(modifier_lower, attrs)
+            if result:
+                attr_slug, opt = result
+                item[attr_slug] = opt.get("slug")
+                return get_option_display_name(opt)
         except Exception as e:
             logger.debug("Error matching attribute option: %s", e)
         return None
@@ -375,53 +360,25 @@ class ConfigModificationHandler:
             StateMachineResult if an attribute option was matched and applied,
             None if no match was found.
         """
+        from .handler_utils import find_attr_option_match, get_option_display_name
+
         item_type = item.menu_item_type
         if not item_type:
             return None
         try:
             attrs = menu_cache.get_item_type_attributes(item_type)
-
-            # Pass 1: Exact matching on slug, display_name, and aliases
-            for attr_slug, attr_config in attrs.items():
-                options = attr_config.get("options", [])
-                for opt in options:
-                    opt_slug = opt.get("slug", "").lower()
-                    opt_display = opt.get("display_name", "").lower()
-                    # Also check aliases (e.g., "pound" -> "one_pound")
-                    aliases = opt.get("aliases") or []
-                    alias_list = [a.strip().lower() for a in aliases] if aliases else []
-                    if modifier_lower == opt_slug or modifier_lower == opt_display or modifier_lower in alias_list:
-                        # Found matching attribute option - apply it
-                        logger.info("CAN_YOU_MAKE_IT: Found matching attr %s=%s", attr_slug, opt_slug)
-                        item[attr_slug] = opt.get("slug")
-                        # Recalculate price after attribute change
-                        pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
-                        safe_recalculate_price(pricing, item, "after attribute change")
-                        # Re-ask current question (the one we were on)
-                        opt_name = opt.get("display_name") or opt.get("slug", "").replace("_", " ").title()
-                        return self._continue_config_with_message(
-                            f"Sure, {opt_name}.", item, order
-                        )
-
-            # Pass 2: Partial matching via OptionMatcher
-            # Handles cases like "scrambled well cooked" matching "Scrambled" option
-            # via Phase 3 word-boundary matching (\bscrambled\b in input)
-            matcher = OptionMatcher()
-            for attr_slug, attr_config in attrs.items():
-                options = attr_config.get("options", [])
-                if not options:
-                    continue
-                matched, _ = matcher.match_single(modifier_lower, options)
-                if matched:
-                    opt_slug = matched.get("slug")
-                    logger.info("CAN_YOU_MAKE_IT: Partial match attr %s=%s", attr_slug, opt_slug)
-                    item[attr_slug] = opt_slug
-                    pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
-                    safe_recalculate_price(pricing, item, "after attribute change")
-                    opt_name = matched.get("display_name") or opt_slug.replace("_", " ").title()
-                    return self._continue_config_with_message(
-                        f"Sure, {opt_name}.", item, order
-                    )
+            result = find_attr_option_match(modifier_lower, attrs)
+            if result:
+                attr_slug, opt = result
+                opt_slug = opt.get("slug")
+                logger.info("CAN_YOU_MAKE_IT: Matched attr %s=%s", attr_slug, opt_slug)
+                item[attr_slug] = opt_slug
+                pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
+                safe_recalculate_price(pricing, item, "after attribute change")
+                opt_name = get_option_display_name(opt)
+                return self._continue_config_with_message(
+                    f"Sure, {opt_name}.", item, order
+                )
         except Exception as e:
             logger.debug("Error checking attributes for 'can you make it': %s", e)
         return None
@@ -461,11 +418,7 @@ class ConfigModificationHandler:
             return None
         # Special handling for "half a pound" / "half pound" / "1/2 lb"
         # These map to 2x quarter pound (1/4 lb) - same logic as by_pound_parsing.py
-        half_pound_pattern = re.compile(
-            r"^(?:a\s+)?half\s+(?:a\s+)?(?:pound|lb)s?$|^1\s*/\s*2\s*(?:pound|lb)s?$",
-            re.IGNORECASE
-        )
-        if half_pound_pattern.match(modifier_lower.strip()):
+        if HALF_POUND_PATTERN.match(modifier_lower.strip()):
             # Look up the quarter pound option
             quarter_option = menu_cache.resolve_option_by_alias(priced_attr, "1/4 lb")
             if quarter_option:
@@ -499,7 +452,8 @@ class ConfigModificationHandler:
             item[priced_attr] = opt_slug
             pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
             safe_recalculate_price(pricing, item, "after weight change")
-            opt_name = option.get("display_name") or opt_slug.replace("_", " ").title()
+            from .handler_utils import get_option_display_name
+            opt_name = get_option_display_name(option)
             # If this answers the current pending question, clear it so we move to next
             pending = order.pending_field
             if pending and ":" in pending:
@@ -1278,7 +1232,8 @@ class ConfigModificationHandler:
 
         # Apply the matched option to the correct attribute
         # Use item[attr] = value (not add_selection) so existing selections are replaced
-        display_name = matched_option.get("display_name") or matched_option["slug"].replace("_", " ").title()
+        from .handler_utils import get_option_display_name
+        display_name = get_option_display_name(matched_option)
         item[matched_attr_slug] = matched_option["slug"]
 
         # Recalculate price
@@ -1594,7 +1549,8 @@ class ConfigModificationHandler:
         order.pending_field = f"{item.menu_item_type}:{attr_slug}"
 
         # Format options list with "and" before last item
-        option_names = [opt.get("display_name") or opt.get("slug", "").replace("_", " ").title() for opt in options[:6]]
+        from .handler_utils import get_option_display_name
+        option_names = [get_option_display_name(opt) for opt in options[:6]]
         if len(option_names) > 1:
             options_text = ", ".join(option_names[:-1]) + ", and " + option_names[-1]
         else:

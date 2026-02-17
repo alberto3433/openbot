@@ -258,8 +258,6 @@ class DuplicateHandler:
         Returns:
             StateMachineResult with appropriate message.
         """
-        from .parsers.deterministic import DUPLICATE_ALL_PATTERN
-
         pending_info = order.pending_same_thing_clarification
         if not pending_info:
             order.pending_field = None

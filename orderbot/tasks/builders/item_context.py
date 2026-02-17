@@ -5,7 +5,7 @@ Provides a dataclass encapsulating all parameters needed to build a menu item.
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..models import OrderTask
@@ -21,7 +21,7 @@ class ItemBuildContext:
     """
 
     # Required parameters
-    menu_item: dict
+    menu_item: dict[str, Any]
     """Menu item dict from lookup (must have 'name', 'item_type', 'base_price')."""
 
     order: "OrderTask"
@@ -34,7 +34,7 @@ class ItemBuildContext:
     user_input: str | None = None
     """Original user input for attribute extraction (optional)."""
 
-    pre_filled_attributes: dict | None = None
+    pre_filled_attributes: dict[str, Any] | None = None
     """Dict of attribute values to pre-fill (optional)."""
 
     extracted_selections: "list[Selection] | None" = None

@@ -274,7 +274,7 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
         qr = []
         for category_slug in ingredients_by_category:
             display_name = menu_cache.get_ingredient_category_display_name(category_slug)
-            qr.append({"label": display_name, "value": display_name})
+            qr.append({"label": display_name, "value": f"What {display_name.lower()} do you have?"})
         return StateMachineResult(message=message, order=order, quick_replies=qr or None)
 
     def _describe_general_modifiers(self, order: OrderTask) -> StateMachineResult:

@@ -372,7 +372,7 @@ class MenuPaginationHandler(MenuDataMixin):
             message = f"We also have {items_str}. That's everything! What would you like?"
 
         # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
+        qr = [{"label": name, "value": f"What {name.lower()} do you have?"} for name in batch]
         if has_more:
             qr.append({"label": f"{remaining} more", "value": "what else?"})
 

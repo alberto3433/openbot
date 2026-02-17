@@ -205,7 +205,7 @@ class RecommendationHandler(MenuDataMixin):
                 order.clear_menu_pagination()
 
             # Build quick replies for inline clickable text
-            qr = [{"label": name, "value": name} for name in shown_names]
+            qr = [{"label": name, "value": f"What {name.lower()} do you have?"} for name in shown_names]
             if has_more:
                 qr.append({"label": "more", "value": "what else?"})
 

@@ -4,6 +4,7 @@ import logging
 import re
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import singularize
 
 from ....schemas import OpenInputResponse
 
@@ -227,21 +228,12 @@ def parse_ingredient_search(
         m = pat.match(text_lower)
         if m:
             raw_ingredient = m.group(1).strip().rstrip('?.')
-            # Try exact multi-word match first, then individual words
-            if raw_ingredient in ingredient_to_items:
-                result = _build_ingredient_search_response(
-                    raw_ingredient, ingredient_to_items[raw_ingredient],
-                    text_lower, "items_with",
-                )
-                if result:
-                    return result
-            # Fallback: try last word (e.g., "egg whites" -> "whites" not useful,
-            # but "fresh bacon" -> "bacon" might work)
-            for word in raw_ingredient.split():
-                if word in ingredient_to_items:
+            # Try exact match, then singularized form ("egg whites" -> "egg white")
+            for candidate in (raw_ingredient, singularize(raw_ingredient)):
+                if candidate in ingredient_to_items:
                     result = _build_ingredient_search_response(
-                        word, ingredient_to_items[word],
-                        text_lower, "items_with_word",
+                        candidate, ingredient_to_items[candidate],
+                        text_lower, "items_with",
                     )
                     if result:
                         return result

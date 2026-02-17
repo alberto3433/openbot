@@ -1263,7 +1263,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         r"(?:can|could|may)\s+i\s+(?:get|have)|"
         r"give\s+me|"
         r"let\s*(?:me|'s)\s*(?:get|have)|"
-        r")?\s*"
+        r")?(?:\s*to\s+(?:order|get|have|buy))?\s*"
         r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a\s+couple|a\s+few|few|half\s+(?:a\s+)?dozen|a?\s*dozen)\s+",
         text_lower
     )

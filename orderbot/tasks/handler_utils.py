@@ -108,6 +108,83 @@ def get_last_item(items: list) -> any:
     return items[-1] if items else None
 
 
+def find_matching_item(
+    target_desc: str,
+    items: list,
+) -> "MenuItemTask | None":
+    """Find an item matching a target description using multiple strategies.
+
+    Does NOT handle pronoun resolution or implicit/empty targets — callers
+    handle those concerns before calling.
+
+    Matching order (most specific to least specific):
+    1. Exact name match
+    2. Summary match (substring both directions)
+    3. Word-boundary suffix on name
+    4. Name substring (both directions)
+    5. Word-level match (any word >2 chars from target in summary)
+    6. Category reference (single item of that type)
+
+    Args:
+        target_desc: Lowercased target description to match against.
+        items: List of items to search (filters to MenuItemTask internally).
+
+    Returns:
+        The matching MenuItemTask, or None if no match found.
+    """
+    from .models import MenuItemTask
+    from orderbot.cache import menu_cache
+
+    menu_items = [i for i in items if isinstance(i, MenuItemTask)]
+    if not target_desc or not menu_items:
+        return None
+
+    target = target_desc.strip()
+
+    # 1. Exact name match
+    for item in menu_items:
+        if item.menu_item_name and item.menu_item_name.lower() == target:
+            return item
+
+    # 2. Summary match (substring both directions)
+    for item in menu_items:
+        summary = item.get_summary().lower()
+        if target in summary or summary in target:
+            return item
+
+    # 3. Word-boundary suffix on name
+    for item in menu_items:
+        name_lower = (item.menu_item_name or "").lower()
+        if not name_lower:
+            continue
+        if name_lower.endswith(target) and (
+            len(name_lower) == len(target)
+            or name_lower[-(len(target) + 1)] == " "
+        ):
+            return item
+
+    # 4. Name substring (both directions)
+    for item in menu_items:
+        name_lower = (item.menu_item_name or "").lower()
+        if name_lower and (target in name_lower or name_lower in target):
+            return item
+
+    # 5. Word-level match (any word >2 chars from target in summary)
+    for item in menu_items:
+        summary = item.get_summary().lower()
+        if any(word in summary for word in target.split() if len(word) > 2):
+            return item
+
+    # 6. Category reference (e.g. "the bagel" when only one bagel in order)
+    target_category = menu_cache.is_category_reference(target)
+    if target_category:
+        matching = [i for i in menu_items if i.menu_item_type == target_category]
+        if len(matching) == 1:
+            return matching[0]
+
+    return None
+
+
 def match_item_from_options(
     user_input: str,
     item_options: list[dict],

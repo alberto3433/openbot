@@ -24,7 +24,7 @@ from .checkout_messages import (
     item_not_customizable,
     modifier_not_available_for_item,
 )
-from .handler_utils import get_last_item, recalculate_and_summarize
+from .handler_utils import get_last_item, recalculate_and_summarize, find_matching_item
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -143,46 +143,19 @@ class ItemModificationHandler:
         active_items: list,
     ) -> MenuItemTask | None:
         """Find the item that matches the target description."""
-        menu_items_in_cart = [i for i in active_items if isinstance(i, MenuItemTask)]
-
         # Resolve pronouns ("that", "it", "this") to the last item
         if target_desc and target_desc in self.LAST_ITEM_PRONOUNS:
             last = get_last_item(active_items)
             return last if isinstance(last, MenuItemTask) else None
 
         if target_desc:
-            # Match items by summary (data-driven, works for any item type)
-            for item in menu_items_in_cart:
-                item_summary = item.get_summary().lower()
-                # Match if target description is contained in summary or vice versa
-                if target_desc in item_summary or item_summary in target_desc:
-                    return item
-                # Also check if any word from target matches summary
-                target_words = target_desc.split()
-                if any(word in item_summary for word in target_words if len(word) > 2):
-                    return item
+            return find_matching_item(target_desc, active_items)
 
-            # Also check by item name if no summary matched
-            for item in menu_items_in_cart:
-                item_name = (item.menu_item_name or "").lower()
-                if item_name and item_name in target_desc:
-                    return item
-
-            # Check for category reference with single item (e.g., "the bagel" when only one bagel)
-            target_category = menu_cache.is_category_reference(target_desc)
-            if target_category:
-                matching_type_items = [
-                    i for i in menu_items_in_cart
-                    if i.menu_item_type == target_category
-                ]
-                if len(matching_type_items) == 1:
-                    return matching_type_items[0]
-        else:
-            # Implicit target ("add mayo", "add mustard", etc.)
-            # Use the last item in the cart regardless of type
-            if active_items:
-                last_item = get_last_item(active_items)
-                return last_item if isinstance(last_item, MenuItemTask) else None
+        # Implicit target ("add mayo", "add mustard", etc.)
+        # Use the last item in the cart regardless of type
+        if active_items:
+            last_item = get_last_item(active_items)
+            return last_item if isinstance(last_item, MenuItemTask) else None
 
         return None
 

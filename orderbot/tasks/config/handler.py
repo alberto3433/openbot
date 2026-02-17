@@ -228,7 +228,10 @@ class MenuItemConfigHandler(BaseHandler):
         return price
 
 
-    def _extract_qualifier_for_option(self, user_input: str, option_name: str) -> str | None:
+    def _extract_qualifier_for_option(
+        self, user_input: str, option_name: str,
+        other_option_positions: list[tuple[int, int]] | None = None,
+    ) -> str | None:
         """
         Extract qualifier (extra, light, lots of, on the side, etc.) for a specific option.
 
@@ -237,6 +240,8 @@ class MenuItemConfigHandler(BaseHandler):
         Args:
             user_input: The full user input text (e.g., "lots of lettuce and extra mayo")
             option_name: The option to find qualifier for (e.g., "Lettuce")
+            other_option_positions: Positions of other matched options in the input.
+                When provided, a qualifier is skipped if another option is closer to it.
 
         Returns:
             Normalized qualifier like "extra" or "on the side", or None if no qualifier found.
@@ -287,6 +292,23 @@ class MenuItemConfigHandler(BaseHandler):
 
                 if is_before or is_after:
                     distance = (opt_start - qual_end) if is_before else (qual_start - opt_end)
+
+                    # Skip this qualifier if another option is closer to it
+                    if other_option_positions:
+                        closer_to_other = False
+                        for other_start, other_end in other_option_positions:
+                            if qual_end <= other_start:
+                                other_dist = other_start - qual_end
+                            elif qual_start >= other_end:
+                                other_dist = qual_start - other_end
+                            else:
+                                other_dist = 0  # Overlapping
+                            if other_dist < distance:
+                                closer_to_other = True
+                                break
+                        if closer_to_other:
+                            continue
+
                     # Pick this qualifier if it's closer, or if tied prefer before
                     if distance < best_distance or (distance == best_distance and is_before and not best_is_before):
                         info = menu_cache.get_qualifier_info(pattern)
@@ -350,6 +372,8 @@ class MenuItemConfigHandler(BaseHandler):
         Used for mandatory attribute questions. Optional attributes have
         additional logic for listing options inline.
         """
+        if attr.get("allow_none") and attr.get("offer_question_text"):
+            return attr["offer_question_text"]
         db_question = attr.get("question_text")
         if db_question:
             return db_question
@@ -482,9 +506,10 @@ class MenuItemConfigHandler(BaseHandler):
         item_ref = item.get_display_name()
 
         # Build base question text
-        question = self._question_builder.build_base_question(
+        base_question = self._question_builder.build_base_question(
             attr, item_ref, ordinal, has_duplicates, multi_count
         )
+        question = base_question
 
         # Add acknowledgment prefix for first question of each item
         if is_first_question:
@@ -511,8 +536,15 @@ class MenuItemConfigHandler(BaseHandler):
         if input_type in ("single_select", "multi_select"):
             options = attr.get("options", [])
             available_opts = [o for o in options if o.get("is_available", True)]
-            for o in available_opts:
-                qr.append({"label": o["display_name"], "value": o["display_name"]})
+            # Single option with allow_none is effectively a yes/no question
+            # (e.g., "Would you like an espresso shot?") — use Yes/No replies
+            # instead of the option name to avoid false inline linking
+            if len(available_opts) == 1 and attr.get("allow_none", False):
+                qr.append({"label": "Yes", "value": "yes"})
+                qr.append({"label": "No", "value": "no"})
+            else:
+                for o in available_opts:
+                    qr.append({"label": o["display_name"], "value": o["display_name"]})
         elif input_type == "boolean":
             question += " Yes or no?"
             qr.append({"label": "Yes", "value": "yes"})
@@ -543,6 +575,26 @@ class MenuItemConfigHandler(BaseHandler):
                 seen.add(key)
                 deduped.append(entry)
         qr = deduped or None
+
+        # Ensure quick reply labels appear in the question text so the frontend
+        # can linkify them inline.  When the DB question_text has baked-in option
+        # names that differ from the attribute option display_names (e.g. "1/4 pound"
+        # in question vs "1/4 lb" in display_name), the frontend can't match them.
+        # Fix: rebuild the question's inline options using the actual display names.
+        # Check against base_question (without prefix) to avoid false positives
+        # from the prefix containing a label (e.g. "with 1/4 lb").
+        if qr and input_type in ("single_select", "multi_select"):
+            base_lower = base_question.lower()
+            any_label_in_base = any(
+                entry["label"].lower() in base_lower for entry in qr
+            )
+            if not any_label_in_base and base_question.count("?") > 1:
+                # Base question has inline options that don't match labels.
+                # Rebuild: keep first sentence, replace options with labels.
+                first_part = base_question.split("?")[0].rstrip() + "?"
+                label_names = [entry["label"] for entry in qr]
+                new_base = first_part + " " + "? ".join(label_names) + "?"
+                question = question.replace(base_question, new_base)
 
         return StateMachineResult(message=question, order=order, quick_replies=qr)
 

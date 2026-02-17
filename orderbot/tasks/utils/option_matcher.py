@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from orderbot.cache import menu_cache
 from .input_normalizer import InputNormalizer
 from .text import ORDINAL_PATTERNS, word_boundary_match
 from ..normalization import strip_filler_words
@@ -268,6 +269,30 @@ class OptionMatcher:
         all_inputs = self.normalizer.get_all_input_variants(user_input)
         raw_tokens = [t.lower().strip() for t in self.normalizer.tokenize_multi_input(user_input)]
         normalized_tokens = [self.normalizer.normalize_for_matching(t) for t in raw_tokens]
+
+        # Strip leading qualifier patterns from tokens for matching
+        # e.g., "lot of milk" → also try "milk", "extra mayo" → also try "mayo"
+        try:
+            qualifier_patterns = menu_cache.get_qualifier_patterns()
+        except Exception:
+            qualifier_patterns = []
+
+        qualifier_stripped: list[str] = []
+        for token in raw_tokens:
+            for pattern in qualifier_patterns:
+                prefix = pattern + " "
+                if token.startswith(prefix) and len(token) > len(prefix):
+                    qualifier_stripped.append(token[len(prefix):])
+                    break  # Only strip one (longest-first already)
+
+        if qualifier_stripped:
+            raw_tokens = raw_tokens + qualifier_stripped
+            normalized_tokens = normalized_tokens + [
+                self.normalizer.normalize_for_matching(t) for t in qualifier_stripped
+            ]
+            all_inputs = all_inputs + qualifier_stripped + [
+                self.normalizer.normalize_for_matching(t) for t in qualifier_stripped
+            ]
 
         for opt in options:
             if not self._passes_must_match(user_input, opt):

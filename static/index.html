@@ -1727,8 +1727,10 @@
       });
       sorted.forEach(function(qr) {
         var escapedLabel = escapeHtml(qr.label);
-        // Case-insensitive search to match labels regardless of casing in message
-        var idx = html.toLowerCase().indexOf(escapedLabel.toLowerCase());
+        // Case-insensitive search — use lastIndexOf so we match the label in the
+        // question/options part of the message, not in the acknowledgment prefix
+        // (e.g. "Got it, for the American Cheese with 1/4 lb. How much? 1/4 pound?")
+        var idx = html.toLowerCase().lastIndexOf(escapedLabel.toLowerCase());
         if (idx !== -1) {
           var originalText = html.substring(idx, idx + escapedLabel.length);
           var span = '<span class="quick-reply-inline" data-value="' + escapeAttr(qr.value) + '">' + originalText + '</span>';

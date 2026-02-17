@@ -485,6 +485,134 @@ def _classify_token(text: str) -> "Token":
 
 
 # =============================================================================
+# Smart Tokenization — Helpers
+# =============================================================================
+
+
+def _create_multi_item_split(
+    compound_match: str, first_item_text: str, after_and: str,
+    next_item_type: str, next_resolved: str,
+) -> list["Token"]:
+    """Create token list for compound phrase + second item split."""
+    from orderbot.tasks.schemas.parser_responses import Token
+
+    _, compound_item_type, compound_resolved = _has_item_indicator(compound_match)
+    qty, _ = _extract_leading_quantity(first_item_text.lower())
+
+    compound_token = Token(
+        original=first_item_text,
+        token_type="item",
+        quantity=qty or 1,
+        item_type=compound_item_type,
+        resolved_name=compound_resolved,
+    )
+
+    # Recursively tokenize the remainder (second item + any more items)
+    remainder_tokens = _smart_split_and_tokenize(after_and)
+    if remainder_tokens:
+        return [compound_token] + remainder_tokens
+
+    # Remainder didn't split further - classify it directly
+    qty2, _ = _extract_leading_quantity(after_and)
+    return [compound_token, Token(
+        original=after_and,
+        token_type="item",
+        quantity=qty2 or 1,
+        item_type=next_item_type,
+        resolved_name=next_resolved,
+    )]
+
+
+def _try_compound_split(
+    text_lower: str, text_for_compound: str, compound_match: str,
+) -> list["Token"] | None:
+    """Try to split input around a compound phrase and a second item.
+
+    Returns tokens if multi-item split succeeded, None if no second item found.
+    """
+    remainder = text_for_compound[len(compound_match):].strip()
+
+    # First check if remainder starts with "and " (e.g., "and a latte")
+    if remainder.startswith("and "):
+        after_and = remainder[4:].strip()
+        has_next_item, next_item_type, next_resolved = _has_item_indicator(after_and)
+        if has_next_item:
+            return _create_multi_item_split(
+                compound_match, compound_match, after_and, next_item_type, next_resolved,
+            )
+
+    # Search for " and " anywhere in remainder (not just at start)
+    and_idx = remainder.find(" and ")
+    while and_idx != -1:
+        after_and = remainder[and_idx + 5:].strip()
+        has_next_item, next_item_type, next_resolved = _has_item_indicator(after_and)
+
+        if has_next_item:
+            first_item_text = compound_match + " " + remainder[:and_idx].strip()
+            first_item_text = first_item_text.strip()
+            return _create_multi_item_split(
+                compound_match, first_item_text, after_and, next_item_type, next_resolved,
+            )
+
+        and_idx = remainder.find(" and ", and_idx + 5)
+
+    return None
+
+
+def _reattach_boolean_attributes(parts: list[str]) -> list[str]:
+    """Reattach boolean attribute words split by 'and' back to their item.
+
+    When splitting on " and " separates two boolean attrs of the same item type,
+    reattach the leading boolean word from part[i+1] back to part[i].
+    e.g., ["plain bagel toasted", "scooped plain cream cheese on the side"]
+        -> ["plain bagel toasted and scooped", "plain cream cheese on the side"]
+    """
+    # Build mapping: boolean attr word -> set of item type slugs
+    boolean_attr_to_types: dict[str, set[str]] = {}
+    for item_type_slug in menu_cache.get_configurable_item_types():
+        item_attrs = menu_cache.get_item_type_attributes(item_type_slug)
+        if item_attrs:
+            for attr_name, attr_info in item_attrs.items():
+                if isinstance(attr_info, dict) and attr_info.get("input_type") == "boolean":
+                    word = attr_name.lower()
+                    boolean_attr_to_types.setdefault(word, set()).add(item_type_slug)
+                    word_spaced = word.replace("_", " ")
+                    if word_spaced != word:
+                        boolean_attr_to_types.setdefault(word_spaced, set()).add(item_type_slug)
+
+    if not boolean_attr_to_types:
+        return parts
+
+    parts = list(parts)  # Don't mutate caller's list
+    i = 0
+    while i < len(parts) - 1:
+        left_words = parts[i].split()
+        right_words = parts[i + 1].split()
+        if left_words and right_words:
+            last_left = left_words[-1].lower()
+            first_right = right_words[0].lower()
+            if (
+                last_left in boolean_attr_to_types
+                and first_right in boolean_attr_to_types
+                and boolean_attr_to_types[last_left] & boolean_attr_to_types[first_right]
+            ):
+                remainder = " ".join(right_words[1:]).strip()
+                if remainder:
+                    has_item, _, _ = _has_item_indicator(remainder)
+                    if has_item:
+                        parts[i] = parts[i] + " and " + first_right
+                        parts[i + 1] = remainder
+                        logger.debug(
+                            "Boolean reattach: moved '%s' back to part[%d]: %s | %s",
+                            first_right, i, parts[i], parts[i + 1],
+                        )
+                        continue  # Re-check same index for triple booleans
+        i += 1
+
+    return parts
+
+
+# =============================================================================
 # Smart Tokenization
 # =============================================================================
 
@@ -506,85 +634,20 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
     text_lower = text.lower().strip()
 
     # Strip ordering prefixes for compound phrase detection
-    # "I'd like an egg and cheese sandwich" -> "egg and cheese sandwich"
     text_for_compound = _strip_ordering_prefix(text_lower)
 
     # First, try to match entire input as a single item
     has_item, item_type, resolved_name = _has_item_indicator(text_lower)
 
-    # Check if this is a compound phrase that shouldn't be split (e.g., "bacon egg and cheese")
-    # First check exact match, then check if input STARTS with a compound phrase
-    # Use stripped text for compound detection to handle "I'd like an egg and cheese sandwich"
+    # Check if this is a compound phrase that shouldn't be split
     is_compound = menu_cache.is_compound_phrase(text_for_compound)
-    compound_match = None
     if not is_compound:
-        # Check if a compound phrase appears at the start (e.g., "egg and cheese on plain bagel")
         compound_match = menu_cache.find_compound_phrase_in(text_for_compound)
         if compound_match:
-            # Found a compound phrase at start - check if there's a second item anywhere
-            # Use text_for_compound (stripped version) for remainder since compound_match is from it
-            remainder = text_for_compound[len(compound_match):].strip()
-
-            # Helper function to create the multi-item split result
-            def _create_multi_item_split(
-                first_item_text: str, after_and: str, next_item_type: str, next_resolved: str
-            ) -> list:
-                """Create token list for compound phrase + second item split."""
-                # Get item type for the compound phrase
-                _, compound_item_type, compound_resolved = _has_item_indicator(compound_match)
-                qty, _ = _extract_leading_quantity(first_item_text.lower())
-
-                # Use the full first item text (with modifiers) for original
-                compound_token = Token(
-                    original=first_item_text,
-                    token_type="item",
-                    quantity=qty or 1,
-                    item_type=compound_item_type,
-                    resolved_name=compound_resolved,
-                )
-
-                # Recursively tokenize the remainder (second item + any more items)
-                remainder_tokens = _smart_split_and_tokenize(after_and)
-                if remainder_tokens:
-                    return [compound_token] + remainder_tokens
-                else:
-                    # Remainder didn't split further - classify it directly
-                    qty2, _ = _extract_leading_quantity(after_and)
-                    return [compound_token, Token(
-                        original=after_and,
-                        token_type="item",
-                        quantity=qty2 or 1,
-                        item_type=next_item_type,
-                        resolved_name=next_resolved,
-                    )]
-
-            # First check if remainder starts with "and " (e.g., "and a latte")
-            if remainder.startswith("and "):
-                after_and = remainder[4:].strip()  # skip "and "
-                has_next_item, next_item_type, next_resolved = _has_item_indicator(after_and)
-                if has_next_item:
-                    return _create_multi_item_split(compound_match, after_and, next_item_type, next_resolved)
-
-            # Search for " and " anywhere in remainder (not just at start)
-            # e.g., "on plain bagel and a coffee" -> find " and " at position 14
-            and_idx = remainder.find(" and ")
-            while and_idx != -1:
-                # Check if what follows " and " is an item
-                after_and = remainder[and_idx + 5:].strip()  # skip " and "
-                has_next_item, next_item_type, next_resolved = _has_item_indicator(after_and)
-
-                if has_next_item:
-                    # Multi-item: compound phrase + modifiers + second item
-                    # First item = compound + everything before " and "
-                    first_item_text = compound_match + " " + remainder[:and_idx].strip()
-                    first_item_text = first_item_text.strip()
-                    return _create_multi_item_split(first_item_text, after_and, next_item_type, next_resolved)
-
-                # Not an item after this " and " - search for next occurrence
-                and_idx = remainder.find(" and ", and_idx + 5)
-
-            # No multi-item split found - treat entire input as single item
-            is_compound = True
+            tokens = _try_compound_split(text_lower, text_for_compound, compound_match)
+            if tokens:
+                return tokens
+            is_compound = True  # Found compound but no second item
 
     if has_item and (is_compound or (" and " not in text_lower and ", " not in text_lower)):
         qty, _ = _extract_leading_quantity(text_lower)
@@ -610,65 +673,15 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
     # Restore protected " and "s
     parts = [p.replace(placeholder, " and ") for p in parts]
 
-    # --- Boolean attribute reattachment ---
-    # When splitting on " and " separates two boolean attrs of the same item type,
-    # reattach the leading boolean word from part[i+1] back to part[i].
-    # e.g., ["plain bagel toasted", "scooped plain cream cheese on the side"]
-    #     → ["plain bagel toasted and scooped", "plain cream cheese on the side"]
+    # Reattach boolean attributes split by "and" back to their item
     if len(parts) >= 2:
-        # Build mapping: boolean attr word → set of item type slugs
-        boolean_attr_to_types: dict[str, set[str]] = {}
-        for item_type_slug in menu_cache.get_configurable_item_types():
-            item_attrs = menu_cache.get_item_type_attributes(item_type_slug)
-            if item_attrs:
-                for attr_name, attr_info in item_attrs.items():
-                    if isinstance(attr_info, dict) and attr_info.get("input_type") == "boolean":
-                        word = attr_name.lower()
-                        boolean_attr_to_types.setdefault(word, set()).add(item_type_slug)
-                        # Also add underscore-replaced variant
-                        word_spaced = word.replace("_", " ")
-                        if word_spaced != word:
-                            boolean_attr_to_types.setdefault(word_spaced, set()).add(item_type_slug)
-
-        if boolean_attr_to_types:
-            i = 0
-            while i < len(parts) - 1:
-                left_words = parts[i].split()
-                right_words = parts[i + 1].split()
-                if left_words and right_words:
-                    last_left = left_words[-1].lower()
-                    first_right = right_words[0].lower()
-                    # Both must be boolean attrs with a common item type
-                    if (
-                        last_left in boolean_attr_to_types
-                        and first_right in boolean_attr_to_types
-                        and boolean_attr_to_types[last_left] & boolean_attr_to_types[first_right]
-                    ):
-                        remainder = " ".join(right_words[1:]).strip()
-                        # Only reattach if remainder still contains an item indicator
-                        if remainder:
-                            has_item, _, _ = _has_item_indicator(remainder)
-                            if has_item:
-                                parts[i] = parts[i] + " and " + first_right
-                                parts[i + 1] = remainder
-                                logger.debug(
-                                    "Boolean reattach: moved '%s' back to part[%d]: %s | %s",
-                                    first_right, i, parts[i], parts[i + 1],
-                                )
-                                continue  # Re-check same index for triple booleans
-                i += 1
+        parts = _reattach_boolean_attributes(parts)
 
     if len(parts) < 2:
-        # Not a multi-item order
         return []
 
     # Classify each part
-    tokens = []
-    for part in parts:
-        token = _classify_token(part)
-        tokens.append(token)
-
-    return tokens
+    return [_classify_token(part) for part in parts]
 
 
 # =============================================================================

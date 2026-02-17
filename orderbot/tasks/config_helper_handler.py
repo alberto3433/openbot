@@ -117,6 +117,10 @@ class ConfigHelperHandler:
         if not field:
             return None
 
+        # Handle customization_checkpoint - not attribute-based, uses a generic question
+        if field == PendingField.CUSTOMIZATION_CHECKPOINT:
+            return "any more changes?"
+
         # Handle side_choice - query component slots for the question text
         if field == PendingField.SIDE_CHOICE:
             if is_configurable_menu_item(item):

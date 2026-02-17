@@ -25,7 +25,7 @@ from .parsers.quantity_utils import extract_leading_quantity
 from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
 from .utils.option_matcher import OptionMatcher
-from .config.attribute_resolver import get_unanswered_mandatory
+from .config.attribute_resolver import get_unanswered_mandatory, get_skipped_attributes
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -1289,6 +1289,25 @@ class ConfigModificationHandler:
             user_input, matched_attr_slug, matched_option["slug"], pending_attr,
         )
 
+        # Check if the cross-attribute value triggers a skip rule for the pending attribute
+        # e.g., style=black skips milk_sweetener_syrup — don't re-ask the skipped question
+        skipped = get_skipped_attributes(item)
+        if pending_attr in skipped:
+            logger.info(
+                "CROSS_ATTR: Skip rule triggered — %s skips %s, advancing",
+                matched_attr_slug, pending_attr,
+            )
+            # Mark the pending attribute as answered (None = declined) and advance
+            item[pending_attr] = None
+            order.clear_pending()
+            next_result = self.checkout_utils_handler.get_next_question(order)
+            msg = f"Got it, {display_name}."
+            if next_result and next_result.message:
+                next_result.message = f"{msg} {next_result.message}"
+            else:
+                next_result = StateMachineResult(message=msg, order=order)
+            return next_result
+
         return self._continue_config_with_message(
             f"Got it, {display_name}.", item, order
         )
@@ -1455,7 +1474,11 @@ class ConfigModificationHandler:
             items_added, item.get_display_name()
         )
 
-        added_names = [p.item_name or p.item_type for p in parsed.parsed_items]
+        added_names = [
+            f"{p.quantity} {p.item_name or p.item_type}s" if p.quantity > 1
+            else (p.item_name or p.item_type)
+            for p in parsed.parsed_items
+        ]
         return self._build_add_during_config_ack(added_names, item, order)
 
     def _replace_or_add_modifier(self, item: MenuItemTask, match: dict) -> None:
@@ -1596,10 +1619,6 @@ class ConfigModificationHandler:
     ) -> MenuItemTask | None:
         """Find an order item matching a target description flexibly.
 
-        Supports exact match, suffix on word boundary, substring, and category
-        reference (e.g. "the bagel" when only one bagel in order). Mirrors the
-        matching logic in item_modification_handler._find_target_item().
-
         Args:
             suffix: The target description extracted after "to the …" / "on the …"
             order: The current order state
@@ -1607,37 +1626,8 @@ class ConfigModificationHandler:
         Returns:
             The matching MenuItemTask, or None if no match.
         """
-        suffix_lower = suffix.lower().strip()
-        menu_items = [i for i in order.items.items if isinstance(i, MenuItemTask)]
-
-        # 1. Exact match on menu_item_name
-        for it in menu_items:
-            if it.menu_item_name and it.menu_item_name.lower() == suffix_lower:
-                return it
-
-        # 2. Suffix / substring match on word boundary
-        for it in menu_items:
-            name_lower = (it.menu_item_name or "").lower()
-            if not name_lower:
-                continue
-            # "latte" matches "Iced Latte" (suffix on word boundary)
-            if name_lower.endswith(suffix_lower) and (
-                len(name_lower) == len(suffix_lower)
-                or name_lower[-(len(suffix_lower) + 1)] == " "
-            ):
-                return it
-            # substring: "latte" in "iced latte"
-            if suffix_lower in name_lower:
-                return it
-
-        # 3. Category reference: "the bagel" -> only bagel-type item in order
-        target_category = menu_cache.is_category_reference(suffix_lower)
-        if target_category:
-            matching = [i for i in menu_items if i.menu_item_type == target_category]
-            if len(matching) == 1:
-                return matching[0]
-
-        return None
+        from .handler_utils import find_matching_item
+        return find_matching_item(suffix.lower().strip(), order.items.items)
 
     def _find_item_accepting_modifier(
         self,

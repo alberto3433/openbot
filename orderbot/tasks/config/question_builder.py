@@ -139,7 +139,10 @@ class QuestionBuilder:
         """
         input_type = attr.get("input_type", "single_select")
         attr_name = attr["display_name"].lower()
-        db_question = attr.get("question_text")
+        if attr.get("allow_none") and attr.get("offer_question_text"):
+            db_question = attr["offer_question_text"]
+        else:
+            db_question = attr.get("question_text")
 
         # Use DB's question_text if available, with appropriate prefix for multi-item orders
         if db_question:
@@ -229,7 +232,10 @@ class QuestionBuilder:
                     item_desc = f"the {ordinal} {item_display}"
                 else:
                     item_desc = f"the {item_display}"
-                db_question = attr.get("question_text")
+                if attr.get("allow_none") and attr.get("offer_question_text"):
+                    db_question = attr["offer_question_text"]
+                else:
+                    db_question = attr.get("question_text")
                 if db_question:
                     return f"For {item_desc}, {db_question[0].lower()}{db_question[1:]}"
                 elif input_type == "boolean":

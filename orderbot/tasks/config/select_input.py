@@ -585,6 +585,33 @@ class SelectInputHandler:
             quick_replies=qr,
         )
 
+    @staticmethod
+    def _find_option_position_in_input(
+        user_lower: str, option_name: str,
+    ) -> tuple[int, int] | None:
+        """Find the position of an option name in the user input.
+
+        Uses the same word-boundary matching logic as _extract_qualifier_for_option:
+        tries the full display name first, then individual words (>= 3 chars).
+
+        Args:
+            user_lower: Lowercased user input text.
+            option_name: The option display name to locate.
+
+        Returns:
+            (start, end) position tuple, or None if not found.
+        """
+        option_lower = option_name.lower()
+        search_terms = [option_lower]
+        for word in option_lower.split():
+            if len(word) >= 3:
+                search_terms.append(word)
+        for term in search_terms:
+            match = re.search(rf'\b{re.escape(term)}\b', user_lower)
+            if match:
+                return (match.start(), match.end())
+        return None
+
     def _apply_multi_select_matches(
         self,
         matched_options: list[dict],
@@ -614,11 +641,36 @@ class SelectInputHandler:
         existing_slugs = {sel.get("slug") for sel in existing_selections}
 
         user_lower = user_input.lower()
+
+        # Pre-compute option positions for qualifier proximity checks.
+        # When multiple options are matched, a qualifier should only attach to
+        # the closest option (e.g., "milk and a little sugar" → only sugar
+        # gets the "light" qualifier).
+        option_positions: dict[str, tuple[int, int]] = {}
+        if len(matched_options) > 1:
+            for opt in matched_options:
+                pos = self._find_option_position_in_input(user_lower, opt["display_name"])
+                if pos:
+                    option_positions[opt["slug"]] = pos
+
         added_selections = []
         for opt in matched_options:
             if opt["slug"] not in existing_slugs:
+                # Build other_option_positions for this option (positions of all OTHER options)
+                other_positions = None
+                if option_positions:
+                    other_positions = [
+                        pos for slug, pos in option_positions.items()
+                        if slug != opt["slug"]
+                    ]
+                    if not other_positions:
+                        other_positions = None
+
                 # Extract qualifier (extra, light, on the side, etc.)
-                qualifier = self._extract_qualifier(user_input, opt["display_name"])
+                qualifier = self._extract_qualifier(
+                    user_input, opt["display_name"],
+                    other_option_positions=other_positions,
+                )
 
                 # Only extract numeric quantity if category supports it (has quantity_unit)
                 mod_category = opt.get("ingredient_category") or attr_slug

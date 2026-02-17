@@ -308,6 +308,49 @@ class OrderStateMachine:
 
         return ctx
 
+    def _dispatch_pending_states(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Check pending state flags and dispatch to appropriate handler.
+
+        Returns a result if a pending state handled the input, None to
+        fall through to normal processing.
+        """
+        if getattr(order, "pending_order_history", None):
+            result = self.order_history_handler.handle_order_history_selection(
+                user_input, order
+            )
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
+        if getattr(order, "pending_reorder_items", None):
+            result = self.order_history_handler.handle_reorder_item_selection(
+                user_input, order
+            )
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
+        if getattr(order, "pending_reorder_offer_items", None):
+            result = self.order_history_handler.handle_reorder_offer_response(
+                user_input, order
+            )
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
+        if getattr(order, "pending_change_clarification", None):
+            result = self.config_helper_handler.handle_change_clarification_response(
+                user_input, order
+            )
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+            # If no result, the response wasn't understood - fall through to normal processing
+
+        return None
+
     def process(
         self,
         user_input: str,
@@ -367,40 +410,9 @@ class OrderStateMachine:
                 order.add_message("assistant", result.message)
                 return result
 
-        # Check for pending order history selection response
-        if getattr(order, "pending_order_history", None):
-            result = self.order_history_handler.handle_order_history_selection(
-                user_input, order
-            )
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-
-        # Check for pending reorder item selection response
-        if getattr(order, "pending_reorder_items", None):
-            result = self.order_history_handler.handle_reorder_item_selection(
-                user_input, order
-            )
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-
-        # Check for pending reorder offer confirmation (yes/no to "Want to reorder it?")
-        if getattr(order, "pending_reorder_offer_items", None):
-            result = self.order_history_handler.handle_reorder_offer_response(
-                user_input, order
-            )
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-
-        # Check for pending change clarification response
-        if order.pending_change_clarification:
-            result = self.config_helper_handler.handle_change_clarification_response(user_input, order)
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-            # If no result, the response wasn't understood - fall through to normal processing
+        pending_result = self._dispatch_pending_states(user_input, order)
+        if pending_result:
+            return pending_result
 
         # Check for "make it 2" pattern early (works from any state with items)
         # This must be BEFORE modifier change requests to prevent "actually make that two"

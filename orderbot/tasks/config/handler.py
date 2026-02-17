@@ -693,10 +693,12 @@ class MenuItemConfigHandler(BaseHandler):
                     return StateMachineResult(
                         message=f"{ack_prefix}{summary}. {next_result.message}",
                         order=next_result.order,
+                        quick_replies=next_result.quick_replies,
                     )
                 return StateMachineResult(
                     message=f"Got it, {summary}. {next_result.message}",
                     order=next_result.order,
+                    quick_replies=next_result.quick_replies,
                 )
 
             order.set_phase(OrderPhase.TAKING_ITEMS)
@@ -825,19 +827,14 @@ class MenuItemConfigHandler(BaseHandler):
             unanswered = self._get_unanswered_mandatory(item, item_type_slug)
 
             if unanswered:
-                # Ask the first unanswered mandatory question
                 first_attr = unanswered[0]
-                order.setup_pending_config(item.id, f"{item_type_slug}:{first_attr['slug']}")
-
-                question = self._build_question_text(first_attr)
-
-                # Add ordinal prefix for multi-item
-                if same_type_count > 1:
-                    message = f"For {item_desc}, {question.lower()}"
-                else:
-                    message = question
-
-                return StateMachineResult(message=message, order=order)
+                # Ensure multi_item_config_names is set when multiple same-type
+                # items exist, so _ask_attribute_question generates ordinals.
+                if same_type_count > 1 and not order.multi_item_config_names:
+                    order.multi_item_config_names = [
+                        it.get_display_name() for it in same_type_items
+                    ]
+                return self._ask_attribute_question(item, order, first_attr, is_first_question=False)
 
             # No mandatory questions left - check if customization was offered
             if not item.customization_offered:
@@ -1387,10 +1384,12 @@ class MenuItemConfigHandler(BaseHandler):
                     return StateMachineResult(
                         message=f"{ack_prefix}{summary}. {next_result.message}",
                         order=next_result.order,
+                        quick_replies=next_result.quick_replies,
                     )
                 return StateMachineResult(
                     message=f"Got it, {summary}. {next_result.message}",
                     order=next_result.order,
+                    quick_replies=next_result.quick_replies,
                 )
 
             order.set_phase(OrderPhase.TAKING_ITEMS)

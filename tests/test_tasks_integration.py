@@ -466,8 +466,11 @@ class TestStateMachineMultiBagel:
         # Ask for next incomplete bagel - use the unified handler's configure method
         result = sm.menu_item_handler.configure_next_incomplete_item(order, "bagel")
 
-        # With new flow: should ask about first bagel's TOASTED (fully configure first bagel)
-        assert "first" in result.message.lower()
+        # Should ask about first bagel's TOASTED (fully configure first bagel before second)
+        # The message references the item by name ("Plain Bagel") since the two bagels
+        # have different display names; ordinals are only used for identically-named items.
+        assert "plain bagel" in result.message.lower()
+        assert "toasted" in result.message.lower()
         assert result.order.pending_field in ("toasted", "menu_item_attr_toasted", "bagel:toasted")
 
 

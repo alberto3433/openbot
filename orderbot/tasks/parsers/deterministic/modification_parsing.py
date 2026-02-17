@@ -647,8 +647,12 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
         if singular != item_text:
             is_option, attr_slug = menu_cache.is_known_attribute_option(singular)
     if is_option:
-        logger.info("ADD MORE: '%s' is attribute option (attr=%s), treating as duplicate (qty=%d)", item_text, attr_slug, quantity)
-        return OpenInputResponse(duplicate_last_item=quantity)
+        all_triggers = menu_cache.get_all_triggers_flat()
+        check_text = singularize(item_text) if singularize(item_text) != item_text else item_text
+        if item_text not in all_triggers and check_text not in all_triggers:
+            logger.info("ADD MORE: '%s' is attribute option (attr=%s), treating as duplicate (qty=%d)", item_text, attr_slug, quantity)
+            return OpenInputResponse(duplicate_last_item=quantity)
+        logger.info("ADD MORE: '%s' is attribute option but also item type trigger, attempting item parse first", item_text)
 
     # Import here to avoid circular imports
     from .item_parsing import (
@@ -733,6 +737,12 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
             )],
         )
 
-    # Couldn't parse the item - fall back to LLM
+    # Couldn't parse the item as a menu item.
+    # If it was a known attribute option (e.g., "pound"), treat as duplicate_last_item.
+    if is_option:
+        logger.info("ADD MORE: '%s' not parseable as item, falling back to duplicate (attr=%s, qty=%d)", item_text, attr_slug, quantity)
+        return OpenInputResponse(duplicate_last_item=quantity)
+
+    # Fall back to LLM
     logger.debug("ADD MORE: couldn't parse item '%s', falling back", item_text)
     return None

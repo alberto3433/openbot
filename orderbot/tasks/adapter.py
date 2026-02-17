@@ -42,10 +42,13 @@ Related Modules:
 import logging
 from typing import Any
 
+from pydantic import BaseModel
+
 from .models import (
     TaskStatus,
     OrderTask,
 )
+from .models.pending_states import PendingDietaryFollowup
 from .item_converters import _unified_converter
 from .pricing import PricingEngine
 from ..services.tax_utils import calculate_order_total
@@ -108,7 +111,7 @@ def _calculate_subtotal(order: OrderTask) -> float:
         Sum of (unit_price * quantity) for all active items
     """
     return sum(
-        (item.unit_price or 0) * getattr(item, 'quantity', 1)
+        (item.unit_price or 0) * item.quantity
         for item in order.items.get_active_items()
     )
 
@@ -125,6 +128,7 @@ def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
     # Map field names to Pydantic model classes for dict→model coercion on restore
     _PYDANTIC_FIELDS: dict[str, type] = {
         "pending_order_history": PendingOrderHistory,
+        "pending_dietary_followup": PendingDietaryFollowup,
     }
 
     for field_name, default in _FLOW_STATE_FIELDS:
@@ -145,7 +149,14 @@ def _build_flow_state_dict(order: OrderTask) -> dict:
     Returns:
         Dict containing all flow state fields
     """
-    return {field_name: getattr(order, field_name) for field_name, _ in _FLOW_STATE_FIELDS}
+    result = {}
+    for field_name, _ in _FLOW_STATE_FIELDS:
+        value = getattr(order, field_name)
+        # Convert Pydantic models to dicts for JSON serialization
+        if isinstance(value, BaseModel):
+            value = value.model_dump()
+        result[field_name] = value
+    return result
 
 
 # -----------------------------------------------------------------------------

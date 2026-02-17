@@ -43,6 +43,8 @@ if TYPE_CHECKING:
     from .taking_items_handler import TakingItemsHandler
     from .config_selection_handler import ConfigSelectionHandler
     from .config_modification_handler import ConfigModificationHandler
+    from .bundle_modification_handler import BundleModificationHandler
+    from .modifier_addition_handler import ModifierAdditionHandler
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,8 @@ class ConfiguringItemHandler:
         menu_item_handler: "MenuItemConfigHandler | None" = None,
         config_selection_handler: "ConfigSelectionHandler | None" = None,
         config_modification_handler: "ConfigModificationHandler | None" = None,
+        bundle_modification_handler: "BundleModificationHandler | None" = None,
+        modifier_addition_handler: "ModifierAdditionHandler | None" = None,
     ) -> None:
         """
         Initialize the configuring item handler.
@@ -76,7 +80,9 @@ class ConfiguringItemHandler:
             item_adder_handler: Handler for adding items.
             menu_item_handler: Handler for menu item configuration (deli sandwiches, espresso, etc.).
             config_selection_handler: Handler for item/modifier selection flows.
-            config_modification_handler: Handler for mid-config modifications.
+            config_modification_handler: Handler for "can you make it X?" and item switch.
+            bundle_modification_handler: Handler for bundle child mods and cross-attribute matching.
+            modifier_addition_handler: Handler for adding modifiers and items during config.
         """
         self.config_helper_handler = config_helper_handler
         self.checkout_utils_handler = checkout_utils_handler
@@ -85,6 +91,8 @@ class ConfiguringItemHandler:
         self.menu_item_handler = menu_item_handler
         self.config_selection_handler = config_selection_handler
         self.config_modification_handler = config_modification_handler
+        self.bundle_modification_handler = bundle_modification_handler
+        self.modifier_addition_handler = modifier_addition_handler
         # Set via setter after TakingItemsHandler is created (to avoid circular dependency)
         self._taking_items_handler: "TakingItemsHandler | None" = None
 
@@ -313,7 +321,7 @@ class ConfiguringItemHandler:
         # Must run BEFORE is_valid_answer check to prevent "blueberry" being
         # matched as a bread option when user says "and a Blueberry Cream Cheese Sandwich"
         if isinstance(item, MenuItemTask):
-            if result := self.config_modification_handler.handle_add_item_during_config(
+            if result := self.modifier_addition_handler.handle_add_item_during_config(
                 user_input, item, order
             ):
                 return result
@@ -395,7 +403,7 @@ class ConfiguringItemHandler:
         # If detected, try to apply immediately instead of deferring
         change_request = None if is_valid_answer else self.modifier_change_handler.detect_change_request(user_input)
         if change_request:
-            result = self.config_modification_handler.apply_modification_during_config(change_request, item, order)
+            result = self.bundle_modification_handler.apply_modification_during_config(change_request, item, order)
             if result:
                 return result
             # If couldn't apply, fall through to normal processing
@@ -403,7 +411,7 @@ class ConfiguringItemHandler:
         # Check for modifications targeting a bundled child item by name
         # e.g., "make the fruit salad a large" while configuring parent omelette
         if not is_valid_answer:
-            bundle_mod_result = self.config_modification_handler.handle_modify_bundle_child(
+            bundle_mod_result = self.bundle_modification_handler.handle_modify_bundle_child(
                 user_input, item, order
             )
             if bundle_mod_result:
@@ -421,7 +429,7 @@ class ConfiguringItemHandler:
         # Check for "add X" patterns during configuration (e.g., "add bacon and cheese")
         # Parse and apply the modifiers to the current item, then continue with config
         if not is_valid_answer:
-            add_result = self.config_modification_handler.handle_add_modifiers_during_config(user_input, item, order)
+            add_result = self.modifier_addition_handler.handle_add_modifiers_during_config(user_input, item, order)
             if add_result:
                 return add_result
 
@@ -430,7 +438,7 @@ class ConfiguringItemHandler:
         # Runs regardless of is_valid_answer because inputs like "veggie cream cheese" may
         # pass is_valid_answer for cheese (loads_from_ingredients) while actually being a
         # spread answer. The exact_only matching prevents false positives.
-        cross_attr_result = self.config_modification_handler.handle_cross_attribute_match(
+        cross_attr_result = self.bundle_modification_handler.handle_cross_attribute_match(
             user_input, item, order
         )
         if cross_attr_result:
@@ -475,7 +483,7 @@ class ConfiguringItemHandler:
                             remainder_is_modifier = True
                             break
                 if not remainder_is_modifier:
-                    add_item_fallback = self.config_modification_handler.handle_add_item_during_config(
+                    add_item_fallback = self.modifier_addition_handler.handle_add_item_during_config(
                         stripped, item, order, require_prefix=False
                     )
                     if add_item_fallback:

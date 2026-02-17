@@ -124,6 +124,34 @@ def _get_removable_modifiers() -> set[str]:
     return modifiers
 
 
+def _item_matches(
+    item: "MenuItemTask",
+    cancel_variants: list[str],
+    cancel_desc: str,
+    mapped_item_type: str | None,
+) -> bool:
+    """Check if an item matches the cancellation description."""
+    item_summary = item.get_summary().lower()
+    item_name = item.menu_item_name or ''
+    item_name_lower = item_name.lower()
+    item_type = item.item_type or ''
+    menu_item_type = item.menu_item_type or ''
+
+    if any(v in item_summary for v in cancel_variants):
+        return True
+    if item_name_lower and any(v in item_name_lower for v in cancel_variants):
+        return True
+    if item_name_lower and item_name_lower in cancel_desc:
+        return True
+    if item_type and any(v == item_type for v in cancel_variants):
+        return True
+    if menu_item_type and any(v == menu_item_type for v in cancel_variants):
+        return True
+    if mapped_item_type and menu_item_type == mapped_item_type:
+        return True
+    return False
+
+
 class ConfigCancellationHandler:
     """
     Handles cancellation/removal requests during item configuration.
@@ -728,28 +756,6 @@ class ConfigCancellationHandler:
             if category_mapping:
                 mapped_item_type = category_mapping.get("slug")
                 break
-
-        def _item_matches(item, cancel_variants, cancel_desc, mapped_item_type) -> bool:
-            """Check if an item matches the cancellation description."""
-            item_summary = item.get_summary().lower()
-            item_name = getattr(item, 'menu_item_name', '') or ''
-            item_name_lower = item_name.lower()
-            item_type = getattr(item, 'item_type', '') or ''
-            menu_item_type = getattr(item, 'menu_item_type', '') or ''
-
-            if any(v in item_summary for v in cancel_variants):
-                return True
-            if item_name_lower and any(v in item_name_lower for v in cancel_variants):
-                return True
-            if item_name_lower and item_name_lower in cancel_desc:
-                return True
-            if item_type and any(v == item_type for v in cancel_variants):
-                return True
-            if menu_item_type and any(v == menu_item_type for v in cancel_variants):
-                return True
-            if mapped_item_type and menu_item_type == mapped_item_type:
-                return True
-            return False
 
         # For singular removal during config, prioritize the item being configured.
         # When user says "remove the bagel" while configuring an Onion Bagel, they

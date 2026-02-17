@@ -354,10 +354,8 @@ class UnifiedItemConverter:
         attribute_values: dict,
     ) -> float:
         """Determine base price from bundle rules, pricing engine, or unit_price."""
-        bundle_price_rule = getattr(item, 'bundle_price_rule', None)
-        bundle_included_price = getattr(item, 'bundle_included_price', None)
-        is_fully_included = bundle_price_rule == 'included' and bundle_included_price is None
-        is_differential_bundle = bundle_price_rule == 'included' and bundle_included_price is not None
+        is_fully_included = item.bundle_price_rule == 'included' and item.bundle_included_price is None
+        is_differential_bundle = item.bundle_price_rule == 'included' and item.bundle_included_price is not None
 
         if is_fully_included:
             return 0.0
@@ -392,18 +390,18 @@ class UnifiedItemConverter:
         menu item names, or domain-specific logic.
         """
         menu_item_name = item.menu_item_name
-        menu_item_type = getattr(item, 'menu_item_type', None)
-        removed_ingredients = getattr(item, 'removed_ingredients', []) or []
+        menu_item_type = item.menu_item_type
+        removed_ingredients = item.removed_ingredients
 
         # Get DB-driven attribute values (source of truth for all customizations)
-        attribute_values = getattr(item, 'attribute_values', {}) or {}
+        attribute_values = item.attribute_values or {}
 
         # Build display name using the item's get_display_name() method
         # which handles name-forming categories (e.g., bread type for bagels)
         display_name = item.get_display_name()
 
         # Add "(side)" suffix for items that are sides of another item
-        is_side_item = getattr(item, 'bundle_parent_item_id', None) is not None
+        is_side_item = item.bundle_parent_item_id is not None
         if is_side_item:
             display_name = f"{display_name} (side)"
 
@@ -411,13 +409,11 @@ class UnifiedItemConverter:
         modifiers = []
 
         # Add modifications (free, no price lookup needed)
-        item_modifications = getattr(item, 'modifications', []) or []
-        for mod in item_modifications:
+        for mod in item.modifications:
             modifiers.append({"name": mod, "price": 0})
 
         # Add special instructions (e.g., "room for cream", "extra hot") - free, shown in cart
-        item_special_instructions = getattr(item, 'special_instructions', []) or []
-        for instruction in item_special_instructions:
+        for instruction in item.special_instructions:
             # Format for display: title case
             display_instruction = instruction.title() if instruction else instruction
             modifiers.append({"name": display_instruction, "price": 0})
@@ -444,7 +440,7 @@ class UnifiedItemConverter:
             self._build_selection_modifiers(item, item_attrs, default_ingredient_slugs)
         )
 
-        customization_offered = getattr(item, 'customization_offered', False)
+        customization_offered = item.customization_offered
 
         base_price = self._compute_base_price(item, pricing, menu_item_name, attribute_values)
 
@@ -455,11 +451,11 @@ class UnifiedItemConverter:
             result["item_type"] = menu_item_type
 
         # Get bundle fields
-        bundle_id = getattr(item, 'bundle_id', None)
-        bundle_parent_item_id = getattr(item, 'bundle_parent_item_id', None)
-        bundle_slot = getattr(item, 'bundle_slot', None)
-        bundle_price_rule = getattr(item, 'bundle_price_rule', None)
-        bundle_included_price = getattr(item, 'bundle_included_price', None)
+        bundle_id = item.bundle_id
+        bundle_parent_item_id = item.bundle_parent_item_id
+        bundle_slot = item.bundle_slot
+        bundle_price_rule = item.bundle_price_rule
+        bundle_included_price = item.bundle_included_price
 
         # Item total: only set when there are upcharges (unit_price differs from base_price)
         unit_price = item.unit_price or 0.0
@@ -468,9 +464,9 @@ class UnifiedItemConverter:
         result.update({
             "menu_item_name": menu_item_name,
             "display_name": display_name,
-            "menu_item_id": getattr(item, 'menu_item_id', None),
+            "menu_item_id": item.menu_item_id,
             "menu_item_type": menu_item_type,
-            "modifications": getattr(item, 'modifications', []),
+            "modifications": item.modifications,
             "modifiers": modifiers,
             "free_details": [],
             "base_price": base_price,
@@ -478,7 +474,7 @@ class UnifiedItemConverter:
             "removed_ingredients": removed_ingredients,
             "attribute_values": attribute_values,
             "customization_offered": customization_offered,
-            "special_instructions": getattr(item, 'special_instructions', []) or [],
+            "special_instructions": item.special_instructions,
             # Bundle fields
             "bundle_id": bundle_id,
             "bundle_parent_item_id": bundle_parent_item_id,

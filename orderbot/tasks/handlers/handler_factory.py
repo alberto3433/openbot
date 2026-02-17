@@ -147,6 +147,8 @@ class HandlerFactory:
         from ..config import MenuItemConfigHandler
         from ..config_selection_handler import ConfigSelectionHandler
         from ..config_modification_handler import ConfigModificationHandler
+        from ..bundle_modification_handler import BundleModificationHandler
+        from ..modifier_addition_handler import ModifierAdditionHandler
 
         self._handlers["config_cancellation"] = ConfigCancellationHandler(
             configure_next_incomplete_item=self._callbacks.configure_next_incomplete_item,
@@ -170,6 +172,17 @@ class HandlerFactory:
             modifier_change_handler=self._handlers["modifier_change"],
             item_adder_handler=self._handlers["item_adder"],
         )
+        self._handlers["bundle_modification"] = BundleModificationHandler(
+            config_helper_handler=self._handlers["config_helper"],
+            checkout_utils_handler=self._handlers["checkout_utils"],
+            modifier_change_handler=self._handlers["modifier_change"],
+        )
+        self._handlers["modifier_addition"] = ModifierAdditionHandler(
+            config_helper_handler=self._handlers["config_helper"],
+            checkout_utils_handler=self._handlers["checkout_utils"],
+            modifier_change_handler=self._handlers["modifier_change"],
+            item_adder_handler=self._handlers["item_adder"],
+        )
 
     def _build_phase_5_top_level(self) -> None:
         """Phase 5: Build top-level handlers that orchestrate others."""
@@ -184,6 +197,8 @@ class HandlerFactory:
             menu_item_handler=self._handlers["menu_item"],
             config_selection_handler=self._handlers["config_selection"],
             config_modification_handler=self._handlers["config_modification"],
+            bundle_modification_handler=self._handlers["bundle_modification"],
+            modifier_addition_handler=self._handlers["modifier_addition"],
         )
         self._handlers["taking_items"] = TakingItemsHandler(
             config=self._config,
@@ -213,6 +228,8 @@ class HandlerFactory:
         self._handlers["configuring_item"].taking_items_handler = self._handlers["taking_items"]
         self._handlers["config_selection"].taking_items_handler = self._handlers["taking_items"]
         self._handlers["config_modification"].taking_items_handler = self._handlers["taking_items"]
+        self._handlers["bundle_modification"].taking_items_handler = self._handlers["taking_items"]
+        self._handlers["modifier_addition"].taking_items_handler = self._handlers["taking_items"]
 
         # Wire menu_item handler references
         self._handlers["item_adder"].menu_item_handler = self._handlers["menu_item"]

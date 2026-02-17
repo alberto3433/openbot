@@ -96,7 +96,7 @@ class ConfigSelectionHandler:
             # Reconstruct ParsedItemEntry from stored dict
             try:
                 parsed_item = ParsedItemEntry(**item_dict)
-            except Exception as e:
+            except (KeyError, ValueError, TypeError) as e:
                 logger.warning("Failed to reconstruct ParsedItemEntry: %s", e)
                 continue
 

@@ -50,7 +50,7 @@ def _get_split_attribute_patterns() -> list[str]:
     # Handle case where menu cache isn't loaded yet (e.g., during test setup)
     try:
         attr_option_words = menu_cache.get_all_attribute_option_words()
-    except Exception:
+    except (ValueError, KeyError, TypeError, AttributeError):
         # Cache not loaded - return empty list but DON'T cache it
         # so we retry when cache is available
         return []

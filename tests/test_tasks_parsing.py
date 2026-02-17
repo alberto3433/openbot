@@ -356,7 +356,6 @@ class TestDeterministicParserBagelOrders:
         assert bagel.attribute_values.get("toasted") == expected_toasted, \
             f"Expected toasted={expected_toasted} for '{text}', got {bagel.attribute_values.get('toasted')}"
 
-    @pytest.mark.xfail(reason="Complex parsing interaction: 'plain bagel with nova' matched as spread_sandwich - needs investigation")
     @pytest.mark.parametrize("text,expected_toasted", [
         ("an untoasted plain bagel with nova", False),
         ("can I get an untoasted plain bagel with nova and capers", False),
@@ -2914,14 +2913,8 @@ class TestAddModifierToItem:
         # Parser returns canonical ingredient name "Bacon" from database
         assert any("bacon" in m.lower() for m in result.modify_add_modifiers)
 
-    @pytest.mark.xfail(reason="Parser sees 'bacon and cheese' as omelette pattern; works correctly in chatbot with context")
     def test_add_bacon_and_cheese(self):
-        """Test 'add bacon and cheese' adds both modifiers.
-
-        Note: The stateless parser interprets 'bacon and cheese' as an omelette order.
-        In the actual chatbot flow, the state machine has context (e.g., configuring a bagel)
-        and correctly interprets 'add bacon and cheese' as modifying the existing item.
-        """
+        """Test 'add bacon and cheese' adds both modifiers."""
         result = parse_open_input_deterministic("add bacon and cheese")
         assert result is not None
         assert result.modify_existing_item is True

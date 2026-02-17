@@ -49,6 +49,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from ..auth import verify_admin_credentials
@@ -399,7 +400,7 @@ def delete_menu_item(
         db.delete(item)
         db.commit()
         logger.info("Successfully deleted menu item: %s (id=%d)", item_name, item_id)
-    except Exception as e:
+    except (SQLAlchemyError, ValueError, KeyError) as e:
         db.rollback()
         logger.error("Failed to delete menu item %s (id=%d): %s", item_name, item_id, str(e))
         raise HTTPException(

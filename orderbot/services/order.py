@@ -543,7 +543,7 @@ def _send_transition_notifications(db: Session, order: Order, new_status: str) -
             notify_order_ready(db, order, store_name)
         elif new_status == OrderStatus.CANCELLED:
             notify_order_cancelled(db, order, store_name)
-    except Exception as e:
+    except (ImportError, ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
         logger.error("Failed to send transition notification for order #%d: %s", order.id, e)
 
 

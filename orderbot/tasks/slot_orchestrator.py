@@ -305,7 +305,7 @@ def get_item_slots(item: ItemTask) -> list[ItemSlotDefinition]:
         slots.sort(key=lambda x: x[0])
         return [slot for _, slot in slots]
 
-    except Exception as e:
+    except (KeyError, ValueError, AttributeError) as e:
         logger.warning("Failed to load slots for item type %s: %s", item_type, e)
         return []
 

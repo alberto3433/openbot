@@ -340,9 +340,7 @@ class TestBeverages:
 
     @pytest.mark.parametrize("user_input", [
         "coffee",
-        pytest.param("iced coffee", marks=pytest.mark.xfail(
-            reason="'iced coffee' needs alias in DB to match 'Iced Coffee' menu item"
-        )),
+        "iced coffee",
         "latte",
     ])
     def test_coffee_triggers_coffee_flow(self, user_input):

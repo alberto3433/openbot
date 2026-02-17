@@ -24,6 +24,7 @@ from ..config import TOAST_WEBHOOK_SECRET
 from ..db import get_db
 from ..db.models import Order
 from ..schemas.enums import ToastOrderStatus
+from ..services.order import InvalidStatusTransition
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ def _handle_order_status(event: dict, db: Session) -> None:
             "Order #%d transitioned to '%s' via Toast webhook (Toast status: %s)",
             order.id, new_status, toast_status,
         )
-    except Exception as e:
+    except (ValueError, RuntimeError, InvalidStatusTransition) as e:
         logger.warning(
             "Failed to transition order #%d to '%s' from Toast: %s",
             order.id, new_status, e,

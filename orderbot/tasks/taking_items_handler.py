@@ -585,7 +585,7 @@ class TakingItemsHandler(MenuDataMixin):
             if self.menu_inquiry_handler:
                 try:
                     return self.menu_inquiry_handler.handle_more_menu_items(order)
-                except Exception as e:
+                except (ValueError, KeyError, TypeError, AttributeError) as e:
                     logger.error("CATEGORY_INQUIRY_RESPONSE: handle_more_menu_items failed: %s", e, exc_info=True)
 
         # Check if there's a pending category to list items from
@@ -601,7 +601,7 @@ class TakingItemsHandler(MenuDataMixin):
             if self.menu_inquiry_handler:
                 try:
                     return self.menu_inquiry_handler.handle_menu_query(pending_category, order)
-                except Exception as e:
+                except (ValueError, KeyError, TypeError, AttributeError) as e:
                     logger.error("CATEGORY_INQUIRY_RESPONSE: handle_menu_query failed: %s", e, exc_info=True)
 
         # Fallback: no pagination or category found

@@ -87,7 +87,7 @@ class MenuInquiryHandler(BaseHandler):
                     return f"{display_names[0].lower()} or {display_names[1].lower()}"
                 else:
                     return f"{display_names[0].lower()}, {display_names[1].lower()}, or {display_names[2].lower()}"
-        except Exception as e:
+        except (KeyError, ValueError, AttributeError) as e:
             logger.warning("Failed to get display groups from database: %s", e)
 
         # Fallback message

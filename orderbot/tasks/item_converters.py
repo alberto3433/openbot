@@ -433,7 +433,7 @@ class UnifiedItemConverter:
                 db_defaults = menu_cache.get_menu_item_default_ingredients(item.menu_item_id)
                 if db_defaults:
                     default_ingredient_slugs = {d["ingredient_slug"] for d in db_defaults}
-            except Exception:
+            except (KeyError, ValueError, TypeError, AttributeError):
                 pass
 
         modifiers.extend(

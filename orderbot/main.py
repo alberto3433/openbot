@@ -160,7 +160,7 @@ async def lifespan(app: FastAPI):
         from .tasks.parsers.intent_patterns import warmup_patterns
         logger.info("Pre-compiling parser patterns...")
         warmup_patterns()
-    except Exception as e:
+    except (RuntimeError, ImportError, ConnectionError, OSError) as e:
         logger.error("Failed to initialize menu data cache: %s", e)
         raise RuntimeError(f"Server startup failed: Could not load menu data cache: {e}") from e
 

@@ -127,7 +127,7 @@ class MenuDataCache(
                 except asyncio.CancelledError:
                     logger.info("Background refresh task cancelled")
                     break
-                except Exception as e:
+                except (RuntimeError, ConnectionError, OSError, ValueError, KeyError) as e:
                     logger.error("Error in background refresh: %s", e)
                     # Wait before retrying to avoid tight error loops
                     await asyncio.sleep(3600)  # 1 hour

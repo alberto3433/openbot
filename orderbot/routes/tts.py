@@ -131,7 +131,7 @@ async def list_voices() -> VoicesResponse:
     except ValueError as e:
         logger.warning("TTS provider error: %s", str(e))
         raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
+    except (ConnectionError, TimeoutError, RuntimeError, OSError) as e:
         logger.error("Failed to list voices: %s", str(e))
         raise HTTPException(status_code=500, detail="Failed to list voices")
 
@@ -176,6 +176,6 @@ async def synthesize_speech(req: SynthesizeRequest):
     except ValueError as e:
         logger.warning("TTS validation error: %s", str(e))
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except (ConnectionError, TimeoutError, RuntimeError, OSError) as e:
         logger.error("TTS synthesis failed: %s", str(e))
         raise HTTPException(status_code=500, detail="Speech synthesis failed")

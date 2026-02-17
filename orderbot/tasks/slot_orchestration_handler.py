@@ -54,7 +54,7 @@ class SlotOrchestrationHandler:
                 filled_slots, empty_slots
             )
 
-        except Exception as e:
+        except (KeyError, ValueError, AttributeError) as e:
             slot_logger.error("SLOT COMPARISON ERROR: %s", e)
 
     def derive_next_phase_from_slots(self, order: OrderTask) -> OrderPhase:

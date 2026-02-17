@@ -275,7 +275,7 @@ class OptionMatcher:
         # e.g., "lot of milk" → also try "milk", "extra mayo" → also try "mayo"
         try:
             qualifier_patterns = menu_cache.get_qualifier_patterns()
-        except Exception:
+        except (KeyError, ValueError, TypeError, AttributeError):
             qualifier_patterns = []
 
         qualifier_stripped: list[str] = []

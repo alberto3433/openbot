@@ -469,7 +469,7 @@ def format_slug_for_display(
             display_name = menu_cache.get_ingredient_display_name(slug)
             if display_name:
                 return display_name
-        except Exception:
+        except (ValueError, TypeError, KeyError, AttributeError):
             # Cache not loaded or lookup failed - fall through to string conversion
             pass
 

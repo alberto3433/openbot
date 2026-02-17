@@ -60,7 +60,7 @@ async def handle_stripe_webhook(
     except ValueError:
         logger.warning("Invalid webhook payload")
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except Exception as e:
+    except (KeyError, TypeError, RuntimeError) as e:
         logger.warning("Webhook signature verification failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid signature")
 
@@ -121,7 +121,7 @@ def _handle_checkout_completed(session_data: dict, db: Session) -> None:
         company = db.query(Company).first()
         store_name = company.name if company else "OrderBot"
         notify_payment_received(db, order, store_name)
-    except Exception as e:
+    except (ImportError, ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
         logger.error("Failed to send payment notification for order #%d: %s", order_id, e)
 
 

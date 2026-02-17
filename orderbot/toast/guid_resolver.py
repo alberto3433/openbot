@@ -8,7 +8,7 @@ single order submission.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -28,15 +28,15 @@ class GuidResolver:
         store_id: Optional store scope (falls back to store_id=NULL mappings)
     """
 
-    def __init__(self, db: Session, store_id: Optional[str] = None):
+    def __init__(self, db: Session, store_id: str | None = None):
         self._db = db
         self._store_id = store_id
-        self._cache: Dict[str, Optional[str]] = {}
+        self._cache: dict[str, str | None] = {}
 
     def _cache_key(self, entity_type: str, local_id: int) -> str:
         return f"{entity_type}:{local_id}"
 
-    def resolve(self, entity_type: str, local_id: int) -> Optional[str]:
+    def resolve(self, entity_type: str, local_id: int) -> str | None:
         """Resolve a local entity ID to a Toast GUID.
 
         Checks store-specific mapping first, then falls back to global (store_id=NULL).
@@ -80,19 +80,19 @@ class GuidResolver:
         self._cache[key] = guid
         return guid
 
-    def resolve_menu_item(self, menu_item_id: int) -> Optional[str]:
+    def resolve_menu_item(self, menu_item_id: int) -> str | None:
         """Resolve a menu item ID to a Toast GUID."""
         return self.resolve("menu_item", menu_item_id)
 
-    def resolve_ingredient(self, ingredient_id: int) -> Optional[str]:
+    def resolve_ingredient(self, ingredient_id: int) -> str | None:
         """Resolve an ingredient ID to a Toast GUID."""
         return self.resolve("ingredient", ingredient_id)
 
-    def resolve_dining_option(self, dining_option_id: int) -> Optional[str]:
+    def resolve_dining_option(self, dining_option_id: int) -> str | None:
         """Resolve a dining option ID to a Toast GUID."""
         return self.resolve("dining_option", dining_option_id)
 
-    def get_unmapped_items(self, order_state: Dict[str, Any]) -> List[str]:
+    def get_unmapped_items(self, order_state: dict[str, Any]) -> list[str]:
         """Return names of items in the order that lack Toast GUID mappings.
 
         Useful for admin warnings and partial-order diagnostics.

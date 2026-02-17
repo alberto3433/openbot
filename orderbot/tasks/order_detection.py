@@ -143,6 +143,6 @@ def get_dynamic_help_text() -> str:
             return f"I can help you order {items_text} from our menu. Just tell me what you'd like!"
         else:
             return "I can help you order from our menu. Just tell me what you'd like!"
-    except Exception:
+    except (ValueError, KeyError, TypeError, AttributeError):
         # Fallback if cache not loaded
         return "I can help you order from our menu. Just tell me what you'd like!"

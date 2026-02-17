@@ -292,7 +292,7 @@ Thanks,
             "message": "Email sent successfully",
         }
 
-    except Exception as e:
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
         logger.error("Failed to send email to %s: %s", to_email, str(e))
         return {
             "status": "error",
@@ -503,7 +503,7 @@ This is an automated report from the ordering chatbot.
             "message": "Report email sent successfully",
         }
 
-    except Exception as e:
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
         logger.error("Failed to send report email for session %s: %s", short_id, str(e))
         return {
             "status": "error",

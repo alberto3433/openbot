@@ -182,8 +182,15 @@ def complete_address(
     # Query Nominatim for address completion (using stripped address without apartment)
     try:
         matches = _query_nominatim(stripped_address, city, state, allowed_zip_codes)
-    except Exception as e:
+    except (requests.RequestException, ConnectionError, TimeoutError, ValueError, KeyError) as e:
         logger.error("Nominatim query failed: %s", e)
+        return AddressCompletionResult(
+            success=False,
+            addresses=[],
+            error_message="I couldn't verify that address. Could you include the ZIP code?",
+        )
+    except Exception as e:  # Catch-all for unexpected third-party errors
+        logger.error("Unexpected error during address completion: %s", e)
         return AddressCompletionResult(
             success=False,
             addresses=[],
@@ -384,7 +391,7 @@ def geocode_to_zip(
                 logger.debug("Geocoded '%s' to ZIP: %s", address, postcode)
                 return postcode
 
-    except Exception as e:
+    except (requests.RequestException, ConnectionError, TimeoutError, ValueError, KeyError) as e:
         logger.warning("Geocoding failed for '%s': %s", address, e)
 
     return None

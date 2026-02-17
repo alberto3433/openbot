@@ -14,7 +14,7 @@ externalId for idempotency.
 
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -30,8 +30,8 @@ def _generate_external_id(prefix: str = "") -> str:
 
 def build_toast_order(
     db: Session,
-    order_state: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+    order_state: dict[str, Any],
+) -> dict[str, Any] | None:
     """Build a Toast API order payload from our internal order state.
 
     Args:
@@ -73,7 +73,7 @@ def build_toast_order(
         check["appliedDiscounts"] = []
 
     # Build the order
-    order_payload: Dict[str, Any] = {
+    order_payload: dict[str, Any] = {
         "entityType": "Order",
         "externalId": _generate_external_id("ord-"),
         "checks": [check],
@@ -86,9 +86,9 @@ def build_toast_order(
 
 
 def _build_selections(
-    order_state: Dict[str, Any],
+    order_state: dict[str, Any],
     resolver: GuidResolver,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Build Toast selections (line items) from order items.
 
     Items without a Toast GUID mapping are skipped with a warning.
@@ -108,9 +108,9 @@ def _build_selections(
 
 
 def _build_single_selection(
-    item: Dict[str, Any],
+    item: dict[str, Any],
     resolver: GuidResolver,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Build a single Toast selection from an order item.
 
     Returns:
@@ -132,7 +132,7 @@ def _build_single_selection(
 
     quantity = item.get("quantity", 1)
 
-    selection: Dict[str, Any] = {
+    selection: dict[str, Any] = {
         "entityType": "MenuItemSelection",
         "externalId": _generate_external_id("sel-"),
         "itemGroup": {"guid": toast_guid},
@@ -150,9 +150,9 @@ def _build_single_selection(
 
 
 def _build_modifiers(
-    item: Dict[str, Any],
+    item: dict[str, Any],
     resolver: GuidResolver,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Build Toast modifier selections from item modifiers/ingredients.
 
     Looks at item_config.modifiers for structured modifier data.
@@ -196,9 +196,9 @@ def _build_modifiers(
 
 
 def _build_dining_option(
-    order_state: Dict[str, Any],
+    order_state: dict[str, Any],
     resolver: GuidResolver,
-) -> Optional[Dict[str, str]]:
+) -> dict[str, str] | None:
     """Map our order_type (pickup/delivery) to a Toast dining option GUID.
 
     Uses a convention-based lookup: dining_option entity type with
@@ -220,7 +220,7 @@ def _build_dining_option(
     return None
 
 
-def _build_customer(order_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _build_customer(order_state: dict[str, Any]) -> dict[str, Any] | None:
     """Build Toast customer info from our order state.
 
     Returns:
@@ -239,7 +239,7 @@ def _build_customer(order_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     first_name = name_parts[0]
     last_name = name_parts[1] if len(name_parts) > 1 else ""
 
-    customer: Dict[str, Any] = {}
+    customer: dict[str, Any] = {}
 
     if first_name:
         customer["firstName"] = first_name

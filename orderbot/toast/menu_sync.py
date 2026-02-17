@@ -9,7 +9,7 @@ matches and reports ambiguous ones for manual resolution.
 
 import logging
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,7 @@ AUTO_MATCH_THRESHOLD = 0.85
 MIN_CANDIDATE_THRESHOLD = 0.5
 
 
-def sync_menus(db: Session) -> Dict[str, Any]:
+def sync_menus(db: Session) -> dict[str, Any]:
     """Fetch Toast menu and create mappings for matching items.
 
     Returns:
@@ -119,7 +119,7 @@ def sync_menus(db: Session) -> Dict[str, Any]:
     }
 
 
-def _extract_toast_items(menus: list) -> List[Dict[str, Any]]:
+def _extract_toast_items(menus: list) -> list[dict[str, Any]]:
     """Flatten Toast menu structure into a list of {name, guid} dicts."""
     items = []
 
@@ -142,7 +142,7 @@ def _extract_toast_items(menus: list) -> List[Dict[str, Any]]:
 def _find_best_match(
     toast_name: str,
     local_items: list,
-) -> Tuple[Any, float]:
+) -> tuple[Any, float]:
     """Find the local menu item most similar to a Toast item name.
 
     Uses SequenceMatcher for fuzzy string matching (case-insensitive).

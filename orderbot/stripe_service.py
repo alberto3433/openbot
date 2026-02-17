@@ -112,7 +112,7 @@ def create_checkout_session(
             "url": session.url,
         }
 
-    except Exception as e:
+    except (ConnectionError, TimeoutError, ValueError, KeyError) as e:
         logger.error("Failed to create Stripe checkout session for order #%d: %s", order_id, e)
         return None
 
@@ -145,6 +145,6 @@ def get_checkout_session(session_id: str) -> dict[str, Any] | None:
             "metadata": dict(session.metadata) if session.metadata else {},
             "status": session.status,
         }
-    except Exception as e:
+    except (ConnectionError, TimeoutError, ValueError, KeyError) as e:
         logger.error("Failed to retrieve Stripe session %s: %s", session_id, e)
         return None

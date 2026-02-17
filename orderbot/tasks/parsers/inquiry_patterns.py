@@ -284,7 +284,7 @@ def _get_allergen_columns() -> list[str]:
             columns = menu_cache.get_allergen_column_names()
             if columns:
                 return columns
-    except Exception:
+    except (ImportError, AttributeError, KeyError, ValueError, TypeError):
         pass
     # Fallback for tests/startup when cache isn't loaded
     return _DEFAULT_ALLERGEN_COLUMNS
@@ -536,7 +536,7 @@ def get_reorder_modification_keywords() -> dict[str, tuple[str, bool | str]]:
 
     try:
         option_words = menu_cache.get_all_attribute_option_words()
-    except Exception:
+    except (KeyError, ValueError, TypeError, AttributeError):
         # Cache not loaded - return empty dict
         return {}
 

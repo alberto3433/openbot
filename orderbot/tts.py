@@ -289,7 +289,7 @@ def get_tts_provider(
     try:
         _provider_instance = provider_class(**kwargs)
         logger.info("Initialized TTS provider: %s", _provider_instance.name)
-    except Exception as e:
+    except (ConnectionError, TimeoutError, OSError, ValueError, ImportError) as e:
         logger.error("Failed to initialize TTS provider %s: %s", provider_type, e)
         raise
 

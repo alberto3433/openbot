@@ -7,7 +7,7 @@ Protected by admin authentication.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -36,14 +36,14 @@ class GuidMappingCreate(BaseModel):
     entity_type: str
     local_id: int
     toast_guid: str
-    toast_name: Optional[str] = None
-    store_id: Optional[str] = None
+    toast_name: str | None = None
+    store_id: str | None = None
 
 
 class GuidMappingUpdate(BaseModel):
-    toast_guid: Optional[str] = None
-    toast_name: Optional[str] = None
-    store_id: Optional[str] = None
+    toast_guid: str | None = None
+    toast_name: str | None = None
+    store_id: str | None = None
 
 
 class GuidMappingResponse(BaseModel):
@@ -51,8 +51,8 @@ class GuidMappingResponse(BaseModel):
     entity_type: str
     local_id: int
     toast_guid: str
-    toast_name: Optional[str]
-    store_id: Optional[str]
+    toast_name: str | None
+    store_id: str | None
 
     model_config = {"from_attributes": True}
 
@@ -61,10 +61,10 @@ class GuidMappingResponse(BaseModel):
 # CRUD endpoints
 # ---------------------------------------------------------------------------
 
-@toast_admin_router.get("/mappings", response_model=List[GuidMappingResponse])
+@toast_admin_router.get("/mappings", response_model=list[GuidMappingResponse])
 def list_mappings(
-    entity_type: Optional[str] = Query(None),
-    store_id: Optional[str] = Query(None),
+    entity_type: str | None = Query(None),
+    store_id: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """List all Toast GUID mappings, optionally filtered by type/store."""
@@ -156,9 +156,9 @@ def delete_mapping(
 
 @toast_admin_router.get("/unmapped")
 def get_unmapped_items(
-    store_id: Optional[str] = Query(None),
+    store_id: str | None = Query(None),
     db: Session = Depends(get_db),
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[dict[str, Any]]]:
     """List local menu items and ingredients without Toast GUID mappings.
 
     Useful for seeing what still needs to be mapped before Toast orders work.
@@ -208,7 +208,7 @@ def get_unmapped_items(
 @toast_admin_router.post("/sync")
 def sync_toast_menu(
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Pull Toast menu and auto-match items to local menu.
 
     Fetches the Toast restaurant menu, then fuzzy-matches Toast item names

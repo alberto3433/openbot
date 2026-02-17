@@ -82,6 +82,6 @@ def send_sms(to_number: str, body: str) -> str | None:
         message_id = response.get("MessageId")
         logger.info("SMS sent to %s (MessageId: %s)", to_number, message_id)
         return message_id
-    except Exception as e:
+    except (ConnectionError, TimeoutError, OSError, ValueError) as e:
         logger.error("Failed to send SMS to %s: %s", to_number, e)
         return None

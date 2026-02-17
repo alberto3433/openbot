@@ -15,7 +15,7 @@ Environment variables:
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -43,7 +43,7 @@ from ..schemas.enums import ToastOrderStatus
 logger = logging.getLogger(__name__)
 
 # Cached auth token and expiry (module-level singleton)
-_auth_token: Optional[str] = None
+_auth_token: str | None = None
 _token_expires_at: float = 0.0
 
 # Token lifetime: refresh before actual expiry
@@ -65,7 +65,7 @@ def _get_httpx():
         return None
 
 
-def _authenticate() -> Optional[str]:
+def _authenticate() -> str | None:
     """Authenticate with Toast and cache the JWT.
 
     Returns the access token, or None on failure.
@@ -110,9 +110,9 @@ def _authenticate() -> Optional[str]:
 def _make_request(
     method: str,
     path: str,
-    json_body: Optional[Dict[str, Any]] = None,
+    json_body: dict[str, Any] | None = None,
     retry_auth: bool = True,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Make an authenticated request to the Toast API.
 
     Automatically retries once on 401 (token expired).
@@ -162,8 +162,8 @@ def _make_request(
 
 def submit_order(
     db: Session,
-    order_state: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
+    order_state: dict[str, Any],
+) -> dict[str, Any] | None:
     """Submit an order to Toast POS.
 
     Builds the Toast order payload from our internal order state, then POSTs
@@ -216,7 +216,7 @@ def submit_order(
         return None
 
 
-def get_dining_options() -> Optional[list]:
+def get_dining_options() -> list | None:
     """Fetch dining options (pickup, delivery, etc.) from Toast config.
 
     Returns:
@@ -229,7 +229,7 @@ def get_dining_options() -> Optional[list]:
     return result if isinstance(result, list) else None
 
 
-def get_menus() -> Optional[list]:
+def get_menus() -> list | None:
     """Fetch full menu configuration from Toast.
 
     Returns:
@@ -246,7 +246,7 @@ def _update_toast_status(
     db: Session,
     order_id: int,
     status: str,
-    toast_guid: Optional[str] = None,
+    toast_guid: str | None = None,
 ) -> None:
     """Update Toast-related columns on the Order row.
 

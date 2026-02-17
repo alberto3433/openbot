@@ -151,7 +151,7 @@ class LoaderMixin(
                     sum(len(v) for v in self._by_unit_type_items.values()),
                 )
 
-            except Exception as e:
+            except (OperationalError, ProgrammingError, RuntimeError, ValueError, KeyError, TypeError, AttributeError) as e:
                 logger.error("Failed to load menu data cache: %s", e)
                 if fail_on_error:
                     raise RuntimeError(f"Failed to load menu data cache: {e}") from e

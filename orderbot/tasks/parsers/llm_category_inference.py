@@ -104,6 +104,9 @@ Reply with ONLY the category slug (lowercase, no quotes) or "none" if no match."
             )
             return None
 
-    except Exception as e:
+    except (ImportError, ConnectionError, TimeoutError, OSError, ValueError, KeyError, AttributeError, RuntimeError) as e:  # noqa: E501
+        logger.warning("LLM category inference failed for '%s': %s", item_name, e)
+        return None
+    except Exception as e:  # Catch-all for third-party SDK errors (openai.APIError, etc.)
         logger.warning("LLM category inference failed for '%s': %s", item_name, e)
         return None

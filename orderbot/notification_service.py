@@ -12,6 +12,7 @@ based on available contact info and sends the notification.
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .db.models import NotificationLog, Order
@@ -46,7 +47,7 @@ def _log_notification(
     db.add(entry)
     try:
         db.commit()
-    except Exception as e:
+    except SQLAlchemyError as e:
         logger.error("Failed to log notification: %s", e)
         db.rollback()
 
@@ -183,7 +184,7 @@ def _send_simple_email(
         )
         logger.info("%s email sent to %s for order #%d", event, order.customer_email, order.id)
 
-    except Exception as e:
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
         _log_notification(
             db, order.id, "email", event, order.customer_email,
             status=NotificationStatus.FAILED, error_message=str(e),

@@ -97,19 +97,26 @@ def _build_ingredient_search_response(
     matches: list[dict],
     user_input: str,
     pattern_name: str,
+    skip_name_filter: bool = False,
 ) -> OpenInputResponse | None:
-    """Build ingredient search response with required_match_phrases filtering.
+    """Build ingredient search response with optional required_match_phrases filtering.
 
     Args:
         ingredient: The ingredient that was matched
         matches: List of menu items containing the ingredient
         user_input: Original user input text (for filtering and logging)
         pattern_name: Name of pattern for logging (e.g., "standalone", "with_pattern")
+        skip_name_filter: If True, skip required_match_phrases filtering. Use for
+            explicit ingredient queries where the user is asking about an ingredient,
+            not referencing an item by name.
 
     Returns:
         OpenInputResponse if matches exist after filtering, None otherwise.
     """
-    filtered = [m for m in matches if _passes_required_match_filter(m, user_input)]
+    if skip_name_filter:
+        filtered = matches
+    else:
+        filtered = [m for m in matches if _passes_required_match_filter(m, user_input)]
     if not filtered:
         return None
 
@@ -229,11 +236,14 @@ def parse_ingredient_search(
         if m:
             raw_ingredient = m.group(1).strip().rstrip('?.')
             # Try exact match, then singularized form ("egg whites" -> "egg white")
+            # Skip required_match_phrases filter — user is explicitly asking about
+            # an ingredient, not referencing items by name
             for candidate in (raw_ingredient, singularize(raw_ingredient)):
                 if candidate in ingredient_to_items:
                     result = _build_ingredient_search_response(
                         candidate, ingredient_to_items[candidate],
                         text_lower, "items_with",
+                        skip_name_filter=True,
                     )
                     if result:
                         return result

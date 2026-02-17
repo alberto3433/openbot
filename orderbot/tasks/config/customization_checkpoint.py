@@ -24,6 +24,7 @@ from ..parsers.quantity_utils import (
 )
 from .attribute_resolver import get_mandatory_attributes
 from .flows import IngredientFallbackHandler
+from ..parsers.intent_patterns import ORDERING_LANGUAGE_PATTERN
 from ..utils.text import normalize_text
 
 if TYPE_CHECKING:
@@ -268,6 +269,22 @@ class CustomizationCheckpointHandler:
             or menu_cache.is_done(user_lower)
         )
         if is_declining:
+            # Check for compound response like "no but can I get two large coffees"
+            ordering_remainder = self._extract_ordering_remainder(user_input)
+            if ordering_remainder:
+                from ..parsers import parse_open_input_deterministic
+                parsed = parse_open_input_deterministic(ordering_remainder)
+                if parsed and parsed.parsed_items:
+                    if not order.pending_parsed_items:
+                        order.pending_parsed_items = []
+                    for pi in parsed.parsed_items:
+                        order.pending_parsed_items.append(
+                            pi.model_dump() if hasattr(pi, 'model_dump') else pi.__dict__
+                        )
+                    logger.info(
+                        "Extracted %d items from compound decline: '%s'",
+                        len(parsed.parsed_items), ordering_remainder,
+                    )
             return self._handle_declining(item, order)
 
         unanswered = self._get_unanswered_optional(item, item_type)
@@ -360,6 +377,56 @@ class CustomizationCheckpointHandler:
             order=order,
             quick_replies=qr,
         )
+
+    def _extract_ordering_remainder(self, user_input: str) -> str | None:
+        """Extract ordering remainder from compound responses.
+
+        Detects inputs like "no but can I get two large coffees" and returns
+        the ordering portion ("can I get two large coffees") after stripping
+        the negative prefix and connectors.
+
+        Args:
+            user_input: Raw user input text.
+
+        Returns:
+            The ordering portion if detected, None otherwise.
+        """
+        user_lower = normalize_text(user_input)
+
+        # Must start with a negative pattern
+        no_patterns = menu_cache.get_response_patterns("negative")
+        matched_prefix = None
+        for p in no_patterns:
+            if user_lower == p:
+                return None  # Pure negative, no remainder
+            if user_lower.startswith(p + " ") or user_lower.startswith(p + ","):
+                matched_prefix = p
+                break
+
+        if not matched_prefix:
+            return None
+
+        # Strip the negative prefix
+        remainder = user_input[len(matched_prefix):].lstrip(" ,.")
+
+        if not remainder:
+            return None
+
+        # Strip connectors: "but", "and", "also"
+        remainder_lower = normalize_text(remainder)
+        for connector in ("but ", "and ", "also "):
+            if remainder_lower.startswith(connector):
+                remainder = remainder[len(connector):].lstrip()
+                break
+
+        if not remainder:
+            return None
+
+        # Only return if remainder contains ordering language
+        if ORDERING_LANGUAGE_PATTERN.search(remainder):
+            return remainder
+
+        return None
 
     def _handle_declining(
         self, item: "MenuItemTask", order: "OrderTask"

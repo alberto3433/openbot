@@ -100,7 +100,7 @@ CANCEL_ITEM_PATTERN = re.compile(
     # Also exclude "no make it X" which is a replacement pattern handled by REPLACE_ITEM_PATTERN
     # Also exclude "no I don't want..." which should be handled by the "I don't want X" pattern
     # Use negative lookahead to avoid matching these phrases
-    r"no\s+(?!thanks\b|thank\s+you|more\b|that'?s?\s+(?:it|all|fine|good|ok|okay)|i'?m\s+(?:good|fine|ok|okay|done|all\s+set)|problem|worries|way|make\s+(?:it\s+)?|i\s+don)(?:the\s+)?(.+?)(?:\s+please)?[\s!.,]*$"
+    r"no\s+(?!thanks\b|thank\s+you|more\b|but\b|that'?s?\s+(?:it|all|fine|good|ok|okay)|i'?m\s+(?:good|fine|ok|okay|done|all\s+set)|problem|worries|way|make\s+(?:it\s+)?|i\s+don)(?:the\s+)?(.+?)(?:\s+please)?[\s!.,]*$"
     r"|"
     # "can you remove X?", "could you remove X?", "would you remove X?"
     r"(?:can|could|would)\s+you\s+(?:remove|delete|cancel|skip|take\s+(?:off|out))\s+(?:the\s+)?(.+?)[\s!.,?]*$"

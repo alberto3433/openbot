@@ -12,6 +12,34 @@ from orderbot.cache import menu_cache
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# Qualifier Patterns for Special Instructions
+# =============================================================================
+
+# Qualifier patterns for special instructions extraction
+# These are phrases that modify a standard modifier in a non-standard way
+QUALIFIER_PATTERNS = [
+    # "light on the X" / "light X" / "go light on X"
+    (r'\b(?:go\s+)?light\s+(?:on\s+(?:the\s+)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'light'),
+    # "easy on the X" / "go easy on the X"
+    (r'\b(?:go\s+)?easy\s+on\s+(?:the\s+)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'light'),
+    # "extra X" / "extra heavy on the X"
+    (r'\bextra\s+(?:heavy\s+(?:on\s+(?:the\s+)?)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'extra'),
+    # "lots of X" / "a lot of X"
+    (r'\b(?:a\s+)?lot(?:s)?\s+of\s+(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'extra'),
+    # "heavy on the X"
+    (r'\bheavy\s+(?:on\s+(?:the\s+)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'extra'),
+    # "a splash of X" / "splash of X"
+    (r'\b(?:a\s+)?splash\s+of\s+(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'a splash of'),
+    # "a little X" / "just a little X" / "little bit of X"
+    (r'\b(?:just\s+)?(?:a\s+)?little\s+(?:bit\s+(?:of\s+)?)?(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'a little'),
+    # "no X" / "hold the X" / "without X"
+    (r'\b(?:no\s+|hold\s+the\s+|without\s+)(\w+(?:\s+(?!and\b|or\b|with\b|a\b|the\b)\w+)?)', 'no'),
+    # "X on the side" - captures single-word modifiers like sugar, cream, milk
+    # Uses negative lookbehind to avoid matching "coffee cream" when user says "coffee cream on the side"
+    (r'\b(\w+)\s+on\s+the\s+side\b', 'on the side'),
+]
+
 
 # =============================================================================
 # Pattern Matching Helpers

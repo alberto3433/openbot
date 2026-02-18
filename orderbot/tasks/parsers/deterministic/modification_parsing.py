@@ -5,6 +5,7 @@ This module contains functions for parsing modifications to existing items,
 including adding modifiers, extracting modifications, and "add more" requests.
 """
 
+import functools
 import re
 import logging
 
@@ -28,17 +29,12 @@ from ..quantity_utils import extract_leading_quantity, BASIC_WORD_TO_NUM
 
 from .extraction import extract_modifiers_with_qualifiers
 from .pipeline import get_pipeline
+from ...shared_constants import ORDERING_PREFIX_RE, LEADING_ARTICLE_RE
 
 logger = logging.getLogger(__name__)
 
-# Get shared pipeline instance for extraction operations
-_pipeline = get_pipeline()
 
-
-# Cache for dynamic terminator pattern
-_ATTRIBUTE_TERMINATORS_PATTERN: str | None = None
-
-
+@functools.lru_cache(maxsize=1)
 def _get_attribute_terminators_pattern() -> str:
     """Build regex alternation of all attribute option words from database.
 
@@ -49,10 +45,6 @@ def _get_attribute_terminators_pattern() -> str:
     Returns:
         Regex alternation string like "toasted|scooped|iced|hot|large|medium|..."
     """
-    global _ATTRIBUTE_TERMINATORS_PATTERN
-    if _ATTRIBUTE_TERMINATORS_PATTERN is not None:
-        return _ATTRIBUTE_TERMINATORS_PATTERN
-
     # Get all attribute option words from database
     attr_words = menu_cache.get_all_attribute_option_words()
 
@@ -64,9 +56,7 @@ def _get_attribute_terminators_pattern() -> str:
     # Sort by length descending (longer matches first)
     sorted_terminators = sorted(terminators, key=len, reverse=True)
 
-    # Build alternation pattern
-    _ATTRIBUTE_TERMINATORS_PATTERN = "|".join(re.escape(t) for t in sorted_terminators)
-    return _ATTRIBUTE_TERMINATORS_PATTERN
+    return "|".join(re.escape(t) for t in sorted_terminators)
 
 
 # =============================================================================
@@ -521,11 +511,8 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int, str | None
     text_lower = text.lower().strip()
 
     # Strip ordering phrases like "I want", "add", "can I get", etc.
-    text_lower = re.sub(
-        r'^(i\s+want\s+|i\'?d\s+like\s+|can\s+i\s+(get|have)\s+|give\s+me\s+|'
-        r'let\s+me\s+(get|have)\s+|add\s+)', '', text_lower
-    )
-    text_lower = re.sub(r'^(a|an|the)\s+', '', text_lower)
+    text_lower = ORDERING_PREFIX_RE.sub('', text_lower)
+    text_lower = LEADING_ARTICLE_RE.sub('', text_lower)
 
     # FIRST: Try matching with FULL text (including any leading numbers)
     # This handles menu items like "3 Bagel Package" where the number is part of the name
@@ -694,7 +681,7 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
     detected_type, trigger = _detect_configurable_item_type(item_text)
     if detected_type:
         # Extract attributes using data-driven extraction
-        attr_result = _pipeline.extract_attributes(item_text, detected_type)
+        attr_result = get_pipeline().extract_attributes(item_text, detected_type)
 
         # Try to find the actual menu item name to avoid falling back to item_type slug
         item_name = None
@@ -703,7 +690,7 @@ def _parse_add_more_request(text: str) -> OpenInputResponse | None:
             item_name = menu_cache.resolve_menu_item_alias(trigger)
         # 2. Fallback: check all items of this type for word-boundary match in item_text
         if not item_name:
-            type_item_names = menu_cache.get_item_names_by_type(detected_type)
+            type_item_names = menu_cache.get_item_names(detected_type)
             for name in sorted(type_item_names, key=len, reverse=True):
                 if re.search(rf'\b{re.escape(name)}\b', item_text.lower()):
                     item_name = menu_cache.resolve_menu_item_alias(name)

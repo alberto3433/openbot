@@ -274,3 +274,23 @@ def menu_cache_loaded(tmp_path_factory):
                     db.close()
 
     return menu_cache
+
+
+@pytest.fixture
+def order_and_sm():
+    """Create a fresh OrderTask (in TAKING_ITEMS phase) and OrderStateMachine.
+
+    Usage in resiliency tests::
+
+        def test_example(self, order_and_sm):
+            order, sm = order_and_sm
+            order.items.add_item(some_item)
+            result = sm.process("user input", order)
+    """
+    from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
+    from orderbot.tasks.models import OrderTask
+
+    order = OrderTask()
+    order.phase = OrderPhase.TAKING_ITEMS.value
+    sm = OrderStateMachine()
+    return order, sm

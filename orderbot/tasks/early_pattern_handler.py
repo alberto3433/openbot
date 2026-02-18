@@ -16,19 +16,20 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from .pending_fields import PendingField
+from .pending_fields import PendingField, UNKNOWN_ATTRIBUTE_SLUG
 
 from orderbot.cache import menu_cache
 
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult
 from .parsers.deterministic import MAKE_IT_N_PATTERN
-from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity, BASIC_WORD_TO_NUM
+from .parsers.quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity, BASIC_WORD_TO_NUM, QTY_WORDS_RE
 from .parsers.constants import ADD_MODIFIER_PATTERNS
 from .parsers.intent_patterns import strip_conversational_fillers
 from .handler_utils import (
     is_configurable_menu_item,
     get_last_item,
+    duplicate_last_item_to_qty,
     recalculate_and_summarize,
 )
 from .modifier_input_handler import (
@@ -45,6 +46,7 @@ from .checkout_messages import (
     sure_removed_anything_else,
     sure_updated_anything_else,
     got_it_anything_else,
+    thats_n_total_anything_else,
 )
 from .parsers.deterministic.qualifier_extraction import extract_modifiers_with_qualifiers
 
@@ -58,7 +60,7 @@ logger = logging.getLogger(__name__)
 # NOTE: "get N" and "give me N" are handled by MAKE_IT_N_PATTERN which sets total to N
 # This pattern is for "add N" which ADDS N more (additive, not absolute)
 ADD_QUANTITY_PATTERN = re.compile(
-    r"^add\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"^add\s+(\d+|{QTY_WORDS_RE})"
     r"(?:\s+more)?(?:\s+(?:of\s+those|of\s+them|of\s+these))?(?:\s+please)?$",
     re.IGNORECASE
 )
@@ -191,23 +193,13 @@ class EarlyPatternHandler:
         if not target_qty:
             return None
 
-        active_items = order.items.get_active_items()
-        if not active_items:
+        result = duplicate_last_item_to_qty(order, target_qty, count_existing=False)
+        if result is None:
             return None
 
-        last_item = get_last_item(active_items)
-        last_item_name = last_item.get_summary()
-        added_count = target_qty - 1
-
-        # Use mark_complete=False so duplicates preserve the original's status
-        # This ensures incomplete items get configured after the original is done
-        for _ in range(added_count):
-            order.items.add_item(last_item.duplicate(mark_complete=False))
-
-        logger.info("TAKING_ITEMS: Added %d more of '%s'", added_count, last_item_name)
-
+        target_qty, _, _ = result
         return StateMachineResult(
-            message=f"Sure, that's {target_qty} total. Anything else?",
+            message=thats_n_total_anything_else(target_qty),
             order=order,
         )
 
@@ -236,7 +228,7 @@ class EarlyPatternHandler:
         if not change_request.possible_attributes:
             return None
 
-        if change_request.possible_attributes[0] == "unknown":
+        if change_request.possible_attributes[0] == UNKNOWN_ATTRIBUTE_SLUG:
             return None
 
         # Apply the change directly
@@ -520,7 +512,7 @@ class EarlyPatternHandler:
             if it.menu_item_name == template_item.menu_item_name
         )
         return StateMachineResult(
-            message=f"Sure, that's {total_qty} total. Anything else?",
+            message=thats_n_total_anything_else(total_qty),
             order=order,
         )
 

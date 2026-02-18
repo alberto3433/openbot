@@ -48,13 +48,40 @@ from .models import (
     TaskStatus,
     OrderTask,
 )
-from .models.pending_states import PendingDietaryFollowup
+from .models.pending_states import (
+    PendingAttrDisambiguation,
+    PendingChangeClarification,
+    PendingDietaryFollowup,
+    PendingDuplicateSelection,
+    PendingIngredientSearch,
+    PendingIngredientSuggestion,
+    PendingOrderHistory,
+    PendingSameThingClarification,
+    PendingSwitchItem,
+    PendingUnmatchedPagination,
+)
 from .item_converters import _unified_converter
 from .pricing import PricingEngine
 from ..schemas.enums import OrderStatus
 from ..services.tax_utils import calculate_order_total
 
 logger = logging.getLogger(__name__)
+
+
+# Map field names to Pydantic model classes for dict→model coercion on restore.
+# Module-level to avoid rebuilding on every _restore_flow_state() call.
+_PYDANTIC_FIELDS: dict[str, type] = {
+    "pending_attr_disambiguation": PendingAttrDisambiguation,
+    "pending_change_clarification": PendingChangeClarification,
+    "pending_dietary_followup": PendingDietaryFollowup,
+    "pending_duplicate_selection": PendingDuplicateSelection,
+    "pending_ingredient_search": PendingIngredientSearch,
+    "pending_ingredient_suggestion": PendingIngredientSuggestion,
+    "pending_order_history": PendingOrderHistory,
+    "pending_same_thing_clarification": PendingSameThingClarification,
+    "pending_switch_item": PendingSwitchItem,
+    "pending_unmatched_pagination": PendingUnmatchedPagination,
+}
 
 
 # -----------------------------------------------------------------------------
@@ -124,14 +151,6 @@ def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
         sm_state: The state_machine_state dict from order_dict
         order: The OrderTask to populate
     """
-    from .models.pending_states import PendingOrderHistory
-
-    # Map field names to Pydantic model classes for dict→model coercion on restore
-    _PYDANTIC_FIELDS: dict[str, type] = {
-        "pending_order_history": PendingOrderHistory,
-        "pending_dietary_followup": PendingDietaryFollowup,
-    }
-
     for field_name, default in _FLOW_STATE_FIELDS:
         value = sm_state.get(field_name, default)
         # Coerce raw dicts back to Pydantic models after JSON round-trip
@@ -297,11 +316,14 @@ def order_task_to_dict(
     else:
         status = OrderStatus.PENDING
 
+    # Calculate subtotal once and reuse
+    subtotal = _calculate_subtotal(order)
+
     # Calculate total
     if order.checkout.total > 0:
         total_price = order.checkout.total
     else:
-        total_price = _calculate_subtotal(order)
+        total_price = subtotal
 
     order_dict = {
         "status": status,
@@ -330,9 +352,6 @@ def order_task_to_dict(
         order_dict["payment_method"] = order.payment.method
     if order.payment.payment_link_sent and order.payment.payment_link_destination:
         order_dict["payment_link"] = order.payment.payment_link_destination
-
-    # Calculate taxes if store_info is available
-    subtotal = _calculate_subtotal(order)
 
     city_tax = order.checkout.city_tax
     state_tax = order.checkout.state_tax

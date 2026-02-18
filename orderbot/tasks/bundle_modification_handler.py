@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from .models import OrderTask, MenuItemTask
 from .schemas import StateMachineResult
 from .parsers.intent_patterns import parse_make_named_item
-from .pending_fields import PendingField
+from .pending_fields import PendingField, UNKNOWN_ATTRIBUTE_SLUG
 from .modifier_change_handler import ChangeRequest
 from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
@@ -265,7 +265,7 @@ class BundleModificationHandler:
         # Case 1: Unambiguous attribute change
         if not change_request.is_ambiguous and change_request.possible_attributes:
             attr_slug = change_request.possible_attributes[0]
-            if attr_slug != "unknown":
+            if attr_slug != UNKNOWN_ATTRIBUTE_SLUG:
                 result = self.modifier_change_handler.apply_change(
                     order, item.id, attr_slug, new_value, target=change_request.target
                 )

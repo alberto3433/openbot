@@ -83,6 +83,14 @@ from orderbot.tasks.parsers.deterministic import ExtractionPipeline
 _test_pipeline = ExtractionPipeline()
 
 
+def _get_spread_slug(values: dict) -> str | None:
+    """Helper to extract spread slug from multi-select attribute format."""
+    spread = values.get("spread")
+    if spread and isinstance(spread, list) and len(spread) > 0:
+        return spread[0].get("slug")
+    return None
+
+
 class TestDeterministicParserHelpers:
     """Tests for deterministic parser helper functions."""
 
@@ -127,13 +135,6 @@ class TestDeterministicParserHelpers:
         Matching is done via display_name and aliases, not slug literals.
         Note: Spread is a multi-select attribute, so it returns a list of dicts.
         """
-        def _get_spread_slug(values: dict) -> str | None:
-            """Helper to extract spread slug from multi-select format."""
-            spread = values.get("spread")
-            if spread and isinstance(spread, list) and len(spread) > 0:
-                return spread[0].get("slug")
-            return None
-
         # "scallion cream cheese" matches scallion_cream_cheese slug
         attrs = _test_pipeline.extract_attributes("with scallion cream cheese", "bagel")
         assert _get_spread_slug(attrs.values) == "scallion_cream_cheese"
@@ -147,13 +148,6 @@ class TestDeterministicParserHelpers:
 
     def test_extract_spread_cc_alias(self):
         """Test that 'cc' alias variants are normalized to correct slug."""
-        def _get_spread_slug(values: dict) -> str | None:
-            """Helper to extract spread slug from multi-select format."""
-            spread = values.get("spread")
-            if spread and isinstance(spread, list) and len(spread) > 0:
-                return spread[0].get("slug")
-            return None
-
         # "scallion cc" alias resolves to scallion_cream_cheese slug
         attrs = _test_pipeline.extract_attributes("scallion cc", "bagel")
         spread = _get_spread_slug(attrs.values)
@@ -1200,59 +1194,53 @@ class TestOrderStatusPatternDetection:
 class TestSpecialInstructionsExtraction:
     """Tests for extract_special_instructions_from_input function."""
 
-    def test_light_on_the_cream_cheese(self):
-        """Test 'light on the cream cheese' extracts correctly."""
+    # ----- Parameterized: simple qualifier extraction (exact match in notes) -----
+    @pytest.mark.parametrize("user_input, expected_note", [
+        ("plain bagel with light on the cream cheese", "light cream cheese"),
+        ("bagel with light cream cheese", "light cream cheese"),
+        ("egg and cheese bagel with extra bacon", "extra bacon"),
+        ("bagel with lots of cream cheese", "extra cream cheese"),
+        ("coffee with a splash of milk", "a splash of milk"),
+        ("sandwich with go easy on the mayo", "light mayo"),
+        ("coffee with a little sugar", "a little sugar"),
+        ("bagel with no onions", "no onions"),
+        ("sandwich hold the tomato", "no tomato"),
+        ("bagel heavy on the cheese", "extra cheese"),
+    ])
+    def test_qualifier_extraction(self, user_input, expected_note):
+        """Test that qualifier phrases are correctly extracted from input."""
         from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("plain bagel with light on the cream cheese")
-        assert "light cream cheese" in notes
+        notes = extract_special_instructions_from_input(user_input)
+        assert expected_note in notes
 
-    def test_light_cream_cheese_short_form(self):
-        """Test 'light cream cheese' extracts correctly."""
+    # ----- Parameterized: standalone special instruction patterns (substring in any note) -----
+    @pytest.mark.parametrize("user_input, expected_substring", [
+        ("coffee room for cream", "room"),
+        ("latte not too hot", "not too hot"),
+        ("coffee lukewarm please", "lukewarm"),
+        ("caramel macchiato upside down", "upside down"),
+        ("iced coffee well stirred", "well stirred"),
+        ("latte mixed", "mixed"),
+        ("plain bagel lightly toasted", "lightly toasted"),
+        ("everything bagel well done", "well done"),
+        ("bagel with cream cheese cut in half", "cut in half"),
+        ("plain bagel sliced", "sliced"),
+        ("egg sandwich open faced", "open faced"),
+        ("bagel with cream cheese spread thin", "spread thin"),
+        ("cream cheese only on one side", "on one side"),
+        ("butter on both halves", "on both halves"),
+        ("bagel with cheese melted", "melted"),
+        ("iced coffee extra ice", "extra ice"),
+        ("iced coffee light ice", "light ice"),
+        ("iced coffee no ice", "no ice"),
+    ])
+    def test_standalone_special_instruction(self, user_input, expected_substring):
+        """Test that standalone instruction patterns are captured."""
         from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("bagel with light cream cheese")
-        assert "light cream cheese" in notes
+        instructions = extract_special_instructions_from_input(user_input)
+        assert any(expected_substring in i.lower() for i in instructions)
 
-    def test_extra_bacon(self):
-        """Test 'extra bacon' extracts correctly."""
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("egg and cheese bagel with extra bacon")
-        assert "extra bacon" in notes
-
-    def test_lots_of_cream_cheese(self):
-        """Test 'lots of cream cheese' extracts correctly."""
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("bagel with lots of cream cheese")
-        assert "extra cream cheese" in notes
-
-    def test_splash_of_milk(self):
-        """Test 'a splash of milk' extracts correctly."""
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("coffee with a splash of milk")
-        assert "a splash of milk" in notes
-
-    def test_go_easy_on_the_mayo(self):
-        """Test 'go easy on the mayo' extracts correctly."""
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("sandwich with go easy on the mayo")
-        assert "light mayo" in notes
-
-    def test_little_bit_of_sugar(self):
-        """Test 'a little sugar' extracts correctly."""
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("coffee with a little sugar")
-        assert "a little sugar" in notes
-
-    def test_no_onions(self):
-        """Test 'no onions' extracts correctly."""
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("bagel with no onions")
-        assert "no onions" in notes
-
-    def test_hold_the_tomato(self):
-        """Test 'hold the tomato' extracts correctly."""
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("sandwich hold the tomato")
-        assert "no tomato" in notes
+    # ----- Non-parameterizable tests (multiple assertions or different logic) -----
 
     def test_multiple_notes(self):
         """Test multiple qualifier phrases extract correctly."""
@@ -1267,38 +1255,25 @@ class TestSpecialInstructionsExtraction:
         notes = extract_special_instructions_from_input("plain bagel with cream cheese")
         assert len(notes) == 0
 
-    def test_heavy_on_the_cheese(self):
-        """Test 'heavy on the cheese' extracts as extra."""
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
-        notes = extract_special_instructions_from_input("bagel heavy on the cheese")
-        assert "extra cheese" in notes
-
     def test_multi_item_notes_separated_coffee_only(self):
         """Test that coffee notes filter only includes coffee-related notes."""
         from orderbot.tasks.parsers import extract_special_instructions_from_input
-        # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
-        notes = extract_special_instructions_from_input("a coffee with a splash of milk and a bagel with a lot of cream cheese")
-        # Should extract both notes separately
+        notes = extract_special_instructions_from_input(
+            "a coffee with a splash of milk and a bagel with a lot of cream cheese"
+        )
         assert "a splash of milk" in notes
         assert "extra cream cheese" in notes
 
     def test_multi_item_coffee_with_milk_and_special_instructions(self):
-        """Test that multi-item parser extracts items and special instructions are captured at order level.
-
-        Note: The 'splash of milk' phrase is captured as order-level special_instructions.
-        Special instructions are no longer stored per-item but at the order level.
-        """
+        """Test that multi-item parser extracts items and special instructions are captured at order level."""
         from orderbot.tasks.parsers import _parse_multi_item_order, extract_special_instructions_from_input
-        # Multi-item order: "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         user_input = "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         result = _parse_multi_item_order(user_input)
         assert result is not None
         assert has_coffee(result)
         assert has_bagel(result)
-        # Check parsed_items has a coffee
         coffee = get_coffee_item(result)
         assert coffee is not None
-        # Special instructions are now extracted at order level, not per-item
         instructions = extract_special_instructions_from_input(user_input)
         assert any("splash" in i.lower() or "milk" in i.lower() for i in instructions)
 
@@ -1311,8 +1286,6 @@ class TestSpecialInstructionsExtraction:
         assert result is not None
         coffee = get_coffee_item(result)
         assert coffee is not None, f"No coffee found. All items: {[(i.item_type, i.item_name) for i in result.parsed_items]}"
-        # Sugar on the side should be in order-level special_instructions
-        # TODO: Future enhancement - extract sugar as sweetener modifier for pricing
         instructions = extract_special_instructions_from_input(user_input)
         assert any("sugar on the side" in i.lower() for i in instructions)
 
@@ -1325,138 +1298,22 @@ class TestSpecialInstructionsExtraction:
         assert result is not None
         coffee = get_coffee_item(result)
         assert coffee is not None
-        # Cream on the side should be in order-level special_instructions
-        # TODO: Future enhancement - extract cream as milk attribute for pricing
         instructions = extract_special_instructions_from_input(user_input)
         assert any("cream on the side" in i.lower() for i in instructions)
 
-    @pytest.mark.xfail(reason="Milk extraction from 'milk on the side' not yet implemented - requires enhanced attribute extraction")
     def test_coffee_with_milk_on_the_side(self):
-        """Test that 'milk on the side' adds milk AND to order-level special_instructions."""
+        """Test that 'milk on the side' attaches qualifier to milk selection."""
         from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
-        from orderbot.tasks.parsers import extract_special_instructions_from_input
         user_input = "coffee milk on the side"
         result = parse_open_input_deterministic(user_input)
         assert result is not None
         coffee = get_coffee_item(result)
         assert coffee is not None
-        # Milk SHOULD be extracted (defaults to whole when just "milk" is mentioned)
-        assert coffee.attribute_values.get("milk") == "whole"
-        # Milk on the side should ALSO be in order-level special_instructions
-        instructions = extract_special_instructions_from_input(user_input)
-        assert any("milk on the side" in i.lower() for i in instructions)
-
-    # -------------------------------------------------------------------------
-    # Standalone Special Instruction Patterns
-    # -------------------------------------------------------------------------
-
-    def test_special_instruction_room_for_cream(self):
-        """Test 'room for cream' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("coffee room for cream")
-        assert any("room" in i.lower() for i in instructions)
-
-    def test_special_instruction_not_too_hot(self):
-        """Test 'not too hot' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("latte not too hot")
-        assert any("not too hot" in i.lower() for i in instructions)
-
-    def test_special_instruction_lukewarm(self):
-        """Test 'lukewarm' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("coffee lukewarm please")
-        assert any("lukewarm" in i.lower() for i in instructions)
-
-    def test_special_instruction_upside_down(self):
-        """Test 'upside down' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("caramel macchiato upside down")
-        assert any("upside down" in i.lower() for i in instructions)
-
-    def test_special_instruction_well_stirred(self):
-        """Test 'well stirred' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("iced coffee well stirred")
-        assert any("well stirred" in i.lower() for i in instructions)
-
-    def test_special_instruction_mixed(self):
-        """Test 'mixed' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("latte mixed")
-        assert any("mixed" in i.lower() for i in instructions)
-
-    def test_special_instruction_lightly_toasted(self):
-        """Test 'lightly toasted' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("plain bagel lightly toasted")
-        assert any("lightly toasted" in i.lower() for i in instructions)
-
-    def test_special_instruction_well_done(self):
-        """Test 'well done' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("everything bagel well done")
-        assert any("well done" in i.lower() for i in instructions)
-
-    def test_special_instruction_cut_in_half(self):
-        """Test 'cut in half' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("bagel with cream cheese cut in half")
-        assert any("cut in half" in i.lower() for i in instructions)
-
-    def test_special_instruction_sliced(self):
-        """Test 'sliced' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("plain bagel sliced")
-        assert any("sliced" in i.lower() for i in instructions)
-
-    def test_special_instruction_open_faced(self):
-        """Test 'open faced' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("egg sandwich open faced")
-        assert any("open faced" in i.lower() for i in instructions)
-
-    def test_special_instruction_spread_thin(self):
-        """Test 'spread thin' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("bagel with cream cheese spread thin")
-        assert any("spread thin" in i.lower() for i in instructions)
-
-    def test_special_instruction_on_one_side(self):
-        """Test 'on one side' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("cream cheese only on one side")
-        assert any("on one side" in i.lower() for i in instructions)
-
-    def test_special_instruction_on_both_halves(self):
-        """Test 'on both halves' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("butter on both halves")
-        assert any("on both halves" in i.lower() for i in instructions)
-
-    def test_special_instruction_melted(self):
-        """Test 'melted' is captured as special instruction."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("bagel with cheese melted")
-        assert any("melted" in i.lower() for i in instructions)
-
-    def test_special_instruction_extra_ice(self):
-        """Test 'extra ice' is captured as special instruction (existing qualifier pattern)."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("iced coffee extra ice")
-        assert any("extra ice" in i.lower() for i in instructions)
-
-    def test_special_instruction_light_ice(self):
-        """Test 'light ice' is captured as special instruction (existing qualifier pattern)."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("iced coffee light ice")
-        assert any("light ice" in i.lower() for i in instructions)
-
-    def test_special_instruction_no_ice(self):
-        """Test 'no ice' is captured as special instruction (existing qualifier pattern)."""
-        from orderbot.tasks.parsers.deterministic import extract_special_instructions_from_input
-        instructions = extract_special_instructions_from_input("iced coffee no ice")
-        assert any("no ice" in i.lower() for i in instructions)
+        milk_sel = [s for s in coffee.selections if "milk" in s.slug]
+        assert milk_sel, f"Expected milk selection, got selections: {coffee.selections}"
+        assert "(on the side)" in milk_sel[0].display_name, (
+            f"Expected '(on the side)' in display_name, got: {milk_sel[0].display_name}"
+        )
 
     def test_multi_item_bagel_and_signature_item(self):
         """Test that multi-item parser recognizes speed menu items like The Classic BEC."""
@@ -3544,4 +3401,70 @@ class TestEnglishBreakfastTeaParsing:
         assert result is not None, "Expected parse result for 'breakfast'"
         assert result.needs_category_clarification == "breakfast", (
             f"Expected needs_category_clarification='breakfast', got '{result.needs_category_clarification}'"
+        )
+
+
+class TestSplitQuantityModifierBleed:
+    """Integration tests: split-quantity items must NOT bleed modifiers to siblings.
+
+    Regression test for bug where 'two bagels one with lox one plain' would
+    apply lox to BOTH bagels because the plain item's empty selections ([])
+    was converted to None, triggering a fallback re-scan of the full input.
+    """
+
+    def test_two_bagels_one_with_spread_one_plain_no_bleed(self):
+        """Plain bagel should NOT get cream cheese from sibling."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.schemas import OrderPhase
+
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        result = sm.process("two plain bagels one with cream cheese one plain", order)
+
+        items = result.order.items.get_active_items()
+        bagels = [i for i in items if "bagel" in (i.menu_item_name or "").lower()]
+        assert len(bagels) == 2, f"Expected 2 bagels, got {len(bagels)}: {[(i.item_type, i.menu_item_name) for i in items]}"
+
+        # Sort by whether they have spread selections to get deterministic order
+        with_spread = [b for b in bagels if b.get_selections("spread")]
+        without_spread = [b for b in bagels if not b.get_selections("spread")]
+
+        assert len(with_spread) == 1, (
+            f"Exactly 1 bagel should have spread. "
+            f"Spreads: {[(b.menu_item_name, b.get_selections('spread')) for b in bagels]}"
+        )
+        assert len(without_spread) == 1, (
+            f"Exactly 1 bagel should have NO spread (plain). "
+            f"Spreads: {[(b.menu_item_name, b.get_selections('spread')) for b in bagels]}"
+        )
+
+    def test_two_bagels_one_with_spread_one_without_no_bleed(self):
+        """'one without' should mean plain — no modifiers from sibling."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.schemas import OrderPhase
+
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        result = sm.process("two plain bagels one with cream cheese one without", order)
+
+        items = result.order.items.get_active_items()
+        bagels = [i for i in items if "bagel" in (i.menu_item_name or "").lower()]
+        assert len(bagels) == 2, f"Expected 2 bagels, got {len(bagels)}: {[(i.item_type, i.menu_item_name) for i in items]}"
+
+        with_spread = [b for b in bagels if b.get_selections("spread")]
+        without_spread = [b for b in bagels if not b.get_selections("spread")]
+
+        assert len(with_spread) == 1, (
+            f"Exactly 1 bagel should have spread. "
+            f"Spreads: {[(b.menu_item_name, b.get_selections('spread')) for b in bagels]}"
+        )
+        assert len(without_spread) == 1, (
+            f"Exactly 1 bagel should have NO spread ('without' = plain). "
+            f"Spreads: {[(b.menu_item_name, b.get_selections('spread')) for b in bagels]}"
         )

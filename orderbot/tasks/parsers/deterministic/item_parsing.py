@@ -31,6 +31,7 @@ from .extraction import (
     _extract_by_pound_info,
 )
 from ..quantity_utils import extract_quantity_for_pattern
+from ...shared_constants import ORDERING_PREFIX_RE, LEADING_ARTICLE_RE
 
 # Import from specialized modules
 from .item_building import build_parsed_item
@@ -233,9 +234,9 @@ def _parse_item_generic(
     modifier_selections: list[Selection] = []
     for mod in food_modifiers:
         category = menu_cache.get_ingredient_category(mod)
-        quantity = extract_quantity_for_pattern(text_lower, mod)
+        mod_quantity = extract_quantity_for_pattern(text_lower, mod)
         modifier_selections.append(Selection(
-            slug=mod, category=category, quantity=quantity
+            slug=mod, category=category, quantity=mod_quantity
         ))
 
     # Extract item-level special instructions (e.g., "room for cream", "extra hot")
@@ -644,8 +645,17 @@ def _attach_position_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -
         # For each selection, check if "{slug_as_words} {qualifier}" appears in text
         for sel in parsed_item.selections:
             slug_words = sel.slug.replace("_", " ")
-            combined = rf'\b{re.escape(slug_words)}\s+{re.escape(pattern)}\b'
-            if not re.search(combined, text_lower):
+            words = slug_words.split()
+            # Try full slug, then progressively shorter suffixes
+            # e.g., "whole milk" -> try "whole milk", then "milk"
+            matched = False
+            for i in range(len(words)):
+                suffix = " ".join(words[i:])
+                combined = rf'\b{re.escape(suffix)}\s+{re.escape(pattern)}\b'
+                if re.search(combined, text_lower):
+                    matched = True
+                    break
+            if not matched:
                 continue
 
             # Match found - attach qualifier to this selection's display_name
@@ -783,9 +793,9 @@ def _extract_and_build_configurable_item(
     modifier_selections: list[Selection] = []
     for mod in food_modifiers:
         category = menu_cache.get_ingredient_category(mod)
-        quantity = extract_quantity_for_pattern(text_lower, mod)
+        mod_quantity = extract_quantity_for_pattern(text_lower, mod)
         modifier_selections.append(Selection(
-            slug=mod, category=category, quantity=quantity
+            slug=mod, category=category, quantity=mod_quantity
         ))
 
     # Filter out special instructions already captured as selections
@@ -840,15 +850,9 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     text_lower = text.lower().strip()
 
     # Strip ordering phrases for cleaner matching (these don't affect item detection)
-    # This is a cleaned version for menu item matching - original text_lower is still used
-    # for other matching that might need the full context
     # Note: "i like" is NOT stripped - it's a statement, not an ordering phrase
-    text_cleaned = re.sub(
-        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|i\'?ll\s+have\s+|i\s+will\s+have\s+|'
-        r'can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+|add\s+)',
-        '', text_lower
-    )
-    text_cleaned = re.sub(r'^(a|an|the)\s+', '', text_cleaned)
+    text_cleaned = ORDERING_PREFIX_RE.sub('', text_lower)
+    text_cleaned = LEADING_ARTICLE_RE.sub('', text_cleaned)
 
     # 1. Check for exclusion phrases (e.g., "coffee cake" -> not a coffee beverage)
     if menu_cache.text_matches_exclusion_phrase(text):
@@ -896,7 +900,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         # e.g., "3 bagel package" -> "3" is part of "3 Bagel Package", not a quantity
         # Try matching the full text (with number) against menu items for this item type
         if quantity > 1 or qty_str.isdigit():
-            item_names = menu_cache.get_item_names_by_type(detected_item_type)
+            item_names = menu_cache.get_item_names(detected_item_type)
             for item_name in sorted(item_names, key=len, reverse=True):
                 if qty_str in item_name and re.search(rf'\b{re.escape(item_name)}\b', text_cleaned):
                     # The number is part of the item name, not a quantity

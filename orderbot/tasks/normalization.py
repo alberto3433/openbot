@@ -242,9 +242,10 @@ def normalize_for_option_match(text: str) -> str:
     text = text.lower().strip()
 
     # Strip leading quantity patterns (numbers like "2", "2x", words like "two")
+    from orderbot.tasks.parsers.quantity_utils import QTY_WORDS_RE
     text = re.sub(r'^(\d+x?\s+)', '', text)  # "2 ", "2x ", "10 "
     text = re.sub(
-        r'^(one|two|three|four|five|six|seven|eight|nine|ten)\s+',
+        rf'^({QTY_WORDS_RE})\s+',
         '', text, flags=re.IGNORECASE
     )
     text = re.sub(r'^(a|an)\s+', '', text)  # "a scrambled egg", "an egg"

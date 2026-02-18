@@ -31,6 +31,7 @@ from .config_input_validation import (
     is_off_topic_request,
 )
 from orderbot.cache import menu_cache
+from .config_side_choice_handler import SIDE_CHOICE_ATTR_SLUG
 from .config.parsers.boolean_parser import BooleanParser
 from .utils.pricing_utils import safe_recalculate_price
 from .utils.text import format_english_list, normalize_text
@@ -189,7 +190,7 @@ class ConfiguringItemHandler:
         item_type_slug, attr_slug = parse_pending_field(order.pending_field)
         if item_type_slug and attr_slug and isinstance(item, MenuItemTask) and self.menu_item_handler:
             # side_choice attribute uses component slot handler (has full option list)
-            if attr_slug == "side_choice" and menu_cache.item_type_has_component_slots(item_type_slug):
+            if attr_slug == SIDE_CHOICE_ATTR_SLUG and menu_cache.item_type_has_component_slots(item_type_slug):
                 logger.debug(
                     "Routing side_choice attr to component slot handler for %s",
                     item_type_slug

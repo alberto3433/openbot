@@ -50,10 +50,6 @@ class MenuQueryMixin:
             return set()
         return self._item_names_by_type[item_type_slug].copy()
 
-    def get_item_names_by_type(self, item_type_slug: str) -> set[str]:
-        """Alias for get_item_names() - get all item names for a given item type."""
-        return self.get_item_names(item_type_slug)
-
     @ensure_cache_loaded
     def get_item_alias_to_canonical_by_type(self, item_type_slug: str) -> dict[str, str]:
         """Get alias-to-canonical name mapping for a given item type.
@@ -108,6 +104,35 @@ class MenuQueryMixin:
                     "item_type": item_type_slug,
                     "base_price": item_data.get("base_price", 0.0),
                 })
+        return result
+
+    @ensure_cache_loaded
+    def iter_all_menu_items(self) -> dict[str, dict]:
+        """Return the full menu items dict keyed by canonical name.
+
+        Each value is a dict with at least: id, name, item_type, base_price,
+        aliases, and required_match_phrases.
+
+        Returns:
+            Shallow copy of the internal menu items dict.
+        """
+        return dict(self._menu_items)
+
+    @ensure_cache_loaded
+    def get_item_names_by_ids(self, item_ids: set[int]) -> dict[int, str]:
+        """Map a set of menu item IDs to their display names.
+
+        Args:
+            item_ids: Set of menu item IDs to look up.
+
+        Returns:
+            Dict mapping id -> display name for all found items.
+        """
+        result: dict[int, str] = {}
+        for item_data in self._all_menu_items_by_name.values():
+            item_id = item_data.get("id")
+            if item_id in item_ids:
+                result[item_id] = item_data.get("name", f"Item {item_id}")
         return result
 
     @ensure_cache_loaded

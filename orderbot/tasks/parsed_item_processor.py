@@ -193,7 +193,7 @@ class ParsedItemProcessor:
             quantity=item.quantity,
             skip_first_question=True,  # Defer config questions until all items are added
             item_name=item.item_name,
-            extracted_selections=selections if has_any_selections(selections) else None,
+            extracted_selections=selections,
             original_input=item.original_text,
             unavailable_selections=item.unavailable_selections if item.unavailable_selections else None,
             unmatched_selections=item.unmatched_selections if item.unmatched_selections else None,
@@ -356,11 +356,15 @@ class ParsedItemProcessor:
     ) -> StateMachineResult:
         """Queue added items for config and augment disambiguation message."""
         # Queue any items that were added and need configuration
+        config_names = []
         for item_id, display_name, item_type in added_items:
             item = order.items.get_item_by_id(item_id)
             if item and item.status == TaskStatus.IN_PROGRESS:
                 order.queue_item_for_config(item_id, item_name=display_name)
+                config_names.append(display_name)
                 logger.info("Queued %s (%s) for config before disambiguation", display_name, item_id[:8])
+        if config_names:
+            order.multi_item_config_names = config_names
 
         # Build message that acknowledges all items (both added and needing disambiguation)
         # Consolidate identical items: ["cookie", "cookie"] -> ["two cookies"]

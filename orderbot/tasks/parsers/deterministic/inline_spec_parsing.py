@@ -15,6 +15,8 @@ import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import singularize
+from ..quantity_utils import QTY_WORDS_RE
 
 if TYPE_CHECKING:
     from ...utils import OptionMatcher, InputNormalizer
@@ -295,3 +297,98 @@ def extract_text_after_item_match(
                 return after_match
 
     return None
+
+
+def _is_inline_attribute_spec_pattern(text: str) -> bool:
+    """Check if text is an inline attribute specification pattern.
+
+    Inline spec pattern: "N items N attr1 N attr2" where:
+    - "N items" identifies the item type (e.g., "2 bagels")
+    - "N attr1 N attr2" are quantity+attribute pairs (e.g., "1 everything 1 plain")
+
+    This differs from multi-item orders like "2 bagels 2 coffees" where
+    each quantity is followed by a different item type.
+
+    Args:
+        text: Lowercase user input
+
+    Returns:
+        True if this is an inline spec pattern that should NOT be split
+        by comma insertion.
+    """
+    from .item_parsing import _detect_configurable_item_type
+
+    # Pattern: qty word qty word qty word...
+    # e.g., "2 bagels 1 everything 1 plain"
+    qty_word_pattern = rf'(\d+|{QTY_WORDS_RE})\s+(\w+)'
+    raw_matches = list(re.finditer(qty_word_pattern, text, re.IGNORECASE))
+
+    if len(raw_matches) < 2:
+        return False  # Not enough qty+word pairs
+
+    matches = [(m.group(1), m.group(2)) for m in raw_matches]
+
+    # First match should identify the item type
+    first_word = matches[0][1].lower()
+
+    # Detect item type from the first qty+word pair
+    first_phrase = f"{matches[0][0]} {first_word}"
+    detected_type, _ = _detect_configurable_item_type(first_phrase)
+
+    if not detected_type:
+        return False  # Couldn't identify item type
+
+    # Get attribute options for this item type
+    attrs = menu_cache.get_item_type_attributes(detected_type)
+    if not attrs:
+        return False
+
+    # Build set of all attribute option words (slugs, display names, aliases)
+    attr_option_words: set[str] = set()
+    for attr_slug, attr_info in attrs.items():
+        options = attr_info.get("options", [])
+        for opt in options:
+            if isinstance(opt, dict):
+                slug = opt.get("slug", "")
+                display_name = opt.get("display_name", "")
+                aliases = opt.get("aliases", [])
+
+                if slug:
+                    attr_option_words.add(slug.lower())
+                    for part in slug.lower().split("_"):
+                        if len(part) >= 3:
+                            attr_option_words.add(part)
+                if display_name:
+                    attr_option_words.add(display_name.lower())
+                    for part in display_name.lower().split():
+                        if len(part) >= 3:
+                            attr_option_words.add(part)
+                for alias in aliases:
+                    attr_option_words.add(alias.lower())
+                    for part in alias.lower().split():
+                        if len(part) >= 3:
+                            attr_option_words.add(part)
+
+    # If item type triggers appear between qty+word pairs, this is multi-item, not inline spec
+    all_trigger_flat = menu_cache.get_all_triggers_flat()
+
+    for i in range(len(raw_matches) - 1):
+        gap_text = text[raw_matches[i].end():raw_matches[i + 1].start()].strip()
+        if gap_text:
+            for word in gap_text.lower().split():
+                if word in all_trigger_flat or singularize(word) in all_trigger_flat:
+                    return False
+
+    # Check if subsequent qty+word pairs have words that are attribute options
+    subsequent_words = [m[1].lower() for m in matches[1:]]
+    attr_matches = [w for w in subsequent_words if w in attr_option_words]
+
+    # If ALL subsequent words are attribute options, this is an inline spec pattern
+    if len(attr_matches) == len(subsequent_words):
+        logger.debug(
+            "Inline spec detected: type=%s, specs=%s",
+            detected_type, subsequent_words
+        )
+        return True
+
+    return False

@@ -17,8 +17,22 @@ import re
 import logging
 
 from orderbot.cache import menu_cache
+from ..quantity_utils import QTY_WORDS_RE
 
 logger = logging.getLogger(__name__)
+
+_NEGATION_WORDS = {"no", "without", "skip", "not"}
+
+
+def _is_preceded_by_negation(text_lower: str, position: int) -> bool:
+    """Check if the word at *position* is immediately preceded by a negation word."""
+    if position <= 0:
+        return False
+    text_before = text_lower[:position].rstrip()
+    if not text_before:
+        return False
+    last_word = text_before.split()[-1]
+    return last_word in _NEGATION_WORDS
 
 
 # Common words that should not be treated as item triggers.
@@ -99,13 +113,8 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
         idx = match.start()
         end_pos = match.end()
         keyword_lower = keyword.lower()
-        # Skip triggers preceded by negation words ("no", "without", "skip", "not")
-        if idx > 0:
-            text_before = text_lower[:idx].rstrip()
-            if text_before:
-                last_word = text_before.split()[-1] if text_before.split() else ""
-                if last_word in {"no", "without", "skip", "not"}:
-                    continue
+        if _is_preceded_by_negation(text_lower, idx):
+            continue
         # Check if this match is in the "end region" (last 20% of text or last 15 chars)
         text_len = len(text_lower)
         end_region_start = max(text_len - 15, int(text_len * 0.8))
@@ -163,7 +172,7 @@ def _is_modifier_chain(text: str) -> bool:
 
     # Strip leading quantity (number or word) - it's likely a modifier phrase
     # "2 sugars" -> "sugars", "two sugars" -> "sugars"
-    quantity_pattern = r'^(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+'
+    quantity_pattern = rf'^(\d+|{QTY_WORDS_RE})\s+'
     after_and_stripped = re.sub(quantity_pattern, '', after_and, flags=re.IGNORECASE)
 
     # Check if the stripped text (without quantity) matches an item keyword
@@ -219,14 +228,9 @@ def _detect_type_by_triggers(
                 end_pos = match.end()
                 trigger_lower = trigger.lower()
 
-                # Skip triggers preceded by negation words ("no", "without", "skip", "not")
-                # "no spread" is a modifier negation, not an item type reference
-                if start_pos > 0:
-                    text_before = text_lower[:start_pos].rstrip()
-                    if text_before:
-                        last_word = text_before.split()[-1] if text_before.split() else ""
-                        if last_word in {"no", "without", "skip", "not"}:
-                            continue
+                # Skip triggers preceded by negation words ("no spread" = modifier negation)
+                if _is_preceded_by_negation(text_lower, start_pos):
+                    continue
 
                 # Skip if this trigger is part of a known compound modifier phrase
                 # that belongs to an UNRELATED category
@@ -354,7 +358,7 @@ def _detect_configurable_item_type(text: str) -> tuple[str | None, str | None]:
         start_pos = match.start()
         trigger_lower = keyword.lower()
         slug_matches = trigger_lower == item_type_slug or trigger_lower.rstrip("s") == item_type_slug
-        item_names = menu_cache.get_item_names_by_type(item_type_slug)
+        item_names = menu_cache.get_item_names(item_type_slug)
         is_complete_item_name = trigger_lower in item_names
         matches.append((item_type_slug, keyword, len(keyword), start_pos, slug_matches, is_complete_item_name))
 

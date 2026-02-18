@@ -8,6 +8,12 @@ providing a single source of truth for pending field names.
 from enum import Enum
 
 
+# Sentinel value used when the config_change_handler cannot determine which
+# attribute an incoming value belongs to. Checked by config_change_handler
+# to trigger special "unknown attribute" resolution logic.
+UNKNOWN_ATTRIBUTE_SLUG = "unknown"
+
+
 class PendingField(str, Enum):
     """Constants for pending_field values used in order state routing."""
 
@@ -30,3 +36,18 @@ class PendingField(str, Enum):
     QUANTITY_ADDITION_SELECTION = "quantity_addition_selection"
     AMBIGUOUS_SELECTION = "ambiguous_selection"
     REORDER_OFFER_CONFIRMATION = "reorder_offer_confirmation"
+
+
+# PendingField values that indicate an item configuration is in progress.
+# Used by ItemsTask.is_configuring_item() for O(1) membership check.
+CONFIGURING_PENDING_FIELDS: frozenset[PendingField] = frozenset({
+    PendingField.ITEM_SELECTION,
+    PendingField.CATEGORY_INQUIRY,
+    PendingField.DUPLICATE_SELECTION,
+    PendingField.CONFIRM_SUGGESTED_ITEM,
+    PendingField.MODIFIER_SELECTION,
+    PendingField.CONFIRM_ITEM_SWITCH,
+    PendingField.CONFIRM_INGREDIENT_SUGGESTION,
+    PendingField.CONFIRM_DIETARY_FOLLOWUP,
+    PendingField.QUANTITY_ADDITION_SELECTION,
+})

@@ -195,7 +195,7 @@ def _select_best_trigger_match(
         # Also best: trigger is a known item name for this specific item_type
         # e.g., "latte" is in sized_beverage's item names, so sized_beverage gets high priority
         # This is fully data-driven - works for any item type, not just beverages
-        item_type_names = menu_cache.get_item_names_by_type(item_type)
+        item_type_names = menu_cache.get_item_names(item_type)
         if trigger_lower in {n.lower() for n in item_type_names}:
             return 1
         # Also best: trigger matches another item type name exactly
@@ -827,6 +827,33 @@ def _is_demotable_to_modifier(token: "Token") -> bool:
     return menu_cache.is_known_modifier(check_text)
 
 
+def _flush_current_item(
+    current_item: "Token",
+    accumulated_modifiers: list["Token"],
+) -> "Token":
+    """Merge an item token with its accumulated modifier tokens.
+
+    If there are modifiers, combines them with the item text and re-checks
+    the combined text against the menu. Returns the (possibly enriched) token.
+    """
+    if not accumulated_modifiers:
+        return current_item
+
+    from orderbot.tasks.schemas.parser_responses import Token
+
+    combined_text = current_item.original + " and " + " and ".join(
+        m.original for m in accumulated_modifiers
+    )
+    has_item, item_type, resolved = _has_item_indicator(combined_text.lower())
+    return Token(
+        original=combined_text,
+        token_type="item",
+        quantity=current_item.quantity,
+        item_type=item_type or current_item.item_type,
+        resolved_name=resolved or current_item.resolved_name,
+    )
+
+
 def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
     """Recombine modifier tokens with their associated item tokens.
 
@@ -866,22 +893,7 @@ def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
 
             # Save previous item with its modifiers
             if current_item:
-                if accumulated_modifiers:
-                    # Combine item with modifiers
-                    combined_text = current_item.original + " and " + " and ".join(
-                        m.original for m in accumulated_modifiers
-                    )
-                    # Re-check if combined text matches a menu item
-                    has_item, item_type, resolved = _has_item_indicator(combined_text.lower())
-                    result.append(Token(
-                        original=combined_text,
-                        token_type="item",
-                        quantity=current_item.quantity,
-                        item_type=item_type or current_item.item_type,
-                        resolved_name=resolved or current_item.resolved_name,
-                    ))
-                else:
-                    result.append(current_item)
+                result.append(_flush_current_item(current_item, accumulated_modifiers))
             current_item = token
             accumulated_modifiers = []
 
@@ -919,20 +931,7 @@ def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
 
     # Don't forget the last item
     if current_item:
-        if accumulated_modifiers:
-            combined_text = current_item.original + " and " + " and ".join(
-                m.original for m in accumulated_modifiers
-            )
-            has_item, item_type, resolved = _has_item_indicator(combined_text.lower())
-            result.append(Token(
-                original=combined_text,
-                token_type="item",
-                quantity=current_item.quantity,
-                item_type=item_type or current_item.item_type,
-                resolved_name=resolved or current_item.resolved_name,
-            ))
-        else:
-            result.append(current_item)
+        result.append(_flush_current_item(current_item, accumulated_modifiers))
 
     return result
 
@@ -1120,12 +1119,9 @@ def _other_tokens_are_potential_modifiers(tokens: list["Token"], text: str) -> b
 
     def _is_potential_modifier(token_text: str) -> bool:
         """Check if text could be a modifier (ignoring item matches)."""
-        text_clean = token_text.lower().strip()
-        # Remove common words
-        for skip in _SKIP_WORDS:
-            text_clean = text_clean.replace(skip, " ").strip()
-        # Split and check each word
-        words = text_clean.split()
+        # Filter out skip words by word boundary (not substring replace)
+        words = [w for w in token_text.lower().strip().split() if w not in _SKIP_WORDS]
+        text_clean = " ".join(words)
         for word in words:
             word = word.strip()
             if not word or word == "and" or word == "not":

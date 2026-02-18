@@ -37,6 +37,27 @@ if TYPE_CHECKING:
     from orderbot.tasks.schemas import OrderPhase
 
 
+# Fields reset by clear_pending(). Each entry is (field_name, default) where
+# default is either a plain value (None, 0) or a callable (list, dict) for
+# mutable defaults.
+_CLEARABLE_PENDING_FIELDS: tuple[tuple[str, object], ...] = (
+    ("pending_item_ids", list),
+    ("pending_field", None),
+    ("config_options_page", 0),
+    ("pending_suggested_item", None),
+    ("pending_switch_item", None),
+    ("pending_replace_item_id", None),
+    ("pending_item_modifiers", dict),
+    ("pending_attr_disambiguation", None),
+    ("pending_unmatched_pagination", None),
+    ("pending_order_history", None),
+    ("pending_reorder_items", None),
+    ("pending_reorder_offer_items", None),
+    ("pending_dietary_followup", None),
+    ("pending_quantity_addition", None),
+)
+
+
 class ItemsTask(BaseTask):
     """Container task for all order items."""
 
@@ -322,34 +343,9 @@ class OrderTask(BaseTask):
 
     def is_configuring_item(self) -> bool:
         """Check if we're waiting for input on a specific item or menu inquiry."""
-        from orderbot.tasks.pending_fields import PendingField
+        from orderbot.tasks.pending_fields import CONFIGURING_PENDING_FIELDS
 
-        # Handle generic item selection (cookies, muffins, etc.) when multiple options presented
-        if self.pending_field == PendingField.ITEM_SELECTION:
-            return True
-        # Handle category inquiry follow-up
-        if self.pending_field == PendingField.CATEGORY_INQUIRY:
-            return True
-        # Handle duplicate item selection when multiple items in cart
-        if self.pending_field == PendingField.DUPLICATE_SELECTION:
-            return True
-        # Handle suggested item confirmation ("Would you like to order one?" -> "yes")
-        if self.pending_field == PendingField.CONFIRM_SUGGESTED_ITEM:
-            return True
-        # Handle modifier selection (disambiguation like "cream cheese" matching multiple options)
-        if self.pending_field == PendingField.MODIFIER_SELECTION:
-            return True
-        # Handle item switch confirmation ("can you make it X?" -> similar item found)
-        if self.pending_field == PendingField.CONFIRM_ITEM_SWITCH:
-            return True
-        # Handle ingredient suggestion confirmation ("I want caramel syrup" -> "yes")
-        if self.pending_field == PendingField.CONFIRM_INGREDIENT_SUGGESTION:
-            return True
-        # Handle dietary follow-up confirmation ("is X vegan?" -> "no" -> "Would you like vegan options?" -> "yes")
-        if self.pending_field == PendingField.CONFIRM_DIETARY_FOLLOWUP:
-            return True
-        # Handle quantity addition selection ("add 3" with multiple item types in cart)
-        if self.pending_field == PendingField.QUANTITY_ADDITION_SELECTION:
+        if self.pending_field in CONFIGURING_PENDING_FIELDS:
             return True
         # Handle attribute disambiguation (e.g., "walnut" -> "honey walnut" or "maple raisin walnut")
         if self.pending_attr_disambiguation is not None:
@@ -358,20 +354,8 @@ class OrderTask(BaseTask):
 
     def clear_pending(self):
         """Clear pending item/field when done configuring."""
-        self.pending_item_ids = []
-        self.pending_field = None
-        self.config_options_page = 0
-        self.pending_suggested_item = None
-        self.pending_switch_item = None
-        self.pending_replace_item_id = None
-        self.pending_item_modifiers = {}
-        self.pending_attr_disambiguation = None
-        self.pending_unmatched_pagination = None
-        self.pending_order_history = None
-        self.pending_reorder_items = None
-        self.pending_reorder_offer_items = None
-        self.pending_dietary_followup = None
-        self.pending_quantity_addition = None
+        for field_name, default_factory in _CLEARABLE_PENDING_FIELDS:
+            setattr(self, field_name, default_factory() if callable(default_factory) else default_factory)
 
     def set_phase(self, phase: "OrderPhase") -> None:
         """Set the order phase from an OrderPhase enum.

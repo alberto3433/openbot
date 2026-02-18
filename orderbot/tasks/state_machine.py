@@ -39,7 +39,8 @@ from .parsers import (
     ORDERING_LANGUAGE_PATTERN,
 )
 from .parsers.quantity_utils import extract_make_it_n_target
-from .handler_utils import get_last_item
+from .handler_utils import get_last_item, duplicate_last_item_to_qty
+from .checkout_messages import already_have_n_anything_else, thats_n_total_anything_else
 from .utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
@@ -397,47 +398,10 @@ class OrderStateMachine:
         # Add user message to history
         order.add_message("user", user_input)
 
-        # Check for order status request (works from any state)
-        if ORDER_STATUS_PATTERN.search(user_input):
-            logger.info("ORDER STATUS: User asked for order status")
-            result = self.order_utils_handler.handle_order_status(order)
-            order.add_message("assistant", result.message)
-            return result
-
-        # Check for order history inquiry (works from any state)
-        if self.order_history_handler.is_order_history_inquiry(user_input):
-            logger.info("ORDER HISTORY: User asked for order history")
-            result = self.order_history_handler.handle_order_history_inquiry(order)
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-
-        # Check for view last order inquiry (works from any state)
-        if self.order_history_handler.is_view_last_order(user_input):
-            logger.info("ORDER HISTORY: User asked for last order details")
-            result = self.order_history_handler.handle_view_last_order(order)
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-
-        pending_result = self._dispatch_pending_states(user_input, order)
-        if pending_result:
-            return pending_result
-
-        # Check for "make it 2" pattern early (works from any state with items)
-        # This must be BEFORE modifier change requests to prevent "actually make that two"
-        # from being matched as a modifier change (with "two" parsed as the modifier value)
-        make_it_n_result = self._handle_make_it_n(user_input, order)
-        if make_it_n_result:
-            order.add_message("assistant", make_it_n_result.message)
-            return make_it_n_result
-
-        # Check for modifier change requests (works when not mid-configuration)
-        if order.items.get_item_count() > 0 and not order.is_configuring_item():
-            change_result = self.config_helper_handler.handle_modifier_change_request(user_input, order)
-            if change_result:
-                order.add_message("assistant", change_result.message)
-                return change_result
+        # Run global pattern checks (order status, history, pending states, make-it-N, modifier change)
+        global_result = self._check_global_patterns(user_input, order)
+        if global_result:
+            return global_result
 
         # Derive phase from OrderTask state via orchestrator
         # Note: is_configuring_item() takes precedence (based on pending_item_ids)
@@ -496,6 +460,68 @@ class OrderStateMachine:
         self._log_slot_comparison(order)
 
         return result
+
+    def _check_global_patterns(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Check global patterns that apply regardless of current phase.
+
+        Checks (order matters):
+        1. Order status inquiry
+        2. Order history inquiry
+        3. View last order
+        4. Pending state dispatch
+        5. Make-it-N quantity change (MUST precede modifier change)
+        6. Modifier change request (guard: items > 0 and not configuring)
+
+        Returns:
+            StateMachineResult if a global pattern matched, None otherwise.
+        """
+        # Check for order status request (works from any state)
+        if ORDER_STATUS_PATTERN.search(user_input):
+            logger.info("ORDER STATUS: User asked for order status")
+            result = self.order_utils_handler.handle_order_status(order)
+            order.add_message("assistant", result.message)
+            return result
+
+        # Check for order history inquiry (works from any state)
+        if self.order_history_handler.is_order_history_inquiry(user_input):
+            logger.info("ORDER HISTORY: User asked for order history")
+            result = self.order_history_handler.handle_order_history_inquiry(order)
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
+        # Check for view last order inquiry (works from any state)
+        if self.order_history_handler.is_view_last_order(user_input):
+            logger.info("ORDER HISTORY: User asked for last order details")
+            result = self.order_history_handler.handle_view_last_order(order)
+            if result:
+                order.add_message("assistant", result.message)
+                return result
+
+        pending_result = self._dispatch_pending_states(user_input, order)
+        if pending_result:
+            return pending_result
+
+        # Check for "make it 2" pattern early (works from any state with items)
+        # This must be BEFORE modifier change requests to prevent "actually make that two"
+        # from being matched as a modifier change (with "two" parsed as the modifier value)
+        make_it_n_result = self._handle_make_it_n(user_input, order)
+        if make_it_n_result:
+            order.add_message("assistant", make_it_n_result.message)
+            return make_it_n_result
+
+        # Check for modifier change requests (works when not mid-configuration)
+        if order.items.get_item_count() > 0 and not order.is_configuring_item():
+            change_result = self.config_helper_handler.handle_modifier_change_request(user_input, order)
+            if change_result:
+                order.add_message("assistant", change_result.message)
+                return change_result
+
+        return None
 
     def _log_slot_comparison(self, order: OrderTask) -> None:
         """Delegate to slot orchestration handler."""
@@ -567,32 +593,18 @@ class OrderStateMachine:
         if not target_qty:
             return None
 
-        active_items = order.items.get_active_items()
-        if not active_items:
+        result = duplicate_last_item_to_qty(order, target_qty, count_existing=True)
+        if result is None:
             return None
 
-        last_item = get_last_item(active_items)
-        last_item_name = last_item.get_summary()
-
-        # Count how many of this same item are already in the order
-        current_count = sum(
-            1 for item in active_items
-            if item.get_summary() == last_item_name
-        )
-
-        # Only add enough to reach the target
-        added_count = target_qty - current_count
+        target_qty, last_item_name, added_count = result
 
         if added_count <= 0:
+            current_count = target_qty - added_count  # reconstruct actual count
             return StateMachineResult(
-                message=f"You already have {current_count} {last_item_name}. Anything else?",
+                message=already_have_n_anything_else(current_count, last_item_name),
                 order=order,
             )
-
-        for _ in range(added_count):
-            order.items.add_item(last_item.duplicate(mark_complete=False))
-
-        logger.info("GLOBAL: Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
 
         # If mid-configuration, re-ask the pending config question
         suffix = "Anything else?"

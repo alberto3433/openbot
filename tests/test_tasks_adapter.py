@@ -4,6 +4,7 @@ Tests for the adapter module.
 Tests state conversion between dict-based order state and OrderTask.
 """
 
+import functools
 
 from orderbot.tasks.adapter import (
     dict_to_order_task,
@@ -22,8 +23,9 @@ from tests.helpers import (
 )
 
 
+@functools.lru_cache(maxsize=1)
 def create_test_pricing():
-    """Create a pricing engine with test menu data."""
+    """Create a pricing engine with test menu data (cached for reuse)."""
     menu_data = create_test_menu_data()
 
     def menu_lookup(name: str):

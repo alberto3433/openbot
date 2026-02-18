@@ -141,8 +141,8 @@ from .tokenization import (
 from .core import (
     parse_open_input_deterministic,
     parse_open_input,
-    _is_inline_attribute_spec_pattern,
 )
+from .inline_spec_parsing import _is_inline_attribute_spec_pattern
 
 
 # =============================================================================

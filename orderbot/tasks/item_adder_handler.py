@@ -31,6 +31,7 @@ from .order_item_builder import OrderItemBuilder
 from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 from orderbot.constants import MULTI_CONFIG_THRESHOLD
+from .config_side_choice_handler import SIDE_SLOT_NAME
 from .default_ingredients import (
     populate_default_ingredients,
     filter_redundant_default_selections,
@@ -548,7 +549,7 @@ class ItemAdderHandler(MenuDataMixin):
             order.phase = OrderPhase.CONFIGURING_ITEM
             order.pending_item_id = first_item.id
             # Get component slot configuration from DB (e.g., "side" slot)
-            side_slot = menu_cache.get_component_slot(category, "side")
+            side_slot = menu_cache.get_component_slot(category, SIDE_SLOT_NAME)
             order.pending_field = PendingField.SIDE_CHOICE
             # Use prompt text from DB or fallback
             question = (
@@ -557,7 +558,7 @@ class ItemAdderHandler(MenuDataMixin):
                 else f"What side would you like with your {canonical_name}?"
             )
             # Build quick replies from component slot options (data-driven)
-            side_options = menu_cache.get_component_slot_options(category, "side")
+            side_options = menu_cache.get_component_slot_options(category, SIDE_SLOT_NAME)
             qr = [{"label": o.get("display_name", o.get("allowed_item_type", "")), "value": o.get("display_name", o.get("allowed_item_type", ""))} for o in side_options] if side_options else None
             return StateMachineResult(
                 message=question,
@@ -900,7 +901,7 @@ class ItemAdderHandler(MenuDataMixin):
 
         # Capture any attributes from original user input
         # Skip if extracted_selections provided - parser already extracted attributes
-        if ctx.user_input and not ctx.extracted_selections:
+        if ctx.user_input and ctx.extracted_selections is None:
             # Strip the menu item name to prevent words in the name from
             # falsely matching attribute options (e.g., "Nova" in "Tofu Nova Sandwich")
             capture_input = ctx.user_input

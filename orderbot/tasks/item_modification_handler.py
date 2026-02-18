@@ -25,6 +25,7 @@ from .checkout_messages import (
     modifier_not_available_for_item,
 )
 from .handler_utils import get_last_item, recalculate_and_summarize, find_matching_item
+from .config_flow_utils import LAST_ITEM_PRONOUNS
 
 if TYPE_CHECKING:
     from .pricing import PricingEngine
@@ -90,7 +91,7 @@ class ItemModificationHandler:
         # accept the modifiers, look for another item in the cart that can.
         # E.g. "add sugar to that" with a sandwich + hot chocolate -> hot chocolate
         if target_item and parsed.modify_add_modifiers:
-            is_vague = not target_desc or target_desc in self.LAST_ITEM_PRONOUNS
+            is_vague = not target_desc or target_desc in LAST_ITEM_PRONOUNS
             if is_vague and not self._can_accept_modifiers(target_item, parsed.modify_add_modifiers):
                 compatible = self._find_compatible_item(
                     parsed.modify_add_modifiers, active_items, exclude=target_item
@@ -131,11 +132,6 @@ class ItemModificationHandler:
             order=order,
         )
 
-    # Pronouns that refer to the last item (shared with cancellation handler)
-    LAST_ITEM_PRONOUNS = {
-        "that", "it", "this", "last", "the last one", "the last item",
-        "last one", "last item",
-    }
 
     def _find_target_item(
         self,
@@ -144,7 +140,7 @@ class ItemModificationHandler:
     ) -> MenuItemTask | None:
         """Find the item that matches the target description."""
         # Resolve pronouns ("that", "it", "this") to the last item
-        if target_desc and target_desc in self.LAST_ITEM_PRONOUNS:
+        if target_desc and target_desc in LAST_ITEM_PRONOUNS:
             last = get_last_item(active_items)
             return last if isinstance(last, MenuItemTask) else None
 

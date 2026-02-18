@@ -125,12 +125,8 @@ class RecommendationHandler(MenuDataMixin):
         Returns:
             List of item names (in order of IDs provided, skipping not found).
         """
-        # Build a lookup from ID to name by iterating through all items
-        id_to_name: dict[int, str] = {}
-        for item_data in menu_cache._all_menu_items_by_name.values():
-            item_id = item_data.get("id")
-            if item_id in item_ids:
-                id_to_name[item_id] = item_data.get("name", f"Item {item_id}")
+        # Build a lookup from ID to name via public cache method
+        id_to_name = menu_cache.get_item_names_by_ids(set(item_ids))
 
         # Return names in the order of requested IDs
         return [id_to_name[item_id] for item_id in item_ids if item_id in id_to_name]

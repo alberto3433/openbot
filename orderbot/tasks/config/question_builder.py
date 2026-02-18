@@ -200,8 +200,24 @@ class QuestionBuilder:
         attr_name = attr["display_name"].lower()
 
         if multi_count > 1:
-            if item_num == 1:
-                # First item acknowledgment
+            if item_num == 1 and has_duplicates:
+                # First item with duplicates: ordinal format with "Got it" prefix
+                # e.g. "Got it, for the first Bagel. What kind of bagel?"
+                item_desc = f"the {ordinal} {item_display}"
+                if attr.get("allow_none") and attr.get("offer_question_text") and not has_default_value:
+                    db_question = attr["offer_question_text"]
+                else:
+                    db_question = attr.get("question_text")
+                if db_question:
+                    return f"Got it, for {item_desc}. {db_question}"
+                elif input_type == "boolean":
+                    return f"Got it, for {item_desc}. Would you like it {attr_name}?"
+                elif input_type == "quantity":
+                    return f"Got it, for {item_desc}. How many {attr_name} would you like?"
+                else:
+                    return f"Got it, for {item_desc}. What kind of {attr_name} would you like?"
+            elif item_num == 1:
+                # First item without duplicates: summary acknowledgment
                 all_same_name = len(set(config_names)) == 1
 
                 if all_same_name:

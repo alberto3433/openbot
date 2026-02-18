@@ -104,6 +104,8 @@ def _count_split_indicators(text: str) -> int:
     static_indicators = [
         r"\bone\s+with\b",
         r"\b1\s+with\b",
+        r"\bone\s+without\b",
+        r"\b1\s+without\b",
         r"\bfirst\s+with\b",
         r"\bsecond\s+with\b",
         r"\bthe\s+other\s+with\b",

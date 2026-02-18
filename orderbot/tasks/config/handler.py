@@ -488,8 +488,8 @@ class MenuItemConfigHandler(BaseHandler):
                 has_default_value=has_only_defaults,
             )
             if prefix:
-                # For subsequent items in multi-item, prefix IS the full question
-                if multi_count > 1 and item_num > 1:
+                # For subsequent items or first-with-duplicates, prefix IS the full question
+                if multi_count > 1 and (item_num > 1 or has_duplicates):
                     question = prefix
                 else:
                     question = prefix + question

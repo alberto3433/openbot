@@ -1810,3 +1810,15 @@ orderbot/tasks/parsers/intent_patterns.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/tasks/parsers/deterministic/qualifier_extraction.py:
+  - term: side
+    line_range: [40, 40]
+    context: code
+    reason: "Linguistic pattern 'on the side' - general ordering qualifier, not a food term"
+
+orderbot/tasks/parsers/parser_utils.py:
+  - term: everything
+    line_range: [48, 48]
+    context: code
+    reason: "Small-talk detection regex for 'how is everything' - not a food term"
+

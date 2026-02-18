@@ -41,6 +41,26 @@ ORDERING_PREFIXES = frozenset({
     "just", "some",
 })
 
+import re as _re  # noqa: E402  (intentionally below constants for clarity)
+
+# Compiled regex matching ordering prefixes at the start of a string.
+# Each phrase is converted to a flexible regex (e.g., "i'd like" -> r"i'?d\s+like\s+").
+# Includes extra patterns for "i will have", "let me get/have", and "add".
+ORDERING_PREFIX_RE = _re.compile(
+    r'^(?:'
+    r"i\s+want\s+|i\s+would\s+like\s+|i'?d\s+like\s+|i\s+need\s+|"
+    r"i'?ll\s+have\s+|i\s+will\s+have\s+|i'?ll\s+take\s+|"
+    r"can\s+i\s+(?:get|have)\s+|could\s+i\s+(?:get|have)\s+|"
+    r"give\s+me\s+|gimme\s+|get\s+me\s+|make\s+it\s+|"
+    r"let'?s\s+(?:go\s+with|do)\s+|let\s+me\s+(?:get|have)\s+|"
+    r"add\s+"
+    r')',
+    _re.IGNORECASE,
+)
+
+# Compiled regex matching leading articles after prefix stripping.
+LEADING_ARTICLE_RE = _re.compile(r'^(?:a|an|the)\s+', _re.IGNORECASE)
+
 # =============================================================================
 # Politeness Words
 # =============================================================================

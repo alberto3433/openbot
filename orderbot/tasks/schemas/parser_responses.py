@@ -197,10 +197,6 @@ class ParsedItemEntry(BaseModel):
                     result[sel.category] = sel.slug
         return result
 
-    @property
-    def modifiers(self) -> list[Selection]:
-        """Return selections for backward compatibility."""
-        return self.selections
 
 
 # ParsedItem is the unified type for all parsed items.

@@ -26,12 +26,13 @@ from .normalization import (
     get_attribute_display_name as _get_attr_display_name_from_db,
     format_slug_for_display,
 )
-from .parsers.constants import CHANGE_REQUEST_PATTERNS
+from .parsers.intent_patterns import CHANGE_REQUEST_PATTERNS
 from .parsers.quantity_utils import BASIC_WORD_TO_NUM, extract_leading_quantity
 from .handler_config import BaseHandler
 from .utils.text import format_english_list, normalize_text
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
+from .pending_fields import UNKNOWN_ATTRIBUTE_SLUG
 from .handler_utils import is_configurable_menu_item, get_last_item
 from .modifier_resolver import normalize_modifier_input
 from .utils.pricing_utils import safe_recalculate_price
@@ -274,11 +275,11 @@ class ModifierChangeHandler(BaseHandler):
         if stripped_value != new_value_lower:
             # Recurse with stripped value
             is_ambiguous, attrs = self._analyze_modifier(stripped_value, target)
-            if attrs and attrs[0] != "unknown":
+            if attrs and attrs[0] != UNKNOWN_ATTRIBUTE_SLUG:
                 return is_ambiguous, attrs
 
         # Unknown modifier
-        return False, ["unknown"]
+        return False, [UNKNOWN_ATTRIBUTE_SLUG]
 
     def _strip_quantity_prefix(self, value: str) -> str:
         """Strip quantity prefixes like '2 ', 'two ', 'double ' from value.

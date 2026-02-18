@@ -133,6 +133,53 @@ def get_last_item(items: list) -> "ItemTask | None":
     return items[-1] if items else None
 
 
+def duplicate_last_item_to_qty(
+    order: "OrderTask",
+    target_qty: int,
+    *,
+    mark_complete: bool = False,
+    count_existing: bool = True,
+) -> tuple[int, str, int] | None:
+    """Duplicate the last active item until the order has target_qty copies.
+
+    Core logic shared by make-it-N handlers across state machine, checkout,
+    and early_pattern_handler.
+
+    Args:
+        order: The current order task
+        target_qty: Desired total quantity
+        mark_complete: If True, duplicates are marked complete (checkout flow)
+        count_existing: If True, counts existing copies and only adds the difference.
+                        If False, always adds (target_qty - 1) copies.
+
+    Returns:
+        Tuple of (target_qty, last_item_name, added_count) or None if no active items.
+        added_count may be 0 or negative if already at/over target.
+    """
+    active_items = order.items.get_active_items()
+    if not active_items:
+        return None
+
+    last_item = get_last_item(active_items)
+    last_item_name = last_item.get_summary()
+
+    if count_existing:
+        current_count = sum(
+            1 for item in active_items
+            if item.get_summary() == last_item_name
+        )
+        added_count = target_qty - current_count
+    else:
+        added_count = target_qty - 1
+
+    if added_count > 0:
+        for _ in range(added_count):
+            order.items.add_item(last_item.duplicate(mark_complete=mark_complete))
+        logger.info("Added %d more of '%s' (now %d total)", added_count, last_item_name, target_qty)
+
+    return target_qty, last_item_name, added_count
+
+
 def find_matching_item(
     target_desc: str,
     items: list,

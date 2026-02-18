@@ -142,11 +142,13 @@ class PricingEngine(MenuDataMixin):
     # Generic Pricing Methods (Data-Driven)
     # =========================================================================
 
+    def _resolve_menu_item(self, name: str) -> dict | None:
+        """Look up a menu item by name, falling back to title-case."""
+        return self._lookup_menu_item(name) or self._lookup_menu_item(name.title())
+
     def get_size_category_slug(self, menu_item_name: str) -> str | None:
         """Return the size_category_slug for a menu item, or None."""
-        menu_item = self._lookup_menu_item(menu_item_name)
-        if not menu_item:
-            menu_item = self._lookup_menu_item(menu_item_name.title())
+        menu_item = self._resolve_menu_item(menu_item_name)
         if not menu_item:
             return None
         return menu_item.get("size_category_slug")
@@ -170,9 +172,7 @@ class PricingEngine(MenuDataMixin):
             Tuple of (price, size_data) where size_data contains size info,
             or (None, None) if item doesn't have size-based pricing
         """
-        menu_item = self._lookup_menu_item(menu_item_name)
-        if not menu_item:
-            menu_item = self._lookup_menu_item(menu_item_name.title())
+        menu_item = self._resolve_menu_item(menu_item_name)
         if not menu_item:
             return None, None
 
@@ -226,9 +226,7 @@ class PricingEngine(MenuDataMixin):
         Returns:
             Upcharge amount (0.0 if this is the base size or not a sized item)
         """
-        menu_item = self._lookup_menu_item(menu_item_name)
-        if not menu_item:
-            menu_item = self._lookup_menu_item(menu_item_name.title())
+        menu_item = self._resolve_menu_item(menu_item_name)
         if not menu_item:
             return 0.0
 
@@ -266,9 +264,7 @@ class PricingEngine(MenuDataMixin):
             - Item doesn't have variant pricing
             - Item has only one variant (no need to display "each" for bagels, etc.)
         """
-        menu_item = self._lookup_menu_item(menu_item_name)
-        if not menu_item:
-            menu_item = self._lookup_menu_item(menu_item_name.title())
+        menu_item = self._resolve_menu_item(menu_item_name)
         if not menu_item:
             return None
 
@@ -327,12 +323,7 @@ class PricingEngine(MenuDataMixin):
             return size_price
 
         # Fall back to base_price
-        menu_item = self._lookup_menu_item(menu_item_name)
-        if menu_item and menu_item.get("base_price"):
-            return menu_item["base_price"]
-
-        # Try title case variation
-        menu_item = self._lookup_menu_item(menu_item_name.title())
+        menu_item = self._resolve_menu_item(menu_item_name)
         if menu_item and menu_item.get("base_price"):
             return menu_item["base_price"]
 
@@ -378,9 +369,10 @@ class PricingEngine(MenuDataMixin):
             logger.warning("No menu_data available for attribute upcharge lookup")
             return 0.0
 
-        item_types = self._menu_data.get("item_types", {})
-        type_data = item_types.get(item_type, {})
-        attributes = type_data.get("attributes", [])
+        attributes = get_item_type_attributes(
+            self._menu_data, item_type,
+            f"look up attribute upcharge for '{option_value}'",
+        )
 
         price, _ = _lookup_option_price_in_attributes(
             attributes,
@@ -437,9 +429,10 @@ class PricingEngine(MenuDataMixin):
         normalized = normalize_to_slug(option_value)
         option_lower = normalize_text(option_value)
 
-        item_types = self._menu_data.get("item_types", {})
-        type_data = item_types.get(item_type, {})
-        attributes = type_data.get("attributes", [])
+        attributes = get_item_type_attributes(
+            self._menu_data, item_type,
+            f"get ingredient category for '{option_value}'",
+        )
 
         for attr in attributes:
             if attr.get("slug") != attr_slug:
@@ -472,9 +465,10 @@ class PricingEngine(MenuDataMixin):
         Returns:
             The minimum price_modifier among matching options, or 0.0 if none found
         """
-        item_types = self._menu_data.get("item_types", {})
-        type_data = item_types.get(item_type, {})
-        attributes = type_data.get("attributes", [])
+        attributes = get_item_type_attributes(
+            self._menu_data, item_type,
+            f"get min option price for '{attr_slug}'",
+        )
 
         min_price: float | None = None
 

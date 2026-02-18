@@ -62,6 +62,21 @@ NUM_TO_WORD: dict[int, str] = {
 # Maximum quantity allowed per individual modifier (e.g., sugars, syrups)
 MAX_MODIFIER_QUANTITY: int = 10
 
+# ── Regex fragments derived from the mappings above ──────────────────
+# Use these in regex patterns instead of hand-writing word lists.
+
+# Basic number words: one|two|...|ten|single|double|triple|quad|quadruple
+_BASIC_WORDS = sorted(BASIC_WORD_TO_NUM.keys(), key=len, reverse=True)
+QTY_WORDS_RE: str = "|".join(re.escape(w) for w in _BASIC_WORDS)
+
+# Extended: also includes eleven, twelve, dozen, etc.
+_EXTENDED_WORDS = sorted(
+    (k for k in WORD_TO_NUM if " " not in k),  # exclude multi-word like "a dozen"
+    key=len,
+    reverse=True,
+)
+QTY_WORDS_EXTENDED_RE: str = "|".join(re.escape(w) for w in _EXTENDED_WORDS)
+
 
 # =============================================================================
 # Quantity Extraction Functions
@@ -177,8 +192,7 @@ def extract_quantity_for_pattern(user_input: str, pattern: str) -> int:
     # Try word match: "two vanilla syrups", "double shot", "triple espresso", "extra bacon"
     # Note: "extra" is treated as quantity=2 for modifiers
     word_pattern = (
-        r'(one|single|two|three|four|five|six|seven|eight|nine|ten|'
-        r'double|triple|quad|quadruple|extra)\s+' + escaped_pattern + r's?'
+        rf'({QTY_WORDS_RE}|extra)\s+' + escaped_pattern + r's?'
     )
     word_match = re.search(word_pattern, user_input)
     if word_match:

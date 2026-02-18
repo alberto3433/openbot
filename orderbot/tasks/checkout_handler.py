@@ -44,7 +44,7 @@ from .parsers.validators import (
     parse_payment_method_deterministic,
 )
 from .handler_config import BaseStateHandler
-from .handler_utils import get_last_item
+from .handler_utils import get_last_item, duplicate_last_item_to_qty
 from .normalization import format_slug_for_display
 from .utils.text import number_to_word
 from .delivery_handler import DeliveryHandler
@@ -385,18 +385,13 @@ class CheckoutHandler(BaseStateHandler):
         if not target_qty:
             return None
 
-        active_items = order.items.get_active_items()
-        if not active_items:
+        result = duplicate_last_item_to_qty(
+            order, target_qty, mark_complete=True, count_existing=False,
+        )
+        if result is None:
             return None
 
-        last_item = get_last_item(active_items)
-        last_item_name = last_item.get_summary()
-        added_count = target_qty - 1
-
-        for _ in range(added_count):
-            order.items.add_item(last_item.duplicate())
-
-        logger.info("CONFIRMATION: Added %d more of '%s'", added_count, last_item_name)
+        target_qty, _, _ = result
 
         # Return to confirmation with updated summary
         summary = self.message_builder.build_order_summary(order)

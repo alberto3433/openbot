@@ -17,6 +17,7 @@ from .schemas import StateMachineResult
 from .handler_utils import get_last_item
 from orderbot.cache import menu_cache
 from .utils.text import normalize_text
+from .pending_fields import UNKNOWN_ATTRIBUTE_SLUG
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -178,7 +179,7 @@ class ConfigChangeHandler:
             active_items = order.items.get_active_items()
 
             # If "unknown" modifier, check if it's a weight/quantity update for last item
-            if attr_slug == "unknown":
+            if attr_slug == UNKNOWN_ATTRIBUTE_SLUG:
                 # Check if value looks like a weight specification (e.g., "2 pounds", "half lb")
                 new_value_lower = normalize_text(change_request.new_value)
                 if WEIGHT_QUANTITY_PATTERN.match(new_value_lower):
@@ -201,7 +202,7 @@ class ConfigChangeHandler:
                                 )
 
                 # If still unknown, check if it's actually a menu item replacement
-                if attr_slug == "unknown":
+                if attr_slug == UNKNOWN_ATTRIBUTE_SLUG:
                     from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
                     parsed = parse_open_input_deterministic(change_request.new_value)
                     if parsed and parsed.parsed_items:

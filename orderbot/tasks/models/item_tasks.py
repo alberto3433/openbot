@@ -6,7 +6,7 @@ import logging
 from typing import Any, Literal
 import uuid
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
@@ -93,6 +93,9 @@ class MenuItemTask(ItemTask):
     # Renamed from "modifiers" to "selections" for clarity - everything is a selection
     selections: list[dict] = Field(default_factory=list)  # Stored as dict for serialization
 
+    # Cached attribute_values dict — rebuilt from selections on demand, invalidated on mutation
+    _attr_cache: dict | None = PrivateAttr(default=None)
+
     # Track if customization checkpoint has been offered
     customization_offered: bool = False
 
@@ -172,6 +175,7 @@ class MenuItemTask(ItemTask):
     @modifiers.setter
     def modifiers(self, value: list[dict]) -> None:
         """DEPRECATED: Use `selections` instead. This alias exists for backward compatibility."""
+        self._attr_cache = None  # Invalidate cache
         self.selections = value
 
     # -------------------------------------------------------------------------
@@ -310,6 +314,8 @@ class MenuItemTask(ItemTask):
             increment_if_exists: If True and selection already exists, increment quantity
                 instead of silently returning. Use for user "add X" commands.
         """
+        self._attr_cache = None  # Invalidate cache
+
         # Check if already present (same slug and category)
         for existing in self.selections:
             if existing.get("slug") == slug and existing.get("category") == category:
@@ -322,6 +328,8 @@ class MenuItemTask(ItemTask):
                 # extracted_selections tries to add with the actual qty
                 if quantity > 1 and existing.get("quantity", 1) == 1:
                     existing["quantity"] = quantity
+                if display_name and existing.get("display_name") != display_name:
+                    existing["display_name"] = display_name
                 # Price updates are no longer done here - all pricing happens in recalculate_item_price()
                 return
 
@@ -383,6 +391,8 @@ class MenuItemTask(ItemTask):
         Returns:
             True if any selections were removed or decremented, False otherwise
         """
+        self._attr_cache = None  # Invalidate cache
+
         removed_any = False
         i = 0
         while i < len(self.selections):
@@ -421,6 +431,8 @@ class MenuItemTask(ItemTask):
         """
         if not target or not self.selections:
             return False
+
+        self._attr_cache = None  # Invalidate cache
 
         target_slug = target.replace(" ", "_").lower()
         removed_any = False
@@ -461,6 +473,9 @@ class MenuItemTask(ItemTask):
         Returns a dict with category->value mapping. Used for logging, display, and
         backward compatibility with code that reads attribute_values.
         """
+        if self._attr_cache is not None:
+            return self._attr_cache
+
         result: dict[str, Any] = {}
         for sel in self.selections:
             category = sel.get("category", "")
@@ -493,11 +508,14 @@ class MenuItemTask(ItemTask):
             if price > 0:
                 result[f"{category}_price"] = price
 
+        self._attr_cache = result
         return result
 
     @attribute_values.setter
     def attribute_values(self, value: dict[str, Any]) -> None:
         """Set selection values from a dict. Used for bulk initialization."""
+        self._attr_cache = None  # Invalidate cache
+
         # Clear existing selections that would be overwritten
         # This is for backward compat when code sets attribute_values directly
         for key, val in value.items():
@@ -524,6 +542,8 @@ class MenuItemTask(ItemTask):
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Set selection by category: item["size"] = "large"."""
+        self._attr_cache = None  # Invalidate cache
+
         # Check if we're setting a value that already exists as a default ingredient
         # If so, skip - the default is already there with the correct pricing (included in base)
         if value and not isinstance(value, bool):

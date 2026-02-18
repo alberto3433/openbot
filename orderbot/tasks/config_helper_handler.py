@@ -20,6 +20,7 @@ from .handler_config import HandlerConfig
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from .handler_utils import is_configurable_menu_item
+from .config_side_choice_handler import SIDE_SLOT_NAME
 
 if TYPE_CHECKING:
     from .modifier_change_handler import ModifierChangeHandler
@@ -123,7 +124,7 @@ class ConfigHelperHandler:
         # Handle side_choice - query component slots for the question text
         if field == PendingField.SIDE_CHOICE:
             if is_configurable_menu_item(item):
-                side_slot = menu_cache.get_component_slot(item.menu_item_type, "side")
+                side_slot = menu_cache.get_component_slot(item.menu_item_type, SIDE_SLOT_NAME)
                 if side_slot and side_slot.get("prompt_text"):
                     return side_slot["prompt_text"]
             # Fallback to generic question if DB lookup fails

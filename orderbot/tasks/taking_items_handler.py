@@ -14,6 +14,7 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
@@ -57,6 +58,37 @@ if TYPE_CHECKING:
     from .context import OrderContext
 
 logger = logging.getLogger(__name__)
+
+# Pattern to strip a leading negative word + optional punctuation from user input
+# e.g., "no nothing else" -> "nothing else", "nah, I'm good" -> "I'm good"
+_LEADING_NEGATIVE_RE = re.compile(
+    r"^(?:no|nah|nope|naw)[,.\s]+",
+    re.IGNORECASE,
+)
+
+
+def _is_negative_done(text: str) -> bool:
+    """Check if user input is a negative response meaning 'done ordering'.
+
+    Handles direct done signals ("that's it"), negative responses ("no", "nope"),
+    and combinations like "no nothing else", "nah I'm good", "no that's it".
+
+    Args:
+        text: Raw user input.
+
+    Returns:
+        True if the input means the user is done ordering.
+    """
+    if menu_cache.is_done(text) or menu_cache.is_negative(text):
+        return True
+
+    # Strip leading negative word and check if the remainder is a done signal
+    # e.g., "no nothing else" -> "nothing else" (matches done pattern)
+    remainder = _LEADING_NEGATIVE_RE.sub("", text.strip())
+    if remainder and remainder != text.strip() and menu_cache.is_done(remainder):
+        return True
+
+    return False
 
 # Get shared pipeline instance
 _pipeline = get_pipeline()
@@ -267,6 +299,12 @@ class TakingItemsHandler(MenuDataMixin):
         result = self._early_pattern_handler.handle_all_early_patterns(user_input, order)
         if result:
             return result
+
+        # When items are in the cart and user gives a negative response
+        # to "Anything else?", treat it as done ordering.
+        # Handles: "no", "nope", "no nothing else", "nah I'm good", etc.
+        if order.items.get_active_items() and _is_negative_done(user_input):
+            return self.checkout_utils_handler.transition_to_checkout(order)
 
         parsed = parse_open_input(
             user_input,

@@ -150,6 +150,35 @@ def sure_changed_anything_else(
     return f"Sure, I've changed the {attr_name} to {new_value}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
+def thats_n_total_anything_else(qty: int) -> str:
+    """Generate "Sure, that's N total. Anything else?" response.
+
+    Used after quantity changes (make-it-N).
+
+    Args:
+        qty: The new total quantity
+
+    Returns:
+        Formatted response string
+    """
+    return f"Sure, that's {qty} total. {CheckoutMessages.ANYTHING_ELSE}"
+
+
+def already_have_n_anything_else(count: int, item_name: str) -> str:
+    """Generate "You already have N X. Anything else?" response.
+
+    Used when user requests a quantity they already have.
+
+    Args:
+        count: Current quantity
+        item_name: Name/description of the item
+
+    Returns:
+        Formatted response string
+    """
+    return f"You already have {count} {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
+
+
 def duplicated_order_anything_else() -> str:
     """Generate "I've duplicated all items in your order. Anything else?" response."""
     return f"I've duplicated all items in your order. {CheckoutMessages.ANYTHING_ELSE}"

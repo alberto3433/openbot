@@ -397,7 +397,7 @@ class ConfigCancellationHandler:
                             order=order,
                         )
                     return StateMachineResult(
-                        message=f"OK, I've removed the {display_name}. Anything else?",
+                        message=ok_removed_anything_else(display_name),
                         order=order,
                     )
                 if defer_if_unset:

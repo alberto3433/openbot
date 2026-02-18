@@ -132,7 +132,7 @@ class SelectionExtractor:
         for sel in selections:
             # Use add_selection for unified storage
             # Note: price is NOT passed - calculated in recalculate_item_price()
-            item.add_selection(sel.slug, sel.category, sel.quantity)
+            item.add_selection(sel.slug, sel.category, sel.quantity, display_name=sel.display_name)
 
             # Build display name for acknowledgment using database lookup
             display_name = sel.display_name or menu_cache.get_ingredient_display_name(sel.slug)

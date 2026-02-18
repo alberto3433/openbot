@@ -1721,31 +1721,49 @@
 
     function renderMessageWithQuickReplies(text, quickReplies) {
       var html = escapeHtml(text);
-      // Sort by label length descending to avoid partial matches
+      // Sort by label length descending so longer labels claim their ranges first
       var sorted = quickReplies.slice().sort(function(a, b) {
         return b.label.length - a.label.length;
       });
+      // Collect replacement positions on the ORIGINAL html, then apply all at once.
+      // This prevents earlier replacements from corrupting searches for later labels
+      // (e.g. "Everything Bagel" matching inside already-wrapped "Whole Wheat Everything Bagel").
+      var replacements = [];
+      var usedRanges = [];
+      var lowerHtml = html.toLowerCase();
       sorted.forEach(function(qr) {
         var escapedLabel = escapeHtml(qr.label);
         // Case-insensitive search — use lastIndexOf so we match the label in the
         // question/options part of the message, not in the acknowledgment prefix
         // (e.g. "Got it, for the American Cheese with 1/4 lb. How much? 1/4 pound?")
-        var lowerHtml = html.toLowerCase();
         var lowerLabel = escapedLabel.toLowerCase();
         var idx = lowerHtml.lastIndexOf(lowerLabel);
-        // Walk backwards to find a match at a word boundary (not inside another word)
+        // Walk backwards to find a match at a word boundary that doesn't overlap
+        // a range already claimed by a longer label
         while (idx !== -1) {
           var before = idx > 0 ? html.charAt(idx - 1) : ' ';
           var after = idx + escapedLabel.length < html.length ? html.charAt(idx + escapedLabel.length) : ' ';
           var wordChar = /[a-zA-Z0-9]/;
-          if (!wordChar.test(before) && !wordChar.test(after)) break;
+          if (!wordChar.test(before) && !wordChar.test(after)) {
+            var end = idx + escapedLabel.length;
+            var overlaps = usedRanges.some(function(r) {
+              return idx < r.end && end > r.start;
+            });
+            if (!overlaps) break;
+          }
           idx = lowerHtml.lastIndexOf(lowerLabel, idx - 1);
         }
         if (idx !== -1) {
           var originalText = html.substring(idx, idx + escapedLabel.length);
           var span = '<span class="quick-reply-inline" data-value="' + escapeAttr(qr.value) + '">' + originalText + '</span>';
-          html = html.substring(0, idx) + span + html.substring(idx + escapedLabel.length);
+          replacements.push({idx: idx, length: escapedLabel.length, span: span});
+          usedRanges.push({start: idx, end: idx + escapedLabel.length});
         }
+      });
+      // Apply replacements right-to-left so character indices remain valid
+      replacements.sort(function(a, b) { return b.idx - a.idx; });
+      replacements.forEach(function(r) {
+        html = html.substring(0, r.idx) + r.span + html.substring(r.idx + r.length);
       });
       return html;
     }
@@ -1843,7 +1861,7 @@
         callerIdPanel.removeAttribute("open");
 
         if (data.message) {
-          addMessage("assistant", data.message);
+          addMessage("assistant", data.message, data.quick_replies);
           lastBotMessage = data.message;
           messageCount++;
           conversationHistory.push({ role: "assistant", content: data.message });

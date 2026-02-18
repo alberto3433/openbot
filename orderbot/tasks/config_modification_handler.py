@@ -250,13 +250,15 @@ class ConfigModificationHandler:
         if not item.menu_item_type:
             return None
         item_type = item.menu_item_type
-        # Get priced attribute, fallback to "weight" for by-weight items
+        # Get priced attribute; fallback to first attribute with priced options
         priced_attr = menu_cache.get_first_priced_attribute(item_type)
         if not priced_attr:
-            # Check if this item type has a weight attribute
             attrs = menu_cache.get_item_type_attributes(item_type)
-            if "weight" in attrs:
-                priced_attr = "weight"
+            for attr_slug, attr_info in attrs.items():
+                options = attr_info.get("options", [])
+                if any(opt.get("price_modifier", 0) for opt in options if isinstance(opt, dict)):
+                    priced_attr = attr_slug
+                    break
         if not priced_attr:
             return None
         # Special handling for "half a pound" / "half pound" / "1/2 lb"

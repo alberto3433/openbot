@@ -15,7 +15,8 @@ Regex patterns for detecting user intents/actions:
 import re
 import logging
 
-from orderbot.tasks.parsers.constants import _get_menu_cache
+from orderbot.tasks.parsers.parser_utils import _get_menu_cache
+from orderbot.tasks.parsers.quantity_utils import QTY_WORDS_RE
 
 logger = logging.getLogger(__name__)
 
@@ -95,14 +96,14 @@ CANCEL_ITEM_PATTERN = re.compile(
     # Handle "I don't want X", "don't want X", and "no I don't want X" (decline + remove)
     r"(?:no[,]?\s+)?(?:i\s+)?don'?t\s+want\s+(?:the\s+)?(.+?)(?:\s+anymore)?[\s!.,]*$"
     r"|"
-    r"no\s+more\s+(.+?)[\s!.,]*$"
+    r"no\s+more\s+(?!changes?\b)(.+?)[\s!.,]*$"
     r"|"
     # "no X" / "no X please" - treat as removal (e.g., "no whole milk", "no sugar please")
     # Exclude common false positives: "no thanks", "no that's it", "no I'm good"
     # Also exclude "no make it X" which is a replacement pattern handled by REPLACE_ITEM_PATTERN
     # Also exclude "no I don't want..." which should be handled by the "I don't want X" pattern
     # Use negative lookahead to avoid matching these phrases
-    r"no\s+(?!thanks\b|thank\s+you|more\b|but\b|that'?s?\s+(?:it|all|fine|good|ok|okay)|i'?m\s+(?:good|fine|ok|okay|done|all\s+set)|problem|worries|way|make\s+(?:it\s+)?|i\s+don|(?:can|could|may)\s+i\s+(?:have|get|do))(?:the\s+)?(.+?)(?:\s+please)?[\s!.,]*$"
+    r"no\s+(?!thanks\b|thank\s+you|more\b|but\b|changes?\b|nothing\b|none\b|that'?s?\s+(?:it|all|fine|good|ok|okay)|i'?m\s+(?:good|fine|ok|okay|done|all\s+set)|problem|worries|way|make\s+(?:it\s+)?|i\s+don|(?:can|could|may)\s+i\s+(?:have|get|do))(?:the\s+)?(.+?)(?:\s+please)?[\s!.,]*$"
     r"|"
     # "can you remove X?", "could you remove X?", "would you remove X?"
     r"(?:can|could|would)\s+you\s+(?:remove|delete|cancel|skip|take\s+(?:off|out))\s+(?:the\s+)?(.+?)[\s!.,?]*$"
@@ -250,30 +251,30 @@ def strip_conversational_fillers(text: str) -> str:
 # "Make it 2" pattern - user wants to change quantity of last item to N
 MAKE_IT_N_PATTERN = re.compile(
     r"^(?:"
-    r"actually[,]?\s+make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"actually[,]?\s+make\s+(?:it|that)\s+(\d+|{QTY_WORDS_RE})"
     r"|"
-    r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"make\s+(?:it|that)\s+(\d+|{QTY_WORDS_RE})"
     r"|"
     # "change it to 3", "change that to three", "switch it to two"
-    r"(?:change|switch)\s+(?:it|that|this)\s+to\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"(?:change|switch)\s+(?:it|that|this)\s+to\s+(\d+|{QTY_WORDS_RE})"
     r"|"
-    r"i'?ll\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"i'?ll\s+(?:take|have|want|get)\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"i'?d\s+like\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"i'?d\s+like\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"i\s+would\s+like\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"i\s+would\s+like\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"i\s+(?:want|need)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"i\s+(?:want|need)\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"(?:can|could|may)\s+i\s+(?:get|have)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"(?:can|could|may)\s+i\s+(?:get|have)\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"actually[,]?\s+(?:let'?s?\s+(?:do|get|have)\s+)?(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"actually[,]?\s+(?:let'?s?\s+(?:do|get|have)\s+)?(\d+|{QTY_WORDS_RE})"
     r"|"
-    r"(?:give|get)\s+me\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"(?:give|get)\s+me\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"let'?s?\s+(?:do|have|get|make\s+it)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"let'?s?\s+(?:do|have|get|make\s+it)\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+of\s+(?:those|them|that)"
+    rf"(\d+|{QTY_WORDS_RE})\s+of\s+(?:those|them|that)"
     r")"
     r"[\s!.,?]*$",
     re.IGNORECASE
@@ -285,33 +286,33 @@ MAKE_IT_N_PATTERN = re.compile(
 # The item name is ignored since we already know which item we're configuring
 MAKE_IT_N_CONFIG_PATTERN = re.compile(
     r"^(?:"
-    r"actually[,]?\s+make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"actually[,]?\s+make\s+(?:it|that)\s+(\d+|{QTY_WORDS_RE})"
     r"|"
-    r"make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"make\s+(?:it|that)\s+(\d+|{QTY_WORDS_RE})"
     r"|"
     # "change it to 3", "change that to three", "switch it to two"
-    r"(?:change|switch)\s+(?:it|that|this)\s+to\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"(?:change|switch)\s+(?:it|that|this)\s+to\s+(\d+|{QTY_WORDS_RE})"
     r"|"
     # "can you make it two" / "could you make that three"
-    r"(?:can|could|would)\s+you\s+make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"(?:can|could|would)\s+you\s+make\s+(?:it|that)\s+(\d+|{QTY_WORDS_RE})"
     r"|"
-    r"i'?ll\s+(?:take|have|want|get)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"i'?ll\s+(?:take|have|want|get)\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"i'?d\s+like\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"i'?d\s+like\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"i\s+would\s+like\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"i\s+would\s+like\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"i\s+(?:want|need)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"i\s+(?:want|need)\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"(?:can|could|may)\s+i\s+(?:get|have)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"(?:can|could|may)\s+i\s+(?:get|have)\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"actually[,]?\s+(?:let'?s?\s+(?:do|get|have)\s+)?(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"actually[,]?\s+(?:let'?s?\s+(?:do|get|have)\s+)?(\d+|{QTY_WORDS_RE})"
     r"|"
-    r"(?:give|get)\s+me\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"(?:give|get)\s+me\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"let'?s?\s+(?:do|have|get|make\s+it)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)(?:\s+of\s+(?:those|them|that))?"
+    rf"let'?s?\s+(?:do|have|get|make\s+it)\s+(\d+|{QTY_WORDS_RE})(?:\s+of\s+(?:those|them|that))?"
     r"|"
-    r"(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+of\s+(?:those|them|that)"
+    rf"(\d+|{QTY_WORDS_RE})\s+of\s+(?:those|them|that)"
     r")"
     # Allow optional trailing item name (e.g., "hot teas", "plain bagels")
     r"(?:\s+[\w\s]+)?[\s!.,?]*$",
@@ -388,7 +389,7 @@ MORE_OF_SAME_PATTERN = re.compile(
 # e.g., "make that two bags of chips", "make it 3 coffees"
 # This is more specific than MAKE_IT_N_PATTERN and captures the item reference
 MAKE_IT_N_WITH_ITEM_PATTERN = re.compile(
-    r"^make\s+(?:it|that)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"^make\s+(?:it|that)\s+(\d+|{QTY_WORDS_RE})"
     r"\s+(.+?)"  # Capture the item reference
     r"[\s!.,?]*$",
     re.IGNORECASE
@@ -541,7 +542,7 @@ ADD_N_MORE_PATTERN = re.compile(
     r"(?:can\s+you\s+|could\s+you\s+|please\s+)?"
     r"(?:add|throw\s+in|get\s+me|give\s+me|i(?:'?d|\s+would)?\s+(?:like|want))"
     r"\s+"
-    r"(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+    rf"(\d+|{QTY_WORDS_RE})"
     r"\s+more"
     r"(?:\s+(.+?))?$",
     re.IGNORECASE
@@ -698,3 +699,45 @@ def _get_configurable_item_pattern() -> re.Pattern:
 def warmup_patterns() -> None:
     """Pre-compile lazy patterns at startup."""
     _get_configurable_item_pattern()
+
+
+# =============================================================================
+# Modifier Change Request Patterns
+# =============================================================================
+
+# Change request patterns - detect when user wants to modify an item
+# These patterns extract the target (what to change) and the new_value
+# Returns (pattern, group_indices) where group_indices is (target_group, new_value_group)
+# target_group can be None for "change it to X" patterns (refers to last item)
+CHANGE_REQUEST_PATTERNS = [
+    # "change it to X" / "make it X" - target is implicit (last item)
+    (re.compile(r"(?:change|make|switch)\s+(?:it|that)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "change the bagel to X" / "make the spread X"
+    (re.compile(r"(?:change|make|switch)\s+the\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "change X to Y" without "the" - e.g., "change corned beef to pastrami"
+    # Note: This must come after "change it to X" pattern so "it" is matched as implicit target
+    (re.compile(r"(?:change|switch)\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "can you change it to X" / "could you make it X"
+    (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+(?:it|that)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "can you change the bagel to X"
+    (re.compile(r"(?:can|could|would)\s+you\s+(?:change|make|switch)\s+the\s+(\w+(?:\s+\w+)?)\s+to\s+(.+?)(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "make it with X" / "can you make it with X instead"
+    (re.compile(r"(?:can|could|would)\s+you\s+(?:make|have|do)\s+(?:it|that)\s+with\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "make it with X" (without "can you") - target is implicit (last item)
+    (re.compile(r"make\s+(?:it|that)\s+with\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "make [quantity] [modifier]" - e.g., "make 2 vanilla syrups"
+    (re.compile(r"make\s+(\d+\s+.+?)(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "actually X instead" / "actually make it X"
+    # Negative lookahead excludes cancellation keywords so "actually cancel that" is NOT a change request
+    (re.compile(r"actually\s+(?!cancel|remove|forget|nevermind|never\s+mind|scratch|take\s+off|no\s+)(?:make\s+it\s+)?(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "I meant X" - clearly signals correction
+    (re.compile(r"i\s+meant\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "I want X instead" - requires "instead" to signal change (without "instead", treat as answer)
+    (re.compile(r"i\s+want(?:ed)?\s+(.+?)\s+instead(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "no wait, X" / "wait, X instead"
+    (re.compile(r"(?:no\s+)?wait[,.]?\s+(.+?)(?:\s+instead)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+    # "make the bagel not toasted" - negate boolean attribute on specific item
+    (re.compile(r"(?:make|have)\s+(?:the|my)\s+(\w+(?:\s+\w+)?)\s+(not\s+\w+)(?:\s+please)?(?:\?|$)", re.IGNORECASE), (1, 2)),
+    # "make it not toasted" - negate boolean attribute on implicit target
+    (re.compile(r"(?:make|have)\s+(?:it|that)\s+(not\s+\w+)(?:\s+please)?(?:\?|$)", re.IGNORECASE), (None, 1)),
+]

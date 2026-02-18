@@ -17,6 +17,7 @@ from .pending_fields import PendingField
 from orderbot.cache import menu_cache
 from orderbot.cache.base import pluralize
 from .utils.pricing_utils import safe_recalculate_price
+from .config_side_choice_handler import SIDE_SLOT_NAME
 
 if TYPE_CHECKING:
     from .item_adder_handler import ItemAdderHandler
@@ -145,6 +146,9 @@ class ConfigSelectionHandler:
         if not items_needing_config:
             # All items were complete - nothing more to configure
             return None
+
+        # Set multi_item_config_names for ordinal tracking
+        order.multi_item_config_names = [name for _, name, _ in items_needing_config]
 
         # Queue items 2+ for later configuration
         for item_id, item_name, item_type in items_needing_config[1:]:
@@ -336,12 +340,12 @@ class ConfigSelectionHandler:
 
         if has_component_slots:
             # Get the component slot question from database (e.g., "side" slot)
-            side_slot = menu_cache.get_component_slot(selected_item_type, "side")
+            side_slot = menu_cache.get_component_slot(selected_item_type, SIDE_SLOT_NAME)
             if side_slot and side_slot.get("prompt_text"):
                 question = side_slot["prompt_text"]
             else:
                 # Build question dynamically from options
-                options = menu_cache.get_component_slot_options(selected_item_type, "side")
+                options = menu_cache.get_component_slot_options(selected_item_type, SIDE_SLOT_NAME)
                 if options:
                     option_names = [
                         opt.get("display_name") or opt.get("allowed_item_type", "item")

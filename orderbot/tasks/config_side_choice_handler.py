@@ -23,6 +23,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Centralized constants linking the "side_choice" attribute to the "side"
+# component slot. These live here (not in a generic constants module) because
+# the relationship is specific to the component-slot subsystem. A full
+# data-driven solution would add a DB FK from attribute -> slot; until then,
+# these constants are the single place to change.
+SIDE_CHOICE_ATTR_SLUG = "side_choice"
+SIDE_SLOT_NAME = "side"
+
 # Get shared pipeline instance
 _pipeline = get_pipeline()
 
@@ -62,7 +70,7 @@ class ConfigSideChoiceHandler(BaseHandler):
         valid_options: list[dict] = []
         slot_options_by_slug: dict[str, dict] = {}
 
-        slot_config = menu_cache.get_component_slot(parent_item_type, "side") if parent_item_type else None
+        slot_config = menu_cache.get_component_slot(parent_item_type, SIDE_SLOT_NAME) if parent_item_type else None
         if not slot_config:
             return valid_answers, valid_options, slot_options_by_slug, question_text
 
@@ -132,7 +140,7 @@ class ConfigSideChoiceHandler(BaseHandler):
             unit_price=0.0 if price_rule == "included" else None,
             bundle_id=bundle_id,
             bundle_parent_item_id=item.id,
-            bundle_slot="side",
+            bundle_slot=SIDE_SLOT_NAME,
             bundle_price_rule=price_rule,
             bundle_included_price=bundle_included_price,
         )
@@ -186,7 +194,7 @@ class ConfigSideChoiceHandler(BaseHandler):
             unit_price=0.0 if price_rule == "included" else (menu_item_info.get("base_price", 0) if menu_item_info else 0),
             bundle_id=bundle_id,
             bundle_parent_item_id=item.id,
-            bundle_slot="side",
+            bundle_slot=SIDE_SLOT_NAME,
             bundle_price_rule=price_rule,
             bundle_included_price=bundle_included_price,
         )
@@ -241,8 +249,8 @@ class ConfigSideChoiceHandler(BaseHandler):
         if parsed.wants_cancel:
             # User declined the side choice — skip it, don't remove the item
             if parent_item_type:
-                item.selections = [m for m in item.selections if m.get("category") != "side_choice"]
-                item.add_selection("no_side", "side_choice", display_name="No Side")
+                item.selections = [m for m in item.selections if m.get("category") != SIDE_CHOICE_ATTR_SLUG]
+                item.add_selection("no_side", SIDE_CHOICE_ATTR_SLUG, display_name="No Side")
 
                 # Mark all item-type-based side options as declined on parent
                 # (e.g., if options include "bagel", mark parent's "bagel" attr as declined)
@@ -327,7 +335,7 @@ class ConfigSideChoiceHandler(BaseHandler):
             side_choice_value = self._normalize_side_choice_value(
                 chosen_option, parent_item_type
             )
-            item["side_choice"] = side_choice_value
+            item[SIDE_CHOICE_ATTR_SLUG] = side_choice_value
 
             # If side choice is a configurable item type (e.g., bagel), and parent has an
             # attribute with the same name, mark it as declined. The child item handles its
@@ -395,7 +403,7 @@ class ConfigSideChoiceHandler(BaseHandler):
         # Try to find matching global attribute option by display name
         if parent_item_type:
             side_choice_attrs = menu_cache.get_item_type_attributes(parent_item_type)
-            side_choice_config = side_choice_attrs.get("side_choice", {})
+            side_choice_config = side_choice_attrs.get(SIDE_CHOICE_ATTR_SLUG, {})
             options = side_choice_config.get("options", [])
 
             for opt in options:

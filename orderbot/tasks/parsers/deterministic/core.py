@@ -26,6 +26,7 @@ from ..constants import (
     make_last_n_sentinel,
     make_reduce_to_one_sentinel,
 )
+from ..quantity_utils import QTY_WORDS_RE
 from ..intent_patterns import (
     strip_conversational_fillers,
     MAKE_IT_N_PATTERN,
@@ -68,11 +69,24 @@ from .modification_parsing import (
     _parse_add_more_request,
 )
 from .tokenization import _parse_multi_item_order
+from .inline_spec_parsing import _is_inline_attribute_spec_pattern
+from ...config_flow_utils import LAST_ITEM_PRONOUNS_EXTENDED
 
 logger = logging.getLogger(__name__)
 
-# Get shared pipeline instance for extraction operations
-_pipeline = get_pipeline()
+
+
+def _extract_replacement_item(match: re.Match) -> str | None:
+    """Extract the replacement item text from a REPLACE_ITEM_PATTERN match.
+
+    Iterates over capture groups and strips leading articles.
+    """
+    for i in range(1, 11):  # 10 capture groups in REPLACE_ITEM_PATTERN
+        if match.group(i):
+            item = match.group(i).strip()
+            item = re.sub(r"^(?:a|an)\s+", "", item, flags=re.IGNORECASE)
+            return item
+    return None
 
 
 def _filter_duplicate_modifications(
@@ -720,14 +734,8 @@ def _try_parse_modification(text: str) -> OpenInputResponse | None:
     # Check for replacement phrases
     replace_match = REPLACE_ITEM_PATTERN.match(text)
     if replace_match:
-        replacement_item = None
-        for i in range(1, 11):  # 10 capture groups in REPLACE_ITEM_PATTERN
-            if replace_match.group(i):
-                replacement_item = replace_match.group(i)
-                break
+        replacement_item = _extract_replacement_item(replace_match)
         if replacement_item:
-            replacement_item = replacement_item.strip()
-            replacement_item = re.sub(r"^(?:a|an)\s+", "", replacement_item, flags=re.IGNORECASE)
             logger.info("Deterministic parse: replacement detected, item='%s'", replacement_item)
 
             parsed_replacement = parse_open_input_deterministic(replacement_item)
@@ -773,19 +781,13 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
             if cancel_item.lower() in all_items_phrases:
                 logger.info("Deterministic parse: cancel ALL items detected (phrase='%s')", cancel_item)
                 return OpenInputResponse(cancel_item=CANCEL_ALL_ITEMS)
-            # Handle pronouns that refer to the last item
-            last_item_pronouns = {
-                "that", "it", "this", "last", "the last one", "the last item", "last one", "last item",
-                # "remove from the order" -> remove the last item mentioned
-                "from the order", "from my order"
-            }
-            if cancel_item.lower() in last_item_pronouns:
+            if cancel_item.lower() in LAST_ITEM_PRONOUNS_EXTENDED:
                 logger.info("Deterministic parse: cancellation of last item detected (pronoun='%s')", cancel_item)
                 return OpenInputResponse(cancel_item=CANCEL_LAST_ITEM)
 
             # Handle "last N" or "last N items" - remove the last N items from cart
             last_n_match = re.match(
-                r"^last\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+                rf"^last\s+(\d+|{QTY_WORDS_RE})"
                 r"(?:\s+(?:items?|ones?))?$",
                 cancel_item.lower()
             )
@@ -803,7 +805,7 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
             # Handle "N" or "N more" or "N items" - remove N items from the end
             # e.g., "remove 2", "remove 2 more", "remove two items"
             just_n_match = re.match(
-                r"^(\d+|two|three|four|five|six|seven|eight|nine|ten)"
+                rf"^(\d+|{QTY_WORDS_RE})"
                 r"(?:\s+(?:more|items?|ones?))?$",
                 cancel_item.lower()
             )
@@ -893,7 +895,7 @@ def _try_parse_new_items(
         attr_result = None
         if item_type_for_mods:
             exclude_spans = [TextSpan(start=menu_item_span[0], end=menu_item_span[1])] if menu_item_span else None
-            attr_result = _pipeline.extract_attributes(text, item_type_for_mods, exclude_spans)
+            attr_result = get_pipeline().extract_attributes(text, item_type_for_mods, exclude_spans)
         modifications = _extract_menu_item_modifications(text, item_type_for_mods)
         # Deduplicate: remove modifications whose ingredient is already matched
         # as an attribute option (e.g., "jalapeño cream" modifier when attribute
@@ -1174,109 +1176,6 @@ def _check_standalone_ingredient(text: str) -> OpenInputResponse | None:
     return None
 
 
-# =============================================================================
-# Inline Attribute Spec Pattern Detection
-# =============================================================================
-
-def _is_inline_attribute_spec_pattern(text: str) -> bool:
-    """Check if text is an inline attribute specification pattern.
-
-    Inline spec pattern: "N items N attr1 N attr2" where:
-    - "N items" identifies the item type (e.g., "2 bagels")
-    - "N attr1 N attr2" are quantity+attribute pairs (e.g., "1 everything 1 plain")
-
-    This differs from multi-item orders like "2 bagels 2 coffees" where
-    each quantity is followed by a different item type.
-
-    Args:
-        text: Lowercase user input
-
-    Returns:
-        True if this is an inline spec pattern that should NOT be split
-        by comma insertion.
-    """
-    from .item_parsing import _detect_configurable_item_type
-
-    # Pattern: qty word qty word qty word...
-    # e.g., "2 bagels 1 everything 1 plain"
-    qty_word_pattern = r'(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(\w+)'
-    raw_matches = list(re.finditer(qty_word_pattern, text, re.IGNORECASE))
-
-    if len(raw_matches) < 2:
-        return False  # Not enough qty+word pairs
-
-    matches = [(m.group(1), m.group(2)) for m in raw_matches]
-
-    # First match should identify the item type
-    first_word = matches[0][1].lower()
-
-    # Detect item type from the first qty+word pair
-    first_phrase = f"{matches[0][0]} {first_word}"
-    detected_type, _ = _detect_configurable_item_type(first_phrase)
-
-    if not detected_type:
-        return False  # Couldn't identify item type
-
-    # Get attribute options for this item type
-    attrs = menu_cache.get_item_type_attributes(detected_type)
-    if not attrs:
-        return False
-
-    # Build set of all attribute option words (slugs, display names, aliases)
-    # Also extract individual words from multi-word options for partial matching
-    # e.g., "everything_bagel" -> add "everything" as well
-    attr_option_words: set[str] = set()
-    for attr_slug, attr_info in attrs.items():
-        options = attr_info.get("options", [])
-        for opt in options:
-            if isinstance(opt, dict):
-                slug = opt.get("slug", "")
-                display_name = opt.get("display_name", "")
-                aliases = opt.get("aliases", [])
-
-                # Add full names
-                if slug:
-                    attr_option_words.add(slug.lower())
-                    # Also add parts split by underscore (e.g., "everything" from "everything_bagel")
-                    for part in slug.lower().split("_"):
-                        if len(part) >= 3:  # Skip very short parts
-                            attr_option_words.add(part)
-                if display_name:
-                    attr_option_words.add(display_name.lower())
-                    # Also add parts split by space
-                    for part in display_name.lower().split():
-                        if len(part) >= 3:
-                            attr_option_words.add(part)
-                for alias in aliases:
-                    attr_option_words.add(alias.lower())
-                    for part in alias.lower().split():
-                        if len(part) >= 3:
-                            attr_option_words.add(part)
-
-    # If item type triggers appear between qty+word pairs, this is multi-item, not inline spec
-    all_trigger_flat = menu_cache.get_all_triggers_flat()
-
-    for i in range(len(raw_matches) - 1):
-        gap_text = text[raw_matches[i].end():raw_matches[i + 1].start()].strip()
-        if gap_text:
-            for word in gap_text.lower().split():
-                if word in all_trigger_flat or singularize(word) in all_trigger_flat:
-                    return False
-
-    # Check if subsequent qty+word pairs have words that are attribute options
-    subsequent_words = [m[1].lower() for m in matches[1:]]
-    attr_matches = [w for w in subsequent_words if w in attr_option_words]
-
-    # If ALL subsequent words are attribute options, this is an inline spec pattern
-    if len(attr_matches) == len(subsequent_words):
-        logger.debug(
-            "Inline spec detected: type=%s, specs=%s",
-            detected_type, subsequent_words
-        )
-        return True
-
-    return False
-
 
 # =============================================================================
 # Main Parse Open Input Function
@@ -1337,14 +1236,8 @@ def parse_open_input(
     # This ensures "No, I said plain bagel" triggers replacement, not a new item
     replace_match = REPLACE_ITEM_PATTERN.match(user_input)
     if replace_match:
-        replacement_item = None
-        for i in range(1, 11):  # 10 capture groups in REPLACE_ITEM_PATTERN
-            if replace_match.group(i):
-                replacement_item = replace_match.group(i)
-                break
+        replacement_item = _extract_replacement_item(replace_match)
         if replacement_item:
-            replacement_item = replacement_item.strip()
-            replacement_item = re.sub(r"^(?:a|an)\s+", "", replacement_item, flags=re.IGNORECASE)
             logger.info("Replacement pattern detected early, item='%s'", replacement_item)
 
             # Parse the replacement item
@@ -1371,7 +1264,7 @@ def parse_open_input(
     # Check for repeated quantity patterns (e.g., "2 plain bagels 2 everything bagels")
     # This handles space-separated items without "and" or commas
     quantity_pattern = re.compile(
-        r'(?:^|\s)(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+\w+',
+        rf'(?:^|\s)(\d+|{QTY_WORDS_RE})\s+\w+',
         re.IGNORECASE
     )
     quantity_matches = quantity_pattern.findall(cleaned)
@@ -1395,7 +1288,7 @@ def parse_open_input(
                 # Build trigger set from cache for boundary detection
                 all_trigger_flat = menu_cache.get_all_triggers_flat()
 
-                qty_words = r'\d+|one|two|three|four|five|six|seven|eight|nine|ten'
+                qty_words = rf'\d+|{QTY_WORDS_RE}'
 
                 def _comma_if_trigger(m: re.Match) -> str:
                     word = m.group(1).lower()

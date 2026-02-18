@@ -104,7 +104,7 @@ def _check_more_specific_menu_items(
     # In "everything bagel with scallion cream cheese", items after "with" are modifiers
     with_pos_for_menu_check = text_cleaned_lower.find(" with ")
 
-    for item_name, item_info in menu_cache._menu_items.items():
+    for item_name, item_info in menu_cache.iter_all_menu_items().items():
         item_type = item_info.get("item_type")
         if item_type and item_type != detected_item_type:
             item_name_lower = item_name.lower()
@@ -340,7 +340,7 @@ def _get_default_menu_item_for_type(item_type_slug: str) -> str | None:
     Returns:
         The default menu item name, or None if no items exist for this type
     """
-    item_names = list(menu_cache.get_item_names_by_type(item_type_slug))
+    item_names = list(menu_cache.get_item_names(item_type_slug))
     if not item_names:
         return None
 
@@ -377,7 +377,7 @@ def _match_menu_item_name_for_type_with_span(
     text_lower = text.lower()
 
     # Get all item names for this type
-    item_names = menu_cache.get_item_names_by_type(item_type_slug)
+    item_names = menu_cache.get_item_names(item_type_slug)
     alias_to_canonical = menu_cache.get_item_alias_to_canonical_by_type(item_type_slug)
 
     # Try to match longest name first for specificity

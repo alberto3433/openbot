@@ -19,6 +19,10 @@ from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
 from .utils.option_matcher import OptionMatcher
 from .config.attribute_resolver import get_unanswered_mandatory
+from .config_flow_utils import (
+    continue_config_with_message as _continue_config,
+    start_modifier_disambiguation as _start_disambig,
+)
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -103,38 +107,12 @@ class ModifierAdditionHandler:
     def _continue_config_with_message(
         self, message: str, item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
-        """Return message + next config question, or proceed if item complete."""
-        current_question = self.config_helper_handler.get_current_config_question(order, item)
-        if current_question:
-            return StateMachineResult(message=f"{message} {current_question}", order=order)
-        return self.checkout_utils_handler.get_next_question(order)
+        return _continue_config(self.config_helper_handler, self.checkout_utils_handler, message, item, order)
 
     def _start_modifier_disambiguation(
-        self,
-        new_value: str,
-        matches: list[dict],
-        item: MenuItemTask,
-        order: OrderTask,
+        self, new_value: str, matches: list[dict], item: MenuItemTask, order: OrderTask
     ) -> StateMachineResult:
-        """Start disambiguation flow for a modifier with multiple matches."""
-        order.pending_item_options = matches
-        order.pending_field = PendingField.MODIFIER_SELECTION
-        order.pending_modifier_target_item_index = order.items.items.index(item)
-
-        option_lines = []
-        for i, match in enumerate(matches[:6], 1):
-            price_str = ""
-            if match.get("base_price", 0) > 0:
-                price_str = f" (+${match['base_price']:.2f})"
-            option_lines.append(f"{i}. {match['name']}{price_str}")
-
-        options_str = "\n".join(option_lines)
-        qr = [{"label": m["name"], "value": m["name"]} for m in matches[:6] if m.get("name")]
-        return StateMachineResult(
-            message=f"Which {new_value} would you like?\n{options_str}",
-            order=order,
-            quick_replies=qr,
-        )
+        return _start_disambig(new_value, matches, item, order)
 
     def _start_attribute_option_selection(
         self,

@@ -51,6 +51,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_QUESTION_PHRASE_RE = re.compile(r'(?:what|which)\s+(.+?)\s*\?', re.IGNORECASE)
+
+
+def _extract_question_phrase(question_text: str) -> str | None:
+    """Extract the noun phrase from a 'what/which …?' question.
+
+    >>> _extract_question_phrase("What type of tea?")
+    'type of tea'
+    >>> _extract_question_phrase("Would you like it toasted?")
+    """
+    m = _QUESTION_PHRASE_RE.search(question_text)
+    return m.group(1).strip() if m else None
+
 
 class MenuItemConfigHandler(BaseHandler):
     """
@@ -548,9 +561,13 @@ class MenuItemConfigHandler(BaseHandler):
             base_lower = base_question.lower()
             has_match = any(e["label"].lower() in base_lower for e in qr)
             if not has_match:
-                display = attr.get("display_name") or attr["slug"]
-                if display.lower() in base_lower:
-                    qr = [{"label": display, "value": f"What {pluralize(display.lower())} do you have?"}]
+                trigger = _extract_question_phrase(base_question)
+                if trigger and trigger.lower() in base_lower:
+                    qr = [{"label": trigger, "value": f"What {pluralize(trigger.lower())} do you have?"}]
+                else:
+                    display = attr.get("display_name") or attr["slug"]
+                    if display.lower() in base_lower:
+                        qr = [{"label": display, "value": f"What {pluralize(display.lower())} do you have?"}]
 
         # Source 2: Component slot options (e.g., side_choice → side slot)
         # Always merge slot options so both attribute options AND slot display names

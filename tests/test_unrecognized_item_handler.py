@@ -24,6 +24,7 @@ class TestUnrecognizedItemHandler:
         """Create a mock MenuLookup."""
         lookup = MagicMock(spec=MenuLookup)
         lookup.get_suggestions_for_item_type.return_value = "latkes, fruit cup, or hash browns"
+        lookup.get_suggestion_names_for_item_type.return_value = ["latkes", "fruit cup", "hash browns"]
         return lookup
 
     @pytest.fixture
@@ -207,12 +208,13 @@ class TestBuildResponses(TestUnrecognizedItemHandler):
             "menu_items": ["Blueberry Muffin", "Chocolate Chip Muffin"],
         }
 
-        message, category = handler._build_curated_response(
+        message, category, suggested = handler._build_curated_response(
             "scone", curated, order_item_count=0
         )
 
         assert "don't have scone" in message.lower()
         assert "Blueberry Muffin" in message or "Chocolate Chip Muffin" in message
+        assert "Blueberry Muffin" in suggested
 
     def test_build_curated_response_with_category(self, handler, mock_menu_lookup):
         """Test that category suggestions work."""
@@ -221,12 +223,12 @@ class TestBuildResponses(TestUnrecognizedItemHandler):
             "menu_items": None,
         }
 
-        message, category = handler._build_curated_response(
+        message, category, suggested = handler._build_curated_response(
             "hash browns", curated, order_item_count=0
         )
 
         # Should have gotten suggestions from menu_lookup
-        mock_menu_lookup.get_suggestions_for_item_type.assert_called_once_with("side", limit=4)
+        mock_menu_lookup.get_suggestion_names_for_item_type.assert_called_once_with("side", limit=4)
         assert "don't have hash browns" in message.lower()
 
     def test_build_fuzzy_response(self, handler):

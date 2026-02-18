@@ -485,6 +485,37 @@ class MenuLookup(MenuDataMixin):
         # Format as natural language list
         return format_english_list(item_names, conjunction="or")
 
+    def get_suggestion_names_for_item_type(self, item_type_slug: str, limit: int = 5) -> list[str]:
+        """Get a list of menu item names for an item type (for quick replies).
+
+        Same logic as get_suggestions_for_item_type but returns the raw list.
+        """
+        if not self._menu_data:
+            return []
+
+        items_by_type = self._menu_data.get("items_by_type", {})
+        items = items_by_type.get(item_type_slug, [])
+
+        if not items:
+            type_info = menu_cache.get_category_keyword_mapping(item_type_slug)
+            if type_info and type_info.get("lookup_type") == "category":
+                items = menu_cache.get_items_by_category(item_type_slug)
+
+        if not items:
+            return []
+
+        item_names = []
+        seen = set()
+        for item in items:
+            name = item.get("name", "")
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                item_names.append(name)
+                if len(item_names) >= limit:
+                    break
+
+        return item_names
+
     def get_not_found_message(self, item_name: str) -> tuple[str, str | None]:
         """
         Generate a helpful message when an item isn't found on the menu.

@@ -2152,14 +2152,13 @@ class TestSplitQuantityDrinksParsing:
         result = _parse_split_quantity_items("two coffees with milk")
         assert result is None  # Should not match - no split pattern
 
-    @pytest.mark.xfail(reason="'latte' needs alias in DB to match 'Hot/Iced Latte' menu items")
     def test_large_iced_lattes_split(self):
         """Test parsing 'two large lattes one iced one hot' preserves size."""
         from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
         result = _parse_split_quantity_items("two large lattes one iced one hot")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
+        drinks = get_parsed_items(result, item_type="espresso_based_beverage")
         assert len(drinks) == 2
         # Both should have the large size
         assert drinks[0].attribute_values.get("size") == "large"
@@ -2601,6 +2600,54 @@ class TestParsedItemsMultiItem:
         assert "bagel" in types, f"Expected bagel in parsed_items, got: {types}"
         # Second item should be a tea
         assert "tea" in types, f"Expected tea in parsed_items, got: {types}"
+
+
+class TestWithAsMultiItemConnector:
+    """Tests for 'with' used as multi-item connector (e.g., 'a bagel with an orange juice')."""
+
+    def test_bagel_with_an_orange_juice(self):
+        """'a bagel with an orange juice' should parse as two items."""
+        result = parse_open_input_deterministic("a bagel with an orange juice")
+        assert result is not None, "Expected parse result"
+        assert result.parsed_items and len(result.parsed_items) == 2, (
+            f"Expected 2 items, got: {result.parsed_items}"
+        )
+        types = {getattr(i, 'item_type', None) for i in result.parsed_items}
+        has_bagel = any("bagel" in t for t in types if t)
+        assert has_bagel, f"Expected a bagel-type item in types, got: {types}"
+
+    def test_coffee_with_a_bagel(self):
+        """'a coffee with a bagel' should parse as two items."""
+        result = parse_open_input_deterministic("a coffee with a bagel")
+        assert result is not None, "Expected parse result"
+        assert result.parsed_items and len(result.parsed_items) == 2, (
+            f"Expected 2 items, got: {result.parsed_items}"
+        )
+        types = {getattr(i, 'item_type', None) for i in result.parsed_items}
+        has_bagel = any("bagel" in t for t in types if t)
+        has_coffee = any("coffee" in t or "beverage" in t for t in types if t)
+        assert has_bagel, f"Expected a bagel-type item in types, got: {types}"
+        assert has_coffee, f"Expected a coffee-type item in types, got: {types}"
+
+    def test_bagel_with_cream_cheese_is_single_item(self):
+        """'bagel with cream cheese' should NOT be split — 'cream cheese' is a modifier."""
+        result = parse_open_input_deterministic("bagel with cream cheese")
+        assert result is not None, "Expected parse result"
+        assert result.parsed_items is not None
+        assert len(result.parsed_items) == 1, (
+            f"Expected 1 item (modifier, not split), got {len(result.parsed_items)}: "
+            f"{[(getattr(i, 'item_name', None), getattr(i, 'item_type', None)) for i in result.parsed_items]}"
+        )
+
+    def test_two_with_occurrences_still_works(self):
+        """Regression: 2+ 'with' occurrences still parse correctly."""
+        result = parse_open_input_deterministic(
+            "onion bagel with scallion cream cheese toasted with an earl gray tea"
+        )
+        assert result is not None, "Expected parse result"
+        assert result.parsed_items and len(result.parsed_items) >= 2, (
+            f"Expected 2+ items, got: {result.parsed_items}"
+        )
 
 
 class TestDuplicatePatterns:
@@ -3450,3 +3497,51 @@ class TestLeadingAttributeWordStripping:
             assert not result.parsed_items, (
                 f"'large' alone should not produce parsed items, got: {result.parsed_items}"
             )
+
+
+class TestEnglishBreakfastTeaParsing:
+    """Tests for high-coverage trigger matching to prevent partial slug matches."""
+
+    def test_english_breakfast_tea_detects_tea_type(self):
+        """'english breakfast tea' should detect item_type=tea, not breakfast."""
+        from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        result = parse_open_input_deterministic("english breakfast tea")
+        assert result is not None, "Expected parse result for 'english breakfast tea'"
+        assert result.parsed_items, "Expected parsed_items for 'english breakfast tea'"
+        item = result.parsed_items[0]
+        assert item.item_type == "tea", (
+            f"Expected item_type='tea', got '{item.item_type}'"
+        )
+
+    def test_multi_item_bagel_and_english_breakfast_tea(self):
+        """Multi-item: 'onion bagel with scallion cream cheese toasted and an english breakfast tea'
+        should produce 2 items (bagel + tea)."""
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order(
+            "onion bagel with scallion cream cheese toasted and an english breakfast tea"
+        )
+        assert result is not None, "Expected multi-item parse result"
+        assert len(result.parsed_items) == 2, (
+            f"Expected 2 parsed_items, got {len(result.parsed_items)}"
+        )
+        types = [getattr(item, 'item_type', None) for item in result.parsed_items]
+        assert "bagel" in types, f"Expected bagel in types, got: {types}"
+        assert "tea" in types, f"Expected tea in types, got: {types}"
+
+    def test_breakfast_alone_triggers_category_clarification(self):
+        """'breakfast' alone should trigger category clarification (regression guard).
+
+        Since 'breakfast' is a non-configurable category, the parser returns
+        needs_category_clarification rather than a parsed item. This verifies
+        that the configurable-type preference doesn't break non-configurable
+        slug matching.
+        """
+        from orderbot.tasks.parsers.deterministic import parse_open_input_deterministic
+
+        result = parse_open_input_deterministic("breakfast")
+        assert result is not None, "Expected parse result for 'breakfast'"
+        assert result.needs_category_clarification == "breakfast", (
+            f"Expected needs_category_clarification='breakfast', got '{result.needs_category_clarification}'"
+        )

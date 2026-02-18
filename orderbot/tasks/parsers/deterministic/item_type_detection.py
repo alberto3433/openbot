@@ -28,6 +28,12 @@ _SKIP_TRIGGER_WORDS = {
     "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for",
 }
 
+# If any trigger covers >= 60% of the input text, prefer the longest such trigger
+# regardless of slug_matches priority. This prevents partial slug matches like
+# "breakfast" (41% of "english breakfast tea") from beating full-text matches
+# like "english breakfast tea" (100%).
+_HIGH_COVERAGE_THRESHOLD = 0.6
+
 
 def _find_trigger_matches(
     text: str,
@@ -109,6 +115,16 @@ def _detect_item_type(text: str) -> tuple[str | None, str | None]:
 
     if not matches:
         return None, None
+
+    # High-coverage pre-check: if any trigger covers >= 60% of the input,
+    # prefer the longest such trigger regardless of slug_matches priority.
+    text_len = len(text_lower)
+    if text_len > 0:
+        high_cov = [m for m in matches if m[2] >= text_len * _HIGH_COVERAGE_THRESHOLD]
+        if high_cov:
+            high_cov.sort(key=lambda x: -x[2])  # longest first
+            best = high_cov[0]
+            return best[0], best[1]
 
     # Sort by: (1) is_at_end_region (True first), (2) slug_matches (True first), (3) match_length (longer first)
     matches.sort(key=lambda x: (not x[4], not x[5], -x[2]))
@@ -249,6 +265,18 @@ def _detect_type_by_triggers(
                 matches.append((item_type_slug, trigger, len(trigger), start_pos, is_before_with, slug_matches))
 
     if matches:
+        # High-coverage pre-check: if any trigger before "with" covers >= 60% of the
+        # input, prefer the longest such trigger regardless of slug_matches priority.
+        text_len = len(text_lower)
+        if text_len > 0:
+            high_cov = [
+                m for m in matches
+                if m[4] and m[2] >= text_len * _HIGH_COVERAGE_THRESHOLD  # is_before_with AND high coverage
+            ]
+            if high_cov:
+                high_cov.sort(key=lambda x: -x[2])  # longest first
+                return high_cov[0][0]
+
         # Sort by:
         # (1) is_before_with (True first) - triggers before "with" are main items
         # (2) slug_matches (True first) - prefer when trigger matches item type slug

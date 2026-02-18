@@ -20,6 +20,7 @@ from .item_parsing import (
     _parse_item_generic,
     _is_modifier_chain,
 )
+from .item_type_detection import _HIGH_COVERAGE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,7 @@ def _collect_trigger_matches(
 def _select_best_trigger_match(
     matches: list[tuple[int, int, str, str]],
     all_item_types: set[str],
+    text_length: int = 0,
 ) -> tuple[bool, str | None, str | None]:
     """Select the best match from collected trigger matches using priority scoring.
 
@@ -227,6 +229,18 @@ def _select_best_trigger_match(
         if trigger_underscore in all_item_types and trigger_underscore != item_type:
             matches.append((pos, length, trigger_underscore, trigger))
 
+    # High-coverage pre-check: if any trigger covers >= 60% of the input,
+    # prefer the longest such trigger regardless of slug/priority scoring.
+    if text_length > 0:
+        high_cov = [
+            m for m in matches
+            if m[1] >= text_length * _HIGH_COVERAGE_THRESHOLD
+        ]
+        if high_cov:
+            high_cov.sort(key=lambda x: -x[1])  # longest first
+            best = high_cov[0]
+            return True, best[2], best[3]
+
     # PRIORITY RULES:
     # 1. Priority 0 matches (trigger == item_type, e.g., "bagel" -> bagel) always win
     # 2. Among same-priority matches, prefer earlier position
@@ -239,9 +253,15 @@ def _select_best_trigger_match(
     ]
 
     if priority_0_matches:
-        # Sort priority 0 matches by position, then length
-        priority_0_matches.sort(key=lambda x: (x[0], -x[1]))
-        best = priority_0_matches[0]
+        # Among priority-0 matches, prefer configurable types over non-configurable.
+        # This prevents "breakfast" (non-configurable slug match) from beating
+        # "tea" (configurable slug match) in "english breakfast tea".
+        configurable_slugs = menu_cache.get_configurable_item_type_slugs()
+        configurable_p0 = [m for m in priority_0_matches if m[2] in configurable_slugs]
+        p0_to_sort = configurable_p0 if configurable_p0 else priority_0_matches
+        # Sort by position, then length
+        p0_to_sort.sort(key=lambda x: (x[0], -x[1]))
+        best = p0_to_sort[0]
         return True, best[2], best[3]
 
     # No priority 0 matches - use priority + position logic
@@ -323,7 +343,7 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
 
     # Strategy 4: Score and select best trigger match
     all_item_types = menu_cache.get_configurable_item_types()
-    return _select_best_trigger_match(matches, all_item_types)
+    return _select_best_trigger_match(matches, all_item_types, text_length=len(text_for_matching))
 
 
 # =============================================================================
@@ -642,11 +662,14 @@ def _try_split_on_with_article(text_lower: str) -> list["Token"] | None:
         positions.append(pos)
         start = pos + 6  # len(" with ")
 
-    if len(positions) < 2:
+    if len(positions) < 1:
         return None
 
-    # Check each "with" from the second occurrence onward
-    for pos in positions[1:]:
+    # For 2+ occurrences: only check from 2nd onward (1st is likely modifier)
+    # For exactly 1 occurrence: check it (must have article + recognized item)
+    positions_to_check = positions[1:] if len(positions) >= 2 else positions
+
+    for pos in positions_to_check:
         after_with = text_lower[pos + 6:]  # skip " with "
 
         # Must start with an article
@@ -944,7 +967,16 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         return None
 
     # --- Step 3: Check if tokens are really modifiers, not separate items ---
-    if _all_tokens_are_modifiers(tokens, text):
+    # Skip this check for "with [article] [item]" splits — those were already
+    # validated by _has_item_indicator on both sides in _try_split_on_with_article.
+    # Without this skip, words like "bagel" (which is both an attribute option for
+    # bread type and a configurable item) get incorrectly demoted to modifiers.
+    is_with_article_split = (
+        " with " in text_lower
+        and " and " not in text_lower
+        and ", " not in text_lower
+    )
+    if not is_with_article_split and _all_tokens_are_modifiers(tokens, text):
         return None
 
     # --- Step 4: Recombine modifier tokens with their items ---

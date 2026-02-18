@@ -94,25 +94,43 @@ class InquiryRouter:
             return self.store_info_handler.handle_customer_service_inquiry(order)
 
         if parsed.asks_recommendation:
-            return self.store_info_handler.handle_recommendation_inquiry(
-                match_type=parsed.recommendation_match_type,
+            handler = self.store_info_handler.recommendation_handler
+            if handler:
+                return handler.handle_recommendation_inquiry(
+                    match_type=parsed.recommendation_match_type,
+                    order=order,
+                    item_type_slug=parsed.recommendation_item_type_slug,
+                    menu_item_ids=parsed.recommendation_menu_item_ids,
+                    search_term=parsed.recommendation_search_term,
+                )
+            return StateMachineResult(
+                message="We have a great selection! What are you in the mood for?",
                 order=order,
-                item_type_slug=parsed.recommendation_item_type_slug,
-                menu_item_ids=parsed.recommendation_menu_item_ids,
-                search_term=parsed.recommendation_search_term,
             )
 
         if parsed.asks_item_description:
             return self.menu_inquiry_handler.handle_item_description_inquiry(parsed.item_description_query, order)
 
         if parsed.asks_modifier_options:
-            return self.store_info_handler.handle_modifier_inquiry(
-                parsed.modifier_query_item, parsed.modifier_query_category, order
+            handler = self.store_info_handler.menu_options_handler
+            if handler:
+                return handler.handle_modifier_inquiry(
+                    parsed.modifier_query_item, parsed.modifier_query_category, order
+                )
+            return StateMachineResult(
+                message="We have lots of ways to customize your order! What item are you curious about?",
+                order=order,
             )
 
         if parsed.asks_attribute_options:
-            return self.store_info_handler.handle_attribute_inquiry(
-                parsed.attribute_query_item_type, parsed.attribute_query_signal, order
+            handler = self.store_info_handler.menu_options_handler
+            if handler:
+                return handler.handle_attribute_inquiry(
+                    parsed.attribute_query_item_type, parsed.attribute_query_signal, order
+                )
+            return StateMachineResult(
+                message="We have lots of options! What item are you curious about?",
+                order=order,
             )
 
         # Handle dietary inquiries

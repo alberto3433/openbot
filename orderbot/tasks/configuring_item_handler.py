@@ -17,7 +17,7 @@ from typing import Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .normalization import singularize
 from .pending_fields import PendingField
-from .schemas import StateMachineResult, OrderPhase
+from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.intent_patterns import (
     ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN, MAKE_IT_N_CONFIG_PATTERN,
     DONE_ORDERING_DURING_CONFIG_PATTERN,
@@ -33,7 +33,7 @@ from .config_input_validation import (
 from orderbot.cache import menu_cache
 from .config.parsers.boolean_parser import BooleanParser
 from .utils.pricing_utils import safe_recalculate_price
-from .utils.text import normalize_text
+from .utils.text import format_english_list, normalize_text
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -218,9 +218,6 @@ class ConfiguringItemHandler:
 
         When user said "syrup" and we asked "Which syrup?", this handles their response.
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         item = order.items.get_item_by_id(order.pending_item_id)
         if not item:
             order.clear_pending()
@@ -261,8 +258,6 @@ class ConfiguringItemHandler:
 
         if matched_option:
             # Apply the selected option to the item
-            from .schemas import Selection
-
             # Create a selection and apply it
             selection = Selection(
                 slug=matched_option.get("slug", ""),
@@ -294,7 +289,6 @@ class ConfiguringItemHandler:
                 return self.menu_item_handler.get_first_question(item, order)
 
         # No match found - ask again or give an error
-        from .utils.text import format_english_list
         option_names = [opt.get("display_name", opt.get("slug", "")) for opt in matching_options]
         options_str = format_english_list(option_names, conjunction="or")
 
@@ -533,9 +527,10 @@ class ConfiguringItemHandler:
         if (modifier_category
             and self._taking_items_handler
             and self._taking_items_handler.store_info_handler
+            and self._taking_items_handler.store_info_handler.menu_options_handler
             and order.pending_field != PendingField.CUSTOMIZATION_CHECKPOINT):
             logger.info("MODIFIER INQUIRY during config: category='%s'", modifier_category)
-            return self._taking_items_handler.store_info_handler.handle_modifier_inquiry(
+            return self._taking_items_handler.store_info_handler.menu_options_handler.handle_modifier_inquiry(
                 None,  # item_type - not specified
                 modifier_category,  # category extracted from query
                 order,

@@ -89,6 +89,7 @@ class ChatStartResponse(BaseModel):
     session_id: str
     message: str
     returning_customer: ReturningCustomerInfo | None = None
+    quick_replies: list[dict[str, str]] | None = None
 
 
 class ChatMessageRequest(BaseModel):

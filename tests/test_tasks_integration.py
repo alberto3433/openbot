@@ -3010,7 +3010,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.store_info_handler.handle_recommendation_inquiry(
+        result = sm.store_info_handler.recommendation_handler.handle_recommendation_inquiry(
             match_type="item_type",
             order=order,
             item_type_slug="bagel",
@@ -3030,7 +3030,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.store_info_handler.handle_recommendation_inquiry(
+        result = sm.store_info_handler.recommendation_handler.handle_recommendation_inquiry(
             match_type="item_type",
             order=order,
             item_type_slug="egg_sandwich",
@@ -3051,7 +3051,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.store_info_handler.handle_recommendation_inquiry(
+        result = sm.store_info_handler.recommendation_handler.handle_recommendation_inquiry(
             match_type="item_type",
             order=order,
             item_type_slug="coffee_based_beverage",
@@ -3071,7 +3071,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.store_info_handler.handle_recommendation_inquiry(
+        result = sm.store_info_handler.recommendation_handler.handle_recommendation_inquiry(
             match_type="general",
             order=order,
         )
@@ -3089,7 +3089,7 @@ class TestRecommendationInquiry:
         sm = OrderStateMachine()
         order = OrderTask()
 
-        result = sm.store_info_handler.handle_recommendation_inquiry(
+        result = sm.store_info_handler.recommendation_handler.handle_recommendation_inquiry(
             match_type="item_type",
             order=order,
             item_type_slug="breakfast",

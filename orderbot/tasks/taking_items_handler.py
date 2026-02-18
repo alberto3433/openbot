@@ -226,6 +226,15 @@ class TakingItemsHandler(MenuDataMixin):
             )
 
         if parsed.is_greeting or parsed.unclear:
+            # Check if user selected a delivery method (e.g., from greeting quick reply)
+            from .parsers.validators import parse_delivery_choice_deterministic
+            delivery_choice = parse_delivery_choice_deterministic(user_input)
+            if delivery_choice.choice in ("pickup", "delivery"):
+                order.delivery_method.order_type = delivery_choice.choice
+                return StateMachineResult(
+                    message="What can I get for you?",
+                    order=order,
+                )
             # Phase will be derived as TAKING_ITEMS by orchestrator on next turn
             return StateMachineResult(
                 message="Hi! Welcome to Zucker's. What can I get for you today?",

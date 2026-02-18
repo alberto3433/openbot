@@ -138,7 +138,7 @@ def chat_start(
     # Generate greeting
     if returning_customer and returning_customer.get("name"):
         customer_name = returning_customer["name"]
-        welcome = f"Hi {customer_name}, welcome to {store_name}! Would you like to repeat your last order or place a new order?"
+        welcome = f"Hi {customer_name}, welcome to {store_name}! Would you like to repeat your last order or place a new pickup or delivery order?"
     else:
         welcome = f"Hi, welcome to {store_name}! Can I take your order?"
 
@@ -167,10 +167,20 @@ def chat_start(
     logger.info("New chat session started: %s (store: %s, caller_id: %s)",
                 session_id[:8], store_id or "default", caller_id or "none")
 
+    # Build quick replies for returning customers
+    greeting_qr = None
+    if returning_customer and returning_customer.get("name"):
+        greeting_qr = [
+            {"label": "Last order", "value": "repeat my last order"},
+            {"label": "Pickup", "value": "Pickup"},
+            {"label": "Delivery", "value": "Delivery"},
+        ]
+
     return ChatStartResponse(
         session_id=session_id,
         message=welcome,
         returning_customer=returning_customer,
+        quick_replies=greeting_qr,
     )
 
 

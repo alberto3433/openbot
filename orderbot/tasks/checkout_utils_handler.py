@@ -183,7 +183,8 @@ class CheckoutUtilsHandler:
                     return self._configure_next_incomplete_item(order)
 
             logger.warning("Queued config item not handled: id=%s, type=%s",
-                          item_id[:8] if item_id else None, item_type)
+                          item_id[:8] if item_id else None,
+                          target_item.menu_item_type if target_item else None)
 
         return None
 

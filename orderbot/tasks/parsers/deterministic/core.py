@@ -7,6 +7,7 @@ all sub-parsers to parse user input without LLM calls.
 
 import re
 import logging
+from collections import Counter
 from typing import Literal
 
 from orderbot.cache import menu_cache
@@ -590,7 +591,6 @@ def _resolve_another_as_item_type(
             item_types = [m.get("item_type") for m in word_matches if m.get("item_type")]
             if item_types:
                 # Use the most frequent item type
-                from collections import Counter
                 resolved_item_type = Counter(item_types).most_common(1)[0][0]
                 logger.debug(
                     "Deterministic parse: 'another %s' word-matches %d items, item_type '%s'",
@@ -1381,7 +1381,7 @@ def parse_open_input(
     # Also try multi-item parsing if we detect repeated quantity patterns
     # Try multi-item parsing first - the multi-item parser has built-in logic to detect
     # modifier chains ("bagel with butter and cream cheese") and will return None for those.
-    if " and " in cleaned or ", " in cleaned or has_repeated_quantities:
+    if " and " in cleaned or ", " in cleaned or " with " in cleaned or has_repeated_quantities:
         logger.info("Potential multi-item detected, trying multi-item parse: %s", user_input[:50])
 
         # If we detected repeated quantities without commas, normalize by inserting commas

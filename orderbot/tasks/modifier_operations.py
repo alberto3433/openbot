@@ -105,6 +105,18 @@ def get_modifier_fields(item: ItemTask) -> list[ModifierField]:
         return []
 
 
+def _get_list_item_slug(list_item: Any) -> str:
+    """Extract the slug/value string from a list item (dict or scalar)."""
+    if isinstance(list_item, dict):
+        return list_item.get("slug", "") or ""
+    return str(list_item)
+
+
+def _normalize_for_matching(value: Any) -> str:
+    """Normalize a value for modifier matching: lowercase + underscores to spaces."""
+    return str(value).lower().replace("_", " ")
+
+
 def _normalize_modifier_name(name: str) -> str:
     """Normalize a modifier name for matching.
 
@@ -164,13 +176,8 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                         if not value:
                             continue
                         for list_item in value:
-                            # Handle dict items (like sweeteners: [{slug: "sugar"}])
-                            if isinstance(list_item, dict):
-                                item_value = list_item.get("slug", "") or ""
-                            else:
-                                item_value = str(list_item)
-                            # Normalize underscores to spaces for comparison
-                            item_value_normalized = item_value.lower().replace("_", " ")
+                            item_value = _get_list_item_slug(list_item)
+                            item_value_normalized = _normalize_for_matching(item_value)
                             if alias in item_value_normalized or normalized_input in item_value_normalized:
                                 return ModifierMatch(field=field, matched_value=item_value, item=item)
                         # Only return "remove all" match if it's an EXACT alias match
@@ -203,12 +210,8 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
         # For list fields, check if any item matches the input directly
         if field.is_list and isinstance(value, list):
             for list_item in value:
-                if isinstance(list_item, dict):
-                    item_value = list_item.get("slug", "") or ""
-                else:
-                    item_value = str(list_item)
-                # Normalize underscores to spaces for comparison
-                item_value_normalized = item_value.lower().replace("_", " ")
+                item_value = _get_list_item_slug(list_item)
+                item_value_normalized = _normalize_for_matching(item_value)
                 if normalized_input in item_value_normalized or item_value_normalized in normalized_input:
                     return ModifierMatch(field=field, matched_value=item_value, item=item)
 
@@ -233,10 +236,7 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
 
                 if isinstance(attr_value, list):
                     for list_item in attr_value:
-                        item_value = str(list_item).lower()
-                        # Normalize underscores to spaces for comparison
-                        # (stored: "blueberry_cream_cheese" vs input: "blueberry cream cheese")
-                        item_value_normalized = item_value.replace("_", " ")
+                        item_value_normalized = _normalize_for_matching(list_item)
                         for variant in input_variants:
                             if variant in item_value_normalized or item_value_normalized in variant:
                                 synthetic_field = ModifierField(
@@ -252,9 +252,7 @@ def find_modifier_match(item: ItemTask, user_input: str) -> ModifierMatch | None
                                     attribute_key=attr_key,
                                 )
                 elif attr_value:
-                    value_str = str(attr_value).lower()
-                    # Normalize underscores to spaces for comparison
-                    value_str_normalized = value_str.replace("_", " ")
+                    value_str_normalized = _normalize_for_matching(attr_value)
                     for variant in input_variants:
                         if variant in value_str_normalized or value_str_normalized in variant:
                             synthetic_field = ModifierField(
@@ -375,10 +373,7 @@ def _remove_from_field_list(
         removed = None
         remaining_qty = None
         for list_item in current_value:
-            if isinstance(list_item, dict):
-                item_value = list_item.get("slug", "") or ""
-            else:
-                item_value = str(list_item)
+            item_value = _get_list_item_slug(list_item)
 
             if item_value.lower() == match.matched_value.lower():
                 removed = item_value
@@ -423,11 +418,7 @@ def _remove_from_field_list(
         # Remove all items from list
         removed_items = []
         for list_item in current_value:
-            if isinstance(list_item, dict):
-                item_value = list_item.get("slug", "") or ""
-            else:
-                item_value = str(list_item)
-            removed_items.append(item_value)
+            removed_items.append(_get_list_item_slug(list_item))
 
         setattr(item, field.field_name, [])
         logger.info("Removed all %s from %s: %s", field.display_name, type(item).__name__, removed_items)

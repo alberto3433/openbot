@@ -147,22 +147,18 @@ def _split_into_parts(text: str) -> list[tuple[int, str]]:
 
     raw_parts = pattern.findall(text)
 
+    # Ordinals and references that always mean "1 item" (not a count)
+    _ORDINAL_QTY_ONE = {"first", "second", "third", "the other", "another"}
+
     result = []
     for qty_word, spec in raw_parts:
         qty_word_lower = qty_word.lower().strip()
-        # Map quantity words to numbers
-        if qty_word_lower in ("one", "1", "first", "the other", "another"):
+        if qty_word_lower in _ORDINAL_QTY_ONE:
             qty = 1
-        elif qty_word_lower in ("two", "2"):
-            qty = 2
-        elif qty_word_lower == "second":
-            qty = 1  # "second" means the second item, qty=1
-        elif qty_word_lower in ("three", "3"):
-            qty = 3
-        elif qty_word_lower == "third":
-            qty = 1
+        elif qty_word_lower.isdigit():
+            qty = int(qty_word_lower)
         else:
-            qty = 1
+            qty = WORD_TO_NUM.get(qty_word_lower, 1)
         result.append((qty, spec.strip()))
 
     return result

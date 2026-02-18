@@ -37,6 +37,35 @@ def get_negative_patterns() -> set[str]:
     return menu_cache.get_response_patterns("negative")
 
 
+def _matches_pattern_set(user_input: str, patterns: set[str]) -> bool:
+    """Check if user input matches any pattern in a set.
+
+    Matching strategy:
+    1. Exact match against the full normalized input
+    2. Prefix match: input starts with "pattern " or "pattern,"
+    3. Word match (short inputs <20 chars): pattern appears as a word
+
+    Args:
+        user_input: The user's input text
+        patterns: Set of lowercase patterns to match against
+
+    Returns:
+        True if any pattern matches, False otherwise
+    """
+    user_lower = normalize_text(user_input)
+
+    if user_lower in patterns:
+        return True
+
+    for pattern in patterns:
+        if user_lower.startswith(pattern + " ") or user_lower.startswith(pattern + ","):
+            return True
+        if len(user_lower) < 20 and pattern in user_lower.split():
+            return True
+
+    return False
+
+
 def is_affirmative(user_input: str) -> bool:
     """Check if user input is an affirmative response.
 
@@ -57,23 +86,7 @@ def is_affirmative(user_input: str) -> bool:
         >>> is_affirmative("no thanks")
         False
     """
-    user_lower = normalize_text(user_input)
-    affirmative_patterns = get_affirmative_patterns()
-
-    # Exact match
-    if user_lower in affirmative_patterns:
-        return True
-
-    # Check if input starts with an affirmative pattern
-    # This handles "yes please", "yeah that's fine", etc.
-    for pattern in affirmative_patterns:
-        if user_lower.startswith(pattern + " ") or user_lower.startswith(pattern + ","):
-            return True
-        # Also check for pattern anywhere in short inputs
-        if len(user_lower) < 20 and pattern in user_lower.split():
-            return True
-
-    return False
+    return _matches_pattern_set(user_input, get_affirmative_patterns())
 
 
 def is_negative(user_input: str) -> bool:
@@ -95,22 +108,7 @@ def is_negative(user_input: str) -> bool:
         >>> is_negative("yes please")
         False
     """
-    user_lower = normalize_text(user_input)
-    negative_patterns = get_negative_patterns()
-
-    # Exact match
-    if user_lower in negative_patterns:
-        return True
-
-    # Check if input starts with a negative pattern
-    for pattern in negative_patterns:
-        if user_lower.startswith(pattern + " ") or user_lower.startswith(pattern + ","):
-            return True
-        # Also check for pattern anywhere in short inputs
-        if len(user_lower) < 20 and pattern in user_lower.split():
-            return True
-
-    return False
+    return _matches_pattern_set(user_input, get_negative_patterns())
 
 
 def has_trailing_done_signal(text: str) -> bool:

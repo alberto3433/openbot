@@ -266,6 +266,8 @@ class QuestionBuilder:
                 category = sel.get("category", "")
                 if is_name_forming_category(category):
                     continue
+                if sel.get("is_default"):
+                    continue
                 display = sel.get("display_name", "")
                 if not display:
                     continue

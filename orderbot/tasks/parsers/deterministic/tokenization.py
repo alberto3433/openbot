@@ -616,6 +616,93 @@ def _reattach_boolean_attributes(parts: list[str]) -> list[str]:
 # Smart Tokenization
 # =============================================================================
 
+
+def _try_split_on_with_article(text_lower: str) -> list["Token"] | None:
+    """Try to split on a second 'with [article] [item]' that introduces a new item.
+
+    Handles patterns where two items are connected by "with" instead of "and":
+      "onion bagel with cream cheese toasted with an earl gray tea"
+      → ["onion bagel with cream cheese toasted", "earl gray tea"]
+
+    Only splits when a second (or later) 'with' is followed by an article
+    (a/an/the) and the text after the article is a recognized menu item.
+    The first part must also contain a recognized item.
+
+    Returns list of tokens if split succeeded, None otherwise.
+    """
+    from orderbot.tasks.schemas.parser_responses import Token
+
+    # Find all " with " positions
+    positions: list[int] = []
+    start = 0
+    while True:
+        pos = text_lower.find(" with ", start)
+        if pos == -1:
+            break
+        positions.append(pos)
+        start = pos + 6  # len(" with ")
+
+    if len(positions) < 2:
+        return None
+
+    # Check each "with" from the second occurrence onward
+    for pos in positions[1:]:
+        after_with = text_lower[pos + 6:]  # skip " with "
+
+        # Must start with an article
+        article_len = 0
+        for art in ("an ", "a ", "the "):
+            if after_with.startswith(art):
+                article_len = len(art)
+                break
+
+        if not article_len:
+            continue
+
+        after_article = after_with[article_len:].strip()
+        if not after_article:
+            continue
+
+        # Check if text after article contains a recognized item
+        has_next_item, next_type, next_resolved = _has_item_indicator(after_article)
+        if not has_next_item:
+            continue
+
+        # Verify first part also has an item
+        first_part = text_lower[:pos].strip()
+        has_first, first_type, first_resolved = _has_item_indicator(first_part)
+        if not has_first:
+            continue
+
+        # Valid split point found
+        qty1, _ = _extract_leading_quantity(first_part)
+        qty2, _ = _extract_leading_quantity(after_article)
+
+        logger.info(
+            "Split on 'with [article]': '%s' + '%s'",
+            first_part[:40], after_article[:40],
+        )
+
+        return [
+            Token(
+                original=first_part,
+                token_type="item",
+                quantity=qty1 or 1,
+                item_type=first_type,
+                resolved_name=first_resolved,
+            ),
+            Token(
+                original=after_article,
+                token_type="item",
+                quantity=qty2 or 1,
+                item_type=next_type,
+                resolved_name=next_resolved,
+            ),
+        ]
+
+    return None
+
+
 def _smart_split_and_tokenize(text: str) -> list["Token"]:
     """Split text on separators and classify each part.
 
@@ -648,6 +735,15 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
             if tokens:
                 return tokens
             is_compound = True  # Found compound but no second item
+
+    # Before returning as single item, check for "with [article] [item]" pattern
+    # e.g., "onion bagel with cream cheese toasted with an earl gray tea"
+    # The second "with" + article introduces a second item.
+    # Only try this when there's no "and"/"," separator (otherwise normal split handles it).
+    if has_item and " with " in text_lower and " and " not in text_lower and ", " not in text_lower:
+        with_article_tokens = _try_split_on_with_article(text_lower)
+        if with_article_tokens:
+            return with_article_tokens
 
     if has_item and (is_compound or (" and " not in text_lower and ", " not in text_lower)):
         qty, _ = _extract_leading_quantity(text_lower)
@@ -1023,6 +1119,43 @@ def _other_tokens_are_potential_modifiers(tokens: list["Token"], text: str) -> b
     return False
 
 
+def _derive_item_name_from_token(token: "Token") -> str:
+    """Derive a more specific item_name from a token's original text.
+
+    When the tokenizer resolves "a large orange juice" via trigger matching,
+    resolved_name may be just the trigger keyword ("juice"). This function
+    recovers qualifier words (like "orange") by stripping only articles and
+    attribute option words (like "large") from the original text.
+
+    Returns the derived name if it's more specific than resolved_name,
+    otherwise falls back to resolved_name.
+    """
+    # Start from the original text, strip ordering prefix + articles
+    stripped = _strip_ordering_prefix(token.original)
+    if not stripped:
+        return token.resolved_name or ""
+
+    # Strip leading attribute option words (e.g., "large", "iced")
+    attr_option_words = menu_cache.get_all_attribute_option_words()
+    text_lower = stripped.lower()
+    while text_lower:
+        matched = False
+        for option_word in sorted(attr_option_words.keys(), key=len, reverse=True):
+            if re.match(rf'^{re.escape(option_word)}\s+', text_lower):
+                text_lower = text_lower[len(option_word):].strip()
+                matched = True
+                break
+        if not matched:
+            break
+
+    # Use the derived name only if it's more specific (longer) than resolved_name
+    resolved = token.resolved_name or ""
+    if text_lower and len(text_lower) > len(resolved):
+        return text_lower
+
+    return resolved
+
+
 def _build_items_from_tokens(item_tokens: list["Token"]) -> OpenInputResponse | None:
     """Parse item tokens into menu items and build an OpenInputResponse.
 
@@ -1033,11 +1166,15 @@ def _build_items_from_tokens(item_tokens: list["Token"]) -> OpenInputResponse | 
     """
     parsed_items: list = []
     for token in item_tokens:
+        # Derive a better item_name from the token's original text
+        # e.g., "a large orange juice" -> "orange juice" instead of just "juice"
+        item_name = _derive_item_name_from_token(token)
+
         # Use the generic parser with detected item type and resolved name
         parsed_item = _parse_item_generic(
             text=token.original,
             item_type=token.item_type,
-            item_name=token.resolved_name,
+            item_name=item_name,
         )
 
         if parsed_item:

@@ -2577,6 +2577,32 @@ class TestParsedItemsMultiItem:
         assert attrs.get("scooped") is True, f"Expected scooped=True, got {attrs.get('scooped')}"
 
 
+    def test_bagel_with_modifiers_with_an_earl_gray_tea(self):
+        """Test that 'onion bagel with scallion cream cheese toasted with an earl gray tea'
+        is parsed as two items.
+
+        Regression test: The second 'with' introduces a new item via article ('with an'),
+        but the tokenizer only splits on 'and' or ','. Without this fix, the earl gray tea
+        is completely dropped.
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_multi_item_order
+
+        result = _parse_multi_item_order(
+            "onion bagel with scallion cream cheese toasted with an earl gray tea"
+        )
+        assert result is not None, "Failed to parse as multi-item order"
+        assert len(result.parsed_items) == 2, (
+            f"Expected 2 parsed_items, got {len(result.parsed_items)}: "
+            f"{[(getattr(i, 'item_name', None), getattr(i, 'item_type', None)) for i in result.parsed_items]}"
+        )
+
+        # First item should be a bagel
+        types = [_get_parsed_item_type(item) for item in result.parsed_items]
+        assert "bagel" in types, f"Expected bagel in parsed_items, got: {types}"
+        # Second item should be a tea
+        assert "tea" in types, f"Expected tea in parsed_items, got: {types}"
+
+
 class TestDuplicatePatterns:
     """Tests for duplicate item patterns: 'another one', 'one more', 'another bagel', etc."""
 
@@ -3383,3 +3409,44 @@ class TestItemQuantityNotBleedingIntoAttributes:
         assert "bagel" in item_types, f"Missing bagel items, got types: {item_types}"
         has_beverage = any(t for t in item_types if t != "bagel")
         assert has_beverage, f"Missing beverage items, got only types: {item_types}"
+
+
+class TestLeadingAttributeWordStripping:
+    """Tests for the fallback that strips leading attribute words (e.g., 'large orange juice')."""
+
+    @pytest.mark.parametrize("text,expected_name_fragment", [
+        ("large orange juice", "orange juice"),
+        ("iced orange juice", "orange juice"),
+        ("large iced orange juice", "orange juice"),
+    ])
+    def test_leading_attr_words_stripped_on_retry(self, text, expected_name_fragment):
+        """Non-configurable items with leading attribute words should parse via retry."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected parse result for: {text}"
+        assert result.parsed_items, f"Expected parsed_items for: {text}"
+        item = result.parsed_items[0]
+        assert expected_name_fragment in item.item_name.lower(), (
+            f"Expected '{expected_name_fragment}' in item_name, got: {item.item_name}"
+        )
+
+    def test_iced_tea_matches_directly_without_retry(self):
+        """'iced tea' should match directly — no stripping needed."""
+        result = parse_open_input_deterministic("iced tea")
+        assert result is not None, "Expected parse result for 'iced tea'"
+        assert result.parsed_items, "Expected parsed_items for 'iced tea'"
+        assert "tea" in result.parsed_items[0].item_name.lower()
+
+    def test_large_iced_latte_matches_directly(self):
+        """Configurable items with size should match via configurable parser, not retry."""
+        result = parse_open_input_deterministic("large iced latte")
+        assert result is not None, "Expected parse result for 'large iced latte'"
+        assert result.parsed_items, "Expected parsed_items for 'large iced latte'"
+
+    def test_only_attribute_word_does_not_match(self):
+        """Input that is ONLY an attribute word should not produce a match."""
+        result = parse_open_input_deterministic("large")
+        # Should either be None or unclear — not a parsed item
+        if result is not None:
+            assert not result.parsed_items, (
+                f"'large' alone should not produce parsed items, got: {result.parsed_items}"
+            )

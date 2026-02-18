@@ -832,6 +832,8 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
 def _try_parse_new_items(
     text: str,
     order_type: Literal["pickup", "delivery"] | None,
+    *,
+    _is_retry: bool = False,
 ) -> OpenInputResponse | None:
     """Check for new item orders: split-quantity, multi-item, configurable, direct lookup, simple.
 
@@ -935,6 +937,19 @@ def _try_parse_new_items(
     if ingredient_result:
         return ingredient_result
 
+    # Fallback: strip leading attribute option words and retry
+    # Handles cases like "large orange juice" where "large" is a size attribute word
+    # but Orange Juice is non-configurable, so the attribute word is just noise.
+    # Only runs after ALL parsers fail, so legitimate matches are never affected.
+    if not _is_retry:
+        stripped_text = _strip_leading_attribute_words(text)
+        if stripped_text:
+            logger.info(
+                "ATTR_STRIP_RETRY: retrying with '%s' (original: '%s')",
+                stripped_text, text[:50],
+            )
+            return _try_parse_new_items(stripped_text, order_type, _is_retry=True)
+
     return None
 
 
@@ -979,6 +994,35 @@ def _strip_noise_phrases(text: str) -> str:
     ).strip()
 
     return text
+
+
+def _strip_leading_attribute_words(text: str) -> str | None:
+    """Strip leading attribute option words from text for retry parsing.
+
+    When all parsers fail, the user may have prepended attribute words
+    (like "large", "iced") to a non-configurable item. Strip them and
+    allow re-parsing.
+
+    Returns stripped text if any words were removed, None otherwise.
+    """
+    attr_option_words = menu_cache.get_all_attribute_option_words()
+    text_lower = text.lower().strip()
+    original = text_lower
+
+    while text_lower:
+        matched = False
+        # Try longest options first (e.g., "extra large" before "extra")
+        for option_word in sorted(attr_option_words.keys(), key=len, reverse=True):
+            if re.match(rf'^{re.escape(option_word)}\s+', text_lower):
+                text_lower = text_lower[len(option_word):].strip()
+                matched = True
+                break
+        if not matched:
+            break
+
+    if not text_lower or text_lower == original:
+        return None
+    return text_lower
 
 
 def parse_open_input_deterministic(

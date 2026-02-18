@@ -258,7 +258,14 @@ class ConfigCancellationHandler:
         if order.pending_field and ":" in order.pending_field:
             _, pending_attr_slug = order.pending_field.split(":", 1)
             cancel_variants = get_singular_plural_variants(cancel_desc)
-            if pending_attr_slug in cancel_variants or cancel_desc == pending_attr_slug:
+            # Also check if cancel_desc words overlap with the slug's word
+            # components (e.g., "shots" matches "espresso_shots" via the
+            # "shots" component). This prevents "no shots" from being treated
+            # as item removal when we're asking about espresso_shots.
+            attr_slug_parts = set(pending_attr_slug.split("_"))
+            if (pending_attr_slug in cancel_variants
+                    or cancel_desc == pending_attr_slug
+                    or set(cancel_variants) & attr_slug_parts):
                 logger.info(
                     "Cancel during config: '%s' matches pending attribute '%s' - "
                     "deferring to attribute handler",

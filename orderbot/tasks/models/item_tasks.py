@@ -773,6 +773,10 @@ class MenuItemTask(ItemTask):
             if is_name_forming_category(category):
                 continue
 
+            # Skip default ingredients (already implied by the signature item name)
+            if sel.get("is_default"):
+                continue
+
             if display_name:
                 if quantity > 1:
                     plural_name = pluralize_display_name(display_name)

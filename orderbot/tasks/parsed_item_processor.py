@@ -403,6 +403,7 @@ class ParsedItemProcessor:
             pending_disambiguation = StateMachineResult(
                 message=msg,
                 order=pending_disambiguation.order,
+                quick_replies=pending_disambiguation.quick_replies,
             )
 
         logger.info("Returning disambiguation result after adding %d other items", len(added_items))

@@ -16,6 +16,7 @@ from orderbot.cache import menu_cache
 from ...schemas import OpenInputResponse, ParsedItemEntry
 from ..constants import WORD_TO_NUM
 from .item_building import build_parsed_item
+from .result_types import TextSpan
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +60,33 @@ def _get_split_attribute_patterns() -> list[str]:
         # Empty result - don't cache, retry later
         return []
 
+    # Also include individual words from multi-word option names so that
+    # abbreviated split indicators like "1 everything" match even though the
+    # full option name is "everything bagel".  We skip only common English
+    # words; item-type triggers (e.g., "bagel") are kept because
+    # _parts_contain_different_item_type() already guards against cross-type
+    # false positives later in the pipeline.
+    skip_words = {
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "the", "a", "an", "and", "or", "with", "on", "in", "of", "to", "for", "not",
+        "no", "free", "style", "new",
+    }
+
+    individual_words: set[str] = set()
+    for key in attr_option_words.keys():
+        words = key.replace("_", " ").split()
+        if len(words) > 1:
+            for word in words:
+                word_lower = word.lower()
+                if len(word_lower) >= 3 and word_lower not in skip_words:
+                    individual_words.add(word_lower)
+
+    # Combine full option names with individual words
+    all_pattern_words = set(attr_option_words.keys()) | individual_words
+
     # Build alternation pattern from option words
     # Sort by length descending for greedy matching
-    sorted_words = sorted(attr_option_words.keys(), key=len, reverse=True)
+    sorted_words = sorted(all_pattern_words, key=len, reverse=True)
     words_pattern = "|".join(re.escape(w) for w in sorted_words)
 
     # Build patterns for each quantity
@@ -272,8 +297,10 @@ def _parse_split_quantity_items(
     # Extract total quantity - only from leading quantity > 1
     # "1 everything bagel 1 plain bagel" should NOT extract 1 as total
     # "2 bagels one iced one hot" SHOULD extract 2 as total
+    # Search initial_part (before first split indicator) so preamble like
+    # "I'd like two lattes, ..." doesn't cause the match to fail.
     total_quantity = None  # Will be computed from parts if not found
-    qty_match = re.match(r"^(\d+|two|three|four|five|six)\s+", text_lower)
+    qty_match = re.search(r"\b(\d+|two|three|four|five|six)\b", initial_part)
     if qty_match:
         qty_str = qty_match.group(1)
         if qty_str.isdigit():
@@ -284,8 +311,14 @@ def _parse_split_quantity_items(
         if extracted_qty > 1:
             total_quantity = extracted_qty
 
+    # Exclude the leading quantity span from attribute extraction so "two" in
+    # "two large lattes" isn't misinterpreted as quantity=2 for the size attribute.
+    qty_exclude_spans = None
+    if qty_match and total_quantity is not None:
+        qty_exclude_spans = [TextSpan(start=qty_match.start(1), end=qty_match.end(1))]
+
     # Extract base attributes using data-driven extractor
-    base_attr_result = _get_pipeline().extract_attributes(initial_part, item_type)
+    base_attr_result = _get_pipeline().extract_attributes(initial_part, item_type, exclude_spans=qty_exclude_spans)
 
     # Try to match a specific menu item name within the type
     base_item_name = match_menu_item_name_for_type_func(initial_part, item_type)
@@ -333,31 +366,51 @@ def _parse_split_quantity_items(
         # Extract part-specific attributes (item-type-specific)
         part_attr_result = _get_pipeline().extract_attributes(part_text, item_type)
 
+        # If the trigger word isn't already in the part text, try enriching with it.
+        # e.g., "plain" + "bagel" → "plain bagel" matches "Plain Bagel" bread option
+        if matched_trigger and matched_trigger.lower() not in part_text.lower():
+            enriched_text = f"{part_text} {matched_trigger}"
+            enriched_result = _get_pipeline().extract_attributes(enriched_text, item_type)
+            if len(enriched_result.values) > len(part_attr_result.values):
+                part_attr_result = enriched_result
+
         # Merge: part overrides base (None means "explicitly declined" and should override)
         merged_attr_result = base_attr_result.merge_with(part_attr_result)
 
-        # Create items for this part (build_parsed_item converts attrs to selections)
+        # Try per-part menu item resolution: combine part text with trigger
+        # e.g., part "iced" + trigger "latte" → "iced latte" → "Iced Latte"
+        part_item_name = None
+        if matched_trigger and part_text.strip() != matched_trigger:
+            for candidate in (f"{part_text} {matched_trigger}", f"{matched_trigger} {part_text}"):
+                part_item_name = match_menu_item_name_for_type_func(candidate, item_type)
+                if part_item_name:
+                    break
+        effective_item_name = part_item_name or base_item_name
+
+        # Create one entry for this part with the appropriate quantity
+        # e.g., "2 plain" → 1 entry with quantity=2, not 2 entries with quantity=1
         items_to_create = min(part_qty, total_quantity - item_count)
-        for _ in range(items_to_create):
+        if items_to_create > 0:
             parsed_items.append(build_parsed_item(
                 item_type=item_type,
-                item_name=base_item_name,
-                quantity=1,
+                item_name=effective_item_name,
+                quantity=items_to_create,
                 attr_result=merged_attr_result,
                 original_text=text,
             ))
-            item_count += 1
+            item_count += items_to_create
             logger.info(
-                "SPLIT-QUANTITY ITEMS: item %d: type=%s, attrs=%s",
-                item_count, item_type, merged_attr_result.values
+                "SPLIT-QUANTITY ITEMS: item %d (qty=%d): type=%s, attrs=%s",
+                len(parsed_items), items_to_create, item_type, merged_attr_result.values
             )
 
     # 6. Fill remaining slots with base config
-    while len(parsed_items) < total_quantity:
+    remaining = total_quantity - item_count
+    if remaining > 0:
         parsed_items.append(build_parsed_item(
             item_type=item_type,
             item_name=base_item_name,
-            quantity=1,
+            quantity=remaining,
             attr_result=base_attr_result,
             original_text=text,
         ))

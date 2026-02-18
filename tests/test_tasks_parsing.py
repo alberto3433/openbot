@@ -1967,19 +1967,22 @@ class TestSplitQuantityBagelParsing:
         """Test parsing '3 bagels, one toasted, two not toasted'.
 
         This tests uneven split handling where distribution quantities
-        (one, two) don't match equal division.
+        (one, two) don't match equal division. Items with the same config
+        are compacted into a single entry with quantity > 1.
         """
         from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
         result = _parse_split_quantity_items("3 bagels, one toasted, two not toasted")
         assert result is not None
         bagels = get_parsed_items(result, item_type="bagel")
-        assert len(bagels) == 3
-        # First bagel: toasted
+        assert len(bagels) == 2
+        assert sum(b.quantity for b in bagels) == 3
+        # First bagel: toasted (qty=1)
         assert bagels[0].attribute_values.get("toasted") is True
-        # Second and third bagels: not toasted
+        assert bagels[0].quantity == 1
+        # Second entry: not toasted (qty=2)
         assert bagels[1].attribute_values.get("toasted") is False
-        assert bagels[2].attribute_values.get("toasted") is False
+        assert bagels[1].quantity == 2
 
     def test_first_second_ordinals_with_toppings(self):
         """Test parsing '2 bagels, first one with butter, second one with plain cream cheese'.
@@ -2027,6 +2030,37 @@ class TestSplitQuantityBagelParsing:
         assert bagels[0].attribute_values.get("spread") == "scallion_cream_cheese"
         assert bagels[1].attribute_values.get("spread") == "vegetable_cream_cheese"
 
+    def test_split_different_bread_types(self):
+        """Test parsing '2 bagels, 1 plain 1 blueberry'.
+
+        When users specify different bread types per item using the item type
+        trigger word omitted, the parser should enrich part text with the trigger
+        (e.g., "plain" + "bagel" → "plain bagel") to match bread options.
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
+
+        result = _parse_split_quantity_items("2 bagels, 1 plain 1 blueberry")
+        assert result is not None
+        bagels = get_parsed_items(result, item_type="bagel")
+        assert len(bagels) == 2
+        assert bagels[0].attribute_values.get("bread") == "plain_bagel"
+        assert bagels[1].attribute_values.get("bread") == "blueberry_bagel"
+
+    def test_split_different_bread_types_with_commas(self):
+        """Test parsing '2 bagels, 1 everything, 1 blueberry'.
+
+        Same as above but with commas separating the parts and using
+        'everything' which could be confused with other item types.
+        """
+        from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
+
+        result = _parse_split_quantity_items("2 bagels, 1 everything, 1 blueberry")
+        assert result is not None
+        bagels = get_parsed_items(result, item_type="bagel")
+        assert len(bagels) == 2
+        assert bagels[0].attribute_values.get("bread") == "everything_bagel"
+        assert bagels[1].attribute_values.get("bread") == "blueberry_bagel"
+
 
 class TestSplitQuantityDrinksParsing:
     """Tests for split-quantity drink parsing (e.g., 'two coffees one with milk one black')."""
@@ -2049,17 +2083,17 @@ class TestSplitQuantityDrinksParsing:
         # Second coffee should have style=black from "one black"
         assert drinks[1].attribute_values.get("style") == "black"
 
-    @pytest.mark.xfail(reason="'latte' needs alias in DB to match 'Hot/Iced Latte' menu items")
     def test_two_lattes_one_iced_one_hot(self):
         """Test parsing 'two lattes one iced one hot'."""
         from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
         result = _parse_split_quantity_items("two lattes one iced one hot")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
+        drinks = get_parsed_items(result, item_type="espresso_based_beverage")
         assert len(drinks) == 2
-        assert drinks[0].attribute_values.get("temperature") == "iced"
-        assert drinks[1].attribute_values.get("temperature") == "hot"
+        # Hot/iced is differentiated by menu item name, not attribute
+        names = sorted(d.item_name for d in drinks)
+        assert names == ["Hot Latte", "Iced Latte"]
 
     @pytest.mark.xfail(reason="'tea' item type detection needs DB configuration")
     def test_two_teas_one_with_oat_milk_one_plain(self):
@@ -2133,26 +2167,27 @@ class TestSplitQuantityDrinksParsing:
         assert drinks[1].attribute_values.get("size") == "large"
         assert "hot" in drinks[1].item_name.lower()
 
-    @pytest.mark.xfail(reason="'coffee' needs alias in DB to match 'Hot/Iced Coffee' menu items")
     def test_uneven_split_one_iced_two_hot(self):
         """Test parsing '3 coffees, one iced, two hot'.
 
         This tests uneven split handling where distribution quantities
-        don't match equal division.
+        don't match equal division. Items with the same config are
+        compacted into a single entry with quantity > 1.
         """
         from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
         result = _parse_split_quantity_items("3 coffees, one iced, two hot")
         assert result is not None
         drinks = get_parsed_items(result, item_type="coffee_based_beverage")
-        assert len(drinks) == 3
-        # First coffee: iced
+        assert len(drinks) == 2
+        assert sum(d.quantity for d in drinks) == 3
+        # First coffee: iced (qty=1)
         assert "iced" in drinks[0].item_name.lower()
-        # Second and third coffees: hot
+        assert drinks[0].quantity == 1
+        # Second entry: hot (qty=2)
         assert "hot" in drinks[1].item_name.lower()
-        assert "hot" in drinks[2].item_name.lower()
+        assert drinks[1].quantity == 2
 
-    @pytest.mark.xfail(reason="'coffee' needs alias in DB to match 'Hot/Iced Coffee' menu items")
     def test_two_coffees_one_hot_one_iced(self):
         """Test parsing '2 coffees, one hot, one iced'.
 

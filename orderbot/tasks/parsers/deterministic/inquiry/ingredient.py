@@ -338,6 +338,16 @@ def parse_ingredient_search(
                 )
                 return None
 
+            # Skip if the full input matches a known menu item name/alias
+            # e.g., "flagel" should order the Flagel directly, not trigger ingredient search
+            known_items = menu_cache.get_known_menu_items()
+            if text_lower in known_items:
+                logger.debug(
+                    "INGREDIENT SEARCH: skipping '%s' - matches menu item name",
+                    text_lower,
+                )
+                return None
+
             # Make sure it's not part of an obvious order ("chicken sandwich", "bacon egg")
             # or a modification/removal command ("remove the bacon", "cancel the ham")
             # or an add-modifier command ("add bacon", "extra cheese")

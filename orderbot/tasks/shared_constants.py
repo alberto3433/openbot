@@ -35,7 +35,7 @@ PREPOSITIONS = frozenset({'on', 'in', 'to', 'of', 'for'})
 
 # Phrases that begin orders but don't add meaning
 ORDERING_PREFIXES = frozenset({
-    "i want", "i'd like", "i need", "i'll have", "i'll take",
+    "i want", "i'd like", "i would like", "i need", "i'll have", "i'll take",
     "can i get", "can i have", "could i get", "could i have",
     "give me", "gimme", "get me", "make it", "let's go with", "let's do",
     "just", "some",

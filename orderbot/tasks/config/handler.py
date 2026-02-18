@@ -16,6 +16,7 @@ import re
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
+from orderbot.cache.base import pluralize
 from orderbot.constants import QUALIFIER_PROXIMITY_THRESHOLD
 from ..models import OrderTask, MenuItemTask
 from ..pending_fields import PendingField
@@ -349,7 +350,7 @@ class MenuItemConfigHandler(BaseHandler):
             display = attr.get("display_name") or attr["slug"]
             quick_replies.append({
                 "label": q,
-                "value": f"What kind of {display} do you have?",
+                "value": f"What {pluralize(display.lower())} do you have?",
             })
         return " ".join(questions), quick_replies
 
@@ -531,7 +532,7 @@ class MenuItemConfigHandler(BaseHandler):
                             if cat.lower() in base_lower:
                                 cat_qr.append({
                                     "label": cat,
-                                    "value": f"What kind of {cat} do you have?",
+                                    "value": f"What {pluralize(cat.lower())} do you have?",
                                 })
                         if cat_qr:
                             qr = cat_qr
@@ -549,7 +550,7 @@ class MenuItemConfigHandler(BaseHandler):
             if not has_match:
                 display = attr.get("display_name") or attr["slug"]
                 if display.lower() in base_lower:
-                    qr = [{"label": display, "value": f"What kind of {display} do you have?"}]
+                    qr = [{"label": display, "value": f"What {pluralize(display.lower())} do you have?"}]
 
         # Source 2: Component slot options (e.g., side_choice → side slot)
         # Always merge slot options so both attribute options AND slot display names

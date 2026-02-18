@@ -332,6 +332,27 @@ class OptionMatcher:
             if len(exact) == 1:
                 matched = exact
 
+        # Direction 1 priority: when there's a single compound token (no explicit
+        # separators like "and"/","), individual words are extracted for matching.
+        # If some options matched because their display name appears as a phrase
+        # in the input ("blueberry cream cheese" found in "blueberry cream cheese
+        # on the side") and others matched only via individual word tokens ("cream"
+        # found in "plain cream cheese"), prefer the phrase-level matches.
+        # Only apply when there's a single token — with explicit separators,
+        # all tokens are intentional (e.g., "oat milk and 2 syrups").
+        if len(matched) > 1 and len(raw_tokens) == 1:
+            strong = [
+                opt for opt in matched
+                if self._is_whole_word_match(
+                    opt["display_name"].lower(), user_raw_lower
+                )
+                or self._is_whole_word_match(
+                    opt["slug"].replace("_", " "), user_raw_lower
+                )
+            ]
+            if strong and len(strong) < len(matched):
+                matched = strong
+
         # Deduplicate within same category: if specific must_match options matched
         # alongside generic (no must_match) options, prefer the specific ones.
         # e.g., "oat milk" matches oat_milk (must_match=["oat milk"]) AND whole_milk

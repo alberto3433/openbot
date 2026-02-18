@@ -607,11 +607,80 @@ def _filter_duplicate_instructions(
                     break
 
         # If item_word is already captured as a selection, skip this instruction
-        if item_word in captured_slugs:
+        # Also check suffix match (e.g., "cheese" matches "blueberry_cream_cheese")
+        if item_word in captured_slugs or any(s.endswith(f"_{item_word}") for s in captured_slugs):
             logger.debug("Filtering duplicate instruction '%s' - already captured as selection", instr)
             continue
         filtered_instructions.append(instr)
     return filtered_instructions
+
+
+def _attach_position_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -> None:
+    """Attach position qualifiers (e.g., 'on the side') to matching selections.
+
+    When a user says 'blueberry cream cheese on the side', the qualifier should
+    attach to the spread selection rather than creating a separate instruction.
+
+    Mutates parsed_item in place: updates selection display_name and removes
+    redundant special instructions.
+
+    Args:
+        parsed_item: The parsed item entry to modify
+        text_lower: Lowercased original user input text
+    """
+    qualifier_patterns = menu_cache.get_qualifier_patterns()
+
+    for pattern in qualifier_patterns:
+        qualifier_info = menu_cache.get_qualifier_info(pattern)
+        if not qualifier_info or qualifier_info.get("category") != "position":
+            continue
+
+        # Check if this qualifier appears in the text at all
+        if pattern not in text_lower:
+            continue
+
+        normalized_form = qualifier_info.get("normalized_form", pattern)
+
+        # For each selection, check if "{slug_as_words} {qualifier}" appears in text
+        for sel in parsed_item.selections:
+            slug_words = sel.slug.replace("_", " ")
+            combined = rf'\b{re.escape(slug_words)}\s+{re.escape(pattern)}\b'
+            if not re.search(combined, text_lower):
+                continue
+
+            # Match found - attach qualifier to this selection's display_name
+            display_name = sel.display_name
+            if not display_name:
+                display_name = menu_cache.get_global_option_display_name(
+                    sel.category, sel.slug
+                )
+            if not display_name:
+                display_name = sel.slug.replace("_", " ").title()
+
+            sel.display_name = f"{display_name} ({normalized_form})"
+
+            # Remove redundant special instructions whose base word is part
+            # of the matched slug (e.g., "cheese on the side" where "cheese"
+            # is a component of "blueberry_cream_cheese")
+            slug_parts = sel.slug.lower().split("_")
+            kept = []
+            for instr in parsed_item.special_instructions:
+                instr_lower = instr.lower()
+                if pattern in instr_lower:
+                    base_word = instr_lower.replace(pattern, "").strip()
+                    if base_word in slug_parts:
+                        logger.debug(
+                            "Removing redundant instruction '%s' - covered by '%s'",
+                            instr, sel.display_name,
+                        )
+                        continue
+                kept.append(instr)
+            parsed_item.special_instructions = kept
+
+            logger.debug(
+                "Attached qualifier '%s' to selection '%s' -> '%s'",
+                normalized_form, sel.slug, sel.display_name,
+            )
 
 
 def _extract_and_build_configurable_item(
@@ -740,6 +809,9 @@ def _extract_and_build_configurable_item(
         original_text=text,
         special_instructions=special_instructions,
     )
+
+    # Attach position qualifiers (e.g., "on the side") to matching selections
+    _attach_position_qualifiers(parsed_item, text_lower)
 
     return OpenInputResponse(parsed_items=[parsed_item])
 

@@ -276,15 +276,78 @@ class TakingItemsHandler(MenuDataMixin):
 
         # Extract order-level special instructions from user input
         instructions_result = _pipeline.extract_special_instructions(user_input)
-        if instructions_result:
-            new_instructions = "; ".join(instructions_result.instructions)
-            if order.special_instructions:
-                order.special_instructions += f"; {new_instructions}"
-            else:
-                order.special_instructions = new_instructions
-            logger.info("Order-level special instructions: %s", order.special_instructions)
+        if instructions_result and instructions_result.instructions:
+            # Filter out instructions already captured as item-level selections
+            # (e.g., "cheese on the side" when blueberry_cream_cheese is a selection)
+            filtered_instructions = self._filter_order_level_instructions(
+                instructions_result.instructions, parsed,
+            )
+            if filtered_instructions:
+                new_instructions = "; ".join(filtered_instructions)
+                if order.special_instructions:
+                    order.special_instructions += f"; {new_instructions}"
+                else:
+                    order.special_instructions = new_instructions
+                logger.info("Order-level special instructions: %s", order.special_instructions)
 
         return self.handle_taking_items_with_parsed(parsed, order, extracted_selections, user_input)
+
+    @staticmethod
+    def _filter_order_level_instructions(
+        instructions: list[str],
+        parsed: "OpenInputResponse",
+    ) -> list[str]:
+        """Filter order-level instructions already captured as item-level selections.
+
+        Removes instructions like "cheese on the side" when a parsed item already has
+        a selection covering that modifier (e.g., blueberry_cream_cheese with an
+        "on the side" qualifier in its display_name).
+
+        Args:
+            instructions: Raw special instructions extracted from user input
+            parsed: The parsed open input response containing parsed items
+
+        Returns:
+            Filtered list with redundant instructions removed.
+        """
+        if not parsed.parsed_items:
+            return instructions
+
+        # Collect all selection slugs from all parsed items
+        all_slugs: set[str] = set()
+        for item in parsed.parsed_items:
+            for sel in item.selections:
+                all_slugs.add(sel.slug.lower())
+
+        # Strip position qualifiers from instructions to get the base word,
+        # then check if it matches any selection slug (exact or suffix)
+        qualifier_patterns = menu_cache.get_qualifier_patterns()
+        position_patterns = []
+        for pattern in qualifier_patterns:
+            info = menu_cache.get_qualifier_info(pattern)
+            if info and info.get("category") == "position":
+                position_patterns.append(pattern)
+
+        filtered = []
+        for instr in instructions:
+            instr_lower = instr.lower()
+            # Strip position qualifier suffix to get the base item word
+            base_word = instr_lower
+            for pattern in position_patterns:
+                suffix = f" {pattern}"
+                if base_word.endswith(suffix):
+                    base_word = base_word[:-len(suffix)].strip()
+                    break
+
+            # Check if base_word matches any slug exactly or as a suffix component
+            if base_word in all_slugs or any(s.endswith(f"_{base_word}") for s in all_slugs):
+                logger.debug(
+                    "Filtering order-level instruction '%s' - covered by item selection",
+                    instr,
+                )
+                continue
+            filtered.append(instr)
+        return filtered
 
     def handle_taking_items_with_parsed(
         self,

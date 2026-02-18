@@ -566,8 +566,15 @@ class ItemAdderHandler(MenuDataMixin):
         elif uses_db_config and self.menu_item_handler:
             # For deli/egg sandwiches, use DB-driven configuration with customization checkpoint
             # Capture any attributes mentioned in the initial order
-            # Note: item_name contains the item + any modifiers the user mentioned
-            self.menu_item_handler.capture_attributes_from_input(item_name, first_item)
+            # Strip the canonical menu item name from user input to prevent
+            # words in the item name from falsely matching attribute options
+            # e.g., "Tofu Nova Sandwich" -> "Nova" matching "Nova Scotia Salmon"
+            capture_input = item_name
+            if canonical_name:
+                idx = item_name.lower().find(canonical_name.lower())
+                if idx >= 0:
+                    capture_input = (item_name[:idx] + item_name[idx + len(canonical_name):]).strip()
+            self.menu_item_handler.capture_attributes_from_input(capture_input, first_item)
             # Start the configuration flow
             return self.menu_item_handler.get_first_question(first_item, order)
         else:
@@ -893,7 +900,14 @@ class ItemAdderHandler(MenuDataMixin):
         # Capture any attributes from original user input
         # Skip if extracted_selections provided - parser already extracted attributes
         if ctx.user_input and not ctx.extracted_selections:
-            self.menu_item_handler.capture_attributes_from_input(ctx.user_input, first_item)
+            # Strip the menu item name to prevent words in the name from
+            # falsely matching attribute options (e.g., "Nova" in "Tofu Nova Sandwich")
+            capture_input = ctx.user_input
+            if ctx.canonical_name:
+                idx = ctx.user_input.lower().find(ctx.canonical_name.lower())
+                if idx >= 0:
+                    capture_input = (ctx.user_input[:idx] + ctx.user_input[idx + len(ctx.canonical_name):]).strip()
+            self.menu_item_handler.capture_attributes_from_input(capture_input, first_item)
 
         # If skip_first_question=True, return without asking config question.
         # This is used when adding multiple items - all items are added first,

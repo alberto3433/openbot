@@ -532,7 +532,7 @@ class TakingItemsHandler(MenuDataMixin):
             return None
 
         logger.info("Detected order attempt for unrecognized item: '%s'", item_name)
-        message, category_for_followup = self._unrecognized_handler.get_not_found_response(
+        message, category_for_followup, qr = self._unrecognized_handler.get_not_found_response(
             item_name, order=order
         )
         if category_for_followup:
@@ -542,6 +542,7 @@ class TakingItemsHandler(MenuDataMixin):
         return StateMachineResult(
             message=message,
             order=order,
+            quick_replies=qr or None,
         )
 
     def _is_known_unrecognized_item(self, text: str) -> bool:

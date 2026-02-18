@@ -68,13 +68,14 @@ class TestFuzzyMatching(TestUnrecognizedItemHandler):
             with patch('orderbot.tasks.unrecognized_item_handler.UnrecognizedItemHandler._get_fuzzy_matches') as mock_fuzzy:
                 mock_fuzzy.return_value = ["Blueberry Muffin", "Chocolate Chip Muffin"]
 
-                message, category = handler.get_not_found_response(
+                message, category, qr = handler.get_not_found_response(
                     "muffin blueberry", order=empty_order
                 )
 
                 assert "Did you mean" in message
                 assert "Blueberry Muffin" in message or "muffin" in message.lower()
                 assert category is None
+                assert any(r["label"] == "Blueberry Muffin" for r in qr)
 
     def test_fuzzy_matching_disabled_when_rapidfuzz_unavailable(self, handler, empty_order):
         """Test that fuzzy matching gracefully handles missing rapidfuzz."""
@@ -105,7 +106,7 @@ class TestLLMCategoryInference(TestUnrecognizedItemHandler):
             with patch.object(handler, '_infer_category_with_llm') as mock_llm:
                 mock_llm.return_value = "pastry"
 
-                message, category = handler.get_not_found_response(
+                message, category, _qr = handler.get_not_found_response(
                     "croissant", order=empty_order
                 )
 
@@ -127,7 +128,7 @@ class TestLLMCategoryInference(TestUnrecognizedItemHandler):
             with patch.object(handler, '_infer_category_with_llm') as mock_llm:
                 mock_llm.return_value = None  # LLM fails
 
-                message, category = handler.get_not_found_response(
+                message, category, _qr = handler.get_not_found_response(
                     "xyzabc123", order=empty_order
                 )
 

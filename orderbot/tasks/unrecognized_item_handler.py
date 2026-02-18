@@ -73,7 +73,7 @@ class UnrecognizedItemHandler:
         item_name: str,
         order=None,
         session_id: str | None = None,
-    ) -> tuple[str, str | None]:
+    ) -> tuple[str, str | None, list[dict]]:
         """
         Generate a helpful response when an item isn't found on the menu.
 
@@ -89,9 +89,10 @@ class UnrecognizedItemHandler:
             session_id: Optional session ID for analytics logging
 
         Returns:
-            Tuple of (message, category_slug_for_followup).
+            Tuple of (message, category_slug_for_followup, quick_replies).
             category_slug_for_followup is set when asking if user wants
             to hear what items are in a category.
+            quick_replies contains clickable suggestion items.
         """
         item_name_normalized = normalize_text(item_name)
         # Strip filler words for lookup (some, a, an, the)
@@ -114,11 +115,12 @@ class UnrecognizedItemHandler:
             message, category = self._build_curated_response(
                 item_name, curated, order_item_count
             )
+            qr = self._build_suggestion_quick_replies(curated.get("menu_items"))
             self._log_unrecognized(
                 item_name, item_name_for_lookup, session_id,
                 order_item_count, "curated", category
             )
-            return (message, category)
+            return (message, category, qr)
 
         # Level 1.5: Check if term matches a display group (e.g., "sandwich" -> "Sandwiches")
         display_group_result = self._check_display_group_match(item_name_for_lookup, order)
@@ -127,7 +129,7 @@ class UnrecognizedItemHandler:
                 item_name, item_name_for_lookup, session_id,
                 order_item_count, "display_group", display_group_result[1]
             )
-            return display_group_result
+            return (display_group_result[0], display_group_result[1], [])
 
         # Level 2: Try fuzzy matching (using cleaned name)
         fuzzy_matches = self._get_fuzzy_matches(item_name_for_lookup)
@@ -135,11 +137,12 @@ class UnrecognizedItemHandler:
             message = self._build_fuzzy_response(
                 item_name, fuzzy_matches, order_item_count
             )
+            qr = self._build_suggestion_quick_replies(fuzzy_matches)
             self._log_unrecognized(
                 item_name, item_name_for_lookup, session_id,
                 order_item_count, "fuzzy", None
             )
-            return (message, None)
+            return (message, None, qr)
 
         # Level 3: LLM category inference (using cleaned name)
         inferred_category = self._infer_category_with_llm(item_name_for_lookup)
@@ -151,7 +154,7 @@ class UnrecognizedItemHandler:
                 item_name, item_name_for_lookup, session_id,
                 order_item_count, "llm", inferred_category
             )
-            return (message, category)
+            return (message, category, [])
 
         # Level 4: Generic fallback
         message = self._build_generic_response(item_name, order_item_count)
@@ -159,7 +162,7 @@ class UnrecognizedItemHandler:
             item_name, item_name_for_lookup, session_id,
             order_item_count, "generic", None
         )
-        return (message, None)
+        return (message, None, [])
 
     def _check_curated_suggestions(self, normalized_input: str) -> dict | None:
         """
@@ -523,6 +526,13 @@ class UnrecognizedItemHandler:
                 f"I'm sorry, we don't have {clean_name}. "
                 f"Is there something else I can help you with?"
             )
+
+    @staticmethod
+    def _build_suggestion_quick_replies(items: list[str] | None) -> list[dict]:
+        """Build quick_replies from a list of suggested item names."""
+        if not items:
+            return []
+        return [{"label": name, "value": name} for name in items[:4]]
 
     def _get_order_aware_followup(self, order_item_count: int, num_alternatives: int = 2) -> str:
         """Get a context-appropriate follow-up question based on cart state.

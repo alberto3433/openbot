@@ -433,7 +433,7 @@ class ItemAdderHandler(MenuDataMixin):
         # If item not found, provide helpful suggestions using hybrid handler
         if not menu_item:
             session_id = order.session_id
-            message, category_for_followup = self._unrecognized_handler.get_not_found_response(
+            message, category_for_followup, qr = self._unrecognized_handler.get_not_found_response(
                 item_name, order=order, session_id=session_id
             )
             if category_for_followup:
@@ -443,6 +443,7 @@ class ItemAdderHandler(MenuDataMixin):
             return StateMachineResult(
                 message=message,
                 order=order,
+                quick_replies=qr or None,
             )
 
         # Step 2: Create the item using existing logic
@@ -607,7 +608,7 @@ class ItemAdderHandler(MenuDataMixin):
         # If item not found, return error message using hybrid handler
         if not menu_item:
             logger.warning("Side item not found: '%s' - rejecting", side_item_name)
-            message, _ = self._unrecognized_handler.get_not_found_response(
+            message, _, _qr = self._unrecognized_handler.get_not_found_response(
                 side_item_name, order=order
             )
             return (None, message)

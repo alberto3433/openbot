@@ -705,13 +705,13 @@ class DietaryInquiryHandler(MenuDataMixin):
 
         # Nothing found - use unrecognized handler for curated suggestions
         if self._unrecognized_handler:
-            message, category_slug = self._unrecognized_handler.get_not_found_response(
+            message, category_slug, qr = self._unrecognized_handler.get_not_found_response(
                 item_name, order=order
             )
             if category_slug:
                 order.pending_field = PendingField.CATEGORY_INQUIRY
                 order.pending_config_queue = [category_slug]
-            return StateMachineResult(message=message, order=order)
+            return StateMachineResult(message=message, order=order, quick_replies=qr or None)
 
         # Fallback if no unrecognized handler
         return StateMachineResult(

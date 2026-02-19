@@ -1,14 +1,20 @@
 """
-Resiliency Test Batch 1: Replacement & Modification Scenarios
+Resiliency Tests: Ordering scenarios (replacement, ambiguity, quantities, multi-item).
 
-Tests the system's ability to handle replacement and modification requests
-where the user wants to change something about an item already in their order.
+Consolidated from batches: 1, 2, 4, 5.
 """
 
-from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
+import pytest
+
+from orderbot.tasks.models import OrderTask
+from orderbot.tasks.models import OrderTask, MenuItemTask
 from orderbot.tasks.models import OrderTask, TaskStatus, MenuItemTask
+from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
 from tests.helpers import BagelItemTask, CoffeeItemTask
 
+# =============================================================================
+# From test_resiliency_batch1.py
+# =============================================================================
 
 class TestReplacementModificationScenarios:
     """Batch 1: Replacement & Modification Scenarios."""
@@ -614,3 +620,530 @@ class TestReplacementModificationScenarios:
         added_acknowledged = "added" in msg_lower or "bacon" in msg_lower
         assert added_acknowledged, \
             f"Should acknowledge adding bacon. Got: {result2.message}"
+
+# =============================================================================
+# From test_resiliency_batch2.py
+# =============================================================================
+
+class TestAmbiguousItemOrders:
+    """Batch 2: Ambiguous Item Orders."""
+
+    def test_orange_juice_shows_options(self):
+        """
+        Test: User says "orange juice" which matches multiple sizes/brands.
+
+        Scenario:
+        - User says: "orange juice"
+        - Expected: System either adds a default OJ or asks which one they want
+        - Should NOT error or return empty
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("orange juice", order)
+
+        # Should have a response (not an error)
+        assert result.message is not None
+        assert len(result.message) > 0
+
+        # Should either:
+        # 1. Add an item and confirm, OR
+        # 2. Ask for clarification about which OJ, OR
+        # 3. Acknowledge the order (acceptable if system recognizes it)
+        items = result.order.items.get_active_items()
+        has_item = len(items) > 0
+        asks_clarification = any(word in result.message.lower() for word in [
+            "which", "what size", "tropicana", "fresh", "would you like"
+        ])
+        acknowledges_order = any(phrase in result.message.lower() for phrase in [
+            "got it", "orange juice", "anything else"
+        ])
+
+        assert has_item or asks_clarification or acknowledges_order, \
+            f"Should either add OJ, ask for clarification, or acknowledge. Message: {result.message}"
+
+    def test_muffin_shows_options(self):
+        """
+        Test: User says "muffin" which matches multiple flavors.
+
+        Scenario:
+        - User says: "muffin"
+        - Expected: System asks which flavor OR shows options
+        - Should NOT just add a random muffin without asking
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("muffin", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should ask for clarification about flavor
+        # OR show available options
+        message_lower = result.message.lower()
+        asks_flavor = any(word in message_lower for word in [
+            "which", "what kind", "what flavor", "blueberry", "chocolate",
+            "corn", "bran", "would you like"
+        ])
+
+        assert asks_flavor, \
+            f"Should ask which muffin flavor. Message: {result.message}"
+
+    def test_coffee_asks_for_size_and_temp(self):
+        """
+        Test: User says "coffee" which needs size and hot/iced.
+
+        Scenario:
+        - User says: "coffee"
+        - Expected: System asks for size or adds with default and asks to confirm
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("coffee", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should either ask about size/temp OR add coffee and start configuring
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
+
+        if coffees:
+            # Coffee was added - check if it's asking for configuration
+            coffee = coffees[0]
+            attr_vals = coffee.attribute_values or {}
+            needs_config = attr_vals.get("size") is None or attr_vals.get("iced") is None
+            if needs_config:
+                # Should be asking about size or hot/iced
+                assert any(word in result.message.lower() for word in [
+                    "size", "small", "medium", "large", "hot", "iced"
+                ]), f"Should ask about size/temp. Message: {result.message}"
+        else:
+            # No coffee added yet - should be asking for clarification
+            assert any(word in result.message.lower() for word in [
+                "size", "small", "medium", "large", "hot", "iced", "drip", "latte"
+            ]), f"Should ask about coffee preferences. Message: {result.message}"
+
+    def test_bagel_with_cream_cheese_asks_flavor(self):
+        """
+        Test: User says "bagel with cream cheese" - should ask which flavor.
+
+        Scenario:
+        - User says: "bagel with cream cheese"
+        - Expected: System adds bagel and asks about cream cheese flavor
+                    OR asks about bagel type first
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("bagel with cream cheese", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have added a bagel or be asking about it
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+
+        # Either:
+        # 1. Bagel was added (possibly asking about type or cream cheese flavor)
+        # 2. Still asking for clarification
+        message_lower = result.message.lower()
+
+        if bagels:
+            # Bagel added - should be asking about type, toasted, or cream cheese
+            assert any(word in message_lower for word in [
+                "what type", "which bagel", "toasted", "plain", "veggie",
+                "scallion", "what kind", "cream cheese"
+            ]) or "anything else" in message_lower, \
+                f"Should configure bagel or confirm. Message: {result.message}"
+        else:
+            # Should be asking about the bagel
+            assert any(word in message_lower for word in [
+                "what type", "which bagel", "what kind"
+            ]), f"Should ask about bagel type. Message: {result.message}"
+
+    def test_the_classic_matches_exact_item(self):
+        """
+        Test: User says "the classic" which should match "The Classic" menu item.
+
+        Scenario:
+        - User says: "the classic"
+        - Expected: Should match "The Classic" (exact match) and start configuration
+        - Note: "The Classic" is a distinct menu item from "The Classic BEC"
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("the classic", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have added "The Classic" item
+        items = result.order.items.get_active_items()
+        assert len(items) == 1, \
+            f"Should have added one item. Got: {len(items)}"
+
+        item = items[0]
+        assert item.menu_item_name == "The Classic", \
+            f"Should have added 'The Classic'. Got: {item.menu_item_name}"
+
+        # Should be asking a configuration question (e.g., bread type)
+        assert result.order.phase == OrderPhase.CONFIGURING_ITEM.value, \
+            f"Should be in CONFIGURING_ITEM phase. Got: {result.order.phase}"
+
+# =============================================================================
+# From test_resiliency_batch4.py
+# =============================================================================
+
+class TestEdgeCaseQuantities:
+    """Batch 4: Edge Case Quantities."""
+
+    def test_half_dozen_bagels(self):
+        """
+        Test: User orders "half dozen bagels".
+
+        Scenario:
+        - User says: "half dozen plain bagels"
+        - Expected: System adds 6 bagels
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("half dozen plain bagels", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have added bagels with quantity 6
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+        total_quantity = sum(b.quantity for b in bagels)
+
+        assert total_quantity == 6, f"Should have 6 bagels, got {total_quantity}"
+
+    def test_dozen_bagels(self):
+        """
+        Test: User orders "a dozen bagels".
+
+        Scenario:
+        - User says: "a dozen everything bagels"
+        - Expected: System adds 12 bagels
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("a dozen everything bagels", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have added bagels with quantity 12
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+        total_quantity = sum(b.quantity for b in bagels)
+
+        assert total_quantity == 12, f"Should have 12 bagels, got {total_quantity}"
+
+    def test_couple_of_coffees(self):
+        """
+        Test: User orders "a couple of coffees".
+
+        Scenario:
+        - User says: "a couple of large iced cappuccinos"
+        - Expected: System adds 2 cappuccinos
+        Note: Using cappuccino (unambiguous) to test "couple" quantity recognition
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("a couple of large iced cappuccinos", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have added coffees with quantity 2
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
+        total_quantity = sum(c.quantity for c in coffees)
+
+        assert total_quantity == 2, f"Should have 2 coffees, got {total_quantity}"
+
+    def test_few_bagels(self):
+        """
+        Test: User orders "a few bagels".
+
+        Scenario:
+        - User says: "a few sesame bagels"
+        - Expected: System either asks how many or adds a reasonable default (3)
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("a few sesame bagels", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should either:
+        # 1. Add bagels with reasonable quantity (3), OR
+        # 2. Ask how many
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+        total_quantity = sum(b.quantity for b in bagels)
+
+        asks_quantity = any(word in result.message.lower() for word in [
+            "how many", "how much", "quantity"
+        ])
+
+        # Either added bagels or asking
+        assert total_quantity >= 1 or asks_quantity, \
+            f"Should add bagels or ask quantity. Qty={total_quantity}, Message: {result.message}"
+
+    def test_one_more_bagel(self):
+        """
+        Test: User has a bagel and says "one more".
+
+        Scenario:
+        - User has: 1 plain bagel
+        - User says: "one more"
+        - Expected: quantity becomes 2
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        bagel = BagelItemTask(
+            bagel_type="plain",
+            toasted=True,
+        )
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        sm = OrderStateMachine()
+        result = sm.process("one more", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have 2 bagels total
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+        total_quantity = sum(b.quantity for b in bagels)
+
+        assert total_quantity == 2, f"Should have 2 bagels, got {total_quantity}"
+
+# =============================================================================
+# From test_resiliency_batch5.py
+# =============================================================================
+
+class TestMultiItemOrders:
+    """Batch 5: Multi-Item Orders."""
+
+    def test_bagel_and_coffee_together(self):
+        """
+        Test: User orders bagel and coffee in one sentence.
+
+        Scenario:
+        - User says: "a plain bagel and a large coffee"
+        - Expected: System acknowledges both items and starts configuring the first one
+        - Coffee is added after bagel configuration is complete
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("a plain bagel and a large coffee", order)
+
+        # Should have a response acknowledging both items
+        assert result.message is not None
+        message_lower = result.message.lower()
+
+        # Response should mention both items (e.g., "Got it, bagel and coffee...")
+        assert "bagel" in message_lower and "coffee" in message_lower, \
+            f"Should acknowledge both items. Message: {result.message}"
+
+        # Should have added the first item (bagel) and start configuring it
+        items = result.order.items.get_active_items()
+        assert len(items) >= 1, f"Should have added bagel. Message: {result.message}"
+
+        # First item should be the bagel
+        bagel = items[0]
+        assert bagel.menu_item_name == "Bagel", \
+            f"First item should be bagel, got: {bagel.menu_item_name}"
+
+        # Should be asking about toasted for the bagel
+        assert "toast" in message_lower, \
+            f"Should ask about toasting. Message: {result.message}"
+
+    def test_two_different_bagels(self):
+        """
+        Test: User orders two different types of bagels.
+
+        Scenario:
+        - User says: "one everything bagel and one plain bagel"
+        - Expected: System adds both bagels with correct bread types
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("one everything bagel and one plain bagel", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have added both bagels
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+        total_quantity = sum(b.quantity for b in bagels)
+
+        assert total_quantity == 2, f"Should have 2 bagels, got {total_quantity}"
+
+        # Should have recognized both types
+        types = [b["bread"] for b in bagels]
+        assert len(types) == 2, f"Should have 2 bagel types, got {len(types)}"
+        assert any("everything" in t for t in types), f"Should have everything bagel. Types: {types}"
+        assert any("plain" in t for t in types), f"Should have plain bagel. Types: {types}"
+
+    def test_two_different_bagels_without_separator(self):
+        """User says "one everything bagel one plain bagel" (no separator)."""
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+        result = sm.process("one everything bagel one plain bagel", order)
+
+        assert result.message is not None
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+        total_quantity = sum(b.quantity for b in bagels)
+        assert total_quantity == 2, f"Should have 2 bagels, got {total_quantity}"
+        types = [b["bread"] for b in bagels]
+        assert any("everything" in t for t in types), f"Missing everything. Types: {types}"
+        assert any("plain" in t for t in types), f"Missing plain. Types: {types}"
+
+    def test_comma_separated_items(self):
+        """
+        Test: User lists items separated by commas.
+
+        Scenario:
+        - User says: "everything bagel, coffee, and orange juice"
+        - Expected: System adds all items or asks about each
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("everything bagel, coffee, and orange juice", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have added items or be asking about them
+        all_items = result.order.items.get_active_items()
+
+        # At minimum should recognize one item
+        assert len(all_items) >= 1 or any(word in result.message.lower() for word in [
+            "bagel", "coffee", "juice", "orange"
+        ]), f"Should add items or ask about them. Message: {result.message}"
+
+    def test_signature_item_with_coffee(self):
+        """
+        Test: User orders signature item with a coffee.
+
+        Scenario:
+        - User says: "the classic and a large latte"
+        - Expected: System adds the latte and asks for classic disambiguation
+          (The Classic BEC vs The Classic BEC Omelette)
+        - User clarifies: "the bec"
+        - Expected: System adds The Classic BEC
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("the classic and a large latte", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Should have added the latte (it resolves unambiguously to Hot Latte)
+        all_items = result.order.items.get_active_items()
+        assert len(all_items) >= 1, f"Should have added the latte. Message: {result.message}"
+
+        # Check for latte in items
+        has_latte = any(
+            isinstance(i, MenuItemTask) and "latte" in (i.menu_item_name or "").lower()
+            for i in all_items
+        )
+        assert has_latte, f"Should have added Hot Latte. Items: {all_items}"
+
+        # Should ask for disambiguation about "the classic" (BEC vs Omelette)
+        assert "classic" in result.message.lower(), \
+            f"Should ask about which classic. Message: {result.message}"
+
+        # Respond to disambiguation
+        result = sm.process("the bec", result.order)
+
+        # Should now have both items
+        all_items = result.order.items.get_active_items()
+        has_classic = any(
+            isinstance(i, MenuItemTask) and "classic" in (i.menu_item_name or "").lower()
+            for i in all_items
+        )
+        assert has_classic, f"Should have added The Classic BEC. Items: {all_items}"
+
+    def test_quantity_on_each_item(self):
+        """
+        Test: User specifies quantities for multiple items.
+
+        Scenario:
+        - User says: "two plain bagels and three coffees"
+        - Expected: System adds 2 bagels and 3 coffees
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("two plain bagels and three coffees", order)
+
+        # Should have a response
+        assert result.message is not None
+
+        # Check quantities
+        bagels = [i for i in result.order.items.items if i.has_attribute('bread')]
+        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
+
+        bagel_qty = sum(b.quantity for b in bagels)
+        coffee_qty = sum(c.quantity for c in coffees)
+
+        # Should have correct quantities (or at least added the items)
+        assert bagel_qty >= 1, f"Should have bagels. Got qty={bagel_qty}"
+        assert coffee_qty >= 1 or any("coffee" in result.message.lower() for _ in [1]), \
+            f"Should have coffees or mention them. Got qty={coffee_qty}"
+
+    def test_add_item_during_config_no_prefix(self):
+        """User says 'a latte' during config — should queue latte and re-ask config question."""
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        # First add a sandwich to trigger config
+        result = sm.process("Chipotle Cream Cheese Sandwich", order)
+        order = result.order
+
+        # Now say "a latte" while being asked about bread
+        result = sm.process("a latte", order)
+        order = result.order
+
+        # Should have added the latte (queued) and re-asked the config question
+        all_items = order.items.get_active_items()
+        item_names = [i.menu_item_name for i in all_items]
+        assert any("latte" in n.lower() for n in item_names), \
+            f"Should have added latte. Items: {item_names}"
+
+        # Should still be configuring the sandwich (re-ask bread question)
+        assert order.pending_field is not None, \
+            f"Should still be configuring. Message: {result.message}"

@@ -164,6 +164,10 @@ def parse_menu_query(text: str) -> OpenInputResponse | None:
         re.compile(r"(?:(?:can|could|would)\s+you\s+)?tell\s+me\s+what(?:\s+you\s+(?:have|serve|offer|sell|make)|(?:'?s|\s+is)\s+(?:available|on\s+(?:the|your)\s+menu))", re.IGNORECASE),
         # "what have you got?" / "what've you got?"
         re.compile(r"what(?:'ve|\s+have)\s+you\s+got", re.IGNORECASE),
+        # "what are my options?" / "what are the options?" / "what options do you have?"
+        re.compile(r"what\s+(?:are\s+(?:my|the)\s+)?options", re.IGNORECASE),
+        # "what are my choices?" / "what are the choices?"
+        re.compile(r"what\s+are\s+(?:my|the)\s+choices", re.IGNORECASE),
     ]
 
     # Check for general menu inquiry patterns first

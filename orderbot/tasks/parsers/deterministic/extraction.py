@@ -926,6 +926,59 @@ def _detect_unrecognized_ingredients(
     return results
 
 
+def _detect_inapplicable_modifiers(text_lower: str) -> list[dict]:
+    """Detect globally-known modifiers in 'with X' phrases that weren't matched for an item.
+
+    Used for non-configurable items where item-type-specific modification extraction
+    found nothing. Checks if there are 'with X' phrases where X is a known modifier
+    globally (e.g., 'hazelnut syrup' on Deviled Eggs).
+
+    Args:
+        text_lower: Lowercase user input.
+
+    Returns:
+        List of dicts with token and display_name for each inapplicable modifier.
+    """
+    with_match = re.search(r'\bwith\s+(.+?)(?:\s*(?:please|thanks)|\s*$)', text_lower)
+    if not with_match:
+        return []
+
+    modifier_text = with_match.group(1).strip()
+    if not modifier_text:
+        return []
+
+    results: list[dict] = []
+    candidates = [modifier_text]
+    for part in re.split(r'\s+and\s+|\s*,\s*', modifier_text):
+        part = part.strip()
+        if part and part != modifier_text:
+            candidates.append(part)
+
+    for candidate in candidates:
+        canonical = menu_cache.normalize_modifier(candidate)
+        if canonical != candidate:
+            results.append({
+                "token": candidate,
+                "display_name": canonical,
+            })
+            return results
+
+        if " " in candidate:
+            for word in candidate.split():
+                word = word.strip()
+                if len(word) < 3:
+                    continue
+                if menu_cache.is_known_modifier(word):
+                    canonical = menu_cache.normalize_modifier(word)
+                    results.append({
+                        "token": candidate,
+                        "display_name": canonical if canonical != word else candidate.title(),
+                    })
+                    return results
+
+    return results
+
+
 def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:
     """Extract by-pound weight unit and product name from text.
 

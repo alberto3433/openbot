@@ -37,6 +37,7 @@ from ..db.models import (
     UnrecognizedOptionSuggestion, GlobalAttribute,
     UnrecognizedIngredientSuggestion, Ingredient,
 )
+from ..schemas.serializers import serialize_menu_item_suggestion, serialize_ingredient_suggestion
 from ..schemas.unrecognized_suggestions import (
     UnrecognizedMenuItemSuggestionOut,
     UnrecognizedMenuItemSuggestionCreate,
@@ -110,7 +111,7 @@ def list_suggestions(
         UnrecognizedMenuItemSuggestion.input_pattern
     ).all()
 
-    return [UnrecognizedMenuItemSuggestionOut.from_db(s) for s in suggestions]
+    return [serialize_menu_item_suggestion(s) for s in suggestions]
 
 
 @admin_unrecognized_menu_item_suggestions_router.get("/stats", response_model=UnrecognizedMenuItemSuggestionStats)
@@ -198,7 +199,7 @@ def get_suggestion(
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
 
-    return UnrecognizedMenuItemSuggestionOut.from_db(suggestion)
+    return serialize_menu_item_suggestion(suggestion)
 
 
 @admin_unrecognized_menu_item_suggestions_router.post("", response_model=UnrecognizedMenuItemSuggestionOut, status_code=201)
@@ -275,7 +276,7 @@ def create_suggestion(
         suggestion.id
     )
 
-    return UnrecognizedMenuItemSuggestionOut.from_db(suggestion)
+    return serialize_menu_item_suggestion(suggestion)
 
 
 @admin_unrecognized_menu_item_suggestions_router.put("/{suggestion_id}", response_model=UnrecognizedMenuItemSuggestionOut)
@@ -361,7 +362,7 @@ def update_suggestion(
 
     logger.info("Updated unrecognized suggestion: '%s' (id=%d)", suggestion.input_pattern, suggestion.id)
 
-    return UnrecognizedMenuItemSuggestionOut.from_db(suggestion)
+    return serialize_menu_item_suggestion(suggestion)
 
 
 @admin_unrecognized_menu_item_suggestions_router.delete("/{suggestion_id}", status_code=204)
@@ -737,7 +738,7 @@ def list_ingredient_suggestions(
         UnrecognizedIngredientSuggestion.input_pattern
     ).all()
 
-    return [UnrecognizedIngredientSuggestionOut.from_db(s) for s in suggestions]
+    return [serialize_ingredient_suggestion(s) for s in suggestions]
 
 
 @admin_unrecognized_ingredient_suggestions_router.get(
@@ -771,7 +772,7 @@ def get_ingredient_suggestion(
     if not suggestion:
         raise HTTPException(status_code=404, detail="Ingredient suggestion not found")
 
-    return UnrecognizedIngredientSuggestionOut.from_db(suggestion)
+    return serialize_ingredient_suggestion(suggestion)
 
 
 @admin_unrecognized_ingredient_suggestions_router.post(
@@ -832,7 +833,7 @@ def create_ingredient_suggestion(
         suggestion.id,
     )
 
-    return UnrecognizedIngredientSuggestionOut.from_db(suggestion)
+    return serialize_ingredient_suggestion(suggestion)
 
 
 @admin_unrecognized_ingredient_suggestions_router.put(
@@ -898,7 +899,7 @@ def update_ingredient_suggestion(
 
     logger.info("Updated unrecognized ingredient suggestion: '%s' (id=%d)", suggestion.input_pattern, suggestion.id)
 
-    return UnrecognizedIngredientSuggestionOut.from_db(suggestion)
+    return serialize_ingredient_suggestion(suggestion)
 
 
 @admin_unrecognized_ingredient_suggestions_router.delete("/{suggestion_id}", status_code=204)

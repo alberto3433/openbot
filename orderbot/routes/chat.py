@@ -293,6 +293,7 @@ def chat_message_stream(
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         finally:
+            stream_db.rollback()
             stream_db.close()
 
     return StreamingResponse(

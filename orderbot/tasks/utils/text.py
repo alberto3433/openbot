@@ -2,6 +2,8 @@
 Text formatting utilities for human-readable output.
 """
 
+import re
+
 
 def normalize_text(text: str | None) -> str:
     """Lowercase and strip whitespace from text for comparison.
@@ -337,3 +339,35 @@ def find_first_word_boundary_match(
                 return normalize_func(candidate)
             return candidate
     return None
+
+
+_WHAT_WHICH_RE = re.compile(r'(?:what|which)\s+(.+?)\s*\?', re.IGNORECASE)
+_HOW_QUESTION_RE = re.compile(
+    r'how\s+(?:would|do)\s+you\s+(?:like|want)\s+(?:your\s+)?(.+?)\s*\?',
+    re.IGNORECASE,
+)
+
+
+def extract_question_phrase(question_text: str) -> str | None:
+    """Extract the noun phrase from a question.
+
+    Handles 'what/which X?' and 'how would you like (your) X?' patterns.
+
+    Args:
+        question_text: The question to extract a phrase from.
+
+    Returns:
+        The extracted noun phrase, or None if no match.
+
+    Examples:
+        >>> extract_question_phrase("What type of tea?")
+        'type of tea'
+        >>> extract_question_phrase("How would you like your eggs?")
+        'eggs'
+        >>> extract_question_phrase("Would you like it toasted?")
+    """
+    m = _WHAT_WHICH_RE.search(question_text)
+    if m:
+        return m.group(1).strip()
+    m = _HOW_QUESTION_RE.search(question_text)
+    return m.group(1).strip() if m else None

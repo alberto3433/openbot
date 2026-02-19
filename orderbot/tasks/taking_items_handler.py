@@ -57,6 +57,20 @@ if TYPE_CHECKING:
     from .handler_config import HandlerConfig
     from .context import OrderContext
 
+# Pattern for ordering-intent phrases that implicitly confirm a suggested item.
+# Matches "I'll take one", "let me get that", "give me one", etc.
+_IMPLICIT_ACCEPT_PATTERN = re.compile(
+    r"(?:i'll|i\s+will)\s+(?:take|have|try|get|order)\s+(?:one|that|it|some)"
+    r"|(?:let\s+me|can\s+i|could\s+i)\s+(?:get|have|try)\s+(?:one|that|it|some)"
+    r"|(?:give|get)\s+me\s+(?:one|that|it|some)",
+    re.IGNORECASE,
+)
+
+
+def _is_implicit_accept(text: str) -> bool:
+    """Check if text contains ordering-intent phrases that implicitly accept a suggestion."""
+    return bool(_IMPLICIT_ACCEPT_PATTERN.search(text))
+
 logger = logging.getLogger(__name__)
 
 # Pattern to strip a leading negative word + optional punctuation from user input
@@ -1092,6 +1106,19 @@ class TakingItemsHandler(MenuDataMixin):
                 suggested_item, user_input
             )
             # Use existing add_menu_item to add the suggested item
+            return self.item_adder_handler.add_menu_item(
+                suggested_item,
+                quantity=1,
+                order=order,
+            )
+
+        # Check for ordering-intent phrases that implicitly accept the suggestion
+        # e.g., "I'll take one", "I'll try that", "sounds good, I'll have one"
+        if suggested_item and _is_implicit_accept(user_lower):
+            logger.info(
+                "User implicitly confirmed suggested item '%s' with ordering intent: '%s'",
+                suggested_item, user_input
+            )
             return self.item_adder_handler.add_menu_item(
                 suggested_item,
                 quantity=1,

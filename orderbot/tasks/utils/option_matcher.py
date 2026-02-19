@@ -578,6 +578,26 @@ class OptionMatcher:
             # No "input in option" matches found - try match_multiple() which also
             # checks if option names appear IN user input (handles "salt pepper" → ["salt", "pepper"])
             matched = self.match_multiple(user_input, options)
+            if matched and len(matched) > 1:
+                # Verify at least one match is "strong" — the option's display name
+                # or slug appears as a phrase in the user input (Direction 1).
+                # If ALL matches are "weak" (only matched because a user sub-word
+                # appears in the option name via Direction 2), the sub-word is too
+                # generic. E.g., "cheese" extracted from "melted cheese" matching
+                # all cream cheese options. Return empty to let other attributes or
+                # attribute-name matching handle the input.
+                has_strong = any(
+                    self._is_whole_word_match(
+                        opt["display_name"].lower(), user_raw_lower
+                    )
+                    or self._is_whole_word_match(
+                        opt["slug"].replace("_", " "), user_raw_lower
+                    )
+                    for opt in matched
+                )
+                if not has_strong:
+                    return ([], [])
+                return (matched, [])
             if matched:
                 return (matched, [])
             return ([], [])

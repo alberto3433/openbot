@@ -277,6 +277,21 @@ def menu_cache_loaded(tmp_path_factory):
 
 
 @pytest.fixture
+def mock_menu_cache_integration(monkeypatch):
+    """Non-autouse fixture that applies mock menu cache for integration tests.
+
+    Used by test modules split from test_tasks_integration.py. Each module
+    creates a thin autouse fixture delegating to this one:
+
+        @pytest.fixture(autouse=True)
+        def mock_menu_cache_attributes(mock_menu_cache_integration):
+            pass
+    """
+    from tests.fixtures.mock_menu_cache import apply_mock_menu_cache
+    apply_mock_menu_cache(monkeypatch)
+
+
+@pytest.fixture
 def order_and_sm():
     """Create a fresh OrderTask (in TAKING_ITEMS phase) and OrderStateMachine.
 

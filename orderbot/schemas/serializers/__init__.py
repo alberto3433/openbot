@@ -22,6 +22,10 @@ from .global_attributes import (
 )
 from .menu_items import serialize_menu_item
 from .item_types import serialize_item_type
+from .unrecognized_suggestions import (
+    serialize_menu_item_suggestion,
+    serialize_ingredient_suggestion,
+)
 
 __all__ = [
     # Global attribute serializers
@@ -33,4 +37,7 @@ __all__ = [
     "serialize_menu_item",
     # Item type serializers
     "serialize_item_type",
+    # Unrecognized suggestion serializers
+    "serialize_menu_item_suggestion",
+    "serialize_ingredient_suggestion",
 ]

@@ -207,6 +207,20 @@ def _parse_item_generic(
             if quantity > 1:
                 item_qty_span = (qty_match.start(1), qty_match.end(1))
 
+    # Compute the span of the matched menu item name in the text so we can exclude it
+    # from modifier extraction. Without this, words within composite item names
+    # (e.g., "kalamata olive" in "Kalamata Olive Feta Cream Cheese Sandwich") get falsely
+    # extracted as modifiers/selections, causing incorrect pricing.
+    # NOTE: We only exclude the item name span from MODIFIER extraction, not attribute
+    # extraction. Short item names like "Bagel" may overlap with attribute option triggers
+    # (e.g., "bagel" → bread type), so excluding from attributes would break detection.
+    matched_item_span: tuple[int, int] | None = None
+    if item_name:
+        item_name_lower = item_name.lower()
+        pos = text_lower.find(item_name_lower)
+        if pos != -1:
+            matched_item_span = (pos, pos + len(item_name_lower))
+
     # Extract all attributes for this item type using database config
     # This handles all attribute types (single_select, multi_select, boolean)
     # including combined attributes like milk_sweetener_syrup
@@ -224,7 +238,11 @@ def _parse_item_generic(
     # Extract food modifiers (proteins, spreads, toppings, etc.)
     # Beverage modifiers (sweeteners, syrups, milk) are handled via attr_result
     # Pass exclude_spans to avoid double-extraction of text already matched as attributes
-    food_modifiers = get_pipeline().extract_modifiers_raw(text_lower, item_type, exclude_spans=attr_matched_spans)
+    # Also include matched_item_span to prevent extracting ingredients from the item name
+    modifier_exclude_spans = list(attr_matched_spans)
+    if matched_item_span:
+        modifier_exclude_spans.append(matched_item_span)
+    food_modifiers = get_pipeline().extract_modifiers_raw(text_lower, item_type, exclude_spans=modifier_exclude_spans)
 
     # Check if this item has default ingredients (used for populating defaults)
     has_defaults = False

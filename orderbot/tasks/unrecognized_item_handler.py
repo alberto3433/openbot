@@ -234,6 +234,10 @@ class UnrecognizedItemHandler:
 
         except (SQLAlchemyError, KeyError, ValueError, AttributeError) as e:
             logger.warning("Failed to query curated suggestions: %s", e)
+            try:
+                self._db_session.rollback()
+            except SQLAlchemyError:
+                pass
 
         return None
 

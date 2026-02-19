@@ -131,7 +131,9 @@ def get_unanswered_mandatory(
             # If so, we should still ask the question to let user confirm/change
             selections = item.get_selections(slug)
             all_defaults = selections and all(
-                sel.get("is_default", False) if isinstance(sel, dict) else getattr(sel, "is_default", False)
+                (sel.get("is_default", False) and not sel.get("_confirmed", False))
+                if isinstance(sel, dict)
+                else (getattr(sel, "is_default", False) and not getattr(sel, "_confirmed", False))
                 for sel in selections
             )
             if all_defaults:

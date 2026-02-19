@@ -26,7 +26,7 @@ from ..parsers.constants import DEFAULT_PAGINATION_SIZE
 from ..handler_config import BaseHandler
 from ..checkout_messages import got_it_anything_else
 from ..utils import OptionMatcher, InputNormalizer
-from ..utils.text import format_display_list, normalize_text
+from ..utils.text import extract_question_phrase, format_display_list, normalize_text
 from .context import ConfigHandlerContext
 from .select_input import SelectInputHandler
 from .options_inquiry import OptionsInquiryHandler
@@ -50,31 +50,6 @@ if TYPE_CHECKING:
     from ..models.pending_states import PendingUnmatchedPagination
 
 logger = logging.getLogger(__name__)
-
-_QUESTION_PHRASE_RE = re.compile(r'(?:what|which)\s+(.+?)\s*\?', re.IGNORECASE)
-_HOW_QUESTION_RE = re.compile(
-    r'how\s+(?:would|do)\s+you\s+(?:like|want)\s+(?:your\s+)?(.+?)\s*\?',
-    re.IGNORECASE,
-)
-
-
-def _extract_question_phrase(question_text: str) -> str | None:
-    """Extract the noun phrase from a question.
-
-    Handles 'what/which X?' and 'how would you like (your) X?' patterns.
-
-    >>> _extract_question_phrase("What type of tea?")
-    'type of tea'
-    >>> _extract_question_phrase("How would you like your eggs?")
-    'eggs'
-    >>> _extract_question_phrase("Would you like it toasted?")
-    """
-    m = _QUESTION_PHRASE_RE.search(question_text)
-    if m:
-        return m.group(1).strip()
-    m = _HOW_QUESTION_RE.search(question_text)
-    return m.group(1).strip() if m else None
-
 
 class MenuItemConfigHandler(BaseHandler):
     """
@@ -553,7 +528,7 @@ class MenuItemConfigHandler(BaseHandler):
             base_lower = base_question.lower()
             has_match = any(e["label"].lower() in base_lower for e in qr)
             if not has_match:
-                trigger = _extract_question_phrase(base_question)
+                trigger = extract_question_phrase(base_question)
                 if trigger and trigger.lower() in base_lower:
                     qr = [{"label": trigger, "value": f"What {pluralize(trigger.lower())} do you have?"}]
                 else:
@@ -1423,8 +1398,9 @@ class MenuItemConfigHandler(BaseHandler):
                 # Build quick replies for inline clickable text
                 qr = [{"label": o["display_name"], "value": o["display_name"]} for o in options]
             else:
-                # Too many options - just ask, user can say "what do you have?" to see list
+                # Too many to list in text, but still provide quick replies for clickability
                 question = f"What kind of {attr['display_name'].lower()}?"
+                qr = [{"label": o["display_name"], "value": o["display_name"]} for o in options]
         else:
             question = f"What {attr['display_name']}?"
 

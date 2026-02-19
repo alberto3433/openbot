@@ -34,21 +34,7 @@ from ..schemas.modifier_qualifiers import (
     ModifierQualifierList,
 )
 from .crud_factory import CRUDRouterFactory
-from .crud_helpers import make_list_builder, build_create_kwargs, apply_payload_updates
-
-
-# Field normalization rules
-_NORMALIZE = {"pattern": "lower_strip", "normalized_form": "lower_strip"}
-
-
-def _build_create_kwargs(payload, db):
-    """Build model kwargs from create payload with normalization."""
-    return build_create_kwargs(payload, normalize_fields=_NORMALIZE)
-
-
-def _handle_before_update(item, payload, db):
-    """Apply update payload to item with normalization."""
-    apply_payload_updates(item, payload, db, normalize_fields=_NORMALIZE)
+from .crud_helpers import make_list_builder
 
 
 # Create the CRUD router using the factory
@@ -63,8 +49,7 @@ _crud = CRUDRouterFactory(
     not_found_message="Modifier qualifier not found",
     unique_fields=["pattern"],
     order_by=["category", "normalized_form", "pattern"],
-    on_before_create=_build_create_kwargs,
-    on_before_update=_handle_before_update,
+    normalize_fields={"pattern": "lower_strip", "normalized_form": "lower_strip"},
     list_response_schema=ModifierQualifierList,
     list_response_builder=make_list_builder(ModifierQualifierList, "qualifiers"),
 )

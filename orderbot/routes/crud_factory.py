@@ -38,12 +38,14 @@ import inspect
 import logging
 from typing import Any, Callable, Generic, TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
+from ..exceptions import ResourceNotFoundError, ValidationError
+from .crud_helpers import build_create_kwargs, apply_payload_updates
 
 
 # Type variables for generic model and schema types
@@ -128,6 +130,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         on_before_delete: Callable[[ModelType, Session], None] | None = None,
         list_response_schema: type[ListResponseType] | None = None,
         list_response_builder: Callable[[list[ResponseSchemaType], int], ListResponseType] | None = None,
+        normalize_fields: dict[str, str] | None = None,
     ):
         """
         Initialize the CRUD router factory.
@@ -155,6 +158,10 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             on_before_delete: Hook called before deleting. Raise HTTPException to prevent.
             list_response_schema: Schema for list endpoint if different from List[response_schema]
             list_response_builder: Function to build list response from items and total
+            normalize_fields: Dict mapping field names to normalization type (e.g.,
+                              {"slug": "lower_strip", "name": "strip"}).
+                              When provided and on_before_create/on_before_update are NOT
+                              provided, auto-generates callbacks using crud_helpers.
         """
         self.model = model
         self.create_schema = create_schema
@@ -173,6 +180,24 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         self.on_before_delete = on_before_delete
         self.list_response_schema = list_response_schema
         self.list_response_builder = list_response_builder
+
+        # Auto-generate normalization callbacks when normalize_fields is provided
+        if normalize_fields:
+            if not self.on_before_create:
+                nf = normalize_fields  # capture for closure
+
+                def _auto_before_create(payload, db):
+                    return build_create_kwargs(payload, normalize_fields=nf)
+
+                self.on_before_create = _auto_before_create
+
+            if not self.on_before_update:
+                nf = normalize_fields  # capture for closure
+
+                def _auto_before_update(item, payload, db):
+                    apply_payload_updates(item, payload, db, normalize_fields=nf)
+
+                self.on_before_update = _auto_before_update
 
         self.logger = logging.getLogger(f"{__name__}.{model.__name__}")
 
@@ -223,9 +248,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
             existing = query.first()
             if existing:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"A {self._get_model_name().lower()} with {field} '{value}' already exists"
+                raise ValidationError(
+                    f"A {self._get_model_name().lower()} with {field} '{value}' already exists"
                 )
 
     def _build_order_by(self) -> list:
@@ -322,7 +346,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             item = db.query(self.model).filter(self.model.id == item_id).first()
 
             if not item:
-                raise HTTPException(status_code=404, detail=self.not_found_message)
+                raise ResourceNotFoundError(self.not_found_message)
 
             return self._model_to_response(item, db)
 
@@ -352,7 +376,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             item_id = path_params.get(id_param_name)
             item = db.query(model).filter(model.id == item_id).first()
             if not item:
-                raise HTTPException(status_code=404, detail=not_found_message)
+                raise ResourceNotFoundError(not_found_message)
             return to_response(item, db)
 
         _set_id_param_signature(get_item, id_param_name)
@@ -392,7 +416,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             item_id = path_params.get(id_param_name)
             item = db.query(model).filter(model.id == item_id).first()
             if not item:
-                raise HTTPException(status_code=404, detail=not_found_message)
+                raise ResourceNotFoundError(not_found_message)
 
             # Check uniqueness for fields being updated
             for field in unique_fields:
@@ -467,7 +491,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             item_id = path_params.get(id_param_name)
             item = db.query(model).filter(model.id == item_id).first()
             if not item:
-                raise HTTPException(status_code=404, detail=not_found_message)
+                raise ResourceNotFoundError(not_found_message)
 
             if on_before_delete:
                 on_before_delete(item, db)

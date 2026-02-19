@@ -70,6 +70,7 @@ from .modification_parsing import (
 )
 from .tokenization import _parse_multi_item_order
 from .inline_spec_parsing import _is_inline_attribute_spec_pattern
+from .extraction import _detect_inapplicable_modifiers
 from ...config_flow_utils import LAST_ITEM_PRONOUNS_EXTENDED
 
 logger = logging.getLogger(__name__)
@@ -339,6 +340,18 @@ def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | Non
             logger.info("Deterministic parse: 'more %s' -> duplicate_by_reference", item_ref)
             return OpenInputResponse(duplicate_by_reference=item_ref)
 
+    # Check for specials/signature menu inquiries BEFORE recommendation
+    # "do you have any specials today?" must match as signature menu, not recommendation
+    signature_result = parse_signature_menu_inquiry(text)
+    if signature_result:
+        return signature_result
+
+    # Check for recommendation questions BEFORE "show more" menu requests
+    # "what else do you think I should get?" must not be caught by MORE_MENU_ITEMS_PATTERNS
+    recommendation_result = parse_recommendation_inquiry(text)
+    if recommendation_result:
+        return recommendation_result
+
     # Check for "show more" menu requests BEFORE menu queries
     # "what other pastries do you have?" should be pagination, not a new query
     more_items_result = parse_more_menu_items(text)
@@ -350,13 +363,6 @@ def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | Non
     attribute_inquiry_result = parse_attribute_inquiry(text)
     if attribute_inquiry_result:
         return attribute_inquiry_result
-
-    # Check for specials/signature menu inquiries BEFORE dietary inquiry
-    # "do you have any specials today?" was incorrectly matched by availability patterns
-    # because it ends with "today", so we need to check for specials first
-    signature_result = parse_signature_menu_inquiry(text)
-    if signature_result:
-        return signature_result
 
     # Check for dietary/allergen/availability/customization inquiries
     # Must run BEFORE parse_menu_query since "do you have vegan sandwiches?" is a
@@ -376,11 +382,6 @@ def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | Non
     menu_query_result = parse_menu_query(text)
     if menu_query_result:
         return menu_query_result
-
-    # Check for recommendation questions
-    recommendation_result = parse_recommendation_inquiry(text)
-    if recommendation_result:
-        return recommendation_result
 
     # Check for store info inquiries
     store_info_result = parse_store_info_inquiry(text)
@@ -895,6 +896,10 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
     for rem in modifications.get("removals", []):
         mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
 
+    # Detect inapplicable modifiers: globally known ingredients the user tried to add
+    # that aren't valid for this item type (e.g., "hazelnut syrup" on Deviled Eggs)
+    unrecognized = _detect_inapplicable_modifiers(text_lower) if not mod_list else []
+
     parsed_items = [
         build_parsed_item(
             item_type=item_type_for_mods or "menu_item",
@@ -903,6 +908,7 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
             original_text=text,
             attr_result=attr_result,
             modifiers=mod_list,
+            unrecognized_ingredients=unrecognized,
         )
         for _ in range(qty)
     ]

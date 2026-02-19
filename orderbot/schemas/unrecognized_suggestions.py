@@ -32,28 +32,6 @@ class UnrecognizedMenuItemSuggestionOut(BaseModel):
     is_active: bool
     created_at: datetime | None = None
 
-    @classmethod
-    def from_db(cls, db_obj) -> "UnrecognizedMenuItemSuggestionOut":
-        """Create from database object with relationships."""
-        item_type_slug = None
-        if db_obj.suggested_item_type:
-            item_type_slug = db_obj.suggested_item_type.slug
-
-        menu_item_names = None
-        if db_obj.suggested_menu_items:
-            menu_item_names = [item.name for item in db_obj.suggested_menu_items]
-
-        return cls(
-            id=db_obj.id,
-            input_pattern=db_obj.input_pattern,
-            match_type=db_obj.match_type,
-            suggested_item_type_id=db_obj.suggested_item_type_id,
-            suggested_item_type_slug=item_type_slug,
-            suggested_menu_item_names=menu_item_names,
-            hit_count=db_obj.hit_count,
-            is_active=db_obj.is_active,
-            created_at=db_obj.created_at,
-        )
 
 
 class UnrecognizedMenuItemSuggestionCreate(BaseModel):
@@ -164,24 +142,6 @@ class UnrecognizedIngredientSuggestionOut(BaseModel):
     is_active: bool
     created_at: datetime | None = None
 
-    @classmethod
-    def from_db(cls, db_obj) -> "UnrecognizedIngredientSuggestionOut":
-        """Create from database object with relationships."""
-        alt_names = None
-        if db_obj.alternative_ingredients:
-            alt_names = [ing.name for ing in db_obj.alternative_ingredients]
-
-        return cls(
-            id=db_obj.id,
-            input_pattern=db_obj.input_pattern,
-            match_type=db_obj.match_type,
-            suggested_display_name=db_obj.suggested_display_name,
-            modifier_category=db_obj.modifier_category,
-            alternative_ingredient_names=alt_names,
-            hit_count=db_obj.hit_count,
-            is_active=db_obj.is_active,
-            created_at=db_obj.created_at,
-        )
 
 
 class UnrecognizedIngredientSuggestionCreate(BaseModel):

@@ -560,10 +560,11 @@ class MenuItemTask(ItemTask):
             if existing_defaults:
                 # All values we're trying to set are already defaults
                 if len(existing_defaults) == len(slugs_to_set):
-                    # User explicitly selected the same option as the default
-                    # Mark as user-selected (not auto-populated) so it's not re-asked
+                    # Value matches the default — keep is_default for pricing
+                    # (included in base price) but mark as confirmed so
+                    # configuration doesn't re-ask
                     for sel in existing_defaults:
-                        sel["is_default"] = False
+                        sel["_confirmed"] = True
                     return
                 # Some values are defaults, some aren't - only add the non-defaults
                 default_slugs = {m.get("slug") for m in existing_defaults}

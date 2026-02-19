@@ -311,6 +311,12 @@ class ModifierAdditionHandler:
             search_term = term
 
         matches = menu_cache.find_matching_ingredients(search_term)
+        # Fallback: if no matches, try resolving via modifier alias
+        # e.g., "almond" -> "Almond Milk" (alias lookup succeeds even when must_match blocks)
+        if not matches and menu_cache.is_known_modifier(search_term):
+            canonical = menu_cache.normalize_modifier(search_term)
+            if canonical != search_term:
+                matches = menu_cache.find_matching_ingredients(canonical)
         logger.info(
             "ADD_DURING_CONFIG: Looking up term '%s' (qty=%d), found %d matches: %s",
             search_term, quantity, len(matches), [m.get("name") for m in matches[:5]] if matches else []
@@ -630,9 +636,82 @@ class ModifierAdditionHandler:
         current_question = self.config_helper_handler.get_current_config_question(order, item)
         added_text = format_english_list(added_names)
 
-        if current_question:
-            message = f"Got it, I've added {added_text}. Now, for your {current_item_name}, {current_question.lower()}"
-        else:
-            message = f"Got it, I've added {added_text}."
+        if not current_question:
+            return StateMachineResult(
+                message=f"Got it, I've added {added_text}.",
+                order=order,
+            )
 
-        return StateMachineResult(message=message, order=order)
+        # Build quick replies from the current pending field's attribute options
+        qr = self._build_qr_for_pending_field(order, item, current_question)
+
+        # Rewrite question inline options to match QR labels for linkification
+        if qr and current_question.count("?") > 1:
+            question_lower = current_question.lower()
+            any_label_match = any(e["label"].lower() in question_lower for e in qr)
+            if not any_label_match:
+                first_part = current_question.split("?")[0].rstrip() + "?"
+                label_names = [e["label"] for e in qr]
+                current_question = first_part + " " + "? ".join(label_names) + "?"
+
+        message = f"Got it, I've added {added_text}. Now, for your {current_item_name}, {current_question.lower()}"
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
+
+    def _build_qr_for_pending_field(
+        self,
+        order: OrderTask,
+        item: MenuItemTask,
+        question: str,
+    ) -> list[dict[str, str]] | None:
+        """Build quick replies from the current pending field's attribute options."""
+        from .models.utilities import parse_pending_field
+
+        item_type, attr_slug = parse_pending_field(order.pending_field)
+        if not item_type or not attr_slug:
+            return None
+
+        try:
+            attrs = menu_cache.get_item_type_attributes(item_type)
+        except Exception:
+            logger.warning(
+                "Failed to load attributes for item_type=%s, attr_slug=%s",
+                item_type, attr_slug, exc_info=True,
+            )
+            return None
+
+        attr = attrs.get(attr_slug)
+        if not attr:
+            return None
+
+        input_type = attr.get("input_type", "single_select")
+        if input_type == "boolean":
+            return [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
+
+        if input_type in ("single_select", "multi_select"):
+            options = attr.get("options", [])
+            available = [o for o in options if o.get("is_available", True)]
+            if len(available) == 1 and attr.get("allow_none", False):
+                return [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
+            qr = [{"label": o["display_name"], "value": o["display_name"]} for o in available]
+
+            # If no QR label appears in the question text, replace with a single
+            # linkable phrase so the frontend can linkify it inline
+            # (e.g., "what kind of bread?" -> linkify "bread")
+            if qr:
+                from .utils.text import extract_question_phrase
+                from orderbot.cache.base import pluralize
+
+                question_lower = question.lower()
+                has_match = any(e["label"].lower() in question_lower for e in qr)
+                if not has_match:
+                    trigger = extract_question_phrase(question)
+                    if trigger and trigger.lower() in question_lower:
+                        qr = [{"label": trigger, "value": f"What {pluralize(trigger.lower())} do you have?"}]
+                    else:
+                        display = attr.get("display_name") or attr["slug"]
+                        if display.lower() in question_lower:
+                            qr = [{"label": display, "value": f"What {pluralize(display.lower())} do you have?"}]
+
+            return qr
+
+        return None

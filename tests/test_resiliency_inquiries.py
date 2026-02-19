@@ -1,13 +1,17 @@
 """
-Resiliency Test Batch 8: Menu Inquiries
+Resiliency Tests: Inquiries (menu, dietary, availability, help).
 
-Tests the system's ability to handle questions about the menu,
-prices, and store information.
+Consolidated from batches: 8, 11, 17, 18.
 """
 
-from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
-from orderbot.tasks.models import OrderTask
+import pytest
 
+from orderbot.tasks.models import OrderTask
+from orderbot.tasks.state_machine import OrderStateMachine, OrderPhase
+
+# =============================================================================
+# From test_resiliency_batch8.py
+# =============================================================================
 
 class TestMenuInquiries:
     """Batch 8: Menu Inquiries."""
@@ -612,3 +616,207 @@ class TestMenuInquiries:
         has_caramel = any('caramel' in slug for slug in modifier_slugs)
         assert has_caramel, \
             f"Caramel should be applied to the latte. Modifiers: {modifiers}"
+
+# =============================================================================
+# From test_resiliency_batch11.py
+# =============================================================================
+
+class TestDietaryAllergyQuestions:
+    """Batch 11: Dietary & Allergy Questions."""
+
+    def test_gluten_free_options(self):
+        """
+        Test: User asks about gluten-free options.
+
+        Scenario:
+        - User says: "do you have gluten-free options?"
+        - Expected: System responds about gluten-free availability
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("do you have gluten-free options?", order)
+
+        assert result.message is not None
+        # Should acknowledge the question
+        message_lower = result.message.lower()
+        responds = any(word in message_lower for word in [
+            "gluten", "free", "option", "bagel", "have", "yes", "no", "sorry"
+        ])
+        assert responds, f"Should respond about gluten-free. Message: {result.message}"
+
+# =============================================================================
+# From test_resiliency_batch17.py
+# =============================================================================
+
+class TestAvailabilityQuestions:
+    """Batch 17: Availability Questions."""
+
+    def test_is_salmon_available(self):
+        """
+        Test: User asks about specific item availability.
+
+        Scenario:
+        - User says: "is the salmon available?"
+        - Expected: System responds about salmon availability
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("is the salmon available?", order)
+
+        assert result.message is not None
+        # Should respond about availability
+        message_lower = result.message.lower()
+        responds = any(word in message_lower for word in [
+            "salmon", "lox", "nova", "yes", "no", "available", "have", "fish"
+        ])
+        assert responds, f"Should respond about salmon. Message: {result.message}"
+
+    def test_are_you_out_of_everything_bagels(self):
+        """
+        Test: User asks if they're out of something.
+
+        Scenario:
+        - User says: "are you out of everything bagels?"
+        - Expected: System responds about availability
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("are you out of everything bagels?", order)
+
+        assert result.message is not None
+        # Should respond about bagel availability
+        message_lower = result.message.lower()
+        responds = any(word in message_lower for word in [
+            "everything", "bagel", "yes", "no", "have", "available", "out"
+        ])
+        assert responds, f"Should respond about availability. Message: {result.message}"
+
+    def test_any_specials_today(self):
+        """
+        Test: User asks about specials.
+
+        Scenario:
+        - User says: "do you have any specials today?"
+        - Expected: System responds about specials
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("do you have any specials today?", order)
+
+        assert result.message is not None
+        # Should respond about specials or menu (signature items are the specials)
+        message_lower = result.message.lower()
+        responds = any(word in message_lower for word in [
+            "special", "signature", "menu", "recommend", "popular", "today", "have", "sorry"
+        ])
+        assert responds, f"Should respond about specials. Message: {result.message}"
+
+    def test_specials_pagination_what_else(self):
+        """
+        Test: User asks about specials then asks "what else" to see more.
+
+        Scenario:
+        - User says: "what are your specials?"
+        - Bot shows first batch with "and X more"
+        - User says: "what else"
+        - Expected: Bot shows more items, NOT "That's all we have"
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+
+        # First ask about specials
+        result1 = sm.process("what are your specials?", order)
+        assert result1.message is not None
+        assert "signature" in result1.message.lower()
+        # Should indicate there are more items
+        assert "more" in result1.message.lower(), f"Should show 'more' items. Message: {result1.message}"
+
+        # Now ask "what else" to paginate
+        result2 = sm.process("what else", result1.order)
+        assert result2.message is not None
+        message_lower = result2.message.lower()
+        # Should show more items, NOT say "that's all we have" (since there were 30+ items)
+        assert "also have" in message_lower, f"Should show more items. Message: {result2.message}"
+
+# =============================================================================
+# From test_resiliency_batch18.py
+# =============================================================================
+
+class TestHelpConfusion:
+    """Batch 18: Help & Confusion."""
+
+    def test_help_request(self):
+        """
+        Test: User says "help".
+
+        Scenario:
+        - User says: "help"
+        - Expected: System provides helpful guidance
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("help", order)
+
+        assert result.message is not None
+        # Should provide helpful response
+        message_lower = result.message.lower()
+        helps = any(word in message_lower for word in [
+            "help", "order", "bagel", "coffee", "menu", "can", "would", "like"
+        ])
+        assert helps, f"Should provide help. Message: {result.message}"
+
+    def test_im_confused(self):
+        """
+        Test: User says "I'm confused".
+
+        Scenario:
+        - User says: "I'm confused"
+        - Expected: System offers assistance
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("I'm confused", order)
+
+        assert result.message is not None
+        # Should offer help
+        message_lower = result.message.lower()
+        helps = any(word in message_lower for word in [
+            "help", "sorry", "let me", "can", "would", "order", "what"
+        ])
+        assert helps, f"Should offer help. Message: {result.message}"
+
+    def test_what_can_you_do(self):
+        """
+        Test: User asks "what can you do?".
+
+        Scenario:
+        - User says: "what can you do?"
+        - Expected: System explains its capabilities
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("what can you do?", order)
+
+        assert result.message is not None
+        # Should explain capabilities
+        message_lower = result.message.lower()
+        explains = any(word in message_lower for word in [
+            "order", "bagel", "coffee", "help", "can", "menu", "food", "drink"
+        ])
+        assert explains, f"Should explain capabilities. Message: {result.message}"

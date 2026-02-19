@@ -2,7 +2,9 @@
 Custom exceptions for the orderbot application.
 
 These exceptions provide clear, actionable error messages when
-configuration or data loading issues occur.
+configuration or data loading issues occur. Domain exceptions
+(OrderBotError hierarchy) replace raw HTTPException usage in business
+logic, letting the HTTP layer map them to appropriate status codes.
 """
 
 
@@ -43,3 +45,30 @@ class MenuDataNotLoadedError(RuntimeError):
 NOTIFICATION_ERRORS = (
     ImportError, ConnectionError, TimeoutError, OSError, ValueError, KeyError,
 )
+
+
+# =============================================================================
+# Domain Exceptions (mapped to HTTP status codes in main.py)
+# =============================================================================
+
+class OrderBotError(Exception):
+    """Base exception for all Orderbot domain errors."""
+
+    def __init__(self, detail: str):
+        self.detail = detail
+        super().__init__(detail)
+
+
+class ResourceNotFoundError(OrderBotError):
+    """Raised when a requested resource does not exist."""
+    pass
+
+
+class ValidationError(OrderBotError):
+    """Raised when input fails business-rule validation (e.g., duplicate slug)."""
+    pass
+
+
+class ReferentialIntegrityError(OrderBotError):
+    """Raised when an operation would violate referential integrity."""
+    pass

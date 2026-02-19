@@ -480,6 +480,12 @@
       height: 16px;
     }
 
+    .replay-btn.running {
+      background: var(--accent-primary, #e07830);
+      border-color: transparent;
+      color: #fff;
+    }
+
     .tts-status {
       margin-left: auto;
       font-size: 11px;
@@ -1419,6 +1425,11 @@
           <span class="icon" id="report-btn-icon"><i data-lucide="flag"></i></span>
           <span class="label" id="report-btn-label">Report</span>
         </button>
+        <button type="button" class="report-btn replay-btn" id="replay-btn"
+                title="Replay current conversation prompts" disabled>
+          <span class="icon"><i data-lucide="rotate-cw"></i></span>
+          <span class="label" id="replay-btn-label">Replay</span>
+        </button>
         <span class="tts-status" id="tts-status"></span>
       </div>
 
@@ -1886,6 +1897,7 @@
       addMessage("user", text);
       lastUserMessage = text;
       messageCount++;
+      if (messageCount >= 1) replayBtn.disabled = false;
       conversationHistory.push({ role: "user", content: text });
       setStatus("Sending...");
       showTypingIndicator();
@@ -2053,6 +2065,8 @@
         reportBtn.classList.remove("sent");
         reportBtn.disabled = false;
         reportBtnLabel.textContent = "Report";
+        replayBtn.disabled = true;
+        replayBtnLabel.textContent = "Replay";
       }
       startSession(callerId || null, storeId);
     });
@@ -2321,6 +2335,60 @@
         reportBtn.disabled = false;
         reportBtnLabel.textContent = "Report";
       }
+    });
+
+    // =====================================================
+    // Replay Button
+    // =====================================================
+    const replayBtn = document.getElementById("replay-btn");
+    const replayBtnLabel = document.getElementById("replay-btn-label");
+    let replayRunning = false;
+
+    replayBtn.addEventListener("click", async () => {
+      if (!sessionId || replayRunning) return;
+
+      // 1. Capture user messages from conversationHistory
+      const userPrompts = conversationHistory
+        .filter(m => m.role === "user")
+        .map(m => m.content);
+      if (userPrompts.length === 0) return;
+
+      replayRunning = true;
+      replayBtn.disabled = true;
+      replayBtnLabel.textContent = "Replaying...";
+      replayBtn.classList.add("running");
+
+      // 2. Reset session state (same pattern as startWithCallerIdBtn handler)
+      sessionId = null;
+      connected = false;
+      messagesEl.innerHTML = "";
+      messageCount = 0;
+      orderState = { status: "pending", items: [], total_price: 0 };
+      lastBotMessage = null;
+      lastUserMessage = null;
+      orderConfirmed = false;
+      conversationHistory = [];
+      abandonAnalyticsSent = false;
+      reportSent = false;
+      reportBtn.classList.remove("sent");
+      reportBtn.disabled = false;
+      reportBtnLabel.textContent = "Report";
+
+      // 3. Start fresh session
+      await startSession(currentCallerId || null, currentStoreId);
+
+      // 4. Replay each user prompt sequentially
+      for (const prompt of userPrompts) {
+        if (!sessionId) break;
+        await sendMessage(prompt);
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      // 5. Restore button
+      replayRunning = false;
+      replayBtn.disabled = false;
+      replayBtnLabel.textContent = "Replay";
+      replayBtn.classList.remove("running");
     });
 
     let audioEnabled = false;

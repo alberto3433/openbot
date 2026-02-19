@@ -7,21 +7,12 @@ from orderbot.models.
 
 from .base import Base
 
-# Config models
-from .config import (
-    AttributeInquiryKeyword,
-    ComponentSlotOption,
-    ItemType,
-    ItemTypeAlias,
-    ItemTypeComponentSlot,
-    MenuDisplayGroup,
-    MenuDisplayGroupAlias,
-    ModifierCategory,
-    ModifierCategoryAlias,
-    ModifierQualifier,
-    OverallCategory,
-    ResponsePattern,
-)
+# Config models (split across display, item_types, patterns, modifiers, components)
+from .display import MenuDisplayGroup, MenuDisplayGroupAlias, OverallCategory
+from .item_types import ItemType, ItemTypeAlias
+from .patterns import ResponsePattern, AttributeInquiryKeyword
+from .modifiers import ModifierCategory, ModifierCategoryAlias, ModifierQualifier
+from .components import ItemTypeComponentSlot, ComponentSlotOption
 
 # Attribute models
 from .attributes import (

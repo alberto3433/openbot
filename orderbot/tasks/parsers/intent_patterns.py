@@ -354,7 +354,7 @@ ONE_MORE_PATTERN = re.compile(
 # Generic pattern for "another X" / "one more X"
 # Captures multi-word item names (e.g., "another 6 bagel package")
 ANOTHER_ITEM_PATTERN = re.compile(
-    r"^(?:and\s+)?(?:one\s+more|another)\s+"
+    r"^(?:and\s+)?(?:(?:also\s+)?add\s+)?(?:one\s+more|another)\s+"
     r"(.+?)"  # Capture multi-word item names including numbers
     r"[\s!.,?]*$",
     re.IGNORECASE

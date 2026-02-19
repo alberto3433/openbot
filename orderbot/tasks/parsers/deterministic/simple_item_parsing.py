@@ -17,6 +17,7 @@ from orderbot.cache.base import singularize
 from ...schemas import OpenInputResponse
 from ..quantity_utils import extract_leading_quantity
 from .item_building import build_parsed_item
+from .extraction import _detect_inapplicable_modifiers
 
 logger = logging.getLogger(__name__)
 
@@ -156,12 +157,16 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
         matched_item, canonical_name, matched_item_type, quantity
     )
 
+    # Detect inapplicable modifiers (globally known but not valid for this item)
+    unrecognized = _detect_inapplicable_modifiers(text_lower)
+
     # Build parsed_items
     parsed_items = [
         build_parsed_item(
             item_type="menu_item",
             item_name=canonical_name,
             quantity=1,
+            unrecognized_ingredients=unrecognized,
         )
         for _ in range(quantity)
     ]

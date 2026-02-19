@@ -20,9 +20,10 @@ from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.intent_patterns import (
     ANOTHER_ITEM_PATTERN, ONE_MORE_PATTERN, MAKE_IT_N_CONFIG_PATTERN,
-    DONE_ORDERING_DURING_CONFIG_PATTERN,
+    DONE_ORDERING_DURING_CONFIG_PATTERN, strip_conversational_fillers,
 )
 from .parsers.inquiry_patterns import MORE_MENU_ITEMS_PATTERNS
+from .parsers.constants import REPEAT_ORDER_PATTERNS
 from .parsers.quantity_utils import parse_make_it_n_quantity, extract_leading_quantity
 from .checkout_messages import ErrorMessages
 from .config_input_validation import (
@@ -366,11 +367,32 @@ class ConfiguringItemHandler:
         if quantity_result:
             return quantity_result
 
-        # Check for "another item" request - redirect to finish current config first
+        # Check for "the same" / "I'll have the same" — duplicate the current item
+        if isinstance(item, MenuItemTask) and REPEAT_ORDER_PATTERNS.match(user_input.strip()):
+            item_name = item.menu_item_name or item.get_display_name()
+            add_result = self.modifier_addition_handler.handle_add_item_during_config(
+                item_name, item, order, require_prefix=False
+            )
+            if add_result:
+                return add_result
+
+        # Check for "another item" request
         # e.g., "another latte" or "one more bagel" while configuring size
         another_match = ANOTHER_ITEM_PATTERN.match(user_input)
         one_more_match = ONE_MORE_PATTERN.match(user_input)
+
+        if another_match:
+            # "another X" / "add another X" — try to add the named item to cart
+            extracted_name = another_match.group(1).strip()
+            if isinstance(item, MenuItemTask):
+                add_result = self.modifier_addition_handler.handle_add_item_during_config(
+                    extracted_name, item, order, require_prefix=False
+                )
+                if add_result:
+                    return add_result
+
         if another_match or one_more_match:
+            # Fallback: couldn't add item, or ONE_MORE with no name — finish current config
             item_name = item.get_display_name()
             current_question = self.config_helper_handler.get_current_config_question(order, item)
             if current_question:
@@ -621,7 +643,13 @@ class ConfiguringItemHandler:
         if not isinstance(item, MenuItemTask):
             return None
 
-        input_stripped = user_input.strip()
+        input_stripped = strip_conversational_fillers(user_input.strip())
+        # Strip mid-sentence "like" filler (e.g., "actually like make it three")
+        # Can't add to MID_SENTENCE_HESITATION_FILLERS globally because "like" is
+        # meaningful in "I'd like" / "I would like". Negative lookbehind protects those.
+        input_stripped = re.sub(
+            r"(?<!'d\s)(?<!would\s)\blike\s+", '', input_stripped, count=1, flags=re.IGNORECASE
+        )
         match = MAKE_IT_N_CONFIG_PATTERN.match(input_stripped)
         if not match:
             return None

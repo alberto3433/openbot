@@ -96,6 +96,10 @@ RECOMMENDATION_GENERAL_PATTERNS = [
     re.compile(r"(?:do\s+you\s+have\s+)?(?:any\s+)?specials?\s*(?:today|right\s+now)?\??$", re.IGNORECASE),
     # "give me a recommendation" / "I need a recommendation" / "I'd like a recommendation"
     re.compile(r"(?:give\s+me|i(?:'?d)?\s+(?:need|want|like))\s+(?:a\s+|some\s+)?recommendations?\s*\??$", re.IGNORECASE),
+    # "what else should I get/try/order?" / "what else can I get?"
+    re.compile(r"what\s+else\s+(?:should|could|would|can)\s+i\s+(?:get|try|order|have)", re.IGNORECASE),
+    # "what else do you think/suggest I should get?" / "what do you think I should get?"
+    re.compile(r"what\s+(?:else\s+)?do\s+you\s+(?:think|suggest)\s+i\s+should\s+(?:get|try|order|have)", re.IGNORECASE),
     # "what do people usually order?" / "what do most people get?"
     re.compile(r"what\s+(?:do\s+)?(?:people|most\s+people|customers?|everyone|everybody)\s+(?:usually\s+)?(?:order|get|have|like|go\s+for|go\s+with)", re.IGNORECASE),
     # "what's usually ordered?" / "what's commonly ordered?"

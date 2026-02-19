@@ -94,6 +94,39 @@ Each run produces a markdown report with this structure:
     [FAILED: reason]
 ```
 
+## Post-Run Summary (REQUIRED)
+
+After EVERY chaos monkey run, you MUST present a summary to the user with:
+
+1. **Totals line**: `Total: N | Passed: N | Failed: N (X%) | System Errors: N`
+2. **Failure table** with columns: `#`, `Scenario`, `Input`, `Expected`, `Actual`
+3. **Reproduce commands** — one `python -m pytest ...` command per generated test file
+
+### Example
+
+```
+## Chaos Monkey Run Results
+
+**Total: 80 | Passed: 77 | Failed: 3 (3.8%) | System Errors: 0**
+
+### Failures
+
+| # | Scenario | Input | Expected | Actual |
+|---|----------|-------|----------|--------|
+| 1 | Quantity change | `"a Bologna"` then `"make it two"` | Quantity updated to 2 | `Sorry, we don't have make it two...` |
+| 2 | Size correction | `"a Small Tuna Salad"` then `"make that a Large"` | Size changed to Large | `Sorry, we don't have make that a Large...` |
+
+### Reproduce locally
+
+python -m pytest tests/chaos_monkey/generated/test_failure_corpus_order_20260219_171655_7981d70a.py -v -s --tb=long
+python -m pytest tests/chaos_monkey/generated/test_failure_corpus_order_20260219_171720_0eb865a4.py -v -s --tb=long
+```
+
+- **Input**: Show the user message(s) that triggered the failure. For multi-turn, show `"turn1"` then `"turn2"`.
+- **Expected**: What the bot should have done (e.g., "Quantity updated to 2", "Item added to cart", "Size changed to Large").
+- **Actual**: The bot's actual response text, truncated with `...` if long.
+- If there are zero failures, just show the totals line and "No failures."
+
 ## Common Failure Categories
 
 - **Menu Item Not Found** — Bot says "sorry, we don't have X" when it should recognize the input

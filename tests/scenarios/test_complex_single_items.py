@@ -405,10 +405,10 @@ class TestComplexSandwichOrders:
         bread_selections = [s for s in item.selections if s.get("category") == "bread"]
         assert len(bread_selections) == 1, "Should have exactly one bread selection"
 
-        # Should NOT be marked as default since user explicitly chose it
+        # Should be marked as confirmed since user explicitly chose it
         bread_sel = bread_selections[0]
-        assert bread_sel.get("is_default") is False, (
-            "Bread should be marked as user-selected (is_default=False), not auto-populated"
+        assert bread_sel.get("_confirmed") is True, (
+            "Bread should be marked as confirmed (_confirmed=True) since user explicitly chose it"
         )
 
         # Response should NOT ask about bread

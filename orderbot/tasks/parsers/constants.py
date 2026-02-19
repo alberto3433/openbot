@@ -186,8 +186,8 @@ REPEAT_ORDER_PATTERNS = re.compile(
 # =============================================================================
 # Re-exports from parser_utils (backward compatibility)
 # =============================================================================
-# These were originally defined here and have many importers.
-# New code should import directly from parser_utils.
+# DEPRECATED: Import directly from orderbot.tasks.parsers.parser_utils instead.
+# These re-exports exist only for backward compatibility with existing importers.
 from .parser_utils import (  # noqa: F401
     match_small_talk,
     get_order_redirect,
@@ -208,8 +208,7 @@ from .parser_utils import (  # noqa: F401
     parse_reduce_to_one_sentinel,
 )
 
-# Re-export QUALIFIER_PATTERNS (moved to deterministic/instructions_extraction.py's sibling)
-# Only consumer is instructions_extraction.py which imports from ..constants
+# DEPRECATED: Import directly from orderbot.tasks.parsers.deterministic.qualifier_extraction.
 from .deterministic.qualifier_extraction import QUALIFIER_PATTERNS  # noqa: F401
 
 # Note: CHANGE_REQUEST_PATTERNS moved to intent_patterns.py.

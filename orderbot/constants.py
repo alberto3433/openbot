@@ -14,7 +14,7 @@ For attribute metadata constants, see orderbot/tasks/utils/constants.py.
 # create a single item with quantity=N instead of N separate items.
 # E.g., "10 plain bagels" creates 1 item with qty=10 (configure once)
 # vs "3 plain bagels" creates 3 items (configure each individually)
-MULTI_CONFIG_THRESHOLD = 5
+MULTI_CONFIG_THRESHOLD = 12
 
 # =============================================================================
 # Disambiguation & Matching Limits

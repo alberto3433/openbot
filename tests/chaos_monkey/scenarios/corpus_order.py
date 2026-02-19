@@ -61,7 +61,11 @@ class CorpusOrderScenario(BaseScenario):
 
     def generate(self) -> None:
         """Generate conversation turns from the pattern templates."""
-        for turn_template in self.pattern.turns:
+        total_turns = len(self.pattern.turns)
+
+        for i, turn_template in enumerate(self.pattern.turns):
+            is_last_turn = (i == total_turns - 1)
+
             # Fill slot placeholders in the template
             user_input = turn_template.template.format(**self.filled_slots)
 
@@ -78,10 +82,14 @@ class CorpusOrderScenario(BaseScenario):
                             )
                         )
 
+            # Only assert cart contents on the last turn — earlier turns
+            # (especially menu inquiries) haven't ordered anything yet
+            cart_items = list(self.expected_cart_items) if is_last_turn else []
+
             self.turns.append(ConversationTurn(
                 user_input=user_input,
                 expected_actions=expected_actions,
-                expected_items_in_cart=list(self.expected_cart_items),
+                expected_items_in_cart=cart_items,
                 allow_disambiguation=True,
                 is_menu_inquiry=turn_template.is_menu_inquiry,
             ))

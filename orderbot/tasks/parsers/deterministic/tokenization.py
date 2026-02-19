@@ -1125,6 +1125,13 @@ def _other_tokens_are_potential_modifiers(tokens: list["Token"], text: str) -> b
         # Filter out skip words by word boundary (not substring replace)
         words = [w for w in token_text.lower().strip().split() if w not in _SKIP_WORDS]
         text_clean = " ".join(words)
+        # Multi-word phrases matching a real menu item are NOT just modifiers.
+        # e.g., "scottish salmon" has words that are individual modifiers, but
+        # the phrase itself is a menu item and should not be demoted.
+        if " " in text_clean:
+            if (menu_cache.find_items_by_word_match(text_clean)
+                    or menu_cache.find_all_items_by_word_match(text_clean)):
+                return False
         for word in words:
             word = word.strip()
             if not word or word == "and" or word == "not":

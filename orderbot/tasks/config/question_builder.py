@@ -176,7 +176,6 @@ class QuestionBuilder:
     def build_base_question(
         self, attr: dict, item_ref: str, ordinal: str,
         has_duplicates: bool, multi_count: int,
-        has_default_value: bool = False,
     ) -> str:
         """
         Build the base question text based on input type and item context.
@@ -187,14 +186,10 @@ class QuestionBuilder:
             ordinal: "first", "second", etc.
             has_duplicates: True if same item appears multiple times
             multi_count: Total number of items being configured
-            has_default_value: True if the attribute only has auto-populated defaults
         """
         input_type = attr.get("input_type", "single_select")
         attr_name = attr["display_name"].lower()
-        if attr.get("allow_none") and attr.get("offer_question_text") and not has_default_value:
-            db_question = attr["offer_question_text"]
-        else:
-            db_question = attr.get("question_text")
+        db_question = attr.get("question_text")
 
         # Use DB's question_text if available, with appropriate prefix for multi-item orders
         if db_question:
@@ -231,7 +226,6 @@ class QuestionBuilder:
     def build_first_question_prefix(
         self, item: "MenuItemTask", order: "OrderTask", attr: dict,
         ordinal: str, item_num: int, has_duplicates: bool,
-        has_default_value: bool = False,
     ) -> str | None:
         """
         Build acknowledgment prefix for the first question of each item.
@@ -252,10 +246,7 @@ class QuestionBuilder:
                 # First item with duplicates: ordinal format with "Got it" prefix
                 # e.g. "Got it, for the first Bagel. What kind of bagel?"
                 item_desc = f"the {ordinal} {item_display}"
-                if attr.get("allow_none") and attr.get("offer_question_text") and not has_default_value:
-                    db_question = attr["offer_question_text"]
-                else:
-                    db_question = attr.get("question_text")
+                db_question = attr.get("question_text")
                 if db_question:
                     return f"Got it, for {item_desc}. {db_question}"
                 elif input_type == "boolean":
@@ -301,10 +292,7 @@ class QuestionBuilder:
                     item_desc = f"the {ordinal} {item_display}"
                 else:
                     item_desc = f"the {item_display}"
-                if attr.get("allow_none") and attr.get("offer_question_text") and not has_default_value:
-                    db_question = attr["offer_question_text"]
-                else:
-                    db_question = attr.get("question_text")
+                db_question = attr.get("question_text")
                 if db_question:
                     return f"For {item_desc}, {db_question[0].lower()}{db_question[1:]}"
                 elif input_type == "boolean":
@@ -440,7 +428,7 @@ class QuestionBuilder:
             if has_more:
                 message = (
                     f"{prefix}We don't have {unmatched_text}. "
-                    f"We have {options_str}... and more. Would you like to see more options?"
+                    f"We have {options_str}... and more — would you like to see more options?"
                 )
             else:
                 message = (
@@ -450,7 +438,7 @@ class QuestionBuilder:
         else:
             # Subsequent pages
             if has_more:
-                message = f"We also have {options_str}... and more. Would you like to see more?"
+                message = f"We also have {options_str}... and more — would you like to see more?"
             else:
                 message = f"And finally, {options_str}. Would you like any of these?"
 

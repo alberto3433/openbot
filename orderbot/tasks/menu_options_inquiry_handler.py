@@ -79,8 +79,8 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
             else:
                 order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(items))
             message = (
-                f"For {display_name.lower()}, we have {items_str}, and more. "
-                f"Would you like one of these, or want to hear more?"
+                f"For {display_name.lower()}, we have {items_str}, and more — "
+                f"would you like one of these, or want to hear more?"
             )
 
         qr = [{"label": name, "value": name} for name in batch]

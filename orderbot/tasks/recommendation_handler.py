@@ -206,7 +206,7 @@ class RecommendationHandler(MenuDataMixin):
                 qr.append({"label": "more", "value": "what else?"})
 
             return StateMachineResult(
-                message=f"We have a great selection! What are you in the mood for? We have {categories_text}.",
+                message=f"We have a great selection! We have {categories_text} — what are you in the mood for?",
                 order=order,
                 quick_replies=qr,
             )

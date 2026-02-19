@@ -12,12 +12,13 @@ import re
 from typing import Callable, TYPE_CHECKING
 
 from ..cache.base import pluralize
+from .checkout_utils_handler import _PICKUP_DELIVERY_QR
 from .models import (
     OrderTask,
     MenuItemTask,
 )
 from .parsers.quantity_utils import BASIC_WORD_TO_NUM
-from .schemas import StateMachineResult
+from .schemas import OrderPhase, StateMachineResult
 from ..services.tax_utils import calculate_taxes, round_money
 from .utils.text import normalize_text
 
@@ -219,9 +220,13 @@ class OrderUtilsHandler:
             lines.append(f"\nThat's ${subtotal:.2f} plus tax.")
 
         # Add phase-appropriate follow-up question
+        quick_replies = None
         if self._message_builder:
             follow_up = self._message_builder.get_phase_follow_up(order)
             lines.append(f"\n{follow_up}")
+            # Include quick_replies when the follow-up is a pickup/delivery question
+            if order.phase == OrderPhase.CHECKOUT_DELIVERY.value:
+                quick_replies = _PICKUP_DELIVERY_QR
 
         message = "\n".join(lines)
         logger.info("ORDER_STATUS: %d items, subtotal=%.2f, phase=%s", len(items), subtotal, order.phase)
@@ -229,4 +234,5 @@ class OrderUtilsHandler:
         return StateMachineResult(
             message=message,
             order=order,
+            quick_replies=quick_replies,
         )

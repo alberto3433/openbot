@@ -553,6 +553,12 @@ class TakingItemsHandler(MenuDataMixin):
             if result:
                 return result
 
+            # Try to extract a category reference from desire/mood phrases
+            # e.g., "I am in the mood for a sandwich" -> "sandwich" -> show sandwich items
+            result = self._try_extract_category_from_input(raw_user_input, order)
+            if result:
+                return result
+
             return StateMachineResult(
                 message="What can I get for you?",
                 order=order,
@@ -628,6 +634,67 @@ class TakingItemsHandler(MenuDataMixin):
             return False
         curated = self._unrecognized_handler._check_curated_suggestions(text.lower().strip())
         return curated is not None
+
+    # Pattern to strip desire/mood phrases that wrap a category reference
+    # e.g., "I am in the mood for a sandwich" -> "sandwich"
+    _DESIRE_MOOD_PATTERN = re.compile(
+        r"^(?:i(?:'?m| am)\s+(?:in the mood for|craving|feeling like)|"
+        r"how about|what about)\s+",
+        re.IGNORECASE,
+    )
+
+    def _try_extract_category_from_input(
+        self,
+        raw_input: str | None,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Try to extract a category reference from desire/mood phrases.
+
+        Handles inputs like "I am in the mood for a sandwich" by stripping
+        desire/mood prefixes, ordering prefixes, and articles, then checking
+        if the remainder is a category reference.
+
+        Args:
+            raw_input: The raw user input string.
+            order: The current order task.
+
+        Returns:
+            StateMachineResult if a category was found and routed, None otherwise.
+        """
+        if not raw_input or not self.menu_inquiry_handler:
+            return None
+
+        from .normalization import strip_ordering_prefix
+
+        text = raw_input.strip()
+
+        # Strip desire/mood phrases first
+        text = self._DESIRE_MOOD_PATTERN.sub("", text).strip()
+
+        # Also apply existing ordering prefix stripping ("I want", "can I get", etc.)
+        text = strip_ordering_prefix(text)
+
+        # Strip articles and trailing punctuation/please
+        text = re.sub(r"^(?:a|an|some|the)\s+", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*(?:please|thanks?)[.!?]*\s*$", "", text, flags=re.IGNORECASE)
+        text = text.strip().rstrip("?.!")
+
+        if not text:
+            return None
+
+        category_slug = menu_cache.is_category_reference(text)
+        if not category_slug:
+            return None
+
+        logger.info(
+            "Extracted category '%s' from desire/mood phrase: '%s'",
+            category_slug, raw_input,
+        )
+        result = self.menu_inquiry_handler.handle_category_clarification(category_slug, order)
+        # handle_category_clarification returns str when a single item matched
+        if isinstance(result, str):
+            return self.item_adder_handler.add_menu_item(result, 1, order)
+        return result
 
     # =========================================================================
     # Extracted Handler Methods (delegate to sub-handlers)

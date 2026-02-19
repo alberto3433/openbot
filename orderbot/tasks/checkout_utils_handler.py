@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _PICKUP_DELIVERY_QR = [
-    {"label": "Pickup", "value": "Pickup"},
-    {"label": "Delivery", "value": "Delivery"},
+    {"label": "pickup", "value": "pickup"},
+    {"label": "delivery", "value": "delivery"},
 ]
 
 

@@ -127,6 +127,12 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
                     # Also check if value is contained in option name
                     if opt_name and val in opt_name:
                         return True
+                    # Check if option name is contained in the input value
+                    # e.g., "whole wheat bagel toasted" contains option "whole wheat bagel"
+                    # This recognizes compound answers where the user provides extra
+                    # attribute values alongside the answer to the pending question
+                    if opt_name and len(opt_name) > 2 and opt_name in val:
+                        return True
 
             # For attributes with ingredient-linked options, check against
             # known modifiers (handles aliases and alternate forms)

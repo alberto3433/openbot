@@ -387,7 +387,7 @@ class SingleSelectHandler:
                 qr = [{"label": name, "value": name} for name in first_page]
                 qr.append({"label": "more", "value": "what else?"})
                 return StateMachineResult(
-                    message=f"Sure! We have {options_str}, and more. Which {attr_name} would you like?",
+                    message=f"Sure! We have {options_str}, and more — which {attr_name} would you like?",
                     order=order,
                     quick_replies=qr,
                 )
@@ -410,7 +410,7 @@ class SingleSelectHandler:
             first_page = available[:DEFAULT_PAGINATION_SIZE]
             names = [opt["display_name"] for opt in first_page]
             options_str = format_english_list(names, conjunction="and")
-            message = f"Sorry, we don't have {user_input}. We have {options_str}, and more. Do you want one of these or do you want to hear more options?"
+            message = f"Sorry, we don't have {user_input}. We have {options_str}, and more — do you want one of these or do you want to hear more options?"
             # Set pagination state so "yes" / "more options" works on next turn
             order.config_options_page = 1
             qr = [{"label": name, "value": name} for name in names]

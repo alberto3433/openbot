@@ -497,7 +497,7 @@ class SelectInputHandler:
                 has_more = True
                 message = (
                     f"Got it, {ack_text}. We don't have {unmatched_text}. "
-                    f"We have {options_str}... and more. Would you like to see more options?"
+                    f"We have {options_str}... and more — would you like to see more options?"
                 )
                 order.pending_unmatched_pagination.page = 1
 

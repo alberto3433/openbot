@@ -167,10 +167,11 @@ def chat_start(
     logger.info("New chat session started: %s (store: %s, caller_id: %s)",
                 session_id[:8], store_id or "default", caller_id or "none")
 
-    # Build quick replies for greeting
+    # Build quick replies for greeting — labels must match message text case
+    # so the frontend can linkify them inline
     pickup_delivery_qr = [
-        {"label": "Pickup", "value": "Pickup"},
-        {"label": "Delivery", "value": "Delivery"},
+        {"label": "pickup", "value": "pickup"},
+        {"label": "delivery", "value": "delivery"},
     ]
     if returning_customer and returning_customer.get("name"):
         greeting_qr = [{"label": "Last order", "value": "repeat my last order"}] + pickup_delivery_qr

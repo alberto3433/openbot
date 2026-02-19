@@ -227,6 +227,9 @@ class ModifierAdditionHandler:
     ) -> tuple[str | None, MenuItemTask, bool]:
         """Extract modifier text from an 'add X' user input."""
         user_stripped = strip_conversational_fillers(user_input.strip())
+        # Strip leading "and" connector left after filler stripping
+        # e.g., "oh and can you add X" → "oh" stripped → "and can you add X" → "can you add X"
+        user_stripped = re.sub(r"^and[,\s]+", "", user_stripped, flags=re.IGNORECASE).strip()
         user_lower = user_stripped.lower()
 
         logger.info("ADD_DURING_CONFIG: Checking input '%s'", user_stripped[:50])
@@ -467,6 +470,13 @@ class ModifierAdditionHandler:
                     alt.get_display_name(),
                 )
             else:
+                # Modifier not valid for any cart item — try adding as a new menu item
+                # e.g., "earl gray" is a tea, not a sandwich modifier
+                new_item_result = self.handle_add_item_during_config(
+                    match["name"], original_config_item, order, require_prefix=False
+                )
+                if new_item_result:
+                    return new_item_result
                 msg = modifier_not_available_for_item(
                     match["name"], item.get_display_name()
                 )

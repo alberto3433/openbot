@@ -96,6 +96,16 @@ RECOMMENDATION_GENERAL_PATTERNS = [
     re.compile(r"(?:do\s+you\s+have\s+)?(?:any\s+)?specials?\s*(?:today|right\s+now)?\??$", re.IGNORECASE),
     # "give me a recommendation" / "I need a recommendation" / "I'd like a recommendation"
     re.compile(r"(?:give\s+me|i(?:'?d)?\s+(?:need|want|like))\s+(?:a\s+|some\s+)?recommendations?\s*\??$", re.IGNORECASE),
+    # "what do people usually order?" / "what do most people get?"
+    re.compile(r"what\s+(?:do\s+)?(?:people|most\s+people|customers?|everyone|everybody)\s+(?:usually\s+)?(?:order|get|have|like|go\s+for|go\s+with)", re.IGNORECASE),
+    # "what's usually ordered?" / "what's commonly ordered?"
+    re.compile(r"what(?:'?s|\s+is)\s+(?:usually|commonly|frequently|typically|often)\s+(?:ordered|gotten|popular)", re.IGNORECASE),
+    # "most ordered item" / "most popular order"
+    re.compile(r"most\s+(?:ordered|popular)\s+(?:item|order|thing)s?\??$", re.IGNORECASE),
+    # "what are your top sellers" / "top items"
+    re.compile(r"(?:what\s+are\s+)?(?:your\s+)?top\s+(?:sellers?|items?|picks?|choices?)", re.IGNORECASE),
+    # "fan favorites" / "crowd favorites" / "customer favorites"
+    re.compile(r"(?:what\s+are\s+)?(?:your\s+|the\s+)?(?:fan|crowd|customer)\s+favorites?\??$", re.IGNORECASE),
 ]
 
 # Term-extracting recommendation patterns - data-driven item/type lookup

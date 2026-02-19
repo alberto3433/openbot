@@ -396,7 +396,7 @@ class MenuInquiryHandler(BaseHandler):
                     qr.append({"label": "more", "value": "what else?"})
 
                 return StateMachineResult(
-                    message=f"We have a great selection! What are you in the mood for? We have {categories_text}.",
+                    message=f"We have a great selection! We have {categories_text} — what are you in the mood for?",
                     order=order,
                     quick_replies=qr,
                 )
@@ -429,7 +429,7 @@ class MenuInquiryHandler(BaseHandler):
                 if len(group_names) > max_categories_to_show:
                     qr.append({"label": "more", "value": "what else?"})
                 return StateMachineResult(
-                    message=f"We don't have {type_display}, but we do have {categories_text}. What are you in the mood for?",
+                    message=f"We don't have {type_display}, but we do have {categories_text} — what are you in the mood for?",
                     order=order,
                     quick_replies=qr,
                 )

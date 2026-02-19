@@ -52,16 +52,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _QUESTION_PHRASE_RE = re.compile(r'(?:what|which)\s+(.+?)\s*\?', re.IGNORECASE)
+_HOW_QUESTION_RE = re.compile(
+    r'how\s+(?:would|do)\s+you\s+(?:like|want)\s+(?:your\s+)?(.+?)\s*\?',
+    re.IGNORECASE,
+)
 
 
 def _extract_question_phrase(question_text: str) -> str | None:
-    """Extract the noun phrase from a 'what/which …?' question.
+    """Extract the noun phrase from a question.
+
+    Handles 'what/which X?' and 'how would you like (your) X?' patterns.
 
     >>> _extract_question_phrase("What type of tea?")
     'type of tea'
+    >>> _extract_question_phrase("How would you like your eggs?")
+    'eggs'
     >>> _extract_question_phrase("Would you like it toasted?")
     """
     m = _QUESTION_PHRASE_RE.search(question_text)
+    if m:
+        return m.group(1).strip()
+    m = _HOW_QUESTION_RE.search(question_text)
     return m.group(1).strip() if m else None
 
 
@@ -334,22 +345,6 @@ class MenuItemConfigHandler(BaseHandler):
 
         return matched
 
-    def _build_question_text(self, attr: dict) -> str:
-        """Build question text for an attribute, preferring DB-configured question_text.
-
-        Used for mandatory attribute questions. Optional attributes have
-        additional logic for listing options inline.
-        """
-        if attr.get("allow_none") and attr.get("offer_question_text"):
-            return attr["offer_question_text"]
-        db_question = attr.get("question_text")
-        if db_question:
-            return db_question
-        attr_name = attr["display_name"].lower()
-        if attr.get("input_type") == "boolean":
-            return f"Would you like it {attr_name}?"
-        return f"What kind of {attr_name} would you like?"
-
     def _format_checkpoint_questions(self, attrs: list[dict]) -> tuple[str, list[dict[str, str]]]:
         """Format unanswered optional attributes as individual questions with quick replies.
 
@@ -481,15 +476,6 @@ class MenuItemConfigHandler(BaseHandler):
         if unmatched_result:
             return unmatched_result
 
-        # Check if this attribute only has auto-populated default values
-        # (not user-selected). If so, use the "offer" question to let user confirm/change.
-        selections = item.get_selections(attr["slug"])
-        has_only_defaults = bool(selections) and all(
-            sel.get("is_default", False) if isinstance(sel, dict)
-            else getattr(sel, "is_default", False)
-            for sel in selections
-        )
-
         # Calculate ordinal position and context for multi-item orders
         ordinal, item_num, has_duplicates = self._question_builder.calculate_item_ordinal(item, order)
         multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
@@ -498,7 +484,6 @@ class MenuItemConfigHandler(BaseHandler):
         # Build base question text
         base_question = self._question_builder.build_base_question(
             attr, item_ref, ordinal, has_duplicates, multi_count,
-            has_default_value=has_only_defaults,
         )
         question = base_question
 
@@ -506,7 +491,6 @@ class MenuItemConfigHandler(BaseHandler):
         if is_first_question:
             prefix = self._question_builder.build_first_question_prefix(
                 item, order, attr, ordinal, item_num, has_duplicates,
-                has_default_value=has_only_defaults,
             )
             if prefix:
                 # For subsequent items or first-with-duplicates, prefix IS the full question

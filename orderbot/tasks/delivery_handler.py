@@ -9,6 +9,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from .checkout_messages import CheckoutMessages
+from .checkout_utils_handler import _PICKUP_DELIVERY_QR
 from .pending_fields import PendingField
 from .models import OrderTask
 from .schemas import OrderPhase, StateMachineResult
@@ -110,10 +111,7 @@ class DeliveryHandler(BaseHandler):
                     self._last_order_type,
                 ) if self._message_builder else CheckoutMessages.PICKUP_OR_DELIVERY,
                 order=order,
-                quick_replies=[
-                    {"label": "Pickup", "value": "Pickup"},
-                    {"label": "Delivery", "value": "Delivery"},
-                ],
+                quick_replies=_PICKUP_DELIVERY_QR,
             )
 
         order.delivery_method.order_type = parsed.choice

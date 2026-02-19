@@ -320,12 +320,12 @@ class OptionsInquiryHandler:
 
         if is_first_page:
             if has_more:
-                return f"We have {options_str}, and more. Would you like to hear the rest?"
+                return f"We have {options_str}, and more — would you like to hear the rest?"
             else:
                 return f"We have {options_str}."
         else:
             if has_more:
-                return f"We also have {options_str}, and more. Want to hear more?"
+                return f"We also have {options_str}, and more — want to hear more?"
             else:
                 return f"And finally, {options_str}. That's all of them."
 

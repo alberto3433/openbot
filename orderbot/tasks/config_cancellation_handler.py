@@ -65,6 +65,21 @@ STANDALONE_CANCEL_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# Pattern for abandoning the entire order during TAKING_ITEMS phase.
+# These phrases express whole-order cancellation intent (not single-item removal).
+# Matches: "I changed my mind", "never mind", "forget it", "cancel", etc.
+CANCEL_ORDER_PATTERN = re.compile(
+    r"^(?:"
+    r"(?:i\s+)?changed?\s*my\s*mind(?:,?\s*(?:cancel|never\s*mind|nevermind))?"
+    r"|never\s*mind(?:,?\s*cancel)?"
+    r"|nevermind(?:,?\s*cancel)?"
+    r"|forget\s*(?:it|about\s+it)"
+    r"|cancel"
+    r"|(?:i\s+)?don'?t\s+want\s+(?:anything|to\s+order)(?:\s+(?:anymore|any\s*more))?"
+    r")[\s!.,?]*$",
+    re.IGNORECASE
+)
+
 
 def _extract_modifier_and_item_reference(cancel_desc: str) -> tuple[str, str] | None:
     """Extract modifier and item reference from phrases like 'onions on the leo'.

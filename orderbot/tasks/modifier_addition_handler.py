@@ -56,7 +56,8 @@ ADD_MODIFIER_MIDDLE_PATTERN = re.compile(
     r"|i\s+want\s+(.+?)\s+on\s+(?:that|it|this|there)"
     r"|(?:put|throw)\s+(?:some\s+)?(.+?)\s+on\s+(?:that|it|this|there)"
     r"|(?:can|could)\s+(?:you\s+)?(?:put|throw)\s+(?:some\s+)?(.+?)\s+on\s+(?:that|it|this|there)"
-    r")(?:\s+(?:please|thanks|thank\s+you))?$",
+    r"|(?:can|could)\s+i\s+(?:get|have)\s+(.+?)\s+on\s+(?:that|it|this|there)"
+    r")(?:\s+(?:please|thanks|thank\s+you))?[\s?!.,]*$",
     re.IGNORECASE
 )
 

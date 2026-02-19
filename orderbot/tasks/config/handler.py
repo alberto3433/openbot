@@ -351,9 +351,12 @@ class MenuItemConfigHandler(BaseHandler):
         return f"What kind of {attr_name} would you like?"
 
     def _format_checkpoint_questions(self, attrs: list[dict]) -> tuple[str, list[dict[str, str]]]:
-        """Format unanswered optional attributes as individual questions with quick replies."""
+        """Format unanswered optional attributes as individual questions with quick replies.
+
+        Prepends a clickable "No?" link so the user can quickly decline all remaining options.
+        """
         questions = []
-        quick_replies = []
+        quick_replies: list[dict[str, str]] = [{"label": "No?", "value": "no"}]
         for attr in attrs:
             q = attr.get("offer_question_text") or attr.get("question_text")
             if not q:
@@ -365,7 +368,7 @@ class MenuItemConfigHandler(BaseHandler):
                 "label": q,
                 "value": f"What {pluralize(display.lower())} do you have?",
             })
-        return " ".join(questions), quick_replies
+        return "No? " + " ".join(questions), quick_replies
 
     # =========================================================================
     # Main Entry Point

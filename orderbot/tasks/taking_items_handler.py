@@ -300,6 +300,12 @@ class TakingItemsHandler(MenuDataMixin):
         if result:
             return result
 
+        # Check for standalone cancel/abandon phrases: "I changed my mind", "never mind",
+        # "forget it", "cancel", etc. During TAKING_ITEMS these clear the entire order.
+        result = self._check_cancel_order(user_input, order)
+        if result:
+            return result
+
         # When items are in the cart and user gives a negative response
         # to "Anything else?", treat it as done ordering.
         # Handles: "no", "nope", "no nothing else", "nah I'm good", etc.
@@ -626,6 +632,50 @@ class TakingItemsHandler(MenuDataMixin):
     # =========================================================================
     # Extracted Handler Methods (delegate to sub-handlers)
     # =========================================================================
+
+    def _check_cancel_order(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Check for standalone cancel phrases that abandon the entire order.
+
+        Matches "I changed my mind", "never mind", "forget it", "cancel", etc.
+        Only clears the cart when there are active items; otherwise ignored
+        so the input can be handled by downstream parsers.
+        """
+        from .config_cancellation_handler import CANCEL_ORDER_PATTERN, START_OVER_PATTERN
+        from .handler_utils import remove_item_from_order
+        from .schemas import OrderPhase
+
+        stripped = user_input.strip()
+        is_cancel = CANCEL_ORDER_PATTERN.match(stripped)
+        is_start_over = not is_cancel and START_OVER_PATTERN.match(stripped)
+
+        if not is_cancel and not is_start_over:
+            return None
+
+        active_items = order.items.get_active_items()
+        if not active_items:
+            return None
+
+        num_items = len(active_items)
+        for item in active_items:
+            remove_item_from_order(order, item)
+        order.clear_pending()
+        order.set_phase(OrderPhase.TAKING_ITEMS)
+
+        if is_start_over:
+            logger.info("Start over during TAKING_ITEMS: cleared %d items", num_items)
+            return StateMachineResult(
+                message="OK, let's start over. What would you like to order?",
+                order=order,
+            )
+        logger.info("Cancel order during TAKING_ITEMS: cleared %d items", num_items)
+        return StateMachineResult(
+            message="OK, I've cleared your order. What would you like to order?",
+            order=order,
+        )
 
     def _handle_item_cancellation(
         self,

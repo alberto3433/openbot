@@ -27,10 +27,13 @@ class ChaosMonkeyConfig:
 
     # Scenario weights (must sum to 1.0)
     scenario_weights: dict[str, float] = field(default_factory=lambda: {
-        "modifier_flow": 0.35,
-        "menu_inquiry": 0.35,
-        "single_item": 0.15,
-        "multi_item": 0.10,
+        "corpus_order": 0.40,
+        "realistic_order": 0.15,
+        "modifier_flow": 0.15,
+        "menu_inquiry": 0.10,
+        "tricky": 0.05,
+        "single_item": 0.05,
+        "multi_item": 0.05,
         "cart_ops": 0.05,
     })
 

@@ -17,12 +17,14 @@ from .modifier_change_handler import ChangeRequest
 from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
 from .utils.option_matcher import OptionMatcher
+from .models.utilities import parse_pending_field
 from .config.attribute_resolver import get_skipped_attributes
 from .config_flow_utils import (
     continue_config_with_message as _continue_config,
     start_modifier_disambiguation as _start_disambig,
     replace_or_add_modifier as _replace_or_add,
     apply_attribute_option_to_item as _apply_attr_option,
+    get_handler_pricing as _get_handler_pricing,
 )
 
 if TYPE_CHECKING:
@@ -58,20 +60,6 @@ class BundleModificationHandler:
     @taking_items_handler.setter
     def taking_items_handler(self, handler: "TakingItemsHandler | None") -> None:
         self._taking_items_handler = handler
-
-    def _get_pricing(self):
-        """Get the pricing engine from taking_items_handler, or None if unavailable."""
-        return self._taking_items_handler.pricing if self._taking_items_handler else None
-
-    def _continue_config_with_message(
-        self, message: str, item: MenuItemTask, order: OrderTask
-    ) -> StateMachineResult:
-        return _continue_config(self.config_helper_handler, self.checkout_utils_handler, message, item, order)
-
-    def _start_modifier_disambiguation(
-        self, new_value: str, matches: list[dict], item: MenuItemTask, order: OrderTask
-    ) -> StateMachineResult:
-        return _start_disambig(new_value, matches, item, order)
 
     def _replace_or_add_modifier(self, item: MenuItemTask, match: dict, quantity: int = 1) -> None:
         pricing = self.modifier_change_handler.pricing if self.modifier_change_handler else None
@@ -145,9 +133,9 @@ class BundleModificationHandler:
         modifier_lower = modifier.lower()
         applied_name = self._apply_attribute_option_to_item(modifier_lower, child)
         if applied_name:
-            pricing = self._get_pricing()
+            pricing = _get_handler_pricing(self)
             safe_recalculate_price(pricing, child, "after bundle child attribute change")
-            return self._continue_config_with_message(
+            return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                 f"Sure, {applied_name}.", parent_item, order
             )
 
@@ -173,15 +161,13 @@ class BundleModificationHandler:
 
         Uses exact_only matching to avoid false partial matches on unrelated attributes.
         """
-        pending_field = order.pending_field
-        if not pending_field or ":" not in pending_field:
-            return None
-
         item_type = item.menu_item_type
         if not item_type:
             return None
 
-        _, pending_attr = pending_field.split(":", 1)
+        _, pending_attr = parse_pending_field(order.pending_field)
+        if not pending_attr:
+            return None
 
         try:
             all_attrs = menu_cache.get_item_type_attributes(item_type)
@@ -218,7 +204,7 @@ class BundleModificationHandler:
         display_name = get_option_display_name(matched_option)
         item[matched_attr_slug] = matched_option["slug"]
 
-        pricing = self._get_pricing()
+        pricing = _get_handler_pricing(self)
         safe_recalculate_price(pricing, item, "after cross-attribute match")
 
         logger.info(
@@ -242,7 +228,7 @@ class BundleModificationHandler:
                 next_result = StateMachineResult(message=msg, order=order)
             return next_result
 
-        return self._continue_config_with_message(
+        return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
             f"Got it, {display_name}.", item, order
         )
 
@@ -271,7 +257,7 @@ class BundleModificationHandler:
                 )
                 if result.success:
                     logger.info("APPLY_MOD_DURING_CONFIG: Applied attribute change %s=%s", attr_slug, new_value)
-                    return self._continue_config_with_message(
+                    return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                         f"Sure, I've changed that to {new_value}.", item, order
                     )
 
@@ -282,13 +268,13 @@ class BundleModificationHandler:
             match = matches[0]
             self._replace_or_add_modifier(item, match)
             logger.info("APPLY_MOD_DURING_CONFIG: Applied modifier change %s (%s)", match['name'], match['category'])
-            return self._continue_config_with_message(
+            return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                 f"Sure, I've changed the {match['category']} to {match['name']}.", item, order
             )
 
         if len(matches) > 1:
             logger.info("APPLY_MOD_DURING_CONFIG: Multiple matches for '%s', starting disambiguation", new_value)
-            return self._start_modifier_disambiguation(new_value, matches, item, order)
+            return _start_disambig(new_value, matches, item, order)
 
         logger.debug("APPLY_MOD_DURING_CONFIG: Could not apply change for '%s'", new_value)
         return None

@@ -35,25 +35,3 @@ class TestDietaryAllergyQuestions:
         ])
         assert responds, f"Should respond about gluten-free. Message: {result.message}"
 
-    @pytest.mark.skip(reason="Dietary question handling not yet implemented")
-    def test_dairy_free_cream_cheese(self):
-        """
-        Test: User asks about dairy-free cream cheese.
-
-        Scenario:
-        - User says: "is the cream cheese dairy-free?"
-        - Expected: System responds about dairy content
-        """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-
-        sm = OrderStateMachine()
-        result = sm.process("is the cream cheese dairy-free?", order)
-
-        assert result.message is not None
-        # Should respond about cream cheese
-        message_lower = result.message.lower()
-        responds = any(word in message_lower for word in [
-            "cream cheese", "dairy", "no", "yes", "sorry", "contain"
-        ])
-        assert responds, f"Should respond about dairy. Message: {result.message}"

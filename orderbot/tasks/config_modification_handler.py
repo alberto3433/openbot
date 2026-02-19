@@ -20,11 +20,13 @@ from .pending_fields import PendingField
 from .parsers.quantity_utils import extract_leading_quantity
 from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
+from .models.utilities import parse_pending_field
 from .config_flow_utils import (
     continue_config_with_message as _continue_config,
     start_modifier_disambiguation as _start_disambig,
     replace_or_add_modifier as _replace_or_add,
     apply_attribute_option_to_item as _apply_attr_option,
+    get_handler_pricing as _get_handler_pricing,
 )
 
 if TYPE_CHECKING:
@@ -75,10 +77,6 @@ class ConfigModificationHandler:
     def taking_items_handler(self, handler: "TakingItemsHandler | None") -> None:
         """Set the taking items handler (called after initialization to avoid circular deps)."""
         self._taking_items_handler = handler
-
-    def _get_pricing(self):
-        """Get the pricing engine from taking_items_handler, or None if unavailable."""
-        return self._taking_items_handler.pricing if self._taking_items_handler else None
 
     # ─── Group 1: "Can You Make It?" ─────────────────────────────────
 
@@ -224,11 +222,11 @@ class ConfigModificationHandler:
                 else:
                     item[attr_slug] = opt_slug
 
-                pricing = self._get_pricing()
+                pricing = _get_handler_pricing(self)
                 safe_recalculate_price(pricing, item, "after attribute change")
                 opt_name = get_option_display_name(opt)
                 qty_prefix = f"{quantity} " if quantity > 1 else ""
-                return self._continue_config_with_message(
+                return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                     f"Sure, {qty_prefix}{opt_name}.", item, order
                 )
         except (KeyError, AttributeError) as e:
@@ -274,15 +272,13 @@ class ConfigModificationHandler:
                 )
                 item[priced_attr] = opt_slug
                 item.quantity = 2  # Two quarter-pound portions = half pound
-                pricing = self._get_pricing()
+                pricing = _get_handler_pricing(self)
                 safe_recalculate_price(pricing, item, "after half pound")
                 # If this answers the current pending question, clear it
-                pending = order.pending_field
-                if pending and ":" in pending:
-                    _, pending_attr = pending.split(":", 1)
-                    if pending_attr == priced_attr:
-                        order.pending_field = None
-                return self._continue_config_with_message(
+                _, pending_attr = parse_pending_field(order.pending_field)
+                if pending_attr == priced_attr:
+                    order.pending_field = None
+                return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                     "Okay, 1/2 lb.", item, order
                 )
 
@@ -295,17 +291,15 @@ class ConfigModificationHandler:
                 modifier_lower, priced_attr, opt_slug
             )
             item[priced_attr] = opt_slug
-            pricing = self._get_pricing()
+            pricing = _get_handler_pricing(self)
             safe_recalculate_price(pricing, item, "after weight change")
             from .handler_utils import get_option_display_name
             opt_name = get_option_display_name(option)
             # If this answers the current pending question, clear it so we move to next
-            pending = order.pending_field
-            if pending and ":" in pending:
-                _, pending_attr = pending.split(":", 1)
-                if pending_attr == priced_attr:
-                    order.pending_field = None
-            return self._continue_config_with_message(
+            _, pending_attr = parse_pending_field(order.pending_field)
+            if pending_attr == priced_attr:
+                order.pending_field = None
+            return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                 f"Okay, {opt_name}.", item, order
             )
         return None
@@ -365,12 +359,12 @@ class ConfigModificationHandler:
             match = matches[0]
             self._replace_or_add_modifier(item, match, quantity=quantity)
             logger.info("CAN_YOU_MAKE_IT: Applied modifier %s (%s) qty=%d", match['name'], match['category'], quantity)
-            return self._continue_config_with_message(
+            return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                 f"Sure, I've changed the {match['category']} to {match['name']}.", item, order
             )
         elif len(matches) > 1:
             logger.info("CAN_YOU_MAKE_IT: Multiple matches for '%s', starting disambiguation", modifier)
-            return self._start_modifier_disambiguation(modifier, matches, item, order)
+            return _start_disambig(modifier, matches, item, order)
 
         return None
 
@@ -514,13 +508,3 @@ class ConfigModificationHandler:
     def _replace_or_add_modifier(self, item: MenuItemTask, match: dict, quantity: int = 1) -> None:
         pricing = self.modifier_change_handler.pricing if self.modifier_change_handler else None
         _replace_or_add(item, match, pricing, quantity)
-
-    def _continue_config_with_message(
-        self, message: str, item: MenuItemTask, order: OrderTask
-    ) -> StateMachineResult:
-        return _continue_config(self.config_helper_handler, self.checkout_utils_handler, message, item, order)
-
-    def _start_modifier_disambiguation(
-        self, new_value: str, matches: list[dict], item: MenuItemTask, order: OrderTask
-    ) -> StateMachineResult:
-        return _start_disambig(new_value, matches, item, order)

@@ -18,6 +18,7 @@ from .parsers.quantity_utils import extract_leading_quantity
 from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
 from .utils.option_matcher import OptionMatcher
+from .models.utilities import parse_pending_field
 from .config.attribute_resolver import get_unanswered_mandatory
 from .config_flow_utils import (
     continue_config_with_message as _continue_config,
@@ -103,16 +104,6 @@ class ModifierAdditionHandler:
     @taking_items_handler.setter
     def taking_items_handler(self, handler: "TakingItemsHandler | None") -> None:
         self._taking_items_handler = handler
-
-    def _continue_config_with_message(
-        self, message: str, item: MenuItemTask, order: OrderTask
-    ) -> StateMachineResult:
-        return _continue_config(self.config_helper_handler, self.checkout_utils_handler, message, item, order)
-
-    def _start_modifier_disambiguation(
-        self, new_value: str, matches: list[dict], item: MenuItemTask, order: OrderTask
-    ) -> StateMachineResult:
-        return _start_disambig(new_value, matches, item, order)
 
     def _start_attribute_option_selection(
         self,
@@ -225,7 +216,7 @@ class ModifierAdditionHandler:
         added_text = format_english_list(added_names)
         message = f"Sure, I've added {added_text}."
 
-        return self._continue_config_with_message(message, original_config_item, order)
+        return _continue_config(self.config_helper_handler, self.checkout_utils_handler,message, original_config_item, order)
 
     def _extract_add_modifier_text(
         self,
@@ -348,7 +339,7 @@ class ModifierAdditionHandler:
                 "ADD_DURING_CONFIG: Multiple matches for '%s', starting disambiguation",
                 term
             )
-            return self._start_modifier_disambiguation(term, matches, item, order)
+            return _start_disambig(term, matches, item, order)
         else:
             logger.warning(
                 "ADD_DURING_CONFIG: Could not find modifier '%s' in database",
@@ -367,9 +358,7 @@ class ModifierAdditionHandler:
     ) -> StateMachineResult | None:
         """Check if a matched ingredient is an answer to the pending attribute question."""
         ingredient_slug = match["slug"]
-        pending_attr = None
-        if order.pending_field and ":" in order.pending_field:
-            _, pending_attr = order.pending_field.split(":", 1)
+        _, pending_attr = parse_pending_field(order.pending_field)
 
         if not pending_attr or match.get("category") != pending_attr:
             return None
@@ -407,7 +396,7 @@ class ModifierAdditionHandler:
         else:
             order.pending_field = None
         message = f"Got it, {match.get('name', ingredient_slug)}."
-        return self._continue_config_with_message(
+        return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
             message, original_config_item, order
         )
 
@@ -462,7 +451,7 @@ class ModifierAdditionHandler:
                 msg = modifier_not_available_for_item(
                     match["name"], item.get_display_name()
                 )
-                return self._continue_config_with_message(
+                return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                     msg, original_config_item, order
                 )
             alt = self._find_item_accepting_modifier(
@@ -480,7 +469,7 @@ class ModifierAdditionHandler:
                 msg = modifier_not_available_for_item(
                     match["name"], item.get_display_name()
                 )
-                return self._continue_config_with_message(
+                return _continue_config(self.config_helper_handler, self.checkout_utils_handler,
                     msg, original_config_item, order
                 )
 

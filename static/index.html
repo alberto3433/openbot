@@ -2032,9 +2032,7 @@
       if (!text) return;
       inputEl.value = "";
       inputEl.style.height = 'auto';
-      // Normalize newlines to commas so multi-item parser handles each line as a separate item
-      const normalized = text.replace(/\n+/g, ', ');
-      sendMessage(normalized);
+      sendMessage(text);
     });
 
     startWithCallerIdBtn.addEventListener("click", () => {

@@ -26,7 +26,7 @@ from ..constants import (
     make_last_n_sentinel,
     make_reduce_to_one_sentinel,
 )
-from ..quantity_utils import QTY_WORDS_RE
+from ..quantity_utils import QTY_WORDS_RE, BASIC_WORD_TO_NUM
 from ..intent_patterns import (
     strip_conversational_fillers,
     MAKE_IT_N_PATTERN,
@@ -792,12 +792,7 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
                 cancel_item.lower()
             )
             if last_n_match:
-                from ..quantity_utils import BASIC_WORD_TO_NUM
-                num_str = last_n_match.group(1)
-                if num_str.isdigit():
-                    count = int(num_str)
-                else:
-                    count = BASIC_WORD_TO_NUM.get(num_str, 0)
+                count = _parse_quantity_count(last_n_match.group(1))
                 if count >= 1:
                     logger.info("Deterministic parse: remove last %d items detected", count)
                     return OpenInputResponse(cancel_item=make_last_n_sentinel(count))
@@ -810,12 +805,7 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
                 cancel_item.lower()
             )
             if just_n_match:
-                from ..quantity_utils import BASIC_WORD_TO_NUM
-                num_str = just_n_match.group(1)
-                if num_str.isdigit():
-                    count = int(num_str)
-                else:
-                    count = BASIC_WORD_TO_NUM.get(num_str, 0)
+                count = _parse_quantity_count(just_n_match.group(1))
                 if count >= 1:
                     logger.info("Deterministic parse: remove %d items detected", count)
                     return OpenInputResponse(cancel_item=make_last_n_sentinel(count))
@@ -829,6 +819,94 @@ def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
         return add_more_result
 
     return None
+
+
+def _parse_quantity_count(num_str: str) -> int:
+    """Convert a digit string or number word to an integer count.
+
+    Args:
+        num_str: A digit string ("2") or number word ("two").
+
+    Returns:
+        The integer count, or 0 if unrecognized.
+    """
+    if num_str.isdigit():
+        return int(num_str)
+    return BASIC_WORD_TO_NUM.get(num_str.lower(), 0)
+
+
+def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
+    """Match text against direct (non-configurable) menu items from the database.
+
+    Performs item lookup, attribute extraction (excluding the matched item name span),
+    modification extraction, and deduplication. Returns parsed items with quantity.
+
+    Args:
+        text: Cleaned user input text.
+
+    Returns:
+        OpenInputResponse if a menu item matched, None otherwise.
+    """
+    menu_item, qty, matched_alias = _extract_menu_item_from_text(text)
+    if not menu_item:
+        return None
+
+    item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
+
+    # Find the span where the menu item name appears in the text to exclude from
+    # attribute matching. This prevents words within the menu item name (e.g., "butter"
+    # in "Cinnamon Sugar Butter Sandwich") from matching as attributes.
+    # Use the matched_alias (the text that actually matched) instead of the canonical
+    # name, since the user may have typed an alias like "cinnamon butter sandwich".
+    menu_item_span = None
+    text_lower = text.lower()
+    search_terms = [matched_alias, menu_item.lower()] if matched_alias else [menu_item.lower()]
+    for search_term in search_terms:
+        if search_term:
+            pos = text_lower.find(search_term.lower())
+            if pos != -1:
+                menu_item_span = (pos, pos + len(search_term))
+                break
+
+    attr_result = None
+    if item_type_for_mods:
+        exclude_spans = [TextSpan(start=menu_item_span[0], end=menu_item_span[1])] if menu_item_span else None
+        attr_result = get_pipeline().extract_attributes(text, item_type_for_mods, exclude_spans)
+
+    modifications = _extract_menu_item_modifications(text, item_type_for_mods)
+    # Deduplicate: remove modifications whose ingredient is already matched
+    # as an attribute option (e.g., "jalapeño cream" modifier when attribute
+    # extraction already matched it as spread → jalapeno_cc)
+    if attr_result and modifications.get("additions"):
+        modifications["additions"] = _filter_duplicate_modifications(
+            modifications["additions"], attr_result, item_type_for_mods
+        )
+
+    attr_keys = list(attr_result.values.keys()) if attr_result else []
+    logger.info(
+        "DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)",
+        text[:50], menu_item, qty, attr_keys, modifications,
+    )
+
+    # Convert structured modifications to Selection objects
+    mod_list = []
+    for add in modifications.get("additions", []):
+        mod_list.append(Selection(slug=add["slug"], category=add.get("category")))
+    for rem in modifications.get("removals", []):
+        mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
+
+    parsed_items = [
+        build_parsed_item(
+            item_type=item_type_for_mods or "menu_item",
+            item_name=menu_item,
+            quantity=1,
+            original_text=text,
+            attr_result=attr_result,
+            modifiers=mod_list,
+        )
+        for _ in range(qty)
+    ]
+    return OpenInputResponse(parsed_items=parsed_items)
 
 
 def _try_parse_new_items(
@@ -869,63 +947,9 @@ def _try_parse_new_items(
         return _add_order_type_to_response(configurable_item_result, order_type)
 
     # Data-driven menu item lookup - runs AFTER configurable item parsing
-    # This matches direct menu items from the database (known_menu_items already excludes
-    # configurable items, so no additional filtering needed)
-    menu_item, qty, matched_alias = _extract_menu_item_from_text(text)
-    if menu_item:
-        # Get item_type for data-driven attribute and modification extraction
-        item_type_for_mods = menu_cache.get_item_type_for_menu_item(menu_item)
-        # Extract attributes using the item's actual item_type (fully data-driven)
-        # Find the span where the menu item name appears in the text to exclude from
-        # attribute matching. This prevents words within the menu item name (e.g., "butter"
-        # in "Cinnamon Sugar Butter Sandwich") from matching as attributes.
-        # Use the matched_alias (the text that actually matched) instead of the canonical
-        # name, since the user may have typed an alias like "cinnamon butter sandwich"
-        # instead of "Cinnamon Sugar Butter Sandwich".
-        menu_item_span = None
-        text_lower = text.lower()
-        # Try the matched alias first, then fall back to canonical name
-        search_terms = [matched_alias, menu_item.lower()] if matched_alias else [menu_item.lower()]
-        for search_term in search_terms:
-            if search_term:
-                pos = text_lower.find(search_term.lower())
-                if pos != -1:
-                    menu_item_span = (pos, pos + len(search_term))
-                    break
-        attr_result = None
-        if item_type_for_mods:
-            exclude_spans = [TextSpan(start=menu_item_span[0], end=menu_item_span[1])] if menu_item_span else None
-            attr_result = get_pipeline().extract_attributes(text, item_type_for_mods, exclude_spans)
-        modifications = _extract_menu_item_modifications(text, item_type_for_mods)
-        # Deduplicate: remove modifications whose ingredient is already matched
-        # as an attribute option (e.g., "jalapeño cream" modifier when attribute
-        # extraction already matched it as spread → jalapeno_cc)
-        if attr_result and modifications.get("additions"):
-            modifications["additions"] = _filter_duplicate_modifications(
-                modifications["additions"], attr_result, item_type_for_mods
-            )
-        attr_keys = list(attr_result.values.keys()) if attr_result else []
-        logger.info("DETERMINISTIC MENU ITEM: matched '%s' -> %s (qty=%d, attrs=%s, mods=%s)", text[:50], menu_item, qty, attr_keys, modifications)
-        # Convert structured modifications to Selection objects
-        mod_list = []
-        for add in modifications.get("additions", []):
-            mod_list.append(Selection(slug=add["slug"], category=add.get("category")))
-        for rem in modifications.get("removals", []):
-            mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
-        menu_item_parsed_items = [
-            build_parsed_item(
-                item_type=item_type_for_mods or "menu_item",
-                item_name=menu_item,
-                quantity=1,
-                original_text=text,
-                attr_result=attr_result,
-                modifiers=mod_list,
-            )
-            for _ in range(qty)
-        ]
-        return _add_order_type_to_response(
-            OpenInputResponse(parsed_items=menu_item_parsed_items), order_type
-        )
+    direct_result = _parse_direct_menu_item(text)
+    if direct_result:
+        return _add_order_type_to_response(direct_result, order_type)
 
     # Check for simple items (beverages, pastries, sides, etc. - no config needed)
     simple_result = _parse_simple_item_deterministic(text)
@@ -1178,6 +1202,57 @@ def _check_standalone_ingredient(text: str) -> OpenInputResponse | None:
 
 
 # =============================================================================
+# Multi-line Merge Helper
+# =============================================================================
+
+def _merge_multiline_results(
+    lines: list[str],
+    ctx: "ParserContext",
+    require_all_produce_items: bool = False,
+) -> OpenInputResponse | None:
+    """Parse each line independently and merge results.
+
+    Args:
+        lines: Segments to parse independently.
+        ctx: Parser context.
+        require_all_produce_items: If True, every segment must produce at least
+            one parsed item for the merge to succeed. Use this for weak
+            boundaries (commas) where the split might be wrong.
+
+    Returns merged OpenInputResponse, or None to fall back to single-input parsing.
+    """
+    all_items: list = []
+    order_type = None
+    done_ordering = False
+
+    for line in lines:
+        try:
+            result = parse_open_input(line, ctx=ctx)
+        except Exception:
+            logger.debug("Segment parse error for '%s', aborting split", line[:50])
+            if require_all_produce_items:
+                return None
+            continue
+        if result.parsed_items:
+            all_items.extend(result.parsed_items)
+        elif require_all_produce_items:
+            return None  # A segment produced no items — don't trust this split
+        if result.order_type and not order_type:
+            order_type = result.order_type
+        if result.done_ordering:
+            done_ordering = True
+
+    if all_items:
+        return OpenInputResponse(
+            parsed_items=all_items,
+            order_type=order_type,
+            done_ordering=done_ordering,
+        )
+
+    return None
+
+
+# =============================================================================
 # Main Parse Open Input Function
 # =============================================================================
 
@@ -1211,8 +1286,40 @@ def parse_open_input(
             modifier_item_keywords=modifier_item_keywords,
             ingredient_to_items=ingredient_to_items,
         )
+    # --- Sentence boundary splitting ---
+    # Split on natural boundaries and parse each statement independently.
+    # Must happen before strip_conversational_fillers which collapses \n to space.
+    raw_text = user_input.strip()
+
+    # 1. Strong boundaries: newlines (user explicitly pressed Enter)
+    nl_segments = [s.strip() for s in raw_text.split('\n') if s.strip()]
+    if len(nl_segments) > 1:
+        merged = _merge_multiline_results(nl_segments, ctx=ctx)
+        if merged is not None:
+            return merged
+
+    # 2. Period boundaries: "two teas one with oat milk one without. two bagels"
+    period_segments = re.split(r'\.\s+', raw_text)
+    period_segments = [s.strip().rstrip('.') for s in period_segments if s.strip()]
+    if len(period_segments) > 1:
+        merged = _merge_multiline_results(
+            period_segments, ctx=ctx, require_all_produce_items=True,
+        )
+        if merged is not None:
+            return merged
+
     # Strip greetings/fillers early so ALL paths get clean text
-    user_input = strip_conversational_fillers(user_input.strip())
+    user_input = strip_conversational_fillers(raw_text)
+
+    # 3. Comma boundaries (weak — commas also separate modifiers within one item,
+    #    so only use the split if every segment independently produces items)
+    comma_segments = [s.strip() for s in user_input.split(', ') if s.strip()]
+    if len(comma_segments) > 1:
+        merged = _merge_multiline_results(
+            comma_segments, ctx=ctx, require_all_produce_items=True,
+        )
+        if merged is not None:
+            return merged
 
     # Check for "make it N [item]" quantity pattern BEFORE replacement patterns
     # e.g., "make it two bagels" should duplicate the configured bagel, not replace it

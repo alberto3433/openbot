@@ -64,15 +64,6 @@ class TestMenuItemDuplicates:
                 + "\n\nTo debug, enable MENU_ITEM_INSERT_LOGGING=1 and re-run tests."
             )
 
-    @pytest.mark.skip(reason="MenuItemCategory table removed - categories now derived from display_groups")
-    def test_no_duplicate_category_assignments(self, db_session):
-        """Fail if any menu item is assigned to the same category multiple times.
-
-        NOTE: This test is obsolete. MenuItemCategory table was removed.
-        Categories are now derived from: menu_item -> item_type -> display_group -> overall_category
-        """
-        pass
-
     def test_report_total_menu_item_count(self, db_session):
         """Report total menu item count for monitoring growth over time."""
         total = db_session.query(MenuItem).count()

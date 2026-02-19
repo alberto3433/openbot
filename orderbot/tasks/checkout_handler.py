@@ -482,21 +482,17 @@ class CheckoutHandler(BaseStateHandler):
             email = self._returning_customer.get("email") or order.customer_info.email
             phone = self._returning_customer.get("phone") or order.customer_info.phone
 
-            if email:
-                # Auto-send to email
-                self._finalize_order(order, email, "email")
-                return StateMachineResult(
-                    message=f"An email with a payment link has been sent to {email}. "
-                           f"Your order number is {order.checkout.short_order_number}. "
-                           f"Thank you, {order.customer_info.name}!",
-                    order=order,
-                    is_complete=True,
+            contact_value = email or phone
+            if contact_value:
+                contact_type = "email" if email else "phone"
+                self._finalize_order(order, contact_value, contact_type)
+                delivery_text = (
+                    f"An email with a payment link has been sent to {contact_value}"
+                    if contact_type == "email"
+                    else f"A text with a payment link has been sent to {contact_value}"
                 )
-            elif phone:
-                # Auto-send to phone
-                self._finalize_order(order, phone, "phone")
                 return StateMachineResult(
-                    message=f"A text with a payment link has been sent to {phone}. "
+                    message=f"{delivery_text}. "
                            f"Your order number is {order.checkout.short_order_number}. "
                            f"Thank you, {order.customer_info.name}!",
                     order=order,

@@ -35,6 +35,19 @@ LAST_ITEM_PRONOUNS_EXTENDED = LAST_ITEM_PRONOUNS | frozenset({
 })
 
 
+def get_handler_pricing(handler: object) -> object | None:
+    """Get pricing engine from a handler's _taking_items_handler.
+
+    Args:
+        handler: A handler object with a _taking_items_handler attribute.
+
+    Returns:
+        PricingEngine or None if taking_items_handler is not set.
+    """
+    th = getattr(handler, '_taking_items_handler', None)
+    return th.pricing if th else None
+
+
 def continue_config_with_message(
     config_helper_handler: "ConfigHelperHandler",
     checkout_utils_handler: "CheckoutUtilsHandler",

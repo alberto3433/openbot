@@ -375,6 +375,13 @@ class TakingItemsHandler(MenuDataMixin):
             if info and info.get("category") == "position":
                 position_patterns.append(pattern)
 
+        # Collect amount qualifier patterns (non-position) for prefix stripping
+        amount_patterns = []
+        for pattern in qualifier_patterns:
+            info = menu_cache.get_qualifier_info(pattern)
+            if info and info.get("category") != "position":
+                amount_patterns.append(pattern)
+
         filtered = []
         for instr in instructions:
             instr_lower = instr.lower()
@@ -384,6 +391,13 @@ class TakingItemsHandler(MenuDataMixin):
                 suffix = f" {pattern}"
                 if base_word.endswith(suffix):
                     base_word = base_word[:-len(suffix)].strip()
+                    break
+
+            # Strip amount qualifier prefixes (data-driven)
+            for pattern in amount_patterns:
+                prefix = f"{pattern} "
+                if base_word.startswith(prefix):
+                    base_word = base_word[len(prefix):].strip()
                     break
 
             # Check if base_word matches any slug exactly or as a suffix component

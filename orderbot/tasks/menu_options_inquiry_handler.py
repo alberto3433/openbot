@@ -109,6 +109,14 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
         # is an ingredient category, not a modifier category
         ingredient_details = menu_cache.get_ingredient_details(category)
         if ingredient_details:
+            # Filter to ingredients valid for the current item type (if known)
+            if item_type:
+                allowed = menu_cache.get_ingredients_by_category_for_item_type(item_type).get(category, set())
+                if allowed:
+                    ingredient_details = [
+                        d for d in ingredient_details
+                        if d.get("name", "").lower() in allowed or d.get("slug", "").lower() in allowed
+                    ]
             return self._describe_ingredient_category(category, ingredient_details, order)
 
         # Category not found in database - log warning and return generic response

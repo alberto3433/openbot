@@ -20,6 +20,7 @@ from .handler_config import HandlerConfig
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from .handler_utils import is_configurable_menu_item
+from .models.utilities import parse_pending_field
 from .config_side_choice_handler import SIDE_SLOT_NAME
 
 if TYPE_CHECKING:
@@ -132,9 +133,8 @@ class ConfigHelperHandler:
 
         # Parse pending_field to get item_type and attr_slug
         # Format: "item_type:attr_slug" (e.g., "bagel:toasted", "sized_beverage:size")
-        if ":" in field:
-            item_type, attr_slug = field.split(":", 1)
-        else:
+        item_type, attr_slug = parse_pending_field(field)
+        if not item_type:
             # Legacy format without colon - try to infer from item
             if is_configurable_menu_item(item):
                 item_type = item.menu_item_type

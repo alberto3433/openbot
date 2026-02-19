@@ -532,7 +532,7 @@ class ConfiguringItemHandler:
             and order.pending_field != PendingField.CUSTOMIZATION_CHECKPOINT):
             logger.info("MODIFIER INQUIRY during config: category='%s'", modifier_category)
             return self._taking_items_handler.store_info_handler.menu_options_handler.handle_modifier_inquiry(
-                None,  # item_type - not specified
+                item.menu_item_type if isinstance(item, MenuItemTask) else None,
                 modifier_category,  # category extracted from query
                 order,
             )

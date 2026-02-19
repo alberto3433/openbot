@@ -187,6 +187,18 @@ class OrderStateMachine:
             configure_next_incomplete_item=self._configure_next_incomplete_item,
         )
 
+        # Phase → handler dispatch (built once, not per-call)
+        self._phase_dispatch = {
+            OrderPhase.GREETING.value: self._handle_greeting,
+            OrderPhase.TAKING_ITEMS.value: self._handle_taking_items,
+            OrderPhase.CHECKOUT_DELIVERY.value: self.checkout_handler.handle_delivery,
+            OrderPhase.CHECKOUT_NAME.value: self.checkout_handler.handle_name,
+            OrderPhase.CHECKOUT_CONFIRM.value: self.checkout_handler.handle_confirmation,
+            OrderPhase.CHECKOUT_PAYMENT_METHOD.value: self.checkout_handler.handle_payment_method,
+            OrderPhase.CHECKOUT_PHONE.value: self.checkout_handler.handle_phone,
+            OrderPhase.CHECKOUT_EMAIL.value: self.checkout_handler.handle_email,
+        }
+
     # Handler accessors via registry
     @property
     def slot_orchestration_handler(self):
@@ -434,17 +446,7 @@ class OrderStateMachine:
         if order.is_configuring_item():
             result = self._handle_configuring_item(user_input, order)
         else:
-            phase_dispatch = {
-                OrderPhase.GREETING.value: self._handle_greeting,
-                OrderPhase.TAKING_ITEMS.value: self._handle_taking_items,
-                OrderPhase.CHECKOUT_DELIVERY.value: self.checkout_handler.handle_delivery,
-                OrderPhase.CHECKOUT_NAME.value: self.checkout_handler.handle_name,
-                OrderPhase.CHECKOUT_CONFIRM.value: self.checkout_handler.handle_confirmation,
-                OrderPhase.CHECKOUT_PAYMENT_METHOD.value: self.checkout_handler.handle_payment_method,
-                OrderPhase.CHECKOUT_PHONE.value: self.checkout_handler.handle_phone,
-                OrderPhase.CHECKOUT_EMAIL.value: self.checkout_handler.handle_email,
-            }
-            handler = phase_dispatch.get(order.phase)
+            handler = self._phase_dispatch.get(order.phase)
             if handler:
                 result = handler(user_input, order)
             else:

@@ -407,6 +407,30 @@ class PricingEngine(MenuDataMixin):
         )
         return 0.0
 
+    def _get_options_for_attribute(
+        self,
+        item_type: str,
+        attr_slug: str,
+        context: str,
+    ) -> list[dict]:
+        """Return the options list for a specific attribute on an item type.
+
+        Args:
+            item_type: Item type slug (e.g., "sandwich")
+            attr_slug: Attribute slug (e.g., "bread", "cheese")
+            context: Description for error messages
+
+        Returns:
+            List of option dicts for the matching attribute, or empty list
+        """
+        attributes = get_item_type_attributes(
+            self._menu_data, item_type, context,
+        )
+        for attr in attributes:
+            if attr.get("slug") == attr_slug:
+                return attr.get("options", [])
+        return []
+
     def _get_option_ingredient_category(
         self,
         item_type: str,
@@ -429,17 +453,11 @@ class PricingEngine(MenuDataMixin):
         normalized = normalize_to_slug(option_value)
         option_lower = normalize_text(option_value)
 
-        attributes = get_item_type_attributes(
-            self._menu_data, item_type,
-            f"get ingredient category for '{option_value}'",
-        )
-
-        for attr in attributes:
-            if attr.get("slug") != attr_slug:
-                continue
-            for opt in attr.get("options", []):
-                if OptionMatcher.matches_value(opt, normalized, option_lower):
-                    return opt.get("ingredient_category")
+        for opt in self._get_options_for_attribute(
+            item_type, attr_slug, f"get ingredient category for '{option_value}'"
+        ):
+            if OptionMatcher.matches_value(opt, normalized, option_lower):
+                return opt.get("ingredient_category")
 
         return None
 
@@ -465,24 +483,18 @@ class PricingEngine(MenuDataMixin):
         Returns:
             The minimum price_modifier among matching options, or 0.0 if none found
         """
-        attributes = get_item_type_attributes(
-            self._menu_data, item_type,
-            f"get min option price for '{attr_slug}'",
-        )
-
         min_price: float | None = None
 
-        for attr in attributes:
-            if attr.get("slug") != attr_slug:
+        for opt in self._get_options_for_attribute(
+            item_type, attr_slug, f"get min option price for '{attr_slug}'"
+        ):
+            if not isinstance(opt, dict):
                 continue
-            for opt in attr.get("options", []):
-                if not isinstance(opt, dict):
-                    continue
-                if opt.get("ingredient_category") != ingredient_category:
-                    continue
-                price = OptionMatcher.get_option_price(opt)
-                if min_price is None or price < min_price:
-                    min_price = price
+            if opt.get("ingredient_category") != ingredient_category:
+                continue
+            price = OptionMatcher.get_option_price(opt)
+            if min_price is None or price < min_price:
+                min_price = price
 
         return min_price if min_price is not None else 0.0
 

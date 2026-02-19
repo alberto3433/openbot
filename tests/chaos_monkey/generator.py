@@ -1,5 +1,7 @@
 """Scenario generation for Chaos Monkey tests."""
 
+from __future__ import annotations
+
 import logging
 import random
 from typing import Any
@@ -126,6 +128,8 @@ class ScenarioGenerator:
             return self._generate_tricky_scenario()
         elif scenario_type == "realistic_order":
             return self._generate_realistic_order_scenario()
+        elif scenario_type == "corpus_order":
+            return self._generate_corpus_order_scenario()
         else:
             logger.warning("Unknown scenario type: %s", scenario_type)
             return None
@@ -492,6 +496,215 @@ class ScenarioGenerator:
             modifiers=valid_modifiers,
             seed=self.rng.randint(0, 2**31),
         )
+
+    def _generate_corpus_order_scenario(self) -> BaseScenario | None:
+        """Generate a scenario from the conversation pattern corpus."""
+        from tests.chaos_monkey.scenarios.corpus import PATTERNS, SlotType
+        from tests.chaos_monkey.scenarios.corpus_order import CorpusOrderScenario
+
+        if not self._menu_items:
+            return None
+
+        # Try up to 10 patterns to find one whose slots we can fill
+        candidates = self.rng.choices(
+            PATTERNS,
+            weights=[p.weight for p in PATTERNS],
+            k=min(10, len(PATTERNS)),
+        )
+
+        for pattern in candidates:
+            filled = self._fill_pattern_slots(pattern)
+            if filled is None:
+                continue
+
+            # Collect attribute data for reactive answering from all items
+            # referenced in the filled slots
+            all_attr_options: dict[str, list[str]] = {}
+            all_boolean_attrs: list[str] = []
+
+            # Find item types from items we picked
+            seen_types: set[str] = set()
+            for slot_name, slot_def in pattern.slots.items():
+                if slot_def.slot_type in (SlotType.ITEM, SlotType.CONFIGURABLE_ITEM):
+                    # Look up item_type for the filled item name
+                    item_name = filled.get(slot_name, "")
+                    for mi in self._menu_items:
+                        if mi.get("name") == item_name:
+                            item_type = mi.get("item_type", "")
+                            if item_type and item_type not in seen_types:
+                                seen_types.add(item_type)
+                                attr_opts, bool_attrs = (
+                                    self._get_attribute_data_for_item_type(item_type)
+                                )
+                                for slug, opts in attr_opts.items():
+                                    if slug not in all_attr_options:
+                                        all_attr_options[slug] = []
+                                    all_attr_options[slug].extend(
+                                        o for o in opts
+                                        if o not in all_attr_options[slug]
+                                    )
+                                all_boolean_attrs.extend(
+                                    b for b in bool_attrs
+                                    if b not in all_boolean_attrs
+                                )
+                            break
+
+            # Build expected cart items from expected_item_slots
+            expected_cart_items: list[str] = []
+            for slot_name in pattern.expected_item_slots:
+                if slot_name in filled:
+                    expected_cart_items.append(filled[slot_name])
+
+            return CorpusOrderScenario(
+                pattern=pattern,
+                filled_slots=filled,
+                attribute_options=all_attr_options,
+                boolean_attrs=all_boolean_attrs,
+                expected_cart_items=expected_cart_items,
+                seed=self.rng.randint(0, 2**31),
+            )
+
+        # All candidates failed slot filling
+        logger.debug("Could not fill slots for any corpus pattern")
+        return None
+
+    def _fill_pattern_slots(
+        self, pattern: "ConversationPattern"
+    ) -> dict[str, str] | None:
+        """Fill all slots in a pattern with menu data.
+
+        Returns:
+            Dict mapping slot names to filled values, or None if any slot
+            can't be filled.
+        """
+        from tests.chaos_monkey.scenarios.corpus import SlotType
+
+        filled: dict[str, str] = {}
+        # Track which items we've picked so same_item_as constraints work
+        item_type_for_slot: dict[str, str] = {}
+
+        for slot_name, slot_def in pattern.slots.items():
+            value = self._fill_single_slot(
+                slot_def, filled, item_type_for_slot
+            )
+            if value is None:
+                return None
+            filled[slot_name] = value
+
+            # Track item_type if this was an item slot
+            if slot_def.slot_type in (SlotType.ITEM, SlotType.CONFIGURABLE_ITEM):
+                for mi in self._menu_items:
+                    if mi.get("name") == value:
+                        item_type_for_slot[slot_name] = mi.get("item_type", "")
+                        break
+
+        return filled
+
+    def _fill_single_slot(
+        self,
+        slot_def: "SlotDef",
+        filled: dict[str, str],
+        item_type_for_slot: dict[str, str],
+    ) -> str | None:
+        """Fill a single slot from menu data.
+
+        Args:
+            slot_def: The slot definition to fill.
+            filled: Already-filled slots (for same_item_as constraints).
+            item_type_for_slot: Maps slot names to their item_type slugs.
+
+        Returns:
+            Filled value string, or None if can't fill.
+        """
+        from tests.chaos_monkey.scenarios.corpus import SlotType
+
+        st = slot_def.slot_type
+
+        if st == SlotType.ITEM:
+            if not self._menu_items:
+                return None
+            item = self.rng.choice(self._menu_items)
+            return item.get("name")
+
+        if st == SlotType.CONFIGURABLE_ITEM:
+            configurable = [
+                mi for mi in self._menu_items
+                if self.menu_cache.is_item_type_configurable(
+                    mi.get("item_type", "")
+                )
+            ]
+            if not configurable:
+                return None
+            item = self.rng.choice(configurable)
+            return item.get("name")
+
+        if st == SlotType.BREAD_OPTION:
+            options = self._get_options_for_attribute("bread")
+            if options:
+                return self.rng.choice(options)
+            return self.rng.choice(["plain", "everything", "sesame"])
+
+        if st == SlotType.SIZE_OPTION:
+            options = self._get_options_for_attribute("size")
+            if options:
+                return self.rng.choice(options)
+            return self.rng.choice(["large", "small"])
+
+        if st == SlotType.MODIFIER:
+            # If constrained to a specific item, use that item's valid modifiers
+            if slot_def.same_item_as and slot_def.same_item_as in item_type_for_slot:
+                item_type = item_type_for_slot[slot_def.same_item_as]
+                valid_ingredients = (
+                    self.menu_cache.get_ingredients_by_category_for_item_type(
+                        item_type
+                    )
+                )
+                valid_mods: list[str] = []
+                for cat_ingredients in valid_ingredients.values():
+                    valid_mods.extend(self._filter_display_names(cat_ingredients))
+                if valid_mods:
+                    return self.rng.choice(valid_mods)
+
+            # Fallback: use any modifier word
+            if self._modifier_words:
+                display_mods = self._filter_display_names(self._modifier_words)
+                if display_mods:
+                    return self.rng.choice(display_mods)
+            return None
+
+        if st == SlotType.BOOLEAN_ATTR:
+            return self.rng.choice(["toasted", "not toasted"])
+
+        if st == SlotType.QUANTITY_WORD:
+            return self.rng.choice(["two", "three", "2", "3"])
+
+        if st == SlotType.CATEGORY_NAME:
+            return self.rng.choice([
+                "bagels", "sandwiches", "coffee", "drinks",
+            ])
+
+        return None
+
+    def _get_options_for_attribute(self, attr_slug: str) -> list[str]:
+        """Get display name options for a global attribute.
+
+        Args:
+            attr_slug: The attribute slug (e.g. "bread", "size").
+
+        Returns:
+            List of display name strings, possibly empty.
+        """
+        try:
+            options = self.menu_cache.get_global_attribute_options(attr_slug)
+            display_names = [
+                opt.get("display_name", opt.get("slug", ""))
+                for opt in options
+                if opt.get("display_name") or opt.get("slug")
+            ]
+            # Filter out long names (>3 words) to keep inputs natural
+            return [n for n in display_names if len(n.split()) <= 3]
+        except Exception:
+            return []
 
     def _apply_mutations(self, scenario: BaseScenario) -> None:
         """Apply text mutations to scenario turns."""

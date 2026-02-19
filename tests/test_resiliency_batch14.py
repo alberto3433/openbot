@@ -67,36 +67,3 @@ class TestPronounContextReferences:
         # Should have 2 coffees
         assert total_qty >= 2, f"Should have 2 coffees. Qty={total_qty}"
 
-    @pytest.mark.skip(reason="Temperature is now part of menu item name; 'make that iced' would require ordering a different item")
-    def test_make_that_iced(self):
-        """
-        Test: User says "make that iced" referring to last coffee.
-
-        DEPRECATED: Temperature (hot/iced) is now part of the menu item name itself
-        (e.g., "Iced Latte" vs "Hot Latte"). To change from hot to iced, user would
-        need to cancel the item and order the iced version as a different menu item.
-
-        Scenario:
-        - User has: hot latte
-        - User says: "make that iced"
-        - Expected: Coffee becomes iced
-        """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-
-        coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=False)
-        coffee.mark_complete()
-        order.items.add_item(coffee)
-
-        sm = OrderStateMachine()
-        result = sm.process("make that iced", order)
-
-        assert result.message is not None
-        coffees = [i for i in result.order.items.items if i.has_attribute('size')]
-
-        # Should have updated coffee to iced
-        if coffees:
-            coffee = coffees[0]
-            # Either temperature is "iced" or message acknowledges
-            assert coffee["temperature"] == "iced" or "iced" in result.message.lower(), \
-                f"Should be iced. temperature={coffee['temperature']}, Message: {result.message}"

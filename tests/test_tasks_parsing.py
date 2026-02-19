@@ -1952,19 +1952,19 @@ class TestSplitQuantityDrinksParsing:
         names = sorted(d.item_name for d in drinks)
         assert names == ["Hot Latte", "Iced Latte"]
 
-    @pytest.mark.xfail(reason="'tea' item type detection needs DB configuration")
     def test_two_teas_one_with_oat_milk_one_plain(self):
         """Test parsing 'two teas one with oat milk one plain'."""
         from orderbot.tasks.parsers.deterministic import _parse_split_quantity_items
 
         result = _parse_split_quantity_items("two teas one with oat milk one plain")
         assert result is not None
-        drinks = get_parsed_items(result, item_type="coffee_based_beverage")
+        drinks = get_parsed_items(result, item_type="tea")
         assert len(drinks) == 2
-        # "tea" alias resolves to canonical name like "Iced Tea" or "Hot Tea"
-        assert "tea" in drinks[0].item_name.lower()
-        assert drinks[0].attribute_values.get("milk") == "oat"
-        assert drinks[1].attribute_values.get("milk") == "none"
+        # First tea has oat milk selection
+        oat_milk_slugs = [s.slug for s in drinks[0].selections]
+        assert "oat_milk" in oat_milk_slugs
+        # Second tea is plain (no selections)
+        assert len(drinks[1].selections) == 0
 
     def test_three_coffees_different_temps(self):
         """Test parsing 'three coffees one iced one hot one decaf'.

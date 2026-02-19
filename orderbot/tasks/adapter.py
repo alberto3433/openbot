@@ -68,64 +68,50 @@ from ..services.tax_utils import calculate_order_total
 logger = logging.getLogger(__name__)
 
 
-# Map field names to Pydantic model classes for dict→model coercion on restore.
-# Module-level to avoid rebuilding on every _restore_flow_state() call.
-_PYDANTIC_FIELDS: dict[str, type] = {
-    "pending_attr_disambiguation": PendingAttrDisambiguation,
-    "pending_change_clarification": PendingChangeClarification,
-    "pending_dietary_followup": PendingDietaryFollowup,
-    "pending_duplicate_selection": PendingDuplicateSelection,
-    "pending_ingredient_search": PendingIngredientSearch,
-    "pending_ingredient_suggestion": PendingIngredientSuggestion,
-    "pending_order_history": PendingOrderHistory,
-    "pending_same_thing_clarification": PendingSameThingClarification,
-    "pending_switch_item": PendingSwitchItem,
-    "pending_unmatched_pagination": PendingUnmatchedPagination,
-}
-
-
 # -----------------------------------------------------------------------------
 # Flow State Helpers
 # -----------------------------------------------------------------------------
 
 # Single source of truth for all flow state fields serialized to/from
-# state_machine_state. Each entry is (field_name, default_value).
-# Adding a new field here automatically handles both serialize and restore.
+# state_machine_state. Each entry is (field_name, default_value, pydantic_class).
+# The optional third element is a Pydantic model class for dict→model coercion
+# on restore (after JSON round-trip). Adding a new field here automatically
+# handles both serialize and restore — no separate mapping needed.
 # Note: pending_item_id is a computed property — do NOT include it here.
-_FLOW_STATE_FIELDS: list[tuple[str, object]] = [
-    ("phase", "greeting"),
-    ("pending_item_ids", []),
-    ("pending_field", None),
-    ("last_bot_message", None),
-    ("pending_config_queue", []),
-    ("pending_item_modifiers", {}),
-    ("pending_item_options", []),
-    ("pending_item_quantity", 1),
-    ("menu_query_pagination", None),
-    ("config_options_page", 0),
-    ("multi_item_config_names", []),
-    ("pending_duplicate_selection", None),
-    ("pending_same_thing_clarification", None),
-    ("pending_suggested_item", None),
-    ("pending_attr_disambiguation", None),
-    ("pending_modifier_quantity", None),
-    ("pending_modifier_is_additive", False),
-    ("pending_modifier_target_item_index", None),
-    ("pending_parsed_items", []),
-    ("pending_dietary_followup", None),
-    ("pending_quantity_addition", None),
-    ("pending_order_history", None),
-    ("pending_reorder_items", None),
-    ("pending_reorder_offer_items", None),
+_FLOW_STATE_FIELDS: list[tuple[str, object, type | None]] = [
+    ("phase", "greeting", None),
+    ("pending_item_ids", [], None),
+    ("pending_field", None, None),
+    ("last_bot_message", None, None),
+    ("pending_config_queue", [], None),
+    ("pending_item_modifiers", {}, None),
+    ("pending_item_options", [], None),
+    ("pending_item_quantity", 1, None),
+    ("menu_query_pagination", None, None),
+    ("config_options_page", 0, None),
+    ("multi_item_config_names", [], None),
+    ("pending_duplicate_selection", None, PendingDuplicateSelection),
+    ("pending_same_thing_clarification", None, PendingSameThingClarification),
+    ("pending_suggested_item", None, None),
+    ("pending_attr_disambiguation", None, PendingAttrDisambiguation),
+    ("pending_modifier_quantity", None, None),
+    ("pending_modifier_is_additive", False, None),
+    ("pending_modifier_target_item_index", None, None),
+    ("pending_parsed_items", [], None),
+    ("pending_dietary_followup", None, PendingDietaryFollowup),
+    ("pending_quantity_addition", None, None),
+    ("pending_order_history", None, PendingOrderHistory),
+    ("pending_reorder_items", None, None),
+    ("pending_reorder_offer_items", None, None),
     # Previously missing fields — were silently lost on session restore
-    ("unknown_item_request", None),
-    ("pending_change_clarification", None),
-    ("pending_ingredient_suggestion", None),
-    ("pending_ingredient_to_apply", None),
-    ("pending_switch_item", None),
-    ("pending_replace_item_id", None),
-    ("pending_ingredient_search", None),
-    ("pending_unmatched_pagination", None),
+    ("unknown_item_request", None, None),
+    ("pending_change_clarification", None, PendingChangeClarification),
+    ("pending_ingredient_suggestion", None, PendingIngredientSuggestion),
+    ("pending_ingredient_to_apply", None, None),
+    ("pending_switch_item", None, PendingSwitchItem),
+    ("pending_replace_item_id", None, None),
+    ("pending_ingredient_search", None, PendingIngredientSearch),
+    ("pending_unmatched_pagination", None, PendingUnmatchedPagination),
 ]
 
 
@@ -151,10 +137,9 @@ def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
         sm_state: The state_machine_state dict from order_dict
         order: The OrderTask to populate
     """
-    for field_name, default in _FLOW_STATE_FIELDS:
+    for field_name, default, model_cls in _FLOW_STATE_FIELDS:
         value = sm_state.get(field_name, default)
         # Coerce raw dicts back to Pydantic models after JSON round-trip
-        model_cls = _PYDANTIC_FIELDS.get(field_name)
         if model_cls and isinstance(value, dict):
             value = model_cls.model_validate(value)
         setattr(order, field_name, value)
@@ -170,13 +155,80 @@ def _build_flow_state_dict(order: OrderTask) -> dict:
         Dict containing all flow state fields
     """
     result = {}
-    for field_name, _ in _FLOW_STATE_FIELDS:
+    for field_name, _, _ in _FLOW_STATE_FIELDS:
         value = getattr(order, field_name)
         # Convert Pydantic models to dicts for JSON serialization
         if isinstance(value, BaseModel):
             value = value.model_dump()
         result[field_name] = value
     return result
+
+
+# -----------------------------------------------------------------------------
+# State Conversion: Dict -> OrderTask (helpers)
+# -----------------------------------------------------------------------------
+
+def _restore_customer_info(order_dict: dict, order: OrderTask) -> None:
+    """Restore customer name, phone, and email from order dict."""
+    customer = order_dict.get("customer", {})
+    if customer.get("name"):
+        order.customer_info.name = customer["name"]
+    if customer.get("phone"):
+        order.customer_info.phone = customer["phone"]
+    if customer.get("email"):
+        order.customer_info.email = customer["email"]
+    if order.customer_info.name:
+        order.customer_info.mark_complete()
+
+
+def _restore_order_type(order_dict: dict, order: OrderTask) -> None:
+    """Restore delivery method and address from order dict."""
+    order_type = order_dict.get("order_type")
+    if order_type:
+        order.delivery_method.order_type = order_type
+        if order_type == "pickup":
+            order.delivery_method.mark_complete()
+        elif order_type == "delivery":
+            delivery_address = order_dict.get("delivery_address", "")
+            if delivery_address:
+                order.delivery_method.address.street = delivery_address
+                order.delivery_method.address.is_validated = True
+                order.delivery_method.address.mark_complete()
+            if order.delivery_method.address.street:
+                order.delivery_method.mark_complete()
+
+
+def _restore_items(order_dict: dict, order: OrderTask) -> None:
+    """Convert item dicts to MenuItemTasks and add to order."""
+    for item in order_dict.get("items", []):
+        item_type = item.get("item_type")
+        if not item_type:
+            logger.error(
+                "Item missing required 'item_type' field in dict_to_order_task. "
+                "Item data: %s",
+                item
+            )
+            continue
+
+        item_task = _unified_converter.from_dict(item)
+        order.items.add_item(item_task)
+
+
+def _restore_checkout_state(order_dict: dict, order: OrderTask) -> None:
+    """Restore checkout confirmation, review status, and payment from order dict."""
+    checkout_data = order_dict.get("checkout_state", {})
+    if checkout_data.get("confirmed") or order_dict.get("status") == OrderStatus.CONFIRMED:
+        order.checkout.confirmed = True
+        order.checkout.mark_complete()
+    if checkout_data.get("order_reviewed"):
+        order.checkout.order_reviewed = True
+
+    if order_dict.get("payment_method"):
+        order.payment.method = order_dict["payment_method"]
+        if order_dict.get("payment_link"):
+            order.payment.payment_link_sent = True
+        if order.payment.method:
+            order.payment.mark_complete()
 
 
 # -----------------------------------------------------------------------------
@@ -207,45 +259,9 @@ def dict_to_order_task(order_dict: dict[str, Any], session_id: str | None = None
     if order_dict.get("special_instructions"):
         order.special_instructions = order_dict["special_instructions"]
 
-    # Convert customer info
-    customer = order_dict.get("customer", {})
-    if customer.get("name"):
-        order.customer_info.name = customer["name"]
-    if customer.get("phone"):
-        order.customer_info.phone = customer["phone"]
-    if customer.get("email"):
-        order.customer_info.email = customer["email"]
-    if order.customer_info.name:
-        order.customer_info.mark_complete()
-
-    # Convert order type and address
-    order_type = order_dict.get("order_type")
-    if order_type:
-        order.delivery_method.order_type = order_type
-        if order_type == "pickup":
-            order.delivery_method.mark_complete()
-        elif order_type == "delivery":
-            delivery_address = order_dict.get("delivery_address", "")
-            if delivery_address:
-                order.delivery_method.address.street = delivery_address
-                order.delivery_method.address.is_validated = True
-                order.delivery_method.address.mark_complete()
-            if order.delivery_method.address.street:
-                order.delivery_method.mark_complete()
-
-    # Convert items using converters
-    for item in order_dict.get("items", []):
-        item_type = item.get("item_type")
-        if not item_type:
-            logger.error(
-                "Item missing required 'item_type' field in dict_to_order_task. "
-                "Item data: %s",
-                item
-            )
-            continue
-
-        item_task = _unified_converter.from_dict(item)
-        order.items.add_item(item_task)
+    _restore_customer_info(order_dict, order)
+    _restore_order_type(order_dict, order)
+    _restore_items(order_dict, order)
 
     # Restore conversation history if present
     task_state = order_dict.get("task_orchestrator_state", {})
@@ -257,23 +273,56 @@ def dict_to_order_task(order_dict: dict[str, Any], session_id: str | None = None
     if sm_state:
         _restore_flow_state(sm_state, order)
 
-    # Convert checkout state
-    checkout_data = order_dict.get("checkout_state", {})
-    if checkout_data.get("confirmed") or order_dict.get("status") == OrderStatus.CONFIRMED:
-        order.checkout.confirmed = True
-        order.checkout.mark_complete()
-    if checkout_data.get("order_reviewed"):
-        order.checkout.order_reviewed = True
-
-    # Payment
-    if order_dict.get("payment_method"):
-        order.payment.method = order_dict["payment_method"]
-        if order_dict.get("payment_link"):
-            order.payment.payment_link_sent = True
-        if order.payment.method:
-            order.payment.mark_complete()
+    _restore_checkout_state(order_dict, order)
 
     return order
+
+
+# -----------------------------------------------------------------------------
+# State Conversion: OrderTask -> Dict (helpers)
+# -----------------------------------------------------------------------------
+
+def _serialize_items(order: OrderTask, pricing: PricingEngine | None) -> list[dict]:
+    """Serialize all non-skipped items to dict format."""
+    items = []
+    for item in order.items.items:
+        if item.status == TaskStatus.SKIPPED:
+            continue
+        items.append(_unified_converter.to_dict(item, pricing))
+    return items
+
+
+def _build_checkout_state(
+    order: OrderTask, subtotal: float, store_info: dict | None
+) -> dict:
+    """Build the checkout_state sub-dict with tax calculations."""
+    city_tax = order.checkout.city_tax
+    state_tax = order.checkout.state_tax
+    tax = order.checkout.tax
+    delivery_fee = order.checkout.delivery_fee
+    total = order.checkout.total
+
+    if store_info and subtotal > 0:
+        is_delivery = order.delivery_method.order_type == "delivery"
+        totals = calculate_order_total(subtotal, store_info, is_delivery)
+        city_tax = totals["city_tax"]
+        state_tax = totals["state_tax"]
+        tax = totals["tax"]
+        delivery_fee = totals["delivery_fee"]
+        total = totals["total"]
+
+    return {
+        "confirmed": order.checkout.confirmed,
+        "order_reviewed": order.checkout.order_reviewed,
+        "name_collected": order.customer_info.name is not None,
+        "contact_collected": order.customer_info.phone is not None or order.customer_info.email is not None,
+        "subtotal": subtotal,
+        "city_tax": city_tax,
+        "state_tax": state_tax,
+        "tax": tax,
+        "delivery_fee": delivery_fee,
+        "total": total,
+    }
 
 
 # -----------------------------------------------------------------------------
@@ -296,17 +345,7 @@ def order_task_to_dict(
     Returns:
         Dict format used for API responses and database storage
     """
-    items = []
-
-    # Get ALL items including in-progress ones
-    all_items = order.items.items
-
-    for item in all_items:
-        if item.status == TaskStatus.SKIPPED:
-            continue
-
-        item_dict = _unified_converter.to_dict(item, pricing)
-        items.append(item_dict)
+    items = _serialize_items(order, pricing)
 
     # Determine status
     if order.checkout.confirmed:
@@ -353,34 +392,7 @@ def order_task_to_dict(
     if order.payment.payment_link_sent and order.payment.payment_link_destination:
         order_dict["payment_link"] = order.payment.payment_link_destination
 
-    city_tax = order.checkout.city_tax
-    state_tax = order.checkout.state_tax
-    tax = order.checkout.tax
-    delivery_fee = order.checkout.delivery_fee
-    total = order.checkout.total
-
-    if store_info and subtotal > 0:
-        is_delivery = order.delivery_method.order_type == "delivery"
-        totals = calculate_order_total(subtotal, store_info, is_delivery)
-        city_tax = totals["city_tax"]
-        state_tax = totals["state_tax"]
-        tax = totals["tax"]
-        delivery_fee = totals["delivery_fee"]
-        total = totals["total"]
-
-    # Checkout state
-    order_dict["checkout_state"] = {
-        "confirmed": order.checkout.confirmed,
-        "order_reviewed": order.checkout.order_reviewed,
-        "name_collected": order.customer_info.name is not None,
-        "contact_collected": order.customer_info.phone is not None or order.customer_info.email is not None,
-        "subtotal": subtotal,
-        "city_tax": city_tax,
-        "state_tax": state_tax,
-        "tax": tax,
-        "delivery_fee": delivery_fee,
-        "total": total,
-    }
+    order_dict["checkout_state"] = _build_checkout_state(order, subtotal, store_info)
 
     # Preserve conversation history
     order_dict["task_orchestrator_state"] = {

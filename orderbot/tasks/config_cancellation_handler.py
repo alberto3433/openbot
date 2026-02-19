@@ -27,6 +27,7 @@ from .normalization import format_slug_for_display
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
 from orderbot.cache.base import get_singular_plural_variants, singularize
+from .models.utilities import parse_pending_field
 from .checkout_messages import ok_removed_anything_else, ErrorMessages, item_not_found_in_order
 from .utils.pricing_utils import safe_recalculate_price
 
@@ -255,8 +256,8 @@ class ConfigCancellationHandler:
         # "I don't want cheese", not "remove the cheese item from my order".
         # Return None to let the attribute handler process it (select_input.py
         # handles "no X" as a skip for optional attributes).
-        if order.pending_field and ":" in order.pending_field:
-            _, pending_attr_slug = order.pending_field.split(":", 1)
+        _, pending_attr_slug = parse_pending_field(order.pending_field)
+        if pending_attr_slug:
             cancel_variants = get_singular_plural_variants(cancel_desc)
             # Also check if cancel_desc words overlap with the slug's word
             # components (e.g., "shots" matches "espresso_shots" via the
@@ -390,15 +391,10 @@ class ConfigCancellationHandler:
                         "Removed attribute '%s' from %s during config",
                         attr_slug, current_item.menu_item_name,
                     )
-                    question = self._get_current_config_question(order, current_item)
-                    if question:
-                        return StateMachineResult(
-                            message=f"OK, I've removed the {display_name}. {question}",
-                            order=order,
-                        )
-                    return StateMachineResult(
-                        message=ok_removed_anything_else(display_name),
-                        order=order,
+                    return self._config_removal_response(
+                        f"OK, I've removed the {display_name}.",
+                        order, current_item,
+                        ok_removed_anything_else(display_name),
                     )
                 if defer_if_unset:
                     logger.info(
@@ -521,18 +517,11 @@ class ConfigCancellationHandler:
                                 "Removed '%s' from '%s' via 'X on Y' pattern",
                                 removed_name, target_item.menu_item_name
                             )
-                            # Return to config question or acknowledge
-                            question = self._get_current_config_question(order, current_item)
-                            if question:
-                                return StateMachineResult(
-                                    message=f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. {question}",
-                                    order=order,
-                                )
-                            else:
-                                return StateMachineResult(
-                                    message=f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. Anything else?",
-                                    order=order,
-                                )
+                            return self._config_removal_response(
+                                f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}.",
+                                order, current_item,
+                                f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. Anything else?",
+                            )
                 except MenuDataNotLoadedError:
                     pass  # Fall through to try default ingredient removal
 
@@ -547,17 +536,11 @@ class ConfigCancellationHandler:
                             "Removed default ingredient '%s' from '%s' via 'X on Y' pattern",
                             removed_name, target_item.menu_item_name
                         )
-                        question = self._get_current_config_question(order, current_item)
-                        if question:
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. {question}",
-                                order=order,
-                            )
-                        else:
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. Anything else?",
-                                order=order,
-                            )
+                        return self._config_removal_response(
+                            f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}.",
+                            order, current_item,
+                            f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. Anything else?",
+                        )
             # If pattern matched but no item found or no modifier found, fall through to existing logic
 
         return None
@@ -627,19 +610,11 @@ class ConfigCancellationHandler:
                             removed_modifier_name, removal_qty, current_item.menu_item_name
                         )
 
-                        # Return to customization checkpoint or continue
-                        question = self._get_current_config_question(order, current_item)
-                        if question:
-                            return StateMachineResult(
-                                message=f"{removal_result.message} {question}",
-                                order=order,
-                            )
-                        else:
-                            updated_summary = current_item.get_summary()
-                            return StateMachineResult(
-                                message=f"{removal_result.message} Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
-                                order=order,
-                            )
+                        updated_summary = current_item.get_summary()
+                        return self._config_removal_response(
+                            removal_result.message, order, current_item,
+                            f"{removal_result.message} Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
+                        )
             except MenuDataNotLoadedError:
                 # Menu cache not loaded - fall back to checking removable modifiers set
                 logger.debug("Menu cache not loaded for modifier match - using removable modifiers set")
@@ -672,18 +647,12 @@ class ConfigCancellationHandler:
                             "Modifier removal during config (fallback): removed '%s' from %s",
                             removed_modifier_name, current_item.menu_item_name
                         )
-                        question = self._get_current_config_question(order, current_item)
-                        if question:
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {removed_modifier_name}. {question}",
-                                order=order,
-                            )
-                        else:
-                            updated_summary = current_item.get_summary()
-                            return StateMachineResult(
-                                message=f"OK, I've removed the {removed_modifier_name}. Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
-                                order=order,
-                            )
+                        updated_summary = current_item.get_summary()
+                        return self._config_removal_response(
+                            f"OK, I've removed the {removed_modifier_name}.",
+                            order, current_item,
+                            f"OK, I've removed the {removed_modifier_name}. Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
+                        )
 
         return None
 
@@ -828,3 +797,26 @@ class ConfigCancellationHandler:
         if self.config_helper_handler:
             return self.config_helper_handler.get_current_config_question(order, item)
         return None
+
+    def _config_removal_response(
+        self,
+        removal_msg: str,
+        order: OrderTask,
+        config_item: MenuItemTask,
+        fallback_msg: str,
+    ) -> StateMachineResult:
+        """Build a response after removing an attribute/modifier during configuration.
+
+        If there's a pending config question, appends it to the removal message.
+        Otherwise falls back to the provided fallback message.
+
+        Args:
+            removal_msg: The removal acknowledgment (e.g., "OK, I've removed the lox.").
+            order: The current order task.
+            config_item: The item being configured (used to find the next question).
+            fallback_msg: Message to use if no config question is pending.
+        """
+        question = self._get_current_config_question(order, config_item)
+        if question:
+            return StateMachineResult(message=f"{removal_msg} {question}", order=order)
+        return StateMachineResult(message=fallback_msg, order=order)

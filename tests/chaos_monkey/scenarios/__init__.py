@@ -12,6 +12,7 @@ from tests.chaos_monkey.scenarios.modifier import ModifierScenario
 from tests.chaos_monkey.scenarios.cart_ops import CartOperationScenario
 from tests.chaos_monkey.scenarios.tricky import TrickyScenario
 from tests.chaos_monkey.scenarios.realistic_order import RealisticOrderScenario
+from tests.chaos_monkey.scenarios.corpus_order import CorpusOrderScenario
 
 __all__ = [
     "BaseScenario",
@@ -24,4 +25,5 @@ __all__ = [
     "CartOperationScenario",
     "TrickyScenario",
     "RealisticOrderScenario",
+    "CorpusOrderScenario",
 ]

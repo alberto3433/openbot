@@ -311,9 +311,6 @@ class TestSideItems:
     @pytest.mark.parametrize("user_input,expected_canonical", [
         ("latkes", "Side of Breakfast Latke"),
         ("latke", "Side of Breakfast Latke"),
-        pytest.param("home fries", "Home Fries", marks=pytest.mark.xfail(
-            reason="'home fries' not being parsed - needs alias in DB"
-        )),
         ("fruit salad", "Fruit Salad"),
     ])
     def test_side_item_parser_output(self, user_input, expected_canonical):
@@ -394,35 +391,6 @@ class TestEdgeCasesAndVariants:
 
 class TestFullFlowIntegration:
     """Test the complete flow from user input to final result."""
-
-    @pytest.mark.skip(reason="Test MenuLookup fixture doesn't apply required_match_phrases filtering. In production, 'chips' -> 'Potato Chips' directly.")
-    def test_chips_full_flow(self, item_handler, fresh_order):
-        """Test 'chips' directly matches Potato Chips (no disambiguation needed).
-
-        With required_match_phrases set on Bagel Chips, Chocolate Chip Cookie, etc.,
-        plain 'chips' now uniquely matches Potato Chips.
-
-        NOTE: This test is skipped because the test's MenuLookup fixture doesn't
-        apply required_match_phrases filtering. In the real UI, "chips" correctly
-        adds Potato Chips without disambiguation.
-        """
-        from tests.helpers import get_menu_item
-        # Step 1: Parser
-        parser_result = get_parser_result("chips")
-        menu_item = get_menu_item(parser_result)
-        assert menu_item is not None and menu_item.item_name.lower() == "chips"
-
-        # Step 2: Handler processes it
-        handler_result = get_handler_result(item_handler, "chips", fresh_order)
-
-        # Step 3: Should find single match (no disambiguation)
-        # "SINGLE_MATCH_FOUND" indicates the handler found exactly one match
-        # and tried to add it (TypeError caught because _get_next_question is None in test)
-        assert handler_result == "SINGLE_MATCH_FOUND", \
-            f"Expected single match, got: {handler_result}"
-        # Should NOT be in disambiguation state
-        assert fresh_order.pending_field != "item_selection", \
-            "Should not trigger disambiguation for 'chips'"
 
     def test_bagel_chips_full_flow(self, item_handler, fresh_order):
         """Test 'bagel chips' shows all bagel chip variants."""

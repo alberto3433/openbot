@@ -693,6 +693,86 @@ def _attach_position_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -
             )
 
 
+def _attach_amount_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -> None:
+    """Attach amount qualifiers (e.g., 'extra', 'light') to matching selections.
+
+    When a user says 'coffee with extra milk', the qualifier should attach to the
+    milk selection rather than creating a separate instruction. Amount qualifiers
+    appear BEFORE the modifier (e.g., "extra milk") unlike position qualifiers
+    which appear after ("milk on the side").
+
+    Mutates parsed_item in place: updates selection display_name and removes
+    redundant special instructions.
+
+    Args:
+        parsed_item: The parsed item entry to modify
+        text_lower: Lowercased original user input text
+    """
+    qualifier_patterns = menu_cache.get_qualifier_patterns()
+
+    for pattern in qualifier_patterns:
+        qualifier_info = menu_cache.get_qualifier_info(pattern)
+        if not qualifier_info or qualifier_info.get("category") == "position":
+            continue  # Only handle non-position (amount) qualifiers
+
+        if pattern not in text_lower:
+            continue
+
+        normalized_form = qualifier_info.get("normalized_form", pattern)
+
+        for sel in parsed_item.selections:
+            slug_words = sel.slug.replace("_", " ")
+            words = slug_words.split()
+            matched = False
+            for i in range(len(words)):
+                suffix = " ".join(words[i:])
+                # Amount qualifiers come BEFORE the modifier: "extra milk", "lots of milk"
+                # Allow optional filler words between qualifier and modifier
+                combined = rf'\b{re.escape(pattern)}\s+(?:\w+\s+)*?{re.escape(suffix)}\b'
+                if re.search(combined, text_lower):
+                    matched = True
+                    break
+            if not matched:
+                continue
+
+            # Attach qualifier to display_name
+            display_name = sel.display_name
+            if not display_name:
+                display_name = menu_cache.get_global_option_display_name(
+                    sel.category, sel.slug
+                )
+            if not display_name:
+                display_name = sel.slug.replace("_", " ").title()
+
+            sel.display_name = f"{display_name} ({normalized_form})"
+
+            # Remove redundant special instructions whose base word is part
+            # of the matched slug (e.g., "extra milk" where "milk" is in slug_parts)
+            slug_parts = sel.slug.lower().split("_")
+            kept = []
+            for instr in parsed_item.special_instructions:
+                instr_lower = instr.lower()
+                if normalized_form in instr_lower or pattern in instr_lower:
+                    base_word = instr_lower
+                    for prefix in [f"{normalized_form} ", f"{pattern} "]:
+                        if base_word.startswith(prefix):
+                            base_word = base_word[len(prefix):].strip()
+                            break
+                    if base_word in slug_parts:
+                        logger.debug(
+                            "Removing redundant instruction '%s' - covered by '%s'",
+                            instr, sel.display_name,
+                        )
+                        continue
+                kept.append(instr)
+            parsed_item.special_instructions = kept
+
+            logger.debug(
+                "Attached amount qualifier '%s' to selection '%s' -> '%s'",
+                normalized_form, sel.slug, sel.display_name,
+            )
+
+
 def _extract_and_build_configurable_item(
     text: str,
     text_lower: str,
@@ -822,6 +902,8 @@ def _extract_and_build_configurable_item(
 
     # Attach position qualifiers (e.g., "on the side") to matching selections
     _attach_position_qualifiers(parsed_item, text_lower)
+    # Attach amount qualifiers (e.g., "extra", "light") to matching selections
+    _attach_amount_qualifiers(parsed_item, text_lower)
 
     return OpenInputResponse(parsed_items=[parsed_item])
 

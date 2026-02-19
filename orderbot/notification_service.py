@@ -52,24 +52,38 @@ def _log_notification(
         db.rollback()
 
 
+def _send_sms_logged(db: Session, order: Order, event: str, body: str) -> None:
+    """Send an SMS and log the result to the notification_log table.
+
+    Skips silently if the order has no phone number or SMS is not configured.
+
+    Args:
+        db: Database session for logging.
+        order: The order (must have .phone and .id).
+        event: Event name for the log entry (e.g., "payment_received").
+        body: SMS message body.
+    """
+    if not (order.phone and is_sms_configured()):
+        return
+    sid = send_sms(order.phone, body)
+    _log_notification(
+        db, order.id, "sms", event, order.phone,
+        status=NotificationStatus.SENT if sid else NotificationStatus.FAILED,
+        provider_message_id=sid,
+    )
+
+
 def notify_payment_received(
     db: Session,
     order: Order,
     store_name: str,
 ) -> None:
     """Send payment received notifications."""
-    # SMS
-    if order.phone and is_sms_configured():
-        sms_body = (
-            f"Payment received for order #{order.id} at {store_name}! "
-            f"Total: ${order.total_price:.2f}. We'll let you know when it's ready."
-        )
-        sid = send_sms(order.phone, sms_body)
-        _log_notification(
-            db, order.id, "sms", "payment_received", order.phone,
-            status=NotificationStatus.SENT if sid else NotificationStatus.FAILED,
-            provider_message_id=sid,
-        )
+    _send_sms_logged(
+        db, order, "payment_received",
+        f"Payment received for order #{order.id} at {store_name}! "
+        f"Total: ${order.total_price:.2f}. We'll let you know when it's ready.",
+    )
 
     # Email - brief confirmation
     if order.customer_email and is_email_configured():
@@ -92,15 +106,10 @@ def notify_order_ready(
     store_name: str,
 ) -> None:
     """Send 'order is ready' notifications."""
-    # SMS
-    if order.phone and is_sms_configured():
-        sms_body = f"Your order #{order.id} at {store_name} is ready for pickup!"
-        sid = send_sms(order.phone, sms_body)
-        _log_notification(
-            db, order.id, "sms", "order_ready", order.phone,
-            status=NotificationStatus.SENT if sid else NotificationStatus.FAILED,
-            provider_message_id=sid,
-        )
+    _send_sms_logged(
+        db, order, "order_ready",
+        f"Your order #{order.id} at {store_name} is ready for pickup!",
+    )
 
     # Email
     if order.customer_email and is_email_configured():
@@ -124,15 +133,10 @@ def notify_order_cancelled(
     """Send order cancellation notifications."""
     reason = f" Reason: {order.cancellation_reason}" if order.cancellation_reason else ""
 
-    # SMS
-    if order.phone and is_sms_configured():
-        sms_body = f"Your order #{order.id} at {store_name} has been cancelled.{reason}"
-        sid = send_sms(order.phone, sms_body)
-        _log_notification(
-            db, order.id, "sms", "order_cancelled", order.phone,
-            status=NotificationStatus.SENT if sid else NotificationStatus.FAILED,
-            provider_message_id=sid,
-        )
+    _send_sms_logged(
+        db, order, "order_cancelled",
+        f"Your order #{order.id} at {store_name} has been cancelled.{reason}",
+    )
 
     # Email
     if order.customer_email and is_email_configured():

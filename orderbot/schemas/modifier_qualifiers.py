@@ -38,10 +38,11 @@ When qualifiers from the same category conflict (e.g., "light extra mayo"),
 the system asks the user for clarification rather than guessing.
 """
 
-from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+from .base import FullTimestampedModel
 
 
 # Valid category values
@@ -105,14 +106,8 @@ class ModifierQualifierUpdate(BaseModel):
     )
 
 
-class ModifierQualifierOut(ModifierQualifierBase):
+class ModifierQualifierOut(ModifierQualifierBase, FullTimestampedModel):
     """Response model for a modifier qualifier."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    created_at: datetime
-    updated_at: datetime
 
 
 class ModifierQualifierList(BaseModel):

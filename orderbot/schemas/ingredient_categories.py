@@ -24,10 +24,11 @@ Categories are classified by how they're used:
   Examples: bread
 """
 
-from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+from .base import FullTimestampedModel
 
 
 # Valid modifier type values
@@ -93,14 +94,8 @@ class IngredientCategoryUpdate(BaseModel):
     )
 
 
-class IngredientCategoryOut(IngredientCategoryBase):
+class IngredientCategoryOut(IngredientCategoryBase, FullTimestampedModel):
     """Response model for an ingredient category."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    created_at: datetime
-    updated_at: datetime
 
 
 class IngredientCategoryList(BaseModel):

@@ -13,9 +13,9 @@ Endpoint Coverage:
 - DELETE /admin/ingredient-subcategories/{id}: Delete
 """
 
-from datetime import datetime
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel, ConfigDict, Field
+from .base import FullTimestampedModel
 
 
 class IngredientSubcategoryBase(BaseModel):
@@ -72,14 +72,8 @@ class IngredientSubcategoryUpdate(BaseModel):
     )
 
 
-class IngredientSubcategoryOut(IngredientSubcategoryBase):
+class IngredientSubcategoryOut(IngredientSubcategoryBase, FullTimestampedModel):
     """Response model for an ingredient subcategory."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    created_at: datetime
-    updated_at: datetime
 
 
 class IngredientSubcategoryList(BaseModel):

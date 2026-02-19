@@ -60,6 +60,24 @@ def _get_normalized_phone_filter(phone_column):
     )
 
 
+def _phone_matches(phone: str):
+    """Return a SQLAlchemy filter clause matching a phone number.
+
+    Combines phone normalization, null check, and LIKE matching into a
+    single reusable filter clause.
+
+    Args:
+        phone: Phone number in any format
+
+    Returns:
+        SQLAlchemy AND clause for phone matching
+    """
+    from sqlalchemy import and_
+    suffix = _normalize_phone_for_lookup(phone)
+    normalized = _get_normalized_phone_filter(Order.phone)
+    return and_(Order.phone.isnot(None), normalized.like(f"%{suffix}%"))
+
+
 def _order_item_to_dict(item) -> dict[str, Any]:
     """Convert an OrderItem ORM object to a dict for API responses.
 
@@ -111,17 +129,13 @@ def lookup_customer_by_phone(db: Session, phone: str) -> dict[str, Any] | None:
     if not phone:
         return None
 
-    # Normalize phone and get SQL filter expression
-    phone_suffix = _normalize_phone_for_lookup(phone)
-    normalized_db_phone = _get_normalized_phone_filter(Order.phone)
-
     # Find most recent order with this phone number
     # Use joinedload to eagerly load items for repeat order functionality
+    phone_filter = _phone_matches(phone)
     recent_order = (
         db.query(Order)
         .options(joinedload(Order.items))
-        .filter(Order.phone.isnot(None))
-        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .filter(phone_filter)
         .order_by(Order.created_at.desc())
         .first()
     )
@@ -132,8 +146,7 @@ def lookup_customer_by_phone(db: Session, phone: str) -> dict[str, Any] | None:
     # Get order history count (using same normalized phone matching)
     order_count = (
         db.query(Order)
-        .filter(Order.phone.isnot(None))
-        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .filter(phone_filter)
         .count()
     )
 
@@ -190,8 +203,7 @@ def lookup_customer_order_history(
     if not phone:
         return None
 
-    phone_suffix = _normalize_phone_for_lookup(phone)
-    normalized_db_phone = _get_normalized_phone_filter(Order.phone)
+    phone_filter = _phone_matches(phone)
 
     # Calculate cutoff date
     cutoff_date = datetime.utcnow() - timedelta(days=days)
@@ -200,8 +212,7 @@ def lookup_customer_order_history(
     orders = (
         db.query(Order)
         .options(joinedload(Order.items))
-        .filter(Order.phone.isnot(None))
-        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .filter(phone_filter)
         .filter(Order.created_at >= cutoff_date)
         .order_by(Order.created_at.desc())
         .limit(limit)
@@ -214,8 +225,7 @@ def lookup_customer_order_history(
     # Get total order count (all time)
     total_count = (
         db.query(Order)
-        .filter(Order.phone.isnot(None))
-        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .filter(phone_filter)
         .count()
     )
 
@@ -276,15 +286,11 @@ def get_order_by_id(
     if not phone:
         return None
 
-    phone_suffix = _normalize_phone_for_lookup(phone)
-    normalized_db_phone = _get_normalized_phone_filter(Order.phone)
-
     order = (
         db.query(Order)
         .options(joinedload(Order.items))
         .filter(Order.id == order_id)
-        .filter(Order.phone.isnot(None))
-        .filter(normalized_db_phone.like(f"%{phone_suffix}%"))
+        .filter(_phone_matches(phone))
         .first()
     )
 

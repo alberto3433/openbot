@@ -40,60 +40,106 @@ Usage:
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import ResponsePattern
+from ..exceptions import ValidationError
 from ..schemas.response_patterns import (
     ResponsePatternOut,
     ResponsePatternCreate,
     ResponsePatternUpdate,
     ResponsePatternTypeStats,
 )
+from .crud_factory import CRUDRouterFactory
 
 logger = logging.getLogger(__name__)
-
-# Router definition
-admin_response_patterns_router = APIRouter(
-    prefix="/admin/response-patterns",
-    tags=["Admin - Response Patterns"]
-)
 
 # Valid pattern types
 VALID_PATTERN_TYPES = {"affirmative", "negative", "cancel", "done"}
 
 
-@admin_response_patterns_router.get("", response_model=list[ResponsePatternOut])
-def list_response_patterns(
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-    pattern_type: str | None = Query(None, description="Filter by pattern type"),
-) -> list[ResponsePatternOut]:
-    """List all response patterns, optionally filtered by type."""
-    query = db.query(ResponsePattern)
-
-    if pattern_type:
-        if pattern_type not in VALID_PATTERN_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid pattern_type. Must be one of: {', '.join(VALID_PATTERN_TYPES)}"
-            )
-        query = query.filter(ResponsePattern.pattern_type == pattern_type)
-
-    patterns = query.order_by(ResponsePattern.pattern_type, ResponsePattern.pattern).all()
-
-    return [
-        ResponsePatternOut(
-            id=p.id,
-            pattern_type=p.pattern_type,
-            pattern=p.pattern,
-            created_at=p.created_at,
+def _validate_pattern_type(pattern_type: str) -> None:
+    """Raise ValidationError if pattern_type is not in the allowed set."""
+    if pattern_type not in VALID_PATTERN_TYPES:
+        raise ValidationError(
+            f"Invalid pattern_type. Must be one of: {', '.join(sorted(VALID_PATTERN_TYPES))}"
         )
-        for p in patterns
-    ]
 
+
+def _check_composite_unique(
+    db: Session,
+    pattern_type: str,
+    pattern: str,
+    exclude_id: int | None = None,
+) -> None:
+    """Raise ValidationError if (pattern_type, pattern) already exists."""
+    query = db.query(ResponsePattern).filter(
+        ResponsePattern.pattern_type == pattern_type,
+        ResponsePattern.pattern == pattern,
+    )
+    if exclude_id is not None:
+        query = query.filter(ResponsePattern.id != exclude_id)
+    if query.first():
+        raise ValidationError(
+            f"Pattern '{pattern}' already exists for type '{pattern_type}'"
+        )
+
+
+def _on_before_create(payload: ResponsePatternCreate, db: Session) -> dict:
+    """Validate and normalize before creating a response pattern."""
+    _validate_pattern_type(payload.pattern_type)
+    normalized_pattern = payload.pattern.lower().strip()
+    _check_composite_unique(db, payload.pattern_type, normalized_pattern)
+    return {
+        "pattern_type": payload.pattern_type,
+        "pattern": normalized_pattern,
+    }
+
+
+def _on_before_update(
+    item: ResponsePattern,
+    payload: ResponsePatternUpdate,
+    db: Session,
+) -> None:
+    """Validate and normalize before updating a response pattern."""
+    if payload.pattern_type is not None:
+        _validate_pattern_type(payload.pattern_type)
+
+    new_pattern = payload.pattern.lower().strip() if payload.pattern else item.pattern
+    new_type = payload.pattern_type if payload.pattern_type else item.pattern_type
+
+    if new_pattern != item.pattern or new_type != item.pattern_type:
+        _check_composite_unique(db, new_type, new_pattern, exclude_id=item.id)
+
+    if payload.pattern_type is not None:
+        item.pattern_type = payload.pattern_type
+    if payload.pattern is not None:
+        item.pattern = new_pattern
+
+
+_crud = CRUDRouterFactory(
+    model=ResponsePattern,
+    create_schema=ResponsePatternCreate,
+    update_schema=ResponsePatternUpdate,
+    response_schema=ResponsePatternOut,
+    prefix="/admin/response-patterns",
+    tags=["Admin - Response Patterns"],
+    not_found_message="Response pattern not found",
+    order_by=["pattern_type", "pattern"],
+    on_before_create=_on_before_create,
+    on_before_update=_on_before_update,
+)
+
+admin_response_patterns_router = _crud.router
+
+
+# =============================================================================
+# Custom Endpoints (not covered by CRUD factory)
+# =============================================================================
 
 @admin_response_patterns_router.get("/stats", response_model=list[ResponsePatternTypeStats])
 def get_response_pattern_stats(
@@ -117,151 +163,3 @@ def get_response_pattern_stats(
         ))
 
     return result
-
-
-@admin_response_patterns_router.get("/{pattern_id}", response_model=ResponsePatternOut)
-def get_response_pattern(
-    pattern_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ResponsePatternOut:
-    """Get a specific response pattern by ID."""
-    pattern = db.query(ResponsePattern).filter(ResponsePattern.id == pattern_id).first()
-    if not pattern:
-        raise HTTPException(status_code=404, detail="Response pattern not found")
-
-    return ResponsePatternOut(
-        id=pattern.id,
-        pattern_type=pattern.pattern_type,
-        pattern=pattern.pattern,
-        created_at=pattern.created_at,
-    )
-
-
-@admin_response_patterns_router.post("", response_model=ResponsePatternOut, status_code=201)
-def create_response_pattern(
-    payload: ResponsePatternCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ResponsePatternOut:
-    """Create a new response pattern."""
-    # Validate pattern type
-    if payload.pattern_type not in VALID_PATTERN_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid pattern_type. Must be one of: {', '.join(VALID_PATTERN_TYPES)}"
-        )
-
-    # Normalize pattern to lowercase
-    pattern_normalized = payload.pattern.lower().strip()
-
-    # Check for duplicate
-    existing = db.query(ResponsePattern).filter(
-        ResponsePattern.pattern_type == payload.pattern_type,
-        ResponsePattern.pattern == pattern_normalized
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Pattern '{pattern_normalized}' already exists for type '{payload.pattern_type}'"
-        )
-
-    pattern = ResponsePattern(
-        pattern_type=payload.pattern_type,
-        pattern=pattern_normalized,
-    )
-    db.add(pattern)
-    db.commit()
-    db.refresh(pattern)
-
-    logger.info(
-        "Created response pattern: '%s' (type=%s, id=%d)",
-        pattern.pattern,
-        pattern.pattern_type,
-        pattern.id
-    )
-
-    return ResponsePatternOut(
-        id=pattern.id,
-        pattern_type=pattern.pattern_type,
-        pattern=pattern.pattern,
-        created_at=pattern.created_at,
-    )
-
-
-@admin_response_patterns_router.put("/{pattern_id}", response_model=ResponsePatternOut)
-def update_response_pattern(
-    pattern_id: int,
-    payload: ResponsePatternUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> ResponsePatternOut:
-    """Update a response pattern."""
-    pattern = db.query(ResponsePattern).filter(ResponsePattern.id == pattern_id).first()
-    if not pattern:
-        raise HTTPException(status_code=404, detail="Response pattern not found")
-
-    # Validate pattern type if changing it
-    if payload.pattern_type is not None:
-        if payload.pattern_type not in VALID_PATTERN_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid pattern_type. Must be one of: {', '.join(VALID_PATTERN_TYPES)}"
-            )
-
-    # Normalize pattern if changing it
-    new_pattern = payload.pattern.lower().strip() if payload.pattern else pattern.pattern
-    new_type = payload.pattern_type if payload.pattern_type else pattern.pattern_type
-
-    # Check for duplicate if changing pattern or type
-    if new_pattern != pattern.pattern or new_type != pattern.pattern_type:
-        existing = db.query(ResponsePattern).filter(
-            ResponsePattern.pattern_type == new_type,
-            ResponsePattern.pattern == new_pattern,
-            ResponsePattern.id != pattern_id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Pattern '{new_pattern}' already exists for type '{new_type}'"
-            )
-
-    if payload.pattern_type is not None:
-        pattern.pattern_type = payload.pattern_type
-    if payload.pattern is not None:
-        pattern.pattern = new_pattern
-
-    db.commit()
-    db.refresh(pattern)
-
-    logger.info("Updated response pattern: '%s' (type=%s, id=%d)",
-                pattern.pattern, pattern.pattern_type, pattern.id)
-
-    return ResponsePatternOut(
-        id=pattern.id,
-        pattern_type=pattern.pattern_type,
-        pattern=pattern.pattern,
-        created_at=pattern.created_at,
-    )
-
-
-@admin_response_patterns_router.delete("/{pattern_id}", status_code=204)
-def delete_response_pattern(
-    pattern_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete a response pattern."""
-    pattern = db.query(ResponsePattern).filter(ResponsePattern.id == pattern_id).first()
-    if not pattern:
-        raise HTTPException(status_code=404, detail="Response pattern not found")
-
-    logger.info(
-        "Deleting response pattern: '%s' (type=%s, id=%d)",
-        pattern.pattern,
-        pattern.pattern_type,
-        pattern.id
-    )
-    db.delete(pattern)
-    db.commit()
-    return None

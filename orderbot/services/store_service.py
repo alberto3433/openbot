@@ -12,6 +12,7 @@ Functions:
 """
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 _store_info_cache: dict[str, dict[str, Any]] = {}
 _store_info_cache_time: dict[str, float] = {}
 _STORE_CACHE_TTL = 300  # 5 minutes
+_store_cache_lock = threading.Lock()
 
 
 def get_or_create_company(db: Session) -> Company:
@@ -88,70 +90,71 @@ def build_store_info(
     """
     cache_key = store_id or "__default__"
 
-    # Check cache first
-    cached = _store_info_cache.get(cache_key)
-    cache_time = _store_info_cache_time.get(cache_key, 0)
-    if cached and (time.time() - cache_time) < _STORE_CACHE_TTL:
-        return cached.copy()
+    with _store_cache_lock:
+        # Check cache first
+        cached = _store_info_cache.get(cache_key)
+        cache_time = _store_info_cache_time.get(cache_key, 0)
+        if cached and (time.time() - cache_time) < _STORE_CACHE_TTL:
+            return cached.copy()
 
-    # Get company name if not provided
-    if not company_name:
-        company = db.query(Company).first()
-        company_name = company.name if company else "OrderBot"
+        # Get company name if not provided
+        if not company_name:
+            company = db.query(Company).first()
+            company_name = company.name if company else "OrderBot"
 
-    store_info = {
-        "name": company_name,
-        "store_id": store_id,
-        "city_tax_rate": 0.0,
-        "state_tax_rate": 0.0,
-        "delivery_zip_codes": [],
-        # Store location and contact info
-        "address": None,
-        "city": None,
-        "state": None,
-        "zip_code": None,
-        "phone": None,
-        "hours": None,
-        # All stores info for cross-store delivery lookup
-        "all_stores": [],
-    }
-
-    if store_id:
-        store = db.query(Store).filter(Store.store_id == store_id).first()
-        if store:
-            store_info["name"] = store.name or company_name
-            store_info["city_tax_rate"] = store.city_tax_rate or 0.0
-            store_info["state_tax_rate"] = store.state_tax_rate or 0.0
-            store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
-            store_info["delivery_fee"] = store.delivery_fee if store.delivery_fee is not None else 0.0
-            # Add location and contact info
-            store_info["address"] = store.address
-            store_info["city"] = store.city
-            store_info["state"] = store.state
-            store_info["zip_code"] = store.zip_code
-            store_info["phone"] = store.phone
-            store_info["hours"] = store.hours
-
-    # Get all stores for delivery zone lookup
-    all_stores = db.query(Store).filter(Store.status == "open").all()
-    store_info["all_stores"] = [
-        {
-            "store_id": s.store_id,
-            "name": s.name,
-            "delivery_zip_codes": s.delivery_zip_codes or [],
-            "address": s.address,
-            "city": s.city,
-            "state": s.state,
-            "phone": s.phone,
+        store_info = {
+            "name": company_name,
+            "store_id": store_id,
+            "city_tax_rate": 0.0,
+            "state_tax_rate": 0.0,
+            "delivery_zip_codes": [],
+            # Store location and contact info
+            "address": None,
+            "city": None,
+            "state": None,
+            "zip_code": None,
+            "phone": None,
+            "hours": None,
+            # All stores info for cross-store delivery lookup
+            "all_stores": [],
         }
-        for s in all_stores
-    ]
 
-    # Cache before returning
-    _store_info_cache[cache_key] = store_info
-    _store_info_cache_time[cache_key] = time.time()
+        if store_id:
+            store = db.query(Store).filter(Store.store_id == store_id).first()
+            if store:
+                store_info["name"] = store.name or company_name
+                store_info["city_tax_rate"] = store.city_tax_rate or 0.0
+                store_info["state_tax_rate"] = store.state_tax_rate or 0.0
+                store_info["delivery_zip_codes"] = store.delivery_zip_codes or []
+                store_info["delivery_fee"] = store.delivery_fee if store.delivery_fee is not None else 0.0
+                # Add location and contact info
+                store_info["address"] = store.address
+                store_info["city"] = store.city
+                store_info["state"] = store.state
+                store_info["zip_code"] = store.zip_code
+                store_info["phone"] = store.phone
+                store_info["hours"] = store.hours
 
-    return store_info
+        # Get all stores for delivery zone lookup
+        all_stores = db.query(Store).filter(Store.status == "open").all()
+        store_info["all_stores"] = [
+            {
+                "store_id": s.store_id,
+                "name": s.name,
+                "delivery_zip_codes": s.delivery_zip_codes or [],
+                "address": s.address,
+                "city": s.city,
+                "state": s.state,
+                "phone": s.phone,
+            }
+            for s in all_stores
+        ]
+
+        # Cache before returning
+        _store_info_cache[cache_key] = store_info
+        _store_info_cache_time[cache_key] = time.time()
+
+        return store_info
 
 
 def invalidate_store_cache(store_id: str | None = None) -> None:
@@ -163,15 +166,16 @@ def invalidate_store_cache(store_id: str | None = None) -> None:
     Args:
         store_id: Specific store ID to invalidate, or None to clear all
     """
-    if store_id:
-        _store_info_cache.pop(store_id, None)
-        _store_info_cache_time.pop(store_id, None)
-        # Also invalidate default since it contains all_stores list
-        _store_info_cache.pop("__default__", None)
-        _store_info_cache_time.pop("__default__", None)
-    else:
-        _store_info_cache.clear()
-        _store_info_cache_time.clear()
+    with _store_cache_lock:
+        if store_id:
+            _store_info_cache.pop(store_id, None)
+            _store_info_cache_time.pop(store_id, None)
+            # Also invalidate default since it contains all_stores list
+            _store_info_cache.pop("__default__", None)
+            _store_info_cache_time.pop("__default__", None)
+        else:
+            _store_info_cache.clear()
+            _store_info_cache_time.clear()
     logger.debug("Store cache invalidated: %s", store_id or "all")
 
 

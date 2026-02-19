@@ -104,9 +104,10 @@ from .routes import (
     admin_item_type_global_attrs_router,
     admin_size_categories_router,
     admin_sizes_router,
-    admin_unrecognized_suggestions_router,
-    admin_unrecognized_logs_router,
+    admin_unrecognized_menu_item_suggestions_router,
+    admin_unrecognized_menu_item_logs_router,
     admin_unrecognized_option_suggestions_router,
+    admin_unrecognized_ingredient_suggestions_router,
     admin_component_slots_router,
     admin_overall_categories_router,
     public_stores_router,
@@ -342,9 +343,10 @@ api_v1_router.include_router(admin_global_attributes_router)
 api_v1_router.include_router(admin_item_type_global_attrs_router)
 api_v1_router.include_router(admin_size_categories_router)
 api_v1_router.include_router(admin_sizes_router)
-api_v1_router.include_router(admin_unrecognized_suggestions_router)
-api_v1_router.include_router(admin_unrecognized_logs_router)
+api_v1_router.include_router(admin_unrecognized_menu_item_suggestions_router)
+api_v1_router.include_router(admin_unrecognized_menu_item_logs_router)
 api_v1_router.include_router(admin_unrecognized_option_suggestions_router)
+api_v1_router.include_router(admin_unrecognized_ingredient_suggestions_router)
 api_v1_router.include_router(admin_component_slots_router)
 api_v1_router.include_router(admin_overall_categories_router)
 api_v1_router.include_router(public_stores_router)

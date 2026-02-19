@@ -112,6 +112,40 @@ def _detect_partial_modifier_split(text_after_item: str, total_qty: int) -> tupl
 # Generic Item Parsing
 # =============================================================================
 
+def _parse_by_pound_item(text: str, text_lower: str) -> ParsedItemEntry | None:
+    """Check for and parse by-pound orders (e.g., "quarter pound of cream cheese").
+
+    Args:
+        text: Original user input text.
+        text_lower: Lowercased user input.
+
+    Returns:
+        ParsedItemEntry with item_type="by_pound" if matched, None otherwise.
+    """
+    weight_unit, product_name = _extract_by_pound_info(text_lower)
+    if not weight_unit:
+        return None
+
+    by_weight_items = menu_cache.get_menu_items_by_unit_type("by_weight")
+    matched_item = None
+    for name in by_weight_items:
+        name_lower = name.lower()
+        if product_name in name_lower or any(
+            word in name_lower for word in product_name.split() if len(word) > 3
+        ):
+            if weight_unit.replace(" ", "") in name_lower.replace(" ", ""):
+                matched_item = name
+                break
+
+    return ParsedItemEntry(
+        item_type="by_pound",
+        item_name=matched_item or product_name,
+        quantity=1,
+        weight_unit=weight_unit,
+        original_text=text,
+    )
+
+
 def _parse_item_generic(
     text: str,
     item_type: str | None = None,
@@ -134,41 +168,13 @@ def _parse_item_generic(
     Returns:
         ParsedItemEntry with extracted attributes and modifiers, or None if
         unable to parse
-
-    Example:
-        >>> _parse_item_generic("large iced latte", "sized_beverage", "latte")
-        ParsedItemEntry(item_type="sized_beverage", item_name="latte",
-                       selections=[Selection(slug="large", category="size"), ...])
-        >>> _parse_item_generic("quarter pound of plain cream cheese")
-        ParsedItemEntry(item_type="by_pound", item_name="plain cream cheese",
-                       weight_unit="1/4 lb")
     """
     text_lower = text.lower()
 
     # Check for by-pound pattern first
-    weight_unit, product_name = _extract_by_pound_info(text_lower)
-    if weight_unit:
-        # This is a by-pound order - find matching menu item
-        by_weight_items = menu_cache.get_menu_items_by_unit_type("by_weight")
-        matched_item = None
-        for item_name in by_weight_items:
-            # Check if product name matches (fuzzy match)
-            item_lower = item_name.lower()
-            if product_name in item_lower or any(
-                word in item_lower for word in product_name.split() if len(word) > 3
-            ):
-                # Check if weight matches too
-                if weight_unit.replace(" ", "") in item_lower.replace(" ", ""):
-                    matched_item = item_name
-                    break
-
-        return ParsedItemEntry(
-            item_type="by_pound",
-            item_name=matched_item or product_name,
-            quantity=1,
-            weight_unit=weight_unit,
-            original_text=text,
-        )
+    by_pound_result = _parse_by_pound_item(text, text_lower)
+    if by_pound_result:
+        return by_pound_result
 
     # Auto-detect item type if not provided
     if not item_type:
@@ -883,9 +889,17 @@ def _extract_and_build_configurable_item(
         special_instructions, attr_result, modifier_selections,
     )
 
+    # Detect unrecognized ingredients (tokens not consumed by attributes or modifiers)
+    from .extraction import _detect_unrecognized_ingredients
+    modifier_spans = [(text_lower.find(s.slug), text_lower.find(s.slug) + len(s.slug))
+                      for s in modifier_selections if text_lower.find(s.slug) != -1]
+    all_consumed_spans = list(attr_matched_spans or []) + modifier_spans
+    unrecognized_ingredients = _detect_unrecognized_ingredients(text_lower, all_consumed_spans)
+
     logger.info(
-        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s",
-        detected_item_type, quantity, item_name, list(attr_result.values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions
+        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s, unrecognized=%s",
+        detected_item_type, quantity, item_name, list(attr_result.values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions,
+        [u["token"] for u in unrecognized_ingredients] if unrecognized_ingredients else []
     )
 
     # Build ParsedItemEntry using build_parsed_item (converts attr_result to selections)
@@ -898,6 +912,7 @@ def _extract_and_build_configurable_item(
         modifiers=modifier_selections,
         original_text=text,
         special_instructions=special_instructions,
+        unrecognized_ingredients=unrecognized_ingredients,
     )
 
     # Attach position qualifiers (e.g., "on the side") to matching selections

@@ -253,6 +253,16 @@ class ItemBuilder:
         if ctx.special_instructions:
             item.special_instructions = list(ctx.special_instructions)
 
+    def set_unrecognized_ingredients(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
+        """Set unrecognized ingredient suggestions for the item.
+
+        Args:
+            item: The menu item to configure.
+            ctx: The build context.
+        """
+        if ctx.unrecognized_ingredients:
+            item.unrecognized_ingredients = list(ctx.unrecognized_ingredients)
+
     def infer_attributes(self, item: MenuItemTask) -> None:
         """Infer attributes from item name.
 
@@ -344,7 +354,10 @@ class ItemBuilder:
         # Step 10: Set special instructions
         self.set_special_instructions(item, ctx)
 
-        # Step 11: Infer attributes from item name
+        # Step 11: Set unrecognized ingredients
+        self.set_unrecognized_ingredients(item, ctx)
+
+        # Step 12: Infer attributes from item name
         self.infer_attributes(item)
 
         # Step 12: Recalculate price

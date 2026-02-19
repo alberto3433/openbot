@@ -1,26 +1,11 @@
 """
-Unrecognized Item Suggestions Schemas for Orderbot
-===================================================
+Unrecognized Suggestions Schemas for Orderbot
+==============================================
 
-This module defines Pydantic models for managing unrecognized item suggestions.
-These are curated responses for items users commonly request that aren't on the menu.
-
-Tables:
--------
-- unrecognized_item_suggestions: Curated responses for known unrecognized items
-- unrecognized_item_log: Analytics for tracking unrecognized item requests
-
-Match Types:
-------------
-- exact: Input must exactly match the pattern
-- prefix: Input must start with the pattern
-- contains: Input must contain the pattern
-
-Example Suggestions:
---------------------
-- "croissant" -> suggest pastry category
-- "home fries" -> suggest side category
-- "expresso" (misspelling) -> suggest espresso category
+Pydantic models for managing unrecognized suggestions:
+- Menu items: items users request that aren't on the menu
+- Options: attribute options users mention that don't exist (e.g., "venti")
+- Ingredients: ingredient requests not on the menu (e.g., "honey")
 """
 
 from datetime import datetime
@@ -29,21 +14,12 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 
-class UnrecognizedSuggestionOut(BaseModel):
-    """
-    Response model for an unrecognized item suggestion.
+# =============================================================================
+# Unrecognized Menu Item Suggestion Schemas
+# =============================================================================
 
-    Attributes:
-        id: Database primary key
-        input_pattern: The pattern to match against user input
-        match_type: How to match (exact, prefix, contains)
-        suggested_item_type_id: FK to item_types table
-        suggested_item_type_slug: Item type slug (derived from relationship)
-        suggested_menu_item_names: List of menu item names (derived from relationship)
-        hit_count: How many times this suggestion has been used
-        is_active: Whether this suggestion is enabled
-        created_at: When the suggestion was created
-    """
+class UnrecognizedMenuItemSuggestionOut(BaseModel):
+    """Response model for an unrecognized menu item suggestion."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -57,7 +33,7 @@ class UnrecognizedSuggestionOut(BaseModel):
     created_at: datetime | None = None
 
     @classmethod
-    def from_db(cls, db_obj) -> "UnrecognizedSuggestionOut":
+    def from_db(cls, db_obj) -> "UnrecognizedMenuItemSuggestionOut":
         """Create from database object with relationships."""
         item_type_slug = None
         if db_obj.suggested_item_type:
@@ -80,24 +56,8 @@ class UnrecognizedSuggestionOut(BaseModel):
         )
 
 
-class UnrecognizedSuggestionCreate(BaseModel):
-    """
-    Request model for creating an unrecognized item suggestion.
-
-    Attributes:
-        input_pattern: The pattern to match (required)
-        match_type: How to match (default: "exact")
-        suggested_item_type_slug: Item type slug to suggest (looked up to get FK)
-        suggested_menu_item_names: List of menu item names to suggest (looked up to get FKs)
-        is_active: Whether this suggestion is enabled (default: True)
-
-    Example:
-        {
-            "input_pattern": "croissant",
-            "match_type": "exact",
-            "suggested_menu_item_names": ["Rugelach", "Babka"]
-        }
-    """
+class UnrecognizedMenuItemSuggestionCreate(BaseModel):
+    """Request model for creating an unrecognized menu item suggestion."""
     input_pattern: str
     match_type: str = "exact"
     suggested_item_type_slug: str | None = None
@@ -105,12 +65,8 @@ class UnrecognizedSuggestionCreate(BaseModel):
     is_active: bool = True
 
 
-class UnrecognizedSuggestionUpdate(BaseModel):
-    """
-    Request model for updating an unrecognized item suggestion.
-
-    All fields optional - only provided fields are updated.
-    """
+class UnrecognizedMenuItemSuggestionUpdate(BaseModel):
+    """Request model for updating an unrecognized menu item suggestion."""
     input_pattern: str | None = None
     match_type: str | None = None
     suggested_item_type_slug: str | None = None
@@ -118,10 +74,8 @@ class UnrecognizedSuggestionUpdate(BaseModel):
     is_active: bool | None = None
 
 
-class UnrecognizedSuggestionStats(BaseModel):
-    """
-    Statistics for unrecognized item suggestions.
-    """
+class UnrecognizedMenuItemSuggestionStats(BaseModel):
+    """Statistics for unrecognized menu item suggestions."""
     total_suggestions: int
     active_suggestions: int
     total_hits: int
@@ -130,13 +84,8 @@ class UnrecognizedSuggestionStats(BaseModel):
     top_hits: list[dict[str, Any]]
 
 
-class UnrecognizedLogEntry(BaseModel):
-    """
-    Response model for an unrecognized item log entry.
-
-    These are analytics records showing what items users requested
-    that weren't found on the menu.
-    """
+class UnrecognizedMenuItemLogEntry(BaseModel):
+    """Response model for an unrecognized menu item log entry."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -149,15 +98,13 @@ class UnrecognizedLogEntry(BaseModel):
     created_at: datetime | None = None
 
 
-class UnrecognizedLogStats(BaseModel):
-    """
-    Aggregated statistics for unrecognized item logs.
-    """
+class UnrecognizedMenuItemLogStats(BaseModel):
+    """Aggregated statistics for unrecognized menu item logs."""
     total_requests: int
     by_fallback_level: dict[str, int]
     by_inferred_category: dict[str, int]
     top_unrecognized: list[dict[str, Any]]
-    recent_entries: list[UnrecognizedLogEntry]
+    recent_entries: list[UnrecognizedMenuItemLogEntry]
 
 
 # =============================================================================
@@ -165,17 +112,7 @@ class UnrecognizedLogStats(BaseModel):
 # =============================================================================
 
 class UnrecognizedOptionSuggestionOut(BaseModel):
-    """
-    Response model for an unrecognized attribute option suggestion.
-
-    Attributes:
-        id: Database primary key
-        input_pattern: The pattern to match against user input (e.g., "venti")
-        attribute_slug: The attribute this suggestion is for (e.g., "size")
-        suggested_display_name: Human-readable name (e.g., "Venti")
-        is_active: Whether this suggestion is enabled
-        created_at: When the suggestion was created
-    """
+    """Response model for an unrecognized attribute option suggestion."""
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -187,16 +124,7 @@ class UnrecognizedOptionSuggestionOut(BaseModel):
 
 
 class UnrecognizedOptionSuggestionCreate(BaseModel):
-    """
-    Request model for creating an unrecognized option suggestion.
-
-    Example:
-        {
-            "input_pattern": "venti",
-            "attribute_slug": "size",
-            "suggested_display_name": "Venti"
-        }
-    """
+    """Request model for creating an unrecognized option suggestion."""
     input_pattern: str
     attribute_slug: str
     suggested_display_name: str
@@ -204,11 +132,7 @@ class UnrecognizedOptionSuggestionCreate(BaseModel):
 
 
 class UnrecognizedOptionSuggestionUpdate(BaseModel):
-    """
-    Request model for updating an unrecognized option suggestion.
-
-    All fields optional - only provided fields are updated.
-    """
+    """Request model for updating an unrecognized option suggestion."""
     input_pattern: str | None = None
     attribute_slug: str | None = None
     suggested_display_name: str | None = None
@@ -216,9 +140,65 @@ class UnrecognizedOptionSuggestionUpdate(BaseModel):
 
 
 class UnrecognizedOptionSuggestionStats(BaseModel):
-    """
-    Statistics for unrecognized option suggestions.
-    """
+    """Statistics for unrecognized option suggestions."""
     total_suggestions: int
     active_suggestions: int
     by_attribute: dict[str, int]
+
+
+# =============================================================================
+# Unrecognized Ingredient Suggestion Schemas
+# =============================================================================
+
+class UnrecognizedIngredientSuggestionOut(BaseModel):
+    """Response model for an unrecognized ingredient suggestion."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    input_pattern: str
+    match_type: str
+    suggested_display_name: str
+    modifier_category: str | None = None
+    alternative_ingredient_names: list[str] | None = None
+    hit_count: int
+    is_active: bool
+    created_at: datetime | None = None
+
+    @classmethod
+    def from_db(cls, db_obj) -> "UnrecognizedIngredientSuggestionOut":
+        """Create from database object with relationships."""
+        alt_names = None
+        if db_obj.alternative_ingredients:
+            alt_names = [ing.name for ing in db_obj.alternative_ingredients]
+
+        return cls(
+            id=db_obj.id,
+            input_pattern=db_obj.input_pattern,
+            match_type=db_obj.match_type,
+            suggested_display_name=db_obj.suggested_display_name,
+            modifier_category=db_obj.modifier_category,
+            alternative_ingredient_names=alt_names,
+            hit_count=db_obj.hit_count,
+            is_active=db_obj.is_active,
+            created_at=db_obj.created_at,
+        )
+
+
+class UnrecognizedIngredientSuggestionCreate(BaseModel):
+    """Request model for creating an unrecognized ingredient suggestion."""
+    input_pattern: str
+    match_type: str = "exact"
+    suggested_display_name: str
+    modifier_category: str | None = None
+    alternative_ingredient_names: list[str] | None = None
+    is_active: bool = True
+
+
+class UnrecognizedIngredientSuggestionUpdate(BaseModel):
+    """Request model for updating an unrecognized ingredient suggestion."""
+    input_pattern: str | None = None
+    match_type: str | None = None
+    suggested_display_name: str | None = None
+    modifier_category: str | None = None
+    alternative_ingredient_names: list[str] | None = None
+    is_active: bool | None = None

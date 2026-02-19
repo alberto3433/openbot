@@ -183,6 +183,81 @@ def _extract_menu_item_modifications(
 # Modify Existing Item Parsing
 # =============================================================================
 
+def _match_modifier_before_target_type(
+    text_lower: str, item_type_pattern: str,
+) -> tuple[str | None, str | None]:
+    """Match patterns where modifier appears BEFORE the target item type.
+
+    Catches: "can I have X on the Y {item_type}", "put X on the Y {item_type}", etc.
+
+    Returns (modifier_part, target_description) or (None, None).
+    """
+    patterns = [
+        # "can I have X on the Y {item_type}"
+        rf"(?:can\s+i\s+(?:have|get)|i(?:'d|\s+would)\s+like)\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+        # "put X on the Y {item_type}"
+        rf"(?:put|add)\s+(.+?)\s+(?:on|to)\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+        # "X on the Y {item_type}" (simple form)
+        rf"^(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}$",
+        # "i want X on the Y {item_type}"
+        rf"i\s+want\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            return match.group(1).strip(), match.group(2).strip()
+    return None, None
+
+
+def _match_target_with_modifier(
+    text_lower: str, item_type_pattern: str,
+) -> tuple[str | None, str | None]:
+    """Match 'make the Y {item_type} with X' — target BEFORE modifier.
+
+    Returns (modifier_part, target_description) or (None, None).
+    """
+    pattern = rf"make\s+(?:the|my)\s+(.+?)\s+{item_type_pattern}\s+with\s+(.+?)(?:\s+(?:please|thanks))?$"
+    match = re.search(pattern, text_lower)
+    if match:
+        return match.group(2).strip(), match.group(1).strip()
+    return None, None
+
+
+def _match_implicit_target_modifier(
+    text_lower: str, item_type_pattern: str,
+) -> tuple[str | None, str | None]:
+    """Match implicit-target patterns — 'make it with X', 'make the {item_type} with X', 'put X on it'.
+
+    target_description is always None (caller should find last/any item).
+
+    Returns (modifier_part, None) or (None, None).
+    """
+    # First try patterns with generic item type (no specific description)
+    generic_pattern = rf"make\s+(?:the|my)\s+{item_type_pattern}\s+with\s+(.+?)(?:\s+(?:please|thanks))?$"
+    match = re.search(generic_pattern, text_lower)
+    if match:
+        return match.group(1).strip(), None
+
+    # Then try implicit "it" patterns
+    it_patterns = [
+        # "make it with X"
+        r"make\s+it\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
+        # "can you make it with X" / "could you make it with X instead"
+        r"(?:can|could|would)\s+you\s+(?:make|have|do)\s+(?:it|that)\s+with\s+(.+?)(?:\s+instead)?(?:\s+(?:please|thanks))?$",
+        # "put X on it"
+        r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+it\b",
+        # "i want X on it"
+        r"i\s+want\s+(.+?)\s+(?:on|to)\s+it\b",
+        # "can I have X on it"
+        r"(?:can\s+i\s+(?:have|get))\s+(.+?)\s+(?:on|to)\s+it\b",
+    ]
+    for pattern in it_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            return match.group(1).strip(), None
+    return None, None
+
+
 def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
     """Detect requests to modify an existing cart item with a modifier.
 
@@ -212,78 +287,13 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
     # Names are sorted by length (longest first) so "deli sandwich" matches before "sandwich"
     item_type_pattern = "(?:" + "|".join(re.escape(name) for name in item_type_names) + ")"
 
-    modifier_part = None
-    target_description = None
-
-    # === Pattern Group 1: MODIFIER preposition TARGET item_type ===
-    # These patterns have modifier BEFORE the target item type
-    # Group 1: modifier, Group 2: item description (e.g., "plain", "cinnamon raisin")
-    modifier_before_target_patterns = [
-        # "can I have X on the Y {item_type}"
-        rf"(?:can\s+i\s+(?:have|get)|i(?:'d|\s+would)\s+like)\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
-        # "put X on the Y {item_type}"
-        rf"(?:put|add)\s+(.+?)\s+(?:on|to)\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
-        # "X on the Y {item_type}" (simple form)
-        rf"^(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}$",
-        # "i want X on the Y {item_type}"
-        rf"i\s+want\s+(.+?)\s+on\s+(?:the|my)\s+(.+?)\s*{item_type_pattern}",
-    ]
-
-    for pattern in modifier_before_target_patterns:
-        match = re.search(pattern, text_lower)
-        if match:
-            modifier_part = match.group(1).strip()
-            target_description = match.group(2).strip()
-            break
-
-    # === Pattern Group 2: TARGET item_type with MODIFIER ===
-    # These patterns have target BEFORE the modifier (reversed order)
-    # "make the plain {item_type} with X" - Group 1: item description, Group 2: modifier
+    # Try each pattern group in priority order
+    modifier_part, target_description = _match_modifier_before_target_type(text_lower, item_type_pattern)
     if not modifier_part:
-        pattern = rf"make\s+(?:the|my)\s+(.+?)\s+{item_type_pattern}\s+with\s+(.+?)(?:\s+(?:please|thanks))?$"
-        match = re.search(pattern, text_lower)
-        if match:
-            target_description = match.group(1).strip()
-            modifier_part = match.group(2).strip()
-
-    # === Pattern Group 3: Implicit target (IT or generic item type) ===
-    # "make it with X", "make the bagel with X", "put X on it"
-    # target_description stays None to indicate "find any/last item"
+        modifier_part, target_description = _match_target_with_modifier(text_lower, item_type_pattern)
     if not modifier_part:
-        # First try patterns with generic item type (no specific description)
-        generic_patterns = [
-            # "make the {item_type} with X" - no specific description
-            rf"make\s+(?:the|my)\s+{item_type_pattern}\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
-        ]
-        for pattern in generic_patterns:
-            match = re.search(pattern, text_lower)
-            if match:
-                modifier_part = match.group(1).strip()
-                target_description = None
-                break
+        modifier_part, target_description = _match_implicit_target_modifier(text_lower, item_type_pattern)
 
-        # Then try implicit "it" patterns
-        if not modifier_part:
-            implicit_target_patterns = [
-                # "make it with X"
-                r"make\s+it\s+with\s+(.+?)(?:\s+(?:please|thanks))?$",
-                # "can you make it with X" / "could you make it with X instead"
-                r"(?:can|could|would)\s+you\s+(?:make|have|do)\s+(?:it|that)\s+with\s+(.+?)(?:\s+instead)?(?:\s+(?:please|thanks))?$",
-                # "put X on it"
-                r"(?:put|add)\s+(.+?)\s+(?:on|to)\s+it\b",
-                # "i want X on it"
-                r"i\s+want\s+(.+?)\s+(?:on|to)\s+it\b",
-                # "can I have X on it"
-                r"(?:can\s+i\s+(?:have|get))\s+(.+?)\s+(?:on|to)\s+it\b",
-            ]
-            for pattern in implicit_target_patterns:
-                match = re.search(pattern, text_lower)
-                if match:
-                    modifier_part = match.group(1).strip()
-                    target_description = None
-                    break
-
-    # No pattern matched
     if not modifier_part:
         return None
 

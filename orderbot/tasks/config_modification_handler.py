@@ -8,6 +8,7 @@ modifier additions are now in separate handler modules.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
@@ -329,6 +330,8 @@ class ConfigModificationHandler:
             from .handler_utils import remove_item_from_order
             remove_item_from_order(order, item)
             order.clear_pending()
+            # Clear stale multi-item config names from the replaced item's add flow
+            order.multi_item_config_names = []
             return self.item_adder_handler.add_menu_item(
                 match_item.get("name", "item"),
                 order=order,
@@ -460,7 +463,6 @@ class ConfigModificationHandler:
         lookup = self.item_adder_handler.menu_lookup
 
         # Strip leading articles ("a", "an", "the") from the modifier text
-        import re
         cleaned = re.sub(r'^(?:a|an|the)\s+', '', modifier.strip(), flags=re.IGNORECASE).strip()
         if not cleaned:
             return None
@@ -487,6 +489,8 @@ class ConfigModificationHandler:
             from .handler_utils import remove_item_from_order
             remove_item_from_order(order, item)
             order.clear_pending()
+            # Clear stale multi-item config names from the replaced item's add flow
+            order.multi_item_config_names = []
             return self.item_adder_handler.add_menu_item(
                 match_item.get("name", "item"),
                 order=order,

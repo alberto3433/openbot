@@ -124,6 +124,9 @@ class LoaderMixin(
                 # Load unrecognized option suggestions (for detecting terms not in our menu)
                 self._load_unrecognized_option_suggestions_from_bulk(bulk_data)
 
+                # Load unrecognized ingredient suggestions (for ingredients not on the menu)
+                self._load_unrecognized_ingredient_suggestions_from_bulk(bulk_data)
+
                 # Load menu display groups (for "what's on your menu?" responses)
                 self._load_menu_display_groups_from_bulk(bulk_data)
 
@@ -172,7 +175,8 @@ class LoaderMixin(
             ResponsePattern, ModifierQualifier,
             ModifierCategory, IngredientCategory, GlobalAttributeAlias,
             MenuItemIngredient, ItemTypeComponentSlot, ComponentSlotOption,
-            UnrecognizedOptionSuggestion, MenuDisplayGroup,
+            UnrecognizedOptionSuggestion, UnrecognizedIngredientSuggestion,
+            MenuDisplayGroup,
         )
 
         start_time = time.time()
@@ -319,7 +323,18 @@ class LoaderMixin(
             # Table may not exist yet if migrations haven't run
             unrecognized_option_suggestions = []
 
-        # 18. Load menu display groups (for "what's on your menu?" responses)
+        # 18. Load unrecognized ingredient suggestions (for ingredients not on the menu)
+        try:
+            unrecognized_ingredient_suggestions = (
+                db.query(UnrecognizedIngredientSuggestion)
+                .filter(UnrecognizedIngredientSuggestion.is_active == True)  # noqa: E712
+                .all()
+            )
+        except (OperationalError, ProgrammingError):
+            # Table may not exist yet if migrations haven't run
+            unrecognized_ingredient_suggestions = []
+
+        # 19. Load menu display groups (for "what's on your menu?" responses)
         try:
             menu_display_groups = (
                 db.query(MenuDisplayGroup)
@@ -359,6 +374,7 @@ class LoaderMixin(
             "component_slots": component_slots,
             "option_skip_rules": option_skip_rules,
             "unrecognized_option_suggestions": unrecognized_option_suggestions,
+            "unrecognized_ingredient_suggestions": unrecognized_ingredient_suggestions,
             "menu_display_groups": menu_display_groups,
         }
 

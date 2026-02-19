@@ -272,3 +272,34 @@ class OptionQueryMixin:
                 result[pattern] = display
 
         return result
+
+    def get_unrecognized_ingredient_suggestion(self, token: str) -> dict | None:
+        """Check if a token matches an unrecognized ingredient suggestion.
+
+        Checks exact match first, then prefix, then contains.
+
+        Args:
+            token: Lowercase token to check.
+
+        Returns:
+            Suggestion dict with display_name, modifier_category, match_type,
+            and alternatives list, or None if no match.
+        """
+        token_lower = token.lower()
+
+        # Pass 1: exact matches
+        for pattern, info in self._unrecognized_ingredient_suggestions.items():
+            if info.get("match_type") == "exact" and pattern == token_lower:
+                return info
+
+        # Pass 2: prefix matches
+        for pattern, info in self._unrecognized_ingredient_suggestions.items():
+            if info.get("match_type") == "prefix" and token_lower.startswith(pattern):
+                return info
+
+        # Pass 3: contains matches
+        for pattern, info in self._unrecognized_ingredient_suggestions.items():
+            if info.get("match_type") == "contains" and pattern in token_lower:
+                return info
+
+        return None

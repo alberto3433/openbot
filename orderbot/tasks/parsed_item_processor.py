@@ -199,6 +199,7 @@ class ParsedItemProcessor:
             unmatched_selections=item.unmatched_selections if item.unmatched_selections else None,
             ambiguous_selections=item.ambiguous_selections if item.ambiguous_selections else None,
             special_instructions=item.special_instructions if item.special_instructions else None,
+            unrecognized_ingredients=item.unrecognized_ingredients if item.unrecognized_ingredients else None,
             **item.attribute_values,  # Data-driven: pass all, receiver filters (backward compat)
         )
         order = result.order

@@ -586,6 +586,11 @@ class BaseCacheMixin:
         # e.g., {"size": {"venti": "Venti", "grande": "Grande"}}
         self._unrecognized_option_suggestions: dict[str, dict[str, str]] = {}
 
+        # Unrecognized ingredient suggestions (for ingredients not on the menu)
+        # Maps input_pattern (lowercase) -> suggestion dict
+        # e.g., {"honey": {display_name, modifier_category, match_type, alternatives: [{name, slug}]}}
+        self._unrecognized_ingredient_suggestions: dict[str, dict] = {}
+
         # Dietary data cache - maps dietary property to list of item dicts
         # e.g., {"is_vegan": [{"id": 1, "name": "Plain Bagel", ...}, ...]}
         self._items_by_dietary_property: dict[str, list[dict]] = {}

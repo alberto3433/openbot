@@ -434,6 +434,127 @@ def _apply_longest_match_first(
     return result, matched_spans, matched_options_per_attr, unavailable_selections
 
 
+def _count_token_option_matches(
+    input_tokens: list[tuple[str, int, int]],
+    options: list[dict],
+    attr_slug: str,
+    matched_options_per_attr: dict[str, set[str]],
+    input_lower: str,
+) -> dict[str, list[dict]]:
+    """First pass of reverse matching: count how many options each input token matches.
+
+    For each option, checks if any input token appears (word-boundary) in the
+    option's display name or slug. Skips already-matched options and options
+    that fail must_match constraints.
+
+    Args:
+        input_tokens: List of (word, start, end) tuples from user input.
+        options: Attribute option dicts from menu cache.
+        attr_slug: The attribute slug being processed.
+        matched_options_per_attr: Already matched options per attribute.
+        input_lower: Full lowercased user input (for must_match checks).
+
+    Returns:
+        Dict mapping token string to list of matching option info dicts.
+    """
+    token_match_counts: dict[str, list[dict]] = {}
+    for opt in options:
+        slug = opt.get("slug", "")
+        if slug in matched_options_per_attr.get(attr_slug, set()):
+            continue
+
+        if not _check_must_match(opt, input_lower):
+            continue
+
+        display_lower = opt.get("display_name", "").lower()
+        slug_readable = slug.replace("_", " ").lower()
+
+        for token, token_start, token_end in input_tokens:
+            matched = (
+                re.search(rf'\b{re.escape(token)}\b', display_lower)
+                or re.search(rf'\b{re.escape(token)}\b', slug_readable)
+            )
+            if matched:
+                existing_slugs = {m["slug"] for m in token_match_counts.get(token, [])}
+                if slug not in existing_slugs:
+                    token_match_counts.setdefault(token, []).append({
+                        "opt": opt,
+                        "slug": slug,
+                        "token_start": token_start,
+                    })
+
+    return token_match_counts
+
+
+def _apply_token_matches(
+    token_match_counts: dict[str, list[dict]],
+    attr_slug: str,
+    input_lower: str,
+    exclude_spans: list[tuple[int, int]] | None,
+    result: dict[str, Any],
+    matched_options_per_attr: dict[str, set[str]],
+) -> list[AmbiguousSelection]:
+    """Second pass of reverse matching: apply single-match tokens, record ambiguous ones.
+
+    Tokens that matched exactly one option are applied to the result. Tokens
+    that matched multiple options are recorded as AmbiguousSelection for
+    disambiguation by the handler.
+
+    Args:
+        token_match_counts: Output of _count_token_option_matches.
+        attr_slug: The attribute slug being processed.
+        input_lower: Full lowercased user input (for quantity extraction).
+        exclude_spans: Spans to exclude from quantity extraction.
+        result: Result dict to add matches to (mutated in place).
+        matched_options_per_attr: Already matched options (mutated in place).
+
+    Returns:
+        List of AmbiguousSelection for tokens that matched multiple options.
+    """
+    ambiguous: list[AmbiguousSelection] = []
+
+    for token, matches in token_match_counts.items():
+        if len(matches) > 1:
+            logger.debug(
+                "Phase 5 skipping ambiguous token '%s' - matches %d options: %s",
+                token, len(matches), [m["slug"] for m in matches]
+            )
+            ambiguous.append(AmbiguousSelection(
+                attr_slug=attr_slug,
+                token=token,
+                matching_options=[
+                    {
+                        "slug": m["slug"],
+                        "display_name": m["opt"].get("display_name", m["slug"]),
+                        "price": m["opt"].get("price_modifier", 0),
+                    }
+                    for m in matches
+                ],
+            ))
+            continue
+
+        match_info = matches[0]
+        opt = match_info["opt"]
+        slug = match_info["slug"]
+        token_start = match_info["token_start"]
+
+        quantity = _extract_quantity_before(input_lower, token_start, exclude_spans=exclude_spans)
+        result.setdefault(attr_slug, []).append({
+            "slug": slug,
+            "display_name": opt.get("display_name", slug),
+            "quantity": quantity,
+            "price": opt.get("price_modifier", 0),
+            "category": opt.get("category"),
+        })
+        matched_options_per_attr.setdefault(attr_slug, set()).add(slug)
+        logger.debug(
+            "Phase 5 reverse match: token '%s' -> option '%s' for attr '%s'",
+            token, opt.get("display_name", slug), attr_slug
+        )
+
+    return ambiguous
+
+
 def _apply_reverse_matching(
     input_lower: str,
     attributes: dict[str, dict],
@@ -454,18 +575,6 @@ def _apply_reverse_matching(
 
     If a token matches multiple options, all matches for that token are
     skipped and an AmbiguousSelection is recorded for disambiguation.
-
-    Args:
-        input_lower: Lowercased user input
-        attributes: Attribute configs from menu cache
-        negated_attrs: Set of attribute slugs already negated (to skip)
-        matched_spans: Spans already consumed (mutated in place)
-        matched_options_per_attr: Already matched options per attr (mutated in place)
-        exclude_spans: Optional list of (start, end) tuples to exclude
-        result: Result dict to add matches to (mutated in place)
-
-    Returns:
-        List of AmbiguousSelection for tokens that matched multiple options.
     """
     ambiguous_selections: list[AmbiguousSelection] = []
 
@@ -478,94 +587,20 @@ def _apply_reverse_matching(
 
     for attr_slug, attr_config in attributes.items():
         if attr_slug in negated_attrs:
-            continue  # Skip - user explicitly said "no {attribute}"
-        # Only apply reverse matching to multi_select attributes
-        input_type = attr_config.get("input_type", "single_select")
-        if input_type != "multi_select":
             continue
-
-        # Note: Don't skip if matches exist - reverse matching adds ADDITIONAL
-        # matches. The per-option guard below prevents duplicates.
-
+        if attr_config.get("input_type", "single_select") != "multi_select":
+            continue
         options = attr_config.get("options", [])
         if not options:
             continue
 
-        # First pass: count how many options each token would match
-        # Skip ambiguous tokens (matching multiple options)
-        token_match_counts: dict[str, list[dict]] = {}  # token -> list of matching options
-        for opt in options:
-            slug = opt.get("slug", "")
-            if slug in matched_options_per_attr.get(attr_slug, set()):
-                continue
-
-            # Check must_match constraint
-            if not _check_must_match(opt, input_lower):
-                continue
-
-            display_lower = opt.get("display_name", "").lower()
-            slug_readable = slug.replace("_", " ").lower()
-
-            for token, token_start, token_end in input_tokens:
-                matched = False
-                if re.search(rf'\b{re.escape(token)}\b', display_lower):
-                    matched = True
-                elif re.search(rf'\b{re.escape(token)}\b', slug_readable):
-                    matched = True
-
-                if matched:
-                    # Deduplicate: skip if this slug already added for this token
-                    # This handles repeated tokens like "with milk. light on the milk"
-                    existing_slugs = {m["slug"] for m in token_match_counts.get(token, [])}
-                    if slug not in existing_slugs:
-                        token_match_counts.setdefault(token, []).append({
-                            "opt": opt,
-                            "slug": slug,
-                            "token_start": token_start,
-                        })
-
-        # Second pass: only apply matches for tokens that matched exactly ONE option
-        for token, matches in token_match_counts.items():
-            if len(matches) > 1:
-                # Ambiguous - track for disambiguation, skip all matches for this token
-                logger.debug(
-                    "Phase 5 skipping ambiguous token '%s' - matches %d options: %s",
-                    token, len(matches), [m["slug"] for m in matches]
-                )
-                # Track the ambiguous selection so handler can ask for clarification
-                ambiguous_selections.append(AmbiguousSelection(
-                    attr_slug=attr_slug,
-                    token=token,
-                    matching_options=[
-                        {
-                            "slug": m["slug"],
-                            "display_name": m["opt"].get("display_name", m["slug"]),
-                            "price": m["opt"].get("price_modifier", 0),
-                        }
-                        for m in matches
-                    ],
-                ))
-                continue
-
-            # Single match - apply it
-            match_info = matches[0]
-            opt = match_info["opt"]
-            slug = match_info["slug"]
-            token_start = match_info["token_start"]
-
-            quantity = _extract_quantity_before(input_lower, token_start, exclude_spans=exclude_spans)
-            result.setdefault(attr_slug, []).append({
-                "slug": slug,
-                "display_name": opt.get("display_name", slug),
-                "quantity": quantity,
-                "price": opt.get("price_modifier", 0),
-                "category": opt.get("category"),
-            })
-            matched_options_per_attr.setdefault(attr_slug, set()).add(slug)
-            logger.debug(
-                "Phase 5 reverse match: token '%s' -> option '%s' for attr '%s'",
-                token, opt.get("display_name", slug), attr_slug
-            )
+        token_match_counts = _count_token_option_matches(
+            input_tokens, options, attr_slug, matched_options_per_attr, input_lower,
+        )
+        ambiguous_selections.extend(_apply_token_matches(
+            token_match_counts, attr_slug, input_lower, exclude_spans,
+            result, matched_options_per_attr,
+        ))
 
     return ambiguous_selections
 
@@ -834,6 +869,61 @@ def _extract_quantity(text: str) -> int | None:
     Delegates to extract_quantity_word from quantity_utils (single source of truth).
     """
     return extract_quantity_word(text)
+
+
+def _detect_unrecognized_ingredients(
+    input_lower: str,
+    consumed_spans: list[tuple[int, int]],
+) -> list[dict]:
+    """Detect tokens in user input that match unrecognized ingredient suggestions.
+
+    After attribute and modifier extraction have consumed their spans, this function
+    checks remaining tokens against the unrecognized ingredient suggestions cache.
+
+    Args:
+        input_lower: Lowercase user input text.
+        consumed_spans: List of (start, end) tuples already consumed by attributes/modifiers.
+
+    Returns:
+        List of dicts, each with: token, display_name, modifier_category, alternatives.
+    """
+    results: list[dict] = []
+
+    # Tokenize the input into words
+    words = input_lower.split()
+    if not words:
+        return results
+
+    # Build simple word-position map for checking consumed spans
+    pos = 0
+    word_positions: list[tuple[int, int, str]] = []
+    for word in words:
+        start = input_lower.find(word, pos)
+        end = start + len(word)
+        word_positions.append((start, end, word))
+        pos = end
+
+    # Check each word against unrecognized ingredient suggestions
+    for start, end, word in word_positions:
+        # Skip if this span is already consumed by attributes or modifiers
+        if _spans_overlap(start, end, consumed_spans, []):
+            continue
+
+        # Strip common punctuation
+        clean_word = word.strip(".,!?;:")
+        if not clean_word or len(clean_word) < 2:
+            continue
+
+        suggestion = menu_cache.get_unrecognized_ingredient_suggestion(clean_word)
+        if suggestion:
+            results.append({
+                "token": clean_word,
+                "display_name": suggestion["display_name"],
+                "modifier_category": suggestion.get("modifier_category"),
+                "alternatives": suggestion.get("alternatives", []),
+            })
+
+    return results
 
 
 def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:

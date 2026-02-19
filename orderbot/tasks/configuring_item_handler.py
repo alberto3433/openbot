@@ -15,7 +15,7 @@ import re
 from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
-from .normalization import singularize
+from .normalization import singularize, strip_ordering_prefix
 from .pending_fields import PendingField
 from .schemas import StateMachineResult, OrderPhase, Selection
 from .parsers.intent_patterns import (
@@ -475,8 +475,11 @@ class ConfiguringItemHandler:
             stripped = user_input.strip()
             if re.match(r'^(?:a(?:n)?\s+|(?:\d+|two|three|four|five|six)\s+|(?:can|could)\s+i\s+(?:get|have)\s+)', stripped, re.IGNORECASE):
                 # Don't treat as a new menu item if the non-quantity part is a known
-                # modifier — it's likely an answer to the pending question
-                _, remainder = extract_leading_quantity(stripped.lower())
+                # modifier — it's likely an answer to the pending question.
+                # Strip ordering prefix first (e.g., "can I have butter?" -> "butter"),
+                # then try quantity extraction (e.g., "2 sugars" -> "sugars").
+                prefix_stripped = strip_ordering_prefix(stripped).lower().rstrip("?!.,")
+                _, remainder = extract_leading_quantity(prefix_stripped or stripped.lower())
                 remainder = remainder.strip()
                 remainder_is_modifier = False
                 if remainder:

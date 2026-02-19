@@ -34,6 +34,7 @@ Usage:
     router = crud.router
 """
 
+import inspect
 import logging
 from typing import Any, Callable, Generic, TypeVar
 
@@ -51,6 +52,28 @@ CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 ResponseSchemaType = TypeVar("ResponseSchemaType", bound=BaseModel)
 ListResponseType = TypeVar("ListResponseType", bound=BaseModel)
+
+
+def _set_id_param_signature(handler: Callable, id_param_name: str) -> None:
+    """Replace **path_params with an explicit int path parameter in a handler's signature.
+
+    FastAPI needs explicit parameters in the signature to generate the correct
+    OpenAPI spec and path parameter extraction. This rewrites the handler's
+    signature so that the id parameter appears explicitly.
+
+    Args:
+        handler: The async handler function to modify (mutated in place).
+        id_param_name: Name of the path parameter (e.g., "item_type_id").
+    """
+    sig = inspect.signature(handler)
+    params = [p for p in sig.parameters.values() if p.kind != inspect.Parameter.VAR_KEYWORD]
+    id_param = inspect.Parameter(
+        id_param_name,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        annotation=int,
+    )
+    params.insert(0, id_param)
+    handler.__signature__ = sig.replace(parameters=params)
 
 
 class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ResponseSchemaType]):
@@ -316,8 +339,6 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
     def _make_get_handler(self) -> Callable:
         """Create the get handler with proper signature."""
-        import inspect
-
         model = self.model
         not_found_message = self.not_found_message
         to_response = self._model_to_response
@@ -334,19 +355,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
                 raise HTTPException(status_code=404, detail=not_found_message)
             return to_response(item, db)
 
-        # Build proper signature with the correct parameter name for FastAPI
-        sig = inspect.signature(get_item)
-        params = list(sig.parameters.values())
-        # Remove **path_params and add the explicit id parameter
-        params = [p for p in params if p.kind != inspect.Parameter.VAR_KEYWORD]
-        id_param = inspect.Parameter(
-            id_param_name,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=int,
-        )
-        params.insert(0, id_param)
-        get_item.__signature__ = sig.replace(parameters=params)
-
+        _set_id_param_signature(get_item, id_param_name)
         return get_item
 
     def _register_update(self) -> None:
@@ -362,8 +371,6 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
     def _make_update_handler(self) -> Callable:
         """Create the update handler with proper signature."""
-        import inspect
-
         model = self.model
         update_schema = self.update_schema
         not_found_message = self.not_found_message
@@ -429,19 +436,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
             return to_response(item, db)
 
-        # Build proper signature with the correct parameter name for FastAPI
-        sig = inspect.signature(update_item)
-        params = list(sig.parameters.values())
-        # Remove **path_params and add the explicit id parameter
-        params = [p for p in params if p.kind != inspect.Parameter.VAR_KEYWORD]
-        id_param = inspect.Parameter(
-            id_param_name,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=int,
-        )
-        params.insert(0, id_param)
-        update_item.__signature__ = sig.replace(parameters=params)
-
+        _set_id_param_signature(update_item, id_param_name)
         return update_item
 
     def _register_delete(self) -> None:
@@ -457,8 +452,6 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
     def _make_delete_handler(self) -> Callable:
         """Create the delete handler with proper signature."""
-        import inspect
-
         model = self.model
         not_found_message = self.not_found_message
         on_before_delete = self.on_before_delete
@@ -489,17 +482,5 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             db.commit()
             return None
 
-        # Build proper signature with the correct parameter name for FastAPI
-        sig = inspect.signature(delete_item)
-        params = list(sig.parameters.values())
-        # Remove **path_params and add the explicit id parameter
-        params = [p for p in params if p.kind != inspect.Parameter.VAR_KEYWORD]
-        id_param = inspect.Parameter(
-            id_param_name,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=int,
-        )
-        params.insert(0, id_param)
-        delete_item.__signature__ = sig.replace(parameters=params)
-
+        _set_id_param_signature(delete_item, id_param_name)
         return delete_item

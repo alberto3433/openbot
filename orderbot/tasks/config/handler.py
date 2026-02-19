@@ -463,7 +463,12 @@ class MenuItemConfigHandler(BaseHandler):
 
         For multi-item configurations, uses ordinal references like "the first one", "the second one".
         """
-        # Handle unavailable selection first (early return if applicable)
+        # Handle unrecognized ingredients first (e.g., "We don't carry honey")
+        unrecognized_result = self._question_builder.handle_unrecognized_ingredients(item, order)
+        if unrecognized_result:
+            return unrecognized_result
+
+        # Handle unavailable selection (early return if applicable)
         unavail_result = self._question_builder.handle_unavailable_selection(item, order, attr)
         if unavail_result:
             return unavail_result
@@ -874,9 +879,9 @@ class MenuItemConfigHandler(BaseHandler):
         if disambiguation_result:
             return disambiguation_result
 
-        # Strip common ordering prefixes from the input
-        # e.g., "make it a double" -> "double", "give me triple" -> "triple"
-        user_input = strip_ordering_prefix(user_input)
+        # Strip common ordering prefixes and trailing punctuation from the input
+        # e.g., "can I have butter?" -> "butter", "make it a double" -> "double"
+        user_input = strip_ordering_prefix(user_input).rstrip("?!.,")
 
         # NOTE: milk_sweetener_syrup now uses the standard multi_select flow
         # which includes partial matching (e.g., "syrup" lists all syrup options)

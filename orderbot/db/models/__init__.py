@@ -72,7 +72,12 @@ from .company import (
 )
 
 # Analytics models
-from .analytics import UnrecognizedItemLog, UnrecognizedItemSuggestion, UnrecognizedOptionSuggestion
+from .analytics import (
+    UnrecognizedMenuItemLog,
+    UnrecognizedMenuItemSuggestion,
+    UnrecognizedOptionSuggestion,
+    UnrecognizedIngredientSuggestion,
+)
 
 __all__ = [
     # Base
@@ -126,9 +131,10 @@ __all__ = [
     "MenuItemSize",
     "MenuItemSizePrice",
     # Analytics
-    "UnrecognizedItemSuggestion",
-    "UnrecognizedItemLog",
+    "UnrecognizedMenuItemSuggestion",
+    "UnrecognizedMenuItemLog",
     "UnrecognizedOptionSuggestion",
+    "UnrecognizedIngredientSuggestion",
     # Toast POS
     "ToastGuidMap",
 ]

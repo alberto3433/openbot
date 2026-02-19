@@ -1,6 +1,7 @@
-"""Analytics models for unrecognized item tracking.
+"""Analytics models for unrecognized item and ingredient tracking.
 
-Contains: UnrecognizedItemSuggestion, UnrecognizedItemLog.
+Contains: UnrecognizedMenuItemSuggestion, UnrecognizedMenuItemLog,
+          UnrecognizedOptionSuggestion, UnrecognizedIngredientSuggestion.
 """
 
 from sqlalchemy import (
@@ -18,16 +19,25 @@ from sqlalchemy.orm import relationship
 from .base import Base
 
 
-# Junction table for many-to-many relationship between suggestions and menu items
-unrecognized_suggestion_menu_items = Table(
-    "unrecognized_suggestion_menu_items",
+# Junction table for many-to-many: menu item suggestions <-> menu items
+unrecognized_menu_item_suggestion_items = Table(
+    "unrecognized_menu_item_suggestion_items",
     Base.metadata,
-    Column("suggestion_id", Integer, ForeignKey("unrecognized_item_suggestions.id", ondelete="CASCADE"), primary_key=True),
+    Column("suggestion_id", Integer, ForeignKey("unrecognized_menu_item_suggestions.id", ondelete="CASCADE"), primary_key=True),
     Column("menu_item_id", Integer, ForeignKey("menu_items.id", ondelete="CASCADE"), primary_key=True),
 )
 
 
-class UnrecognizedItemSuggestion(Base):
+# Junction table for many-to-many: ingredient suggestions <-> ingredients
+unrecognized_ingredient_suggestion_alternatives = Table(
+    "unrecognized_ingredient_suggestion_alternatives",
+    Base.metadata,
+    Column("suggestion_id", Integer, ForeignKey("unrecognized_ingredient_suggestions.id", ondelete="CASCADE"), primary_key=True),
+    Column("ingredient_id", Integer, ForeignKey("ingredients.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class UnrecognizedMenuItemSuggestion(Base):
     """
     Curated suggestions for unrecognized menu item requests.
 
@@ -40,7 +50,7 @@ class UnrecognizedItemSuggestion(Base):
     - 'prefix': input must start with pattern
     - 'contains': input must contain pattern
     """
-    __tablename__ = "unrecognized_item_suggestions"
+    __tablename__ = "unrecognized_menu_item_suggestions"
 
     id = Column(Integer, primary_key=True, index=True)
     input_pattern = Column(String(200), nullable=False, index=True)
@@ -52,10 +62,10 @@ class UnrecognizedItemSuggestion(Base):
 
     # Relationships
     suggested_item_type = relationship("ItemType", lazy="joined")
-    suggested_menu_items = relationship("MenuItem", secondary=unrecognized_suggestion_menu_items, lazy="joined")
+    suggested_menu_items = relationship("MenuItem", secondary=unrecognized_menu_item_suggestion_items, lazy="joined")
 
 
-class UnrecognizedItemLog(Base):
+class UnrecognizedMenuItemLog(Base):
     """
     Analytics log for unrecognized item requests.
 
@@ -64,7 +74,7 @@ class UnrecognizedItemLog(Base):
     identify common requests that should be added to the menu
     or suggestion table.
     """
-    __tablename__ = "unrecognized_item_log"
+    __tablename__ = "unrecognized_menu_item_log"
 
     id = Column(Integer, primary_key=True, index=True)
     user_input = Column(String(500), nullable=False)
@@ -91,3 +101,30 @@ class UnrecognizedOptionSuggestion(Base):
     suggested_display_name = Column(String(100), nullable=False)     # "Venti"
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class UnrecognizedIngredientSuggestion(Base):
+    """
+    Curated suggestions for unrecognized ingredient requests.
+
+    When users ask for ingredients not on the menu (e.g., "honey"),
+    this table stores the pattern to detect and links to alternative
+    ingredients we actually carry.
+    """
+    __tablename__ = "unrecognized_ingredient_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    input_pattern = Column(String(100), nullable=False, index=True)
+    match_type = Column(String(20), nullable=False, default="exact")
+    suggested_display_name = Column(String(100), nullable=False)
+    modifier_category = Column(String(50), nullable=True)
+    hit_count = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Many-to-many: alternative ingredients we actually carry
+    alternative_ingredients = relationship(
+        "Ingredient",
+        secondary=unrecognized_ingredient_suggestion_alternatives,
+        lazy="joined",
+    )

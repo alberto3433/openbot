@@ -191,14 +191,14 @@ class UnrecognizedItemHandler:
             forms_to_try.append(singular_form)
 
         try:
-            from orderbot.db.models import UnrecognizedItemSuggestion
+            from orderbot.db.models import UnrecognizedMenuItemSuggestion
 
             # Try exact match first (for both original and singular forms)
             for form in forms_to_try:
-                suggestion = self._db_session.query(UnrecognizedItemSuggestion).filter(
-                    UnrecognizedItemSuggestion.is_active == True,
-                    UnrecognizedItemSuggestion.match_type == "exact",
-                    UnrecognizedItemSuggestion.input_pattern == form,
+                suggestion = self._db_session.query(UnrecognizedMenuItemSuggestion).filter(
+                    UnrecognizedMenuItemSuggestion.is_active == True,
+                    UnrecognizedMenuItemSuggestion.match_type == "exact",
+                    UnrecognizedMenuItemSuggestion.input_pattern == form,
                 ).first()
 
                 if suggestion:
@@ -207,9 +207,9 @@ class UnrecognizedItemHandler:
                     return self._extract_suggestion_data(suggestion)
 
             # Try prefix match (for both forms)
-            suggestions = self._db_session.query(UnrecognizedItemSuggestion).filter(
-                UnrecognizedItemSuggestion.is_active == True,
-                UnrecognizedItemSuggestion.match_type == "prefix",
+            suggestions = self._db_session.query(UnrecognizedMenuItemSuggestion).filter(
+                UnrecognizedMenuItemSuggestion.is_active == True,
+                UnrecognizedMenuItemSuggestion.match_type == "prefix",
             ).all()
 
             for s in suggestions:
@@ -220,9 +220,9 @@ class UnrecognizedItemHandler:
                         return self._extract_suggestion_data(s)
 
             # Try contains match (for both forms)
-            suggestions = self._db_session.query(UnrecognizedItemSuggestion).filter(
-                UnrecognizedItemSuggestion.is_active == True,
-                UnrecognizedItemSuggestion.match_type == "contains",
+            suggestions = self._db_session.query(UnrecognizedMenuItemSuggestion).filter(
+                UnrecognizedMenuItemSuggestion.is_active == True,
+                UnrecognizedMenuItemSuggestion.match_type == "contains",
             ).all()
 
             for s in suggestions:
@@ -310,7 +310,7 @@ class UnrecognizedItemHandler:
         """Extract category slug and menu items from a suggestion object.
 
         Args:
-            suggestion: UnrecognizedItemSuggestion model instance
+            suggestion: UnrecognizedMenuItemSuggestion model instance
 
         Returns:
             Dict with category_slug and menu_items list
@@ -601,9 +601,9 @@ class UnrecognizedItemHandler:
             return
 
         try:
-            from orderbot.db.models import UnrecognizedItemLog
+            from orderbot.db.models import UnrecognizedMenuItemLog
 
-            log_entry = UnrecognizedItemLog(
+            log_entry = UnrecognizedMenuItemLog(
                 user_input=user_input[:500],  # Truncate if needed
                 normalized_input=normalized_input[:200],
                 session_id=session_id,

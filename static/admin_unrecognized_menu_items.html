@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <title>Unrecognized Suggestions</title>
+  <title>Unrecognized Items</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -286,7 +286,7 @@
   <div class="app-header">
     <div class="header-title">
       <span class="icon"><i data-lucide="help-circle"></i></span>
-      <span>Unrecognized Suggestions</span>
+      <span>Unrecognized Items</span>
     </div>
     <div class="nav-links">
       <a href="/static/index.html">Customer Chat</a>
@@ -311,7 +311,8 @@
           <a href="/static/admin_overall_categories.html">Overall Categories</a>
           <a href="/static/admin_menu_display_groups.html">Display Groups</a>
           <a href="/static/admin_response_patterns.html">Response Patterns</a>
-          <a href="/static/admin_unrecognized_suggestions.html" class="active">Unrecognized Suggestions</a>
+          <a href="/static/admin_unrecognized_menu_items.html" class="active">Unrecognized Menu Items</a>
+          <a href="/static/admin_unrecognized_ingredients.html">Unrecognized Ingredients</a>
         </div>
       </span>
       <a href="/static/admin_stores.html">Stores</a>
@@ -327,7 +328,7 @@
   <div class="container">
     <!-- Tabs -->
     <div class="tabs">
-      <div class="tab active" onclick="switchTab('items')">Items</div>
+      <div class="tab active" onclick="switchTab('items')">Menu Items</div>
       <div class="tab" onclick="switchTab('options')">Options</div>
       <div class="tab" onclick="switchTab('logs')">Request Logs</div>
     </div>
@@ -610,18 +611,19 @@
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
+      const tabMap = { items: 0, options: 1, logs: 2 };
+      const tabIndex = tabMap[tab] ?? 0;
+      document.querySelectorAll('.tab')[tabIndex].classList.add('active');
+
       if (tab === 'items') {
-        document.querySelector('.tab:nth-child(1)').classList.add('active');
         document.getElementById('itemsTab').classList.add('active');
         loadSuggestions();
         loadSuggestionStats();
       } else if (tab === 'options') {
-        document.querySelector('.tab:nth-child(2)').classList.add('active');
         document.getElementById('optionsTab').classList.add('active');
         loadOptionSuggestions();
         loadOptionStats();
       } else {
-        document.querySelector('.tab:nth-child(3)').classList.add('active');
         document.getElementById('logsTab').classList.add('active');
         loadLogStats();
         loadLogs();
@@ -655,7 +657,7 @@
       const category = document.getElementById('filterCategory').value;
       const activeOnly = document.getElementById('filterActive').checked;
 
-      let url = `${API_BASE}/admin/unrecognized-suggestions?`;
+      let url = `${API_BASE}/admin/unrecognized-menu-items?`;
       if (matchType) url += `match_type=${matchType}&`;
       if (category) url += `category=${category}&`;
       if (activeOnly) url += `active_only=true&`;
@@ -712,7 +714,7 @@
 
     async function loadSuggestionStats() {
       try {
-        const res = await fetch(`${API_BASE}/admin/unrecognized-suggestions/stats`, { credentials: 'include' });
+        const res = await fetch(`${API_BASE}/admin/unrecognized-menu-items/stats`, { credentials: 'include' });
         if (!res.ok) throw new Error('Failed to load stats');
         const stats = await res.json();
 
@@ -765,7 +767,7 @@
 
     async function editSuggestion(id) {
       try {
-        const res = await fetch(`${API_BASE}/admin/unrecognized-suggestions/${id}`, { credentials: 'include' });
+        const res = await fetch(`${API_BASE}/admin/unrecognized-menu-items/${id}`, { credentials: 'include' });
         if (!res.ok) throw new Error('Failed to load suggestion');
         const s = await res.json();
 
@@ -805,8 +807,8 @@
 
       try {
         const url = id
-          ? `${API_BASE}/admin/unrecognized-suggestions/${id}`
-          : `${API_BASE}/admin/unrecognized-suggestions`;
+          ? `${API_BASE}/admin/unrecognized-menu-items/${id}`
+          : `${API_BASE}/admin/unrecognized-menu-items`;
         const method = id ? 'PUT' : 'POST';
 
         const res = await fetch(url, {
@@ -834,7 +836,7 @@
       if (!confirm(`Delete suggestion for "${pattern}"?`)) return;
 
       try {
-        const res = await fetch(`${API_BASE}/admin/unrecognized-suggestions/${id}`, {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-menu-items/${id}`, {
           method: 'DELETE',
           credentials: 'include',
         });
@@ -858,7 +860,7 @@
     // Logs
     async function loadLogStats() {
       try {
-        const res = await fetch(`${API_BASE}/admin/unrecognized-logs/stats?days=7`, { credentials: 'include' });
+        const res = await fetch(`${API_BASE}/admin/unrecognized-menu-item-logs/stats?days=7`, { credentials: 'include' });
         if (!res.ok) throw new Error('Failed to load log stats');
         const stats = await res.json();
 
@@ -912,7 +914,7 @@
     async function loadLogs() {
       const fallbackLevel = document.getElementById('filterFallbackLevel').value;
 
-      let url = `${API_BASE}/admin/unrecognized-logs?limit=50&days=7`;
+      let url = `${API_BASE}/admin/unrecognized-menu-item-logs?limit=50&days=7`;
       if (fallbackLevel) url += `&fallback_level=${fallbackLevel}`;
 
       try {
@@ -964,7 +966,7 @@
     async function loadDropdownOptions() {
       try {
         // Load item types
-        const itemTypesRes = await fetch(`${API_BASE}/admin/unrecognized-suggestions/lookups/item-types`, { credentials: 'include' });
+        const itemTypesRes = await fetch(`${API_BASE}/admin/unrecognized-menu-items/lookups/item-types`, { credentials: 'include' });
         if (itemTypesRes.ok) {
           allItemTypes = await itemTypesRes.json();
           const categorySelect = document.getElementById('suggestedCategory');
@@ -975,7 +977,7 @@
         }
 
         // Load menu items
-        const menuItemsRes = await fetch(`${API_BASE}/admin/unrecognized-suggestions/lookups/menu-items`, { credentials: 'include' });
+        const menuItemsRes = await fetch(`${API_BASE}/admin/unrecognized-menu-items/lookups/menu-items`, { credentials: 'include' });
         if (menuItemsRes.ok) {
           allMenuItems = await menuItemsRes.json();
         }

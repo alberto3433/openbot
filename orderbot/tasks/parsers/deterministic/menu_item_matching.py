@@ -61,6 +61,113 @@ def _match_item_with_defaults(
     return None, None, None
 
 
+def _find_different_type_menu_item(
+    text: str,
+    text_cleaned_lower: str,
+    detected_item_type: str,
+    configurable_slugs: set[str],
+    detected_type_attr_options: set[str],
+) -> str | None | bool:
+    """Check if a menu item of a different type matches the user input more specifically.
+
+    Scans all menu items for word-boundary matches in the cleaned input text.
+    Skips items that appear after "with" (likely modifiers) and items whose
+    names are attribute options for the detected type.
+
+    Args:
+        text: Original user input (for logging).
+        text_cleaned_lower: Lowercased, cleaned input text.
+        detected_item_type: Currently detected item type slug.
+        configurable_slugs: Set of configurable item type slugs.
+        detected_type_attr_options: Attribute option slugs for detected type.
+
+    Returns:
+        New item type slug to switch to, None to reject parsing, or True
+        if no match found (caller should continue with other checks).
+    """
+    def is_attribute_option_word(word: str) -> bool:
+        word_lower = word.lower()
+        for opt in detected_type_attr_options:
+            if word_lower == opt or word_lower in opt.split('_') or word_lower in opt.split():
+                return True
+        return False
+
+    with_pos = text_cleaned_lower.find(" with ")
+
+    for item_name, item_info in menu_cache.iter_all_menu_items().items():
+        item_type = item_info.get("item_type")
+        if not item_type or item_type == detected_item_type:
+            continue
+        item_name_lower = item_name.lower()
+        if is_attribute_option_word(item_name_lower):
+            continue
+        match = re.search(rf'\b{re.escape(item_name_lower)}\b', text_cleaned_lower)
+        if match:
+            if with_pos != -1 and match.start() > with_pos:
+                continue
+            if item_type in configurable_slugs:
+                logger.info(
+                    "CONFIGURABLE_ITEM: switching type '%s' -> '%s' based on menu item '%s' in '%s'",
+                    detected_item_type, item_type, item_name, text[:50]
+                )
+                return item_type
+            else:
+                logger.info(
+                    "CONFIGURABLE_ITEM: skipping '%s' - found non-configurable menu item '%s' of type '%s'",
+                    text[:50], item_name, item_type
+                )
+                return None
+
+    return True  # No match found, continue checking
+
+
+def _has_extra_word_specificity(
+    text: str,
+    text_lower: str,
+    detected_item_type: str,
+    more_specific_matches: list[dict],
+) -> bool:
+    """Check if user input has extra words that match a more specific menu item.
+
+    Compares input words against the type's trigger words. If extra words
+    appear in any matching menu item name, the input is too specific for
+    the generic configurable parser.
+
+    Args:
+        text: Original user input (for logging).
+        text_lower: Lowercased user input.
+        detected_item_type: Currently detected item type slug.
+        more_specific_matches: Menu items matched by word-boundary search.
+
+    Returns:
+        True if extra specificity found (caller should reject), False otherwise.
+    """
+    filler_words = {
+        'a', 'an', 'the', 'i', 'id', 'want', 'like', 'get', 'can', 'have', 'need',
+        'please', 'would', 'could', 'some', 'of', 'with', 'and', 'or', 'for', 'me',
+    }
+    input_words = set(re.findall(r'\b[a-z]+\b', text_lower))
+    type_words = set(re.findall(r'\b[a-z]+\b', detected_item_type.lower()))
+    triggers = menu_cache.get_item_type_triggers().get(detected_item_type, [])
+    for trigger in triggers:
+        if len(trigger.split()) <= 2:
+            type_words.update(re.findall(r'\b[a-z]+\b', trigger.lower()))
+    extra_words = input_words - type_words - filler_words
+
+    if extra_words:
+        for match in more_specific_matches:
+            match_name_lower = match.get("name", "").lower()
+            matching_extra = [w for w in extra_words if w in match_name_lower]
+            if matching_extra:
+                logger.info(
+                    "CONFIGURABLE_ITEM: skipping '%s' - extra words %s found in menu item '%s'",
+                    text[:50], matching_extra, match.get("name")
+                )
+                return True
+
+    return False
+
+
 def _check_more_specific_menu_items(
     text: str,
     text_lower: str,
@@ -75,102 +182,28 @@ def _check_more_specific_menu_items(
     cases like "hot chai tea" where "chai tea" is a complete menu item of type
     "chai_drink" but trigger word "tea" detected the "tea" type.
 
-    Args:
-        text: Original user input text
-        text_lower: Lowercased user input text
-        text_cleaned: Lowercased text with ordering phrases stripped
-        detected_item_type: The currently detected item type slug
-        configurable_slugs: Set of configurable item type slugs
-
     Returns:
         Updated item type slug if type was kept or switched to a more specific
-        configurable type. None to signal that parsing should be rejected
-        (non-configurable match or extra-word specificity match found).
+        configurable type. None to signal that parsing should be rejected.
     """
     more_specific_matches = menu_cache.find_items_by_word_match(text_cleaned)
-
     text_cleaned_lower = text_cleaned.lower()
     detected_type_attr_options = menu_cache.get_all_attribute_option_slugs_for_item_type(detected_item_type)
 
-    def is_attribute_option_word(word: str) -> bool:
-        """Check if a word appears in any attribute option for the detected type."""
-        word_lower = word.lower()
-        for opt in detected_type_attr_options:
-            if word_lower == opt or word_lower in opt.split('_') or word_lower in opt.split():
-                return True
-        return False
+    # Phase 1: Check if a menu item of a different type matches more specifically
+    phase1_result = _find_different_type_menu_item(
+        text, text_cleaned_lower, detected_item_type,
+        configurable_slugs, detected_type_attr_options,
+    )
+    if phase1_result is not True:
+        return phase1_result  # type: ignore[return-value]
 
-    # Find " with " position to detect modifier patterns
-    # In "everything bagel with scallion cream cheese", items after "with" are modifiers
-    with_pos_for_menu_check = text_cleaned_lower.find(" with ")
+    # Phase 2: Check if extra words in input match a more specific menu item
+    if more_specific_matches and _has_extra_word_specificity(
+        text, text_lower, detected_item_type, more_specific_matches,
+    ):
+        return None
 
-    for item_name, item_info in menu_cache.iter_all_menu_items().items():
-        item_type = item_info.get("item_type")
-        if item_type and item_type != detected_item_type:
-            item_name_lower = item_name.lower()
-            # Skip if this menu item name is also an attribute option for the detected type
-            # (e.g., "bagel" as a bread option for egg_sandwich - options are "plain_bagel", etc.)
-            if is_attribute_option_word(item_name_lower):
-                continue
-            # Check if this menu item name appears as a word-boundary phrase in input
-            match = re.search(rf'\b{re.escape(item_name_lower)}\b', text_cleaned_lower)
-            if match:
-                # Skip if this menu item appears AFTER "with" - it's likely a modifier on the main item
-                # e.g., "everything bagel with scallion cream cheese" - cream cheese is a modifier
-                if with_pos_for_menu_check != -1 and match.start() > with_pos_for_menu_check:
-                    continue
-                # Found a complete menu item of a different type - use its type instead
-                # e.g., "large iced tea" detected type "tea" but "iced tea" is type "iced_tea"
-                # Switch to the correct type so configurable item parsing continues
-                if item_type in configurable_slugs:
-                    logger.info(
-                        "CONFIGURABLE_ITEM: switching type '%s' -> '%s' based on menu item '%s' in '%s'",
-                        detected_item_type, item_type, item_name, text[:50]
-                    )
-                    return item_type
-                else:
-                    # Non-configurable item - defer to menu item lookup
-                    logger.info(
-                        "CONFIGURABLE_ITEM: skipping '%s' - found non-configurable menu item '%s' of type '%s'",
-                        text[:50], item_name, item_type
-                    )
-                    return None
-
-    if more_specific_matches:
-        # Check if user's input has extra specificity beyond the item type word
-        # e.g., "bagel package" has "package" beyond "bagel", and if "package" appears
-        # in matching menu items like "3 Bagel Package", defer to menu item lookup
-        filler_words = {
-            'a', 'an', 'the', 'i', 'id', 'want', 'like', 'get', 'can', 'have', 'need',
-            'please', 'would', 'could', 'some', 'of', 'with', 'and', 'or', 'for', 'me',
-        }
-        input_words = set(re.findall(r'\b[a-z]+\b', text_lower))
-        # Include both the item type slug words AND the SHORT trigger words that detected this type
-        # e.g., for "coffee", type_words should include "coffee" (the trigger), not just "sized"/"beverage"
-        # But we only include triggers with 2 or fewer words - longer ones are menu item names
-        # (e.g., "3 bagel package" is a menu item, not a type trigger)
-        type_words = set(re.findall(r'\b[a-z]+\b', detected_item_type.lower()))
-        # Add short trigger words for this item type (e.g., "coffee", "latte", "iced coffee")
-        triggers = menu_cache.get_item_type_triggers().get(detected_item_type, [])
-        for trigger in triggers:
-            trigger_word_count = len(trigger.split())
-            if trigger_word_count <= 2:  # Only short triggers (like "coffee", "iced coffee")
-                type_words.update(re.findall(r'\b[a-z]+\b', trigger.lower()))
-        extra_words = input_words - type_words - filler_words
-
-        if extra_words:
-            # Check if any matching menu item name contains these extra words
-            for match in more_specific_matches:
-                match_name_lower = match.get("name", "").lower()
-                matching_extra = [w for w in extra_words if w in match_name_lower]
-                if matching_extra:
-                    logger.info(
-                        "CONFIGURABLE_ITEM: skipping '%s' - extra words %s found in menu item '%s'",
-                        text[:50], matching_extra, match.get("name")
-                    )
-                    return None
-
-    # Return the original type unchanged
     return detected_item_type
 
 

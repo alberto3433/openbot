@@ -793,6 +793,41 @@ class ItemTypeLoaderMixin:
             sum(len(v) for v in result.values()),
         )
 
+    def _load_unrecognized_ingredient_suggestions_from_bulk(self, bulk_data: dict) -> None:
+        """Load unrecognized ingredient suggestions from bulk data.
+
+        These are common ingredient terms not on our menu (e.g., "honey")
+        that we want to detect and suggest alternatives for.
+        """
+        suggestions = bulk_data.get("unrecognized_ingredient_suggestions", [])
+
+        result: dict[str, dict] = {}
+
+        for s in suggestions:
+            if not s.is_active:
+                continue
+            pattern = s.input_pattern.lower()
+            alternatives = []
+            for ing in (s.alternative_ingredients or []):
+                alternatives.append({
+                    "name": ing.name,
+                    "slug": ing.name.lower().replace(" ", "_"),
+                })
+
+            result[pattern] = {
+                "display_name": s.suggested_display_name,
+                "modifier_category": s.modifier_category,
+                "match_type": s.match_type,
+                "alternatives": alternatives,
+            }
+
+        self._unrecognized_ingredient_suggestions = result
+
+        logger.debug(
+            "Loaded unrecognized ingredient suggestions: %d patterns",
+            len(result),
+        )
+
     def _load_menu_display_groups_from_bulk(self, bulk_data: dict) -> None:
         """Load menu display groups from bulk data.
 

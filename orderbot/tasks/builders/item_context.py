@@ -55,6 +55,9 @@ class ItemBuildContext:
     special_instructions: list[str] | None = None
     """List of special instruction strings."""
 
+    unrecognized_ingredients: list[dict[str, Any]] | None = None
+    """Unrecognized ingredient tokens with alternative suggestions."""
+
     skip_first_question: bool = False
     """If True, don't ask the first config question (for multi-item adds)."""
 

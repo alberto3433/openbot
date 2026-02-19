@@ -71,8 +71,8 @@ def is_valid_answer_for_pending_field(user_input: str, pending_field: str | None
     if not pending_field:
         return False
 
-    # Extract the potential answer value
-    answer_value = strip_ordering_prefix(user_input).lower()
+    # Extract the potential answer value, stripping ordering prefix and trailing punctuation
+    answer_value = strip_ordering_prefix(user_input).lower().rstrip("?!.,")
     if not answer_value:
         return False
 

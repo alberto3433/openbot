@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <title>Unrecognized Ingredients</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="/static/admin_theme.css">
+  <link rel="stylesheet" href="/static/admin_common.css">
+  <style>
+    /* Badge colors for match types and statuses */
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+    .badge-exact { background: var(--success-bg); color: var(--success-text); }
+    .badge-prefix { background: var(--info-bg); color: var(--info-text); }
+    .badge-contains { background: var(--warning-bg); color: var(--warning-text); }
+    .badge-active { background: var(--success-bg); color: var(--success-text); }
+    .badge-inactive { background: var(--error-bg); color: var(--error-text); }
+
+    /* Multi-select with tags */
+    .multi-select-container {
+      position: relative;
+    }
+    .selected-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+      min-height: 24px;
+    }
+    .selected-tags:empty::before {
+      content: 'No ingredients selected';
+      color: var(--text-tertiary);
+      font-size: 12px;
+      font-style: italic;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      background: var(--info-bg);
+      color: var(--info-text);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      gap: 6px;
+    }
+    .tag-remove {
+      cursor: pointer;
+      font-weight: bold;
+      color: var(--info-text);
+      line-height: 1;
+    }
+    .tag-remove:hover {
+      color: var(--error-text);
+    }
+    .multi-select-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--card-bg);
+      border: 1px solid var(--input-border);
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+    }
+    .multi-select-dropdown.open {
+      display: block;
+    }
+    .multi-select-option {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+    .multi-select-option:hover {
+      background: var(--bg-tertiary);
+    }
+    .multi-select-option.selected {
+      background: var(--info-bg);
+    }
+    .multi-select-empty {
+      padding: 12px;
+      color: var(--text-tertiary);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    /* Toolbar and filters */
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .filter-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .filter-group select {
+      padding: 8px 12px;
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      font-size: 13px;
+      background: var(--bg-input);
+      color: var(--text-primary);
+    }
+    .filter-group select:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: var(--input-focus-shadow);
+    }
+    .filter-group label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Stats cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 900px) {
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    @media (max-width: 500px) {
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--card-border);
+    }
+    .stat-card .stat-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .stat-card .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: var(--text-primary);
+    }
+    .stat-card .stat-detail {
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+
+    /* Hit count */
+    .hit-count {
+      font-weight: 600;
+      color: var(--brand-primary);
+    }
+    .hit-count.high {
+      color: var(--success-text);
+    }
+
+    /* Nav dropdown styles */
+    .nav-group {
+      display: inline-block;
+      position: relative;
+    }
+    .nav-group-label {
+      color: var(--nav-link);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .nav-group-label:hover {
+      background: var(--bg-tertiary);
+      color: var(--nav-link-hover);
+    }
+    .nav-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: var(--nav-dropdown-bg);
+      border-radius: 8px;
+      box-shadow: var(--shadow-lg);
+      min-width: 200px;
+      z-index: 1000;
+      padding: 8px 0;
+      border: 1px solid var(--border-light);
+    }
+    .nav-group:hover .nav-dropdown {
+      display: block;
+    }
+    .nav-dropdown a {
+      display: block;
+      color: var(--text-primary);
+      padding: 8px 16px;
+      margin: 0;
+      font-size: 13px;
+      border-radius: 0;
+    }
+    .nav-dropdown a:hover {
+      background: var(--nav-dropdown-hover);
+    }
+    .nav-dropdown a.active {
+      background: var(--nav-dropdown-active);
+      color: var(--brand-primary);
+      font-weight: 500;
+    }
+
+    /* Description text */
+    .section-description {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    /* Alternatives cell */
+    .alternatives-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .alternatives-list .tag {
+      padding: 2px 6px;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Toast notification container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="app-header">
+    <div class="header-title">
+      <span class="icon"><i data-lucide="search"></i></span>
+      <span>Unrecognized Ingredients</span>
+    </div>
+    <div class="nav-links">
+      <a href="/static/index.html">Customer Chat</a>
+      <a href="/static/admin_orders.html">Orders</a>
+      <a href="/static/admin_menu.html">Menu</a>
+      <a href="/static/admin_ingredients.html">Ingredients</a>
+      <span class="nav-group">
+        <span class="nav-group-label">Item Types <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
+        <div class="nav-dropdown">
+          <a href="/static/admin_item_types.html">Basic Info</a>
+          <a href="/static/admin_modifiers.html">Modifiers</a>
+        </div>
+      </span>
+      <span class="nav-group">
+        <span class="nav-group-label">Config <i data-lucide="chevron-down" style="width:14px;height:14px;vertical-align:middle;margin-left:2px;"></i></span>
+        <div class="nav-dropdown">
+          <a href="/static/admin_global_attributes.html">Global Attributes</a>
+          <a href="/static/admin_size_categories.html">Size Categories</a>
+          <a href="/static/admin_modifier_categories.html">Modifier Categories</a>
+          <a href="/static/admin_modifier_qualifiers.html">Qualifiers</a>
+          <a href="/static/admin_ingredient_categories.html">Ingredient Categories</a>
+          <a href="/static/admin_overall_categories.html">Overall Categories</a>
+          <a href="/static/admin_menu_display_groups.html">Display Groups</a>
+          <a href="/static/admin_response_patterns.html">Response Patterns</a>
+          <a href="/static/admin_unrecognized_menu_items.html">Unrecognized Menu Items</a>
+          <a href="/static/admin_unrecognized_ingredients.html" class="active">Unrecognized Ingredients</a>
+        </div>
+      </span>
+      <a href="/static/admin_stores.html">Stores</a>
+      <a href="/static/admin_analytics.html">Analytics</a>
+      <a href="/static/admin_company.html">Company</a>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <span class="icon" id="theme-icon"></span>
+        <span id="theme-text">Light</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Ingredient Suggestions</div>
+        <div class="stat-value" id="statTotal">-</div>
+        <div class="stat-detail" id="statActive">Loading...</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Hits</div>
+        <div class="stat-value" id="statHits">-</div>
+        <div class="stat-detail">Times suggestions were used</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">By Category</div>
+        <div class="stat-value" id="statCategories">-</div>
+        <div class="stat-detail" id="statCategoryDetail">Loading...</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Match Types</div>
+        <div class="stat-value" id="statMatchType">-</div>
+        <div class="stat-detail" id="statMatchDetail">Loading...</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <span>Unrecognized Ingredient Suggestions</span>
+        <button class="btn primary" onclick="openCreateModal()">
+          <span class="icon"><i data-lucide="plus"></i></span>
+          Add Suggestion
+        </button>
+      </div>
+      <div class="section-body">
+        <div class="toolbar">
+          <div class="filter-group">
+            <select id="filterCategory" onchange="applyFilters()">
+              <option value="">All Categories</option>
+            </select>
+            <label>
+              <input type="checkbox" id="filterActive" onchange="applyFilters()"> Active only
+            </label>
+          </div>
+        </div>
+        <p class="section-description">
+          These are common ingredient terms that users request but aren't on our menu (e.g., 'honey'). Each maps to suggested alternatives we actually carry.
+        </p>
+        <div id="suggestionsTable">
+          <div class="loading">Loading suggestions...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create/Edit Modal -->
+  <div id="suggestionModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <span id="modalTitle">Add Suggestion</span>
+        <button class="close-btn" onclick="closeModal()">
+          <span class="icon"><i data-lucide="x"></i></span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="suggestionForm">
+          <input type="hidden" id="suggestionId">
+          <div class="form-group">
+            <label>Input Pattern *</label>
+            <input type="text" id="inputPattern" required placeholder="e.g., honey">
+            <div class="hint">The text to match against user input (lowercase)</div>
+          </div>
+          <div class="form-group">
+            <label>Match Type</label>
+            <select id="matchType">
+              <option value="exact">Exact - Input must exactly match</option>
+              <option value="prefix">Prefix - Input must start with pattern</option>
+              <option value="contains">Contains - Input must contain pattern</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Display Name *</label>
+            <input type="text" id="displayName" required placeholder="e.g., Honey">
+            <div class="hint">Human-readable name shown in messages</div>
+          </div>
+          <div class="form-group">
+            <label>Modifier Category</label>
+            <input type="text" id="modifierCategory" placeholder="e.g., sweetener">
+            <div class="hint">Optional category for grouping (e.g., sweetener, spread, topping)</div>
+          </div>
+          <div class="form-group">
+            <label>Alternative Ingredients</label>
+            <div class="multi-select-container" id="ingredientsMultiSelect">
+              <div class="selected-tags" id="selectedIngredientTags"></div>
+              <input type="text" id="ingredientSearch" placeholder="Type to search ingredients..." autocomplete="off">
+              <div class="multi-select-dropdown" id="ingredientsDropdown"></div>
+            </div>
+            <div class="hint">Click items to add, click x to remove</div>
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="isActive" checked> Active
+            </label>
+            <div class="hint">Inactive suggestions won't be used</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn primary" onclick="saveSuggestion()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/admin_common.js"></script>
+  <script>
+    const API_BASE = '/api/v1';
+    let allSuggestions = [];       // Full list from API for client-side stats
+    let allIngredients = [];       // For the multi-select lookup
+    let selectedIngredients = [];  // Currently selected ingredient names
+
+    // =========================================================================
+    // Toast notifications
+    // =========================================================================
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      const iconNames = { success: 'check', error: 'x', info: 'info' };
+      toast.innerHTML = `<span class="icon"><i data-lucide="${iconNames[type] || iconNames.info}"></i></span><span>${escapeHtml(message)}</span>`;
+      container.appendChild(toast);
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
+      setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease forwards';
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // =========================================================================
+    // Stats (computed client-side from the full list)
+    // =========================================================================
+    function computeAndRenderStats(data) {
+      const total = data.length;
+      const activeCount = data.filter(s => s.is_active).length;
+      const totalHits = data.reduce((sum, s) => sum + (s.hit_count || 0), 0);
+
+      // Category breakdown
+      const byCategory = {};
+      data.forEach(s => {
+        const cat = s.modifier_category || '(no category)';
+        byCategory[cat] = (byCategory[cat] || 0) + 1;
+      });
+
+      // Match type breakdown
+      const byMatchType = {};
+      data.forEach(s => {
+        const mt = s.match_type || 'unknown';
+        byMatchType[mt] = (byMatchType[mt] || 0) + 1;
+      });
+
+      // Render stats cards
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statActive').textContent = `${activeCount} active`;
+      document.getElementById('statHits').textContent = totalHits;
+
+      const categories = Object.entries(byCategory);
+      document.getElementById('statCategories').textContent = categories.length;
+      document.getElementById('statCategoryDetail').textContent =
+        categories.slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ') || 'None';
+
+      const matchTypes = Object.entries(byMatchType);
+      document.getElementById('statMatchType').textContent = matchTypes.length;
+      document.getElementById('statMatchDetail').textContent =
+        matchTypes.map(([k, v]) => `${k}: ${v}`).join(', ') || 'None';
+
+      // Populate category filter dropdown from data
+      const categorySelect = document.getElementById('filterCategory');
+      const currentVal = categorySelect.value;
+      categorySelect.innerHTML = '<option value="">All Categories</option>';
+      categories.forEach(([cat]) => {
+        if (cat !== '(no category)') {
+          categorySelect.innerHTML += `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`;
+        }
+      });
+      categorySelect.value = currentVal;
+    }
+
+    // =========================================================================
+    // Load suggestions list
+    // =========================================================================
+    async function loadSuggestions() {
+      const category = document.getElementById('filterCategory').value;
+      const activeOnly = document.getElementById('filterActive').checked;
+
+      let url = `${API_BASE}/admin/unrecognized-ingredient-suggestions?`;
+      if (category) url += `category=${encodeURIComponent(category)}&`;
+      if (activeOnly) url += `active_only=true&`;
+
+      try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load suggestions');
+        const data = await res.json();
+        allSuggestions = data;
+        computeAndRenderStats(data);
+        renderSuggestionsTable(data);
+      } catch (err) {
+        document.getElementById('suggestionsTable').innerHTML =
+          `<div class="empty-state">Error loading suggestions: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function applyFilters() {
+      loadSuggestions();
+    }
+
+    function renderSuggestionsTable(suggestions) {
+      if (!suggestions.length) {
+        document.getElementById('suggestionsTable').innerHTML =
+          '<div class="empty-state">No suggestions found. Add your first one!</div>';
+        return;
+      }
+
+      let html = `<table>
+        <thead>
+          <tr>
+            <th>Pattern</th>
+            <th>Display Name</th>
+            <th>Match Type</th>
+            <th>Category</th>
+            <th>Alternatives</th>
+            <th>Hits</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      suggestions.forEach(s => {
+        const hitClass = s.hit_count > 10 ? 'high' : '';
+        const alternatives = (s.alternative_ingredient_names || []);
+        const altHtml = alternatives.length > 0
+          ? `<div class="alternatives-list">${alternatives.map(a => `<span class="tag">${escapeHtml(a)}</span>`).join('')}</div>`
+          : '<span style="color:var(--text-tertiary);">-</span>';
+
+        html += `<tr>
+          <td><strong>${escapeHtml(s.input_pattern)}</strong></td>
+          <td>${escapeHtml(s.suggested_display_name || '')}</td>
+          <td><span class="badge badge-${s.match_type}">${s.match_type}</span></td>
+          <td>${escapeHtml(s.modifier_category || '-')}</td>
+          <td>${altHtml}</td>
+          <td><span class="hit-count ${hitClass}">${s.hit_count}</span></td>
+          <td><span class="badge badge-${s.is_active ? 'active' : 'inactive'}">${s.is_active ? 'Active' : 'Inactive'}</span></td>
+          <td>
+            <button class="btn small" onclick="editSuggestion(${s.id})">Edit</button>
+            <button class="btn small danger" onclick="deleteSuggestion(${s.id}, '${escapeHtml(s.input_pattern)}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('suggestionsTable').innerHTML = html;
+    }
+
+    // =========================================================================
+    // Load ingredient lookups for multi-select
+    // =========================================================================
+    async function loadIngredientLookups() {
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-ingredient-suggestions/lookups/ingredients`, { credentials: 'include' });
+        if (res.ok) {
+          allIngredients = await res.json();
+        }
+      } catch (err) {
+        console.error('Failed to load ingredient lookups:', err);
+      }
+    }
+
+    // =========================================================================
+    // Multi-select ingredients functions
+    // =========================================================================
+    function renderSelectedTags() {
+      const container = document.getElementById('selectedIngredientTags');
+      container.innerHTML = selectedIngredients.map((name, idx) =>
+        `<span class="tag">${escapeHtml(name)}<span class="tag-remove" data-idx="${idx}">&times;</span></span>`
+      ).join('');
+    }
+
+    function renderIngredientsDropdown(filter = '') {
+      const dropdown = document.getElementById('ingredientsDropdown');
+      const filterLower = filter.toLowerCase();
+      const filtered = allIngredients.filter(ing =>
+        ing.name.toLowerCase().includes(filterLower) && !selectedIngredients.includes(ing.name)
+      );
+
+      if (filtered.length === 0) {
+        dropdown.innerHTML = '<div class="multi-select-empty">No matching ingredients</div>';
+      } else {
+        dropdown.innerHTML = filtered.slice(0, 20).map(ing =>
+          `<div class="multi-select-option" data-name="${escapeHtml(ing.name)}">${escapeHtml(ing.name)}</div>`
+        ).join('');
+      }
+    }
+
+    function setupIngredientsMultiSelect() {
+      const searchInput = document.getElementById('ingredientSearch');
+      const dropdown = document.getElementById('ingredientsDropdown');
+      const tagsContainer = document.getElementById('selectedIngredientTags');
+
+      searchInput.addEventListener('focus', () => {
+        renderIngredientsDropdown(searchInput.value);
+        dropdown.classList.add('open');
+      });
+
+      searchInput.addEventListener('input', () => {
+        renderIngredientsDropdown(searchInput.value);
+        dropdown.classList.add('open');
+      });
+
+      // Handle clicking on dropdown options (event delegation)
+      dropdown.addEventListener('click', (e) => {
+        const option = e.target.closest('.multi-select-option');
+        if (option) {
+          const name = option.dataset.name;
+          if (name && !selectedIngredients.includes(name)) {
+            selectedIngredients.push(name);
+            renderSelectedTags();
+            searchInput.value = '';
+            renderIngredientsDropdown('');
+          }
+        }
+      });
+
+      // Handle removing tags (event delegation)
+      tagsContainer.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tag-remove')) {
+          const idx = parseInt(e.target.dataset.idx, 10);
+          if (!isNaN(idx) && idx >= 0 && idx < selectedIngredients.length) {
+            selectedIngredients.splice(idx, 1);
+            renderSelectedTags();
+            renderIngredientsDropdown(searchInput.value);
+          }
+        }
+      });
+
+      // Close dropdown when clicking outside
+      document.addEventListener('click', (e) => {
+        const container = document.getElementById('ingredientsMultiSelect');
+        if (!container.contains(e.target)) {
+          dropdown.classList.remove('open');
+        }
+      });
+    }
+
+    // =========================================================================
+    // Modal handling
+    // =========================================================================
+    function openCreateModal() {
+      document.getElementById('modalTitle').textContent = 'Add Suggestion';
+      document.getElementById('suggestionId').value = '';
+      document.getElementById('inputPattern').value = '';
+      document.getElementById('matchType').value = 'exact';
+      document.getElementById('displayName').value = '';
+      document.getElementById('modifierCategory').value = '';
+      selectedIngredients = [];
+      renderSelectedTags();
+      document.getElementById('ingredientSearch').value = '';
+      document.getElementById('isActive').checked = true;
+      document.getElementById('suggestionModal').classList.add('active');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    async function editSuggestion(id) {
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-ingredient-suggestions/${id}`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load suggestion');
+        const s = await res.json();
+
+        document.getElementById('modalTitle').textContent = 'Edit Suggestion';
+        document.getElementById('suggestionId').value = s.id;
+        document.getElementById('inputPattern').value = s.input_pattern;
+        document.getElementById('matchType').value = s.match_type;
+        document.getElementById('displayName').value = s.suggested_display_name || '';
+        document.getElementById('modifierCategory').value = s.modifier_category || '';
+
+        selectedIngredients = s.alternative_ingredient_names || [];
+        renderSelectedTags();
+        document.getElementById('ingredientSearch').value = '';
+
+        document.getElementById('isActive').checked = s.is_active;
+        document.getElementById('suggestionModal').classList.add('active');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      } catch (err) {
+        showToast('Failed to load suggestion: ' + err.message, 'error');
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('suggestionModal').classList.remove('active');
+    }
+
+    async function saveSuggestion() {
+      const id = document.getElementById('suggestionId').value;
+
+      const payload = {
+        input_pattern: document.getElementById('inputPattern').value,
+        match_type: document.getElementById('matchType').value,
+        suggested_display_name: document.getElementById('displayName').value,
+        modifier_category: document.getElementById('modifierCategory').value || null,
+        alternative_ingredient_names: selectedIngredients.length > 0 ? selectedIngredients : [],
+        is_active: document.getElementById('isActive').checked,
+      };
+
+      if (!payload.input_pattern || !payload.suggested_display_name) {
+        showToast('Please fill in all required fields', 'error');
+        return;
+      }
+
+      try {
+        const url = id
+          ? `${API_BASE}/admin/unrecognized-ingredient-suggestions/${id}`
+          : `${API_BASE}/admin/unrecognized-ingredient-suggestions`;
+        const method = id ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Failed to save');
+        }
+
+        showToast(id ? 'Suggestion updated!' : 'Suggestion created!', 'success');
+        closeModal();
+        loadSuggestions();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
+    }
+
+    async function deleteSuggestion(id, pattern) {
+      if (!confirm(`Delete suggestion for "${pattern}"?`)) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/unrecognized-ingredient-suggestions/${id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        if (!res.ok) throw new Error('Failed to delete');
+
+        showToast('Suggestion deleted', 'success');
+        loadSuggestions();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+      }
+    }
+
+    // =========================================================================
+    // Close modal on outside click
+    // =========================================================================
+    document.getElementById('suggestionModal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    // Close modal on Escape
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    });
+
+    // =========================================================================
+    // Initialize
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      loadIngredientLookups();
+      loadSuggestions();
+      setupIngredientsMultiSelect();
+
+      // Initialize Lucide icons
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+
+      // Mark active nav link based on current URL
+      const currentPath = window.location.pathname;
+      document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
+        const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
+        const linkPage = hrefMatch ? hrefMatch[1] : null;
+        const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+        const currentPage = currentMatch ? currentMatch[1] : null;
+
+        if (linkPage && currentPage && linkPage === currentPage) {
+          link.classList.add('active');
+          const navGroup = link.closest('.nav-group');
+          if (navGroup) {
+            const label = navGroup.querySelector('.nav-group-label');
+            if (label) label.classList.add('active');
+          }
+        }
+      });
+    });
+
+    // =========================================================================
+    // Theme Toggle
+    // =========================================================================
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const themeText = document.getElementById('theme-text');
+    const htmlEl = document.documentElement;
+
+    const savedTheme = localStorage.getItem('admin_theme') || 'light';
+    htmlEl.setAttribute('data-theme', savedTheme);
+    updateThemeButton(savedTheme);
+
+    function updateThemeButton(theme) {
+      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      htmlEl.setAttribute('data-theme', newTheme);
+      localStorage.setItem('admin_theme', newTheme);
+      updateThemeButton(newTheme);
+    });
+  </script>
+</body>
+</html>

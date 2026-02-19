@@ -352,6 +352,9 @@ class ItemAdderHandler(MenuDataMixin):
         # Get special_instructions from kwargs (e.g., "room for cream", "extra hot")
         special_instructions = kwargs.get("special_instructions")
 
+        # Get unrecognized_ingredients from kwargs (for "We don't have X" messaging)
+        unrecognized_ingredients = kwargs.get("unrecognized_ingredients")
+
         logger.info(
             "ADD ITEM: type=%s, name=%s, qty=%d, pre_filled=%s",
             item_type, item_name, quantity,
@@ -370,6 +373,7 @@ class ItemAdderHandler(MenuDataMixin):
             unmatched_selections=unmatched_selections,
             ambiguous_selections=ambiguous_selections,
             special_instructions=special_instructions,
+            unrecognized_ingredients=unrecognized_ingredients,
             skip_first_question=skip_first_question,
         )
 
@@ -766,6 +770,7 @@ class ItemAdderHandler(MenuDataMixin):
         unmatched_selections: dict | None = None,
         ambiguous_selections: list[dict] | None = None,
         special_instructions: list[str] | None = None,
+        unrecognized_ingredients: list[dict] | None = None,
         skip_first_question: bool = False,
     ) -> StateMachineResult:
         """
@@ -805,6 +810,7 @@ class ItemAdderHandler(MenuDataMixin):
             unmatched_selections=unmatched_selections,
             ambiguous_selections=ambiguous_selections,
             special_instructions=special_instructions,
+            unrecognized_ingredients=unrecognized_ingredients,
             skip_first_question=skip_first_question,
         )
 

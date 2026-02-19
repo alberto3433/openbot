@@ -140,6 +140,10 @@ class ParsedItemEntry(BaseModel):
     # Item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions: list[str] = Field(default_factory=list)
 
+    # Unrecognized ingredients detected in input (e.g., "honey")
+    # List of {token, display_name, modifier_category, alternatives: [{name, slug}]}
+    unrecognized_ingredients: list[dict] = Field(default_factory=list)
+
     def get_selection(self, category: str) -> Selection | None:
         """Get first selection for a category (for single-select attributes)."""
         for sel in self.selections:

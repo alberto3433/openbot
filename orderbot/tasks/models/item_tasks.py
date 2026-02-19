@@ -106,6 +106,11 @@ class MenuItemTask(ItemTask):
     # Item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions: list[str] = Field(default_factory=list)
 
+    # Unrecognized ingredients detected during parsing (e.g., "honey")
+    # List of {token, display_name, modifier_category, alternatives: [{name, slug}]}
+    # Popped one at a time during configuration to show "We don't have X" messages
+    unrecognized_ingredients: list[dict] = Field(default_factory=list)
+
     # Bundle fields - for items that include configurable sub-items (e.g., omelette + bagel)
     # bundle_id groups related items (parent + children share same bundle_id)
     bundle_id: str | None = None
@@ -720,10 +725,10 @@ class MenuItemTask(ItemTask):
         if self.has_default_ingredients_resolved():
             return self.menu_item_name
 
-        # Check for name-forming category modifiers (e.g., bread type)
+        # Check for name-forming category modifiers (e.g., bread type, tea flavor)
         for sel in self.selections:
             category = sel.get("category", "")
-            if is_name_forming_category(category):
+            if is_name_forming_category(category, sel.get("slug")):
                 # Use the ingredient's display name if available
                 display_name = sel.get("display_name")
                 if display_name:
@@ -790,7 +795,7 @@ class MenuItemTask(ItemTask):
                 continue
 
             # Skip name-forming categories (already part of base name)
-            if is_name_forming_category(category):
+            if is_name_forming_category(category, slug):
                 continue
 
             # Skip default ingredients (already implied by the signature item name)

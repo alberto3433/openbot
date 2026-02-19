@@ -84,6 +84,54 @@ class QuestionBuilder:
         qr = build_quick_replies(available) if available else None
         return StateMachineResult(message=question, order=order, quick_replies=qr)
 
+    def handle_unrecognized_ingredients(
+        self, item: "MenuItemTask", order: "OrderTask"
+    ) -> StateMachineResult | None:
+        """Check if item has unrecognized ingredients to notify the user about.
+
+        Pops the first unrecognized ingredient from the list and generates a
+        helpful message suggesting alternatives we carry.
+
+        Returns StateMachineResult if an unrecognized ingredient was handled, None otherwise.
+        """
+        if not item.unrecognized_ingredients:
+            return None
+
+        # Pop first unrecognized ingredient
+        entry = item.unrecognized_ingredients.pop(0)
+        display_name = entry.get("display_name", entry.get("token", "that"))
+        category = entry.get("modifier_category")
+        alternatives = entry.get("alternatives", [])
+
+        # Build alternative names list
+        alt_names = [a.get("name", "") for a in alternatives if a.get("name")]
+
+        if alt_names and category:
+            alt_str = format_english_list(alt_names, conjunction="or")
+            question = (
+                f"We don't carry {display_name}, but for {category}s we have "
+                f"{alt_str}. Would you like any of those?"
+            )
+        elif alt_names:
+            alt_str = format_english_list(alt_names, conjunction="or")
+            question = (
+                f"We don't carry {display_name}, but we have "
+                f"{alt_str}. Would you like any of those?"
+            )
+        else:
+            question = f"Sorry, we don't carry {display_name}."
+
+        # Set up pending config so the next response routes back to this item
+        if item.menu_item_type:
+            order.setup_pending_config(item.id, f"{item.menu_item_type}:unrecognized_ingredient")
+
+        # Build quick replies for alternative ingredients
+        from ..handler_utils import build_quick_replies
+        qr_options = alt_names + ["No thanks"] if alt_names else None
+        qr = build_quick_replies(qr_options) if qr_options else None
+
+        return StateMachineResult(message=question, order=order, quick_replies=qr)
+
     def calculate_item_ordinal(
         self, item: "MenuItemTask", order: "OrderTask"
     ) -> tuple[str, int, bool]:

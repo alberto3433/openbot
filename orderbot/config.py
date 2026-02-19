@@ -255,6 +255,7 @@ ADMIN_PAGES = {
     "size_categories": "admin_size_categories.html",
     "response_patterns": "admin_response_patterns.html",
     "overall_categories": "admin_overall_categories.html",
-    "unrecognized_suggestions": "admin_unrecognized_suggestions.html",
+    "unrecognized_menu_items": "admin_unrecognized_menu_items.html",
+    "unrecognized_ingredients": "admin_unrecognized_ingredients.html",
     "menu_display_groups": "admin_menu_display_groups.html",
 }

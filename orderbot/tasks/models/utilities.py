@@ -52,15 +52,26 @@ def pluralize_display_name(display_name: str) -> str:
     return ' '.join(words)
 
 
-def is_name_forming_category(category: str) -> bool:
+def is_name_forming_category(category: str, ingredient_slug: str | None = None) -> bool:
     """Check if a category is name-forming (data-driven).
 
     Name-forming categories have their ingredient display name replace
     the base menu item name. For example, "bread" category means
     "Garlic Bagel" instead of "Bagel, Garlic Bagel".
+
+    Checks both the selection's category (attribute slug) and, if provided,
+    the ingredient's actual category. This handles cases where the attribute
+    slug differs from the ingredient category (e.g., "tea_flavor" vs "tea").
     """
     try:
-        return menu_cache.is_name_forming_category(category)
+        if menu_cache.is_name_forming_category(category):
+            return True
+        # Also check the ingredient's actual category if slug is provided
+        if ingredient_slug:
+            ing_cat = menu_cache.get_ingredient_category(ingredient_slug)
+            if ing_cat and menu_cache.is_name_forming_category(ing_cat):
+                return True
+        return False
     except MenuDataNotLoadedError:
         # Cache not loaded - shouldn't happen in production
         logger.warning("Menu cache not loaded when checking name-forming category: %s", category)

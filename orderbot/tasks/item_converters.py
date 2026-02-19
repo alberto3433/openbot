@@ -57,6 +57,7 @@ from .models import (
     ItemTask,
     MenuItemTask,
     _pluralize_display_name,
+    is_name_forming_category,
 )
 from .normalization import format_slug_for_display
 from .utils.constants import PRICE_SUFFIXES
@@ -302,11 +303,11 @@ class UnifiedItemConverter:
         item_modifiers = item.selections or []
 
         for mod in item_modifiers:
-            # Skip name-forming categories (e.g., bread) - already in display name
+            # Skip name-forming categories (e.g., bread, tea) - already in display name
             # Exception: items with default ingredients keep their fixed name,
             # so show bread as a sub-line (e.g., "The Classic BEC" shows "Bialy" as sub-line)
             mod_category = mod.get("category", "")
-            if menu_cache.is_name_forming_category(mod_category):
+            if is_name_forming_category(mod_category, mod.get("slug")):
                 if not item.has_default_ingredients_resolved():
                     continue
 

@@ -15,7 +15,7 @@ import re
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import singularize
+from orderbot.cache.base import singularize, contains_word_or_singular
 from ..quantity_utils import QTY_WORDS_RE
 
 if TYPE_CHECKING:
@@ -376,7 +376,7 @@ def _is_inline_attribute_spec_pattern(text: str) -> bool:
         gap_text = text[raw_matches[i].end():raw_matches[i + 1].start()].strip()
         if gap_text:
             for word in gap_text.lower().split():
-                if word in all_trigger_flat or singularize(word) in all_trigger_flat:
+                if contains_word_or_singular(word, all_trigger_flat):
                     return False
 
     # Check if subsequent qty+word pairs have words that are attribute options

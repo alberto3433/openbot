@@ -40,6 +40,55 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
         """
         self._menu_data = menu_data or {}
 
+    def _build_paginated_options_result(
+        self,
+        items: list[str],
+        display_name: str,
+        category: str,
+        order: OrderTask,
+        suffix: str = "What would you like?",
+        pagination_state: dict | None = None,
+    ) -> StateMachineResult:
+        """Build a paginated list response with quick replies.
+
+        Handles the common pattern of showing a list of options with automatic
+        pagination when there are more items than DEFAULT_PAGINATION_SIZE.
+
+        Args:
+            items: Sorted list of option display names.
+            display_name: Human-readable category name for the message.
+            category: Category slug for pagination state.
+            order: Current order state (pagination state is set/cleared on it).
+            suffix: Prompt appended when all items fit on one page.
+            pagination_state: If provided, set as order.menu_query_pagination
+                when paginating (for attribute options). If None, uses
+                order.set_menu_pagination() (for modifier/ingredient categories).
+        """
+        if len(items) <= DEFAULT_PAGINATION_SIZE:
+            batch = items
+            items_str = format_english_list(items)
+            has_more = False
+            order.clear_menu_pagination()
+            message = f"For {display_name.lower()}, we have {items_str}. {suffix}"
+        else:
+            batch = items[:DEFAULT_PAGINATION_SIZE]
+            items_str = format_english_list(batch)
+            has_more = True
+            if pagination_state is not None:
+                order.menu_query_pagination = pagination_state
+            else:
+                order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(items))
+            message = (
+                f"For {display_name.lower()}, we have {items_str}, and more. "
+                f"Would you like one of these, or want to hear more?"
+            )
+
+        qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": "more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
+
     # =========================================================================
     # Modifier Inquiry Handlers
     # =========================================================================
@@ -151,33 +200,10 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
                 order=order,
             )
 
-        # Format options for display
         items_list = sorted(options)
-
-        if len(items_list) <= DEFAULT_PAGINATION_SIZE:
-            # Show all items, no pagination needed
-            batch = items_list
-            items_str = format_english_list(items_list)
-            has_more = False
-
-            order.clear_menu_pagination()
-            message = f"For {display_name.lower()}, we have {items_str}. {prompt_suffix}"
-        else:
-            # Show first batch with pagination
-            batch = items_list[:DEFAULT_PAGINATION_SIZE]
-            items_str = format_english_list(batch)
-            has_more = True
-
-            # Set pagination state for "what else" follow-ups
-            order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(items_list))
-            message = f"For {display_name.lower()}, we have {items_str}, and more. Would you like one of these, or want to hear more?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
-        if has_more:
-            qr.append({"label": "more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+        return self._build_paginated_options_result(
+            items_list, display_name, category, order, suffix=prompt_suffix,
+        )
 
     def _describe_ingredient_category(
         self,
@@ -213,29 +239,9 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
                 order=order,
             )
 
-        if len(ingredient_names) <= DEFAULT_PAGINATION_SIZE:
-            # Show all items, no pagination needed
-            batch = ingredient_names
-            items_str = format_english_list(ingredient_names)
-            has_more = False
-            order.clear_menu_pagination()
-            message = f"For {display_name.lower()}, we have {items_str}. What would you like?"
-        else:
-            # Show first batch with pagination
-            batch = ingredient_names[:DEFAULT_PAGINATION_SIZE]
-            items_str = format_english_list(batch)
-            has_more = True
-
-            # Set pagination state for "what else" follow-ups
-            order.set_menu_pagination(category, DEFAULT_PAGINATION_SIZE, len(ingredient_names))
-            message = f"For {display_name.lower()}, we have {items_str}, and more. Would you like one of these, or want to hear more?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
-        if has_more:
-            qr.append({"label": "more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+        return self._build_paginated_options_result(
+            ingredient_names, display_name, category, order,
+        )
 
     def _describe_item_modifiers(
         self,
@@ -454,32 +460,14 @@ class MenuOptionsInquiryHandler(MenuDataMixin):
                 order=order,
             )
 
-        # Format options list with pagination if needed
-        if len(option_names) <= DEFAULT_PAGINATION_SIZE:
-            batch = option_names
-            options_str = format_english_list(option_names)
-            order.clear_menu_pagination()
-            has_more = False
-            message = f"For {attr_display.lower()}, we have {options_str}. What would you like?"
-        else:
-            batch = option_names[:DEFAULT_PAGINATION_SIZE]
-            options_str = format_english_list(batch)
-            has_more = True
-
-            # Store pagination state with "attribute_options" type so handle_more knows what to do
-            order.menu_query_pagination = {
+        return self._build_paginated_options_result(
+            option_names, attr_display, attr_slug, order,
+            pagination_state={
                 "type": "attribute_options",
                 "attribute_slug": attr_slug,
                 "attribute_display": attr_display,
                 "item_type": item_type,
-                "items": option_names,  # Store all option names for pagination
+                "items": option_names,
                 "offset": DEFAULT_PAGINATION_SIZE,
-            }
-            message = f"For {attr_display.lower()}, we have {options_str}, and more. Would you like one of these, or want to hear more?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
-        if has_more:
-            qr.append({"label": "more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+            },
+        )

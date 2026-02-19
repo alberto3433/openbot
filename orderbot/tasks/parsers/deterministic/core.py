@@ -11,7 +11,7 @@ from collections import Counter
 from typing import Literal
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import singularize
+from orderbot.cache.base import singularize, contains_word_or_singular
 
 from ...schemas import OpenInputResponse, Selection
 
@@ -1399,7 +1399,7 @@ def parse_open_input(
 
                 def _comma_if_trigger(m: re.Match) -> str:
                     word = m.group(1).lower()
-                    if word in all_trigger_flat or singularize(word) in all_trigger_flat:
+                    if contains_word_or_singular(word, all_trigger_flat):
                         return f"{m.group(1)}, {m.group(2)}"
                     return m.group(0)
 

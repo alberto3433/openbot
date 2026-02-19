@@ -182,6 +182,22 @@ def singularize(word: str) -> str:
         return word
 
 
+def contains_word_or_singular(word: str, word_set: set | frozenset) -> bool:
+    """Check if a word or its singular form exists in a set.
+
+    Useful for matching user input where plurals like "coffees" should match
+    a set containing "coffee".
+
+    Args:
+        word: The word to check (already lowercased).
+        word_set: Set of words to check against.
+
+    Returns:
+        True if word or singularize(word) is in the set.
+    """
+    return word in word_set or singularize(word) in word_set
+
+
 def pluralize(word: str) -> str:
     """Convert singular to plural form using the inflect library.
 

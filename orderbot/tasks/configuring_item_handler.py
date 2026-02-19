@@ -402,7 +402,13 @@ class ConfiguringItemHandler:
             result = self.bundle_modification_handler.apply_modification_during_config(change_request, item, order)
             if result:
                 return result
-            # If couldn't apply, fall through to normal processing
+            # If couldn't apply as attribute/modifier, try as cross-type menu item replacement
+            result = self.config_modification_handler._try_replace_with_any_menu_item(
+                change_request.new_value, item, order
+            )
+            if result:
+                return result
+            # If still couldn't apply, fall through to normal processing
 
         # Check for modifications targeting a bundled child item by name
         # e.g., "make the fruit salad a large" while configuring parent omelette

@@ -135,6 +135,11 @@ class ConfigModificationHandler:
         if result:
             return result
 
+        # 1d. Check for ANY menu item matching (cross-type replacement)
+        result = self._try_replace_with_any_menu_item(modifier, item, order)
+        if result:
+            return result
+
         # 2. Check if it's an ingredient/modifier (spread, topping, syrup, etc.)
         result = self._try_match_ingredient(modifier, modifier_lower, item, order, quantity=quantity)
         if result:
@@ -427,6 +432,79 @@ class ConfigModificationHandler:
                 [m.get("name") for m in same_type]
             )
         return same_type
+
+    def _try_replace_with_any_menu_item(
+        self,
+        modifier: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Try to replace the current item with ANY menu item matching the modifier.
+
+        Unlike _try_replace_with_same_type_item which only considers items of the
+        same type, this searches all menu items. Used for cross-type replacement
+        (e.g., switching from a turkey sandwich to a Classic BEC during config).
+
+        Args:
+            modifier: The user's text describing the replacement item.
+            item: The current item being configured.
+            order: The current order state.
+
+        Returns:
+            StateMachineResult if a replacement was made or disambiguation started,
+            None if no matching menu item was found.
+        """
+        if not (self.item_adder_handler and self.item_adder_handler.menu_lookup):
+            return None
+
+        lookup = self.item_adder_handler.menu_lookup
+
+        # Strip leading articles ("a", "an", "the") from the modifier text
+        import re
+        cleaned = re.sub(r'^(?:a|an|the)\s+', '', modifier.strip(), flags=re.IGNORECASE).strip()
+        if not cleaned:
+            return None
+
+        all_matches = lookup.lookup_menu_items(cleaned)
+        if not all_matches:
+            return None
+
+        # Exclude the current item from results
+        current_name = (item.menu_item_name or "").lower()
+        matches = [
+            m for m in all_matches
+            if m.get("name", "").lower() != current_name
+        ]
+        if not matches:
+            return None
+
+        if len(matches) == 1:
+            match_item = matches[0]
+            logger.info(
+                "CROSS_TYPE_REPLACE: Replacing '%s' with '%s'",
+                item.menu_item_name, match_item.get("name"),
+            )
+            from .handler_utils import remove_item_from_order
+            remove_item_from_order(order, item)
+            order.clear_pending()
+            return self.item_adder_handler.add_menu_item(
+                match_item.get("name", "item"),
+                order=order,
+                quantity=item.quantity,
+            )
+        else:
+            logger.info(
+                "CROSS_TYPE_REPLACE: Found %d items for '%s', starting disambiguation",
+                len(matches), cleaned,
+            )
+            order.pending_replace_item_id = item.id
+            return self.item_adder_handler.disambiguation_handler.start_disambiguation(
+                item_name=cleaned,
+                matching_items=matches,
+                order=order,
+                quantity=item.quantity,
+                pending_field=PendingField.ITEM_SELECTION,
+            )
 
     # ─── Group 2: Confirm Item Switch ────────────────────────────────
 

@@ -12,7 +12,7 @@ Handles parsing of:
 import logging
 
 from .....cache import menu_cache
-from .....cache.base import singularize
+from .....cache.base import singularize, contains_word_or_singular
 from ....schemas import OpenInputResponse
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import (
@@ -102,7 +102,7 @@ def parse_dietary_category_inquiry(text: str) -> OpenInputResponse | None:
                     all_triggers = menu_cache.get_all_triggers_flat()
                     category_words = category_term.lower().split()
                     if any(
-                        w in all_triggers or singularize(w) in all_triggers
+                        contains_word_or_singular(w, all_triggers)
                         for w in category_words
                     ):
                         logger.info(

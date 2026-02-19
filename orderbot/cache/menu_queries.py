@@ -370,6 +370,46 @@ class MenuQueryMixin:
         return matches
 
     @ensure_cache_loaded
+    def find_all_items_by_word_match(self, word: str) -> list[dict]:
+        """Find menu items where the word appears as a complete word in the name.
+
+        Like find_items_by_word_match but searches ALL menu items including
+        configurable items without default ingredients. Use for multi-word
+        phrases that fail the primary search.
+
+        Args:
+            word: The word or phrase to search for
+
+        Returns:
+            List of matching menu item dicts with name, item_type, base_price.
+        """
+        word_normalized = normalize_for_matching(word)
+
+        if not word_normalized:
+            return []
+
+        word_pattern = re.compile(rf'\b{re.escape(word_normalized)}\b', re.IGNORECASE)
+
+        matches = []
+        seen_ids: set[int] = set()
+
+        for name_lower, item_data in self._all_menu_items_by_name.items():
+            item_id = item_data.get("id")
+            if item_id in seen_ids:
+                continue
+
+            item_normalized = normalize_for_matching(name_lower)
+            if word_pattern.search(item_normalized):
+                seen_ids.add(item_id)
+                matches.append({
+                    "name": item_data.get("name", name_lower),
+                    "item_type": item_data.get("item_type_slug") or "menu_item",
+                    "base_price": item_data.get("base_price", 0.0),
+                })
+
+        return matches
+
+    @ensure_cache_loaded
     def search_menu_items_by_term(self, term: str) -> list[dict]:
         """Search menu items by term in both names AND aliases using word-boundary matching.
 

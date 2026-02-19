@@ -195,132 +195,93 @@ class ConfigCancellationHandler:
         self._configure_next_incomplete_item = configure_next_incomplete_item
         self.pricing = pricing
 
-    def check_cancellation_during_config(
-        self,
-        user_input: str,
-        current_item: MenuItemTask,
-        order: OrderTask,
-    ) -> StateMachineResult | None:
-        """
-        Check if user wants to cancel/remove items while in configuration phase.
-
-        This allows users to say things like "remove the coffee" or "cancel this"
-        while they're being asked for coffee size, instead of being forced to answer.
-
-        Returns StateMachineResult if cancellation handled, None otherwise.
-        """
-        user_input_stripped = user_input.strip()
-        # Strip conversational fillers like "actually," before pattern matching
-        user_input_stripped = strip_conversational_fillers(user_input_stripped)
-
-        # Check for "start over" - clears entire order (check before standalone cancel)
-        start_over_match = START_OVER_PATTERN.match(user_input_stripped)
-        if start_over_match:
-            logger.info("Start over during config: '%s'", user_input_stripped)
-            active_items = order.items.get_active_items()
-            if active_items:
-                num_items = len(active_items)
-                for item in active_items:
-                    remove_item_from_order(order, item)
-                order.clear_pending()
-                order.set_phase(OrderPhase.TAKING_ITEMS)
-                logger.info("Start over: cleared ALL %d items from cart", num_items)
-                return StateMachineResult(
-                    message="OK, let's start over. What would you like to order?",
-                    order=order,
-                )
-            else:
-                return StateMachineResult(
-                    message="Your order is already empty. What would you like to order?",
-                    order=order,
-                )
-
-        # Check for standalone cancellation phrases (no target specified)
-        # During config, these mean "cancel the current item being configured"
-        standalone_match = STANDALONE_CANCEL_PATTERN.match(user_input_stripped)
-        if standalone_match:
-            logger.info("Standalone cancel during config: '%s'", user_input_stripped)
-            # Treat as "cancel this" - cancel the current item
-            cancel_desc = "this"
-        else:
-            cancel_match = CANCEL_ITEM_PATTERN.match(user_input_stripped)
-            if not cancel_match:
-                return None
-
-            # Extract what they want to cancel from any of the capture groups
-            cancel_desc = None
-            for group in cancel_match.groups():
-                if group:
-                    cancel_desc = group.strip().lower()
-                    break
-
-            if not cancel_desc:
-                return None
-
-            # Strip trailing pleasantries ("thank you", "thanks", "please")
-            # so "scallion cc thank you" becomes "scallion cc"
-            for filler in TRAILING_FILLERS:
-                if cancel_desc.endswith(filler.strip()):
-                    cancel_desc = cancel_desc[:-len(filler.strip())].strip()
-                    break
-
-        logger.info("Cancel request during config: '%s'", cancel_desc)
-
-        # If cancel_desc matches the pending attribute slug, this is a decline/skip
-        # response, not an item removal. "no cheese" during cheese config means
-        # "I don't want cheese", not "remove the cheese item from my order".
-        # Return None to let the attribute handler process it (select_input.py
-        # handles "no X" as a skip for optional attributes).
-        _, pending_attr_slug = parse_pending_field(order.pending_field)
-        if pending_attr_slug:
-            cancel_variants = get_singular_plural_variants(cancel_desc)
-            # Also check if cancel_desc words overlap with the slug's word
-            # components (e.g., "shots" matches "espresso_shots" via the
-            # "shots" component). This prevents "no shots" from being treated
-            # as item removal when we're asking about espresso_shots.
-            attr_slug_parts = set(pending_attr_slug.split("_"))
-            if (pending_attr_slug in cancel_variants
-                    or cancel_desc == pending_attr_slug
-                    or set(cancel_variants) & attr_slug_parts):
-                logger.info(
-                    "Cancel during config: '%s' matches pending attribute '%s' - "
-                    "deferring to attribute handler",
-                    cancel_desc, pending_attr_slug,
-                )
-                return None
-
-        # During regular config, "no X" where X is an already-set attribute
-        # means remove that attribute, not the entire item.
-        if isinstance(current_item, MenuItemTask):
-            result = self._try_remove_attribute_by_name(cancel_desc, current_item, order)
-            if result:
-                return result
-
-        # At customization checkpoint, "no X" where X is an attribute display name
-        # is a decline, not a removal (unless the attribute already has a value).
-        if order.pending_field in (
-            PendingField.CUSTOMIZATION_CHECKPOINT,
-            PendingField.CUSTOMIZATION_SELECTION,
-        ) and isinstance(current_item, MenuItemTask):
-            result = self._try_remove_attribute_by_name(
-                cancel_desc, current_item, order, defer_if_unset=True
+    def _handle_start_over(self, order: OrderTask) -> StateMachineResult:
+        """Clear all items and return to TAKING_ITEMS phase."""
+        active_items = order.items.get_active_items()
+        if active_items:
+            num_items = len(active_items)
+            for item in active_items:
+                remove_item_from_order(order, item)
+            order.clear_pending()
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+            logger.info("Start over: cleared ALL %d items from cart", num_items)
+            return StateMachineResult(
+                message="OK, let's start over. What would you like to order?",
+                order=order,
             )
-            if result:
-                return result
+        return StateMachineResult(
+            message="Your order is already empty. What would you like to order?",
+            order=order,
+        )
 
-        # Handle "this" or "it" - cancel the current item being configured
-        result = self._try_cancel_current_item(cancel_desc, current_item, order)
-        if result:
-            return result
+    @staticmethod
+    def _extract_cancel_description(user_input_stripped: str) -> str | None:
+        """Extract the cancel target from user input.
 
-        # Handle "cancel everything", "cancel all", "remove all", etc.
-        result = self._try_cancel_all_items(cancel_desc, order)
-        if result:
-            return result
+        Matches STANDALONE_CANCEL_PATTERN (→ "this") or CANCEL_ITEM_PATTERN
+        (→ extracted description). Returns None if no cancel intent detected.
+        """
+        if STANDALONE_CANCEL_PATTERN.match(user_input_stripped):
+            logger.info("Standalone cancel during config: '%s'", user_input_stripped)
+            return "this"
 
-        # Check if cancel_desc matches an ITEM TYPE (e.g., "bagels", "coffees")
-        # If so, skip modifier removal - user wants to remove items, not modifiers
+        cancel_match = CANCEL_ITEM_PATTERN.match(user_input_stripped)
+        if not cancel_match:
+            return None
+
+        cancel_desc = None
+        for group in cancel_match.groups():
+            if group:
+                cancel_desc = group.strip().lower()
+                break
+        if not cancel_desc:
+            return None
+
+        # Strip trailing pleasantries ("thank you", "thanks", "please")
+        for filler in TRAILING_FILLERS:
+            if cancel_desc.endswith(filler.strip()):
+                cancel_desc = cancel_desc[:-len(filler.strip())].strip()
+                break
+
+        return cancel_desc
+
+    @staticmethod
+    def _should_defer_to_attribute_handler(cancel_desc: str, order: OrderTask) -> bool:
+        """Check if cancel_desc matches the pending attribute slug.
+
+        If so, this is a decline/skip ("no cheese" during cheese config means
+        "I don't want cheese"), not an item removal. Returns True to defer.
+        """
+        _, pending_attr_slug = parse_pending_field(order.pending_field)
+        if not pending_attr_slug:
+            return False
+
         cancel_variants = get_singular_plural_variants(cancel_desc)
+        # Check if cancel_desc words overlap with the slug's word components
+        # (e.g., "shots" matches "espresso_shots" via the "shots" component)
+        attr_slug_parts = set(pending_attr_slug.split("_"))
+        if (pending_attr_slug in cancel_variants
+                or cancel_desc == pending_attr_slug
+                or set(cancel_variants) & attr_slug_parts):
+            logger.info(
+                "Cancel during config: '%s' matches pending attribute '%s' - "
+                "deferring to attribute handler",
+                cancel_desc, pending_attr_slug,
+            )
+            return True
+        return False
+
+    @staticmethod
+    def _cancel_matches_item_or_type(
+        cancel_desc: str, order: OrderTask,
+    ) -> tuple[bool, bool]:
+        """Check if cancel_desc matches an item type name or an item's base name.
+
+        Returns (matches_item_type, matches_item_in_order). When either is True,
+        modifier removal should be skipped — the user wants to remove items.
+        """
+        cancel_variants = get_singular_plural_variants(cancel_desc)
+
         matches_item_type = False
         for variant in cancel_variants:
             category_mapping = menu_cache.get_category_keyword_mapping(variant)
@@ -332,19 +293,13 @@ class ConfigCancellationHandler:
                 )
                 break
 
-        # Check if cancel_desc matches an item's BASE NAME in the order
-        # If so, skip modifier removal - user wants to remove the item, not a modifier
-        # IMPORTANT: Do NOT check against item_summary because it includes modifiers.
-        # If we checked "avocado" against "BEC, Cheese, Bacon, Avocado", it would
-        # incorrectly match and remove the item instead of just the avocado modifier.
-        active_items = order.items.get_active_items()
+        # Check against item BASE NAMES only (not full summary which includes modifiers)
         matches_item_in_order = False
-        for item in active_items:
+        cancel_desc_lower = cancel_desc.lower()
+        for item in order.items.get_active_items():
             if not isinstance(item, MenuItemTask):
                 continue
             item_name = (item.menu_item_name or "").lower()
-            cancel_desc_lower = cancel_desc.lower()
-            # Only match against the item's base name, NOT the full summary
             if item_name and (cancel_desc_lower in item_name or item_name in cancel_desc_lower):
                 matches_item_in_order = True
                 logger.info(
@@ -353,19 +308,76 @@ class ConfigCancellationHandler:
                 )
                 break
 
-        # Try removing a modifier referenced as "X on/from Y"
-        result = self._try_remove_modifier_by_reference(cancel_desc, current_item, order)
+        return matches_item_type, matches_item_in_order
+
+    def check_cancellation_during_config(
+        self,
+        user_input: str,
+        current_item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Check if user wants to cancel/remove items while in configuration phase.
+
+        Returns StateMachineResult if cancellation handled, None otherwise.
+        """
+        user_input_stripped = strip_conversational_fillers(user_input.strip())
+
+        # Check for "start over" - clears entire order
+        if START_OVER_PATTERN.match(user_input_stripped):
+            logger.info("Start over during config: '%s'", user_input_stripped)
+            return self._handle_start_over(order)
+
+        # Extract cancel target description
+        cancel_desc = self._extract_cancel_description(user_input_stripped)
+        if not cancel_desc:
+            return None
+        logger.info("Cancel request during config: '%s'", cancel_desc)
+
+        # Defer to attribute handler if cancel matches pending attribute
+        if self._should_defer_to_attribute_handler(cancel_desc, order):
+            return None
+
+        # Try removing an already-set attribute by name
+        if isinstance(current_item, MenuItemTask):
+            result = self._try_remove_attribute_by_name(cancel_desc, current_item, order)
+            if result:
+                return result
+
+        # At customization checkpoint, defer unset attribute declines
+        if order.pending_field in (
+            PendingField.CUSTOMIZATION_CHECKPOINT,
+            PendingField.CUSTOMIZATION_SELECTION,
+        ) and isinstance(current_item, MenuItemTask):
+            result = self._try_remove_attribute_by_name(
+                cancel_desc, current_item, order, defer_if_unset=True
+            )
+            if result:
+                return result
+
+        # Cancel current item ("this", "it") or all items ("everything", "all")
+        result = self._try_cancel_current_item(cancel_desc, current_item, order)
+        if result:
+            return result
+        result = self._try_cancel_all_items(cancel_desc, order)
         if result:
             return result
 
-        # Try removing a modifier on the current item
+        # Determine if cancel_desc refers to an item type or cart item name
+        matches_item_type, matches_item_in_order = self._cancel_matches_item_or_type(
+            cancel_desc, order
+        )
+
+        # Try modifier removal (skipped when cancel_desc matches an item)
+        result = self._try_remove_modifier_by_reference(cancel_desc, current_item, order)
+        if result:
+            return result
         result = self._try_remove_modifier_on_current_item(
             cancel_desc, current_item, order, matches_item_type, matches_item_in_order,
         )
         if result:
             return result
 
-        # Find and remove matching items (ordinal, plural, category, name)
+        # Fall through: find and remove matching items
         return self._find_and_remove_matching_items(cancel_desc, current_item, order)
 
     def _try_remove_attribute_by_name(

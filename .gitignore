@@ -33,7 +33,7 @@ db_backup*/
 plan.md
 
 # Server/deployment files
-server.log
+*.log
 _apprunner_update.json
 
 # Chaos monkey generated tests (auto-generated, not tracked)

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from ..config import STRIPE_WEBHOOK_SECRET
 from ..db import get_db
 from ..db.models import Order
+from ..exceptions import NOTIFICATION_ERRORS
 from ..schemas.enums import OrderStatus, PaymentStatus
 
 logger = logging.getLogger(__name__)
@@ -121,7 +122,7 @@ def _handle_checkout_completed(session_data: dict, db: Session) -> None:
         company = db.query(Company).first()
         store_name = company.name if company else "OrderBot"
         notify_payment_received(db, order, store_name)
-    except (ImportError, ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
+    except NOTIFICATION_ERRORS as e:
         logger.error("Failed to send payment notification for order #%d: %s", order_id, e)
 
 

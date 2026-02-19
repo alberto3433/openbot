@@ -35,3 +35,11 @@ class MenuDataNotLoadedError(RuntimeError):
     """
 
     pass
+
+
+# Exception tuple for catching transient errors from notification services
+# (email, SMS, payment webhooks). These are non-fatal — the order proceeds
+# even if the notification fails.
+NOTIFICATION_ERRORS = (
+    ImportError, ConnectionError, TimeoutError, OSError, ValueError, KeyError,
+)

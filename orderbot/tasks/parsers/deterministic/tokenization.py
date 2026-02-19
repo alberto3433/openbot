@@ -113,6 +113,9 @@ def _try_word_boundary_match(
     Returns True to indicate an item indicator even if disambiguation is needed later.
     """
     word_matches = menu_cache.find_items_by_word_match(text_for_matching)
+    if not word_matches and " " in text_for_matching:
+        # Multi-word phrase not found in primary cache - try ALL menu items
+        word_matches = menu_cache.find_all_items_by_word_match(text_for_matching)
     if word_matches:
         # Multiple matches - pick the first one's item_type (disambiguation happens later)
         first_match = word_matches[0]

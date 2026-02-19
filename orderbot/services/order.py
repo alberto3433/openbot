@@ -46,6 +46,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..db.models import Order, OrderItem, OrderStatusHistory, Store
+from ..exceptions import NOTIFICATION_ERRORS
 from ..schemas.enums import OrderStatus, PaymentStatus, ToastOrderStatus
 
 
@@ -543,7 +544,7 @@ def _send_transition_notifications(db: Session, order: Order, new_status: str) -
             notify_order_ready(db, order, store_name)
         elif new_status == OrderStatus.CANCELLED:
             notify_order_cancelled(db, order, store_name)
-    except (ImportError, ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
+    except NOTIFICATION_ERRORS as e:
         logger.error("Failed to send transition notification for order #%d: %s", order.id, e)
 
 

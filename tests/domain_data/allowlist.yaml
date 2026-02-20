@@ -1733,6 +1733,11 @@ orderbot/tasks/menu_pagination_handler.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/tasks/pagination_content_handlers.py:
+  - term: everything
+    context: all
+    reason: "Generic English word meaning 'all items', not a food term"
+
 orderbot/tasks/parsers/deterministic/cancellation_parsing.py:
   - term: everything
     context: all

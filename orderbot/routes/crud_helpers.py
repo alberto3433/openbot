@@ -7,16 +7,19 @@ that use the CRUDRouterFactory.
 
 Helpers:
 --------
-- get_or_404: Fetch a record by ID or raise 404
+- get_or_404: Fetch a record by ID or raise ResourceNotFoundError
+- check_slug_unique: Check slug uniqueness with optional scoping
 - make_list_builder: Creates list response wrapper functions
 - apply_payload_updates: Applies non-None payload fields to model with normalization
+- build_create_kwargs: Build model kwargs from a create payload with normalization
 """
 
 from typing import Any, Callable, TypeVar
 
-from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+from ..exceptions import ResourceNotFoundError, ValidationError
 
 
 def get_or_404(
@@ -28,32 +31,72 @@ def get_or_404(
     detail: str | None = None,
 ):
     """
-    Fetch a record by ID or raise HTTP 404.
+    Fetch a record by ID or raise ResourceNotFoundError (mapped to HTTP 404).
 
     Replaces the common pattern:
         item = db.query(Model).filter(Model.id == item_id).first()
         if not item:
-            raise HTTPException(status_code=404, detail="... not found")
+            raise ResourceNotFoundError("... not found")
 
     Args:
         db: Database session
         model: SQLAlchemy model class
         id_value: The ID value to look up
         id_column: Column name to filter on (default: "id")
-        detail: Custom 404 message. If None, auto-generates from model name.
+        detail: Custom error message. If None, auto-generates from model name.
 
     Returns:
         The found record
 
     Raises:
-        HTTPException: 404 if record not found
+        ResourceNotFoundError: If record not found
     """
     column = getattr(model, id_column)
     item = db.query(model).filter(column == id_value).first()
     if not item:
         name = model.__name__.replace("_", " ")
-        raise HTTPException(status_code=404, detail=detail or f"{name} not found")
+        raise ResourceNotFoundError(detail or f"{name} not found")
     return item
+
+
+def check_slug_unique(
+    db: Session,
+    model: type,
+    slug: str,
+    *,
+    exclude_id: int | None = None,
+    scope_filters: dict[str, Any] | None = None,
+    detail: str | None = None,
+) -> None:
+    """
+    Check slug uniqueness, raising ValidationError if duplicate found.
+
+    Replaces the common pattern:
+        existing = db.query(Model).filter(Model.slug == slug).first()
+        if existing:
+            raise ValidationError("Slug already exists")
+
+    Args:
+        db: Database session
+        model: SQLAlchemy model class
+        slug: The slug value to check
+        exclude_id: ID to exclude from check (for updates)
+        scope_filters: Additional column=value filters for scoped uniqueness
+            e.g. {"global_attribute_id": 5} for attribute-scoped slugs
+        detail: Custom error message. If None, auto-generates from model name.
+
+    Raises:
+        ValidationError: If a duplicate slug is found
+    """
+    query = db.query(model).filter(model.slug == slug)
+    if exclude_id is not None:
+        query = query.filter(model.id != exclude_id)
+    if scope_filters:
+        for col_name, value in scope_filters.items():
+            query = query.filter(getattr(model, col_name) == value)
+    if query.first():
+        name = model.__name__.replace("_", " ")
+        raise ValidationError(detail or f"{name} with slug '{slug}' already exists")
 
 
 ListSchemaType = TypeVar("ListSchemaType", bound=BaseModel)

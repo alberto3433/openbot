@@ -105,6 +105,18 @@ def _find_different_type_menu_item(
         if match:
             if with_pos != -1 and match.start() > with_pos:
                 continue
+            # Don't switch types if the matching menu item name is a known modifier
+            # e.g., "muenster cheese" in "muenster cheese omelette" should be treated
+            # as a modifier for omelette, not a type switch to "cheese"
+            if menu_cache.is_known_modifier(item_name_lower) or any(
+                menu_cache.is_known_modifier(w) for w in item_name_lower.split()
+            ):
+                logger.info(
+                    "CONFIGURABLE_ITEM: skipping type switch '%s' -> '%s' - "
+                    "'%s' is a known modifier for '%s'",
+                    detected_item_type, item_type, item_name, detected_item_type,
+                )
+                continue
             if item_type in configurable_slugs:
                 logger.info(
                     "CONFIGURABLE_ITEM: switching type '%s' -> '%s' based on menu item '%s' in '%s'",

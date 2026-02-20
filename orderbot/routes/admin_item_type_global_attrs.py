@@ -20,7 +20,7 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 import logging
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..auth import verify_admin_credentials
@@ -37,6 +37,7 @@ from ..schemas.global_attributes import (
     ItemTypeGlobalAttributeLinkCreate,
     ItemTypeGlobalAttributeLinkUpdate,
 )
+from ..exceptions import ResourceNotFoundError, ValidationError
 from ..schemas.serializers import serialize_item_type_link
 from .admin_global_attributes import admin_item_type_global_attrs_router
 from .crud_helpers import get_or_404
@@ -103,9 +104,8 @@ def link_global_attribute_to_item_type(
         ItemTypeGlobalAttribute.global_attribute_id == payload.global_attribute_id
     ).first()
     if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Global attribute '{global_attr.slug}' is already linked to this item type"
+        raise ValidationError(
+            f"Global attribute '{global_attr.slug}' is already linked to this item type"
         )
 
     link = ItemTypeGlobalAttribute(
@@ -153,7 +153,7 @@ def update_item_type_global_attribute_link(
         ItemTypeGlobalAttribute.item_type_id == item_type_id
     ).first()
     if not link:
-        raise HTTPException(status_code=404, detail="Link not found")
+        raise ResourceNotFoundError("Link not found")
 
     # Apply updates
     if payload.display_order is not None:
@@ -204,7 +204,7 @@ def unlink_global_attribute_from_item_type(
         ItemTypeGlobalAttribute.item_type_id == item_type_id
     ).first()
     if not link:
-        raise HTTPException(status_code=404, detail="Link not found")
+        raise ResourceNotFoundError("Link not found")
 
     logger.info(
         "Unlinking global attribute %s from item type %s (link_id=%d)",

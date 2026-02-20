@@ -76,7 +76,7 @@ from slowapi.errors import RateLimitExceeded
 
 from . import __version__
 from .auth import verify_admin_credentials
-from .exceptions import OrderBotError, ResourceNotFoundError, ValidationError
+from .exceptions import OrderBotError, ResourceNotFoundError, ReferentialIntegrityError, ValidationError
 from .config import (
     CORS_ORIGINS,
     ADMIN_PAGES,
@@ -267,6 +267,7 @@ async def _orderbot_error_handler(request: Request, exc: OrderBotError):
     status_map = {
         ResourceNotFoundError: 404,
         ValidationError: 400,
+        ReferentialIntegrityError: 409,
     }
     status_code = status_map.get(type(exc), 500)
     return JSONResponse(status_code=status_code, content={"detail": exc.detail})

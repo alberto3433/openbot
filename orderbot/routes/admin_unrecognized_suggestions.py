@@ -41,7 +41,7 @@ All endpoints require admin authentication via HTTP Basic Auth.
 import logging
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
@@ -235,9 +235,8 @@ def list_suggestions(
 
     if match_type:
         if match_type not in VALID_MATCH_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
+            raise ValidationError(
+                f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
             )
         query = query.filter(UnrecognizedMenuItemSuggestion.match_type == match_type)
 

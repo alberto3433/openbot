@@ -542,6 +542,10 @@ class OpenInputResponse(BaseModel):
         default_factory=list,
         description="List of parsed items from multi-item order detection. Used for generic item processing in handler."
     )
+    unrecognized_item_names: list[str] = Field(
+        default_factory=list,
+        description="Item names from multi-item input that couldn't be matched to any menu item"
+    )
 
 
 class DeliveryChoiceResponse(BaseModel):

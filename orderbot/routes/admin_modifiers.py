@@ -33,13 +33,14 @@ Structure:
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import ItemType, MenuItem, ItemTypeGlobalAttribute, GlobalAttribute, MenuDisplayGroup, OverallCategory
+from ..exceptions import ReferentialIntegrityError, ValidationError
 from ..services.alias_service import sync_entity_aliases
 from ..schemas.modifiers import (
     GlobalAttributeRef,
@@ -67,9 +68,8 @@ def _build_create_kwargs(payload: ItemTypeCreate, db: Session) -> dict[str, Any]
         MenuDisplayGroup.id == payload.menu_display_group_id
     ).first()
     if not display_group:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Menu display group with id {payload.menu_display_group_id} not found"
+        raise ValidationError(
+            f"Menu display group with id {payload.menu_display_group_id} not found"
         )
 
     return {
@@ -105,9 +105,8 @@ def _handle_before_update(
             MenuDisplayGroup.id == payload.menu_display_group_id
         ).first()
         if not display_group:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Menu display group with id {payload.menu_display_group_id} not found"
+            raise ValidationError(
+                f"Menu display group with id {payload.menu_display_group_id} not found"
             )
         item.menu_display_group_id = payload.menu_display_group_id
     if payload.aliases is not None:
@@ -120,9 +119,8 @@ def _handle_before_delete(item: ItemType, db: Session) -> None:
         MenuItem.item_type_id == item.id
     ).count()
     if menu_item_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete: {menu_item_count} menu items use this type"
+        raise ReferentialIntegrityError(
+            f"Cannot delete: {menu_item_count} menu items use this type"
         )
 
 

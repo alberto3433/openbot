@@ -90,6 +90,7 @@ HESITATION_FILLERS = MID_SENTENCE_HESITATION_FILLERS | frozenset({
     "anyway", "anyways",
     # Retraction fillers - "no wait, untoasted" means hesitation, not cancellation
     "no wait", "no, wait",
+    "no, but", "no but",
     "scratch that",
 })
 

@@ -28,11 +28,12 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 import logging
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from sqlalchemy.orm import Session, joinedload
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
+from ..exceptions import ResourceNotFoundError, ValidationError
 from ..db.models import (
     GlobalAttribute,
     GlobalAttributeOption,
@@ -97,10 +98,7 @@ def create_global_attribute_option(
         # Validate provided ingredient_id
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
         if not ingredient:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Ingredient with id {ingredient_id} not found"
-            )
+            raise ValidationError(f"Ingredient with id {ingredient_id} not found")
     elif payload.slug and payload.display_name:
         # Auto-find matching ingredient by name or slug
         ingredient = db.query(Ingredient).filter(
@@ -122,10 +120,7 @@ def create_global_attribute_option(
         db_display_name = None
     else:
         if not payload.slug or not payload.display_name:
-            raise HTTPException(
-                status_code=400,
-                detail="Slug and display name are required (or link an ingredient)"
-            )
+            raise ValidationError("Slug and display name are required (or link an ingredient)")
         effective_slug = payload.slug
         db_slug = payload.slug
         db_display_name = payload.display_name
@@ -136,9 +131,8 @@ def create_global_attribute_option(
         GlobalAttributeOption.slug == effective_slug
     ).first()
     if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Option with slug '{effective_slug}' already exists for this attribute"
+        raise ValidationError(
+            f"Option with slug '{effective_slug}' already exists for this attribute"
         )
 
     # Also check for duplicate ingredient link
@@ -148,9 +142,8 @@ def create_global_attribute_option(
             GlobalAttributeOption.ingredient_id == ingredient_id
         ).first()
         if existing_link:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Ingredient '{ingredient.name}' is already linked to an option for this attribute"
+            raise ValidationError(
+                f"Ingredient '{ingredient.name}' is already linked to an option for this attribute"
             )
 
     # Validate forward_to_attribute_id if provided
@@ -160,9 +153,8 @@ def create_global_attribute_option(
             GlobalAttribute.id == forward_to_attribute_id
         ).first()
         if not forward_attr:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Forward-to attribute with id {forward_to_attribute_id} not found"
+            raise ValidationError(
+                f"Forward-to attribute with id {forward_to_attribute_id} not found"
             )
 
     option = GlobalAttributeOption(
@@ -185,7 +177,7 @@ def create_global_attribute_option(
             sync_entity_aliases(db, option, payload.aliases, "global_attribute_option")
         except ValueError as e:
             db.rollback()
-            raise HTTPException(status_code=400, detail=str(e))
+            raise ValidationError(str(e))
 
     db.commit()
     db.refresh(option)
@@ -220,7 +212,7 @@ def update_global_attribute_option(
         GlobalAttributeOption.global_attribute_id == attr_id
     ).first()
     if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
+        raise ResourceNotFoundError("Option not found")
 
     # Determine effective ingredient_id after this update
     effective_ingredient_id = option.ingredient_id
@@ -235,9 +227,8 @@ def update_global_attribute_option(
                 GlobalAttributeOption.slug == payload.slug
             ).first()
             if existing:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Option with slug '{payload.slug}' already exists"
+                raise ValidationError(
+                    f"Option with slug '{payload.slug}' already exists"
                 )
         if payload.slug is not None:
             option.slug = payload.slug
@@ -260,9 +251,8 @@ def update_global_attribute_option(
             # Validate ingredient exists
             ingredient = db.query(Ingredient).filter(Ingredient.id == payload.ingredient_id).first()
             if not ingredient:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Ingredient with id {payload.ingredient_id} not found"
+                raise ValidationError(
+                    f"Ingredient with id {payload.ingredient_id} not found"
                 )
             # Ingredient-linked: NULL out slug/display_name (derived at read time)
             option.slug = None
@@ -273,17 +263,13 @@ def update_global_attribute_option(
                 if payload.slug:
                     option.slug = payload.slug
                 else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Slug is required when unlinking an ingredient"
-                    )
+                    raise ValidationError("Slug is required when unlinking an ingredient")
             if not option.display_name:
                 if payload.display_name:
                     option.display_name = payload.display_name
                 else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Display name is required when unlinking an ingredient"
+                    raise ValidationError(
+                        "Display name is required when unlinking an ingredient"
                     )
         option.ingredient_id = payload.ingredient_id
 
@@ -295,9 +281,8 @@ def update_global_attribute_option(
                 GlobalAttribute.id == payload.forward_to_attribute_id
             ).first()
             if not forward_attr:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Forward-to attribute with id {payload.forward_to_attribute_id} not found"
+                raise ValidationError(
+                    f"Forward-to attribute with id {payload.forward_to_attribute_id} not found"
                 )
         option.forward_to_attribute_id = payload.forward_to_attribute_id
 
@@ -307,7 +292,7 @@ def update_global_attribute_option(
             sync_entity_aliases(db, option, payload.aliases, "global_attribute_option")
         except ValueError as e:
             db.rollback()
-            raise HTTPException(status_code=400, detail=str(e))
+            raise ValidationError(str(e))
 
     db.commit()
     db.refresh(option)
@@ -340,7 +325,7 @@ def delete_global_attribute_option(
         GlobalAttributeOption.global_attribute_id == attr_id
     ).first()
     if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
+        raise ResourceNotFoundError("Option not found")
 
     logger.info(
         "Deleting global attribute option: %s from %s (id=%d)",
@@ -450,9 +435,8 @@ def create_option_from_ingredient(
         GlobalAttributeOption.ingredient_id == ingredient_id
     ).first()
     if already_linked:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Ingredient '{ingredient.name}' is already linked to an option for this attribute"
+        raise ValidationError(
+            f"Ingredient '{ingredient.name}' is already linked to an option for this attribute"
         )
 
     # Check if a non-ingredient option with the same slug already exists
@@ -461,9 +445,8 @@ def create_option_from_ingredient(
         GlobalAttributeOption.slug == ingredient.slug
     ).first()
     if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Option with slug '{ingredient.slug}' already exists for this attribute"
+        raise ValidationError(
+            f"Option with slug '{ingredient.slug}' already exists for this attribute"
         )
 
     # Create the option - slug/display_name are NULL (derived from ingredient at read time)
@@ -558,7 +541,7 @@ def list_option_skip_rules(
         GlobalAttributeOption.global_attribute_id == attr_id
     ).first()
     if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
+        raise ResourceNotFoundError("Option not found")
 
     # Get skip rules with skipped_attribute relationship
     rules = (
@@ -602,7 +585,7 @@ def create_option_skip_rule(
         GlobalAttributeOption.global_attribute_id == attr_id
     ).first()
     if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
+        raise ResourceNotFoundError("Option not found")
 
     # Verify skipped attribute exists
     skipped_attr = get_or_404(db, GlobalAttribute, payload.skipped_attribute_id, detail="Skipped attribute not found")
@@ -613,9 +596,8 @@ def create_option_skip_rule(
         GlobalAttributeOptionSkip.skipped_attribute_id == payload.skipped_attribute_id
     ).first()
     if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Skip rule for attribute '{skipped_attr.display_name}' already exists"
+        raise ValidationError(
+            f"Skip rule for attribute '{skipped_attr.display_name}' already exists"
         )
 
     # Create the skip rule
@@ -665,7 +647,7 @@ def delete_option_skip_rule(
         GlobalAttributeOption.global_attribute_id == attr_id
     ).first()
     if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
+        raise ResourceNotFoundError("Option not found")
 
     # Find and delete the skip rule
     rule = db.query(GlobalAttributeOptionSkip).filter(
@@ -673,7 +655,7 @@ def delete_option_skip_rule(
         GlobalAttributeOptionSkip.triggering_option_id == option_id
     ).first()
     if not rule:
-        raise HTTPException(status_code=404, detail="Skip rule not found")
+        raise ResourceNotFoundError("Skip rule not found")
 
     logger.info(
         "Deleting skip rule %d from option %d",

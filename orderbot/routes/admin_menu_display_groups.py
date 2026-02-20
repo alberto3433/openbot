@@ -20,9 +20,8 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
-from fastapi import HTTPException
-
 from ..db.models import MenuDisplayGroup, MenuDisplayGroupAlias, ItemType, OverallCategory
+from ..exceptions import ReferentialIntegrityError, ValidationError
 from ..schemas.menu_display_groups import (
     MenuDisplayGroupCreate,
     MenuDisplayGroupUpdate,
@@ -79,9 +78,8 @@ def _validate_aliases(aliases: list[str], db, exclude_group_id: int | None = Non
             query = query.filter(MenuDisplayGroupAlias.menu_display_group_id != exclude_group_id)
         existing = query.first()
         if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Alias '{alias}' is already used by another display group"
+            raise ValidationError(
+                f"Alias '{alias}' is already used by another display group"
             )
         normalized.append(alias)
     return normalized
@@ -98,9 +96,8 @@ def _build_create_kwargs(payload, db):
             OverallCategory.id == payload.overall_category_id
         ).first()
         if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Overall category with id {payload.overall_category_id} not found"
+            raise ValidationError(
+                f"Overall category with id {payload.overall_category_id} not found"
             )
 
     # Validate parent_id if provided
@@ -109,9 +106,8 @@ def _build_create_kwargs(payload, db):
             MenuDisplayGroup.id == payload.parent_id
         ).first()
         if not parent:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Parent display group with id {payload.parent_id} not found"
+            raise ValidationError(
+                f"Parent display group with id {payload.parent_id} not found"
             )
 
     # Validate aliases (will be added in pre_commit hook)
@@ -156,9 +152,8 @@ def _handle_before_update(item, payload, db):
             OverallCategory.id == payload.overall_category_id
         ).first()
         if not category:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Overall category with id {payload.overall_category_id} not found"
+            raise ValidationError(
+                f"Overall category with id {payload.overall_category_id} not found"
             )
         item.overall_category_id = payload.overall_category_id
 
@@ -169,15 +164,14 @@ def _handle_before_update(item, payload, db):
         if new_parent_id is not None:
             # Prevent self-reference
             if new_parent_id == item.id:
-                raise HTTPException(status_code=400, detail="A group cannot be its own parent")
+                raise ValidationError("A group cannot be its own parent")
             # Validate parent exists
             parent = db.query(MenuDisplayGroup).filter(
                 MenuDisplayGroup.id == new_parent_id
             ).first()
             if not parent:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Parent display group with id {new_parent_id} not found"
+                raise ValidationError(
+                    f"Parent display group with id {new_parent_id} not found"
                 )
         item.parent_id = new_parent_id
 
@@ -203,9 +197,8 @@ def _handle_before_delete(item, db):
     """Check if group can be deleted."""
     item_type_count = db.query(ItemType).filter(ItemType.menu_display_group_id == item.id).count()
     if item_type_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete group '{item.display_name}' - it has {item_type_count} item types assigned"
+        raise ReferentialIntegrityError(
+            f"Cannot delete group '{item.display_name}' - it has {item_type_count} item types assigned"
         )
 
 

@@ -307,7 +307,14 @@ def parse_delivery_choice_deterministic(user_input: str) -> DeliveryChoiceRespon
 
             return DeliveryChoiceResponse(choice="delivery", address=address)
 
-    # Can't determine
+    # Can't determine choice, but input might be a bare address
+    # (e.g., user already chose delivery and is now providing their address)
+    if re.search(
+        r'\d+\s+\w+.*(street|st\b|ave\b|avenue|road|rd\b|drive|dr\b|blvd|lane|ln\b|way\b|place|pl\b|court|ct\b)',
+        text, re.IGNORECASE,
+    ):
+        return DeliveryChoiceResponse(choice="unclear", address=original)
+
     return DeliveryChoiceResponse(choice="unclear")
 
 

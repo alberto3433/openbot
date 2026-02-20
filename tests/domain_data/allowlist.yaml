@@ -1781,6 +1781,11 @@ orderbot/tasks/parsers/deterministic/core.py:
     context: all
     reason: "Refers to 'small talk' (conversation concept), not food size"
 
+orderbot/tasks/parsers/deterministic/meta_parsing.py:
+  - term: small
+    context: all
+    reason: "Refers to 'small talk' (conversation concept), not food size"
+
 orderbot/tasks/parsers/deterministic/instructions_extraction.py:
   - term: side
     context: all

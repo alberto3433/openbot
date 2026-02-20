@@ -15,6 +15,7 @@ Global Attributes:
 - GET /admin/global-attributes: List all global attributes
 - GET /admin/global-attributes/{id}: Get a specific global attribute with options
 - POST /admin/global-attributes: Create a new global attribute
+- POST /admin/global-attributes/with-options: Create attribute with options
 - PUT /admin/global-attributes/{id}: Update a global attribute
 - DELETE /admin/global-attributes/{id}: Delete a global attribute
 
@@ -24,8 +25,8 @@ All endpoints require admin authentication via HTTP Basic Auth.
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session, joinedload, selectinload
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
@@ -36,6 +37,7 @@ from ..db.models import (
     Ingredient,
     ItemTypeGlobalAttribute,
 )
+from ..exceptions import ReferentialIntegrityError
 from ..schemas.global_attributes import (
     GlobalAttributeOut,
     GlobalAttributeListOut,
@@ -47,17 +49,12 @@ from ..schemas.serializers import (
     serialize_global_attribute,
     serialize_global_attribute_list,
 )
-from .crud_helpers import get_or_404
+from .crud_factory import CRUDRouterFactory
+from .crud_helpers import check_slug_unique
 
 logger = logging.getLogger(__name__)
 
-# Router definition
-admin_global_attributes_router = APIRouter(
-    prefix="/admin/global-attributes",
-    tags=["Admin - Global Attributes"]
-)
-
-# Separate router for item type links
+# Separate router for item type links (imported by admin_item_type_global_attrs.py)
 admin_item_type_global_attrs_router = APIRouter(
     prefix="/admin/item-types",
     tags=["Admin - Item Type Global Attributes"]
@@ -65,37 +62,11 @@ admin_item_type_global_attrs_router = APIRouter(
 
 
 # =============================================================================
-# Global Attribute Endpoints
+# Factory Callbacks
 # =============================================================================
 
-@admin_global_attributes_router.get("", response_model=list[GlobalAttributeListOut])
-def list_global_attributes(
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-    input_type: str | None = Query(None, description="Filter by input type"),
-) -> list[GlobalAttributeListOut]:
-    """List all global attributes."""
-    # Eager load relationships to get counts without N+1 queries
-    query = db.query(GlobalAttribute).options(
-        selectinload(GlobalAttribute.options),
-        selectinload(GlobalAttribute.item_type_links),
-    )
-
-    if input_type:
-        query = query.filter(GlobalAttribute.input_type == input_type)
-
-    attrs = query.order_by(GlobalAttribute.display_name).all()
-    return [serialize_global_attribute_list(attr, db) for attr in attrs]
-
-
-@admin_global_attributes_router.get("/{attr_id}", response_model=GlobalAttributeOut)
-def get_global_attribute(
-    attr_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> GlobalAttributeOut:
-    """Get a specific global attribute by ID, including all options."""
-    # Eager load all relationships to avoid N+1 queries
+def _to_response(item: GlobalAttribute, db: Session) -> GlobalAttributeOut:
+    """Serialize a GlobalAttribute with eager-loaded relationships."""
     attr = (
         db.query(GlobalAttribute)
         .options(
@@ -110,46 +81,115 @@ def get_global_attribute(
             selectinload(GlobalAttribute.item_type_links)
             .joinedload(ItemTypeGlobalAttribute.item_type),
         )
-        .filter(GlobalAttribute.id == attr_id)
+        .filter(GlobalAttribute.id == item.id)
         .first()
     )
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
     return serialize_global_attribute(attr, db)
 
 
-@admin_global_attributes_router.post("", response_model=GlobalAttributeOut, status_code=201)
-def create_global_attribute(
-    payload: GlobalAttributeCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> GlobalAttributeOut:
-    """Create a new global attribute."""
-    # Check for duplicate slug
-    existing = db.query(GlobalAttribute).filter(
-        GlobalAttribute.slug == payload.slug
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Global attribute with slug '{payload.slug}' already exists"
+def _build_create_kwargs(payload: GlobalAttributeCreate, db: Session) -> dict:
+    """Build model kwargs from create payload."""
+    return {
+        "slug": payload.slug,
+        "display_name": payload.display_name,
+        "input_type": payload.input_type,
+        "description": payload.description,
+        "question_text": payload.question_text,
+        "offer_question_text": payload.offer_question_text,
+        "options_source_category": payload.options_source_category,
+    }
+
+
+def _handle_before_update(item: GlobalAttribute, payload: GlobalAttributeUpdate, db: Session) -> None:
+    """Apply update payload to item."""
+    if payload.slug is not None and payload.slug != item.slug:
+        check_slug_unique(db, GlobalAttribute, payload.slug, exclude_id=item.id)
+
+    if payload.slug:
+        item.slug = payload.slug
+    if payload.display_name:
+        item.display_name = payload.display_name
+    if payload.input_type:
+        item.input_type = payload.input_type
+    if "description" in payload.model_fields_set:
+        item.description = payload.description
+    if "question_text" in payload.model_fields_set:
+        item.question_text = payload.question_text
+    if "offer_question_text" in payload.model_fields_set:
+        item.offer_question_text = payload.offer_question_text
+    if "options_source_category" in payload.model_fields_set:
+        item.options_source_category = payload.options_source_category
+
+
+def _handle_before_delete(item: GlobalAttribute, db: Session) -> None:
+    """Check for RESTRICT-protected references before deleting."""
+    dependents: list[str] = []
+
+    link_count = db.query(ItemTypeGlobalAttribute).filter(
+        ItemTypeGlobalAttribute.global_attribute_id == item.id
+    ).count()
+    if link_count > 0:
+        dependents.append(f"{link_count} item type link(s)")
+
+    option_count = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.global_attribute_id == item.id
+    ).count()
+    if option_count > 0:
+        dependents.append(f"{option_count} option(s)")
+
+    if dependents:
+        raise ReferentialIntegrityError(
+            f"Cannot delete attribute '{item.slug}' — it still has: "
+            f"{', '.join(dependents)}. Remove these first."
         )
 
-    attr = GlobalAttribute(
-        slug=payload.slug,
-        display_name=payload.display_name,
-        input_type=payload.input_type,
-        description=payload.description,
-        question_text=payload.question_text,
-        offer_question_text=payload.offer_question_text,
-        options_source_category=payload.options_source_category,
-    )
-    db.add(attr)
-    db.commit()
-    db.refresh(attr)
 
-    logger.info("Created global attribute: %s (id=%d)", attr.slug, attr.id)
-    return serialize_global_attribute(attr, db)
+# =============================================================================
+# CRUD Factory (create, get, update, delete — list is custom below)
+# =============================================================================
+
+_crud = CRUDRouterFactory(
+    model=GlobalAttribute,
+    create_schema=GlobalAttributeCreate,
+    update_schema=GlobalAttributeUpdate,
+    response_schema=GlobalAttributeOut,
+    prefix="/admin/global-attributes",
+    tags=["Admin - Global Attributes"],
+    id_param="attr_id",
+    not_found_message="Global attribute not found",
+    unique_fields=["slug"],
+    skip_list=True,
+    to_response=_to_response,
+    on_before_create=_build_create_kwargs,
+    on_before_update=_handle_before_update,
+    on_before_delete=_handle_before_delete,
+)
+
+# Use factory's router as the main router, add custom endpoints to it
+admin_global_attributes_router = _crud.router
+
+
+# =============================================================================
+# Custom Endpoints (list + create-with-options)
+# =============================================================================
+
+@admin_global_attributes_router.get("", response_model=list[GlobalAttributeListOut])
+def list_global_attributes(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(verify_admin_credentials),
+    input_type: str | None = Query(None, description="Filter by input type"),
+) -> list[GlobalAttributeListOut]:
+    """List all global attributes."""
+    query = db.query(GlobalAttribute).options(
+        selectinload(GlobalAttribute.options),
+        selectinload(GlobalAttribute.item_type_links),
+    )
+
+    if input_type:
+        query = query.filter(GlobalAttribute.input_type == input_type)
+
+    attrs = query.order_by(GlobalAttribute.display_name).all()
+    return [serialize_global_attribute_list(attr, db) for attr in attrs]
 
 
 @admin_global_attributes_router.post(
@@ -164,15 +204,7 @@ def create_global_attribute_with_options(
     _admin: str = Depends(verify_admin_credentials),
 ) -> GlobalAttributeOut:
     """Create a new global attribute with options in one call."""
-    # Check for duplicate slug
-    existing = db.query(GlobalAttribute).filter(
-        GlobalAttribute.slug == payload.slug
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Global attribute with slug '{payload.slug}' already exists"
-        )
+    check_slug_unique(db, GlobalAttribute, payload.slug)
 
     attr = GlobalAttribute(
         slug=payload.slug,
@@ -217,7 +249,7 @@ def create_global_attribute_with_options(
         if ingredient:
             logger.info(
                 "Auto-linked option '%s' to Ingredient '%s' (id=%d)",
-                display_name, ingredient.name, ingredient.id
+                opt_data.display_name, ingredient.name, ingredient.id
             )
 
     db.commit()
@@ -229,86 +261,4 @@ def create_global_attribute_with_options(
         len(payload.options),
         attr.id
     )
-    return serialize_global_attribute(attr, db)
-
-
-@admin_global_attributes_router.put("/{attr_id}", response_model=GlobalAttributeOut)
-def update_global_attribute(
-    attr_id: int,
-    payload: GlobalAttributeUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> GlobalAttributeOut:
-    """Update a global attribute."""
-    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
-
-    # Check for duplicate slug if changing
-    if payload.slug is not None and payload.slug != attr.slug:
-        existing = db.query(GlobalAttribute).filter(
-            GlobalAttribute.slug == payload.slug
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Global attribute with slug '{payload.slug}' already exists"
-            )
-
-    # Apply updates - use model_fields_set to detect explicit null (clearing a field)
-    # For string fields, also skip empty strings (treat "" same as None for updates)
-    if payload.slug:
-        attr.slug = payload.slug
-    if payload.display_name:
-        attr.display_name = payload.display_name
-    if payload.input_type:
-        attr.input_type = payload.input_type
-    if "description" in payload.model_fields_set:
-        attr.description = payload.description
-    if "question_text" in payload.model_fields_set:
-        attr.question_text = payload.question_text
-    if "offer_question_text" in payload.model_fields_set:
-        attr.offer_question_text = payload.offer_question_text
-    if "options_source_category" in payload.model_fields_set:
-        attr.options_source_category = payload.options_source_category
-
-    db.commit()
-    db.refresh(attr)
-
-    logger.info("Updated global attribute: %s (id=%d)", attr.slug, attr.id)
-    return serialize_global_attribute(attr, db)
-
-
-@admin_global_attributes_router.delete("/{attr_id}", status_code=204)
-def delete_global_attribute(
-    attr_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete a global attribute (and all its options)."""
-    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
-
-    # Check for RESTRICT-protected references before attempting delete
-    dependents: list[str] = []
-
-    link_count = db.query(ItemTypeGlobalAttribute).filter(
-        ItemTypeGlobalAttribute.global_attribute_id == attr_id
-    ).count()
-    if link_count > 0:
-        dependents.append(f"{link_count} item type link(s)")
-
-    option_count = db.query(GlobalAttributeOption).filter(
-        GlobalAttributeOption.global_attribute_id == attr_id
-    ).count()
-    if option_count > 0:
-        dependents.append(f"{option_count} option(s)")
-
-    if dependents:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete attribute '{attr.slug}' — it still has: "
-                   f"{', '.join(dependents)}. Remove these first."
-        )
-
-    logger.info("Deleting global attribute: %s (id=%d)", attr.slug, attr.id)
-    db.delete(attr)
-    db.commit()
-    return None
+    return _to_response(attr, db)

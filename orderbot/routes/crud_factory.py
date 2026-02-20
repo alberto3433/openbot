@@ -131,6 +131,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         list_response_schema: type[ListResponseType] | None = None,
         list_response_builder: Callable[[list[ResponseSchemaType], int], ListResponseType] | None = None,
         normalize_fields: dict[str, str] | None = None,
+        skip_list: bool = False,
     ):
         """
         Initialize the CRUD router factory.
@@ -162,6 +163,9 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
                               {"slug": "lower_strip", "name": "strip"}).
                               When provided and on_before_create/on_before_update are NOT
                               provided, auto-generates callbacks using crud_helpers.
+            skip_list: If True, don't register the list endpoint. Useful when
+                       the list endpoint needs custom logic (filters, computed fields)
+                       and is defined separately on the parent router.
         """
         self.model = model
         self.create_schema = create_schema
@@ -180,6 +184,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         self.on_before_delete = on_before_delete
         self.list_response_schema = list_response_schema
         self.list_response_builder = list_response_builder
+        self._skip_list = skip_list
 
         # Auto-generate normalization callbacks when normalize_fields is provided
         if normalize_fields:
@@ -258,7 +263,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
     def _register_routes(self) -> None:
         """Register all CRUD routes on the router."""
-        self._register_list()
+        if not self._skip_list:
+            self._register_list()
         self._register_create()
         self._register_get()
         self._register_update()

@@ -29,37 +29,19 @@ The "86" System:
 Restaurant terminology for "out of stock". This module provides a simple
 toggle system for marking items unavailable without tracking exact counts.
 
-When an ingredient is 86'd:
-1. Chatbot won't offer it as an option
-2. Admin dashboard highlights it for restocking
-3. Orders with that item show warnings
-
 Store-Specific Availability:
 ----------------------------
 For multi-location restaurants, availability can be set per-store.
-If store_id is provided, it affects only that location.
-If omitted, it affects global availability.
 
 Authentication:
 ---------------
 All endpoints require admin authentication via HTTP Basic Auth.
-
-Usage:
-------
-    # 86 Swiss cheese at all stores
-    PATCH /admin/ingredients/5/availability
-    {"is_available": false}
-
-    # 86 Swiss cheese at one store only
-    PATCH /admin/ingredients/5/availability
-    {"is_available": false, "store_id": "store_eb_001"}
-
-    # List what's 86'd at a specific store
-    GET /admin/ingredients/unavailable?store_id=store_eb_001
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Any
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 
 from ..auth import verify_admin_credentials
@@ -75,6 +57,7 @@ from ..db.models import (
     MenuItemIngredient,
     MenuItemStoreAvailability,
 )
+from ..exceptions import ReferentialIntegrityError, ResourceNotFoundError, ValidationError
 from ..schemas.ingredients import (
     IngredientListOut,
     IngredientOut,
@@ -87,30 +70,23 @@ from ..schemas.ingredients import (
 )
 from ..services.alias_service import sync_entity_aliases
 from ..services.helpers import batch_load_store_availability
+from .crud_factory import CRUDRouterFactory
 from .crud_helpers import get_or_404
 
 
 logger = logging.getLogger(__name__)
 
-# Router definition
-admin_ingredients_router = APIRouter(
-    prefix="/admin/ingredients",
-    tags=["Admin - Ingredients"]
-)
 
+# =============================================================================
+# Internal Helpers
+# =============================================================================
 
 def _set_ingredient_must_match(db: Session, ingredient: Ingredient, must_match_str: str | None) -> None:
-    """
-    Set ingredient must_match from a comma-separated string.
-    Clears existing must_match entries and creates new ones from the input string.
-    """
-    # Clear existing must_match
+    """Set ingredient must_match from a comma-separated string."""
     for mm in list(ingredient.must_match_records):
         db.delete(mm)
-    # Flush deletes before inserting to avoid unique constraint violations
     db.flush()
 
-    # Add new must_match entries if provided
     if must_match_str:
         for mm in must_match_str.split(","):
             mm = mm.strip()
@@ -119,16 +95,7 @@ def _set_ingredient_must_match(db: Session, ingredient: Ingredient, must_match_s
 
 
 def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> int:
-    """
-    Link any GlobalAttributeOptions that match this Ingredient by name or slug.
-
-    This ensures that when an Ingredient has must_match values, the corresponding
-    GlobalAttributeOptions are linked so they can access the must_match data.
-
-    Returns:
-        Number of options linked.
-    """
-    # Find matching options by name or slug that aren't already linked
+    """Link any GlobalAttributeOptions that match this Ingredient by name or slug."""
     matching_options = db.query(GlobalAttributeOption).filter(
         GlobalAttributeOption.ingredient_id.is_(None),
         (GlobalAttributeOption.display_name == ingredient.name) |
@@ -141,7 +108,6 @@ def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> i
             "Auto-linked GlobalAttributeOption '%s' (id=%d) to Ingredient '%s' (id=%d)",
             opt.display_name, opt.id, ingredient.name, ingredient.id
         )
-        # NULL out slug/display_name (derived from ingredient at read time)
         opt.slug = None
         opt.display_name = None
 
@@ -149,24 +115,141 @@ def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> i
 
 
 def _resolve_subcategory(db: Session, subcategory_slug: str) -> "IngredientSubcategory":
-    """Look up an IngredientSubcategory by slug.
-
-    Returns:
-        The IngredientSubcategory row (has .id, .slug, .category_slug).
-
-    Raises:
-        HTTPException 400 if subcategory doesn't exist.
-    """
+    """Look up an IngredientSubcategory by slug."""
     subcat = db.query(IngredientSubcategory).filter(
         IngredientSubcategory.slug == subcategory_slug
     ).first()
     if not subcat:
-        raise HTTPException(status_code=400, detail=f"Invalid subcategory: '{subcategory_slug}'")
+        raise ValidationError(f"Invalid subcategory: '{subcategory_slug}'")
     return subcat
 
 
 # =============================================================================
-# Ingredient Unit Endpoints
+# Factory Callbacks
+# =============================================================================
+
+
+def _build_create_kwargs(payload: IngredientCreate, db: Session) -> dict[str, Any]:
+    """Build model kwargs from create payload."""
+    existing = db.query(Ingredient).filter(Ingredient.name == payload.name).first()
+    if existing:
+        raise ValidationError(f"Ingredient '{payload.name}' already exists")
+
+    unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
+    if not unit_obj:
+        raise ValidationError(f"Invalid unit: {payload.unit}")
+
+    subcat = _resolve_subcategory(db, payload.subcategory)
+
+    return {
+        "name": payload.name,
+        "slug": payload.name.lower().replace(" ", "_"),
+        "category": subcat.category_slug,
+        "subcategory_id": subcat.id,
+        "unit_id": unit_obj.id,
+        "track_inventory": payload.track_inventory,
+        "is_available": payload.is_available,
+        "abbreviation": payload.abbreviation,
+    }
+
+
+def _handle_create_pre_commit(item: Ingredient, payload: IngredientCreate, db: Session) -> None:
+    """Add aliases, must_match, and auto-link after item has ID."""
+    sync_entity_aliases(db, item, payload.aliases, "ingredient")
+    _set_ingredient_must_match(db, item, payload.must_match)
+
+    linked_count = _sync_ingredient_to_global_options(db, item)
+    if linked_count > 0:
+        logger.info("Auto-linked %d GlobalAttributeOptions to new ingredient", linked_count)
+
+
+def _to_response(item: Ingredient, db: Session) -> IngredientOut:
+    """Serialize ingredient with eager-loaded relationships."""
+    ingredient = db.query(Ingredient).options(
+        joinedload(Ingredient.unit_rel)
+    ).filter(Ingredient.id == item.id).first()
+    return IngredientOut.model_validate(ingredient)
+
+
+def _handle_before_update(item: Ingredient, payload: IngredientUpdate, db: Session) -> None:
+    """Apply update payload to item."""
+    if payload.name is not None:
+        item.name = payload.name
+    if payload.unit is not None:
+        unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
+        if not unit_obj:
+            raise ValidationError(f"Invalid unit: {payload.unit}")
+        item.unit_id = unit_obj.id
+    if payload.track_inventory is not None:
+        item.track_inventory = payload.track_inventory
+    if payload.is_available is not None:
+        item.is_available = payload.is_available
+    if payload.aliases is not None:
+        sync_entity_aliases(db, item, payload.aliases, "ingredient")
+    if payload.must_match is not None:
+        _set_ingredient_must_match(db, item, payload.must_match)
+        linked_count = _sync_ingredient_to_global_options(db, item)
+        if linked_count > 0:
+            logger.info("Auto-linked %d GlobalAttributeOptions after must_match update", linked_count)
+    if "abbreviation" in payload.model_fields_set:
+        item.abbreviation = payload.abbreviation
+    if "subcategory" in payload.model_fields_set and payload.subcategory is not None:
+        subcat = _resolve_subcategory(db, payload.subcategory)
+        item.subcategory_id = subcat.id
+        item.category = subcat.category_slug
+
+
+def _handle_before_delete(item: Ingredient, db: Session) -> None:
+    """Check for RESTRICT-protected references before deleting."""
+    dependents: list[str] = []
+
+    menu_item_count = db.query(MenuItemIngredient).filter(
+        MenuItemIngredient.ingredient_id == item.id
+    ).count()
+    if menu_item_count:
+        dependents.append(f"{menu_item_count} menu item default(s)")
+
+    attr_option_count = db.query(GlobalAttributeOption).filter(
+        GlobalAttributeOption.ingredient_id == item.id
+    ).count()
+    if attr_option_count:
+        dependents.append(f"{attr_option_count} attribute option(s)")
+
+    if dependents:
+        raise ReferentialIntegrityError(
+            f"Cannot delete ingredient '{item.name}' — "
+            f"it still has: {', '.join(dependents)}. "
+            f"Remove these records first."
+        )
+
+
+# =============================================================================
+# CRUD Factory (create, get, update, delete — list is custom below)
+# =============================================================================
+
+_crud = CRUDRouterFactory(
+    model=Ingredient,
+    create_schema=IngredientCreate,
+    update_schema=IngredientUpdate,
+    response_schema=IngredientOut,
+    prefix="/admin/ingredients",
+    tags=["Admin - Ingredients"],
+    id_param="ingredient_id",
+    not_found_message="Ingredient not found",
+    skip_list=True,
+    to_response=_to_response,
+    on_before_create=_build_create_kwargs,
+    on_create_pre_commit=_handle_create_pre_commit,
+    on_before_update=_handle_before_update,
+    on_before_delete=_handle_before_delete,
+)
+
+# Use factory's router as the main router, add custom endpoints to it
+admin_ingredients_router = _crud.router
+
+
+# =============================================================================
+# Custom Endpoints (not handled by factory)
 # =============================================================================
 
 @admin_ingredients_router.get("/units", response_model=list[str])
@@ -178,10 +261,6 @@ def list_ingredient_units(
     units = db.query(IngredientUnit).order_by(IngredientUnit.name).all()
     return [u.name for u in units]
 
-
-# =============================================================================
-# Ingredient Endpoints
-# =============================================================================
 
 @admin_ingredients_router.get("/list", response_model=list[IngredientListOut])
 def list_ingredients_minimal(
@@ -238,52 +317,6 @@ def list_ingredients(
     return result
 
 
-@admin_ingredients_router.post("", response_model=IngredientOut, status_code=201)
-def create_ingredient(
-    payload: IngredientCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> IngredientOut:
-    """Create a new ingredient."""
-    existing = db.query(Ingredient).filter(Ingredient.name == payload.name).first()
-    if existing:
-        raise HTTPException(status_code=400, detail=f"Ingredient '{payload.name}' already exists")
-
-    # Look up unit_id from unit name
-    unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
-    if not unit_obj:
-        raise HTTPException(status_code=400, detail=f"Invalid unit: {payload.unit}")
-
-    subcat = _resolve_subcategory(db, payload.subcategory)
-
-    ingredient = Ingredient(
-        name=payload.name,
-        slug=payload.name.lower().replace(" ", "_"),
-        category=subcat.category_slug,
-        subcategory_id=subcat.id,
-        unit_id=unit_obj.id,
-        track_inventory=payload.track_inventory,
-        is_available=payload.is_available,
-        abbreviation=payload.abbreviation,
-    )
-    db.add(ingredient)
-    db.flush()  # Get the ingredient ID before adding child records
-
-    # Add aliases and must_match through child tables
-    sync_entity_aliases(db, ingredient, payload.aliases, "ingredient")
-    _set_ingredient_must_match(db, ingredient, payload.must_match)
-
-    # Auto-link to any matching GlobalAttributeOptions
-    linked_count = _sync_ingredient_to_global_options(db, ingredient)
-    if linked_count > 0:
-        logger.info("Auto-linked %d GlobalAttributeOptions to new ingredient", linked_count)
-
-    db.commit()
-    db.refresh(ingredient)
-    logger.info("Created ingredient: %s (id=%d)", ingredient.name, ingredient.id)
-    return IngredientOut.model_validate(ingredient)
-
-
 @admin_ingredients_router.get("/unavailable", response_model=list[IngredientStoreAvailabilityOut])
 def list_unavailable_ingredients(
     db: Session = Depends(get_db),
@@ -329,8 +362,6 @@ def list_menu_items_availability(
     result = []
     for item in items:
         is_available = store_avail_map.get(item.id, True) if store_id else True
-
-        # Derive category from item_type
         category = item.item_type.display_name if item.item_type else None
         result.append(MenuItemStoreAvailabilityOut(
             id=item.id,
@@ -405,7 +436,6 @@ def update_menu_item_availability(
     logger.info("Updated menu item %d availability: %s (store: %s)",
                 item_id, payload.is_available, payload.store_id or "global")
 
-    # Derive category from item_type
     category = item.item_type.display_name if item.item_type else None
     return MenuItemStoreAvailabilityOut(
         id=item.id,
@@ -416,21 +446,6 @@ def update_menu_item_availability(
     )
 
 
-@admin_ingredients_router.get("/{ingredient_id}", response_model=IngredientOut)
-def get_ingredient(
-    ingredient_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> IngredientOut:
-    """Get a specific ingredient by ID."""
-    ingredient = db.query(Ingredient).options(
-        joinedload(Ingredient.unit_rel)
-    ).filter(Ingredient.id == ingredient_id).first()
-    if not ingredient:
-        raise HTTPException(status_code=404, detail="Ingredient not found")
-    return IngredientOut.model_validate(ingredient)
-
-
 @admin_ingredients_router.get("/{ingredient_id}/references")
 def get_ingredient_references(
     ingredient_id: int,
@@ -438,11 +453,8 @@ def get_ingredient_references(
     _admin: str = Depends(verify_admin_credentials),
 ) -> dict:
     """Get all references to this ingredient for the References tab."""
-
-    # Verify ingredient exists
     ingredient = get_or_404(db, Ingredient, ingredient_id)
 
-    # Query MenuItemIngredient - menu items with this ingredient as a default
     menu_item_refs = db.query(MenuItemIngredient).options(
         joinedload(MenuItemIngredient.menu_item)
     ).filter(MenuItemIngredient.ingredient_id == ingredient_id).all()
@@ -456,7 +468,6 @@ def get_ingredient_references(
         for ref in menu_item_refs
     ]
 
-    # Query GlobalAttributeOption - options linked to this ingredient
     attr_options = db.query(GlobalAttributeOption).options(
         joinedload(GlobalAttributeOption.attribute)
     ).filter(GlobalAttributeOption.ingredient_id == ingredient_id).all()
@@ -476,48 +487,6 @@ def get_ingredient_references(
         "menu_items": menu_items,
         "attribute_options": attribute_options,
     }
-
-
-@admin_ingredients_router.put("/{ingredient_id}", response_model=IngredientOut)
-def update_ingredient(
-    ingredient_id: int,
-    payload: IngredientUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> IngredientOut:
-    """Update an ingredient."""
-    ingredient = get_or_404(db, Ingredient, ingredient_id)
-
-    if payload.name is not None:
-        ingredient.name = payload.name
-    if payload.unit is not None:
-        unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
-        if not unit_obj:
-            raise HTTPException(status_code=400, detail=f"Invalid unit: {payload.unit}")
-        ingredient.unit_id = unit_obj.id
-    if payload.track_inventory is not None:
-        ingredient.track_inventory = payload.track_inventory
-    if payload.is_available is not None:
-        ingredient.is_available = payload.is_available
-    if payload.aliases is not None:
-        sync_entity_aliases(db, ingredient, payload.aliases, "ingredient")
-    if payload.must_match is not None:
-        _set_ingredient_must_match(db, ingredient, payload.must_match)
-        # Auto-link to any matching GlobalAttributeOptions when must_match is set
-        linked_count = _sync_ingredient_to_global_options(db, ingredient)
-        if linked_count > 0:
-            logger.info("Auto-linked %d GlobalAttributeOptions after must_match update", linked_count)
-    if "abbreviation" in payload.model_fields_set:
-        ingredient.abbreviation = payload.abbreviation
-    if "subcategory" in payload.model_fields_set and payload.subcategory is not None:
-        subcat = _resolve_subcategory(db, payload.subcategory)
-        ingredient.subcategory_id = subcat.id
-        ingredient.category = subcat.category_slug
-
-    db.commit()
-    db.refresh(ingredient)
-    logger.info("Updated ingredient: %s (id=%d)", ingredient.name, ingredient.id)
-    return IngredientOut.model_validate(ingredient)
 
 
 @admin_ingredients_router.patch("/{ingredient_id}/availability", response_model=IngredientStoreAvailabilityOut)
@@ -563,42 +532,3 @@ def update_ingredient_availability(
         track_inventory=ingredient.track_inventory,
         is_available=is_available,
     )
-
-
-@admin_ingredients_router.delete("/{ingredient_id}", status_code=204)
-def delete_ingredient(
-    ingredient_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete an ingredient."""
-    ingredient = get_or_404(db, Ingredient, ingredient_id)
-
-    # Check for RESTRICT-protected references before attempting delete
-    dependents: list[str] = []
-
-    menu_item_count = db.query(MenuItemIngredient).filter(
-        MenuItemIngredient.ingredient_id == ingredient_id
-    ).count()
-    if menu_item_count:
-        dependents.append(f"{menu_item_count} menu item default(s)")
-
-    # Check for GlobalAttributeOption links
-    attr_option_count = db.query(GlobalAttributeOption).filter(
-        GlobalAttributeOption.ingredient_id == ingredient_id
-    ).count()
-    if attr_option_count:
-        dependents.append(f"{attr_option_count} attribute option(s)")
-
-    if dependents:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cannot delete ingredient '{ingredient.name}' — "
-                   f"it still has: {', '.join(dependents)}. "
-                   f"Remove these records first."
-        )
-
-    logger.info("Deleting ingredient: %s (id=%d)", ingredient.name, ingredient.id)
-    db.delete(ingredient)
-    db.commit()
-    return None

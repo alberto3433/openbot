@@ -347,7 +347,22 @@ class ParsedItemProcessor:
         if not summaries:
             return None
 
-        return self._start_item_configuration(added_items, summaries, order)
+        result = self._start_item_configuration(added_items, summaries, order)
+
+        # Prepend note about unrecognized items from multi-item input
+        if parsed.unrecognized_item_names and result:
+            names = format_english_list(parsed.unrecognized_item_names)
+            if len(parsed.unrecognized_item_names) == 1:
+                note = f"I don't have {names} on our menu."
+            else:
+                note = f"I don't have {names} on our menu."
+            result = StateMachineResult(
+                message=f"{note} {result.message}",
+                order=result.order,
+                quick_replies=result.quick_replies,
+            )
+
+        return result
 
     def _build_disambiguation_response(
         self,

@@ -7,7 +7,6 @@ all sub-parsers to parse user input without LLM calls.
 
 import re
 import logging
-from collections import Counter
 from typing import Literal
 
 from orderbot.cache import menu_cache
@@ -16,10 +15,6 @@ from orderbot.cache.base import singularize, contains_word_or_singular
 from ...schemas import OpenInputResponse, Selection
 
 from ..constants import (
-    GRATITUDE_PATTERNS,
-    HELP_PATTERNS,
-    REPEAT_ORDER_PATTERNS,
-    match_small_talk,
     CANCEL_LAST_ITEM,
     CANCEL_ALL_ITEMS,
     REDUCE_TO_ONE,
@@ -31,8 +26,6 @@ from ..intent_patterns import (
     strip_conversational_fillers,
     MAKE_IT_N_PATTERN,
     REDUCE_TO_ONE_PATTERN,
-    ONE_MORE_PATTERN,
-    ANOTHER_ITEM_PATTERN,
     REPLACE_ITEM_PATTERN,
     CANCEL_ITEM_PATTERN,
     MORE_OF_SAME_PATTERN,
@@ -72,6 +65,9 @@ from .tokenization import _parse_multi_item_order
 from .inline_spec_parsing import _is_inline_attribute_spec_pattern
 from .extraction import _detect_inapplicable_modifiers, _detect_inapplicable_attributes
 from ...config_flow_utils import LAST_ITEM_PRONOUNS_EXTENDED
+from .meta_parsing import _is_only_filler, _try_parse_greeting_or_meta
+from .order_type_parsing import _extract_order_type, _strip_order_type_phrase, _add_order_type_to_response
+from .another_item_parsing import _try_parse_another_item
 
 logger = logging.getLogger(__name__)
 
@@ -148,156 +144,8 @@ def _filter_duplicate_modifications(
 
 
 # =============================================================================
-# Order Type Detection (Pickup/Delivery)
-# =============================================================================
-
-# Patterns for pickup/delivery detection
-ORDER_TYPE_PATTERNS: dict[str, re.Pattern] = {
-    "pickup": re.compile(
-        r"(?:place\s+)?(?:a\s+)?(?:pick[\s-]?up)\s+order"
-        r"|(?:for|is\s+for)\s+(?:pick[\s-]?up)"
-        r"|i(?:'ll|\s+will)\s+pick\s+(?:it\s+)?up"
-        r"|(?:^|\s)(?:pick[\s-]?up)(?:\s+please)?(?:$|\s)",
-        re.IGNORECASE
-    ),
-    "delivery": re.compile(
-        r"(?:place\s+)?(?:a\s+)?delivery\s+order"
-        r"|(?:for|is\s+for)\s+delivery"
-        r"|to\s+be\s+deliver(?:y|ed)"
-        r"|can\s+you\s+deliver"
-        r"|(?:^|\s)delivery(?:\s+please)?(?:$|\s)",
-        re.IGNORECASE
-    ),
-}
-
-
-def _extract_order_type(text: str) -> Literal["pickup", "delivery"] | None:
-    """Extract pickup/delivery order type from text.
-
-    Args:
-        text: User input text
-
-    Returns:
-        "pickup", "delivery", or None if not detected
-    """
-    for order_type, pattern in ORDER_TYPE_PATTERNS.items():
-        if pattern.search(text):
-            return order_type  # type: ignore[return-value]
-    return None
-
-
-def _strip_order_type_phrase(text: str) -> str:
-    """Remove order type phrases from text to continue parsing remaining content.
-
-    Args:
-        text: User input text
-
-    Returns:
-        Text with order type phrases removed
-    """
-    result = text
-    # Remove common order type phrases
-    result = re.sub(
-        r"(?:i(?:'d| would) like to )?(?:place\s+)?(?:a\s+)?(?:pick[\s-]?up|delivery)\s+order",
-        "", result, flags=re.IGNORECASE
-    )
-    result = re.sub(r"(?:for|is\s+for)\s+(?:pick[\s-]?up|delivery)", "", result, flags=re.IGNORECASE)
-    result = re.sub(r"i(?:'ll|\s+will)\s+pick\s+(?:it\s+)?up", "", result, flags=re.IGNORECASE)
-    result = re.sub(r"to\s+be\s+deliver(?:y|ed)", "", result, flags=re.IGNORECASE)
-    result = re.sub(r"can\s+you\s+deliver", "", result, flags=re.IGNORECASE)
-    result = re.sub(r"(?:^|\s)(?:pick[\s-]?up|delivery)(?:\s+please)?(?:$|\s)", " ", result, flags=re.IGNORECASE)
-    return result.strip()
-
-
-def _is_only_filler(text: str) -> bool:
-    """Check if text contains only filler words after stripping order type.
-
-    Args:
-        text: Text to check
-
-    Returns:
-        True if text is empty or only contains filler words
-    """
-    # Remove common filler words and check if anything meaningful remains
-    filler_words = {
-        "and", "also", "i", "want", "would", "like", "to", "a", "an", "the", "please",
-        "this", "is", "it", "that", "for", "can", "you", "be",
-    }
-    words = text.lower().split()
-    meaningful_words = [w for w in words if w not in filler_words]
-    return len(meaningful_words) == 0
-
-
-def _add_order_type_to_response(
-    response: OpenInputResponse | None,
-    order_type: Literal["pickup", "delivery"] | None
-) -> OpenInputResponse | None:
-    """Add order_type to a response if it has parsed_items.
-
-    Args:
-        response: The parser response (may be None)
-        order_type: The detected order type (may be None)
-
-    Returns:
-        Response with order_type added if applicable, otherwise unchanged
-    """
-    if response is None or order_type is None:
-        return response
-
-    # Only add order_type if response has items
-    if response.parsed_items:
-        response.order_type = order_type
-
-    return response
-
-
-# =============================================================================
 # Sub-functions for parse_open_input_deterministic
 # =============================================================================
-
-
-def _try_parse_greeting_or_meta(text: str) -> OpenInputResponse | None:
-    """Check for greetings, gratitude, help requests, done ordering, repeat order.
-
-    Args:
-        text: Cleaned user input text (after abbreviation expansion).
-
-    Returns:
-        OpenInputResponse if matched, None otherwise.
-    """
-    # Check for greetings (patterns loaded from database)
-    if menu_cache.is_greeting(text):
-        logger.debug("Deterministic parse: greeting detected")
-        return OpenInputResponse(is_greeting=True)
-
-    # Check for gratitude ("thank you", "thanks", etc.)
-    if GRATITUDE_PATTERNS.match(text):
-        logger.debug("Deterministic parse: gratitude detected")
-        return OpenInputResponse(is_gratitude=True)
-
-    # Check for help requests ("help", "I'm confused", "what can you do")
-    if HELP_PATTERNS.match(text):
-        logger.debug("Deterministic parse: help request detected")
-        return OpenInputResponse(is_help_request=True)
-
-    # Check for done ordering (patterns loaded from database)
-    # Must run BEFORE small talk so "I'm good" is treated as done ordering, not social chat
-    if menu_cache.is_done(text):
-        logger.debug("Deterministic parse: done ordering detected")
-        return OpenInputResponse(done_ordering=True)
-
-    # Check for small talk ("how are you?", "what's up?", etc.)
-    small_talk_response = match_small_talk(text)
-    if small_talk_response:
-        logger.debug("Deterministic parse: small talk detected")
-        return OpenInputResponse(is_small_talk=True, small_talk_response=small_talk_response)
-
-    # Check for repeat order
-    if REPEAT_ORDER_PATTERNS.match(text):
-        logger.debug("Deterministic parse: repeat order detected")
-        return OpenInputResponse(wants_repeat_order=True)
-
-    return None
 
 
 def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | None:
@@ -461,257 +309,6 @@ def _try_parse_quantity_change(text: str) -> OpenInputResponse | None:
             item_type or "any",
         )
         return OpenInputResponse(cancel_item=cancel_value)
-
-    return None
-
-
-def _resolve_another_as_parsed_item(
-    item_keyword: str,
-) -> OpenInputResponse | None:
-    """Try to parse 'another X' keyword as a complete configurable item order.
-
-    Handles cases like "another 6 bagel package" where the full item name is captured.
-    """
-    parsed_as_item = _parse_configurable_item(item_keyword)
-    if parsed_as_item:
-        logger.info("Deterministic parse: 'another %s' parsed as new item", item_keyword)
-        return parsed_as_item
-    return None
-
-
-def _resolve_another_as_menu_item(
-    item_keyword: str,
-) -> OpenInputResponse | None:
-    """Try to match 'another X' keyword as a direct menu item name."""
-    menu_item, qty, _ = _extract_menu_item_from_text(item_keyword)
-    if menu_item:
-        item_type_for_item = menu_cache.get_item_type_for_menu_item(menu_item)
-        logger.info(
-            "Deterministic parse: 'another %s' matched menu item '%s'",
-            item_keyword, menu_item,
-        )
-        parsed_items = [
-            build_parsed_item(
-                item_type=item_type_for_item or "menu_item",
-                item_name=menu_item,
-                quantity=1,
-            )
-            for _ in range(qty)
-        ]
-        return OpenInputResponse(parsed_items=parsed_items)
-    return None
-
-
-def _resolve_another_as_attribute_option(
-    item_keyword: str,
-    item_keyword_lower: str,
-    item_keyword_singular: str,
-) -> OpenInputResponse | None:
-    """Check if 'another X' keyword is a known attribute option (e.g., "pound" -> weight).
-
-    If so, treat as "one more of the same" -- mirrors _parse_add_more_request logic.
-    """
-    is_option, attr_slug = menu_cache.is_known_attribute_option(item_keyword_lower)
-    if not is_option:
-        is_option, attr_slug = menu_cache.is_known_attribute_option(item_keyword_singular)
-    if is_option:
-        logger.info(
-            "Deterministic parse: 'another %s' is attribute option (attr=%s), treating as duplicate",
-            item_keyword, attr_slug,
-        )
-        return OpenInputResponse(duplicate_last_item=1)
-    return None
-
-
-def _find_exact_word_match_item(
-    item_keyword: str,
-    item_keyword_lower: str,
-    word_matches: list[dict],
-) -> OpenInputResponse | None:
-    """Given word-boundary matches, return a parsed item if one is an exact name match."""
-    for m in word_matches:
-        match_name = m.get("name", "")
-        if match_name.lower() == item_keyword_lower:
-            item_name = m.get("name")
-            item_type_for_item = m.get("item_type")
-            logger.info(
-                "Deterministic parse: 'another %s' exact match menu item '%s'",
-                item_keyword, item_name,
-            )
-            parsed_items = [
-                build_parsed_item(
-                    item_type=item_type_for_item or "menu_item",
-                    item_name=item_name,
-                    quantity=1,
-                )
-            ]
-            return OpenInputResponse(parsed_items=parsed_items)
-    return None
-
-
-def _resolve_another_as_item_type(
-    item_keyword: str,
-    item_keyword_lower: str,
-    item_keyword_singular: str,
-) -> OpenInputResponse | None:
-    """Resolve 'another X' via category keywords, item type triggers, or word-boundary matching.
-
-    Returns a duplicate_new_item_type response, a specific parsed item (if an exact menu item
-    name is found), or None if no item type could be resolved.
-    """
-    resolved_item_type: str | None = None
-
-    # 1. Check category keyword mapping - returns the item type slug
-    category_info = menu_cache.get_category_keyword_mapping(item_keyword_lower)
-    if not category_info:
-        category_info = menu_cache.get_category_keyword_mapping(item_keyword_singular)
-    if category_info:
-        resolved_item_type = category_info.get("slug")
-
-    # 2. Check if keyword is a trigger for any item type (reverse lookup)
-    # BUT first check if it's an exact menu item name - if so, return the specific item
-    if not resolved_item_type:
-        all_triggers = menu_cache.get_item_type_triggers()  # Returns dict[str, set[str]]
-        for item_type_slug, triggers in all_triggers.items():
-            if item_keyword_lower in triggers or item_keyword_singular in triggers:
-                # Found trigger match - but check if this is also an exact menu item name
-                # e.g., "6 bagel package" is both a trigger AND a menu item name
-                word_matches = menu_cache.find_items_by_word_match(item_keyword_lower)
-                exact_result = _find_exact_word_match_item(
-                    item_keyword, item_keyword_lower, word_matches,
-                )
-                if exact_result:
-                    return exact_result
-                # No exact match - use item type
-                resolved_item_type = item_type_slug
-                break
-
-    # 3. Fallback: Try word-boundary matching to find items containing the keyword
-    # This handles cases like "tea" matching "Hot Tea", "Iced Tea", etc.
-    # Also handles specific menu items with numbers like "6 Bagel Package"
-    if not resolved_item_type:
-        word_matches = menu_cache.find_items_by_word_match(item_keyword_lower)
-        if not word_matches:
-            word_matches = menu_cache.find_items_by_word_match(item_keyword_singular)
-        if word_matches:
-            # Check if any match is an EXACT match to the search term (case-insensitive)
-            # This handles "6 bagel package" -> "6 Bagel Package"
-            exact_result = _find_exact_word_match_item(
-                item_keyword, item_keyword_lower, word_matches,
-            )
-            if exact_result:
-                return exact_result
-
-            # No exact match - find the most common item type among matches
-            item_types = [m.get("item_type") for m in word_matches if m.get("item_type")]
-            if item_types:
-                # Use the most frequent item type
-                resolved_item_type = Counter(item_types).most_common(1)[0][0]
-                logger.debug(
-                    "Deterministic parse: 'another %s' word-matches %d items, item_type '%s'",
-                    item_keyword_lower, len(word_matches), resolved_item_type,
-                )
-
-    if resolved_item_type:
-        # Valid item type keyword - pass the canonical item type to downstream handler
-        logger.info(
-            "Deterministic parse: 'another %s' detected -> item_type '%s'",
-            item_keyword_lower, resolved_item_type,
-        )
-        return OpenInputResponse(duplicate_new_item_type=resolved_item_type)
-
-    return None
-
-
-def _try_parse_another_item(text: str) -> OpenInputResponse | None:
-    """Check for 'another' patterns, 'one more', and 'make it N [item]'.
-
-    Handles ANOTHER_ITEM_PATTERN (with item type specified), ONE_MORE_PATTERN
-    (generic), and MAKE_IT_N_WITH_ITEM_PATTERN.
-
-    Args:
-        text: Cleaned user input text.
-
-    Returns:
-        OpenInputResponse if matched, None otherwise.
-    """
-    # Check for "another" patterns (with item type specified)
-    # This must be checked BEFORE ONE_MORE_PATTERN since it's more specific
-    # Uses data-driven validation against menu_cache triggers
-    another_item_match = ANOTHER_ITEM_PATTERN.match(text)
-    if another_item_match:
-        item_keyword = another_item_match.group(1).strip()
-        item_keyword_lower = item_keyword.lower()
-        # Get singular form for matching
-        item_keyword_singular = singularize(item_keyword_lower)
-
-        # 0. First try to parse the captured text as a complete item order
-        result = _resolve_another_as_parsed_item(item_keyword)
-        if result:
-            return result
-
-        # 1. Try direct menu item match (for non-configurable items)
-        result = _resolve_another_as_menu_item(item_keyword)
-        if result:
-            return result
-
-        # 2. Check if keyword is a known attribute option (e.g., "pound" -> weight)
-        result = _resolve_another_as_attribute_option(
-            item_keyword, item_keyword_lower, item_keyword_singular,
-        )
-        if result:
-            return result
-
-        # 3. Resolve via category keywords, item type triggers, or word-boundary matching
-        result = _resolve_another_as_item_type(
-            item_keyword, item_keyword_lower, item_keyword_singular,
-        )
-        if result:
-            return result
-
-        # 4. No item type match - check if it's a generic pronoun/reference
-        # "another one", "one more of those", "another of them" should fall through
-        generic_refs = {
-            "one", "of those", "of them", "of that", "one of those", "one of them",
-            "of these", "one of these", "please",
-        }
-        if item_keyword_lower not in generic_refs:
-            # Return for cart lookup
-            # e.g., "another bag of chips" -> duplicate_by_reference="bag of chips"
-            # The handler will try to match against cart items
-            logger.info(
-                "Deterministic parse: 'another %s' -> duplicate_by_reference for cart lookup",
-                item_keyword,
-            )
-            return OpenInputResponse(duplicate_by_reference=item_keyword)
-        # else: fall through to ONE_MORE_PATTERN
-
-    # Check for "one more" / "another" patterns (without item type)
-    if ONE_MORE_PATTERN.match(text):
-        logger.info("Deterministic parse: 'one more' / 'another' detected, adding 1 more")
-        return OpenInputResponse(duplicate_last_item=1)
-
-    # Check for "make it/that N [item]" BEFORE modification and replacement patterns
-    # e.g., "make that two bags of chips" -> change quantity of chips to 2
-    # This is more specific than REPLACE_ITEM_PATTERN which would incorrectly match
-    make_n_with_item_match = MAKE_IT_N_WITH_ITEM_PATTERN.match(text)
-    if make_n_with_item_match:
-        num_str = make_n_with_item_match.group(1).lower()
-        item_ref = make_n_with_item_match.group(2).strip()
-        target_qty = parse_make_it_n_quantity(num_str)
-
-        if target_qty is not None:
-            # User says "make that 2 bags of chips" means they want 2 total
-            # Return duplicate_by_reference with the additional count needed
-            additional = target_qty - 1
-            logger.info(
-                "Deterministic parse: 'make it N [item]' detected, target=%d, item_ref='%s', adding %d more",
-                target_qty, item_ref, additional,
-            )
-            return OpenInputResponse(
-                duplicate_last_item=additional,
-                duplicate_by_reference=item_ref,
-            )
 
     return None
 

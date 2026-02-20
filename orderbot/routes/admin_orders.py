@@ -23,13 +23,14 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import Order, OrderStatusHistory
+from ..exceptions import ResourceNotFoundError, ValidationError
 from ..schemas.enums import OrderStatus
 from ..schemas.orders import (
     OrderSummaryOut,
@@ -153,7 +154,7 @@ def get_order_detail(
     """Get detailed information about a specific order."""
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise ResourceNotFoundError("Order not found")
 
     items_out = [OrderItemOut.model_validate(item) for item in order.items]
 
@@ -212,9 +213,9 @@ def update_order_status(
         )
         return {"status": order.status, "order_id": order.id}
     except ValueError:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise ResourceNotFoundError("Order not found")
     except InvalidStatusTransition as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise ValidationError(str(e))
 
 
 @admin_orders_router.patch("/{order_id}/estimated-time")
@@ -227,7 +228,7 @@ def set_estimated_time(
     """Set the estimated ready time for an order (minutes from now)."""
     order = db.get(Order, order_id)
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise ResourceNotFoundError("Order not found")
 
     order.estimated_ready_at = datetime.now(timezone.utc) + timedelta(minutes=body.estimated_minutes)
     db.commit()
@@ -248,7 +249,7 @@ def update_staff_notes(
     """Update staff notes on an order."""
     order = db.get(Order, order_id)
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise ResourceNotFoundError("Order not found")
 
     order.staff_notes = body.staff_notes
     db.commit()
@@ -265,7 +266,7 @@ def get_order_history(
     """Get the status transition history for an order."""
     order = db.get(Order, order_id)
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise ResourceNotFoundError("Order not found")
 
     entries = (
         db.query(OrderStatusHistory)

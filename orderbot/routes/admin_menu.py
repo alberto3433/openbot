@@ -12,44 +12,18 @@ Endpoints:
 - GET /admin/menu/{id}: Get a specific menu item
 - PUT /admin/menu/{id}: Update a menu item
 - DELETE /admin/menu/{id}: Delete a menu item
+- GET /admin/menu/cache/status: Get cache status
+- POST /admin/menu/cache/refresh: Refresh cache
 
 Authentication:
 ---------------
 All endpoints require admin authentication via HTTP Basic Auth.
-See auth.py for credential verification.
-
-Menu Item Structure:
---------------------
-Menu items have:
-- name: Display name (e.g., "Turkey Club")
-- is_signature: Pre-configured items on the speed menu
-- base_price: Starting price before modifiers
-- item_type_id: Links to ItemType for configuration options
-- ingredients: Default ingredients via menu_item_ingredients junction table
-
-Note: Categories are now derived from item_type -> display_group -> overall_category
-
-Usage:
-------
-    # Create a signature sandwich
-    POST /admin/menu
-    {
-        "name": "The Italian",
-        "item_type_id": 3,
-        "is_signature": true,
-        "base_price": 12.99,
-        "ingredients": [
-            {"ingredient_id": 1, "quantity": 1},
-            {"ingredient_id": 2, "quantity": 1}
-        ]
-    }
 """
 
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.exc import SQLAlchemyError
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, joinedload
 
 from ..auth import verify_admin_credentials
@@ -63,27 +37,19 @@ from ..db.models import (
     MenuItemSizeCategory,
     Ingredient,
 )
-from ..schemas.menu import (
-    MenuItemOut,
-    MenuItemCreate,
-    MenuItemUpdate,
-    SizePriceOut,
-    MenuItemIngredientOut,
-)
+from ..exceptions import ValidationError
+from ..schemas.menu import MenuItemOut, MenuItemCreate, MenuItemUpdate
 from ..schemas.serializers import serialize_menu_item
 from ..services.alias_service import sync_entity_aliases
 from ..cache import menu_cache
-from .crud_helpers import get_or_404
+from .crud_factory import CRUDRouterFactory
 
 
 logger = logging.getLogger(__name__)
 
-# Router definition
-admin_menu_router = APIRouter(prefix="/admin/menu", tags=["Admin - Menu"])
-
 
 # =============================================================================
-# Helper Functions
+# Internal Helpers
 # =============================================================================
 
 def _set_menu_item_size_prices(
@@ -92,53 +58,33 @@ def _set_menu_item_size_prices(
     size_category_id: int | None,
     size_prices: list | None,
 ) -> None:
-    """
-    Set menu item size pricing.
-    Updates size_category_id and size_price entries.
-
-    Args:
-        db: Database session
-        item: The menu item to update
-        size_category_id: Size category ID (or None to clear)
-        size_prices: List of {size_id, price} dicts (or None to skip)
-    """
-    # Update size_category_id if provided
+    """Set menu item size pricing."""
     if size_category_id is not None:
         if size_category_id == 0:
-            # Special case: 0 means clear the size category
             item.size_category_id = None
         else:
-            # Verify category exists
             category = db.query(MenuItemSizeCategory).filter(
                 MenuItemSizeCategory.id == size_category_id
             ).first()
             if not category:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Size category with ID {size_category_id} not found"
+                raise ValidationError(
+                    f"Size category with ID {size_category_id} not found"
                 )
             item.size_category_id = size_category_id
 
-    # Update size prices if provided
     if size_prices is not None:
-        # Clear existing size prices
         db.query(MenuItemSizePrice).filter(
             MenuItemSizePrice.menu_item_id == item.id
         ).delete()
         db.flush()
 
-        # Add new size prices
         for sp in size_prices:
             size_id = sp.size_id if hasattr(sp, 'size_id') else sp.get('size_id')
             price = sp.price if hasattr(sp, 'price') else sp.get('price')
 
-            # Verify size exists
             size = db.query(MenuItemSize).filter(MenuItemSize.id == size_id).first()
             if not size:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Size with ID {size_id} not found"
-                )
+                raise ValidationError(f"Size with ID {size_id} not found")
 
             db.add(MenuItemSizePrice(
                 menu_item_id=item.id,
@@ -152,37 +98,22 @@ def _set_menu_item_ingredients(
     item: MenuItem,
     ingredients: list[dict] | None,
 ) -> None:
-    """
-    Set menu item ingredients from a list of ingredient dicts.
-    Clears existing ingredients and creates new ones from the input list.
-
-    Args:
-        db: Database session
-        item: The menu item to update
-        ingredients: List of {"ingredient_id": int, "quantity": int} dicts (None means don't change)
-
-    Raises:
-        HTTPException: If any ingredient ID is invalid
-    """
+    """Set menu item ingredients from a list of ingredient dicts."""
     if ingredients is None:
         return
 
-    # Clear existing ingredient links
     for link in list(item.ingredient_links):
         db.delete(link)
     db.flush()
 
-    # Add new ingredient links
     for ing_data in ingredients:
         ingredient_id = ing_data.get("ingredient_id")
         quantity = ing_data.get("quantity", 1)
 
-        # Verify ingredient exists
         ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
         if not ingredient:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Ingredient with ID {ingredient_id} not found"
+            raise ValidationError(
+                f"Ingredient with ID {ingredient_id} not found"
             )
 
         db.add(MenuItemIngredient(
@@ -193,91 +124,12 @@ def _set_menu_item_ingredients(
 
 
 # =============================================================================
-# Menu Endpoints
+# Factory Callbacks
 # =============================================================================
 
-@admin_menu_router.get("", response_model=list[MenuItemOut])
-def admin_menu(
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> list[MenuItemOut]:
-    """List all menu items. Requires admin authentication."""
-    items = (
-        db.query(MenuItem)
-        .options(
-            joinedload(MenuItem.alias_records),
-            joinedload(MenuItem.size_prices).joinedload(MenuItemSizePrice.size),
-            joinedload(MenuItem.item_type),  # For category display name
-        )
-        .order_by(MenuItem.id.asc())
-        .all()
-    )
-    # Skip ingredients in list to avoid N+1 queries - fetch on single item GET
-    return [serialize_menu_item(m, db, include_ingredients=False) for m in items]
-
-
-@admin_menu_router.post("", response_model=MenuItemOut)
-def create_menu_item(
-    payload: MenuItemCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> MenuItemOut:
-    """Create a new menu item. Requires admin authentication."""
-    item = MenuItem(
-        name=payload.name,
-        description=payload.description,
-        is_signature=payload.is_signature,
-        available_qty=payload.available_qty,
-        item_type_id=payload.item_type_id,
-        abbreviation=payload.abbreviation,
-        required_match_phrases=payload.required_match_phrases,
-        size_category_id=payload.size_category_id,
-        # Dietary attributes (fallback when no ingredients defined)
-        is_vegan=payload.is_vegan,
-        is_vegetarian=payload.is_vegetarian,
-        is_gluten_free=payload.is_gluten_free,
-        is_dairy_free=payload.is_dairy_free,
-        is_kosher=payload.is_kosher,
-        # Allergen attributes
-        contains_eggs=payload.contains_eggs,
-        contains_fish=payload.contains_fish,
-        contains_sesame=payload.contains_sesame,
-        contains_nuts=payload.contains_nuts,
-        # Unit of sale
-        unit_type=payload.unit_type or "each",
-        quantity_per_unit=payload.quantity_per_unit,
-    )
-    db.add(item)
-    db.flush()  # Get the item ID before adding child records
-
-    # Add aliases through child table
-    sync_entity_aliases(db, item, payload.aliases, "menu_item")
-
-    # Add size prices - if no size_prices provided, create default from base_price
-    size_prices_to_set = payload.size_prices
-    if not size_prices_to_set and payload.base_price is not None:
-        # Create a default "each" size price from the base_price
-        # size_id=6 is the "each" size in the Quantity category
-        size_prices_to_set = [{"size_id": 6, "price": payload.base_price}]
-        if not payload.size_category_id:
-            item.size_category_id = 3  # Quantity category
-    _set_menu_item_size_prices(db, item, None, size_prices_to_set)
-
-    db.commit()
-    db.refresh(item)
-    logger.info("Created menu item: %s (id=%d)", item.name, item.id)
-
-    return serialize_menu_item(item, db)
-
-
-@admin_menu_router.get("/{item_id}", response_model=MenuItemOut)
-def get_menu_item(
-    item_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> MenuItemOut:
-    """Get a specific menu item by ID. Requires admin authentication."""
-    item = (
+def _to_response(item: MenuItem, db: Session) -> MenuItemOut:
+    """Serialize a MenuItem with eager-loaded relationships."""
+    menu_item = (
         db.query(MenuItem)
         .options(
             joinedload(MenuItem.size_prices).joinedload(MenuItemSizePrice.size),
@@ -285,35 +137,60 @@ def get_menu_item(
             joinedload(MenuItem.item_type),
             joinedload(MenuItem.alias_records),
         )
-        .filter(MenuItem.id == item_id)
+        .filter(MenuItem.id == item.id)
         .first()
     )
-    if not item:
-        raise HTTPException(status_code=404, detail="Menu item not found")
-    return serialize_menu_item(item, db)
+    return serialize_menu_item(menu_item, db)
 
 
-@admin_menu_router.put("/{item_id}", response_model=MenuItemOut)
-def update_menu_item(
-    item_id: int,
-    payload: MenuItemUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> MenuItemOut:
-    """Update a menu item. Requires admin authentication."""
-    item = get_or_404(db, MenuItem, item_id, detail="Menu item not found")
+def _build_create_kwargs(payload: MenuItemCreate, db: Session) -> dict[str, Any]:
+    """Build model kwargs from create payload."""
+    return {
+        "name": payload.name,
+        "description": payload.description,
+        "is_signature": payload.is_signature,
+        "available_qty": payload.available_qty,
+        "item_type_id": payload.item_type_id,
+        "abbreviation": payload.abbreviation,
+        "required_match_phrases": payload.required_match_phrases,
+        "size_category_id": payload.size_category_id,
+        "is_vegan": payload.is_vegan,
+        "is_vegetarian": payload.is_vegetarian,
+        "is_gluten_free": payload.is_gluten_free,
+        "is_dairy_free": payload.is_dairy_free,
+        "is_kosher": payload.is_kosher,
+        "contains_eggs": payload.contains_eggs,
+        "contains_fish": payload.contains_fish,
+        "contains_sesame": payload.contains_sesame,
+        "contains_nuts": payload.contains_nuts,
+        "unit_type": payload.unit_type or "each",
+        "quantity_per_unit": payload.quantity_per_unit,
+    }
 
+
+def _handle_create_pre_commit(item: MenuItem, payload: MenuItemCreate, db: Session) -> None:
+    """Add aliases and size prices after item has ID."""
+    sync_entity_aliases(db, item, payload.aliases, "menu_item")
+
+    # Add size prices - if no size_prices provided, create default from base_price
+    size_prices_to_set = payload.size_prices
+    if not size_prices_to_set and payload.base_price is not None:
+        size_prices_to_set = [{"size_id": 6, "price": payload.base_price}]
+        if not payload.size_category_id:
+            item.size_category_id = 3  # Quantity category
+    _set_menu_item_size_prices(db, item, None, size_prices_to_set)
+
+
+def _handle_before_update(item: MenuItem, payload: MenuItemUpdate, db: Session) -> None:
+    """Apply update payload to item."""
     if payload.name is not None:
         item.name = payload.name
     if "description" in payload.model_fields_set:
         item.description = payload.description
     if payload.is_signature is not None:
         item.is_signature = payload.is_signature
-    # Note: base_price is now computed from size_prices, not stored directly
-    # If base_price is provided without size_prices, create/update the default size price
+    # If base_price is provided without size_prices, update the default size price
     if payload.base_price is not None and not payload.size_prices:
-        from orderbot.db.models import MenuItemSizePrice
-        # Find existing "each" price or create one
         each_price = next((sp for sp in item.size_prices if sp.size_id == 6), None)
         if each_price:
             each_price.price = payload.base_price
@@ -339,94 +216,82 @@ def update_menu_item(
     if payload.ingredients is not None:
         _set_menu_item_ingredients(db, item, [ing.model_dump() for ing in payload.ingredients])
 
-    # Update dietary attributes (fallback values when no ingredients defined)
-    if "is_vegan" in payload.model_fields_set:
-        item.is_vegan = payload.is_vegan
-    if "is_vegetarian" in payload.model_fields_set:
-        item.is_vegetarian = payload.is_vegetarian
-    if "is_gluten_free" in payload.model_fields_set:
-        item.is_gluten_free = payload.is_gluten_free
-    if "is_dairy_free" in payload.model_fields_set:
-        item.is_dairy_free = payload.is_dairy_free
-    if "is_kosher" in payload.model_fields_set:
-        item.is_kosher = payload.is_kosher
+    # Update dietary attributes
+    for field in ("is_vegan", "is_vegetarian", "is_gluten_free", "is_dairy_free", "is_kosher"):
+        if field in payload.model_fields_set:
+            setattr(item, field, getattr(payload, field))
 
     # Update allergen attributes
-    if "contains_eggs" in payload.model_fields_set:
-        item.contains_eggs = payload.contains_eggs
-    if "contains_fish" in payload.model_fields_set:
-        item.contains_fish = payload.contains_fish
-    if "contains_sesame" in payload.model_fields_set:
-        item.contains_sesame = payload.contains_sesame
-    if "contains_nuts" in payload.model_fields_set:
-        item.contains_nuts = payload.contains_nuts
+    for field in ("contains_eggs", "contains_fish", "contains_sesame", "contains_nuts"):
+        if field in payload.model_fields_set:
+            setattr(item, field, getattr(payload, field))
 
     # Update unit of sale
-    if "unit_type" in payload.model_fields_set:
-        item.unit_type = payload.unit_type
-    if "quantity_per_unit" in payload.model_fields_set:
-        item.quantity_per_unit = payload.quantity_per_unit
-
-    db.commit()
-    db.refresh(item)
-    logger.info("Updated menu item: %s (id=%d)", item.name, item.id)
-
-    return serialize_menu_item(item, db)
+    for field in ("unit_type", "quantity_per_unit"):
+        if field in payload.model_fields_set:
+            setattr(item, field, getattr(payload, field))
 
 
-@admin_menu_router.delete("/{item_id}", status_code=204)
-def delete_menu_item(
-    item_id: int,
+def _handle_before_delete(item: MenuItem, db: Session) -> None:
+    """Delete related records before the menu item."""
+    db.query(MenuItemSizePrice).filter(MenuItemSizePrice.menu_item_id == item.id).delete()
+    db.query(MenuItemAlias).filter(MenuItemAlias.menu_item_id == item.id).delete()
+    db.query(MenuItemIngredient).filter(MenuItemIngredient.menu_item_id == item.id).delete()
+
+
+# =============================================================================
+# CRUD Factory (create, get, update, delete — list is custom below)
+# =============================================================================
+
+_crud = CRUDRouterFactory(
+    model=MenuItem,
+    create_schema=MenuItemCreate,
+    update_schema=MenuItemUpdate,
+    response_schema=MenuItemOut,
+    prefix="/admin/menu",
+    tags=["Admin - Menu"],
+    id_param="item_id",
+    not_found_message="Menu item not found",
+    skip_list=True,
+    to_response=_to_response,
+    on_before_create=_build_create_kwargs,
+    on_create_pre_commit=_handle_create_pre_commit,
+    on_before_update=_handle_before_update,
+    on_before_delete=_handle_before_delete,
+)
+
+# Use factory's router as the main router, add custom endpoints to it
+admin_menu_router = _crud.router
+
+
+# =============================================================================
+# Custom Endpoints (list + cache management)
+# =============================================================================
+
+@admin_menu_router.get("", response_model=list[MenuItemOut])
+def admin_menu(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete a menu item and all related records. Requires admin authentication."""
-    item = get_or_404(db, MenuItem, item_id, detail="Menu item not found")
-
-    item_name = item.name
-    logger.info("Deleting menu item: %s (id=%d)", item_name, item_id)
-
-    try:
-        # Delete related records first (tables with foreign keys to menu_items)
-        # These must be deleted before the menu item due to FK constraints
-        db.query(MenuItemSizePrice).filter(MenuItemSizePrice.menu_item_id == item_id).delete()
-        db.query(MenuItemAlias).filter(MenuItemAlias.menu_item_id == item_id).delete()
-        db.query(MenuItemIngredient).filter(MenuItemIngredient.menu_item_id == item_id).delete()
-
-        # Now delete the menu item itself
-        db.delete(item)
-        db.commit()
-        logger.info("Successfully deleted menu item: %s (id=%d)", item_name, item_id)
-    except (SQLAlchemyError, ValueError, KeyError) as e:
-        db.rollback()
-        logger.error("Failed to delete menu item %s (id=%d): %s", item_name, item_id, str(e))
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to delete menu item: {str(e)}"
+) -> list[MenuItemOut]:
+    """List all menu items. Requires admin authentication."""
+    items = (
+        db.query(MenuItem)
+        .options(
+            joinedload(MenuItem.alias_records),
+            joinedload(MenuItem.size_prices).joinedload(MenuItemSizePrice.size),
+            joinedload(MenuItem.item_type),
         )
+        .order_by(MenuItem.id.asc())
+        .all()
+    )
+    return [serialize_menu_item(m, db, include_ingredients=False) for m in items]
 
-    return None
-
-
-# =============================================================================
-# Cache Management Endpoints
-# =============================================================================
 
 @admin_menu_router.get("/cache/status", response_model=dict[str, Any])
 def get_cache_status(
     _admin: str = Depends(verify_admin_credentials),
 ) -> dict[str, Any]:
-    """
-    Get menu data cache status.
-
-    Returns information about the cache including:
-    - Whether it's loaded
-    - Last refresh timestamp
-    - Item counts by category
-    - Keyword index sizes
-
-    Requires admin authentication.
-    """
+    """Get menu data cache status."""
     return menu_cache.get_status()
 
 
@@ -435,24 +300,7 @@ def refresh_cache(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
 ) -> dict[str, Any]:
-    """
-    Manually refresh the menu data cache.
-
-    Reloads all menu data from the database including:
-    - Spread types and varieties
-    - Bagel types
-    - Proteins, toppings, and cheeses
-    - Coffee and soda types
-    - Known menu items
-
-    This is useful after making menu changes that should take effect
-    immediately without waiting for the scheduled 3 AM refresh.
-
-    Requires admin authentication.
-
-    Returns:
-        Cache status after refresh
-    """
+    """Manually refresh the menu data cache."""
     logger.info("Manual cache refresh triggered by admin")
     menu_cache.load_from_db(db, fail_on_error=False, force=True)
 
@@ -460,5 +308,3 @@ def refresh_cache(
         "message": "Cache refreshed successfully",
         "status": menu_cache.get_status(),
     }
-
-

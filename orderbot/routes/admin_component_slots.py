@@ -5,10 +5,11 @@ Component slots allow item types to include configurable sub-items.
 For example, an omelette can include a "side" slot that accepts bagels or fruit salad.
 """
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
+from ..exceptions import ResourceNotFoundError, ValidationError
 from .crud_helpers import get_or_404
 from ..db.models import (
     GlobalAttributeOption,
@@ -119,7 +120,7 @@ def create_component_slot(
         .first()
     )
     if existing:
-        raise HTTPException(status_code=400, detail=f"Slot '{slot_name}' already exists for this item type")
+        raise ValidationError(f"Slot '{slot_name}' already exists for this item type")
 
     slot = ItemTypeComponentSlot(
         parent_item_type_id=item_type_id,
@@ -220,7 +221,7 @@ def get_slot_options(slot_id: int, db: Session = Depends(get_db)):
         .first()
     )
     if not slot:
-        raise HTTPException(status_code=404, detail="Slot not found")
+        raise ResourceNotFoundError("Slot not found")
 
     options = []
     for opt in sorted(slot.slot_options, key=lambda o: o.display_order):
@@ -284,23 +285,22 @@ def add_slot_option(
 
     # Must have either item_type or menu_item
     if not allowed_item_type_id and not allowed_menu_item_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Must specify either allowed_item_type_id or allowed_menu_item_id"
+        raise ValidationError(
+            "Must specify either allowed_item_type_id or allowed_menu_item_id"
         )
 
     # Validate references
     if allowed_item_type_id:
         item_type = db.query(ItemType).filter(ItemType.id == allowed_item_type_id).first()
         if not item_type:
-            raise HTTPException(status_code=404, detail="Item type not found")
+            raise ResourceNotFoundError("Item type not found")
         if not display_name:
             display_name = item_type.display_name
 
     if allowed_menu_item_id:
         menu_item = db.query(MenuItem).filter(MenuItem.id == allowed_menu_item_id).first()
         if not menu_item:
-            raise HTTPException(status_code=404, detail="Menu item not found")
+            raise ResourceNotFoundError("Menu item not found")
         if not display_name:
             display_name = menu_item.name
 
@@ -399,17 +399,15 @@ def update_default_modifiers(
         if entry_type == "attribute_option":
             gao_id = entry.get("global_attribute_option_id")
             if not gao_id:
-                raise HTTPException(
-                    status_code=400,
-                    detail="attribute_option entry requires global_attribute_option_id"
+                raise ValidationError(
+                    "attribute_option entry requires global_attribute_option_id"
                 )
             gao = db.query(GlobalAttributeOption).filter(
                 GlobalAttributeOption.id == gao_id
             ).first()
             if not gao:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"GlobalAttributeOption {gao_id} not found"
+                raise ResourceNotFoundError(
+                    f"GlobalAttributeOption {gao_id} not found"
                 )
             validated.append({
                 "type": "attribute_option",
@@ -418,15 +416,13 @@ def update_default_modifiers(
         elif entry_type == "ingredient":
             ing_id = entry.get("ingredient_id")
             if not ing_id:
-                raise HTTPException(
-                    status_code=400,
-                    detail="ingredient entry requires ingredient_id"
+                raise ValidationError(
+                    "ingredient entry requires ingredient_id"
                 )
             ing = db.query(Ingredient).filter(Ingredient.id == ing_id).first()
             if not ing:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Ingredient {ing_id} not found"
+                raise ResourceNotFoundError(
+                    f"Ingredient {ing_id} not found"
                 )
             validated.append({
                 "type": "ingredient",
@@ -434,9 +430,8 @@ def update_default_modifiers(
                 "quantity": entry.get("quantity", 1),
             })
         else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown modifier type: {entry_type}"
+            raise ValidationError(
+                f"Unknown modifier type: {entry_type}"
             )
 
     option.default_modifiers = validated if validated else None

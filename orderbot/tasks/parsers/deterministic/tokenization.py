@@ -857,7 +857,7 @@ def _flush_current_item(
     )
 
 
-def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
+def _recombine_tokens(tokens: list["Token"]) -> tuple[list["Token"], list[str]]:
     """Recombine modifier tokens with their associated item tokens.
 
     Modifier tokens are attached to the PREVIOUS item token.
@@ -866,19 +866,20 @@ def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
         tokens: List of classified tokens
 
     Returns:
-        List of item tokens with modifiers combined
+        Tuple of (item tokens with modifiers combined, dropped unknown token texts)
 
     Examples:
         >>> tokens = [Token("bacon egg", item), Token("cheese", modifier), Token("coffee", item)]
         >>> _recombine_tokens(tokens)
-        [Token("bacon egg and cheese", item), Token("coffee", item)]
+        ([Token("bacon egg and cheese", item), Token("coffee", item)], [])
     """
     from orderbot.tasks.schemas.parser_responses import Token
 
     if not tokens:
-        return []
+        return [], []
 
     result = []
+    dropped_unknowns: list[str] = []
     current_item = None
     accumulated_modifiers = []
 
@@ -931,12 +932,20 @@ def _recombine_tokens(tokens: list["Token"]) -> list["Token"]:
                     result.append(current_item)
                     current_item = None
                     accumulated_modifiers = []
+                    text = token.original.strip()
+                    if text:
+                        dropped_unknowns.append(text)
+            else:
+                # No current item to combine with - track as dropped
+                text = token.original.strip()
+                if text:
+                    dropped_unknowns.append(text)
 
     # Don't forget the last item
     if current_item:
         result.append(_flush_current_item(current_item, accumulated_modifiers))
 
-    return result
+    return result, dropped_unknowns
 
 
 # =============================================================================
@@ -982,16 +991,27 @@ def _parse_multi_item_order(user_input: str) -> OpenInputResponse | None:
         return None
 
     # --- Step 4: Recombine modifier tokens with their items ---
-    combined_tokens = _recombine_tokens(tokens)
+    combined_tokens, dropped_unknowns = _recombine_tokens(tokens)
     logger.info("Multi-item tokens after recombine: %s", [(t.original, t.token_type) for t in combined_tokens])
 
     # --- Step 5: Filter to only item tokens ---
     item_tokens = [t for t in combined_tokens if t.token_type == "item"]
+
     if len(item_tokens) < 2:
+        # If we have exactly 1 recognized item + dropped unknowns, parse the
+        # single item and surface the unknowns instead of silently returning None
+        if len(item_tokens) == 1 and dropped_unknowns:
+            response = _build_items_from_tokens(item_tokens, min_items=1)
+            if response:
+                response.unrecognized_item_names = dropped_unknowns
+                return response
         return None
 
     # --- Step 6: Parse each item token and build response ---
-    return _build_items_from_tokens(item_tokens)
+    response = _build_items_from_tokens(item_tokens)
+    if response and dropped_unknowns:
+        response.unrecognized_item_names = dropped_unknowns
+    return response
 
 
 # =============================================================================
@@ -1194,13 +1214,19 @@ def _derive_item_name_from_token(token: "Token") -> str:
     return resolved
 
 
-def _build_items_from_tokens(item_tokens: list["Token"]) -> OpenInputResponse | None:
+def _build_items_from_tokens(
+    item_tokens: list["Token"], min_items: int = 2,
+) -> OpenInputResponse | None:
     """Parse item tokens into menu items and build an OpenInputResponse.
 
     For each item token, attempts to parse it using the generic parser. Falls back
     to the full deterministic parser if generic parsing fails.
 
-    Returns OpenInputResponse with parsed_items if 2+ items found, else None.
+    Args:
+        item_tokens: List of item tokens to parse.
+        min_items: Minimum number of successfully parsed items required (default 2).
+
+    Returns OpenInputResponse with parsed_items if >= min_items found, else None.
     """
     parsed_items: list = []
     for token in item_tokens:
@@ -1231,7 +1257,7 @@ def _build_items_from_tokens(item_tokens: list["Token"]) -> OpenInputResponse | 
                     parsed_items.append(item)
                 logger.debug("Multi-item: fallback parsed '%s'", token.original[:40])
 
-    if len(parsed_items) >= 2:
+    if len(parsed_items) >= min_items:
         logger.info("Multi-item order parsed: %d items", len(parsed_items))
         return OpenInputResponse(parsed_items=parsed_items)
 

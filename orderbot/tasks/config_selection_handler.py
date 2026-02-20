@@ -222,7 +222,17 @@ class ConfigSelectionHandler:
         )
 
         if not selected_item:
-            # Couldn't determine which one - ask again
+            # No match against shown items — the user may be placing a full order
+            # instead of selecting from the list. Delegate to taking_items_handler
+            # which will parse the input fresh and process any items found.
+            if self._taking_items_handler:
+                order.pending_item_options = []
+                order.pending_item_quantity = 1
+                order.pending_item_modifiers = None
+                order.clear_pending()
+                return self._taking_items_handler.handle_taking_items(user_input, order)
+
+            # Fallback: no taking_items_handler available — re-ask
             options_str = format_numbered_list(options)
             qr = [{"label": o.get("name", ""), "value": o.get("name", "")} for o in options if o.get("name")]
             return StateMachineResult(

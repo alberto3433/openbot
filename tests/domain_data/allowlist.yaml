@@ -1759,6 +1759,17 @@ orderbot/tasks/parsers/deterministic/tokenization.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/tasks/parsers/deterministic/item_indicator.py:
+  - term: side
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+  - term: snack
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+  - term: beverage
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
 orderbot/tasks/parsers/inquiry_patterns.py:
   - term: breakfast
     context: all
@@ -1777,6 +1788,11 @@ orderbot/tasks/parsers/deterministic/qualifier_extraction.py:
     line_range: [40, 40]
     context: code
     reason: "Linguistic pattern 'on the side' - general ordering qualifier, not a food term"
+
+orderbot/tasks/menu_item_adder.py:
+  - term: side
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
 
 orderbot/tasks/parsers/parser_utils.py:
   - term: everything

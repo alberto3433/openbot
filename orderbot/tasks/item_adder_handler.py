@@ -5,6 +5,7 @@ This module handles adding new items to orders, including menu items,
 side items, and bagels with their configurations.
 
 Extracted from state_machine.py for better separation of concerns.
+Delegates to ItemCreationHandler and MenuItemAdder for specific flows.
 """
 
 import logging
@@ -38,6 +39,8 @@ from .default_ingredients import (
 )
 from .builders import ItemBuilder, ItemBuildContext
 from .utils.text import normalize_text
+from .item_creation_handler import ItemCreationHandler
+from .menu_item_adder import MenuItemAdder
 
 if TYPE_CHECKING:
     from .context import OrderContext
@@ -51,6 +54,10 @@ class ItemAdderHandler(MenuDataMixin):
 
     Manages menu item lookup, price calculation, and item creation
     for menu items, side items, and bagels.
+
+    Delegates to:
+    - ItemCreationHandler: configurable item creation pipeline
+    - MenuItemAdder: menu-item-name-based addition flow
     """
 
     def __init__(
@@ -98,6 +105,10 @@ class ItemAdderHandler(MenuDataMixin):
             menu_lookup=self.menu_lookup,
             db_session=db_session,
         )
+
+        # Sub-handlers for delegated flows
+        self._creation_handler = ItemCreationHandler(parent=self)
+        self._menu_item_adder = MenuItemAdder(parent=self)
 
     def set_context(self, ctx: "OrderContext") -> None:
         """Set per-request context including db_session.
@@ -372,8 +383,8 @@ class ItemAdderHandler(MenuDataMixin):
             {k: v for k, v in pre_filled_attributes.items() if v is not None}
         )
 
-        # Create item through generic flow
-        return self._create_configurable_item(
+        # Create item through generic flow (delegated to ItemCreationHandler)
+        return self._creation_handler._create_configurable_item(
             menu_item=menu_item,
             order=order,
             quantity=quantity,
@@ -415,6 +426,10 @@ class ItemAdderHandler(MenuDataMixin):
         """
         return extract_pre_filled_attributes(item_type, kwargs)
 
+    # =========================================================================
+    # Delegation to MenuItemAdder
+    # =========================================================================
+
     def add_menu_item(
         self,
         item_name: str,
@@ -425,181 +440,15 @@ class ItemAdderHandler(MenuDataMixin):
     ) -> StateMachineResult:
         """Add a menu item and determine next question.
 
-        Uses DisambiguationHandler for unified disambiguation logic.
-
-        Args:
-            item_name: Name of the menu item
-            quantity: Number of items to add
-            order: Current order task
-            attributes: Optional dict of attribute values to pre-fill
-            modifications: Optional list of modification strings
+        Delegates to MenuItemAdder.add_menu_item().
         """
-        # Ensure quantity is at least 1
-        quantity = max(1, quantity)
-
-        # Step 1: Look up menu item with disambiguation handling
-        menu_item, disambiguation_result = self.item_lookup_handler.lookup_menu_item_with_disambiguation(
-            item_name, quantity, order
-        )
-
-        # If disambiguation is needed, return the question
-        if disambiguation_result:
-            return disambiguation_result
-
-        # If item not found, provide helpful suggestions using hybrid handler
-        if not menu_item:
-            session_id = order.session_id
-            message, category_for_followup, qr = self._unrecognized_handler.get_not_found_response(
-                item_name, order=order, session_id=session_id
-            )
-            if category_for_followup:
-                # Track state so "yes" response can list items in this category
-                order.pending_field = PendingField.CATEGORY_INQUIRY
-                order.pending_config_queue = [category_for_followup]
-            return StateMachineResult(
-                message=message,
-                order=order,
-                quick_replies=qr or None,
-            )
-
-        # Step 2: Create the item using existing logic
-        return self._create_menu_item_from_lookup(
-            menu_item=menu_item,
+        return self._menu_item_adder.add_menu_item(
             item_name=item_name,
             quantity=quantity,
             order=order,
             attributes=attributes,
             modifications=modifications,
         )
-
-
-    def _create_menu_item_from_lookup(
-        self,
-        menu_item: dict,
-        item_name: str,
-        quantity: int,
-        order: OrderTask,
-        attributes: dict | None = None,
-        modifications: list[str] | None = None,
-    ) -> StateMachineResult:
-        """Create a menu item from lookup result.
-
-        Args:
-            menu_item: Menu item dict from lookup
-            item_name: Original item name from user
-            quantity: Number of items to create
-            order: Current order task
-            attributes: Optional dict of attribute values to pre-fill
-            modifications: Optional list of modification strings
-        """
-        # Use the canonical name from menu if found
-        canonical_name = menu_item.get("name", item_name)
-        price = menu_item.get("base_price", 0.0)
-        menu_item_id = menu_item.get("id")
-        category = menu_item.get("item_type", "")  # item_type slug like "spread_sandwich"
-
-        # Check if item type has component slots (data-driven, e.g., omelette includes a side)
-        has_component_slots = menu_cache.item_type_has_component_slots(category) if category else False
-
-        # Check if it uses DB-driven configuration (item types with configurable attributes)
-        # Note: has_component_slots items are handled separately and return early
-        uses_db_config = category and category in menu_cache.get_configurable_item_types()
-
-        logger.info(
-            "Menu item check: canonical_name='%s', category='%s', has_component_slots=%s, uses_db_config=%s, quantity=%d",
-            canonical_name,
-            category,
-            has_component_slots,
-            uses_db_config,
-            quantity,
-        )
-
-        # Determine the menu item type for tracking
-        if has_component_slots:
-            item_type = category  # Use the actual category slug (e.g., "omelette")
-        elif uses_db_config:
-            item_type = category  # "deli_sandwich", "egg_sandwich", "fish_sandwich", or "spread_sandwich"
-        else:
-            item_type = None
-
-        # Create the requested quantity of items
-        first_item = None
-        for i in range(quantity):
-            item = MenuItemTask(
-                menu_item_name=canonical_name,
-                menu_item_id=menu_item_id,
-                unit_price=price,
-                menu_item_type=item_type,
-                modifications=modifications or [],  # User modifications like "with mayo and mustard"
-            )
-            # Populate default ingredients for items that have them defined
-            # This must happen before applying user selections so user selections
-            # can replace defaults (e.g., "BEC with swiss" replaces cheddar)
-            # Check if item has default ingredients
-            if menu_item_id:
-                populate_default_ingredients(item)
-            # Apply pre-filled attributes
-            if attributes:
-                for attr_name, attr_value in attributes.items():
-                    if attr_value is not None:
-                        item[attr_name] = attr_value
-
-            # Apply pending ingredient from ingredient suggestion flow
-            # (e.g., "I want caramel syrup" -> "yes" -> "iced coffee" -> apply caramel)
-            # Only apply to the first item (first_item is None means this is the first)
-            if first_item is None:
-                self._apply_pending_ingredient(item, order, item_type, canonical_name)
-
-            # Infer attributes from item name (data-driven, e.g., "Hot Coffee" -> temperature=hot)
-            self._infer_attributes_from_item_name(item)
-            item.mark_in_progress()
-            order.items.add_item(item)
-            if first_item is None:
-                first_item = item
-
-        logger.info("Added %d menu item(s): %s (price: $%.2f each, id: %s, attrs=%s, mods=%s)", quantity, canonical_name, price, menu_item_id, attributes, modifications)
-
-        if has_component_slots:
-            # Set state to wait for component slot selection (applies to first item, others will be configured after)
-            order.phase = OrderPhase.CONFIGURING_ITEM
-            order.pending_item_id = first_item.id
-            # Get component slot configuration from DB (e.g., "side" slot)
-            side_slot = menu_cache.get_component_slot(category, SIDE_SLOT_NAME)
-            order.pending_field = PendingField.SIDE_CHOICE
-            # Use prompt text from DB or fallback
-            question = (
-                side_slot.get("prompt_text")
-                if side_slot
-                else f"What side would you like with your {canonical_name}?"
-            )
-            # Build quick replies from component slot options (data-driven)
-            side_options = menu_cache.get_component_slot_options(category, SIDE_SLOT_NAME)
-            qr = [{"label": o.get("display_name", o.get("allowed_item_type", "")), "value": o.get("display_name", o.get("allowed_item_type", ""))} for o in side_options] if side_options else None
-            return StateMachineResult(
-                message=question,
-                order=order,
-                quick_replies=qr,
-            )
-        elif uses_db_config and self.menu_item_handler:
-            # For deli/egg sandwiches, use DB-driven configuration with customization checkpoint
-            # Capture any attributes mentioned in the initial order
-            # Strip the canonical menu item name from user input to prevent
-            # words in the item name from falsely matching attribute options
-            # e.g., "Tofu Nova Sandwich" -> "Nova" matching "Nova Scotia Salmon"
-            capture_input = item_name
-            if canonical_name:
-                idx = item_name.lower().find(canonical_name.lower())
-                if idx >= 0:
-                    capture_input = (item_name[:idx] + item_name[idx + len(canonical_name):]).strip()
-            self.menu_item_handler.capture_attributes_from_input(capture_input, first_item)
-            # Start the configuration flow
-            return self.menu_item_handler.get_first_question(first_item, order)
-        else:
-            # Mark all items complete (non-omelettes don't need configuration)
-            for item in order.items.items:
-                if isinstance(item, MenuItemTask) and item.menu_item_name == canonical_name and item.status == TaskStatus.IN_PROGRESS:
-                    item.mark_complete()
-            return self._get_next_question(order)
 
     def add_side_item(
         self,
@@ -609,47 +458,13 @@ class ItemAdderHandler(MenuDataMixin):
     ) -> tuple[str | None, str | None]:
         """Add a side item to the order without returning a response.
 
-        Used when a side item is ordered alongside another item (e.g., "bagel with a side of sausage").
-
-        Returns:
-            Tuple of (canonical_name, error_message).
-            If successful: (canonical_name, None)
-            If item not found: (None, error_message)
+        Delegates to MenuItemAdder.add_side_item().
         """
-        quantity = max(1, quantity)
-
-        # Look up the side item in the menu
-        menu_item = self.menu_lookup.lookup_menu_item(side_item_name)
-
-        # If item not found, return error message using hybrid handler
-        if not menu_item:
-            logger.warning("Side item not found: '%s' - rejecting", side_item_name)
-            message, _, _qr = self._unrecognized_handler.get_not_found_response(
-                side_item_name, order=order
-            )
-            return (None, message)
-
-        # Use canonical name and price from menu
-        canonical_name = menu_item.get("name", side_item_name)
-        price = menu_item.get("base_price", 0.0)
-        menu_item_id = menu_item.get("id")
-
-        # Get item type from DB lookup
-        item_type = menu_item.get("item_type")
-
-        # Create the side item(s)
-        for _ in range(quantity):
-            item = MenuItemTask(
-                menu_item_name=canonical_name,
-                menu_item_id=menu_item_id,
-                unit_price=price,
-                menu_item_type=item_type,
-            )
-            item.mark_complete()  # Side items don't need configuration
-            order.items.add_item(item)
-
-        logger.info("Added %d side item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
-        return (canonical_name, None)
+        return self._menu_item_adder.add_side_item(
+            side_item_name=side_item_name,
+            quantity=quantity,
+            order=order,
+        )
 
     def _apply_pending_ingredient(
         self,
@@ -660,75 +475,17 @@ class ItemAdderHandler(MenuDataMixin):
     ) -> None:
         """Apply pending ingredient from ingredient suggestion flow.
 
-        When a user orders a modifier without an item (e.g., "I want caramel syrup"),
-        then confirms they want to add it to a drink (e.g., "yes"), then orders the item
-        (e.g., "iced coffee"), this method applies the pending ingredient to the new item.
-
-        The pending ingredient is stored in order.pending_ingredient_to_apply and is
-        cleared after being applied to prevent it from being applied to subsequent items.
-
-        Args:
-            item: The MenuItemTask to apply the ingredient to.
-            order: The OrderTask containing the pending ingredient.
-            item_type: The item type slug for attribute lookup.
-            canonical_name: The menu item name for logging.
+        Delegates to MenuItemAdder._apply_pending_ingredient().
         """
-        if not order.pending_ingredient_to_apply or not self.menu_item_handler:
-            return
-
-        pending_ingredient = order.pending_ingredient_to_apply
-        # Clear it now so it's not applied to subsequent items
-        order.pending_ingredient_to_apply = None
-
-        # Find the attribute and option that match this ingredient
-        # Search through item type's attributes for an option matching the ingredient
-        attrs = menu_cache.get_item_type_attributes(item_type) if item_type else {}
-        pending_lower = normalize_text(pending_ingredient)
-        pending_slug = pending_lower.replace(' ', '_')
-        found_attr_slug = None
-        found_option = None
-
-        for attr_slug_iter, attr_config in attrs.items():
-            options = attr_config.get('options', [])
-            for opt in options:
-                opt_slug = opt.get('slug', '').lower()
-                opt_display = opt.get('display_name', '').lower()
-                opt_aliases = [a.lower() for a in (opt.get('aliases') or [])]
-                # Match by slug, display name, or alias
-                if (opt_slug == pending_slug or
-                    opt_display == pending_lower or
-                    pending_lower in opt_aliases):
-                    found_attr_slug = attr_slug_iter
-                    found_option = opt
-                    break
-            if found_option:
-                break
-
-        if found_attr_slug and found_option:
-            # Get the correct slug and price from the matched option
-            option_slug = found_option.get('slug', pending_ingredient)
-            option_price = found_option.get('price_modifier', 0.0)
-            # Create and apply the selection
-            pending_selection = Selection(
-                slug=option_slug,
-                category=found_attr_slug,
-                quantity=1,
-                price=option_price,
-                display_name=found_option.get('display_name'),
-            )
-            self.menu_item_handler._apply_selections(item, [pending_selection])
-            logger.info(
-                "Applied pending ingredient '%s' to %s (attr=%s, price=$%.2f)",
-                pending_ingredient, canonical_name, found_attr_slug, option_price
-            )
-        else:
-            logger.warning(
-                "Could not find attribute for pending ingredient '%s' on item type '%s'",
-                pending_ingredient, item_type
-            )
+        self._menu_item_adder._apply_pending_ingredient(
+            item=item,
+            order=order,
+            item_type=item_type,
+            canonical_name=canonical_name,
+        )
 
     # =========================================================================
-    # Generic Item Creation (Data-Driven)
+    # Delegation to ItemCreationHandler
     # =========================================================================
 
     def _check_config_complete(
@@ -738,36 +495,12 @@ class ItemAdderHandler(MenuDataMixin):
     ) -> bool:
         """Check if all mandatory attributes for item_type are already filled.
 
-        Returns True if configuration would be complete (no questions needed).
-        Used to decide whether to create a single item with quantity=N vs
-        N separate items for individual configuration.
-
-        Args:
-            item_type: Item type slug (e.g., "cold_cut", "cheese")
-            pre_filled_attributes: Dict of attribute values already filled
-
-        Returns:
-            True if all mandatory attributes are filled, False otherwise
+        Delegates to ItemCreationHandler._check_config_complete().
         """
-        if not item_type:
-            return False
-
-        from .config.attribute_resolver import get_mandatory_attributes
-        mandatory = get_mandatory_attributes(item_type)
-
-        if not mandatory:
-            return True  # No mandatory attributes = config complete
-
-        if not pre_filled_attributes:
-            return False  # Has mandatory attrs but nothing pre-filled
-
-        # Check if all mandatory attrs have values in pre_filled_attributes
-        for attr in mandatory:
-            attr_slug = attr.get("slug")
-            if attr_slug and attr_slug not in pre_filled_attributes:
-                return False
-
-        return True
+        return self._creation_handler._check_config_complete(
+            item_type=item_type,
+            pre_filled_attributes=pre_filled_attributes,
+        )
 
     def _create_configurable_item(
         self,
@@ -784,33 +517,11 @@ class ItemAdderHandler(MenuDataMixin):
         inapplicable_attributes: list[dict] | None = None,
         skip_first_question: bool = False,
     ) -> StateMachineResult:
+        """Create an item and start its configuration flow if needed.
+
+        Delegates to ItemCreationHandler._create_configurable_item().
         """
-        Create an item and start its configuration flow if needed.
-
-        This is the generic, data-driven item creation method. It handles all item types
-        by checking the database for configuration requirements.
-
-        Delegates item building to _build_items_for_order(), then routes to either
-        _start_configuration_flow() or _complete_non_configurable_item().
-
-        Args:
-            menu_item: Menu item dict from lookup (must have 'name', 'item_type', 'base_price')
-            order: Current order task
-            quantity: Number of items to create (default: 1)
-            user_input: Original user input for attribute extraction (optional)
-            pre_filled_attributes: Dict of attribute values to pre-fill (optional)
-            extracted_selections: List of Selection objects to apply (optional)
-            unavailable_selections: Dict of attr_slug -> {attempted_slug, attempted_display}
-                for options user tried that aren't available (e.g., "medium" size)
-            unmatched_selections: Dict of attr_slug -> {tokens: list[str]}
-                for tokens user mentioned that don't match any option (e.g., "honey" for coffee)
-            special_instructions: List of special instruction strings (e.g., "room for cream")
-
-        Returns:
-            StateMachineResult with next question or confirmation
-        """
-        # Create build context with all parameters
-        ctx = ItemBuildContext(
+        return self._creation_handler._create_configurable_item(
             menu_item=menu_item,
             order=order,
             quantity=quantity,
@@ -825,31 +536,6 @@ class ItemAdderHandler(MenuDataMixin):
             skip_first_question=skip_first_question,
         )
 
-        # Create builder with callbacks
-        builder = ItemBuilder(
-            pricing=self.pricing,
-            config_handler=self.menu_item_handler,
-            infer_attributes_callback=self._infer_attributes_from_item_name,
-            apply_pending_ingredient_callback=self._apply_pending_ingredient,
-        )
-
-        # Prepare context (determine configuration requirements)
-        builder.prepare_context(ctx)
-
-        # Build items and add to order
-        first_item = self._build_items_for_order(ctx, builder)
-        if first_item is None:
-            return StateMachineResult(
-                message="What can I get for you?",
-                order=order,
-            )
-
-        # Route to configuration or completion flow
-        if ctx.needs_configuration and self.menu_item_handler:
-            return self._start_configuration_flow(ctx, first_item)
-        else:
-            return self._complete_non_configurable_item(ctx, first_item)
-
     def _build_items_for_order(
         self,
         ctx: ItemBuildContext,
@@ -857,44 +543,9 @@ class ItemAdderHandler(MenuDataMixin):
     ) -> MenuItemTask | None:
         """Build menu items and add them to the order.
 
-        Args:
-            ctx: The build context with item parameters.
-            builder: The ItemBuilder for constructing items.
-
-        Returns:
-            The first item created, or None if pricing failed.
+        Delegates to ItemCreationHandler._build_items_for_order().
         """
-        item_count, item_quantity = builder.calculate_item_count(
-            ctx, self._check_config_complete
-        )
-
-        first_item = None
-        for i in range(item_count):
-            is_first = (first_item is None)
-            item = builder.build_single_item(ctx, item_quantity, is_first)
-
-            # Check for pricing failure
-            if item.unit_price == 0.0 and ctx.price > 0.0:
-                logger.warning("Price lookup failed for '%s'", item.menu_item_name)
-                return None
-
-            ctx.order.items.add_item(item)
-            if first_item is None:
-                first_item = item
-
-        # Check if user's input had a trailing "done" signal (e.g., "nothing else")
-        # If so, mark all items in this batch so optional customization is skipped
-        if first_item and ctx.user_input:
-            from .response_utils import has_trailing_done_signal
-            if has_trailing_done_signal(ctx.user_input):
-                for item_in_order in ctx.order.items.items:
-                    if item_in_order.id == first_item.id or (
-                        item_count > 1 and item_in_order.menu_item_name == first_item.menu_item_name
-                        and not item_in_order.is_complete()
-                    ):
-                        item_in_order.customization_declined = True
-
-        return first_item
+        return self._creation_handler._build_items_for_order(ctx=ctx, builder=builder)
 
     def _start_configuration_flow(
         self,
@@ -903,75 +554,9 @@ class ItemAdderHandler(MenuDataMixin):
     ) -> StateMachineResult:
         """Start the configuration flow for a configurable item.
 
-        Handles attribute capture from user input, skip-first-question deferral,
-        pending parsed items, and queued config items before starting the
-        configuration question flow.
-
-        Args:
-            ctx: The build context.
-            first_item: The first item created (used for configuration).
-
-        Returns:
-            StateMachineResult with the next configuration question or deferred result.
+        Delegates to ItemCreationHandler._start_configuration_flow().
         """
-        order = ctx.order
-
-        # Capture any attributes from original user input
-        # Skip if extracted_selections provided - parser already extracted attributes
-        if ctx.user_input and ctx.extracted_selections is None:
-            # Strip the menu item name to prevent words in the name from
-            # falsely matching attribute options (e.g., "Nova" in "Tofu Nova Sandwich")
-            capture_input = ctx.user_input
-            if ctx.canonical_name:
-                idx = ctx.user_input.lower().find(ctx.canonical_name.lower())
-                if idx >= 0:
-                    capture_input = (ctx.user_input[:idx] + ctx.user_input[idx + len(ctx.canonical_name):]).strip()
-            self.menu_item_handler.capture_attributes_from_input(capture_input, first_item)
-
-        # If skip_first_question=True, return without asking config question.
-        # This is used when adding multiple items - all items are added first,
-        # then process_items() calls get_first_question after all are added.
-        if ctx.skip_first_question:
-            logger.info(
-                "skip_first_question=True: added %s (%s), deferring config question",
-                ctx.canonical_name, first_item.id[:8]
-            )
-            # Return a result without a message - just the updated order
-            # The caller (process_items) will handle asking questions
-            return StateMachineResult(message="", order=order)
-
-        # Check if there are pending parsed items that haven't been added yet
-        # If so, process them first (they were stored during disambiguation)
-        if self.menu_item_handler._process_pending_parsed_items_callback:
-            pending_result = self.menu_item_handler._process_pending_parsed_items_callback(order)
-            if pending_result:
-                # Queue this item for later and return the pending result
-                order.queue_item_for_config(first_item.id, item_name=ctx.canonical_name)
-                logger.info(
-                    "Queued newly selected item %s (%s) - processing pending parsed items first",
-                    ctx.canonical_name, first_item.id[:8]
-                )
-                return pending_result
-
-        # Check if there are other items queued for configuration
-        # If so, configure them first (they were ordered earlier in the conversation)
-        if order.has_queued_config_items():
-            from .handler_utils import process_next_queued_item
-            # Queue this item for later
-            order.queue_item_for_config(first_item.id, item_name=ctx.canonical_name)
-            logger.info(
-                "Queued newly selected item %s (%s) - processing queued item first",
-                ctx.canonical_name, first_item.id[:8]
-            )
-            # Start config for the first queued item
-            queued_result = process_next_queued_item(
-                order, self.menu_item_handler, "before new item"
-            )
-            if queued_result:
-                return queued_result
-
-        # Start configuration flow for this item
-        return self.menu_item_handler.get_first_question(first_item, order)
+        return self._creation_handler._start_configuration_flow(ctx=ctx, first_item=first_item)
 
     def _complete_non_configurable_item(
         self,
@@ -980,51 +565,35 @@ class ItemAdderHandler(MenuDataMixin):
     ) -> StateMachineResult:
         """Complete a non-configurable item and return confirmation.
 
-        Handles clearing pending state, skip-first-question deferral,
-        processing queued config items, and building the confirmation message.
-
-        Args:
-            ctx: The build context.
-            first_item: The first item created.
-
-        Returns:
-            StateMachineResult with confirmation or queued item question.
+        Delegates to ItemCreationHandler._complete_non_configurable_item().
         """
-        order = ctx.order
-        order.clear_pending()
+        return self._creation_handler._complete_non_configurable_item(ctx=ctx, first_item=first_item)
 
-        # If skip_first_question=True, return without confirmation message.
-        # This is used when adding multiple items - confirmation comes after all added.
-        if ctx.skip_first_question:
-            logger.info(
-                "skip_first_question=True: added non-configurable %s (%s)",
-                ctx.canonical_name, first_item.id[:8]
-            )
-            return StateMachineResult(message="", order=order)
+    def _create_menu_item_from_lookup(
+        self,
+        menu_item: dict,
+        item_name: str,
+        quantity: int,
+        order: OrderTask,
+        attributes: dict | None = None,
+        modifications: list[str] | None = None,
+    ) -> StateMachineResult:
+        """Create a menu item from lookup result.
 
-        # Check if there are other items queued for configuration
-        # This handles the case where disambiguation was triggered after other items
-        # were already added (e.g., "an everything bagel and a latte")
-        from .handler_utils import process_next_queued_item
-        queued_result = process_next_queued_item(
-            order, self.menu_item_handler, "after non-configurable"
+        Delegates to MenuItemAdder._create_menu_item_from_lookup().
+        """
+        return self._menu_item_adder._create_menu_item_from_lookup(
+            menu_item=menu_item,
+            item_name=item_name,
+            quantity=quantity,
+            order=order,
+            attributes=attributes,
+            modifications=modifications,
         )
-        if queued_result:
-            return queued_result
 
-        # No queued items - return confirmation
-        # Use get_display_name() to include unit suffix (e.g., "(3 pack)")
-        display_name = first_item.get_display_name()
-        if ctx.quantity > 1:
-            return StateMachineResult(
-                message=got_it_anything_else(f"{ctx.quantity} {display_name}"),
-                order=order,
-            )
-        else:
-            return StateMachineResult(
-                message=got_it_anything_else(display_name),
-                order=order,
-            )
+    # =========================================================================
+    # Backward Compatibility
+    # =========================================================================
 
     def _lookup_menu_item_with_disambiguation(
         self,

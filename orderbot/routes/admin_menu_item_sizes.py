@@ -48,7 +48,7 @@ from ..schemas.menu_item_sizes import (
 )
 from ..services.store_service import get_or_create_company
 from .crud_factory import CRUDRouterFactory
-from .crud_helpers import apply_payload_updates, make_list_builder
+from .crud_helpers import apply_payload_updates, check_slug_unique, make_list_builder
 
 
 logger = logging.getLogger(__name__)
@@ -119,15 +119,12 @@ def _cat_before_update(
 ) -> None:
     if payload.slug is not None:
         new_slug = payload.slug.lower().strip()
-        existing = db.query(MenuItemSizeCategory).filter(
-            MenuItemSizeCategory.company_id == item.company_id,
-            MenuItemSizeCategory.slug == new_slug,
-            MenuItemSizeCategory.id != item.id
-        ).first()
-        if existing:
-            raise ValidationError(
-                f"A size category with slug '{new_slug}' already exists"
-            )
+        check_slug_unique(
+            db, MenuItemSizeCategory, new_slug,
+            exclude_id=item.id,
+            scope_filters={"company_id": item.company_id},
+            detail=f"A size category with slug '{new_slug}' already exists",
+        )
     apply_payload_updates(
         item, payload, db,
         normalize_fields={"slug": "lower_strip", "name": "strip", "question_text": "strip"}

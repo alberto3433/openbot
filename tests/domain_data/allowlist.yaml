@@ -1773,10 +1773,12 @@ orderbot/tasks/menu_pagination_handler.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
-orderbot/tasks/parsers/deterministic/core.py:
+orderbot/tasks/parsers/deterministic/cancellation_parsing.py:
   - term: everything
     context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
+    reason: "Generic word meaning 'all items' in cancellation scope, not a food term"
+
+orderbot/tasks/parsers/deterministic/core.py:
   - term: small
     context: all
     reason: "Refers to 'small talk' (conversation concept), not food size"

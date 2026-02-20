@@ -291,16 +291,12 @@ def add_slot_option(
 
     # Validate references
     if allowed_item_type_id:
-        item_type = db.query(ItemType).filter(ItemType.id == allowed_item_type_id).first()
-        if not item_type:
-            raise ResourceNotFoundError("Item type not found")
+        item_type = get_or_404(db, ItemType, allowed_item_type_id, detail="Item type not found")
         if not display_name:
             display_name = item_type.display_name
 
     if allowed_menu_item_id:
-        menu_item = db.query(MenuItem).filter(MenuItem.id == allowed_menu_item_id).first()
-        if not menu_item:
-            raise ResourceNotFoundError("Menu item not found")
+        menu_item = get_or_404(db, MenuItem, allowed_menu_item_id, detail="Menu item not found")
         if not display_name:
             display_name = menu_item.name
 
@@ -402,13 +398,7 @@ def update_default_modifiers(
                 raise ValidationError(
                     "attribute_option entry requires global_attribute_option_id"
                 )
-            gao = db.query(GlobalAttributeOption).filter(
-                GlobalAttributeOption.id == gao_id
-            ).first()
-            if not gao:
-                raise ResourceNotFoundError(
-                    f"GlobalAttributeOption {gao_id} not found"
-                )
+            gao = get_or_404(db, GlobalAttributeOption, gao_id, detail=f"GlobalAttributeOption {gao_id} not found")
             validated.append({
                 "type": "attribute_option",
                 "global_attribute_option_id": gao_id,
@@ -419,11 +409,7 @@ def update_default_modifiers(
                 raise ValidationError(
                     "ingredient entry requires ingredient_id"
                 )
-            ing = db.query(Ingredient).filter(Ingredient.id == ing_id).first()
-            if not ing:
-                raise ResourceNotFoundError(
-                    f"Ingredient {ing_id} not found"
-                )
+            ing = get_or_404(db, Ingredient, ing_id, detail=f"Ingredient {ing_id} not found")
             validated.append({
                 "type": "ingredient",
                 "ingredient_id": ing_id,

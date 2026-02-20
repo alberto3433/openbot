@@ -31,6 +31,7 @@ from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import Order, OrderStatusHistory
 from ..exceptions import ResourceNotFoundError, ValidationError
+from .crud_helpers import get_or_404
 from ..schemas.enums import OrderStatus
 from ..schemas.orders import (
     OrderSummaryOut,
@@ -152,9 +153,7 @@ def get_order_detail(
     _admin: str = Depends(verify_admin_credentials),
 ) -> OrderDetailOut:
     """Get detailed information about a specific order."""
-    order = db.query(Order).filter(Order.id == order_id).first()
-    if not order:
-        raise ResourceNotFoundError("Order not found")
+    order = get_or_404(db, Order, order_id, detail="Order not found")
 
     items_out = [OrderItemOut.model_validate(item) for item in order.items]
 
@@ -226,9 +225,7 @@ def set_estimated_time(
     _admin: str = Depends(verify_admin_credentials),
 ) -> dict:
     """Set the estimated ready time for an order (minutes from now)."""
-    order = db.get(Order, order_id)
-    if not order:
-        raise ResourceNotFoundError("Order not found")
+    order = get_or_404(db, Order, order_id, detail="Order not found")
 
     order.estimated_ready_at = datetime.now(timezone.utc) + timedelta(minutes=body.estimated_minutes)
     db.commit()
@@ -247,9 +244,7 @@ def update_staff_notes(
     _admin: str = Depends(verify_admin_credentials),
 ) -> dict:
     """Update staff notes on an order."""
-    order = db.get(Order, order_id)
-    if not order:
-        raise ResourceNotFoundError("Order not found")
+    order = get_or_404(db, Order, order_id, detail="Order not found")
 
     order.staff_notes = body.staff_notes
     db.commit()
@@ -264,9 +259,7 @@ def get_order_history(
     _admin: str = Depends(verify_admin_credentials),
 ) -> list[OrderStatusHistoryOut]:
     """Get the status transition history for an order."""
-    order = db.get(Order, order_id)
-    if not order:
-        raise ResourceNotFoundError("Order not found")
+    order = get_or_404(db, Order, order_id, detail="Order not found")
 
     entries = (
         db.query(OrderStatusHistory)

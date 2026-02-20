@@ -437,10 +437,9 @@ class MenuItemConfigHandler(BaseHandler):
 
         For multi-item configurations, uses ordinal references like "the first one", "the second one".
         """
-        # Handle unrecognized ingredients first (e.g., "We don't carry honey")
-        unrecognized_result = self._question_builder.handle_unrecognized_ingredients(item, order)
-        if unrecognized_result:
-            return unrecognized_result
+        # Build non-interactive note for unrecognized ingredients
+        # (e.g., "Sorry, we don't carry Pepperoni.")
+        unrecognized_note = self._question_builder.build_unrecognized_note(item)
 
         # Handle unavailable selection (early return if applicable)
         unavail_result = self._question_builder.handle_unavailable_selection(item, order, attr)
@@ -478,9 +477,11 @@ class MenuItemConfigHandler(BaseHandler):
                 else:
                     question = prefix + question
 
-        # Prepend inapplicable attribute note before the question
+        # Prepend notes before the question
         if inapplicable_note:
             question = inapplicable_note + " " + question
+        if unrecognized_note:
+            question = unrecognized_note + " " + question
 
         # Set up order state for receiving the answer
         order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr['slug']}")

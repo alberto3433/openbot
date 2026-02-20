@@ -29,7 +29,7 @@ from ..schemas.ingredient_subcategories import (
     IngredientSubcategoryUpdate,
 )
 from .crud_factory import CRUDRouterFactory
-from .crud_helpers import apply_payload_updates, make_list_builder
+from .crud_helpers import apply_payload_updates, check_slug_unique, make_list_builder
 
 
 def _handle_before_create(payload: IngredientSubcategoryCreate, db: Session) -> dict:
@@ -57,12 +57,11 @@ def _handle_before_update(item, payload: IngredientSubcategoryUpdate, db: Sessio
     if payload.slug is not None:
         new_slug = payload.slug.lower().strip()
         if new_slug != item.slug:
-            existing = db.query(IngredientSubcategory).filter(
-                IngredientSubcategory.slug == new_slug,
-                IngredientSubcategory.id != item.id,
-            ).first()
-            if existing:
-                raise ValidationError(f"Subcategory slug '{new_slug}' already exists")
+            check_slug_unique(
+                db, IngredientSubcategory, new_slug,
+                exclude_id=item.id,
+                detail=f"Subcategory slug '{new_slug}' already exists",
+            )
             item.slug = new_slug
 
     # Apply remaining fields

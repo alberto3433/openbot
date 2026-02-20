@@ -85,53 +85,39 @@ class QuestionBuilder:
         qr = build_quick_replies(available) if available else None
         return StateMachineResult(message=question, order=order, quick_replies=qr)
 
-    def handle_unrecognized_ingredients(
-        self, item: "MenuItemTask", order: "OrderTask"
-    ) -> StateMachineResult | None:
-        """Check if item has unrecognized ingredients to notify the user about.
+    def build_unrecognized_note(self, item: "MenuItemTask") -> str | None:
+        """Build a non-interactive note about unrecognized ingredients.
 
-        Pops the first unrecognized ingredient from the list and generates a
-        helpful message suggesting alternatives we carry.
+        Pops ALL unrecognized ingredients from the item and builds a combined
+        note string. This is prepended to the next config question rather than
+        creating a separate interactive step.
 
-        Returns StateMachineResult if an unrecognized ingredient was handled, None otherwise.
+        Args:
+            item: The menu item to check for unrecognized ingredients.
+
+        Returns:
+            A note string like "Sorry, we don't carry Pepperoni." or None.
         """
         if not item.unrecognized_ingredients:
             return None
 
-        # Pop first unrecognized ingredient
-        entry = item.unrecognized_ingredients.pop(0)
-        display_name = entry.get("display_name", entry.get("token", "that"))
-        category = entry.get("modifier_category")
-        alternatives = entry.get("alternatives", [])
+        parts = []
+        while item.unrecognized_ingredients:
+            entry = item.unrecognized_ingredients.pop(0)
+            display_name = entry.get("display_name", entry.get("token", "that"))
+            alternatives = entry.get("alternatives", [])
+            alt_names = [a.get("name", "") for a in alternatives if a.get("name")]
 
-        # Build alternative names list
-        alt_names = [a.get("name", "") for a in alternatives if a.get("name")]
+            if alt_names:
+                alt_str = format_english_list(alt_names, conjunction="or")
+                parts.append(
+                    f"we don't carry {display_name} (we have {alt_str})"
+                )
+            else:
+                parts.append(f"we don't carry {display_name}")
 
-        if alt_names and category:
-            alt_str = format_english_list(alt_names, conjunction="or")
-            question = (
-                f"We don't carry {display_name}, but for {category}s we have "
-                f"{alt_str}. Would you like any of those?"
-            )
-        elif alt_names:
-            alt_str = format_english_list(alt_names, conjunction="or")
-            question = (
-                f"We don't carry {display_name}, but we have "
-                f"{alt_str}. Would you like any of those?"
-            )
-        else:
-            question = f"Sorry, we don't carry {display_name}."
-
-        # Set up pending config so the next response routes back to this item
-        if item.menu_item_type:
-            order.setup_pending_config(item.id, f"{item.menu_item_type}:unrecognized_ingredient")
-
-        # Build quick replies for alternative ingredients
-        from ..handler_utils import build_quick_replies
-        qr_options = alt_names + ["No thanks"] if alt_names else None
-        qr = build_quick_replies(qr_options) if qr_options else None
-
-        return StateMachineResult(message=question, order=order, quick_replies=qr)
+        note = "Sorry, " + "; ".join(parts) + "."
+        return note
 
     def handle_inapplicable_attributes(self, item: "MenuItemTask") -> str | None:
         """Check if item has inapplicable attribute words to notify the user about.

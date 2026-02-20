@@ -51,7 +51,7 @@ from ..schemas.global_attributes import (
 )
 from ..schemas.serializers import serialize_global_attribute_option
 from .admin_global_attributes import admin_global_attributes_router
-from .crud_helpers import get_or_404
+from .crud_helpers import check_slug_unique, get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +96,7 @@ def create_global_attribute_option(
     ingredient = None
     if ingredient_id is not None:
         # Validate provided ingredient_id
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
-        if not ingredient:
-            raise ValidationError(f"Ingredient with id {ingredient_id} not found")
+        ingredient = get_or_404(db, Ingredient, ingredient_id, detail=f"Ingredient with id {ingredient_id} not found")
     elif payload.slug and payload.display_name:
         # Auto-find matching ingredient by name or slug
         ingredient = db.query(Ingredient).filter(
@@ -126,14 +124,11 @@ def create_global_attribute_option(
         db_display_name = payload.display_name
 
     # Check for duplicate slug (using ingredient slug or payload slug)
-    existing = db.query(GlobalAttributeOption).filter(
-        GlobalAttributeOption.global_attribute_id == attr_id,
-        GlobalAttributeOption.slug == effective_slug
-    ).first()
-    if existing:
-        raise ValidationError(
-            f"Option with slug '{effective_slug}' already exists for this attribute"
-        )
+    check_slug_unique(
+        db, GlobalAttributeOption, effective_slug,
+        scope_filters={"global_attribute_id": attr_id},
+        detail=f"Option with slug '{effective_slug}' already exists for this attribute",
+    )
 
     # Also check for duplicate ingredient link
     if ingredient_id:
@@ -249,11 +244,7 @@ def update_global_attribute_option(
     if "ingredient_id" in payload.model_fields_set:
         if payload.ingredient_id is not None:
             # Validate ingredient exists
-            ingredient = db.query(Ingredient).filter(Ingredient.id == payload.ingredient_id).first()
-            if not ingredient:
-                raise ValidationError(
-                    f"Ingredient with id {payload.ingredient_id} not found"
-                )
+            ingredient = get_or_404(db, Ingredient, payload.ingredient_id, detail=f"Ingredient with id {payload.ingredient_id} not found")
             # Ingredient-linked: NULL out slug/display_name (derived at read time)
             option.slug = None
             option.display_name = None

@@ -10,64 +10,38 @@ import logging
 from typing import Literal
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import singularize, contains_word_or_singular
+from orderbot.cache.base import contains_word_or_singular
 
 from ...schemas import OpenInputResponse, Selection
 
-from ..constants import (
-    CANCEL_LAST_ITEM,
-    CANCEL_ALL_ITEMS,
-    REDUCE_TO_ONE,
-    make_last_n_sentinel,
-    make_reduce_to_one_sentinel,
-)
-from ..quantity_utils import QTY_WORDS_RE, BASIC_WORD_TO_NUM
+from ..quantity_utils import QTY_WORDS_RE, parse_make_it_n_quantity
 from ..intent_patterns import (
     strip_conversational_fillers,
-    MAKE_IT_N_PATTERN,
-    REDUCE_TO_ONE_PATTERN,
     REPLACE_ITEM_PATTERN,
-    CANCEL_ITEM_PATTERN,
-    MORE_OF_SAME_PATTERN,
     MAKE_IT_N_WITH_ITEM_PATTERN,
 )
 from .pipeline import get_pipeline
 from .result_types import ParserContext, TextSpan
-from ..quantity_utils import extract_make_it_n_target, parse_make_it_n_quantity
 from .item_parsing import (
     build_parsed_item,
     _parse_configurable_item,
     _parse_split_quantity_items,
 )
 from .simple_item_parsing import _parse_simple_item_deterministic
-from .by_pound_parsing import _parse_by_pound_order
-from .inquiry import (
-    parse_attribute_inquiry,
-    parse_price_inquiry,
-    parse_menu_query,
-    parse_recommendation_inquiry,
-    parse_store_info_inquiry,
-    parse_item_description_inquiry,
-    parse_modifier_inquiry,
-    parse_more_menu_items,
-    parse_ingredient_search,
-    parse_dietary_inquiry,
-    parse_signature_menu_inquiry,
-)
 from .modification_parsing import (
     _extract_menu_item_modifications,
     _parse_modify_existing_item,
-    _parse_add_modifier_to_item,
     _extract_menu_item_from_text,
-    _parse_add_more_request,
 )
 from .tokenization import _parse_multi_item_order
 from .inline_spec_parsing import _is_inline_attribute_spec_pattern
 from .extraction import _detect_inapplicable_modifiers, _detect_inapplicable_attributes
-from ...config_flow_utils import LAST_ITEM_PRONOUNS_EXTENDED
 from .meta_parsing import _is_only_filler, _try_parse_greeting_or_meta
 from .order_type_parsing import _extract_order_type, _strip_order_type_phrase, _add_order_type_to_response
 from .another_item_parsing import _try_parse_another_item
+from .inquiry_dispatch import _try_parse_inquiry
+from .quantity_change_parsing import _try_parse_quantity_change
+from .cancellation_parsing import _try_parse_cancellation
 
 logger = logging.getLogger(__name__)
 
@@ -148,171 +122,6 @@ def _filter_duplicate_modifications(
 # =============================================================================
 
 
-def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | None:
-    """Check for all inquiry types: price, dietary, menu, store, modifier, ingredient, etc.
-
-    Also handles add-modifier patterns, more-of-same, and by-the-pound orders since
-    they must be checked in specific order relative to inquiry parsers.
-
-    Args:
-        text: Cleaned user input text.
-        ctx: Parser context with modifier/ingredient keyword mappings.
-
-    Returns:
-        OpenInputResponse if matched, None otherwise.
-    """
-    # Check for price inquiries
-    price_result = parse_price_inquiry(text)
-    if price_result:
-        return price_result
-
-    # Check for add-modifier patterns ("add bacon", "extra cheese", "more cheese")
-    # This MUST run BEFORE parse_more_menu_items() because "more cheese" would otherwise
-    # be caught by the "^more\b" pattern in MORE_MENU_ITEMS_PATTERNS
-    add_modifier_result = _parse_add_modifier_to_item(text)
-    if add_modifier_result:
-        return add_modifier_result
-
-    # Check for "more [item reference]" BEFORE parse_more_menu_items()
-    # This catches "more chips" style requests that should duplicate cart items
-    # rather than being treated as menu inquiry ("show me more options")
-    more_of_same_match = MORE_OF_SAME_PATTERN.match(text)
-    if more_of_same_match:
-        item_ref = more_of_same_match.group(1).strip().lower()
-        # Exclude menu inquiry words - these should fall through to parse_more_menu_items
-        menu_inquiry_words = {
-            "options", "items", "please", "of those", "of them", "of that",
-            "choices", "things", "stuff", "menu", "food",
-        }
-        if item_ref not in menu_inquiry_words:
-            logger.info("Deterministic parse: 'more %s' -> duplicate_by_reference", item_ref)
-            return OpenInputResponse(duplicate_by_reference=item_ref)
-
-    # Check for specials/signature menu inquiries BEFORE recommendation
-    # "do you have any specials today?" must match as signature menu, not recommendation
-    signature_result = parse_signature_menu_inquiry(text)
-    if signature_result:
-        return signature_result
-
-    # Check for recommendation questions BEFORE "show more" menu requests
-    # "what else do you think I should get?" must not be caught by MORE_MENU_ITEMS_PATTERNS
-    recommendation_result = parse_recommendation_inquiry(text)
-    if recommendation_result:
-        return recommendation_result
-
-    # Check for "show more" menu requests BEFORE menu queries
-    # "what other pastries do you have?" should be pagination, not a new query
-    more_items_result = parse_more_menu_items(text)
-    if more_items_result:
-        return more_items_result
-
-    # Check for attribute option inquiries ("what bagel types do you have?")
-    # Must run BEFORE parse_menu_query to prevent "bagel types" being treated as menu category
-    attribute_inquiry_result = parse_attribute_inquiry(text)
-    if attribute_inquiry_result:
-        return attribute_inquiry_result
-
-    # Check for dietary/allergen/availability/customization inquiries
-    # Must run BEFORE parse_menu_query since "do you have vegan sandwiches?" is a
-    # dietary+category query that should be handled specially, not as a generic menu query
-    dietary_result = parse_dietary_inquiry(text)
-    if dietary_result:
-        return dietary_result
-
-    # Check for ingredient-based menu search BEFORE menu query
-    # "what menu items do you have with egg whites?" should find items containing
-    # that ingredient, not be treated as a generic menu category query
-    ingredient_search_result = parse_ingredient_search(text, ctx.ingredient_to_items)
-    if ingredient_search_result:
-        return ingredient_search_result
-
-    # Check for menu category queries ("what sweets do you have?", "what desserts do you have?")
-    menu_query_result = parse_menu_query(text)
-    if menu_query_result:
-        return menu_query_result
-
-    # Check for store info inquiries
-    store_info_result = parse_store_info_inquiry(text)
-    if store_info_result:
-        return store_info_result
-
-    # Check for item description inquiries
-    item_desc_result = parse_item_description_inquiry(text)
-    if item_desc_result:
-        return item_desc_result
-
-    # Check for modifier/add-on inquiries
-    modifier_inquiry_result = parse_modifier_inquiry(
-        text, ctx.modifier_category_keywords, ctx.modifier_item_keywords
-    )
-    if modifier_inquiry_result:
-        return modifier_inquiry_result
-
-    # Check for by-the-pound orders EARLY
-    # Must be checked BEFORE spread/salad sandwich matching to prevent
-    # "half a pound of whitefish salad" from matching "Whitefish Salad Sandwich"
-    by_pound_result = _parse_by_pound_order(text)
-    if by_pound_result:
-        return by_pound_result
-
-    return None
-
-
-def _try_parse_quantity_change(text: str) -> OpenInputResponse | None:
-    """Check for make-it-N and reduce-to-one patterns.
-
-    Args:
-        text: Cleaned user input text.
-
-    Returns:
-        OpenInputResponse if matched, None otherwise.
-    """
-    # Check for "make it 2" patterns BEFORE replacement (since "make it X" could match both)
-    make_it_n_match = MAKE_IT_N_PATTERN.match(text)
-    if make_it_n_match:
-        target_qty = extract_make_it_n_target(make_it_n_match)
-        if target_qty is not None:
-            # User says "make it 2" means they want 2 total, so add (target - 1) more
-            additional = target_qty - 1
-            logger.info(
-                "Deterministic parse: 'make it N' detected, target=%d, adding %d more",
-                target_qty, additional,
-            )
-            return OpenInputResponse(duplicate_last_item=additional)
-
-    # Check for "just one" / "only one" patterns - reduces quantity to 1
-    # e.g., "actually just one bagel", "only one", "just one"
-    reduce_to_one_match = REDUCE_TO_ONE_PATTERN.match(text)
-    if reduce_to_one_match:
-        # Extract item type if specified (any of the capture groups)
-        item_type = None
-        all_item_type_slugs = menu_cache.get_configurable_item_types()
-        for i in range(1, 6):  # Check all capture groups
-            if reduce_to_one_match.group(i):
-                item_type = reduce_to_one_match.group(i).lower()
-                # Normalize plurals using data-driven approach:
-                # Check if the word matches an item type, if not try singular form
-                if item_type not in all_item_type_slugs:
-                    singular = singularize(item_type)
-                    if singular in all_item_type_slugs:
-                        item_type = singular
-                break
-
-        # Return special cancel_item value to signal quantity reduction
-        if item_type:
-            cancel_value = make_reduce_to_one_sentinel(item_type)
-        else:
-            cancel_value = REDUCE_TO_ONE
-
-        logger.info(
-            "Deterministic parse: 'just/only one' detected, reducing to 1 (item_type=%s)",
-            item_type or "any",
-        )
-        return OpenInputResponse(cancel_item=cancel_value)
-
-    return None
-
-
 def _try_parse_modification(text: str) -> OpenInputResponse | None:
     """Check for modify-existing-item and replacement phrases.
 
@@ -344,93 +153,6 @@ def _try_parse_modification(text: str) -> OpenInputResponse | None:
             return OpenInputResponse(replace_last_item=True)
 
     return None
-
-
-def _try_parse_cancellation(text: str) -> OpenInputResponse | None:
-    """Check for cancel all/last/N items and 'add more' patterns.
-
-    Args:
-        text: Cleaned user input text.
-
-    Returns:
-        OpenInputResponse if matched, None otherwise.
-    """
-    # Check for cancellation phrases
-    cancel_match = CANCEL_ITEM_PATTERN.match(text)
-    if cancel_match:
-        cancel_item = None
-        # Check all capture groups dynamically (pattern may have varying number of groups)
-        for i in range(1, CANCEL_ITEM_PATTERN.groups + 1):
-            if cancel_match.group(i):
-                cancel_item = cancel_match.group(i)
-                break
-        if cancel_item:
-            cancel_item = cancel_item.strip()
-            # Handle "all" / "everything" to clear entire order
-            all_items_phrases = {
-                "all", "everything", "all of it", "the order", "my order",
-                "the whole order", "my whole order", "all items", "all the items",
-                "the whole thing", "it all", "them all",
-                # Without "the" prefix (pattern strips "the")
-                "order", "whole order", "whole thing",
-                # Cart-based phrases
-                "cart", "the cart", "my cart",
-            }
-            if cancel_item.lower() in all_items_phrases:
-                logger.info("Deterministic parse: cancel ALL items detected (phrase='%s')", cancel_item)
-                return OpenInputResponse(cancel_item=CANCEL_ALL_ITEMS)
-            if cancel_item.lower() in LAST_ITEM_PRONOUNS_EXTENDED:
-                logger.info("Deterministic parse: cancellation of last item detected (pronoun='%s')", cancel_item)
-                return OpenInputResponse(cancel_item=CANCEL_LAST_ITEM)
-
-            # Handle "last N" or "last N items" - remove the last N items from cart
-            last_n_match = re.match(
-                rf"^last\s+(\d+|{QTY_WORDS_RE})"
-                r"(?:\s+(?:items?|ones?))?$",
-                cancel_item.lower()
-            )
-            if last_n_match:
-                count = _parse_quantity_count(last_n_match.group(1))
-                if count >= 1:
-                    logger.info("Deterministic parse: remove last %d items detected", count)
-                    return OpenInputResponse(cancel_item=make_last_n_sentinel(count))
-
-            # Handle "N" or "N more" or "N items" - remove N items from the end
-            # e.g., "remove 2", "remove 2 more", "remove two items"
-            just_n_match = re.match(
-                rf"^(\d+|{QTY_WORDS_RE})"
-                r"(?:\s+(?:more|items?|ones?))?$",
-                cancel_item.lower()
-            )
-            if just_n_match:
-                count = _parse_quantity_count(just_n_match.group(1))
-                if count >= 1:
-                    logger.info("Deterministic parse: remove %d items detected", count)
-                    return OpenInputResponse(cancel_item=make_last_n_sentinel(count))
-
-            logger.info("Deterministic parse: cancellation detected, item='%s'", cancel_item)
-            return OpenInputResponse(cancel_item=cancel_item)
-
-    # Check for "add more" requests (add a third, add another, etc.)
-    add_more_result = _parse_add_more_request(text)
-    if add_more_result:
-        return add_more_result
-
-    return None
-
-
-def _parse_quantity_count(num_str: str) -> int:
-    """Convert a digit string or number word to an integer count.
-
-    Args:
-        num_str: A digit string ("2") or number word ("two").
-
-    Returns:
-        The integer count, or 0 if unrecognized.
-    """
-    if num_str.isdigit():
-        return int(num_str)
-    return BASIC_WORD_TO_NUM.get(num_str.lower(), 0)
 
 
 def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:

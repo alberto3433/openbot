@@ -12,6 +12,7 @@ Environment variables:
 """
 
 import logging
+import time
 from typing import Any
 
 from .config import STRIPE_SECRET_KEY, STRIPE_CHECKOUT_EXPIRY_SECONDS, BASE_URL
@@ -92,6 +93,8 @@ def create_checkout_session(
         })
 
     try:
+        expires_at = int(time.time()) + STRIPE_CHECKOUT_EXPIRY_SECONDS
+
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=stripe_line_items,
@@ -99,7 +102,7 @@ def create_checkout_session(
             success_url=success_url,
             cancel_url=cancel_url,
             metadata={"order_id": str(order_id)},
-            expires_after={"seconds": STRIPE_CHECKOUT_EXPIRY_SECONDS},
+            expires_at=expires_at,
         )
 
         logger.info(
@@ -112,7 +115,7 @@ def create_checkout_session(
             "url": session.url,
         }
 
-    except (ConnectionError, TimeoutError, ValueError, KeyError) as e:
+    except Exception as e:
         logger.error("Failed to create Stripe checkout session for order #%d: %s", order_id, e)
         return None
 
@@ -145,6 +148,6 @@ def get_checkout_session(session_id: str) -> dict[str, Any] | None:
             "metadata": dict(session.metadata) if session.metadata else {},
             "status": session.status,
         }
-    except (ConnectionError, TimeoutError, ValueError, KeyError) as e:
+    except Exception as e:
         logger.error("Failed to retrieve Stripe session %s: %s", session_id, e)
         return None

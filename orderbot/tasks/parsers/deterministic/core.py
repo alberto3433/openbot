@@ -35,7 +35,7 @@ from .modification_parsing import (
 )
 from .tokenization import _parse_multi_item_order
 from .inline_spec_parsing import _is_inline_attribute_spec_pattern
-from .extraction import _detect_inapplicable_modifiers, _detect_inapplicable_attributes
+from .extraction import _detect_inapplicable_attributes
 from .meta_parsing import _is_only_filler, _try_parse_greeting_or_meta
 from .order_type_parsing import _extract_order_type, _strip_order_type_phrase, _add_order_type_to_response
 from .another_item_parsing import _try_parse_another_item
@@ -215,10 +215,6 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
     for rem in modifications.get("removals", []):
         mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
 
-    # Detect inapplicable modifiers: globally known ingredients the user tried to add
-    # that aren't valid for this item type (e.g., "hazelnut syrup" on Deviled Eggs)
-    unrecognized = _detect_inapplicable_modifiers(text_lower) if not mod_list else []
-
     # Detect inapplicable attribute words: known attribute options (e.g., "small")
     # that don't apply to this item type (e.g., sandwich has no size attribute)
     inapplicable_attrs = _detect_inapplicable_attributes(
@@ -233,7 +229,6 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
             original_text=text,
             attr_result=attr_result,
             modifiers=mod_list,
-            unrecognized_ingredients=unrecognized,
             inapplicable_attributes=inapplicable_attrs,
         )
         for _ in range(qty)

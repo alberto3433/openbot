@@ -459,6 +459,12 @@ class MenuInquiryHandler(BaseHandler):
         if has_more:
             qr.append({"label": f"{remaining} more", "value": "what else?"})
 
+        # Store shown items so vague replies ("I'll take some") route through
+        # handle_item_selection instead of being parsed as a new item search.
+        batch_items = items[:DEFAULT_PAGINATION_SIZE]
+        order.pending_item_options = batch_items
+        order.pending_field = PendingField.ITEM_SELECTION
+
         return StateMachineResult(
             message=f"Our {type_display} include: {items_str}. Would you like any of these?",
             order=order,

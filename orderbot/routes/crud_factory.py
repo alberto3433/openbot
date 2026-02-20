@@ -56,6 +56,21 @@ ResponseSchemaType = TypeVar("ResponseSchemaType", bound=BaseModel)
 ListResponseType = TypeVar("ListResponseType", bound=BaseModel)
 
 
+def reorder_routes_static_first(router: APIRouter) -> None:
+    """Move static-path routes before parameterized routes to prevent shadowing.
+
+    FastAPI matches routes in registration order. If a parameterized route like
+    GET /{id} is registered before a static route like GET /units, the
+    parameterized route matches first, causing 422 errors when the path segment
+    can't be parsed as the expected type (e.g., int).
+
+    Call this after adding custom static-path endpoints to a factory router.
+    """
+    static = [r for r in router.routes if not (hasattr(r, 'path') and '{' in r.path)]
+    param = [r for r in router.routes if hasattr(r, 'path') and '{' in r.path]
+    router.routes[:] = static + param
+
+
 def _set_id_param_signature(handler: Callable, id_param_name: str) -> None:
     """Replace **path_params with an explicit int path parameter in a handler's signature.
 

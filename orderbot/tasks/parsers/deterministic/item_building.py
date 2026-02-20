@@ -27,7 +27,6 @@ def build_parsed_item(
     attribute_values: dict | None = None,
     attr_result: AttributeExtractionResult | None = None,
     modifiers: list[Selection] | None = None,
-    unrecognized_ingredients: list[dict] | None = None,
     inapplicable_attributes: list[dict] | None = None,
 ) -> ParsedItemEntry:
     """
@@ -154,6 +153,5 @@ def build_parsed_item(
         unmatched_selections=unmatched_selections,
         ambiguous_selections=ambiguous_selections,
         special_instructions=special_instructions or [],
-        unrecognized_ingredients=unrecognized_ingredients or [],
         inapplicable_attributes=inapplicable_attributes or [],
     )

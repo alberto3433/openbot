@@ -170,6 +170,10 @@ class AttributeUpchargeCalculator:
                     option_category = self._pricing._get_option_ingredient_category(
                         item_type, attr_slug, item_val
                     )
+                    # Fall back to the modifier's stored ingredient_category when
+                    # the option isn't linked to an ingredient in the DB
+                    if not option_category and matching_modifier:
+                        option_category = matching_modifier.get("ingredient_category")
                     if option_category and option_category in included_categories:
                         if base_quantity == 0:
                             # Default ingredient, not user-modified → entirely free
@@ -245,6 +249,10 @@ class AttributeUpchargeCalculator:
             option_category = self._pricing._get_option_ingredient_category(
                 item_type, attr_slug, attr_value
             )
+            # Fall back to the modifier's stored ingredient_category when
+            # the option isn't linked to an ingredient in the DB
+            if not option_category and matching_modifier:
+                option_category = matching_modifier.get("ingredient_category")
             if option_category and option_category in included_categories:
                 priced_slugs.add(attr_value_normalized)
                 if matching_modifier:

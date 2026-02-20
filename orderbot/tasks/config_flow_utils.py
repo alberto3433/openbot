@@ -48,6 +48,66 @@ def get_handler_pricing(handler: object) -> object | None:
     return th.pricing if th else None
 
 
+def build_qr_for_pending_field(
+    order: OrderTask,
+    question: str,
+) -> list[dict[str, str]] | None:
+    """Build quick replies for the current pending config field.
+
+    Looks up attribute options from the menu cache and produces QR entries
+    the frontend can use for inline linkification.
+    """
+    from .models.utilities import parse_pending_field
+    from .utils.text import extract_question_phrase
+    from orderbot.cache.base import pluralize
+
+    item_type, attr_slug = parse_pending_field(order.pending_field)
+    if not item_type or not attr_slug:
+        return None
+
+    try:
+        attrs = menu_cache.get_item_type_attributes(item_type)
+    except Exception:
+        logger.warning(
+            "Failed to load attributes for item_type=%s, attr_slug=%s",
+            item_type, attr_slug, exc_info=True,
+        )
+        return None
+
+    attr = attrs.get(attr_slug)
+    if not attr:
+        return None
+
+    input_type = attr.get("input_type", "single_select")
+    if input_type == "boolean":
+        return [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
+
+    if input_type in ("single_select", "multi_select"):
+        options = attr.get("options", [])
+        available = [o for o in options if o.get("is_available", True)]
+        if len(available) == 1 and attr.get("allow_none", False):
+            return [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
+        qr = [{"label": o["display_name"], "value": o["display_name"]} for o in available]
+
+        # If no QR label appears in the question text, replace with a single
+        # linkable phrase so the frontend can linkify it inline
+        if qr:
+            question_lower = question.lower()
+            has_match = any(e["label"].lower() in question_lower for e in qr)
+            if not has_match:
+                trigger = extract_question_phrase(question)
+                if trigger and trigger.lower() in question_lower:
+                    qr = [{"label": trigger, "value": f"What {pluralize(trigger.lower())} do you have?"}]
+                else:
+                    display = attr.get("display_name") or attr["slug"]
+                    if display.lower() in question_lower:
+                        qr = [{"label": display, "value": f"What {pluralize(display.lower())} do you have?"}]
+
+        return qr
+
+    return None
+
+
 def continue_config_with_message(
     config_helper_handler: "ConfigHelperHandler",
     checkout_utils_handler: "CheckoutUtilsHandler",
@@ -58,7 +118,10 @@ def continue_config_with_message(
     """Return message + next config question, or proceed if item complete."""
     current_question = config_helper_handler.get_current_config_question(order, item)
     if current_question:
-        return StateMachineResult(message=f"{message} {current_question}", order=order)
+        qr = build_qr_for_pending_field(order, current_question)
+        return StateMachineResult(
+            message=f"{message} {current_question}", order=order, quick_replies=qr,
+        )
     return checkout_utils_handler.get_next_question(order)
 
 

@@ -140,10 +140,6 @@ class ParsedItemEntry(BaseModel):
     # Item-level special instructions (e.g., "room for cream", "extra hot")
     special_instructions: list[str] = Field(default_factory=list)
 
-    # Unrecognized ingredients detected in input (e.g., "honey")
-    # List of {token, display_name, modifier_category, alternatives: [{name, slug}]}
-    unrecognized_ingredients: list[dict] = Field(default_factory=list)
-
     # Attribute option words detected in input that don't apply to this item type
     # e.g., "small" on an item without size options → [{word: "small", attribute_slug: "size"}]
     inapplicable_attributes: list[dict] = Field(default_factory=list)

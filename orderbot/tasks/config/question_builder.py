@@ -85,40 +85,6 @@ class QuestionBuilder:
         qr = build_quick_replies(available) if available else None
         return StateMachineResult(message=question, order=order, quick_replies=qr)
 
-    def build_unrecognized_note(self, item: "MenuItemTask") -> str | None:
-        """Build a non-interactive note about unrecognized ingredients.
-
-        Pops ALL unrecognized ingredients from the item and builds a combined
-        note string. This is prepended to the next config question rather than
-        creating a separate interactive step.
-
-        Args:
-            item: The menu item to check for unrecognized ingredients.
-
-        Returns:
-            A note string like "Sorry, we don't carry Pepperoni." or None.
-        """
-        if not item.unrecognized_ingredients:
-            return None
-
-        parts = []
-        while item.unrecognized_ingredients:
-            entry = item.unrecognized_ingredients.pop(0)
-            display_name = entry.get("display_name", entry.get("token", "that"))
-            alternatives = entry.get("alternatives", [])
-            alt_names = [a.get("name", "") for a in alternatives if a.get("name")]
-
-            if alt_names:
-                alt_str = format_english_list(alt_names, conjunction="or")
-                parts.append(
-                    f"we don't carry {display_name} (we have {alt_str})"
-                )
-            else:
-                parts.append(f"we don't carry {display_name}")
-
-        note = "Sorry, " + "; ".join(parts) + "."
-        return note
-
     def handle_inapplicable_attributes(self, item: "MenuItemTask") -> str | None:
         """Check if item has inapplicable attribute words to notify the user about.
 

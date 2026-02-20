@@ -47,7 +47,7 @@ from ..schemas.menu_item_sizes import (
     SizeList,
 )
 from ..services.store_service import get_or_create_company
-from .crud_factory import CRUDRouterFactory
+from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
 from .crud_helpers import apply_payload_updates, check_slug_unique, make_list_builder
 
 
@@ -211,6 +211,11 @@ def list_size_categories_with_sizes(
         ))
 
     return result
+
+
+# Fix route ordering: static GET paths (/with-sizes) must be matched
+# before the factory's GET /{category_id} to prevent 422 errors.
+reorder_routes_static_first(admin_size_categories_router)
 
 
 # =============================================================================

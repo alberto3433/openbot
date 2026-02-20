@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, TaskStatus
 from .schemas import StateMachineResult, OrderPhase, Selection, ParsedItemEntry
-from .parsers.selection_patterns import SELECTION_PATTERNS
+from .utils import OptionMatcher
 from .utils.text import format_numbered_list, normalize_text
 from .checkout_messages import got_it_anything_else, ErrorMessages
 from .pending_fields import PendingField
@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from .taking_items_handler import TakingItemsHandler
 
 logger = logging.getLogger(__name__)
+
+_option_matcher = OptionMatcher()
 
 
 class ConfigSelectionHandler:
@@ -191,6 +193,16 @@ class ConfigSelectionHandler:
         options = order.pending_item_options
         quantity = order.pending_item_quantity or 1
 
+        # Allow user to decline the selection (e.g., "no thanks" after menu inquiry)
+        from .response_utils import is_negative
+        if is_negative(user_lower):
+            order.pending_item_options = []
+            order.clear_pending()
+            return StateMachineResult(
+                message="No problem! What else can I get for you?",
+                order=order,
+            )
+
         # Reject negative numbers or other invalid input early
         if user_lower.startswith('-') or user_lower.startswith('\u2212'):
             options_str = format_numbered_list(options)
@@ -201,41 +213,13 @@ class ConfigSelectionHandler:
                 quick_replies=qr,
             )
 
-        # Try to match by number (1, 2, 3, "first", "second", etc.)
-        # Uses shared SELECTION_PATTERNS from constants (sorted by length descending)
-        selected_item = None
-
-        # Check for number/ordinal selection (longer patterns first)
-        for key, idx in SELECTION_PATTERNS:
-            if key in user_lower:
-                if idx < len(options):
-                    selected_item = options[idx]
-                    break
-                else:
-                    # User selected a number that's out of range - ask again
-                    logger.info("ITEM SELECTION: User selected %s but only %d options available", key, len(options))
-                    options_str = format_numbered_list(options)
-                    qr = [{"label": o.get("name", ""), "value": o.get("name", "")} for o in options if o.get("name")]
-                    return StateMachineResult(
-                        message=f"I only have {min(len(options), 6)} options. Please choose:\n{options_str}",
-                        order=order,
-                        quick_replies=qr,
-                    )
-
-        # If not found by number, try to match by name
-        if not selected_item:
-            for option in options:
-                option_name = option.get("name", "").lower()
-                # Check if the option name is in user input or vice versa
-                # Require minimum length to avoid false matches
-                if len(user_lower) >= 3 and (option_name in user_lower or user_lower in option_name):
-                    selected_item = option
-                    break
-                # Also try matching individual words
-                for word in user_lower.split():
-                    if len(word) >= 3 and word in option_name:
-                        selected_item = option
-                        break
+        # Use unified matcher: exact match first, then ordinals, then aliases,
+        # then substring (option name in input). Avoids the old bug where naive
+        # substring matching picked the first partial hit (e.g., "Chai Tea" before
+        # "Iced Chai Tea").
+        selected_item = _option_matcher.match_from_numbered_list(
+            user_input, options, name_key="name", slug_key="slug"
+        )
 
         if not selected_item:
             # Couldn't determine which one - ask again

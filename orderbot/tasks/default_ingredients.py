@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 def populate_default_ingredients(
     item: "MenuItemTask",
-    exclude_slugs: set[str] | None = None,
 ) -> None:
     """Load default ingredients for a menu item and populate as selections.
 
@@ -36,8 +35,6 @@ def populate_default_ingredients(
 
     Args:
         item: The MenuItemTask to populate with default ingredients.
-        exclude_slugs: Optional set of ingredient slugs (lowercase) to skip.
-            Used to prevent adding unrecognized ingredients as defaults.
     """
     if not item.menu_item_id or not item.menu_item_type:
         return
@@ -56,14 +53,6 @@ def populate_default_ingredients(
     )
 
     for default in defaults:
-        # Skip excluded ingredients (e.g., unrecognized ones)
-        if exclude_slugs and default["ingredient_slug"].lower() in exclude_slugs:
-            logger.info(
-                "Skipping excluded default ingredient: %s",
-                default["ingredient_name"],
-            )
-            continue
-
         # Map ingredient category to attribute slug
         attr_slug = menu_cache.get_attribute_for_ingredient_category(
             item.menu_item_type,

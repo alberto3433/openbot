@@ -10,7 +10,6 @@ separation of concerns and testability.
 """
 
 import logging
-import re
 from typing import TYPE_CHECKING, Callable
 
 from orderbot.cache import menu_cache
@@ -138,7 +137,6 @@ class ItemBuilder:
         self,
         item: MenuItemTask,
         ctx: ItemBuildContext,
-        exclude_slugs: set[str] | None = None,
     ) -> None:
         """Populate default ingredients for the item.
 
@@ -148,10 +146,9 @@ class ItemBuilder:
         Args:
             item: The menu item to populate.
             ctx: The build context.
-            exclude_slugs: Optional set of ingredient slugs to skip.
         """
         if ctx.menu_item_id:
-            populate_default_ingredients(item, exclude_slugs=exclude_slugs)
+            populate_default_ingredients(item)
 
     def apply_variant_defaults(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
         """Auto-populate variant selection for items with weight-based pricing.
@@ -260,45 +257,6 @@ class ItemBuilder:
         if ctx.special_instructions:
             item.special_instructions = list(ctx.special_instructions)
 
-    def set_unrecognized_ingredients(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
-        """Set unrecognized ingredient suggestions for the item.
-
-        Args:
-            item: The menu item to configure.
-            ctx: The build context.
-        """
-        if ctx.unrecognized_ingredients:
-            item.unrecognized_ingredients = list(ctx.unrecognized_ingredients)
-
-    def clean_item_name(self, item: MenuItemTask) -> None:
-        """Strip 'with {unrecognized_ingredient}' from item name.
-
-        Prevents infer_attributes from re-inferring removed ingredients
-        from the item name (e.g., "The Pizza BEC with Pepperoni" -> "The Pizza BEC").
-
-        Args:
-            item: The menu item whose name to clean.
-        """
-        if not item.unrecognized_ingredients:
-            return
-        name = item.menu_item_name
-        for entry in item.unrecognized_ingredients:
-            token = entry.get("token", "")
-            display = entry.get("display_name", "")
-            for term in (token, display):
-                if not term:
-                    continue
-                # Strip "with <term>" (case-insensitive)
-                pattern = rf'\s+with\s+{re.escape(term)}'
-                name = re.sub(pattern, '', name, flags=re.IGNORECASE)
-        cleaned = name.strip()
-        if cleaned != item.menu_item_name:
-            logger.info(
-                "Cleaned item name: '%s' -> '%s'",
-                item.menu_item_name, cleaned,
-            )
-            item.menu_item_name = cleaned
-
     def set_inapplicable_attributes(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
         """Set inapplicable attribute words for the item.
 
@@ -354,28 +312,6 @@ class ItemBuilder:
         else:
             item.mark_complete()
 
-    @staticmethod
-    def _get_unrecognized_slugs(item: MenuItemTask) -> set[str] | None:
-        """Build a set of slugs from unrecognized ingredients for exclusion.
-
-        Args:
-            item: The menu item with unrecognized ingredients set.
-
-        Returns:
-            Set of lowercase token strings, or None if no unrecognized ingredients.
-        """
-        if not item.unrecognized_ingredients:
-            return None
-        slugs = set()
-        for entry in item.unrecognized_ingredients:
-            token = entry.get("token", "")
-            if token:
-                slugs.add(token.lower())
-            display = entry.get("display_name", "")
-            if display:
-                slugs.add(display.lower())
-        return slugs or None
-
     def build_single_item(
         self,
         ctx: ItemBuildContext,
@@ -395,50 +331,43 @@ class ItemBuilder:
         # Step 1: Create the item
         item = self.create_item(ctx, item_quantity)
 
-        # Step 2: Set unrecognized ingredients (before defaults so we can exclude them)
-        self.set_unrecognized_ingredients(item, ctx)
+        # Step 2: Populate defaults
+        self.populate_defaults(item, ctx)
 
-        # Step 3: Clean item name (strip "with {unrecognized}" to prevent re-inference)
-        self.clean_item_name(item)
-
-        # Step 4: Populate defaults (skip unrecognized ingredients)
-        exclude_slugs = self._get_unrecognized_slugs(item)
-        self.populate_defaults(item, ctx, exclude_slugs=exclude_slugs)
-
-        # Step 5: Apply variant defaults (weight-based pricing)
+        # Step 3: Apply variant defaults (weight-based pricing)
         self.apply_variant_defaults(item, ctx)
 
-        # Step 6: Apply pre-filled attributes
+        # Step 4: Apply pre-filled attributes
         self.apply_pre_filled_attributes(item, ctx)
 
-        # Step 7: Apply extracted selections
+        # Step 5: Apply extracted selections
         self.apply_extracted_selections(item, ctx)
 
-        # Step 8: Apply pending ingredient (first item only)
+        # Step 6: Apply pending ingredient (first item only)
         self.apply_pending_ingredient(item, ctx, is_first_item)
 
-        # Step 9: Set unavailable selections
+        # Step 7: Set unavailable selections
         self.set_unavailable_selections(item, ctx)
 
-        # Step 10: Set unmatched selections
+        # Step 8: Set unmatched selections
         self.set_unmatched_selections(item, ctx)
 
-        # Step 11: Set ambiguous selections
+        # Step 9: Set ambiguous selections
         self.set_ambiguous_selections(item, ctx)
 
-        # Step 12: Set special instructions
+        # Step 10: Set special instructions
         self.set_special_instructions(item, ctx)
 
-        # Step 13: Set inapplicable attributes
+        # Step 11: Set inapplicable attributes
         self.set_inapplicable_attributes(item, ctx)
 
-        # Step 14: Infer attributes from item name
+        # Step 12: Infer attributes from item name
         self.infer_attributes(item)
 
-        # Step 15: Recalculate price
+        # Step 13: Recalculate price
         self.recalculate_price(item)
 
-        # Step 16: Set status
+        # Step 14: Set status
         self.set_status(item, ctx.needs_configuration)
 
         return item

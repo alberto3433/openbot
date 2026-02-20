@@ -57,7 +57,7 @@ ADD_MODIFIER_MIDDLE_PATTERN = re.compile(
     r"|(?:put|throw)\s+(?:some\s+)?(.+?)\s+on\s+(?:that|it|this|there)"
     r"|(?:can|could)\s+(?:you\s+)?(?:put|throw)\s+(?:some\s+)?(.+?)\s+on\s+(?:that|it|this|there)"
     r"|(?:can|could)\s+i\s+(?:get|have)\s+(.+?)\s+on\s+(?:that|it|this|there)"
-    r")(?:\s+(?:please|thanks|thank\s+you))?[\s?!.,]*$",
+    r")(?:\s+(?:too|also|as\s+well|please|thanks|thank\s+you))*[\s?!.,]*$",
     re.IGNORECASE
 )
 
@@ -75,7 +75,7 @@ DESIRE_MODIFIER_PATTERN = re.compile(
     r"|i'?ll\s+(?:have|take|get)\s+"
     r")"
     r"(.+?)"
-    r"(?:\s+(?:please|thanks|thank\s+you))?$",
+    r"(?:\s+(?:too|also|as\s+well|please|thanks|thank\s+you))*$",
     re.IGNORECASE,
 )
 
@@ -240,9 +240,9 @@ class ModifierAdditionHandler:
         match = ADD_MODIFIER_PATTERN.match(user_lower)
         if match:
             modifier_text = user_lower[match.end():].strip()
-            modifier_text = re.sub(r"\s*(please|thanks|thank you)$", "", modifier_text).strip()
+            modifier_text = re.sub(r"\s*(?:too|also|as\s+well|please|thanks|thank you)$", "", modifier_text).strip()
             modifier_text = re.sub(
-                r"\s+(?:to|on|for)\s+(?:that|it|this|there)$",
+                r"\s+(?:to|on|for)\s+(?:that|it|this|there)(?:\s+(?:too|also|as\s+well))?$",
                 "",
                 modifier_text,
             ).strip()
@@ -664,54 +664,5 @@ class ModifierAdditionHandler:
         question: str,
     ) -> list[dict[str, str]] | None:
         """Build quick replies from the current pending field's attribute options."""
-        from .models.utilities import parse_pending_field
-
-        item_type, attr_slug = parse_pending_field(order.pending_field)
-        if not item_type or not attr_slug:
-            return None
-
-        try:
-            attrs = menu_cache.get_item_type_attributes(item_type)
-        except Exception:
-            logger.warning(
-                "Failed to load attributes for item_type=%s, attr_slug=%s",
-                item_type, attr_slug, exc_info=True,
-            )
-            return None
-
-        attr = attrs.get(attr_slug)
-        if not attr:
-            return None
-
-        input_type = attr.get("input_type", "single_select")
-        if input_type == "boolean":
-            return [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
-
-        if input_type in ("single_select", "multi_select"):
-            options = attr.get("options", [])
-            available = [o for o in options if o.get("is_available", True)]
-            if len(available) == 1 and attr.get("allow_none", False):
-                return [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
-            qr = [{"label": o["display_name"], "value": o["display_name"]} for o in available]
-
-            # If no QR label appears in the question text, replace with a single
-            # linkable phrase so the frontend can linkify it inline
-            # (e.g., "what kind of bread?" -> linkify "bread")
-            if qr:
-                from .utils.text import extract_question_phrase
-                from orderbot.cache.base import pluralize
-
-                question_lower = question.lower()
-                has_match = any(e["label"].lower() in question_lower for e in qr)
-                if not has_match:
-                    trigger = extract_question_phrase(question)
-                    if trigger and trigger.lower() in question_lower:
-                        qr = [{"label": trigger, "value": f"What {pluralize(trigger.lower())} do you have?"}]
-                    else:
-                        display = attr.get("display_name") or attr["slug"]
-                        if display.lower() in question_lower:
-                            qr = [{"label": display, "value": f"What {pluralize(display.lower())} do you have?"}]
-
-            return qr
-
-        return None
+        from .config_flow_utils import build_qr_for_pending_field
+        return build_qr_for_pending_field(order, question)

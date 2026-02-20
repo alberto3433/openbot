@@ -593,6 +593,32 @@ class OrderStateMachine:
 
         target_qty = extract_make_it_n_target(make_it_n_match)
         if not target_qty:
+            # extract_make_it_n_target returns None for qty < 2.
+            # If the user said "make that one" / "actually, make it one",
+            # the pattern matched but qty=1 was filtered out.  Handle it
+            # here so the input doesn't silently fall through.
+            from .parsers.quantity_utils import BASIC_WORD_TO_NUM
+            for i in range(1, 15):
+                try:
+                    group = make_it_n_match.group(i)
+                except IndexError:
+                    break
+                if group:
+                    raw = group.lower().strip()
+                    qty = int(raw) if raw.isdigit() else BASIC_WORD_TO_NUM.get(raw, 0)
+                    if qty == 1:
+                        active_items = order.items.get_active_items()
+                        if active_items:
+                            last_item = get_last_item(active_items)
+                            last_name = last_item.get_summary()
+                            current_count = sum(
+                                1 for it in active_items if it.get_summary() == last_name
+                            )
+                            return StateMachineResult(
+                                message=already_have_n_anything_else(current_count, last_name),
+                                order=order,
+                            )
+                    break
             return None
 
         result = duplicate_last_item_to_qty(order, target_qty, count_existing=True)

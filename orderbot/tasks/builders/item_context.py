@@ -55,9 +55,6 @@ class ItemBuildContext:
     special_instructions: list[str] | None = None
     """List of special instruction strings."""
 
-    unrecognized_ingredients: list[dict[str, Any]] | None = None
-    """Unrecognized ingredient tokens with alternative suggestions."""
-
     inapplicable_attributes: list[dict[str, Any]] | None = None
     """Attribute option words that don't apply to this item type."""
 

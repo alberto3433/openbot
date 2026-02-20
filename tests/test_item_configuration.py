@@ -3104,7 +3104,7 @@ class TestDrinkSelectionHandler:
 
         result = sm.configuring_item_handler._handle_item_selection("3", order)
 
-        assert "only" in result.message.lower() and "2" in result.message
+        assert "choose" in result.message.lower() or "didn't catch" in result.message.lower()
         assert len(order.items.items) == 0
 
     def test_negative_number_rejected(self):

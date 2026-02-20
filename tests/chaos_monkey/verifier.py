@@ -89,11 +89,17 @@ class ResponseVerifier:
             return
 
         # Check for item not found (skip for menu inquiry turns)
+        # The bot often warns about an unrecognized modifier
+        # (e.g. "Sorry, we don't carry Pepperoni") but still adds the
+        # item successfully. Check the actual cart to distinguish real
+        # failures (nothing added) from spurious warnings.
         if self._is_not_found(response) and not turn.is_menu_inquiry:
-            turn.passed = False
-            turn.failure_category = FailureCategory.MENU_ITEM_NOT_FOUND
-            turn.failure_reason = f"Item not found: {response[:100]}"
-            return
+            cart_items = order_state.get("items", [])
+            if not cart_items:
+                turn.passed = False
+                turn.failure_category = FailureCategory.MENU_ITEM_NOT_FOUND
+                turn.failure_reason = f"Item not found: {response[:100]}"
+                return
 
         # Verify cart contents (primary verification for add_item scenarios)
         # This is more reliable than action intents since the API uses generic

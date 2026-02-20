@@ -649,6 +649,12 @@ class DietaryInquiryHandler(MenuDataMixin):
                 if has_more:
                     qr.append({"label": f"{remaining} more", "value": "what else?"})
 
+                # Store shown items so selection responses ("I'll take one")
+                # route through handle_item_selection.
+                batch_items = matching_items[:DEFAULT_PAGINATION_SIZE]
+                order.pending_item_options = batch_items
+                order.pending_field = PendingField.ITEM_SELECTION
+
                 return StateMachineResult(
                     message=(
                         f"Yes! We have {items_list}. Would you like any of these?"

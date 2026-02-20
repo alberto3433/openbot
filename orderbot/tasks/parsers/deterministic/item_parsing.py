@@ -907,17 +907,9 @@ def _extract_and_build_configurable_item(
         special_instructions, attr_result, modifier_selections,
     )
 
-    # Detect unrecognized ingredients (tokens not consumed by attributes or modifiers)
-    from .extraction import _detect_unrecognized_ingredients
-    modifier_spans = [(text_lower.find(s.slug), text_lower.find(s.slug) + len(s.slug))
-                      for s in modifier_selections if text_lower.find(s.slug) != -1]
-    all_consumed_spans = list(attr_matched_spans or []) + modifier_spans
-    unrecognized_ingredients = _detect_unrecognized_ingredients(text_lower, all_consumed_spans)
-
     logger.info(
-        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s, unrecognized=%s",
+        "CONFIGURABLE_ITEM PARSED: type=%s, qty=%d, item_name=%s, attrs=%s, mods=%s, has_defaults=%s, instructions=%s",
         detected_item_type, quantity, item_name, list(attr_result.values.keys()), [s.slug for s in modifier_selections], has_defaults, special_instructions,
-        [u["token"] for u in unrecognized_ingredients] if unrecognized_ingredients else []
     )
 
     # Build ParsedItemEntry using build_parsed_item (converts attr_result to selections)
@@ -930,7 +922,6 @@ def _extract_and_build_configurable_item(
         modifiers=modifier_selections,
         original_text=text,
         special_instructions=special_instructions,
-        unrecognized_ingredients=unrecognized_ingredients,
     )
 
     # Attach position qualifiers (e.g., "on the side") to matching selections

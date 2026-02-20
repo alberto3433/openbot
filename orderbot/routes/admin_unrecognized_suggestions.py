@@ -68,7 +68,7 @@ from ..schemas.unrecognized_suggestions import (
     UnrecognizedIngredientSuggestionCreate,
     UnrecognizedIngredientSuggestionUpdate,
 )
-from .crud_factory import CRUDRouterFactory
+from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +330,9 @@ def get_menu_items_for_dropdown(
         {"id": mi.id, "name": mi.name}
         for mi in menu_items
     ]
+
+
+reorder_routes_static_first(admin_unrecognized_menu_item_suggestions_router)
 
 
 # =============================================================================
@@ -607,6 +610,9 @@ def get_attributes_for_dropdown(
     ]
 
 
+reorder_routes_static_first(admin_unrecognized_option_suggestions_router)
+
+
 # =============================================================================
 # Ingredient Suggestions - Factory Hooks
 # =============================================================================
@@ -770,3 +776,6 @@ def get_ingredients_for_dropdown(
         {"id": i.id, "name": i.name}
         for i in ingredients
     ]
+
+
+reorder_routes_static_first(admin_unrecognized_ingredient_suggestions_router)

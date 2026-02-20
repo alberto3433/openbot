@@ -54,7 +54,7 @@ from ..schemas.response_patterns import (
     ResponsePatternUpdate,
     ResponsePatternTypeStats,
 )
-from .crud_factory import CRUDRouterFactory
+from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
 
 logger = logging.getLogger(__name__)
 
@@ -163,3 +163,8 @@ def get_response_pattern_stats(
         ))
 
     return result
+
+
+# Fix route ordering: static GET paths (/stats) must be matched
+# before the factory's GET /{id} to prevent 422 errors.
+reorder_routes_static_first(admin_response_patterns_router)

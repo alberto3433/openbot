@@ -19,7 +19,7 @@ from .schemas import (
     ParsedItemEntry,
     ParsedItem,
 )
-from .checkout_messages import got_it_anything_else, CheckoutMessages
+from .checkout_messages import got_it_anything_else
 from .utils.text import format_english_list
 from .utils.constants import is_price_metadata_key
 
@@ -199,7 +199,6 @@ class ParsedItemProcessor:
             unmatched_selections=item.unmatched_selections if item.unmatched_selections else None,
             ambiguous_selections=item.ambiguous_selections if item.ambiguous_selections else None,
             special_instructions=item.special_instructions if item.special_instructions else None,
-            unrecognized_ingredients=item.unrecognized_ingredients if item.unrecognized_ingredients else None,
             inapplicable_attributes=item.inapplicable_attributes if item.inapplicable_attributes else None,
             **item.attribute_values,  # Data-driven: pass all, receiver filters (backward compat)
         )
@@ -447,11 +446,7 @@ class ParsedItemProcessor:
 
         if not items_needing_config:
             items_str = format_english_list(summaries)
-            note = self._build_unrecognized_note(added_items, order)
-            if note:
-                message = f"{note} I've added {items_str} to your order. {CheckoutMessages.ANYTHING_ELSE}"
-            else:
-                message = got_it_anything_else(items_str)
+            message = got_it_anything_else(items_str)
             return StateMachineResult(message=message, order=order)
 
         # Queue items 2+ for later configuration
@@ -476,29 +471,3 @@ class ParsedItemProcessor:
             order=order,
         )
 
-    def _build_unrecognized_note(
-        self,
-        added_items: list[tuple[str, str, str]],
-        order: "OrderTask",
-    ) -> str | None:
-        """Build note about modifiers that couldn't be applied to complete items."""
-        parts = []
-        for item_id, display_name, item_type in added_items:
-            item = order.items.get_item_by_id(item_id)
-            if not item or item.status == TaskStatus.IN_PROGRESS:
-                continue
-            if not getattr(item, 'unrecognized_ingredients', None):
-                continue
-            mod_names: list[str] = []
-            for entry in item.unrecognized_ingredients:
-                name = entry.get("display_name", entry.get("token", ""))
-                if name and name not in mod_names:
-                    mod_names.append(name)
-            item.unrecognized_ingredients = []
-            if mod_names:
-                mods_str = format_english_list(mod_names)
-                verb = "isn't" if len(mod_names) == 1 else "aren't"
-                parts.append(f"{mods_str} {verb} available for {display_name}")
-        if not parts:
-            return None
-        return "Sorry, " + "; ".join(parts) + "."

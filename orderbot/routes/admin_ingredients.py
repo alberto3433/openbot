@@ -70,7 +70,7 @@ from ..schemas.ingredients import (
 )
 from ..services.alias_service import sync_entity_aliases
 from ..services.helpers import batch_load_store_availability
-from .crud_factory import CRUDRouterFactory
+from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
 from .crud_helpers import get_or_404
 
 
@@ -532,3 +532,8 @@ def update_ingredient_availability(
         track_inventory=ingredient.track_inventory,
         is_available=is_available,
     )
+
+
+# Fix route ordering: static GET paths (/units, /list, etc.) must be matched
+# before the factory's GET /{ingredient_id} to prevent 422 errors.
+reorder_routes_static_first(admin_ingredients_router)

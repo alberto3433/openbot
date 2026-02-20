@@ -8,6 +8,12 @@ Generic pricing formula:
     total = base_price + sum(attribute_option.price_modifier) + conditional_modifiers + modifier_prices
 
 Extracted from state_machine.py for better separation of concerns.
+
+Sub-calculators:
+- VariantPricingCalculator: size/variant-based pricing (variant_pricing.py)
+- ModifierPricingCalculator: modifier price lookups (modifier_pricing.py)
+- AttributePricingLookup: attribute option upcharges (attribute_pricing_lookup.py)
+- AttributeUpchargeCalculator: attribute value upcharge application (attribute_upcharge_calculator.py)
 """
 
 import logging
@@ -102,6 +108,12 @@ class PricingEngine(MenuDataMixin):
 
     Requires menu_data and a menu_lookup function to resolve item prices
     from the menu database.
+
+    Delegates to sub-calculators for specific pricing concerns:
+    - variant_calculator: size/variant-based pricing
+    - modifier_calculator: modifier price lookups
+    - attribute_lookup: attribute option upcharges
+    - upcharge_calculator: attribute value upcharge application
     """
 
     # Modifier prices are now stored in the database (AttributeOption.price_modifier)
@@ -127,8 +139,11 @@ class PricingEngine(MenuDataMixin):
         self._menu_data = menu_data or {}
         self._lookup_menu_item = menu_lookup_func
 
-        # Lazy-loaded calculator to avoid circular imports
+        # Lazy-loaded sub-calculators to avoid circular imports
         self._upcharge_calculator = None
+        self._variant_calculator = None
+        self._modifier_calculator = None
+        self._attribute_lookup = None
 
     @property
     def upcharge_calculator(self):
@@ -138,20 +153,45 @@ class PricingEngine(MenuDataMixin):
             self._upcharge_calculator = AttributeUpchargeCalculator(self)
         return self._upcharge_calculator
 
+    @property
+    def variant_calculator(self):
+        """Get the variant pricing calculator (lazy-loaded)."""
+        if self._variant_calculator is None:
+            from .variant_pricing import VariantPricingCalculator
+            self._variant_calculator = VariantPricingCalculator(self)
+        return self._variant_calculator
+
+    @property
+    def modifier_calculator(self):
+        """Get the modifier pricing calculator (lazy-loaded)."""
+        if self._modifier_calculator is None:
+            from .modifier_pricing import ModifierPricingCalculator
+            self._modifier_calculator = ModifierPricingCalculator(self)
+        return self._modifier_calculator
+
+    @property
+    def attribute_lookup(self):
+        """Get the attribute pricing lookup (lazy-loaded)."""
+        if self._attribute_lookup is None:
+            from .attribute_pricing_lookup import AttributePricingLookup
+            self._attribute_lookup = AttributePricingLookup(self)
+        return self._attribute_lookup
+
     # =========================================================================
-    # Generic Pricing Methods (Data-Driven)
+    # Shared Helper
     # =========================================================================
 
     def _resolve_menu_item(self, name: str) -> dict | None:
         """Look up a menu item by name, falling back to title-case."""
         return self._lookup_menu_item(name) or self._lookup_menu_item(name.title())
 
+    # =========================================================================
+    # Delegate Methods — Variant Pricing
+    # =========================================================================
+
     def get_size_category_slug(self, menu_item_name: str) -> str | None:
         """Return the size_category_slug for a menu item, or None."""
-        menu_item = self._resolve_menu_item(menu_item_name)
-        if not menu_item:
-            return None
-        return menu_item.get("size_category_slug")
+        return self.variant_calculator.get_size_category_slug(menu_item_name)
 
     def lookup_size_price(
         self,
@@ -172,41 +212,7 @@ class PricingEngine(MenuDataMixin):
             Tuple of (price, size_data) where size_data contains size info,
             or (None, None) if item doesn't have size-based pricing
         """
-        menu_item = self._resolve_menu_item(menu_item_name)
-        if not menu_item:
-            return None, None
-
-        size_prices = menu_item.get("size_prices")
-        if not size_prices:
-            return None, None
-
-        # If only one size, return it (no disambiguation needed)
-        if len(size_prices) == 1:
-            sp = size_prices[0]
-            return sp["price"], sp
-
-        # If size_name provided, find matching size
-        if size_name:
-            size_lower = normalize_text(size_name)
-            for sp in size_prices:
-                if sp["size_name"] and sp["size_name"].lower() == size_lower:
-                    return sp["price"], sp
-
-            # Try translating option slug to display name
-            # (e.g., "one_pound" -> "1 lb" for weight-based pricing)
-            size_category_slug = menu_item.get("size_category_slug")
-            if size_category_slug:
-                display_name = menu_cache.get_global_option_display_name(
-                    size_category_slug, size_name
-                )
-                if display_name:
-                    display_lower = normalize_text(display_name)
-                    for sp in size_prices:
-                        if sp["size_name"] and sp["size_name"].lower() == display_lower:
-                            return sp["price"], sp
-
-        # No size specified and multiple sizes - return None to trigger disambiguation
-        return None, None
+        return self.variant_calculator.lookup_size_price(menu_item_name, size_name)
 
     def lookup_size_upcharge(
         self,
@@ -226,25 +232,7 @@ class PricingEngine(MenuDataMixin):
         Returns:
             Upcharge amount (0.0 if this is the base size or not a sized item)
         """
-        menu_item = self._resolve_menu_item(menu_item_name)
-        if not menu_item:
-            return 0.0
-
-        size_prices = menu_item.get("size_prices")
-        if not size_prices or len(size_prices) <= 1:
-            return 0.0
-
-        # Sort by display_order to find the base (smallest) size
-        sorted_sizes = sorted(size_prices, key=lambda sp: sp.get("display_order", 999))
-        base_price = sorted_sizes[0]["price"]
-
-        # Find the selected size price
-        size_lower = normalize_text(size_name)
-        for sp in size_prices:
-            if sp["size_name"] and sp["size_name"].lower() == size_lower:
-                return sp["price"] - base_price
-
-        return 0.0
+        return self.variant_calculator.lookup_size_upcharge(menu_item_name, size_name)
 
     def get_default_variant_for_item(
         self,
@@ -264,34 +252,7 @@ class PricingEngine(MenuDataMixin):
             - Item doesn't have variant pricing
             - Item has only one variant (no need to display "each" for bagels, etc.)
         """
-        menu_item = self._resolve_menu_item(menu_item_name)
-        if not menu_item:
-            return None
-
-        size_prices = menu_item.get("size_prices")
-        if not size_prices:
-            return None
-
-        # If only one variant, don't show it in cart (e.g., "each" for bagels is redundant)
-        if len(size_prices) == 1:
-            return None
-
-        # Sort by display_order to find the default (first) variant
-        sorted_sizes = sorted(size_prices, key=lambda sp: sp.get("display_order", 999))
-        default_size = sorted_sizes[0]
-
-        # Get the size name and convert to slug
-        size_name = default_size.get("size_name")
-        if not size_name:
-            return None
-
-        # Convert display name to slug (e.g., "1/4 lb" -> "quarter_pound")
-        slug = normalize_to_slug(size_name)
-
-        return {
-            "slug": slug,
-            "display_name": size_name,
-        }
+        return self.variant_calculator.get_default_variant_for_item(menu_item_name)
 
     def lookup_base_price(self, menu_item_name: str, size_name: str | None = None) -> float:
         """Look up base price for any menu item by name.
@@ -314,23 +275,11 @@ class PricingEngine(MenuDataMixin):
         Raises:
             ValueError: If menu item not found in database
         """
-        if not menu_item_name:
-            raise ValueError("menu_item_name is required for base price lookup")
+        return self.variant_calculator.lookup_base_price(menu_item_name, size_name)
 
-        # Try size-based pricing first
-        size_price, _ = self.lookup_size_price(menu_item_name, size_name)
-        if size_price is not None:
-            return size_price
-
-        # Fall back to base_price
-        menu_item = self._resolve_menu_item(menu_item_name)
-        if menu_item and menu_item.get("base_price"):
-            return menu_item["base_price"]
-
-        raise ValueError(
-            f"No price found for menu item '{menu_item_name}'. "
-            "Ensure the menu item exists in database with a base_price or size_prices."
-        )
+    # =========================================================================
+    # Delegate Methods — Attribute Pricing Lookup
+    # =========================================================================
 
     def lookup_attribute_option_upcharge(
         self,
@@ -359,144 +308,9 @@ class PricingEngine(MenuDataMixin):
             Price modifier (upcharge) for the option, or 0.0 if not found or if
             the option's category is already included in the menu item
         """
-        if not option_value:
-            return 0.0
-
-        normalized = normalize_to_slug(option_value)
-        option_lower = normalize_text(option_value)
-
-        if not self._menu_data:
-            logger.warning("No menu_data available for attribute upcharge lookup")
-            return 0.0
-
-        attributes = get_item_type_attributes(
-            self._menu_data, item_type,
-            f"look up attribute upcharge for '{option_value}'",
+        return self.attribute_lookup.lookup_attribute_option_upcharge(
+            item_type, attr_slug, option_value, included_ingredient_categories
         )
-
-        price, _ = _lookup_option_price_in_attributes(
-            attributes,
-            normalized,
-            option_lower,
-            target_attr_slug=attr_slug,
-        )
-
-        if price is not None:
-            # Check inclusion BEFORE returning price — if the menu item already
-            # includes an ingredient in this category, the upcharge is waived.
-            if included_ingredient_categories and price > 0:
-                option_category = self._get_option_ingredient_category(
-                    item_type, attr_slug, option_value
-                )
-                if option_category and option_category in included_ingredient_categories:
-                    min_price = self._get_min_option_price_for_attribute(
-                        item_type, attr_slug, option_category
-                    )
-                    premium = max(0.0, price - min_price)
-                    logger.debug(
-                        "Category '%s' included for %s.%s=%s — price=$%.2f, min=$%.2f, premium=$%.2f",
-                        option_category, item_type, attr_slug, option_value, price, min_price, premium
-                    )
-                    return premium
-            return price
-
-        # Not found - log and return 0.0
-        logger.debug(
-            "Attribute option upcharge not found: %s.%s=%s",
-            item_type, attr_slug, option_value
-        )
-        return 0.0
-
-    def _get_options_for_attribute(
-        self,
-        item_type: str,
-        attr_slug: str,
-        context: str,
-    ) -> list[dict]:
-        """Return the options list for a specific attribute on an item type.
-
-        Args:
-            item_type: Item type slug (e.g., "sandwich")
-            attr_slug: Attribute slug (e.g., "bread", "cheese")
-            context: Description for error messages
-
-        Returns:
-            List of option dicts for the matching attribute, or empty list
-        """
-        attributes = get_item_type_attributes(
-            self._menu_data, item_type, context,
-        )
-        for attr in attributes:
-            if attr.get("slug") == attr_slug:
-                return attr.get("options", [])
-        return []
-
-    def _get_option_ingredient_category(
-        self,
-        item_type: str,
-        attr_slug: str,
-        option_value: str,
-    ) -> str | None:
-        """Get the ingredient_category for an attribute option.
-
-        Used to determine if an option belongs to a category that's already
-        included in the menu item's base price.
-
-        Args:
-            item_type: Item type slug
-            attr_slug: Attribute slug
-            option_value: Selected option value
-
-        Returns:
-            The ingredient category string (e.g., "cheese") or None if not found
-        """
-        normalized = normalize_to_slug(option_value)
-        option_lower = normalize_text(option_value)
-
-        for opt in self._get_options_for_attribute(
-            item_type, attr_slug, f"get ingredient category for '{option_value}'"
-        ):
-            if OptionMatcher.matches_value(opt, normalized, option_lower):
-                return opt.get("ingredient_category")
-
-        return None
-
-    def _get_min_option_price_for_attribute(
-        self,
-        item_type: str,
-        attr_slug: str,
-        ingredient_category: str,
-    ) -> float:
-        """Get the minimum price_modifier among available options in the same
-        ingredient category for a given attribute.
-
-        Used to compute the premium when a category is included in the base price.
-        For example, if bread options are $0 (regular) and $1.85 (GF), the minimum
-        is $0, so ordering GF still carries a $1.85 premium even when bread is
-        included.
-
-        Args:
-            item_type: Item type slug (e.g., "sandwich")
-            attr_slug: Attribute slug (e.g., "bread")
-            ingredient_category: The ingredient category to filter by (e.g., "bread")
-
-        Returns:
-            The minimum price_modifier among matching options, or 0.0 if none found
-        """
-        min_price: float | None = None
-
-        for opt in self._get_options_for_attribute(
-            item_type, attr_slug, f"get min option price for '{attr_slug}'"
-        ):
-            if not isinstance(opt, dict):
-                continue
-            if opt.get("ingredient_category") != ingredient_category:
-                continue
-            price = OptionMatcher.get_option_price(opt)
-            if min_price is None or price < min_price:
-                min_price = price
-
-        return min_price if min_price is not None else 0.0
 
     def lookup_attribute_option_upcharge_for_item(
         self,
@@ -522,17 +336,82 @@ class PricingEngine(MenuDataMixin):
         Returns:
             Price modifier (upcharge) for the option, or 0.0 if included
         """
-        # Look up the menu item to get included ingredient categories
-        menu_item = self._lookup_menu_item(menu_item_name)
-        included_categories: set[str] = set()
-        if menu_item:
-            included_categories = set(
-                menu_item.get("included_ingredient_categories", [])
-            )
-
-        return self.lookup_attribute_option_upcharge(
-            item_type, attr_slug, option_value, included_categories
+        return self.attribute_lookup.lookup_attribute_option_upcharge_for_item(
+            menu_item_name, item_type, attr_slug, option_value
         )
+
+    def _get_options_for_attribute(
+        self,
+        item_type: str,
+        attr_slug: str,
+        context: str,
+    ) -> list[dict]:
+        """Return the options list for a specific attribute on an item type.
+
+        Args:
+            item_type: Item type slug (e.g., "sandwich")
+            attr_slug: Attribute slug (e.g., "bread", "cheese")
+            context: Description for error messages
+
+        Returns:
+            List of option dicts for the matching attribute, or empty list
+        """
+        return self.attribute_lookup._get_options_for_attribute(
+            item_type, attr_slug, context
+        )
+
+    def _get_option_ingredient_category(
+        self,
+        item_type: str,
+        attr_slug: str,
+        option_value: str,
+    ) -> str | None:
+        """Get the ingredient_category for an attribute option.
+
+        Used to determine if an option belongs to a category that's already
+        included in the menu item's base price.
+
+        Args:
+            item_type: Item type slug
+            attr_slug: Attribute slug
+            option_value: Selected option value
+
+        Returns:
+            The ingredient category string (e.g., "cheese") or None if not found
+        """
+        return self.attribute_lookup._get_option_ingredient_category(
+            item_type, attr_slug, option_value
+        )
+
+    def _get_min_option_price_for_attribute(
+        self,
+        item_type: str,
+        attr_slug: str,
+        ingredient_category: str,
+    ) -> float:
+        """Get the minimum price_modifier among available options in the same
+        ingredient category for a given attribute.
+
+        Used to compute the premium when a category is included in the base price.
+        For example, if bread options are $0 (regular) and $1.85 (GF), the minimum
+        is $0, so ordering GF still carries a $1.85 premium even when bread is
+        included.
+
+        Args:
+            item_type: Item type slug (e.g., "sandwich")
+            attr_slug: Attribute slug (e.g., "bread")
+            ingredient_category: The ingredient category to filter by (e.g., "bread")
+
+        Returns:
+            The minimum price_modifier among matching options, or 0.0 if none found
+        """
+        return self.attribute_lookup._get_min_option_price_for_attribute(
+            item_type, attr_slug, ingredient_category
+        )
+
+    # =========================================================================
+    # Delegate Methods — Modifier Pricing
+    # =========================================================================
 
     def lookup_generic_modifier_price(
         self,
@@ -558,53 +437,9 @@ class PricingEngine(MenuDataMixin):
         Raises:
             MenuDataNotLoadedError: If menu_data is not loaded or item_type doesn't exist
         """
-        if not modifier_name:
-            return 0.0
-
-        normalized = normalize_to_slug(modifier_name)
-        modifier_lower = normalize_text(modifier_name)
-
-        # Use cache helper for validated attribute lookup (raises MenuDataNotLoadedError)
-        attributes = get_item_type_attributes(
-            self._menu_data,
-            item_type,
-            f"look up modifier price for '{modifier_name}'",
+        return self.modifier_calculator.lookup_generic_modifier_price(
+            modifier_name, item_type, modifier_type
         )
-
-        price, attr_slug = _lookup_option_price_in_attributes(
-            attributes,
-            normalized,
-            modifier_lower,
-            modifier_type_hint=modifier_type,
-        )
-
-        if price is not None:
-            logger.debug(
-                "Found modifier price: %s = $%.2f (from %s.%s)",
-                modifier_name, price, item_type, attr_slug
-            )
-            return price
-
-        # Fallback: Check ingredient price contexts (for ingredients not in attribute options)
-        ing_price = menu_cache.get_ingredient_price_for_item_type(modifier_name, item_type)
-        if ing_price is not None and ing_price > 0:
-            logger.debug(
-                "Found ingredient price: %s = $%.2f (from ingredient contexts for %s)",
-                modifier_name, ing_price, item_type
-            )
-            return ing_price
-
-        # Not found in this item type - return 0.0 (modifier is free or unconfigured)
-        # This is not an error - some modifiers may not have prices
-        logger.debug(
-            "Modifier '%s' not found in item_type '%s'. Returning $0.00.",
-            modifier_name, item_type
-        )
-        return 0.0
-
-    # =========================================================================
-    # Modifier Pricing (Used by generic pricing)
-    # =========================================================================
 
     def lookup_modifier_price(self, modifier_name: str, item_type: str) -> float:
         """Look up price modifier for an item add-on (protein, cheese, topping).
@@ -622,9 +457,7 @@ class PricingEngine(MenuDataMixin):
         Raises:
             MenuDataNotLoadedError: If menu_data is not available or item_type doesn't exist
         """
-        # Resolve database alias (e.g., "lox" -> "Nova Scotia Salmon")
-        canonical_name = menu_cache.normalize_modifier(modifier_name.lower().strip())
-        return self.lookup_generic_modifier_price(canonical_name, item_type)
+        return self.modifier_calculator.lookup_modifier_price(modifier_name, item_type)
 
     # =========================================================================
     # Unified Price Recalculation (Generic, Data-Driven)
@@ -821,4 +654,3 @@ class PricingEngine(MenuDataMixin):
         )
 
         return new_price
-

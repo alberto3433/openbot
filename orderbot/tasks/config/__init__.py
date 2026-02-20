@@ -22,6 +22,9 @@ Utilities:
 - QuestionBuilder: Builds configuration questions from DB attributes
 - SelectionExtractor: Extracts user selections from input text
 - DirectOptionMatcher: Matches input directly to available options
+- QualifierExtractor: Extracts qualifiers (extra, light, etc.) for matched options
+- QuickReplyBuilder: Builds quick reply option lists for attribute questions
+- ConfigPaginationHandler: Handles unmatched-token pagination during config
 """
 
 from .handler import MenuItemConfigHandler
@@ -35,6 +38,9 @@ from .question_builder import QuestionBuilder
 from .selection_extractor import SelectionExtractor
 from .customization_checkpoint import CustomizationCheckpointHandler
 from .direct_option_matcher import DirectOptionMatcher
+from .qualifier_extractor import QualifierExtractor
+from .quick_reply_builder import QuickReplyBuilder
+from .config_pagination import ConfigPaginationHandler
 
 __all__ = [
     "MenuItemConfigHandler",
@@ -48,4 +54,7 @@ __all__ = [
     "SelectionExtractor",
     "CustomizationCheckpointHandler",
     "DirectOptionMatcher",
+    "QualifierExtractor",
+    "QuickReplyBuilder",
+    "ConfigPaginationHandler",
 ]

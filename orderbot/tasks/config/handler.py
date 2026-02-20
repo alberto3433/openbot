@@ -12,12 +12,10 @@ Designed to be generic and work with any item type that has DB-defined attribute
 """
 
 import logging
-import re
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 from orderbot.cache.base import pluralize
-from orderbot.constants import QUALIFIER_PROXIMITY_THRESHOLD
 from ..models import OrderTask, MenuItemTask
 from ..pending_fields import PendingField
 from ..normalization import strip_ordering_prefix
@@ -27,7 +25,7 @@ from ..parsers.constants import DEFAULT_PAGINATION_SIZE
 from ..handler_config import BaseHandler
 from ..checkout_messages import got_it_anything_else
 from ..utils import OptionMatcher, InputNormalizer
-from ..utils.text import extract_question_phrase, format_display_list, normalize_text
+from ..utils.text import format_display_list, normalize_text
 from .context import ConfigHandlerContext
 from .select_input import SelectInputHandler
 from .options_inquiry import OptionsInquiryHandler
@@ -35,12 +33,15 @@ from .disambiguation import ConfigDisambiguationHandler
 from .question_builder import QuestionBuilder
 from .selection_extractor import SelectionExtractor
 from .direct_option_matcher import DirectOptionMatcher
-from ..response_utils import is_negative, is_affirmative
+from ..response_utils import is_affirmative
 from .quantity_input import QuantityInputHandler
 from .package_input import PackageInputHandler
 from .attribute_capture import capture_attributes_from_input
 from .parsers import BooleanParser
 from .customization_checkpoint import CustomizationCheckpointHandler
+from .qualifier_extractor import QualifierExtractor
+from .quick_reply_builder import QuickReplyBuilder
+from .config_pagination import ConfigPaginationHandler
 from .attribute_resolver import (
     get_optional_attributes,
     get_unanswered_mandatory,
@@ -138,6 +139,15 @@ class MenuItemConfigHandler(BaseHandler):
             ctx=self._ctx,
         )
         self._boolean_parser = BooleanParser()
+        self._qualifier_extractor = QualifierExtractor()
+        self._quick_reply_builder = QuickReplyBuilder()
+        self._pagination_handler = ConfigPaginationHandler(
+            option_matcher=self._option_matcher,
+            question_builder=self._question_builder,
+            resolve_option_price=self._resolve_option_price,
+            advance_to_next_question=self._advance_to_next_question,
+            get_next_question=self._get_next_question,
+        )
 
     def _apply_selections(self, item: "MenuItemTask", selections: list) -> str | None:
         """
@@ -202,89 +212,11 @@ class MenuItemConfigHandler(BaseHandler):
         """
         Extract qualifier (extra, light, lots of, on the side, etc.) for a specific option.
 
-        Scans user input for qualifier patterns adjacent to the option name.
-
-        Args:
-            user_input: The full user input text (e.g., "lots of lettuce and extra mayo")
-            option_name: The option to find qualifier for (e.g., "Lettuce")
-            other_option_positions: Positions of other matched options in the input.
-                When provided, a qualifier is skipped if another option is closer to it.
-
-        Returns:
-            Normalized qualifier like "extra" or "on the side", or None if no qualifier found.
+        Delegates to QualifierExtractor.
         """
-        qualifier_patterns = menu_cache.get_qualifier_patterns()
-        if not qualifier_patterns:
-            return None
-
-        user_lower = user_input.lower()
-        option_lower = option_name.lower()
-
-        # Find position of the option in user input
-        # Try multiple variations: full name, individual words, slug-based patterns
-        opt_match = None
-        search_terms = [option_lower]
-
-        # Also try individual words from the display name (e.g., "milk" from "Whole Milk")
-        for word in option_lower.split():
-            if len(word) >= 3:  # Skip short words like "a", "of", etc.
-                search_terms.append(word)
-
-        for term in search_terms:
-            opt_match = re.search(rf'\b{re.escape(term)}\b', user_lower)
-            if opt_match:
-                break
-
-        if not opt_match:
-            return None
-
-        opt_start, opt_end = opt_match.start(), opt_match.end()
-
-        # Check for qualifiers adjacent to this option — pick the closest one.
-        # When distances tie, prefer a qualifier BEFORE the option over one AFTER,
-        # since English qualifiers naturally precede their noun ("dash of milk").
-        best_qualifier = None
-        best_distance = float('inf')
-        best_is_before = False
-
-        for pattern in qualifier_patterns:
-            pattern_re = re.compile(rf'\b{re.escape(pattern)}\b', re.IGNORECASE)
-            for match in pattern_re.finditer(user_lower):
-                qual_start, qual_end = match.start(), match.end()
-
-                # Qualifier before option: "extra lettuce", "lots of lettuce"
-                is_before = qual_end <= opt_start and opt_start - qual_end <= QUALIFIER_PROXIMITY_THRESHOLD
-                # Qualifier after option: "lettuce on the side"
-                is_after = qual_start >= opt_end and qual_start - opt_end <= QUALIFIER_PROXIMITY_THRESHOLD
-
-                if is_before or is_after:
-                    distance = (opt_start - qual_end) if is_before else (qual_start - opt_end)
-
-                    # Skip this qualifier if another option is closer to it
-                    if other_option_positions:
-                        closer_to_other = False
-                        for other_start, other_end in other_option_positions:
-                            if qual_end <= other_start:
-                                other_dist = other_start - qual_end
-                            elif qual_start >= other_end:
-                                other_dist = qual_start - other_end
-                            else:
-                                other_dist = 0  # Overlapping
-                            if other_dist < distance:
-                                closer_to_other = True
-                                break
-                        if closer_to_other:
-                            continue
-
-                    # Pick this qualifier if it's closer, or if tied prefer before
-                    if distance < best_distance or (distance == best_distance and is_before and not best_is_before):
-                        info = menu_cache.get_qualifier_info(pattern)
-                        if info:
-                            best_qualifier = info["normalized_form"]
-                            best_distance = distance
-                            best_is_before = is_before
-
-        return best_qualifier
+        return self._qualifier_extractor.extract_qualifier_for_option(
+            user_input, option_name, other_option_positions
+        )
 
     def _match_attribute_from_input(
         self, user_input: str, attributes: list[dict]
@@ -437,10 +369,6 @@ class MenuItemConfigHandler(BaseHandler):
 
         For multi-item configurations, uses ordinal references like "the first one", "the second one".
         """
-        # Build non-interactive note for unrecognized ingredients
-        # (e.g., "Sorry, we don't carry Pepperoni.")
-        unrecognized_note = self._question_builder.build_unrecognized_note(item)
-
         # Handle unavailable selection (early return if applicable)
         unavail_result = self._question_builder.handle_unavailable_selection(item, order, attr)
         if unavail_result:
@@ -480,116 +408,18 @@ class MenuItemConfigHandler(BaseHandler):
         # Prepend notes before the question
         if inapplicable_note:
             question = inapplicable_note + " " + question
-        if unrecognized_note:
-            question = unrecognized_note + " " + question
 
         # Set up order state for receiving the answer
         order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr['slug']}")
 
-        # Build quick replies from BOTH attribute options AND component slots
-        # The frontend only highlights labels that appear in the message text,
-        # so extra labels from component slots won't cause false positives.
-        qr = []
-
-        # Source 1: Attribute options (data-driven)
-        input_type = attr.get("input_type", "single_select")
-        if input_type in ("single_select", "multi_select"):
-            options = attr.get("options", [])
-            available_opts = [o for o in options if o.get("is_available", True)]
-            # Single option with allow_none is effectively a yes/no question
-            # (e.g., "Would you like an espresso shot?") — use Yes/No replies
-            # instead of the option name to avoid false inline linking
-            if len(available_opts) == 1 and attr.get("allow_none", False):
-                qr.append({"label": "Yes", "value": "yes"})
-                qr.append({"label": "No", "value": "no"})
-            else:
-                for o in available_opts:
-                    qr.append({"label": o["display_name"], "value": o["display_name"]})
-                # For multi_select with category-grouped options, use category-level
-                # quick replies when the question mentions those categories.
-                # e.g., "Any milk, sweetener, or syrup?" -> clicking "milk" sends
-                # "What kind of milk do you have?" which triggers options inquiry.
-                if input_type == "multi_select":
-                    categories = list(dict.fromkeys(
-                        o.get("ingredient_category") for o in available_opts
-                        if o.get("ingredient_category")
-                    ))
-                    if len(categories) > 1:
-                        base_lower = base_question.lower()
-                        cat_qr = []
-                        for cat in categories:
-                            if cat.lower() in base_lower:
-                                cat_qr.append({
-                                    "label": cat,
-                                    "value": f"What {pluralize(cat.lower())} do you have?",
-                                })
-                        if cat_qr:
-                            qr = cat_qr
-        elif input_type == "boolean":
-            question += " Yes or no?"
-            qr.append({"label": "Yes", "value": "yes"})
-            qr.append({"label": "No", "value": "no"})
-
-        # For select attributes where no QR label matches the question text,
-        # linkify the attribute display name itself so users can click to see options
-        # (e.g., "spread" in "Any spread on that?" → "what kind of spread do you have?")
-        if qr and input_type in ("single_select", "multi_select"):
-            base_lower = base_question.lower()
-            has_match = any(e["label"].lower() in base_lower for e in qr)
-            if not has_match:
-                trigger = extract_question_phrase(base_question)
-                if trigger and trigger.lower() in base_lower:
-                    qr = [{"label": trigger, "value": f"What {pluralize(trigger.lower())} do you have?"}]
-                else:
-                    display = attr.get("display_name") or attr["slug"]
-                    if display.lower() in base_lower:
-                        qr = [{"label": display, "value": f"What {pluralize(display.lower())} do you have?"}]
-
-        # Source 2: Component slot options (e.g., side_choice → side slot)
-        # Always merge slot options so both attribute options AND slot display names
-        # are clickable. Quick replies are inline-only (frontend only highlights text
-        # that appears in the message), so extra labels are harmless — they simply
-        # won't be highlighted. Deduplication below removes any duplicates.
-        slots = menu_cache.get_component_slots(item.menu_item_type)
-        for _slot_name, slot_config in slots.items():
-            for o in slot_config.get("options", []):
-                label = o.get("display_name")
-                if not label and o.get("allowed_item_type"):
-                    label = menu_cache.get_item_type_display_name(o["allowed_item_type"])
-                if not label:
-                    label = o.get("allowed_item_type", "")
-                if label:
-                    qr.append({"label": label, "value": label})
-
-        # Deduplicate by label (case-insensitive), preserving order
-        seen: set[str] = set()
-        deduped = []
-        for entry in qr:
-            key = entry["label"].lower()
-            if key not in seen:
-                seen.add(key)
-                deduped.append(entry)
-        qr = deduped or None
-
-        # Ensure quick reply labels appear in the question text so the frontend
-        # can linkify them inline.  When the DB question_text has baked-in option
-        # names that differ from the attribute option display_names (e.g. "1/4 pound"
-        # in question vs "1/4 lb" in display_name), the frontend can't match them.
-        # Fix: rebuild the question's inline options using the actual display names.
-        # Check against base_question (without prefix) to avoid false positives
-        # from the prefix containing a label (e.g. "with 1/4 lb").
-        if qr and input_type in ("single_select", "multi_select"):
-            base_lower = base_question.lower()
-            any_label_in_base = any(
-                entry["label"].lower() in base_lower for entry in qr
-            )
-            if not any_label_in_base and base_question.count("?") > 1:
-                # Base question has inline options that don't match labels.
-                # Rebuild: keep first sentence, replace options with labels.
-                first_part = base_question.split("?")[0].rstrip() + "?"
-                label_names = [entry["label"] for entry in qr]
-                new_base = first_part + " " + "? ".join(label_names) + "?"
-                question = question.replace(base_question, new_base)
+        # Build quick replies and optional question suffix via QuickReplyBuilder
+        qr, question_suffix, rebuilt_base = self._quick_reply_builder.build(
+            attr, base_question, item.menu_item_type,
+        )
+        if question_suffix:
+            question += question_suffix
+        if rebuilt_base:
+            question = question.replace(base_question, rebuilt_base)
 
         return StateMachineResult(message=question, order=order, quick_replies=qr)
 
@@ -1166,26 +996,11 @@ class MenuItemConfigHandler(BaseHandler):
     ) -> StateMachineResult:
         """Look up the attribute from pagination context and advance to next question.
 
-        Consolidates the repeated pattern of resolving attr_slug from pagination
-        state and calling _advance_to_next_question.
-
-        Args:
-            pagination: The pagination state model (must have 'attr_slug').
-            item: The menu item being configured.
-            order: Current order state.
-            matched_choice: Optional display name of the user's choice (for acknowledgment).
-
-        Returns:
-            StateMachineResult with the next question.
+        Delegates to ConfigPaginationHandler.
         """
-        attr_slug = pagination.attr_slug
-        item_type = item.menu_item_type
-        if item_type and attr_slug:
-            attrs = menu_cache.get_item_type_attributes(item_type)
-            attr = attrs.get(attr_slug)
-            if attr:
-                return self._advance_to_next_question(item, order, attr, matched_choice)
-        return self._get_next_question(order)
+        return self._pagination_handler.advance_from_pagination(
+            pagination, item, order, matched_choice
+        )
 
     def _handle_unmatched_pagination(
         self,
@@ -1195,61 +1010,11 @@ class MenuItemConfigHandler(BaseHandler):
     ) -> StateMachineResult | None:
         """Handle pagination responses for unmatched token messages.
 
-        When user says "yes" or "more" after seeing "We don't have X. We have A, B, C... and more",
-        this shows the next page of options.
-
-        When user says "no" or selects an option, this resolves the pagination.
-
-        Returns:
-            StateMachineResult if pagination was handled, None otherwise.
+        Delegates to ConfigPaginationHandler.
         """
-        pagination = order.pending_unmatched_pagination
-        if not pagination:
-            return None
-
-        user_lower = normalize_text(user_input)
-
-        # Check for "yes" / "more" to show next page
-        if is_affirmative(user_input) or any(
-            phrase in user_lower for phrase in ["more", "see more", "show more", "next"]
-        ):
-            return self._question_builder.advance_unmatched_pagination(order)
-
-        # Check for "no" - decline options and advance to next question
-        if is_negative(user_input):
-            self._question_builder.clear_unmatched_pagination(order)
-            return self._advance_from_pagination(pagination, item, order)
-
-        # Check if user selected one of the available options
-        available = pagination.available_options
-        matched, _ = self._option_matcher.match_single(user_input, available)
-        if matched:
-            self._question_builder.clear_unmatched_pagination(order)
-            attr_slug = pagination.attr_slug
-
-            opt_price = self._resolve_option_price(matched, item.menu_item_type)
-
-            item.add_selection(
-                matched["slug"],
-                attr_slug,
-                quantity=1,
-                price=opt_price,
-                display_name=matched.get("display_name"),
-                ingredient_category=matched.get("ingredient_category"),
-            )
-            logger.info(
-                "UNMATCHED_PAGINATION: added selection '%s' for attr '%s'",
-                matched["slug"], attr_slug
-            )
-
-            return self._advance_from_pagination(
-                pagination, item, order, matched.get("display_name")
-            )
-
-        # Input didn't match pagination flow - clear and let normal handling proceed
-        # This handles cases where user ignores the pagination and orders something else
-        self._question_builder.clear_unmatched_pagination(order)
-        return None
+        return self._pagination_handler.handle_unmatched_pagination(
+            user_input, item, order
+        )
 
     def _advance_to_next_question(
         self, item: MenuItemTask, order: OrderTask, current_attr: dict,

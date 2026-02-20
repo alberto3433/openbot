@@ -201,9 +201,9 @@ class MessageProcessor:
                 store_id=persist_store_id,
             )
 
-        # Create payment URL and schedule delayed email
+        # Create payment URL and schedule delayed email (only on first confirmation)
         payment_url = None
-        if order_is_confirmed and updated_order_state.get("db_order_id"):
+        if order_is_confirmed and order_not_yet_logged and updated_order_state.get("db_order_id"):
             payment_url = self._create_payment_url(
                 updated_order_state,
                 customer_email=customer_email,
@@ -431,8 +431,8 @@ class MessageProcessor:
     ) -> str | None:
         """Create a Stripe Checkout Session and return the payment URL.
 
-        Returns the checkout URL string, or None if Stripe is not configured
-        or session creation fails.
+        Returns the Stripe checkout URL if configured, otherwise a fallback
+        payment page URL so the button always appears for confirmed orders.
         """
         try:
             db_order_id = order_state.get("db_order_id")
@@ -452,7 +452,10 @@ class MessageProcessor:
             )
             if stripe_result:
                 return stripe_result["url"]
-            return None
+
+            # Fallback URL when Stripe is not configured
+            from .config import BASE_URL
+            return f"{BASE_URL}/pay/{db_order_id}"
         except (OSError, ValueError, KeyError, TypeError, SQLAlchemyError):
             logger.exception("Failed to create payment URL")
             return None

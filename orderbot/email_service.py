@@ -303,6 +303,141 @@ Thanks,
         }
 
 
+def send_receipt_email(
+    to_email: str,
+    order_id: int,
+    amount: float,
+    store_name: str,
+    customer_name: str | None = None,
+    customer_phone: str | None = None,
+    order_type: str | None = None,
+    items: list | None = None,
+    subtotal: float | None = None,
+    city_tax: float | None = None,
+    state_tax: float | None = None,
+    delivery_fee: float | None = None,
+) -> dict:
+    """
+    Send a receipt email confirming payment was received.
+
+    Same structure as the payment link email, but replaces the payment button
+    with a "Payment received" confirmation banner.
+
+    Args:
+        to_email: Customer's email address
+        order_id: The order ID for reference
+        amount: The total amount paid
+        store_name: Name of the store
+        customer_name: Optional customer name for personalization
+        customer_phone: Optional customer phone number
+        order_type: Optional order type (pickup/delivery)
+        items: Optional list of order items
+        subtotal: Optional subtotal before tax
+        city_tax: Optional city tax amount
+        state_tax: Optional state tax amount
+        delivery_fee: Optional delivery fee
+
+    Returns:
+        dict with status and details
+    """
+    greeting = f"Hi {customer_name}," if customer_name else "Hi,"
+
+    order_details_text, order_details_html = _build_order_details_section(
+        customer_name, customer_phone, order_type,
+    )
+    items_text, items_html = _build_items_section(
+        items, subtotal, city_tax, state_tax, delivery_fee, amount,
+    )
+
+    subject = f"Receipt for Your {store_name} Order #{order_id}"
+
+    body_text = f"""{greeting}
+
+Thank you for your payment! Your order at {store_name} has been received.
+{order_details_text}{items_text}
+Payment received: ${amount:.2f}
+
+If you have any questions, please call us.
+
+Thanks,
+{store_name}
+"""
+
+    body_html = f"""
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<p>{greeting}</p>
+<p>Thank you for your payment! Your order at <strong>{store_name}</strong> has been received.</p>
+{order_details_html}
+{items_html}
+<div style="margin-top: 24px; padding: 16px 24px; background-color: #ECFDF5; border-radius: 8px; border: 1px solid #A7F3D0; text-align: center;">
+  <span style="color: #059669; font-weight: 600; font-size: 16px;">&#10003; Payment Received &mdash; ${amount:.2f}</span>
+</div>
+<p>If you have any questions, please call us.</p>
+<p>Thanks,<br><strong>{store_name}</strong></p>
+</body>
+</html>
+"""
+
+    if not is_email_configured():
+        logger.info(
+            "MOCK EMAIL to %s: Subject: %s | Body: %s",
+            to_email, subject, body_text[:200] + "...",
+        )
+        return {
+            "status": "sent",
+            "to_email": to_email,
+            "subject": subject,
+            "mock": True,
+            "message": "Receipt email logged (AWS SES not configured)",
+        }
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = AWS_SES_FROM_EMAIL
+        msg["To"] = to_email
+
+        msg.attach(MIMEText(body_text, "plain"))
+        msg.attach(MIMEText(body_html, "html"))
+
+        client = _get_ses_client()
+        if client is None:
+            return {
+                "status": "error",
+                "to_email": to_email,
+                "error": "boto3 not installed",
+                "mock": False,
+                "message": "Failed to send receipt email: boto3 not installed",
+            }
+
+        client.send_raw_email(
+            Source=AWS_SES_FROM_EMAIL,
+            Destinations=[to_email],
+            RawMessage={"Data": msg.as_string()},
+        )
+
+        logger.info("Receipt email sent successfully to %s for order %d", to_email, order_id)
+
+        return {
+            "status": "sent",
+            "to_email": to_email,
+            "subject": subject,
+            "mock": False,
+            "message": "Receipt email sent successfully",
+        }
+
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
+        logger.error("Failed to send receipt email to %s: %s", to_email, str(e))
+        return {
+            "status": "error",
+            "to_email": to_email,
+            "error": str(e),
+            "mock": False,
+            "message": f"Failed to send receipt email: {str(e)}",
+        }
+
+
 def send_report_email(
     session_id: str,
     store_id: str | None = None,

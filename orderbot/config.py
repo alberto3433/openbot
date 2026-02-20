@@ -176,6 +176,10 @@ STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 # Example: "https://order.zuckersbagels.com" or "http://localhost:8000" for dev
 BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
 
+# Delay (seconds) before sending payment email after order confirmation.
+# If customer pays via chatbot button within this window, a receipt is sent instead.
+PAYMENT_EMAIL_DELAY_SECONDS: int = int(os.getenv("PAYMENT_EMAIL_DELAY_SECONDS", "180"))
+
 
 # =============================================================================
 # AWS Messaging Configuration (SNS for SMS, SES for Email)
@@ -231,6 +235,23 @@ STRIPE_CHECKOUT_EXPIRY_SECONDS: int = int(os.getenv("STRIPE_CHECKOUT_EXPIRY_SECO
 # Buffer before token expiry to trigger re-authentication
 
 TOAST_TOKEN_BUFFER_SECONDS: int = int(os.getenv("TOAST_TOKEN_BUFFER_SECONDS", "300"))
+
+
+# =============================================================================
+# Square POS Configuration
+# =============================================================================
+# Square POS integration for pushing confirmed orders to the kitchen display.
+# Leave all empty to disable Square (graceful degradation, zero impact on orders).
+
+SQUARE_ACCESS_TOKEN: str = os.getenv("SQUARE_ACCESS_TOKEN", "")
+SQUARE_LOCATION_ID: str = os.getenv("SQUARE_LOCATION_ID", "")  # Fallback if store has no square_location_id
+SQUARE_ENVIRONMENT: str = os.getenv("SQUARE_ENVIRONMENT", "sandbox")
+SQUARE_API_VERSION: str = os.getenv("SQUARE_API_VERSION", "2025-01-23")
+SQUARE_API_BASE_URL: str = (
+    "https://connect.squareup.com" if SQUARE_ENVIRONMENT == "production"
+    else "https://connect.squareupsandbox.com"
+)
+SQUARE_WEBHOOK_SIGNATURE_KEY: str = os.getenv("SQUARE_WEBHOOK_SIGNATURE_KEY", "")
 
 
 # =============================================================================

@@ -1365,6 +1365,36 @@
         height: 18px;
       }
     }
+
+    /* Payment Button */
+    .payment-bubble {
+      display: flex;
+      justify-content: center;
+      padding: 8px 0;
+    }
+    .payment-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      background-color: var(--brand-primary);
+      color: #FFFFFF;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+      box-shadow: var(--shadow-md);
+    }
+    .payment-btn:hover {
+      background-color: var(--brand-primary-hover);
+    }
+    .payment-btn .payment-icon {
+      width: 18px;
+      height: 18px;
+    }
   </style>
 </head>
 <body>
@@ -1803,6 +1833,24 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
+    function renderPaymentButton(url) {
+      if (!url) return;
+      var row = document.createElement("div");
+      row.className = "msg-row assistant";
+      var wrapper = document.createElement("div");
+      wrapper.className = "payment-bubble";
+      var link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.className = "payment-btn";
+      link.innerHTML = '<svg class="payment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>Complete Payment';
+      wrapper.appendChild(link);
+      row.appendChild(wrapper);
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
     // Event delegation for inline quick reply clicks
     messagesEl.addEventListener("click", function(e) {
       var target = e.target.closest(".quick-reply-inline");
@@ -1923,6 +1971,9 @@
           messageCount++;
           conversationHistory.push({ role: "assistant", content: data.reply });
         }
+        if (data.payment_url) {
+          renderPaymentButton(data.payment_url);
+        }
         if (data.order_state) {
           orderState = data.order_state;
           if (orderState.status === "confirmed") orderConfirmed = true;
@@ -1991,6 +2042,9 @@
                     messageCount++;
                     conversationHistory.push({ role: "assistant", content: fullReply });
                     if (typeof speakText === "function") speakText(fullReply);
+                  }
+                  if (event.payment_url) {
+                    renderPaymentButton(event.payment_url);
                   }
                   if (event.order_state) {
                     orderState = event.order_state;

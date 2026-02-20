@@ -215,6 +215,7 @@ def chat_message(
             order_state=result.order_state,
             actions=processed_actions,
             quick_replies=result.quick_replies,
+            payment_url=result.payment_url,
         )
 
     except ValueError as e:
@@ -286,6 +287,8 @@ def chat_message_stream(
             }
             if result.quick_replies:
                 final_event['quick_replies'] = result.quick_replies
+            if result.payment_url:
+                final_event['payment_url'] = result.payment_url
             yield f"data: {json.dumps(final_event)}\n\n"
 
         except (ValueError, KeyError, TypeError, AttributeError, SQLAlchemyError) as e:

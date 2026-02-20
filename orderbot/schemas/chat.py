@@ -157,6 +157,7 @@ class ChatMessageResponse(BaseModel):
         description="List of actions performed"
     )
     quick_replies: list[dict[str, str]] | None = None
+    payment_url: str | None = None
 
 
 class ReportSessionRequest(BaseModel):

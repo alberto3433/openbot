@@ -15,6 +15,7 @@ request/response format handling done in the endpoint itself.
 """
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from .db.models import SessionAnalytics, Company
 from .cache import menu_cache
-from .email_service import send_payment_link_email
+from .email_service import send_payment_link_email, send_receipt_email
 from .schemas.enums import OrderStatus
 from .tasks.state_machine_adapter import process_message_with_state_machine
 from .services.customer_service import lookup_customer_by_phone
@@ -61,6 +62,9 @@ class ProcessingResult:
 
     # Session data for response
     history: list[dict[str, str]] = field(default_factory=list)
+
+    # Payment
+    payment_url: str | None = None
 
     # Status flags
     order_persisted: bool = False
@@ -179,9 +183,10 @@ class MessageProcessor:
                 store_id=persist_store_id
             )
 
-        # Submit to Toast POS (best-effort, never blocks order flow)
+        # Submit to POS systems (best-effort, never blocks order flow)
         if order_persisted and updated_order_state.get("db_order_id"):
             self._submit_to_toast(updated_order_state)
+            self._submit_to_square(updated_order_state)
 
         # Log analytics for ALL confirmed orders (regardless of customer info)
         if order_is_confirmed and order_not_yet_logged:
@@ -196,14 +201,22 @@ class MessageProcessor:
                 store_id=persist_store_id,
             )
 
-        # Send payment email if applicable
-        if order_is_confirmed and customer_email and updated_order_state.get("db_order_id"):
-            payment_sent = self._send_payment_email(
+        # Create payment URL and schedule delayed email
+        payment_url = None
+        if order_is_confirmed and updated_order_state.get("db_order_id"):
+            payment_url = self._create_payment_url(
                 updated_order_state,
                 customer_email=customer_email,
-                customer_name=customer_name,
-                customer_phone=customer_phone,
             )
+            if customer_email:
+                self._schedule_payment_email(
+                    updated_order_state,
+                    customer_email=customer_email,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                    payment_url=payment_url,
+                )
+                payment_sent = True
 
         # 8. Update and save session
         session["history"] = history
@@ -216,6 +229,7 @@ class MessageProcessor:
             order_state=updated_order_state,
             actions=actions,
             quick_replies=quick_replies,
+            payment_url=payment_url,
             history=history,
             order_persisted=order_persisted,
             analytics_logged=analytics_logged,
@@ -331,6 +345,38 @@ class MessageProcessor:
             return False
 
     # -------------------------------------------------------------------------
+    # Square POS Submission
+    # -------------------------------------------------------------------------
+
+    def _submit_to_square(self, order_state: dict[str, Any]) -> bool:
+        """Submit confirmed order to Square POS. Best-effort: never raises."""
+        try:
+            from .square.service import is_square_configured, submit_order
+            if not is_square_configured():
+                return False
+
+            result = submit_order(self.db, order_state)
+            if result:
+                logger.info(
+                    "Order #%s submitted to Square POS",
+                    order_state.get("db_order_id"),
+                )
+                return True
+            return False
+        except (ImportError, OSError, SQLAlchemyError):
+            logger.exception(
+                "Failed to submit order #%s to Square",
+                order_state.get("db_order_id"),
+            )
+            return False
+        except (ValueError, KeyError, TypeError, ConnectionError):
+            logger.exception(
+                "Unexpected error submitting order #%s to Square",
+                order_state.get("db_order_id"),
+            )
+            return False
+
+    # -------------------------------------------------------------------------
     # Analytics Logging
     # -------------------------------------------------------------------------
 
@@ -378,21 +424,20 @@ class MessageProcessor:
     # Payment Email
     # -------------------------------------------------------------------------
 
-    def _send_payment_email(
+    def _create_payment_url(
         self,
         order_state: dict[str, Any],
-        customer_email: str,
-        customer_name: str | None,
-        customer_phone: str | None,
-    ) -> bool:
-        """Create Stripe checkout session (if configured) and send payment link email."""
+        customer_email: str | None,
+    ) -> str | None:
+        """Create a Stripe Checkout Session and return the payment URL.
+
+        Returns the checkout URL string, or None if Stripe is not configured
+        or session creation fails.
+        """
         try:
             db_order_id = order_state.get("db_order_id")
             if not db_order_id:
-                return False
-
-            company = self._get_company()
-            store_name = company.name if company else "OrderBot"
+                return None
 
             items = order_state.get("items", [])
             checkout_state = order_state.get("checkout_state", {})
@@ -401,39 +446,103 @@ class MessageProcessor:
                 or order_state.get("total_price")
                 or sum(item.get("line_total", 0) for item in items)
             )
-            order_type = order_state.get("order_type", "pickup")
 
-            # Try to create a Stripe checkout session for real payment
-            payment_url = None
             stripe_result = self._create_stripe_session(
-                db_order_id, items, order_total, customer_email,
+                db_order_id, items, order_total, customer_email or "",
             )
             if stripe_result:
-                payment_url = stripe_result["url"]
+                return stripe_result["url"]
+            return None
+        except (OSError, ValueError, KeyError, TypeError, SQLAlchemyError):
+            logger.exception("Failed to create payment URL")
+            return None
 
-            result = send_payment_link_email(
-                to_email=customer_email,
-                order_id=db_order_id,
-                amount=order_total,
-                store_name=store_name,
-                customer_name=customer_name,
-                customer_phone=customer_phone,
-                order_type=order_type,
-                items=items,
-                subtotal=checkout_state.get("subtotal"),
-                city_tax=checkout_state.get("city_tax", 0),
-                state_tax=checkout_state.get("state_tax", 0),
-                delivery_fee=checkout_state.get("delivery_fee", 0),
-                payment_url=payment_url,
-            )
-            logger.info("Payment link email sent: %s", result)
-            return True
-        except (OSError, ValueError):
-            logger.exception("Failed to send payment email")
-            return False
-        except (KeyError, TypeError, SQLAlchemyError):
-            logger.exception("Unexpected error sending payment email")
-            return False
+    def _schedule_payment_email(
+        self,
+        order_state: dict[str, Any],
+        customer_email: str,
+        customer_name: str | None,
+        customer_phone: str | None,
+        payment_url: str | None,
+    ) -> None:
+        """Schedule a delayed payment email using threading.Timer.
+
+        After the delay, checks Order.payment_status in a fresh DB session:
+        - If paid: sends a receipt email (no payment link)
+        - If not paid: sends a payment link email (current behavior)
+        """
+        from .config import PAYMENT_EMAIL_DELAY_SECONDS
+
+        db_order_id = order_state.get("db_order_id")
+        if not db_order_id:
+            return
+
+        company = self._get_company()
+        store_name = company.name if company else "OrderBot"
+
+        items = list(order_state.get("items", []))
+        checkout_state = dict(order_state.get("checkout_state", {}))
+        order_total = (
+            checkout_state.get("total")
+            or order_state.get("total_price")
+            or sum(item.get("line_total", 0) for item in items)
+        )
+        order_type = order_state.get("order_type", "pickup")
+
+        # Capture all email params now; the timer callback runs later
+        email_kwargs = dict(
+            to_email=customer_email,
+            order_id=db_order_id,
+            amount=order_total,
+            store_name=store_name,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            order_type=order_type,
+            items=items,
+            subtotal=checkout_state.get("subtotal"),
+            city_tax=checkout_state.get("city_tax", 0),
+            state_tax=checkout_state.get("state_tax", 0),
+            delivery_fee=checkout_state.get("delivery_fee", 0),
+        )
+
+        def _send_email_callback() -> None:
+            """Timer callback: check payment status and send appropriate email."""
+            try:
+                from .db import SessionLocal
+                from .db.models.orders import Order
+
+                db = SessionLocal()
+                try:
+                    order = db.query(Order).filter(Order.id == db_order_id).first()
+                    is_paid = order and order.payment_status == "paid"
+                finally:
+                    db.close()
+
+                if is_paid:
+                    logger.info(
+                        "Order #%d already paid; sending receipt email to %s",
+                        db_order_id, customer_email,
+                    )
+                    send_receipt_email(**email_kwargs)
+                else:
+                    logger.info(
+                        "Order #%d not yet paid; sending payment link email to %s",
+                        db_order_id, customer_email,
+                    )
+                    send_payment_link_email(payment_url=payment_url, **email_kwargs)
+
+            except (OSError, SQLAlchemyError, ValueError, KeyError, TypeError):
+                logger.exception(
+                    "Failed to send delayed email for order #%d", db_order_id,
+                )
+
+        timer = threading.Timer(PAYMENT_EMAIL_DELAY_SECONDS, _send_email_callback)
+        timer.daemon = True
+        timer.start()
+        logger.info(
+            "Scheduled payment email for order #%d in %ds",
+            db_order_id, PAYMENT_EMAIL_DELAY_SECONDS,
+        )
 
     def _create_stripe_session(
         self,

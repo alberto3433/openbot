@@ -75,10 +75,12 @@ Usage:
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from .base import FullTimestampedModel
 
 
-class StoreOut(BaseModel):
+class StoreOut(FullTimestampedModel):
     """
     Response model for store data.
 
@@ -106,9 +108,6 @@ class StoreOut(BaseModel):
         created_at: When store was created
         updated_at: When store was last updated
     """
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     store_id: str
     name: str
     address: str
@@ -125,8 +124,6 @@ class StoreOut(BaseModel):
     delivery_zip_codes: list[str] = []
     delivery_fee: float = 2.99
     deleted_at: datetime | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
 
 
 class StoreCreate(BaseModel):

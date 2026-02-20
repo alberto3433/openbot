@@ -111,6 +111,10 @@ class MenuItemTask(ItemTask):
     # Popped one at a time during configuration to show "We don't have X" messages
     unrecognized_ingredients: list[dict] = Field(default_factory=list)
 
+    # Inapplicable attribute words from user input (e.g., "small" on non-sized item)
+    # List of {word, attribute_slug} — consumed by question_builder to generate notes
+    inapplicable_attributes: list[dict] = Field(default_factory=list)
+
     # Bundle fields - for items that include configurable sub-items (e.g., omelette + bagel)
     # bundle_id groups related items (parent + children share same bundle_id)
     bundle_id: str | None = None

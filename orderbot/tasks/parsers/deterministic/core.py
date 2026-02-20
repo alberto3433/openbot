@@ -70,7 +70,7 @@ from .modification_parsing import (
 )
 from .tokenization import _parse_multi_item_order
 from .inline_spec_parsing import _is_inline_attribute_spec_pattern
-from .extraction import _detect_inapplicable_modifiers
+from .extraction import _detect_inapplicable_modifiers, _detect_inapplicable_attributes
 from ...config_flow_utils import LAST_ITEM_PRONOUNS_EXTENDED
 
 logger = logging.getLogger(__name__)
@@ -900,6 +900,12 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
     # that aren't valid for this item type (e.g., "hazelnut syrup" on Deviled Eggs)
     unrecognized = _detect_inapplicable_modifiers(text_lower) if not mod_list else []
 
+    # Detect inapplicable attribute words: known attribute options (e.g., "small")
+    # that don't apply to this item type (e.g., sandwich has no size attribute)
+    inapplicable_attrs = _detect_inapplicable_attributes(
+        text_lower, menu_item, menu_item_span, item_type_for_mods
+    )
+
     parsed_items = [
         build_parsed_item(
             item_type=item_type_for_mods or "menu_item",
@@ -909,6 +915,7 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
             attr_result=attr_result,
             modifiers=mod_list,
             unrecognized_ingredients=unrecognized,
+            inapplicable_attributes=inapplicable_attrs,
         )
         for _ in range(qty)
     ]

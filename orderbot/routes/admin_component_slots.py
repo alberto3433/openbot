@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
+from .crud_helpers import get_or_404
 from ..db.models import (
     GlobalAttributeOption,
     GlobalAttribute,
@@ -55,9 +56,7 @@ def list_item_types_with_slots(db: Session = Depends(get_db)):
 @admin_component_slots_router.get("/item-types/{item_type_id}/slots")
 def get_item_type_slots(item_type_id: int, db: Session = Depends(get_db)):
     """Get all component slots for an item type."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
+    item_type = get_or_404(db, ItemType, item_type_id, detail="Item type not found")
 
     slots = (
         db.query(ItemTypeComponentSlot)
@@ -108,9 +107,7 @@ def create_component_slot(
 ):
     """Create a new component slot for an item type."""
     # Verify item type exists
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
+    item_type = get_or_404(db, ItemType, item_type_id, detail="Item type not found")
 
     # Check for duplicate slot name
     existing = (
@@ -163,9 +160,7 @@ def update_component_slot(
     db: Session = Depends(get_db),
 ):
     """Update a component slot."""
-    slot = db.query(ItemTypeComponentSlot).filter(ItemTypeComponentSlot.id == slot_id).first()
-    if not slot:
-        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = get_or_404(db, ItemTypeComponentSlot, slot_id, detail="Slot not found")
 
     if slot_name is not None:
         slot.slot_name = slot_name
@@ -200,9 +195,7 @@ def update_component_slot(
 @admin_component_slots_router.delete("/slots/{slot_id}")
 def delete_component_slot(slot_id: int, db: Session = Depends(get_db)):
     """Delete a component slot and all its options."""
-    slot = db.query(ItemTypeComponentSlot).filter(ItemTypeComponentSlot.id == slot_id).first()
-    if not slot:
-        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = get_or_404(db, ItemTypeComponentSlot, slot_id, detail="Slot not found")
 
     db.delete(slot)
     db.commit()
@@ -287,9 +280,7 @@ def add_slot_option(
     db: Session = Depends(get_db),
 ):
     """Add an option to a component slot."""
-    slot = db.query(ItemTypeComponentSlot).filter(ItemTypeComponentSlot.id == slot_id).first()
-    if not slot:
-        raise HTTPException(status_code=404, detail="Slot not found")
+    slot = get_or_404(db, ItemTypeComponentSlot, slot_id, detail="Slot not found")
 
     # Must have either item_type or menu_item
     if not allowed_item_type_id and not allowed_menu_item_id:
@@ -347,9 +338,7 @@ def update_slot_option(
     db: Session = Depends(get_db),
 ):
     """Update a slot option."""
-    option = db.query(ComponentSlotOption).filter(ComponentSlotOption.id == option_id).first()
-    if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
+    option = get_or_404(db, ComponentSlotOption, option_id, detail="Option not found")
 
     if price_rule is not None:
         option.price_rule = price_rule
@@ -377,9 +366,7 @@ def update_slot_option(
 @admin_component_slots_router.delete("/options/{option_id}")
 def delete_slot_option(option_id: int, db: Session = Depends(get_db)):
     """Delete a slot option."""
-    option = db.query(ComponentSlotOption).filter(ComponentSlotOption.id == option_id).first()
-    if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
+    option = get_or_404(db, ComponentSlotOption, option_id, detail="Option not found")
 
     db.delete(option)
     db.commit()
@@ -403,11 +390,7 @@ def update_default_modifiers(
     - {"type": "attribute_option", "global_attribute_option_id": 42}
     - {"type": "ingredient", "ingredient_id": 15, "quantity": 1}
     """
-    option = db.query(ComponentSlotOption).filter(
-        ComponentSlotOption.id == option_id
-    ).first()
-    if not option:
-        raise HTTPException(status_code=404, detail="Option not found")
+    option = get_or_404(db, ComponentSlotOption, option_id, detail="Option not found")
 
     # Validate each entry
     validated = []

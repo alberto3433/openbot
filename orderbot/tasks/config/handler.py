@@ -21,6 +21,7 @@ from orderbot.constants import QUALIFIER_PROXIMITY_THRESHOLD
 from ..models import OrderTask, MenuItemTask
 from ..pending_fields import PendingField
 from ..normalization import strip_ordering_prefix
+from ..parsers import strip_conversational_fillers
 from ..schemas import StateMachineResult, OrderPhase
 from ..parsers.constants import DEFAULT_PAGINATION_SIZE
 from ..handler_config import BaseHandler
@@ -451,6 +452,9 @@ class MenuItemConfigHandler(BaseHandler):
         if unmatched_result:
             return unmatched_result
 
+        # Generate note for inapplicable attributes (e.g., "Heads up, only comes in one size")
+        inapplicable_note = self._question_builder.handle_inapplicable_attributes(item)
+
         # Calculate ordinal position and context for multi-item orders
         ordinal, item_num, has_duplicates = self._question_builder.calculate_item_ordinal(item, order)
         multi_count = len(order.multi_item_config_names) if order.multi_item_config_names else 1
@@ -473,6 +477,10 @@ class MenuItemConfigHandler(BaseHandler):
                     question = prefix
                 else:
                     question = prefix + question
+
+        # Prepend inapplicable attribute note before the question
+        if inapplicable_note:
+            question = inapplicable_note + " " + question
 
         # Set up order state for receiving the answer
         order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr['slug']}")
@@ -841,8 +849,9 @@ class MenuItemConfigHandler(BaseHandler):
         if disambiguation_result:
             return disambiguation_result
 
-        # Strip common ordering prefixes and trailing punctuation from the input
-        # e.g., "can I have butter?" -> "butter", "make it a double" -> "double"
+        # Strip conversational fillers and ordering prefixes from the input
+        # e.g., "wait, make that a large" -> "large", "can I have butter?" -> "butter"
+        user_input = strip_conversational_fillers(user_input)
         user_input = strip_ordering_prefix(user_input).rstrip("?!.,")
 
         # NOTE: milk_sweetener_syrup now uses the standard multi_select flow

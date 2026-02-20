@@ -707,13 +707,53 @@ class ConfiguringItemHandler:
             added_count, item_name, target_qty
         )
 
-        # Continue with the current config question
+        # Continue with the current config question, preserving quick_replies
+        # for inline linkification on the frontend.
+        config_result = self._get_current_config_result(item, order)
+        if config_result:
+            return StateMachineResult(
+                message=f"Sure, that's {target_qty} total. {config_result.message}",
+                order=config_result.order,
+                quick_replies=config_result.quick_replies,
+            )
+        # Fallback to text-only if we can't get a full result
         current_question = self.config_helper_handler.get_current_config_question(order, item)
         suffix = current_question or "Anything else?"
         return StateMachineResult(
             message=f"Sure, that's {target_qty} total. {suffix}",
             order=order,
         )
+
+    def _get_current_config_result(
+        self, item: MenuItemTask, order: OrderTask
+    ) -> StateMachineResult | None:
+        """Get the current config question as a full StateMachineResult with quick_replies.
+
+        Parses the pending_field, looks up the attribute, and delegates to the
+        menu item config handler to build a complete result including quick_replies
+        for frontend linkification.
+
+        Returns:
+            StateMachineResult with message and quick_replies, or None if lookup fails.
+        """
+        field = order.pending_field
+        if not field or not self.menu_item_handler:
+            return None
+
+        item_type, attr_slug = parse_pending_field(field)
+        if not item_type or not attr_slug:
+            return None
+
+        try:
+            attrs = menu_cache.get_item_type_attributes(item_type)
+        except Exception:
+            return None
+
+        attr = attrs.get(attr_slug)
+        if not attr:
+            return None
+
+        return self.menu_item_handler._ask_attribute_question(item, order, attr)
 
     def _check_boolean_attribute_match(
         self, user_input: str, item: MenuItemTask, order: OrderTask

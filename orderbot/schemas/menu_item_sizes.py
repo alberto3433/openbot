@@ -31,9 +31,9 @@ Size Prices (managed via menu item endpoints):
 - PUT /admin/menu-items/{id}/prices: Update size prices for a menu item
 """
 
-from datetime import datetime
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel, ConfigDict, Field
+from .base import TimestampedModel
 
 
 # =============================================================================
@@ -91,14 +91,10 @@ class SizeCategoryUpdate(BaseModel):
     )
 
 
-class SizeCategoryOut(SizeCategoryBase):
+class SizeCategoryOut(SizeCategoryBase, TimestampedModel):
     """Response model for a size category."""
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     company_id: int
-    created_at: datetime
     size_count: int = Field(
         default=0,
         description="Number of sizes in this category"
@@ -161,17 +157,13 @@ class SizeUpdate(BaseModel):
     )
 
 
-class SizeOut(BaseModel):
+class SizeOut(TimestampedModel):
     """Response model for a size."""
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     company_id: int
     category_id: int
     name: str
     display_order: int
-    created_at: datetime
     category_name: str | None = Field(
         None,
         description="Name of the category this size belongs to"
@@ -221,16 +213,12 @@ class SizePriceUpdate(BaseModel):
     )
 
 
-class SizePriceOut(BaseModel):
+class SizePriceOut(TimestampedModel):
     """Response model for a size price entry."""
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     menu_item_id: int
     size_id: int
     price: float
-    created_at: datetime
     size_name: str | None = Field(
         None,
         description="Name of the size"

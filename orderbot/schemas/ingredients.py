@@ -59,10 +59,12 @@ Usage:
     )
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from .base import OrmModel
 
 
-class IngredientListOut(BaseModel):
+class IngredientListOut(OrmModel):
     """
     Lightweight response model for ingredient list (sidebar).
 
@@ -75,15 +77,13 @@ class IngredientListOut(BaseModel):
         category: Type category (bread, protein, cheese, topping, sauce)
         is_available: Availability status for quick indicator
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     category: str
     is_available: bool
 
 
-class IngredientOut(BaseModel):
+class IngredientOut(OrmModel):
     """
     Response model for ingredient data.
 
@@ -101,8 +101,6 @@ class IngredientOut(BaseModel):
         must_match: List of strings - at least one must be in input for this to match
         abbreviation: Short form expanded before parsing (e.g., "cc" for "cream cheese")
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     category: str
@@ -203,7 +201,7 @@ class IngredientAvailabilityUpdate(BaseModel):
     store_id: str | None = None
 
 
-class IngredientStoreAvailabilityOut(BaseModel):
+class IngredientStoreAvailabilityOut(OrmModel):
     """
     Response model for ingredient with store-specific availability.
 
@@ -221,8 +219,6 @@ class IngredientStoreAvailabilityOut(BaseModel):
         aliases: List of synonyms for matching
         must_match: List of strings - at least one must be in input for this to match
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     slug: str
@@ -234,7 +230,7 @@ class IngredientStoreAvailabilityOut(BaseModel):
     must_match: list[str] = []
 
 
-class MenuItemStoreAvailabilityOut(BaseModel):
+class MenuItemStoreAvailabilityOut(OrmModel):
     """
     Response model for menu item with store-specific availability.
 
@@ -248,8 +244,6 @@ class MenuItemStoreAvailabilityOut(BaseModel):
         base_price: Item base price
         is_available: Availability at the queried store
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     category: str | None = None  # Derived from item_type.display_name

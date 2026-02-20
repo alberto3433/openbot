@@ -7,14 +7,53 @@ that use the CRUDRouterFactory.
 
 Helpers:
 --------
+- get_or_404: Fetch a record by ID or raise 404
 - make_list_builder: Creates list response wrapper functions
 - apply_payload_updates: Applies non-None payload fields to model with normalization
 """
 
 from typing import Any, Callable, TypeVar
 
+from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+
+def get_or_404(
+    db: Session,
+    model: type,
+    id_value: int | str,
+    *,
+    id_column: str = "id",
+    detail: str | None = None,
+):
+    """
+    Fetch a record by ID or raise HTTP 404.
+
+    Replaces the common pattern:
+        item = db.query(Model).filter(Model.id == item_id).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="... not found")
+
+    Args:
+        db: Database session
+        model: SQLAlchemy model class
+        id_value: The ID value to look up
+        id_column: Column name to filter on (default: "id")
+        detail: Custom 404 message. If None, auto-generates from model name.
+
+    Returns:
+        The found record
+
+    Raises:
+        HTTPException: 404 if record not found
+    """
+    column = getattr(model, id_column)
+    item = db.query(model).filter(column == id_value).first()
+    if not item:
+        name = model.__name__.replace("_", " ")
+        raise HTTPException(status_code=404, detail=detail or f"{name} not found")
+    return item
 
 
 ListSchemaType = TypeVar("ListSchemaType", bound=BaseModel)

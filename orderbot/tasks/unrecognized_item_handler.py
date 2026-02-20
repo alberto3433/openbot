@@ -158,12 +158,12 @@ class UnrecognizedItemHandler:
             return (message, category, qr)
 
         # Level 4: Generic fallback
-        message = self._build_generic_response(item_name, order_item_count)
+        message, qr = self._build_generic_response(item_name, order_item_count)
         self._log_unrecognized(
             item_name, item_name_for_lookup, session_id,
             order_item_count, "generic", None
         )
-        return (message, None, [])
+        return (message, None, qr)
 
     def _check_curated_suggestions(self, normalized_input: str) -> dict | None:
         """
@@ -523,11 +523,14 @@ class UnrecognizedItemHandler:
         self,
         item_name: str,
         order_item_count: int,
-    ) -> str:
+    ) -> tuple[str, list[dict]]:
         """Build generic fallback response with top categories.
 
         Uses high-level display groups (Breads, Sandwiches, Drinks) instead of
         granular item types (Bagels, Chai Drinks, etc.) for cleaner UX.
+
+        Returns:
+            Tuple of (message, quick_replies).
         """
         clean_name = strip_leading_filler_words(item_name).rstrip('?!.')
         # Get high-level display groups
@@ -537,14 +540,17 @@ class UnrecognizedItemHandler:
             # Show top 3-4 display groups
             group_names = [g["display_name"] for g in display_groups][:4]
             group_list = format_english_list(group_names, conjunction="and")
+            qr = [{"label": name, "value": name} for name in group_names]
             return (
                 f"I'm sorry, we don't have {clean_name}. "
-                f"We do have {group_list} though - would any of those interest you?"
+                f"We do have {group_list} though - would any of those interest you?",
+                qr,
             )
         else:
             return (
                 f"I'm sorry, we don't have {clean_name}. "
-                f"Is there something else I can help you with?"
+                f"Is there something else I can help you with?",
+                [],
             )
 
     @staticmethod

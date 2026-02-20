@@ -263,6 +263,16 @@ class ItemBuilder:
         if ctx.unrecognized_ingredients:
             item.unrecognized_ingredients = list(ctx.unrecognized_ingredients)
 
+    def set_inapplicable_attributes(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
+        """Set inapplicable attribute words for the item.
+
+        Args:
+            item: The menu item to configure.
+            ctx: The build context.
+        """
+        if ctx.inapplicable_attributes:
+            item.inapplicable_attributes = list(ctx.inapplicable_attributes)
+
     def infer_attributes(self, item: MenuItemTask) -> None:
         """Infer attributes from item name.
 
@@ -357,13 +367,16 @@ class ItemBuilder:
         # Step 11: Set unrecognized ingredients
         self.set_unrecognized_ingredients(item, ctx)
 
-        # Step 12: Infer attributes from item name
+        # Step 12: Set inapplicable attributes
+        self.set_inapplicable_attributes(item, ctx)
+
+        # Step 13: Infer attributes from item name
         self.infer_attributes(item)
 
-        # Step 12: Recalculate price
+        # Step 14: Recalculate price
         self.recalculate_price(item)
 
-        # Step 13: Set status
+        # Step 15: Set status
         self.set_status(item, ctx.needs_configuration)
 
         return item

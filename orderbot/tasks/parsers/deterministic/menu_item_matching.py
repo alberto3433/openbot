@@ -386,8 +386,8 @@ def _get_default_menu_item_for_type(item_type_slug: str) -> str | None:
         if name.lower().endswith(type_display):
             return name.title()
 
-    # Fallback: return first item (sorted alphabetically for consistency)
-    return sorted(item_names)[0].title()
+    # Multiple items, no clear default — return None so disambiguation can handle it
+    return None
 
 
 def _match_menu_item_name_for_type_with_span(

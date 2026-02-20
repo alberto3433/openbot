@@ -58,6 +58,9 @@ class ItemBuildContext:
     unrecognized_ingredients: list[dict[str, Any]] | None = None
     """Unrecognized ingredient tokens with alternative suggestions."""
 
+    inapplicable_attributes: list[dict[str, Any]] | None = None
+    """Attribute option words that don't apply to this item type."""
+
     skip_first_question: bool = False
     """If True, don't ask the first config question (for multi-item adds)."""
 

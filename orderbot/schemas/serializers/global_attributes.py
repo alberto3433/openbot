@@ -22,6 +22,50 @@ from orderbot.schemas.global_attributes import (
 )
 
 
+def _derive_option_identity(
+    opt: GlobalAttributeOption,
+    db: Session | None,
+) -> tuple[str, str, str | None, str | None]:
+    """Derive (slug, display_name, ingredient_name, modifier_category_name) for an option.
+
+    3-tier fallback: eager-loaded ingredient -> DB lookup -> option's own columns.
+    """
+    ingredient = getattr(opt, 'ingredient', None)
+
+    # Tier 2: DB fallback
+    if not ingredient and opt.ingredient_id and db:
+        ingredient = db.query(Ingredient).filter(Ingredient.id == opt.ingredient_id).first()
+
+    if ingredient:
+        slug = ingredient.slug
+        display_name = ingredient.name
+        ingredient_name = ingredient.name
+        mod_cat = ingredient.modifier_category.display_name if ingredient.modifier_category else None
+    else:
+        slug = opt.slug or f"option_{opt.id}"
+        display_name = opt.display_name or f"Option {opt.id}"
+        ingredient_name = None
+        mod_cat = None
+
+    return slug, display_name, ingredient_name, mod_cat
+
+
+def _resolve_forward_attribute_slug(
+    opt: GlobalAttributeOption,
+    db: Session | None,
+) -> str | None:
+    """Resolve forward_to_attribute slug with eager-load -> DB fallback."""
+    if hasattr(opt, 'forward_to_attribute') and opt.forward_to_attribute:
+        return opt.forward_to_attribute.slug
+    if opt.forward_to_attribute_id and db:
+        forward_attr = db.query(GlobalAttribute).filter(
+            GlobalAttribute.id == opt.forward_to_attribute_id
+        ).first()
+        if forward_attr:
+            return forward_attr.slug
+    return None
+
+
 def serialize_global_attribute_option(
     opt: GlobalAttributeOption,
     db: Session | None = None
@@ -38,28 +82,8 @@ def serialize_global_attribute_option(
     # Get aliases from the option's alias_records
     aliases_str = ", ".join(opt.aliases) if opt.aliases else None
 
-    # Derive slug/display_name from ingredient when linked (normalized)
-    # Handle case where ingredient relationship isn't loaded but ingredient_id exists
-    ingredient = opt.ingredient
-    ingredient_name = None
-
-    if ingredient:
-        slug = ingredient.slug
-        display_name = ingredient.name
-        ingredient_name = ingredient.name
-    elif opt.ingredient_id and db:
-        # Fallback: load ingredient if relationship wasn't eager loaded
-        ingredient = db.query(Ingredient).filter(Ingredient.id == opt.ingredient_id).first()
-        if ingredient:
-            slug = ingredient.slug
-            display_name = ingredient.name
-            ingredient_name = ingredient.name
-        else:
-            slug = opt.slug or f"option_{opt.id}"
-            display_name = opt.display_name or f"Option {opt.id}"
-    else:
-        slug = opt.slug or f"option_{opt.id}"
-        display_name = opt.display_name or f"Option {opt.id}"
+    # Derive identity fields from ingredient (3-tier fallback)
+    slug, display_name, ingredient_name, modifier_category_name = _derive_option_identity(opt, db)
 
     # Serialize skip rules
     skip_rules_out = []
@@ -72,22 +96,8 @@ def serialize_global_attribute_option(
                 skipped_attribute_name=rule.skipped_attribute.display_name if rule.skipped_attribute else "",
             ))
 
-    # Get forward_to_attribute info if present
-    forward_to_attr_slug = None
-    if hasattr(opt, 'forward_to_attribute') and opt.forward_to_attribute:
-        forward_to_attr_slug = opt.forward_to_attribute.slug
-    elif opt.forward_to_attribute_id and db:
-        # Fallback: load if relationship wasn't eager loaded
-        forward_attr = db.query(GlobalAttribute).filter(
-            GlobalAttribute.id == opt.forward_to_attribute_id
-        ).first()
-        if forward_attr:
-            forward_to_attr_slug = forward_attr.slug
-
-    # Derive modifier_category from ingredient at runtime
-    modifier_category_name = None
-    if ingredient and ingredient.modifier_category:
-        modifier_category_name = ingredient.modifier_category.display_name
+    # Resolve forward_to_attribute slug (eager-load -> DB fallback)
+    forward_to_attr_slug = _resolve_forward_attribute_slug(opt, db)
 
     return GlobalAttributeOptionOut(
         id=opt.id,

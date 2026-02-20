@@ -27,12 +27,12 @@ Pattern Types:
 - done: Done responses (that's all, nothing else, etc.)
 """
 
-from datetime import datetime
+from pydantic import BaseModel
 
-from pydantic import BaseModel, ConfigDict
+from .base import TimestampedModel
 
 
-class ResponsePatternOut(BaseModel):
+class ResponsePatternOut(TimestampedModel):
     """
     Response model for a response pattern.
 
@@ -42,12 +42,8 @@ class ResponsePatternOut(BaseModel):
         pattern: The pattern to match
         created_at: When the pattern was created
     """
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     pattern_type: str
     pattern: str
-    created_at: datetime | None = None
 
 
 class ResponsePatternCreate(BaseModel):

@@ -39,6 +39,7 @@ from ..schemas.global_attributes import (
 )
 from ..schemas.serializers import serialize_item_type_link
 from .admin_global_attributes import admin_item_type_global_attrs_router
+from .crud_helpers import get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +59,7 @@ def list_item_type_global_attributes(
     _admin: str = Depends(verify_admin_credentials),
 ) -> list[ItemTypeGlobalAttributeOut]:
     """List all global attributes linked to an item type."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
+    item_type = get_or_404(db, ItemType, item_type_id, detail="Item type not found")
 
     # Eager load all relationships to avoid N+1 queries
     # modifier_category is derived from ingredient at runtime
@@ -94,15 +93,9 @@ def link_global_attribute_to_item_type(
     _admin: str = Depends(verify_admin_credentials),
 ) -> ItemTypeGlobalAttributeOut:
     """Link a global attribute to an item type."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
+    item_type = get_or_404(db, ItemType, item_type_id, detail="Item type not found")
 
-    global_attr = db.query(GlobalAttribute).filter(
-        GlobalAttribute.id == payload.global_attribute_id
-    ).first()
-    if not global_attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    global_attr = get_or_404(db, GlobalAttribute, payload.global_attribute_id, detail="Global attribute not found")
 
     # Check if already linked
     existing = db.query(ItemTypeGlobalAttribute).filter(
@@ -153,9 +146,7 @@ def update_item_type_global_attribute_link(
     _admin: str = Depends(verify_admin_credentials),
 ) -> ItemTypeGlobalAttributeOut:
     """Update an item type's global attribute link settings."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
+    item_type = get_or_404(db, ItemType, item_type_id, detail="Item type not found")
 
     link = db.query(ItemTypeGlobalAttribute).filter(
         ItemTypeGlobalAttribute.id == link_id,
@@ -206,9 +197,7 @@ def unlink_global_attribute_from_item_type(
     _admin: str = Depends(verify_admin_credentials),
 ) -> None:
     """Unlink a global attribute from an item type."""
-    item_type = db.query(ItemType).filter(ItemType.id == item_type_id).first()
-    if not item_type:
-        raise HTTPException(status_code=404, detail="Item type not found")
+    item_type = get_or_404(db, ItemType, item_type_id, detail="Item type not found")
 
     link = db.query(ItemTypeGlobalAttribute).filter(
         ItemTypeGlobalAttribute.id == link_id,

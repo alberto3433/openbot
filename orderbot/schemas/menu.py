@@ -51,7 +51,9 @@ Usage:
     new_item = MenuItemOut.model_validate(db_item)
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from .base import OrmModel
 
 
 class SizePriceOut(BaseModel):
@@ -75,7 +77,7 @@ class MenuItemIngredientInput(BaseModel):
     quantity: int = 1
 
 
-class MenuItemOut(BaseModel):
+class MenuItemOut(OrmModel):
     """
     Response model for menu item data.
 
@@ -94,8 +96,6 @@ class MenuItemOut(BaseModel):
         abbreviation: Short form expanded before parsing (e.g., "oj" for "orange juice")
         ingredients: Default ingredients via menu_item_ingredients junction table
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     description: str | None = None

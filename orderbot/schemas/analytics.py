@@ -73,12 +73,12 @@ Usage:
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
-from .base import PaginatedListResponse
+from .base import OrmModel, PaginatedListResponse
 
 
-class SessionAnalyticsOut(BaseModel):
+class SessionAnalyticsOut(OrmModel):
     """
     Response model for a single session analytics record.
 
@@ -104,8 +104,6 @@ class SessionAnalyticsOut(BaseModel):
         store_id: Which store location
         ended_at: ISO timestamp when session ended
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     session_id: str
     status: str

@@ -62,10 +62,12 @@ Usage:
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from .base import OrmModel
 
 
-class CompanyOut(BaseModel):
+class CompanyOut(OrmModel):
     """
     Response model for company settings.
 
@@ -107,8 +109,6 @@ class CompanyOut(BaseModel):
         catering_phone: Phone number for catering inquiries
         catering_email: Email for catering inquiries
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     bot_persona_name: str

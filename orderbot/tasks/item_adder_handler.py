@@ -218,6 +218,7 @@ class ItemAdderHandler(MenuDataMixin):
         # Override: If item type has component slots (like omelette with side choice),
         # it's a signature-item-only type that requires user to pick a specific item.
         # Trigger disambiguation instead of treating as a generic configurable request.
+        needs_item_selection = False
         if is_configurable_generic_request and item_type:
             has_component_slots = menu_cache.item_type_has_component_slots(item_type)
             if has_component_slots:
@@ -225,6 +226,15 @@ class ItemAdderHandler(MenuDataMixin):
                 if len(items_of_type) > 1:
                     # Item type with component slots (e.g., omelette) - need disambiguation
                     is_configurable_generic_request = False
+
+        # Override: If caller didn't specify an item name and type has multiple items,
+        # the user provided only attributes (e.g., "large iced") — need disambiguation
+        # to ask which specific item they want
+        if is_configurable_generic_request and not kwargs.get("item_name"):
+            items_of_type = menu_cache.get_items_by_item_type(item_type)
+            if len(items_of_type) > 1:
+                is_configurable_generic_request = False
+                needs_item_selection = True
 
         # Check for multiple word-boundary matches (e.g., "tea" matches Hot Tea, Iced Tea, etc.)
         # This triggers disambiguation even when the term isn't a registered category reference
@@ -255,7 +265,8 @@ class ItemAdderHandler(MenuDataMixin):
             filter_type = item_type
 
         needs_disambiguation = (
-            (is_category_reference or is_empty_name or has_multiple_word_matches)
+            (is_category_reference or is_empty_name or has_multiple_word_matches
+             or needs_item_selection)
             and not is_configurable_generic_request
         )
 
@@ -355,6 +366,9 @@ class ItemAdderHandler(MenuDataMixin):
         # Get unrecognized_ingredients from kwargs (for "We don't have X" messaging)
         unrecognized_ingredients = kwargs.get("unrecognized_ingredients")
 
+        # Get inapplicable_attributes from kwargs (for "only comes in one size" messaging)
+        inapplicable_attributes = kwargs.get("inapplicable_attributes")
+
         logger.info(
             "ADD ITEM: type=%s, name=%s, qty=%d, pre_filled=%s",
             item_type, item_name, quantity,
@@ -374,6 +388,7 @@ class ItemAdderHandler(MenuDataMixin):
             ambiguous_selections=ambiguous_selections,
             special_instructions=special_instructions,
             unrecognized_ingredients=unrecognized_ingredients,
+            inapplicable_attributes=inapplicable_attributes,
             skip_first_question=skip_first_question,
         )
 
@@ -771,6 +786,7 @@ class ItemAdderHandler(MenuDataMixin):
         ambiguous_selections: list[dict] | None = None,
         special_instructions: list[str] | None = None,
         unrecognized_ingredients: list[dict] | None = None,
+        inapplicable_attributes: list[dict] | None = None,
         skip_first_question: bool = False,
     ) -> StateMachineResult:
         """
@@ -811,6 +827,7 @@ class ItemAdderHandler(MenuDataMixin):
             ambiguous_selections=ambiguous_selections,
             special_instructions=special_instructions,
             unrecognized_ingredients=unrecognized_ingredients,
+            inapplicable_attributes=inapplicable_attributes,
             skip_first_question=skip_first_question,
         )
 

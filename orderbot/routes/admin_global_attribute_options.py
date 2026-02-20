@@ -50,6 +50,7 @@ from ..schemas.global_attributes import (
 )
 from ..schemas.serializers import serialize_global_attribute_option
 from .admin_global_attributes import admin_global_attributes_router
+from .crud_helpers import get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +70,7 @@ def list_global_attribute_options(
     _admin: str = Depends(verify_admin_credentials),
 ) -> list[GlobalAttributeOptionOut]:
     """List all options for a global attribute."""
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     return [serialize_global_attribute_option(opt, db) for opt in attr.options]
 
@@ -89,9 +88,7 @@ def create_global_attribute_option(
     _admin: str = Depends(verify_admin_credentials),
 ) -> GlobalAttributeOptionOut:
     """Add a new option to a global attribute."""
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Determine ingredient_id: use provided value, or auto-find matching ingredient
     ingredient_id = payload.ingredient_id
@@ -216,9 +213,7 @@ def update_global_attribute_option(
     _admin: str = Depends(verify_admin_credentials),
 ) -> GlobalAttributeOptionOut:
     """Update a global attribute option."""
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     option = db.query(GlobalAttributeOption).filter(
         GlobalAttributeOption.id == option_id,
@@ -338,9 +333,7 @@ def delete_global_attribute_option(
     _admin: str = Depends(verify_admin_credentials),
 ) -> None:
     """Delete a global attribute option."""
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     option = db.query(GlobalAttributeOption).filter(
         GlobalAttributeOption.id == option_id,
@@ -378,9 +371,7 @@ def auto_link_options_to_ingredients(
     Returns:
         Dict with counts of linked and unmatched options.
     """
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Get unlinked options for this attribute
     unlinked_options = db.query(GlobalAttributeOption).filter(
@@ -448,14 +439,10 @@ def create_option_from_ingredient(
     User only needs to specify price_modifier and display_order.
     """
     # Verify attribute exists
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Verify ingredient exists
-    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
-    if not ingredient:
-        raise HTTPException(status_code=404, detail="Ingredient not found")
+    ingredient = get_or_404(db, Ingredient, ingredient_id)
 
     # Check if this ingredient is already linked to an option for this attribute
     already_linked = db.query(GlobalAttributeOption).filter(
@@ -521,9 +508,7 @@ def list_unlinked_ingredients(
     Returns ingredients sorted by name.
     """
     # Verify attribute exists
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Get IDs of already-linked ingredients
     linked_ingredient_ids = db.query(GlobalAttributeOption.ingredient_id).filter(
@@ -565,9 +550,7 @@ def list_option_skip_rules(
 ) -> list[SkipRuleOut]:
     """List all skip rules for a global attribute option."""
     # Verify attribute exists
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Verify option exists and belongs to attribute
     option = db.query(GlobalAttributeOption).filter(
@@ -611,9 +594,7 @@ def create_option_skip_rule(
 ) -> SkipRuleOut:
     """Add a skip rule to a global attribute option."""
     # Verify attribute exists
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Verify option exists and belongs to attribute
     option = db.query(GlobalAttributeOption).filter(
@@ -624,11 +605,7 @@ def create_option_skip_rule(
         raise HTTPException(status_code=404, detail="Option not found")
 
     # Verify skipped attribute exists
-    skipped_attr = db.query(GlobalAttribute).filter(
-        GlobalAttribute.id == payload.skipped_attribute_id
-    ).first()
-    if not skipped_attr:
-        raise HTTPException(status_code=404, detail="Skipped attribute not found")
+    skipped_attr = get_or_404(db, GlobalAttribute, payload.skipped_attribute_id, detail="Skipped attribute not found")
 
     # Check if skip rule already exists
     existing = db.query(GlobalAttributeOptionSkip).filter(
@@ -680,9 +657,7 @@ def delete_option_skip_rule(
 ) -> None:
     """Delete a skip rule from a global attribute option."""
     # Verify attribute exists
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Verify option exists and belongs to attribute
     option = db.query(GlobalAttributeOption).filter(

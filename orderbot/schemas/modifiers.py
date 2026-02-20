@@ -95,14 +95,16 @@ Usage:
     large = AttributeOptionCreate(slug="large", display_name="Large", price_modifier=1.00)
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from .base import OrmModel
 
 
 # =============================================================================
 # Attribute Option Schemas
 # =============================================================================
 
-class AttributeOptionOut(BaseModel):
+class AttributeOptionOut(OrmModel):
     """
     Response model for an attribute option.
 
@@ -118,8 +120,6 @@ class AttributeOptionOut(BaseModel):
         is_available: Whether option is currently available
         display_order: Sort order for display
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     slug: str
     display_name: str
@@ -188,7 +188,7 @@ class AttributeOptionUpdate(BaseModel):
 # Global Attribute Reference (for ItemTypeOut)
 # =============================================================================
 
-class GlobalAttributeRef(BaseModel):
+class GlobalAttributeRef(OrmModel):
     """
     Lightweight reference to a global attribute linked to an item type.
 
@@ -200,8 +200,6 @@ class GlobalAttributeRef(BaseModel):
         slug: URL-safe identifier (e.g., "bread", "size")
         display_name: Human-readable name (e.g., "Bread", "Size")
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     slug: str
     display_name: str
@@ -211,7 +209,7 @@ class GlobalAttributeRef(BaseModel):
 # Overall Category Schemas
 # =============================================================================
 
-class OverallCategoryOut(BaseModel):
+class OverallCategoryOut(OrmModel):
     """
     Response model for an overall category.
 
@@ -223,17 +221,13 @@ class OverallCategoryOut(BaseModel):
         slug: URL-safe identifier (e.g., "food", "beverage")
         display_name: Human-readable name (e.g., "Food", "Beverage")
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     slug: str
     display_name: str
 
 
-class OverallCategoryAdminOut(BaseModel):
+class OverallCategoryAdminOut(OrmModel):
     """Response model for overall category admin CRUD (maps display_name to name)."""
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     name: str
     slug: str
@@ -265,7 +259,7 @@ class OverallCategoryAdminList(BaseModel):
 # Item Type Schemas
 # =============================================================================
 
-class ItemTypeListOut(BaseModel):
+class ItemTypeListOut(OrmModel):
     """
     Lightweight response model for item type list (sidebar).
 
@@ -279,8 +273,6 @@ class ItemTypeListOut(BaseModel):
         menu_item_count: Number of menu items using this type
         global_attribute_count: Number of linked global attributes
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     slug: str
     display_name: str
@@ -288,7 +280,7 @@ class ItemTypeListOut(BaseModel):
     global_attribute_count: int = 0
 
 
-class ItemTypeOut(BaseModel):
+class ItemTypeOut(OrmModel):
     """
     Response model for an item type.
 
@@ -309,8 +301,6 @@ class ItemTypeOut(BaseModel):
         global_attributes: List of linked global attributes (slug and display_name)
         aliases: List of synonyms for matching (e.g., ["coffee", "java"])
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     slug: str
     display_name: str
@@ -381,7 +371,7 @@ class ItemTypeUpdate(BaseModel):
 # Modifier Category Schemas
 # =============================================================================
 
-class ModifierCategoryOut(BaseModel):
+class ModifierCategoryOut(OrmModel):
     """
     Response model for a modifier category.
 
@@ -398,8 +388,6 @@ class ModifierCategoryOut(BaseModel):
         loads_from_ingredients: If True, options are loaded from Ingredient table
         ingredient_category: Category value in Ingredient table (if loads_from_ingredients)
     """
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     slug: str
     display_name: str

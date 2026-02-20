@@ -28,12 +28,13 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import MenuItemSizeCategory, MenuItemSize, MenuItemSizePrice
+from ..exceptions import ReferentialIntegrityError, ValidationError
 from ..schemas.menu_item_sizes import (
     SizeCategoryCreate,
     SizeCategoryUpdate,
@@ -46,21 +47,11 @@ from ..schemas.menu_item_sizes import (
     SizeList,
 )
 from ..services.store_service import get_or_create_company
-from .crud_helpers import apply_payload_updates
+from .crud_factory import CRUDRouterFactory
+from .crud_helpers import apply_payload_updates, make_list_builder
 
 
 logger = logging.getLogger(__name__)
-
-# Router definitions
-admin_size_categories_router = APIRouter(
-    prefix="/admin/size-categories",
-    tags=["Admin - Size Categories"]
-)
-
-admin_sizes_router = APIRouter(
-    prefix="/admin/sizes",
-    tags=["Admin - Sizes"]
-)
 
 
 # =============================================================================
@@ -103,9 +94,84 @@ def _size_to_out(size: MenuItemSize, db: Session) -> SizeOut:
 
 
 # =============================================================================
-# Size Category Endpoints
+# Size Category CRUD Hooks
 # =============================================================================
 
+def _cat_before_create(payload: SizeCategoryCreate, db: Session) -> dict:
+    company = get_or_create_company(db)
+    slug = payload.slug.lower().strip()
+    existing = db.query(MenuItemSizeCategory).filter(
+        MenuItemSizeCategory.company_id == company.id,
+        MenuItemSizeCategory.slug == slug
+    ).first()
+    if existing:
+        raise ValidationError(f"A size category with slug '{slug}' already exists")
+    return {
+        "company_id": company.id,
+        "name": payload.name.strip(),
+        "slug": slug,
+        "question_text": payload.question_text.strip() if payload.question_text else None,
+    }
+
+
+def _cat_before_update(
+    item: MenuItemSizeCategory, payload: SizeCategoryUpdate, db: Session
+) -> None:
+    if payload.slug is not None:
+        new_slug = payload.slug.lower().strip()
+        existing = db.query(MenuItemSizeCategory).filter(
+            MenuItemSizeCategory.company_id == item.company_id,
+            MenuItemSizeCategory.slug == new_slug,
+            MenuItemSizeCategory.id != item.id
+        ).first()
+        if existing:
+            raise ValidationError(
+                f"A size category with slug '{new_slug}' already exists"
+            )
+    apply_payload_updates(
+        item, payload, db,
+        normalize_fields={"slug": "lower_strip", "name": "strip", "question_text": "strip"}
+    )
+
+
+def _cat_before_delete(item: MenuItemSizeCategory, db: Session) -> None:
+    size_count = db.query(MenuItemSize).filter(
+        MenuItemSize.category_id == item.id
+    ).count()
+    if size_count > 0:
+        raise ReferentialIntegrityError(
+            f"Cannot delete category '{item.name}' - it has {size_count} sizes. "
+            f"Delete the sizes first."
+        )
+
+
+# =============================================================================
+# Size Category Router (factory + custom endpoints)
+# =============================================================================
+
+_cat_crud = CRUDRouterFactory(
+    model=MenuItemSizeCategory,
+    create_schema=SizeCategoryCreate,
+    update_schema=SizeCategoryUpdate,
+    response_schema=SizeCategoryOut,
+    prefix="/admin/size-categories",
+    tags=["Admin - Size Categories"],
+    id_param="category_id",
+    not_found_message="Size category not found",
+    on_before_create=_cat_before_create,
+    on_before_update=_cat_before_update,
+    on_before_delete=_cat_before_delete,
+    to_response=_category_to_out,
+    list_response_schema=SizeCategoryList,
+    list_response_builder=make_list_builder(SizeCategoryList, "categories"),
+)
+admin_size_categories_router = _cat_crud.router
+
+# Remove the factory's default list endpoint (we need company-scoped queries)
+admin_size_categories_router.routes.pop(0)
+
+
+# Custom list endpoint: company-scoped
 @admin_size_categories_router.get("", response_model=SizeCategoryList)
 def list_size_categories(
     db: Session = Depends(get_db),
@@ -123,6 +189,7 @@ def list_size_categories(
     )
 
 
+# Custom endpoint: categories with their sizes included
 @admin_size_categories_router.get("/with-sizes", response_model=list[SizeCategoryWithSizes])
 def list_size_categories_with_sizes(
     db: Session = Depends(get_db),
@@ -149,136 +216,98 @@ def list_size_categories_with_sizes(
     return result
 
 
-@admin_size_categories_router.post("", response_model=SizeCategoryOut, status_code=201)
-def create_size_category(
-    payload: SizeCategoryCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> SizeCategoryOut:
-    """Create a new size category."""
-    company = get_or_create_company(db)
+# =============================================================================
+# Size CRUD Hooks
+# =============================================================================
 
-    # Check for duplicate slug
-    slug = payload.slug.lower().strip()
-    existing = db.query(MenuItemSizeCategory).filter(
-        MenuItemSizeCategory.company_id == company.id,
-        MenuItemSizeCategory.slug == slug
+def _size_before_create(payload: SizeCreate, db: Session) -> dict:
+    company = get_or_create_company(db)
+    category = db.query(MenuItemSizeCategory).filter(
+        MenuItemSizeCategory.id == payload.category_id,
+        MenuItemSizeCategory.company_id == company.id
+    ).first()
+    if not category:
+        raise ValidationError("Size category not found")
+    name = payload.name.strip()
+    existing = db.query(MenuItemSize).filter(
+        MenuItemSize.category_id == payload.category_id,
+        MenuItemSize.name == name
     ).first()
     if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"A size category with slug '{slug}' already exists"
+        raise ValidationError(
+            f"A size with name '{name}' already exists in category '{category.name}'"
         )
-
-    category = MenuItemSizeCategory(
-        company_id=company.id,
-        name=payload.name.strip(),
-        slug=slug,
-        question_text=payload.question_text.strip() if payload.question_text else None,
-    )
-    db.add(category)
-    db.commit()
-    db.refresh(category)
-
-    logger.info("Created size category: %s (%s)", category.name, category.slug)
-    return _category_to_out(category, db)
+    return {
+        "company_id": company.id,
+        "category_id": payload.category_id,
+        "name": name,
+        "display_order": payload.display_order,
+    }
 
 
-@admin_size_categories_router.get("/{category_id}", response_model=SizeCategoryOut)
-def get_size_category(
-    category_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> SizeCategoryOut:
-    """Get a specific size category by ID."""
-    category = db.query(MenuItemSizeCategory).filter(
-        MenuItemSizeCategory.id == category_id
-    ).first()
-
-    if not category:
-        raise HTTPException(status_code=404, detail="Size category not found")
-
-    return _category_to_out(category, db)
-
-
-@admin_size_categories_router.put("/{category_id}", response_model=SizeCategoryOut)
-def update_size_category(
-    category_id: int,
-    payload: SizeCategoryUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> SizeCategoryOut:
-    """Update a size category."""
-    category = db.query(MenuItemSizeCategory).filter(
-        MenuItemSizeCategory.id == category_id
-    ).first()
-
-    if not category:
-        raise HTTPException(status_code=404, detail="Size category not found")
-
-    # Check for duplicate slug (company-scoped uniqueness)
-    if payload.slug is not None:
-        new_slug = payload.slug.lower().strip()
-        existing = db.query(MenuItemSizeCategory).filter(
-            MenuItemSizeCategory.company_id == category.company_id,
-            MenuItemSizeCategory.slug == new_slug,
-            MenuItemSizeCategory.id != category_id
+def _size_before_update(item: MenuItemSize, payload: SizeUpdate, db: Session) -> None:
+    if payload.category_id is not None:
+        company = get_or_create_company(db)
+        category = db.query(MenuItemSizeCategory).filter(
+            MenuItemSizeCategory.id == payload.category_id,
+            MenuItemSizeCategory.company_id == company.id
+        ).first()
+        if not category:
+            raise ValidationError("Size category not found")
+    if payload.name is not None:
+        new_name = payload.name.strip()
+        check_category_id = (
+            payload.category_id if payload.category_id is not None else item.category_id
+        )
+        existing = db.query(MenuItemSize).filter(
+            MenuItemSize.category_id == check_category_id,
+            MenuItemSize.name == new_name,
+            MenuItemSize.id != item.id
         ).first()
         if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"A size category with slug '{new_slug}' already exists"
+            raise ValidationError(
+                f"A size with name '{new_name}' already exists in this category"
             )
-
-    # Apply updates with normalization
-    apply_payload_updates(
-        category, payload, db,
-        normalize_fields={"slug": "lower_strip", "name": "strip", "question_text": "strip"}
-    )
-
-    db.commit()
-    db.refresh(category)
-
-    logger.info("Updated size category %d: %s (%s)", category.id, category.name, category.slug)
-    return _category_to_out(category, db)
+    apply_payload_updates(item, payload, db, normalize_fields={"name": "strip"})
 
 
-@admin_size_categories_router.delete("/{category_id}", status_code=204)
-def delete_size_category(
-    category_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete a size category."""
-    category = db.query(MenuItemSizeCategory).filter(
-        MenuItemSizeCategory.id == category_id
-    ).first()
-
-    if not category:
-        raise HTTPException(status_code=404, detail="Size category not found")
-
-    # Check if category has sizes
-    size_count = db.query(MenuItemSize).filter(
-        MenuItemSize.category_id == category_id
+def _size_before_delete(item: MenuItemSize, db: Session) -> None:
+    price_count = db.query(MenuItemSizePrice).filter(
+        MenuItemSizePrice.size_id == item.id
     ).count()
-
-    if size_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete category '{category.name}' - it has {size_count} sizes. Delete the sizes first."
+    if price_count > 0:
+        raise ReferentialIntegrityError(
+            f"Cannot delete size '{item.name}' - it is used by {price_count} menu items"
         )
 
-    name = category.name
-    db.delete(category)
-    db.commit()
-
-    logger.info("Deleted size category: %s", name)
-
 
 # =============================================================================
-# Size Endpoints
+# Size Router (factory + custom list endpoint)
 # =============================================================================
 
+_size_crud = CRUDRouterFactory(
+    model=MenuItemSize,
+    create_schema=SizeCreate,
+    update_schema=SizeUpdate,
+    response_schema=SizeOut,
+    prefix="/admin/sizes",
+    tags=["Admin - Sizes"],
+    id_param="size_id",
+    not_found_message="Size not found",
+    on_before_create=_size_before_create,
+    on_before_update=_size_before_update,
+    on_before_delete=_size_before_delete,
+    to_response=_size_to_out,
+    list_response_schema=SizeList,
+    list_response_builder=make_list_builder(SizeList, "sizes"),
+)
+admin_sizes_router = _size_crud.router
+
+# Remove the factory's default list endpoint (we need company-scoped + category filter)
+admin_sizes_router.routes.pop(0)
+
+
+# Custom list endpoint: company-scoped with optional category filter
 @admin_sizes_router.get("", response_model=SizeList)
 def list_sizes(
     category_id: int | None = None,
@@ -303,145 +332,3 @@ def list_sizes(
         sizes=[_size_to_out(s, db) for s in sizes],
         total=len(sizes)
     )
-
-
-@admin_sizes_router.post("", response_model=SizeOut, status_code=201)
-def create_size(
-    payload: SizeCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> SizeOut:
-    """Create a new size."""
-    company = get_or_create_company(db)
-
-    # Verify category exists and belongs to this company
-    category = db.query(MenuItemSizeCategory).filter(
-        MenuItemSizeCategory.id == payload.category_id,
-        MenuItemSizeCategory.company_id == company.id
-    ).first()
-    if not category:
-        raise HTTPException(status_code=404, detail="Size category not found")
-
-    # Check for duplicate name within category
-    name = payload.name.strip()
-    existing = db.query(MenuItemSize).filter(
-        MenuItemSize.category_id == payload.category_id,
-        MenuItemSize.name == name
-    ).first()
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"A size with name '{name}' already exists in category '{category.name}'"
-        )
-
-    size = MenuItemSize(
-        company_id=company.id,
-        category_id=payload.category_id,
-        name=name,
-        display_order=payload.display_order,
-    )
-    db.add(size)
-    db.commit()
-    db.refresh(size)
-
-    logger.info("Created size: %s in category %s", size.name, category.name)
-    return _size_to_out(size, db)
-
-
-@admin_sizes_router.get("/{size_id}", response_model=SizeOut)
-def get_size(
-    size_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> SizeOut:
-    """Get a specific size by ID."""
-    size = db.query(MenuItemSize).filter(
-        MenuItemSize.id == size_id
-    ).first()
-
-    if not size:
-        raise HTTPException(status_code=404, detail="Size not found")
-
-    return _size_to_out(size, db)
-
-
-@admin_sizes_router.put("/{size_id}", response_model=SizeOut)
-def update_size(
-    size_id: int,
-    payload: SizeUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> SizeOut:
-    """Update a size."""
-    size = db.query(MenuItemSize).filter(
-        MenuItemSize.id == size_id
-    ).first()
-
-    if not size:
-        raise HTTPException(status_code=404, detail="Size not found")
-
-    # Validate category if provided
-    if payload.category_id is not None:
-        company = get_or_create_company(db)
-        category = db.query(MenuItemSizeCategory).filter(
-            MenuItemSizeCategory.id == payload.category_id,
-            MenuItemSizeCategory.company_id == company.id
-        ).first()
-        if not category:
-            raise HTTPException(status_code=404, detail="Size category not found")
-
-    # Check for duplicate name within category
-    if payload.name is not None:
-        new_name = payload.name.strip()
-        check_category_id = payload.category_id if payload.category_id is not None else size.category_id
-        existing = db.query(MenuItemSize).filter(
-            MenuItemSize.category_id == check_category_id,
-            MenuItemSize.name == new_name,
-            MenuItemSize.id != size_id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"A size with name '{new_name}' already exists in this category"
-            )
-
-    # Apply updates with normalization
-    apply_payload_updates(size, payload, db, normalize_fields={"name": "strip"})
-
-    db.commit()
-    db.refresh(size)
-
-    logger.info("Updated size %d: %s", size.id, size.name)
-    return _size_to_out(size, db)
-
-
-@admin_sizes_router.delete("/{size_id}", status_code=204)
-def delete_size(
-    size_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete a size."""
-    size = db.query(MenuItemSize).filter(
-        MenuItemSize.id == size_id
-    ).first()
-
-    if not size:
-        raise HTTPException(status_code=404, detail="Size not found")
-
-    # Check if size is used by any menu items
-    price_count = db.query(MenuItemSizePrice).filter(
-        MenuItemSizePrice.size_id == size_id
-    ).count()
-
-    if price_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete size '{size.name}' - it is used by {price_count} menu items"
-        )
-
-    name = size.name
-    db.delete(size)
-    db.commit()
-
-    logger.info("Deleted size: %s", name)

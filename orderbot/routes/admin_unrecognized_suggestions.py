@@ -7,18 +7,31 @@ These are curated responses for items users commonly request that aren't on the 
 
 Endpoints:
 ----------
-Suggestions:
-- GET /admin/unrecognized-suggestions: List all suggestions
-- GET /admin/unrecognized-suggestions/stats: Get suggestion statistics
-- GET /admin/unrecognized-suggestions/{id}: Get a specific suggestion
-- POST /admin/unrecognized-suggestions: Create a new suggestion
-- PUT /admin/unrecognized-suggestions/{id}: Update a suggestion
-- DELETE /admin/unrecognized-suggestions/{id}: Delete a suggestion
+Menu Item Suggestions:
+- GET /admin/unrecognized-menu-items: List all suggestions (custom filters)
+- GET /admin/unrecognized-menu-items/stats: Get suggestion statistics
+- GET /admin/unrecognized-menu-items/lookups/item-types: Item types dropdown
+- GET /admin/unrecognized-menu-items/lookups/menu-items: Menu items dropdown
+- GET /admin/unrecognized-menu-items/{id}: Get a specific suggestion (factory)
+- POST /admin/unrecognized-menu-items: Create a new suggestion (factory)
+- PUT /admin/unrecognized-menu-items/{id}: Update a suggestion (factory)
+- DELETE /admin/unrecognized-menu-items/{id}: Delete a suggestion (factory)
 
 Logs (Analytics):
 - GET /admin/unrecognized-logs: List unrecognized item logs
 - GET /admin/unrecognized-logs/stats: Get log statistics
 - DELETE /admin/unrecognized-logs/clear: Clear old logs
+
+Option Suggestions:
+- GET /admin/unrecognized-option-suggestions: List (custom filters)
+- GET /admin/unrecognized-option-suggestions/stats: Statistics
+- GET /admin/unrecognized-option-suggestions/lookups/attributes: Attributes dropdown
+- GET/POST/PUT/DELETE: Standard CRUD (factory)
+
+Ingredient Suggestions:
+- GET /admin/unrecognized-ingredient-suggestions: List (custom filters)
+- GET /admin/unrecognized-ingredient-suggestions/lookups/ingredients: Dropdown
+- GET/POST/PUT/DELETE: Standard CRUD (factory)
 
 Authentication:
 ---------------
@@ -27,6 +40,7 @@ All endpoints require admin authentication via HTTP Basic Auth.
 
 import logging
 from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -37,6 +51,7 @@ from ..db.models import (
     UnrecognizedOptionSuggestion, GlobalAttribute,
     UnrecognizedIngredientSuggestion, Ingredient,
 )
+from ..exceptions import ValidationError
 from ..schemas.serializers import serialize_menu_item_suggestion, serialize_ingredient_suggestion
 from ..schemas.unrecognized_suggestions import (
     UnrecognizedMenuItemSuggestionOut,
@@ -53,34 +68,161 @@ from ..schemas.unrecognized_suggestions import (
     UnrecognizedIngredientSuggestionCreate,
     UnrecognizedIngredientSuggestionUpdate,
 )
+from .crud_factory import CRUDRouterFactory
 
 logger = logging.getLogger(__name__)
-
-# Router definition
-admin_unrecognized_menu_item_suggestions_router = APIRouter(
-    prefix="/admin/unrecognized-menu-items",
-    tags=["Admin - Unrecognized Menu Items"]
-)
-
-admin_unrecognized_menu_item_logs_router = APIRouter(
-    prefix="/admin/unrecognized-menu-item-logs",
-    tags=["Admin - Unrecognized Menu Item Logs"]
-)
-
-admin_unrecognized_option_suggestions_router = APIRouter(
-    prefix="/admin/unrecognized-option-suggestions",
-    tags=["Admin - Unrecognized Option Suggestions"]
-)
 
 # Valid match types
 VALID_MATCH_TYPES = {"exact", "prefix", "contains"}
 
 
 # =============================================================================
-# Suggestions Endpoints
+# Menu Item Suggestions - Factory Hooks
 # =============================================================================
 
-@admin_unrecognized_menu_item_suggestions_router.get("", response_model=list[UnrecognizedMenuItemSuggestionOut])
+def _menu_item_before_create(
+    payload: UnrecognizedMenuItemSuggestionCreate, db: Session
+) -> dict:
+    """Validate and normalize payload, return kwargs for model creation."""
+    if payload.match_type not in VALID_MATCH_TYPES:
+        raise ValidationError(
+            f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
+        )
+
+    pattern_normalized = payload.input_pattern.lower().strip()
+
+    existing = db.query(UnrecognizedMenuItemSuggestion).filter(
+        UnrecognizedMenuItemSuggestion.input_pattern == pattern_normalized,
+        UnrecognizedMenuItemSuggestion.match_type == payload.match_type
+    ).first()
+    if existing:
+        raise ValidationError(
+            f"Pattern '{pattern_normalized}' with match_type "
+            f"'{payload.match_type}' already exists"
+        )
+
+    item_type_id = None
+    if payload.suggested_item_type_slug:
+        item_type = db.query(ItemType).filter(
+            ItemType.slug == payload.suggested_item_type_slug
+        ).first()
+        if not item_type:
+            raise ValidationError(
+                f"Item type '{payload.suggested_item_type_slug}' not found"
+            )
+        item_type_id = item_type.id
+
+    return {
+        "input_pattern": pattern_normalized,
+        "match_type": payload.match_type,
+        "suggested_item_type_id": item_type_id,
+        "is_active": payload.is_active,
+    }
+
+
+def _menu_item_create_pre_commit(
+    item: UnrecognizedMenuItemSuggestion,
+    payload: UnrecognizedMenuItemSuggestionCreate,
+    db: Session,
+) -> None:
+    """Resolve many-to-many menu items from names after flush."""
+    if payload.suggested_menu_item_names:
+        menu_items = []
+        for name in payload.suggested_menu_item_names:
+            menu_item = db.query(MenuItem).filter(MenuItem.name == name).first()
+            if not menu_item:
+                raise ValidationError(f"Menu item '{name}' not found")
+            menu_items.append(menu_item)
+        item.suggested_menu_items = menu_items
+
+
+def _menu_item_before_update(
+    item: UnrecognizedMenuItemSuggestion,
+    payload: UnrecognizedMenuItemSuggestionUpdate,
+    db: Session,
+) -> None:
+    """Validate, normalize, and apply updates in place."""
+    if payload.match_type is not None and payload.match_type not in VALID_MATCH_TYPES:
+        raise ValidationError(
+            f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
+        )
+
+    new_pattern = (
+        payload.input_pattern.lower().strip()
+        if payload.input_pattern else item.input_pattern
+    )
+    new_match_type = payload.match_type if payload.match_type else item.match_type
+
+    if new_pattern != item.input_pattern or new_match_type != item.match_type:
+        existing = db.query(UnrecognizedMenuItemSuggestion).filter(
+            UnrecognizedMenuItemSuggestion.input_pattern == new_pattern,
+            UnrecognizedMenuItemSuggestion.match_type == new_match_type,
+            UnrecognizedMenuItemSuggestion.id != item.id
+        ).first()
+        if existing:
+            raise ValidationError(
+                f"Pattern '{new_pattern}' with match_type "
+                f"'{new_match_type}' already exists"
+            )
+
+    if payload.input_pattern is not None:
+        item.input_pattern = new_pattern
+    if payload.match_type is not None:
+        item.match_type = payload.match_type
+
+    if payload.suggested_item_type_slug is not None:
+        if payload.suggested_item_type_slug == "":
+            item.suggested_item_type_id = None
+        else:
+            it = db.query(ItemType).filter(
+                ItemType.slug == payload.suggested_item_type_slug
+            ).first()
+            if not it:
+                raise ValidationError(
+                    f"Item type '{payload.suggested_item_type_slug}' not found"
+                )
+            item.suggested_item_type_id = it.id
+
+    if payload.suggested_menu_item_names is not None:
+        menu_items = []
+        for name in payload.suggested_menu_item_names:
+            mi = db.query(MenuItem).filter(MenuItem.name == name).first()
+            if not mi:
+                raise ValidationError(f"Menu item '{name}' not found")
+            menu_items.append(mi)
+        item.suggested_menu_items = menu_items
+
+    if payload.is_active is not None:
+        item.is_active = payload.is_active
+
+
+# Factory for Menu Item Suggestions CRUD
+_menu_item_crud = CRUDRouterFactory(
+    model=UnrecognizedMenuItemSuggestion,
+    create_schema=UnrecognizedMenuItemSuggestionCreate,
+    update_schema=UnrecognizedMenuItemSuggestionUpdate,
+    response_schema=UnrecognizedMenuItemSuggestionOut,
+    prefix="/admin/unrecognized-menu-items",
+    tags=["Admin - Unrecognized Menu Items"],
+    id_param="suggestion_id",
+    not_found_message="Suggestion not found",
+    on_before_create=_menu_item_before_create,
+    on_create_pre_commit=_menu_item_create_pre_commit,
+    on_before_update=_menu_item_before_update,
+    to_response=lambda item, db: serialize_menu_item_suggestion(item),
+)
+
+admin_unrecognized_menu_item_suggestions_router = _menu_item_crud.router
+# Remove factory's default list route (doesn't support query filters)
+admin_unrecognized_menu_item_suggestions_router.routes.pop(0)
+
+
+# -- Custom endpoints on the same router --
+
+
+@admin_unrecognized_menu_item_suggestions_router.get(
+    "", response_model=list[UnrecognizedMenuItemSuggestionOut]
+)
 def list_suggestions(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
@@ -114,7 +256,9 @@ def list_suggestions(
     return [serialize_menu_item_suggestion(s) for s in suggestions]
 
 
-@admin_unrecognized_menu_item_suggestions_router.get("/stats", response_model=UnrecognizedMenuItemSuggestionStats)
+@admin_unrecognized_menu_item_suggestions_router.get(
+    "/stats", response_model=UnrecognizedMenuItemSuggestionStats
+)
 def get_suggestion_stats(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
@@ -159,7 +303,9 @@ def get_suggestion_stats(
     )
 
 
-@admin_unrecognized_menu_item_suggestions_router.get("/lookups/item-types", response_model=list[dict])
+@admin_unrecognized_menu_item_suggestions_router.get(
+    "/lookups/item-types", response_model=list[dict]
+)
 def get_item_types_for_dropdown(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
@@ -172,7 +318,9 @@ def get_item_types_for_dropdown(
     ]
 
 
-@admin_unrecognized_menu_item_suggestions_router.get("/lookups/menu-items", response_model=list[dict])
+@admin_unrecognized_menu_item_suggestions_router.get(
+    "/lookups/menu-items", response_model=list[dict]
+)
 def get_menu_items_for_dropdown(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
@@ -185,213 +333,15 @@ def get_menu_items_for_dropdown(
     ]
 
 
-@admin_unrecognized_menu_item_suggestions_router.get("/{suggestion_id}", response_model=UnrecognizedMenuItemSuggestionOut)
-def get_suggestion(
-    suggestion_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedMenuItemSuggestionOut:
-    """Get a specific suggestion by ID."""
-    suggestion = db.query(UnrecognizedMenuItemSuggestion).filter(
-        UnrecognizedMenuItemSuggestion.id == suggestion_id
-    ).first()
-
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Suggestion not found")
-
-    return serialize_menu_item_suggestion(suggestion)
-
-
-@admin_unrecognized_menu_item_suggestions_router.post("", response_model=UnrecognizedMenuItemSuggestionOut, status_code=201)
-def create_suggestion(
-    payload: UnrecognizedMenuItemSuggestionCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedMenuItemSuggestionOut:
-    """Create a new unrecognized item suggestion."""
-    # Validate match type
-    if payload.match_type not in VALID_MATCH_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
-        )
-
-    # Normalize pattern to lowercase
-    pattern_normalized = payload.input_pattern.lower().strip()
-
-    # Check for duplicate
-    existing = db.query(UnrecognizedMenuItemSuggestion).filter(
-        UnrecognizedMenuItemSuggestion.input_pattern == pattern_normalized,
-        UnrecognizedMenuItemSuggestion.match_type == payload.match_type
-    ).first()
-
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Pattern '{pattern_normalized}' with match_type '{payload.match_type}' already exists"
-        )
-
-    # Look up item type by slug if provided
-    item_type_id = None
-    if payload.suggested_item_type_slug:
-        item_type = db.query(ItemType).filter(
-            ItemType.slug == payload.suggested_item_type_slug
-        ).first()
-        if not item_type:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Item type '{payload.suggested_item_type_slug}' not found"
-            )
-        item_type_id = item_type.id
-
-    # Look up menu items by name if provided
-    menu_items = []
-    if payload.suggested_menu_item_names:
-        for name in payload.suggested_menu_item_names:
-            menu_item = db.query(MenuItem).filter(MenuItem.name == name).first()
-            if not menu_item:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Menu item '{name}' not found"
-                )
-            menu_items.append(menu_item)
-
-    suggestion = UnrecognizedMenuItemSuggestion(
-        input_pattern=pattern_normalized,
-        match_type=payload.match_type,
-        suggested_item_type_id=item_type_id,
-        is_active=payload.is_active,
-    )
-    if menu_items:
-        suggestion.suggested_menu_items = menu_items
-
-    db.add(suggestion)
-    db.commit()
-    db.refresh(suggestion)
-
-    logger.info(
-        "Created unrecognized suggestion: '%s' -> %s (id=%d)",
-        suggestion.input_pattern,
-        payload.suggested_item_type_slug or payload.suggested_menu_item_names,
-        suggestion.id
-    )
-
-    return serialize_menu_item_suggestion(suggestion)
-
-
-@admin_unrecognized_menu_item_suggestions_router.put("/{suggestion_id}", response_model=UnrecognizedMenuItemSuggestionOut)
-def update_suggestion(
-    suggestion_id: int,
-    payload: UnrecognizedMenuItemSuggestionUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedMenuItemSuggestionOut:
-    """Update an unrecognized item suggestion."""
-    suggestion = db.query(UnrecognizedMenuItemSuggestion).filter(
-        UnrecognizedMenuItemSuggestion.id == suggestion_id
-    ).first()
-
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Suggestion not found")
-
-    # Validate match type if changing it
-    if payload.match_type is not None:
-        if payload.match_type not in VALID_MATCH_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
-            )
-
-    # Normalize pattern if changing it
-    new_pattern = payload.input_pattern.lower().strip() if payload.input_pattern else suggestion.input_pattern
-    new_match_type = payload.match_type if payload.match_type else suggestion.match_type
-
-    # Check for duplicate if changing pattern or match_type
-    if new_pattern != suggestion.input_pattern or new_match_type != suggestion.match_type:
-        existing = db.query(UnrecognizedMenuItemSuggestion).filter(
-            UnrecognizedMenuItemSuggestion.input_pattern == new_pattern,
-            UnrecognizedMenuItemSuggestion.match_type == new_match_type,
-            UnrecognizedMenuItemSuggestion.id != suggestion_id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Pattern '{new_pattern}' with match_type '{new_match_type}' already exists"
-            )
-
-    # Apply updates
-    if payload.input_pattern is not None:
-        suggestion.input_pattern = new_pattern
-    if payload.match_type is not None:
-        suggestion.match_type = payload.match_type
-
-    # Update item type FK if provided
-    if payload.suggested_item_type_slug is not None:
-        if payload.suggested_item_type_slug == "":
-            # Clear the item type
-            suggestion.suggested_item_type_id = None
-        else:
-            item_type = db.query(ItemType).filter(
-                ItemType.slug == payload.suggested_item_type_slug
-            ).first()
-            if not item_type:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Item type '{payload.suggested_item_type_slug}' not found"
-                )
-            suggestion.suggested_item_type_id = item_type.id
-
-    # Update menu items relationship if provided
-    if payload.suggested_menu_item_names is not None:
-        menu_items = []
-        for name in payload.suggested_menu_item_names:
-            menu_item = db.query(MenuItem).filter(MenuItem.name == name).first()
-            if not menu_item:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Menu item '{name}' not found"
-                )
-            menu_items.append(menu_item)
-        suggestion.suggested_menu_items = menu_items
-
-    if payload.is_active is not None:
-        suggestion.is_active = payload.is_active
-
-    db.commit()
-    db.refresh(suggestion)
-
-    logger.info("Updated unrecognized suggestion: '%s' (id=%d)", suggestion.input_pattern, suggestion.id)
-
-    return serialize_menu_item_suggestion(suggestion)
-
-
-@admin_unrecognized_menu_item_suggestions_router.delete("/{suggestion_id}", status_code=204)
-def delete_suggestion(
-    suggestion_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete an unrecognized item suggestion."""
-    suggestion = db.query(UnrecognizedMenuItemSuggestion).filter(
-        UnrecognizedMenuItemSuggestion.id == suggestion_id
-    ).first()
-
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Suggestion not found")
-
-    logger.info(
-        "Deleting unrecognized suggestion: '%s' (id=%d)",
-        suggestion.input_pattern,
-        suggestion.id
-    )
-    db.delete(suggestion)
-    db.commit()
-    return None
-
-
 # =============================================================================
-# Log Endpoints (Analytics)
+# Log Endpoints (Analytics) - UNCHANGED
 # =============================================================================
+
+admin_unrecognized_menu_item_logs_router = APIRouter(
+    prefix="/admin/unrecognized-menu-item-logs",
+    tags=["Admin - Unrecognized Menu Item Logs"]
+)
+
 
 @admin_unrecognized_menu_item_logs_router.get("", response_model=list[UnrecognizedMenuItemLogEntry])
 def list_logs(
@@ -509,10 +459,92 @@ def clear_old_logs(
 
 
 # =============================================================================
-# Option Suggestions Endpoints
+# Option Suggestions - Factory Hooks
 # =============================================================================
 
-@admin_unrecognized_option_suggestions_router.get("", response_model=list[UnrecognizedOptionSuggestionOut])
+def _option_before_create(
+    payload: UnrecognizedOptionSuggestionCreate, db: Session
+) -> dict:
+    """Validate and normalize payload, return kwargs for model creation."""
+    pattern_normalized = payload.input_pattern.lower().strip()
+
+    existing = db.query(UnrecognizedOptionSuggestion).filter(
+        UnrecognizedOptionSuggestion.input_pattern == pattern_normalized,
+        UnrecognizedOptionSuggestion.attribute_slug == payload.attribute_slug
+    ).first()
+    if existing:
+        raise ValidationError(
+            f"Pattern '{pattern_normalized}' for attribute "
+            f"'{payload.attribute_slug}' already exists"
+        )
+
+    return {
+        "input_pattern": pattern_normalized,
+        "attribute_slug": payload.attribute_slug,
+        "suggested_display_name": payload.suggested_display_name,
+        "is_active": payload.is_active,
+    }
+
+
+def _option_before_update(
+    item: UnrecognizedOptionSuggestion,
+    payload: UnrecognizedOptionSuggestionUpdate,
+    db: Session,
+) -> None:
+    """Validate, normalize, and apply updates in place."""
+    new_pattern = (
+        payload.input_pattern.lower().strip()
+        if payload.input_pattern else item.input_pattern
+    )
+    new_attr_slug = payload.attribute_slug if payload.attribute_slug else item.attribute_slug
+
+    if new_pattern != item.input_pattern or new_attr_slug != item.attribute_slug:
+        existing = db.query(UnrecognizedOptionSuggestion).filter(
+            UnrecognizedOptionSuggestion.input_pattern == new_pattern,
+            UnrecognizedOptionSuggestion.attribute_slug == new_attr_slug,
+            UnrecognizedOptionSuggestion.id != item.id
+        ).first()
+        if existing:
+            raise ValidationError(
+                f"Pattern '{new_pattern}' for attribute "
+                f"'{new_attr_slug}' already exists"
+            )
+
+    if payload.input_pattern is not None:
+        item.input_pattern = new_pattern
+    if payload.attribute_slug is not None:
+        item.attribute_slug = payload.attribute_slug
+    if payload.suggested_display_name is not None:
+        item.suggested_display_name = payload.suggested_display_name
+    if payload.is_active is not None:
+        item.is_active = payload.is_active
+
+
+# Factory for Option Suggestions CRUD
+_option_crud = CRUDRouterFactory(
+    model=UnrecognizedOptionSuggestion,
+    create_schema=UnrecognizedOptionSuggestionCreate,
+    update_schema=UnrecognizedOptionSuggestionUpdate,
+    response_schema=UnrecognizedOptionSuggestionOut,
+    prefix="/admin/unrecognized-option-suggestions",
+    tags=["Admin - Unrecognized Option Suggestions"],
+    id_param="suggestion_id",
+    not_found_message="Option suggestion not found",
+    on_before_create=_option_before_create,
+    on_before_update=_option_before_update,
+)
+
+admin_unrecognized_option_suggestions_router = _option_crud.router
+# Remove factory's default list route (doesn't support query filters)
+admin_unrecognized_option_suggestions_router.routes.pop(0)
+
+
+# -- Custom endpoints on the same router --
+
+
+@admin_unrecognized_option_suggestions_router.get(
+    "", response_model=list[UnrecognizedOptionSuggestionOut]
+)
 def list_option_suggestions(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
@@ -536,7 +568,9 @@ def list_option_suggestions(
     return [UnrecognizedOptionSuggestionOut.model_validate(s) for s in suggestions]
 
 
-@admin_unrecognized_option_suggestions_router.get("/stats", response_model=UnrecognizedOptionSuggestionStats)
+@admin_unrecognized_option_suggestions_router.get(
+    "/stats", response_model=UnrecognizedOptionSuggestionStats
+)
 def get_option_suggestion_stats(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
@@ -559,7 +593,9 @@ def get_option_suggestion_stats(
     )
 
 
-@admin_unrecognized_option_suggestions_router.get("/lookups/attributes", response_model=list[dict])
+@admin_unrecognized_option_suggestions_router.get(
+    "/lookups/attributes", response_model=list[dict]
+)
 def get_attributes_for_dropdown(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
@@ -572,152 +608,133 @@ def get_attributes_for_dropdown(
     ]
 
 
-@admin_unrecognized_option_suggestions_router.get("/{suggestion_id}", response_model=UnrecognizedOptionSuggestionOut)
-def get_option_suggestion(
-    suggestion_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedOptionSuggestionOut:
-    """Get a specific option suggestion by ID."""
-    suggestion = db.query(UnrecognizedOptionSuggestion).filter(
-        UnrecognizedOptionSuggestion.id == suggestion_id
-    ).first()
+# =============================================================================
+# Ingredient Suggestions - Factory Hooks
+# =============================================================================
 
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Option suggestion not found")
-
-    return UnrecognizedOptionSuggestionOut.model_validate(suggestion)
-
-
-@admin_unrecognized_option_suggestions_router.post("", response_model=UnrecognizedOptionSuggestionOut, status_code=201)
-def create_option_suggestion(
-    payload: UnrecognizedOptionSuggestionCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedOptionSuggestionOut:
-    """Create a new unrecognized option suggestion."""
-    # Normalize pattern to lowercase
-    pattern_normalized = payload.input_pattern.lower().strip()
-
-    # Check for duplicate
-    existing = db.query(UnrecognizedOptionSuggestion).filter(
-        UnrecognizedOptionSuggestion.input_pattern == pattern_normalized,
-        UnrecognizedOptionSuggestion.attribute_slug == payload.attribute_slug
-    ).first()
-
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Pattern '{pattern_normalized}' for attribute '{payload.attribute_slug}' already exists"
+def _ingredient_before_create(
+    payload: UnrecognizedIngredientSuggestionCreate, db: Session
+) -> dict:
+    """Validate and normalize payload, return kwargs for model creation."""
+    if payload.match_type not in VALID_MATCH_TYPES:
+        raise ValidationError(
+            f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
         )
 
-    suggestion = UnrecognizedOptionSuggestion(
-        input_pattern=pattern_normalized,
-        attribute_slug=payload.attribute_slug,
-        suggested_display_name=payload.suggested_display_name,
-        is_active=payload.is_active,
-    )
+    pattern_normalized = payload.input_pattern.lower().strip()
 
-    db.add(suggestion)
-    db.commit()
-    db.refresh(suggestion)
-
-    logger.info(
-        "Created unrecognized option suggestion: '%s' -> '%s' for attribute '%s' (id=%d)",
-        suggestion.input_pattern,
-        suggestion.suggested_display_name,
-        suggestion.attribute_slug,
-        suggestion.id
-    )
-
-    return UnrecognizedOptionSuggestionOut.model_validate(suggestion)
-
-
-@admin_unrecognized_option_suggestions_router.put("/{suggestion_id}", response_model=UnrecognizedOptionSuggestionOut)
-def update_option_suggestion(
-    suggestion_id: int,
-    payload: UnrecognizedOptionSuggestionUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedOptionSuggestionOut:
-    """Update an unrecognized option suggestion."""
-    suggestion = db.query(UnrecognizedOptionSuggestion).filter(
-        UnrecognizedOptionSuggestion.id == suggestion_id
+    existing = db.query(UnrecognizedIngredientSuggestion).filter(
+        UnrecognizedIngredientSuggestion.input_pattern == pattern_normalized,
+        UnrecognizedIngredientSuggestion.match_type == payload.match_type
     ).first()
+    if existing:
+        raise ValidationError(
+            f"Pattern '{pattern_normalized}' with match_type "
+            f"'{payload.match_type}' already exists"
+        )
 
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Option suggestion not found")
+    return {
+        "input_pattern": pattern_normalized,
+        "match_type": payload.match_type,
+        "suggested_display_name": payload.suggested_display_name,
+        "modifier_category": payload.modifier_category,
+        "is_active": payload.is_active,
+    }
 
-    # Normalize pattern if changing it
-    new_pattern = payload.input_pattern.lower().strip() if payload.input_pattern else suggestion.input_pattern
-    new_attr_slug = payload.attribute_slug if payload.attribute_slug else suggestion.attribute_slug
 
-    # Check for duplicate if changing pattern or attribute
-    if new_pattern != suggestion.input_pattern or new_attr_slug != suggestion.attribute_slug:
-        existing = db.query(UnrecognizedOptionSuggestion).filter(
-            UnrecognizedOptionSuggestion.input_pattern == new_pattern,
-            UnrecognizedOptionSuggestion.attribute_slug == new_attr_slug,
-            UnrecognizedOptionSuggestion.id != suggestion_id
+def _ingredient_create_pre_commit(
+    item: UnrecognizedIngredientSuggestion,
+    payload: UnrecognizedIngredientSuggestionCreate,
+    db: Session,
+) -> None:
+    """Resolve many-to-many alternative ingredients from names after flush."""
+    if payload.alternative_ingredient_names:
+        alternatives = []
+        for name in payload.alternative_ingredient_names:
+            ingredient = db.query(Ingredient).filter(Ingredient.name == name).first()
+            if not ingredient:
+                raise ValidationError(f"Ingredient '{name}' not found")
+            alternatives.append(ingredient)
+        item.alternative_ingredients = alternatives
+
+
+def _ingredient_before_update(
+    item: UnrecognizedIngredientSuggestion,
+    payload: UnrecognizedIngredientSuggestionUpdate,
+    db: Session,
+) -> None:
+    """Validate, normalize, and apply updates in place."""
+    if payload.match_type is not None and payload.match_type not in VALID_MATCH_TYPES:
+        raise ValidationError(
+            f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
+        )
+
+    new_pattern = (
+        payload.input_pattern.lower().strip()
+        if payload.input_pattern else item.input_pattern
+    )
+    new_match_type = payload.match_type if payload.match_type else item.match_type
+
+    if new_pattern != item.input_pattern or new_match_type != item.match_type:
+        existing = db.query(UnrecognizedIngredientSuggestion).filter(
+            UnrecognizedIngredientSuggestion.input_pattern == new_pattern,
+            UnrecognizedIngredientSuggestion.match_type == new_match_type,
+            UnrecognizedIngredientSuggestion.id != item.id
         ).first()
         if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Pattern '{new_pattern}' for attribute '{new_attr_slug}' already exists"
+            raise ValidationError(
+                f"Pattern '{new_pattern}' with match_type "
+                f"'{new_match_type}' already exists"
             )
 
-    # Apply updates
     if payload.input_pattern is not None:
-        suggestion.input_pattern = new_pattern
-    if payload.attribute_slug is not None:
-        suggestion.attribute_slug = payload.attribute_slug
+        item.input_pattern = new_pattern
+    if payload.match_type is not None:
+        item.match_type = payload.match_type
     if payload.suggested_display_name is not None:
-        suggestion.suggested_display_name = payload.suggested_display_name
+        item.suggested_display_name = payload.suggested_display_name
+    if payload.modifier_category is not None:
+        item.modifier_category = payload.modifier_category
     if payload.is_active is not None:
-        suggestion.is_active = payload.is_active
+        item.is_active = payload.is_active
 
-    db.commit()
-    db.refresh(suggestion)
-
-    logger.info("Updated unrecognized option suggestion: '%s' (id=%d)", suggestion.input_pattern, suggestion.id)
-
-    return UnrecognizedOptionSuggestionOut.model_validate(suggestion)
-
-
-@admin_unrecognized_option_suggestions_router.delete("/{suggestion_id}", status_code=204)
-def delete_option_suggestion(
-    suggestion_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete an unrecognized option suggestion."""
-    suggestion = db.query(UnrecognizedOptionSuggestion).filter(
-        UnrecognizedOptionSuggestion.id == suggestion_id
-    ).first()
-
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Option suggestion not found")
-
-    logger.info(
-        "Deleting unrecognized option suggestion: '%s' (id=%d)",
-        suggestion.input_pattern,
-        suggestion.id
-    )
-    db.delete(suggestion)
-    db.commit()
-    return None
+    if payload.alternative_ingredient_names is not None:
+        alternatives = []
+        for name in payload.alternative_ingredient_names:
+            ingredient = db.query(Ingredient).filter(Ingredient.name == name).first()
+            if not ingredient:
+                raise ValidationError(f"Ingredient '{name}' not found")
+            alternatives.append(ingredient)
+        item.alternative_ingredients = alternatives
 
 
-# =============================================================================
-# Ingredient Suggestions Endpoints
-# =============================================================================
-
-admin_unrecognized_ingredient_suggestions_router = APIRouter(
+# Factory for Ingredient Suggestions CRUD
+_ingredient_crud = CRUDRouterFactory(
+    model=UnrecognizedIngredientSuggestion,
+    create_schema=UnrecognizedIngredientSuggestionCreate,
+    update_schema=UnrecognizedIngredientSuggestionUpdate,
+    response_schema=UnrecognizedIngredientSuggestionOut,
     prefix="/admin/unrecognized-ingredient-suggestions",
-    tags=["Admin - Unrecognized Ingredient Suggestions"]
+    tags=["Admin - Unrecognized Ingredient Suggestions"],
+    id_param="suggestion_id",
+    not_found_message="Ingredient suggestion not found",
+    on_before_create=_ingredient_before_create,
+    on_create_pre_commit=_ingredient_create_pre_commit,
+    on_before_update=_ingredient_before_update,
+    to_response=lambda item, db: serialize_ingredient_suggestion(item),
 )
 
+admin_unrecognized_ingredient_suggestions_router = _ingredient_crud.router
+# Remove factory's default list route (doesn't support query filters)
+admin_unrecognized_ingredient_suggestions_router.routes.pop(0)
 
-@admin_unrecognized_ingredient_suggestions_router.get("", response_model=list[UnrecognizedIngredientSuggestionOut])
+
+# -- Custom endpoints on the same router --
+
+
+@admin_unrecognized_ingredient_suggestions_router.get(
+    "", response_model=list[UnrecognizedIngredientSuggestionOut]
+)
 def list_ingredient_suggestions(
     db: Session = Depends(get_db),
     _admin: str = Depends(verify_admin_credentials),
@@ -754,173 +771,3 @@ def get_ingredients_for_dropdown(
         {"id": i.id, "name": i.name}
         for i in ingredients
     ]
-
-
-@admin_unrecognized_ingredient_suggestions_router.get(
-    "/{suggestion_id}", response_model=UnrecognizedIngredientSuggestionOut
-)
-def get_ingredient_suggestion(
-    suggestion_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedIngredientSuggestionOut:
-    """Get a specific ingredient suggestion by ID."""
-    suggestion = db.query(UnrecognizedIngredientSuggestion).filter(
-        UnrecognizedIngredientSuggestion.id == suggestion_id
-    ).first()
-
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Ingredient suggestion not found")
-
-    return serialize_ingredient_suggestion(suggestion)
-
-
-@admin_unrecognized_ingredient_suggestions_router.post(
-    "", response_model=UnrecognizedIngredientSuggestionOut, status_code=201
-)
-def create_ingredient_suggestion(
-    payload: UnrecognizedIngredientSuggestionCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedIngredientSuggestionOut:
-    """Create a new unrecognized ingredient suggestion."""
-    if payload.match_type not in VALID_MATCH_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
-        )
-
-    pattern_normalized = payload.input_pattern.lower().strip()
-
-    # Check for duplicate
-    existing = db.query(UnrecognizedIngredientSuggestion).filter(
-        UnrecognizedIngredientSuggestion.input_pattern == pattern_normalized,
-        UnrecognizedIngredientSuggestion.match_type == payload.match_type
-    ).first()
-
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Pattern '{pattern_normalized}' with match_type '{payload.match_type}' already exists"
-        )
-
-    # Look up alternative ingredients by name
-    alternatives = []
-    if payload.alternative_ingredient_names:
-        for name in payload.alternative_ingredient_names:
-            ingredient = db.query(Ingredient).filter(Ingredient.name == name).first()
-            if not ingredient:
-                raise HTTPException(status_code=400, detail=f"Ingredient '{name}' not found")
-            alternatives.append(ingredient)
-
-    suggestion = UnrecognizedIngredientSuggestion(
-        input_pattern=pattern_normalized,
-        match_type=payload.match_type,
-        suggested_display_name=payload.suggested_display_name,
-        modifier_category=payload.modifier_category,
-        is_active=payload.is_active,
-    )
-    if alternatives:
-        suggestion.alternative_ingredients = alternatives
-
-    db.add(suggestion)
-    db.commit()
-    db.refresh(suggestion)
-
-    logger.info(
-        "Created unrecognized ingredient suggestion: '%s' (id=%d)",
-        suggestion.input_pattern,
-        suggestion.id,
-    )
-
-    return serialize_ingredient_suggestion(suggestion)
-
-
-@admin_unrecognized_ingredient_suggestions_router.put(
-    "/{suggestion_id}", response_model=UnrecognizedIngredientSuggestionOut
-)
-def update_ingredient_suggestion(
-    suggestion_id: int,
-    payload: UnrecognizedIngredientSuggestionUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> UnrecognizedIngredientSuggestionOut:
-    """Update an unrecognized ingredient suggestion."""
-    suggestion = db.query(UnrecognizedIngredientSuggestion).filter(
-        UnrecognizedIngredientSuggestion.id == suggestion_id
-    ).first()
-
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Ingredient suggestion not found")
-
-    if payload.match_type is not None and payload.match_type not in VALID_MATCH_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
-        )
-
-    new_pattern = payload.input_pattern.lower().strip() if payload.input_pattern else suggestion.input_pattern
-    new_match_type = payload.match_type if payload.match_type else suggestion.match_type
-
-    if new_pattern != suggestion.input_pattern or new_match_type != suggestion.match_type:
-        existing = db.query(UnrecognizedIngredientSuggestion).filter(
-            UnrecognizedIngredientSuggestion.input_pattern == new_pattern,
-            UnrecognizedIngredientSuggestion.match_type == new_match_type,
-            UnrecognizedIngredientSuggestion.id != suggestion_id
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Pattern '{new_pattern}' with match_type '{new_match_type}' already exists"
-            )
-
-    if payload.input_pattern is not None:
-        suggestion.input_pattern = new_pattern
-    if payload.match_type is not None:
-        suggestion.match_type = payload.match_type
-    if payload.suggested_display_name is not None:
-        suggestion.suggested_display_name = payload.suggested_display_name
-    if payload.modifier_category is not None:
-        suggestion.modifier_category = payload.modifier_category
-    if payload.is_active is not None:
-        suggestion.is_active = payload.is_active
-
-    if payload.alternative_ingredient_names is not None:
-        alternatives = []
-        for name in payload.alternative_ingredient_names:
-            ingredient = db.query(Ingredient).filter(Ingredient.name == name).first()
-            if not ingredient:
-                raise HTTPException(status_code=400, detail=f"Ingredient '{name}' not found")
-            alternatives.append(ingredient)
-        suggestion.alternative_ingredients = alternatives
-
-    db.commit()
-    db.refresh(suggestion)
-
-    logger.info("Updated unrecognized ingredient suggestion: '%s' (id=%d)", suggestion.input_pattern, suggestion.id)
-
-    return serialize_ingredient_suggestion(suggestion)
-
-
-@admin_unrecognized_ingredient_suggestions_router.delete("/{suggestion_id}", status_code=204)
-def delete_ingredient_suggestion(
-    suggestion_id: int,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> None:
-    """Delete an unrecognized ingredient suggestion."""
-    suggestion = db.query(UnrecognizedIngredientSuggestion).filter(
-        UnrecognizedIngredientSuggestion.id == suggestion_id
-    ).first()
-
-    if not suggestion:
-        raise HTTPException(status_code=404, detail="Ingredient suggestion not found")
-
-    logger.info(
-        "Deleting unrecognized ingredient suggestion: '%s' (id=%d)",
-        suggestion.input_pattern,
-        suggestion.id,
-    )
-    db.delete(suggestion)
-    db.commit()
-    return None

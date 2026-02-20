@@ -68,7 +68,7 @@ Usage:
 import logging
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
@@ -76,6 +76,7 @@ from ..db import get_db
 from ..db.models import Store
 from ..schemas.stores import StoreOut, StoreCreate, StoreUpdate
 from ..services.store_service import invalidate_store_cache
+from .crud_helpers import get_or_404
 
 
 logger = logging.getLogger(__name__)
@@ -140,9 +141,7 @@ def get_store(
     _admin: str = Depends(verify_admin_credentials),
 ) -> StoreOut:
     """Get a specific store by ID."""
-    store = db.query(Store).filter(Store.store_id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
+    store = get_or_404(db, Store, store_id, id_column="store_id")
     return StoreOut.model_validate(store)
 
 
@@ -154,9 +153,7 @@ def update_store(
     _admin: str = Depends(verify_admin_credentials),
 ) -> StoreOut:
     """Update a store's information."""
-    store = db.query(Store).filter(Store.store_id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
+    store = get_or_404(db, Store, store_id, id_column="store_id")
 
     if payload.name is not None:
         store.name = payload.name
@@ -201,9 +198,7 @@ def delete_store(
     _admin: str = Depends(verify_admin_credentials),
 ) -> None:
     """Soft-delete a store (sets deleted_at timestamp)."""
-    store = db.query(Store).filter(Store.store_id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
+    store = get_or_404(db, Store, store_id, id_column="store_id")
 
     store.deleted_at = datetime.utcnow()
     store.status = "deleted"
@@ -220,9 +215,7 @@ def restore_store(
     _admin: str = Depends(verify_admin_credentials),
 ) -> StoreOut:
     """Restore a soft-deleted store."""
-    store = db.query(Store).filter(Store.store_id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
+    store = get_or_404(db, Store, store_id, id_column="store_id")
 
     store.deleted_at = None
     store.status = "open"

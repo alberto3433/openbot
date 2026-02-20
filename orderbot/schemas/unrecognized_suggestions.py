@@ -8,21 +8,19 @@ Pydantic models for managing unrecognized suggestions:
 - Ingredients: ingredient requests not on the menu (e.g., "honey")
 """
 
-from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from .base import TimestampedModel
 
 
 # =============================================================================
 # Unrecognized Menu Item Suggestion Schemas
 # =============================================================================
 
-class UnrecognizedMenuItemSuggestionOut(BaseModel):
+class UnrecognizedMenuItemSuggestionOut(TimestampedModel):
     """Response model for an unrecognized menu item suggestion."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     input_pattern: str
     match_type: str
     suggested_item_type_id: int | None = None
@@ -30,7 +28,6 @@ class UnrecognizedMenuItemSuggestionOut(BaseModel):
     suggested_menu_item_names: list[str] | None = None
     hit_count: int
     is_active: bool
-    created_at: datetime | None = None
 
 
 
@@ -62,18 +59,14 @@ class UnrecognizedMenuItemSuggestionStats(BaseModel):
     top_hits: list[dict[str, Any]]
 
 
-class UnrecognizedMenuItemLogEntry(BaseModel):
+class UnrecognizedMenuItemLogEntry(TimestampedModel):
     """Response model for an unrecognized menu item log entry."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     user_input: str
     normalized_input: str
     session_id: str | None = None
     order_item_count: int
     fallback_level: str  # "curated", "fuzzy", "llm", "generic"
     inferred_category: str | None = None
-    created_at: datetime | None = None
 
 
 class UnrecognizedMenuItemLogStats(BaseModel):
@@ -89,16 +82,12 @@ class UnrecognizedMenuItemLogStats(BaseModel):
 # Unrecognized Option Suggestion Schemas
 # =============================================================================
 
-class UnrecognizedOptionSuggestionOut(BaseModel):
+class UnrecognizedOptionSuggestionOut(TimestampedModel):
     """Response model for an unrecognized attribute option suggestion."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     input_pattern: str
     attribute_slug: str
     suggested_display_name: str
     is_active: bool
-    created_at: datetime | None = None
 
 
 class UnrecognizedOptionSuggestionCreate(BaseModel):
@@ -128,11 +117,8 @@ class UnrecognizedOptionSuggestionStats(BaseModel):
 # Unrecognized Ingredient Suggestion Schemas
 # =============================================================================
 
-class UnrecognizedIngredientSuggestionOut(BaseModel):
+class UnrecognizedIngredientSuggestionOut(TimestampedModel):
     """Response model for an unrecognized ingredient suggestion."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     input_pattern: str
     match_type: str
     suggested_display_name: str
@@ -140,7 +126,6 @@ class UnrecognizedIngredientSuggestionOut(BaseModel):
     alternative_ingredient_names: list[str] | None = None
     hit_count: int
     is_active: bool
-    created_at: datetime | None = None
 
 
 

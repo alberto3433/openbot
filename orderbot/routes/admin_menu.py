@@ -73,6 +73,7 @@ from ..schemas.menu import (
 from ..schemas.serializers import serialize_menu_item
 from ..services.alias_service import sync_entity_aliases
 from ..cache import menu_cache
+from .crud_helpers import get_or_404
 
 
 logger = logging.getLogger(__name__)
@@ -300,9 +301,7 @@ def update_menu_item(
     _admin: str = Depends(verify_admin_credentials),
 ) -> MenuItemOut:
     """Update a menu item. Requires admin authentication."""
-    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Menu item not found")
+    item = get_or_404(db, MenuItem, item_id, detail="Menu item not found")
 
     if payload.name is not None:
         item.name = payload.name
@@ -382,9 +381,7 @@ def delete_menu_item(
     _admin: str = Depends(verify_admin_credentials),
 ) -> None:
     """Delete a menu item and all related records. Requires admin authentication."""
-    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Menu item not found")
+    item = get_or_404(db, MenuItem, item_id, detail="Menu item not found")
 
     item_name = item.name
     logger.info("Deleting menu item: %s (id=%d)", item_name, item_id)

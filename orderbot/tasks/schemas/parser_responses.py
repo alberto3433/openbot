@@ -144,6 +144,10 @@ class ParsedItemEntry(BaseModel):
     # List of {token, display_name, modifier_category, alternatives: [{name, slug}]}
     unrecognized_ingredients: list[dict] = Field(default_factory=list)
 
+    # Attribute option words detected in input that don't apply to this item type
+    # e.g., "small" on an item without size options → [{word: "small", attribute_slug: "size"}]
+    inapplicable_attributes: list[dict] = Field(default_factory=list)
+
     def get_selection(self, category: str) -> Selection | None:
         """Get first selection for a category (for single-select attributes)."""
         for sel in self.selections:

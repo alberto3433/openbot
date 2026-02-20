@@ -11,6 +11,7 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 import logging
 from typing import TYPE_CHECKING
 
+from orderbot.cache import menu_cache
 from orderbot.cache.base import pluralize
 from ..models.pending_states import PendingUnmatchedPagination
 from ..models.utilities import is_name_forming_category
@@ -131,6 +132,30 @@ class QuestionBuilder:
         qr = build_quick_replies(qr_options) if qr_options else None
 
         return StateMachineResult(message=question, order=order, quick_replies=qr)
+
+    def handle_inapplicable_attributes(self, item: "MenuItemTask") -> str | None:
+        """Check if item has inapplicable attribute words to notify the user about.
+
+        Pops the first entry from the list and generates a note like
+        "Heads up, the Tuna Salad Sandwich only comes in one size."
+
+        Returns a note string to prepend to the question, or None if nothing to report.
+        """
+        if not item.inapplicable_attributes:
+            return None
+
+        entry = item.inapplicable_attributes.pop(0)
+        attr_slug = entry.get("attribute_slug", "")
+        item_name = item.get_display_name()
+
+        # Get a human-readable attribute name
+        attr_display = menu_cache.get_attribute_display_name(attr_slug)
+
+        # Build the note
+        if attr_slug == "size":
+            return f"Heads up, the {item_name} only comes in one size."
+        else:
+            return f"Heads up, the {item_name} doesn't have {attr_display.lower()} options."
 
     def calculate_item_ordinal(
         self, item: "MenuItemTask", order: "OrderTask"

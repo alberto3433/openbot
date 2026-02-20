@@ -87,6 +87,7 @@ from ..schemas.ingredients import (
 )
 from ..services.alias_service import sync_entity_aliases
 from ..services.helpers import batch_load_store_availability
+from .crud_helpers import get_or_404
 
 
 logger = logging.getLogger(__name__)
@@ -379,9 +380,7 @@ def update_menu_item_availability(
     _admin: str = Depends(verify_admin_credentials),
 ) -> MenuItemStoreAvailabilityOut:
     """Toggle menu item availability (86/un-86)."""
-    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Menu item not found")
+    item = get_or_404(db, MenuItem, item_id, detail="Menu item not found")
 
     if payload.store_id:
         store_avail = db.query(MenuItemStoreAvailability).filter(
@@ -441,9 +440,7 @@ def get_ingredient_references(
     """Get all references to this ingredient for the References tab."""
 
     # Verify ingredient exists
-    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
-    if not ingredient:
-        raise HTTPException(status_code=404, detail="Ingredient not found")
+    ingredient = get_or_404(db, Ingredient, ingredient_id)
 
     # Query MenuItemIngredient - menu items with this ingredient as a default
     menu_item_refs = db.query(MenuItemIngredient).options(
@@ -489,9 +486,7 @@ def update_ingredient(
     _admin: str = Depends(verify_admin_credentials),
 ) -> IngredientOut:
     """Update an ingredient."""
-    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
-    if not ingredient:
-        raise HTTPException(status_code=404, detail="Ingredient not found")
+    ingredient = get_or_404(db, Ingredient, ingredient_id)
 
     if payload.name is not None:
         ingredient.name = payload.name
@@ -533,9 +528,7 @@ def update_ingredient_availability(
     _admin: str = Depends(verify_admin_credentials),
 ) -> IngredientStoreAvailabilityOut:
     """Toggle ingredient availability (86/un-86)."""
-    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
-    if not ingredient:
-        raise HTTPException(status_code=404, detail="Ingredient not found")
+    ingredient = get_or_404(db, Ingredient, ingredient_id)
 
     if payload.store_id:
         store_avail = db.query(IngredientStoreAvailability).filter(
@@ -579,9 +572,7 @@ def delete_ingredient(
     _admin: str = Depends(verify_admin_credentials),
 ) -> None:
     """Delete an ingredient."""
-    ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
-    if not ingredient:
-        raise HTTPException(status_code=404, detail="Ingredient not found")
+    ingredient = get_or_404(db, Ingredient, ingredient_id)
 
     # Check for RESTRICT-protected references before attempting delete
     dependents: list[str] = []

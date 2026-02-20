@@ -47,6 +47,7 @@ from ..schemas.serializers import (
     serialize_global_attribute,
     serialize_global_attribute_list,
 )
+from .crud_helpers import get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -239,9 +240,7 @@ def update_global_attribute(
     _admin: str = Depends(verify_admin_credentials),
 ) -> GlobalAttributeOut:
     """Update a global attribute."""
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Check for duplicate slug if changing
     if payload.slug is not None and payload.slug != attr.slug:
@@ -285,9 +284,7 @@ def delete_global_attribute(
     _admin: str = Depends(verify_admin_credentials),
 ) -> None:
     """Delete a global attribute (and all its options)."""
-    attr = db.query(GlobalAttribute).filter(GlobalAttribute.id == attr_id).first()
-    if not attr:
-        raise HTTPException(status_code=404, detail="Global attribute not found")
+    attr = get_or_404(db, GlobalAttribute, attr_id, detail="Global attribute not found")
 
     # Check for RESTRICT-protected references before attempting delete
     dependents: list[str] = []

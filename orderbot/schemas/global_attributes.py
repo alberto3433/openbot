@@ -18,30 +18,25 @@ Endpoint Coverage:
 - GET/POST/DELETE /admin/item-types/{id}/global-attributes: Link/unlink global attributes
 """
 
-from datetime import datetime
+from pydantic import BaseModel
 
-from pydantic import BaseModel, ConfigDict
+from .base import FullTimestampedModel, OrmModel
 
 
 # =============================================================================
 # Global Attribute Option Schemas
 # =============================================================================
 
-class SkipRuleOutBasic(BaseModel):
+class SkipRuleOutBasic(OrmModel):
     """Basic response model for skip rules (used within GlobalAttributeOptionOut)."""
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     skipped_attribute_id: int
     skipped_attribute_slug: str
     skipped_attribute_name: str
 
 
-class GlobalAttributeOptionOut(BaseModel):
+class GlobalAttributeOptionOut(FullTimestampedModel):
     """Response model for global attribute options."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     slug: str
     display_name: str
     price_modifier: float = 0.0
@@ -61,8 +56,6 @@ class GlobalAttributeOptionOut(BaseModel):
     # auto-select this option and forward to target attribute
     forward_to_attribute_id: int | None = None
     forward_to_attribute_slug: str | None = None  # Slug for display
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
 
 
 class GlobalAttributeOptionCreate(BaseModel):
@@ -121,7 +114,7 @@ class LinkedItemTypeInfo(BaseModel):
 # Global Attribute Schemas
 # =============================================================================
 
-class GlobalAttributeOut(BaseModel):
+class GlobalAttributeOut(FullTimestampedModel):
     """
     Response model for global attributes.
 
@@ -129,9 +122,6 @@ class GlobalAttributeOut(BaseModel):
     attribute with all cream cheese options can be used by fish_sandwich,
     egg_sandwich, and bagel item types.
     """
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     slug: str
     display_name: str
     input_type: str  # 'single_select', 'multi_select', 'boolean'
@@ -146,15 +136,10 @@ class GlobalAttributeOut(BaseModel):
     item_type_count: int = 0
     # List of item types using this attribute (for detail view)
     linked_item_types: list[LinkedItemTypeInfo] = []
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
 
 
-class GlobalAttributeListOut(BaseModel):
+class GlobalAttributeListOut(FullTimestampedModel):
     """Response model for listing global attributes (without full options)."""
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     slug: str
     display_name: str
     input_type: str
@@ -164,8 +149,6 @@ class GlobalAttributeListOut(BaseModel):
     options_source_category: str | None = None
     option_count: int = 0
     item_type_count: int = 0
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
 
 
 class GlobalAttributeCreate(BaseModel):
@@ -194,16 +177,13 @@ class GlobalAttributeUpdate(BaseModel):
 # Item Type Global Attribute Link Schemas
 # =============================================================================
 
-class ItemTypeGlobalAttributeOut(BaseModel):
+class ItemTypeGlobalAttributeOut(FullTimestampedModel):
     """
     Response model for an item type's link to a global attribute.
 
     Contains item-type-specific settings (is_required, etc.)
     as well as the global attribute and its options.
     """
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     item_type_id: int
     item_type_slug: str | None = None
     global_attribute_id: int
@@ -229,9 +209,6 @@ class ItemTypeGlobalAttributeOut(BaseModel):
 
     # Options from the global attribute
     options: list[GlobalAttributeOptionOut] = []
-
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
 
 
 class ItemTypeGlobalAttributeLinkCreate(BaseModel):
@@ -297,10 +274,8 @@ class GlobalAttributeOptionFromIngredientCreate(BaseModel):
 # Skip Rule Schemas
 # =============================================================================
 
-class SkipRuleOut(BaseModel):
+class SkipRuleOut(OrmModel):
     """Response model for skip rules attached to an option."""
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
     skipped_attribute_id: int
     skipped_attribute_slug: str

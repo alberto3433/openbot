@@ -28,6 +28,7 @@ from .tokenization import _parse_multi_item_order
 from .extraction import _detect_inapplicable_attributes
 from .text_cleaning import _extract_replacement_item, _filter_duplicate_modifications, _strip_leading_attribute_words
 from .order_type_parsing import _add_order_type_to_response
+from ...utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +233,7 @@ def _check_standalone_ingredient(text: str) -> OpenInputResponse | None:
         None otherwise.
     """
     # Strip common ordering phrases
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
     for prefix in ["i want ", "i'd like ", "i would like ", "give me ", "can i get ", "can i have "]:
         if text_lower.startswith(prefix):
             text_lower = text_lower[len(prefix):].strip()

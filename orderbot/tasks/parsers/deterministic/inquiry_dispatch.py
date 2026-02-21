@@ -9,6 +9,7 @@ be checked in specific order relative to inquiry parsers.
 import logging
 
 from ...schemas import OpenInputResponse
+from ...utils.text import normalize_text
 from ..intent_patterns import MORE_OF_SAME_PATTERN
 from .result_types import ParserContext
 from .by_pound_parsing import _parse_by_pound_order
@@ -60,7 +61,7 @@ def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | Non
     # rather than being treated as menu inquiry ("show me more options")
     more_of_same_match = MORE_OF_SAME_PATTERN.match(text)
     if more_of_same_match:
-        item_ref = more_of_same_match.group(1).strip().lower()
+        item_ref = normalize_text(more_of_same_match.group(1))
         # Exclude menu inquiry words - these should fall through to parse_more_menu_items
         menu_inquiry_words = {
             "options", "items", "please", "of those", "of them", "of that",

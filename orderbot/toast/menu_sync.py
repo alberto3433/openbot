@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from ..cache.base import normalize_text
 from ..db.models.menu import MenuItem
 from ..db.models.toast import ToastGuidMap
 
@@ -152,10 +153,10 @@ def _find_best_match(
     """
     best_match = None
     best_score = 0.0
-    toast_lower = toast_name.lower().strip()
+    toast_lower = normalize_text(toast_name)
 
     for item in local_items:
-        local_lower = item.name.lower().strip()
+        local_lower = normalize_text(item.name)
         score = SequenceMatcher(None, toast_lower, local_lower).ratio()
 
         if score > best_score:

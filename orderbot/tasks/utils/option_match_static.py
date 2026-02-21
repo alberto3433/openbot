@@ -8,6 +8,7 @@ price extraction, option filtering, and numeric option matching.
 from __future__ import annotations
 
 from ..normalization import normalize_to_slug
+from .text import normalize_text
 
 
 class OptionMatchStaticMixin:
@@ -130,7 +131,7 @@ class OptionMatchStaticMixin:
         from ..parsers.quantity_utils import parse_numeric_input
         from ..response_utils import is_affirmative
 
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
 
         # Check if any options have numeric slugs
         numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}

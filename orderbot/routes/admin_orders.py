@@ -182,6 +182,10 @@ def get_order_detail(
         staff_notes=order.staff_notes,
         created_at=_format_dt(order.created_at) or "",
         updated_at=_format_dt(order.updated_at),
+        toast_order_guid=order.toast_order_guid,
+        toast_order_status=order.toast_order_status,
+        square_order_id=order.square_order_id,
+        square_order_status=order.square_order_status,
         items=items_out,
     )
 

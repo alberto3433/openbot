@@ -19,6 +19,7 @@ from typing import Any, Callable, TypeVar
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..cache.base import normalize_text
 from ..exceptions import ResourceNotFoundError, ValidationError
 
 
@@ -187,7 +188,7 @@ def apply_payload_updates(
             elif norm_type == "lower":
                 value = value.lower()
             elif norm_type == "lower_strip":
-                value = value.lower().strip()
+                value = normalize_text(value)
 
         if hasattr(item, field_name):
             setattr(item, field_name, value)
@@ -235,7 +236,7 @@ def build_create_kwargs(
             elif norm_type == "lower":
                 value = value.lower()
             elif norm_type == "lower_strip":
-                value = value.lower().strip()
+                value = normalize_text(value)
         result[field_name] = value
 
     if extra_fields:

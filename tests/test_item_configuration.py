@@ -3069,8 +3069,8 @@ class TestDrinkSelectionHandler:
         assert "apple juice" in result.message.lower()
         assert order.items.items[0].menu_item_name == "Apple Juice"
 
-    def test_invalid_selection_asks_again(self):
-        """Test that unclear input asks again with options."""
+    def test_invalid_selection_delegates_to_taking_items(self):
+        """Test that unrecognized input during selection falls through to taking-items flow."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
@@ -3084,13 +3084,12 @@ class TestDrinkSelectionHandler:
 
         result = sm.configuring_item_handler._handle_item_selection("xyz", order)
 
-        assert "choose" in result.message.lower()
-        assert "1." in result.message
-        assert "2." in result.message
-        assert len(order.items.items) == 0
+        # Unrecognized input delegates to handle_taking_items, clearing the selection state
+        assert order.pending_item_options == []
+        assert order.pending_field is None
 
-    def test_out_of_range_number_asks_again(self):
-        """Test that out of range number asks again."""
+    def test_out_of_range_number_delegates_to_taking_items(self):
+        """Test that out-of-range number is treated as new input (e.g. quantity)."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 
@@ -3104,8 +3103,8 @@ class TestDrinkSelectionHandler:
 
         result = sm.configuring_item_handler._handle_item_selection("3", order)
 
-        assert "choose" in result.message.lower() or "didn't catch" in result.message.lower()
-        assert len(order.items.items) == 0
+        # "3" is treated as new input by the taking-items handler, not re-asked
+        assert order.pending_item_options == []
 
     def test_negative_number_rejected(self):
         """Test that negative numbers are rejected."""

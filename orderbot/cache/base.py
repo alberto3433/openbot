@@ -4,7 +4,7 @@ Base utilities for the menu data cache.
 This module contains:
 - Helper functions (singularize, etc.)
 - BaseCacheMixin with cache attribute initialization
-- MenuDataNotLoadedError handling
+- Re-exports from focused sub-modules (text_utils, constants)
 """
 
 import asyncio
@@ -19,33 +19,17 @@ from typing import Any, Callable, TypeVar
 import inflect
 
 from ..exceptions import MenuDataNotLoadedError
+from .text_utils import normalize_text, normalize_for_matching  # noqa: F401 — re-exported
+from .constants import (  # noqa: F401 — re-exported
+    SKIP_WORDS_BASIC,
+    SKIP_WORDS_CONJUNCTIONS,
+    SKIP_WORDS_PREPOSITIONS,
+)
 
 logger = logging.getLogger(__name__)
 
 # Type variable for generic method return type
 F = TypeVar("F", bound=Callable[..., Any])
-
-
-def normalize_text(text: str | None) -> str:
-    """Normalize text for comparison by lowercasing and stripping whitespace.
-
-    This is the canonical definition used by both cache and task modules.
-    Task modules import via ``from orderbot.tasks.utils.text import normalize_text``
-    which re-exports this function.
-
-    Args:
-        text: The text to normalize, or None.
-
-    Returns:
-        Lowercased and whitespace-stripped text (empty string for None).
-
-    Examples:
-        >>> normalize_text("  Bacon  ")
-        'bacon'
-        >>> normalize_text(None)
-        ''
-    """
-    return (text or "").lower().strip()
 
 
 def ensure_cache_loaded(func: F) -> F:
@@ -65,77 +49,6 @@ def ensure_cache_loaded(func: F) -> F:
         self._ensure_loaded()
         return func(self, *args, **kwargs)
     return wrapper  # type: ignore[return-value]
-
-
-# Pattern for abbreviation periods (Dr., Mr., Mrs., Ms., St.)
-_ABBREV_PERIOD_PATTERN = re.compile(r'\b(dr|mr|mrs|ms|st)\.', re.IGNORECASE)
-
-# Smart quote to straight quote mapping
-# Use Unicode ordinals to avoid encoding issues
-_SMART_QUOTE_MAP = str.maketrans({
-    '\u2018': "'",  # Left single quotation mark
-    '\u2019': "'",  # Right single quotation mark
-    '\u201C': '"',  # Left double quotation mark
-    '\u201D': '"',  # Right double quotation mark
-})
-
-
-def normalize_for_matching(text: str) -> str:
-    """Normalize text for matching by standardizing special characters.
-
-    Used for menu item matching where user input like "dr brown" should
-    match database values like "Dr. Brown's".
-
-    Transforms applied:
-    - Lowercase and strip whitespace
-    - Normalize smart quotes to straight quotes
-    - Remove periods after common abbreviations (Dr., Mr., Mrs., Ms., St.)
-    - Replace & with ' and '
-    - Replace hyphens with spaces
-    - Remove possessive 's (e.g., "Brown's" -> "Brown")
-    - Remove remaining apostrophes (contractions)
-    - Collapse multiple spaces to single space
-
-    Args:
-        text: The text to normalize.
-
-    Returns:
-        Normalized text for matching.
-
-    Examples:
-        >>> normalize_for_matching("Dr. Brown's")
-        'dr brown'
-        >>> normalize_for_matching("dr brown")
-        'dr brown'
-        >>> normalize_for_matching("Bacon & Eggs")
-        'bacon and eggs'
-        >>> normalize_for_matching("cream-cheese")
-        'cream cheese'
-        >>> normalize_for_matching("St. Mark's")
-        'st mark'
-    """
-    text = text.lower().strip()
-    text = text.translate(_SMART_QUOTE_MAP)
-    text = _ABBREV_PERIOD_PATTERN.sub(r'\1', text)
-    text = text.replace('&', ' and ')
-    text = text.replace('-', ' ')
-    # Remove possessive 's at word boundaries (e.g., "Brown's" -> "Brown")
-    text = re.sub(r"'s\b", '', text)
-    # Remove remaining apostrophes (contractions like "don't" -> "dont")
-    text = text.replace("'", '')
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
-
-
-# =============================================================================
-# Skip Words for Text Processing
-# =============================================================================
-# These basic skip word sets are duplicated from orderbot/tasks/shared_constants.py.
-# Cannot import from shared_constants here because it triggers orderbot.tasks.__init__
-# which eventually imports back into orderbot.cache (circular import).
-SKIP_WORDS_BASIC = frozenset({'the', 'a', 'an'})
-SKIP_WORDS_CONJUNCTIONS = frozenset({'and', 'or', 'with'})
-SKIP_WORDS_PREPOSITIONS = frozenset({'on', 'in', 'to', 'of'})
 
 # Shared inflect engine instance (thread-safe for reading)
 _inflect_engine = inflect.engine()

@@ -13,6 +13,8 @@ Extracted from handler.py for better separation of concerns.
 import logging
 from typing import TYPE_CHECKING
 
+from ..utils.text import normalize_text
+
 if TYPE_CHECKING:
     from ..models import MenuItemTask
     from ..utils import OptionMatcher
@@ -98,7 +100,7 @@ def _capture_boolean_attribute(
     for opt in options:
         opt_aliases = opt.get("aliases") or []
         if isinstance(opt_aliases, str):
-            opt_aliases = [a.strip().lower() for a in opt_aliases.split(",")]
+            opt_aliases = [normalize_text(a) for a in opt_aliases.split(",")]
         else:
             opt_aliases = [a.lower() for a in opt_aliases]
 

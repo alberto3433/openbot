@@ -54,6 +54,9 @@ class Store(Base):
     delivery_zip_codes = Column(JSON, nullable=False, default=list)  # List of zip codes for delivery
     delivery_fee = Column(Float, nullable=False, default=2.99)  # Delivery fee in dollars
 
+    # Square POS integration
+    square_location_id = Column(String, nullable=True)  # Square location ID for this store
+
     # Soft delete support
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -103,6 +106,9 @@ class Company(Base):
 
     # Business hours (JSON for structured format)
     business_hours = Column(JSON, nullable=True)  # e.g., {"mon": "9-5", "tue": "9-5", ...}
+
+    # Online Payment Provider
+    payment_provider = Column(String, nullable=False, default="stripe")  # "stripe" or "square"
 
     # Payment Methods
     accepts_credit_cards = Column(Boolean, nullable=False, default=True)

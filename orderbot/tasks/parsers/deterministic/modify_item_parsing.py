@@ -20,6 +20,7 @@ from ..constants import (
     SKIP_WORDS_BASIC,
     SKIP_WORDS_PREPOSITIONS,
 )
+from ...utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ def _parse_modify_existing_item(text: str) -> OpenInputResponse | None:
 
     Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Build dynamic item type pattern from database
     item_type_names = menu_cache.get_item_type_names_for_regex()

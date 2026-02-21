@@ -202,6 +202,11 @@ class OrderDetailOut(BaseModel):
     staff_notes: str | None = None
     created_at: str | datetime
     updated_at: str | datetime | None = None
+    # POS integration fields
+    toast_order_guid: str | None = None
+    toast_order_status: str | None = None
+    square_order_id: str | None = None
+    square_order_status: str | None = None
     items: list[OrderItemOut]
 
 

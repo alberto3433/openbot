@@ -14,6 +14,7 @@ import logging
 from ...schemas import OpenInputResponse, ParsedItemEntry, Selection
 from ..constants import find_item_by_unit_type
 from orderbot.cache import menu_cache
+from ...utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def _parse_by_pound_order(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with by_pound_items if matched, None otherwise.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Strip common action verb prefixes - these indicate intent, not item type
     # The quantity phrase ("quarter pound", "half pound") identifies by-the-pound orders

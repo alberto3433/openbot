@@ -127,11 +127,11 @@ class TestOrderTypeUpfront:
         assert "pickup or delivery" not in result.message.lower()
         assert order.phase == OrderPhase.CHECKOUT_NAME.value
 
-    def test_email_choice_sets_checkout_email_phase(self):
-        """Test that choosing 'email' sets CHECKOUT_EMAIL phase for next input.
+    def test_name_transitions_to_email_phase(self):
+        """Test that after name, the phase transitions to CHECKOUT_EMAIL.
 
-        Bug fix: When user chooses email for notification, the phase should be
-        CHECKOUT_EMAIL so their email address is captured correctly.
+        In the new flow, after collecting the customer's name, the system
+        asks for their email address.
         """
         from unittest.mock import patch, MagicMock
         from orderbot.tasks.state_machine import (
@@ -144,31 +144,28 @@ class TestOrderTypeUpfront:
         order = OrderTask()
         sm = OrderStateMachine()
 
-        # Set up order state: has items, delivery method, name, confirmed
+        # Set up order state: has items, delivery method
         bagel = BagelItemTask(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
-        order.customer_info.name = "Joey"
-        order.checkout.order_reviewed = True
-        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.phase = OrderPhase.CHECKOUT_NAME.value
 
-        # Mock parse_payment_method to return email choice (no email address)
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
-            mock_parse.return_value = MagicMock(
-                choice="email",
-                email_address=None,  # No email provided yet
-                phone_number=None,
-            )
-            result = sm.checkout_handler.handle_payment_method("email", order)
+        with patch("orderbot.tasks.checkout_handler.parse_name") as mock_parse:
+            mock_parse.return_value = MagicMock(name="Joey")
+            result = sm.checkout_handler.handle_name("Joey", order)
 
         # Should ask for email
         assert "email" in result.message.lower()
-        # Phase should be CHECKOUT_EMAIL (not CHECKOUT_PHONE)
+        # Phase should be CHECKOUT_EMAIL
         assert order.phase == OrderPhase.CHECKOUT_EMAIL.value
 
     def test_email_address_captured_in_checkout_email_phase(self):
-        """Test that email address is captured when in CHECKOUT_EMAIL phase."""
+        """Test that email address is captured when in CHECKOUT_EMAIL phase.
+
+        In the new flow, handle_email stores the email and transitions to
+        the next slot (phone if not known, or confirm).
+        """
         from unittest.mock import patch, MagicMock
         from orderbot.tasks.state_machine import (
             OrderStateMachine,
@@ -186,29 +183,24 @@ class TestOrderTypeUpfront:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "Joey"
-        order.checkout.order_reviewed = True
-        order.payment.method = "card_link"
         order.phase = OrderPhase.CHECKOUT_EMAIL.value
 
         # Mock parse_email to return the email address
-        # Note: Using gmail.com because email validation checks DNS/MX records
         with patch("orderbot.tasks.checkout_handler.parse_email") as mock_parse:
             mock_parse.return_value = MagicMock(email="joey@gmail.com")
             result = sm.checkout_handler.handle_email("joey@gmail.com", order)
 
-        # Email should be stored (normalized)
+        # Email should be stored
         assert order.customer_info.email == "joey@gmail.com"
-        # Order should be complete
-        assert result.is_complete
-        assert "joey@gmail.com" in result.message
-        assert "Joey" in result.message  # Thank you message includes name
+        # Order should NOT be complete yet - still need phone and/or confirm
+        assert not result.is_complete
 
     def test_email_phase_persists_through_process(self):
         """Test that CHECKOUT_EMAIL phase is preserved through process().
 
-        Bug fix: When user chooses email, the phase is set to CHECKOUT_EMAIL.
-        On the next turn, process() was calling _transition_to_next_slot() which
-        overwrote the phase to CHECKOUT_PHONE. This test verifies the fix.
+        When the order is in CHECKOUT_EMAIL phase, process() should route
+        to handle_email and capture the email, then transition to the next
+        slot (phone or confirm).
         """
         from unittest.mock import patch, MagicMock
         from orderbot.tasks.state_machine import (
@@ -220,7 +212,7 @@ class TestOrderTypeUpfront:
 
         sm = OrderStateMachine()
 
-        # Set up order state as it would be after choosing "email"
+        # Set up order state: name collected, now in email phase
         order = OrderTask()
         bagel = BagelItemTask(bagel_type="egg", toasted=True)
         bagel["spread_type"] = "none"  # "with nothing on it"
@@ -228,22 +220,18 @@ class TestOrderTypeUpfront:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "Hank"
-        order.checkout.order_reviewed = True
-        order.payment.method = "card_link"
-        order.phase = OrderPhase.CHECKOUT_EMAIL.value  # Set by previous handler
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
 
         # Mock parse_email to return the email address
         with patch("orderbot.tasks.checkout_handler.parse_email") as mock_parse:
             mock_parse.return_value = MagicMock(email="alberto33@gmail.com")
-            # Call process() - this should NOT overwrite the phase
+            # Call process() - should route to handle_email
             result = sm.process("alberto33@gmail.com", order)
 
         # Verify email was captured
         assert order.customer_info.email == "alberto33@gmail.com"
-        # Order should be complete
-        assert result.is_complete
-        assert "alberto33@gmail.com" in result.message
-        assert "Hank" in result.message
+        # Order should NOT be complete yet - still need phone/confirm
+        assert not result.is_complete
 
 
 class TestEmailValidation:
@@ -444,10 +432,14 @@ class TestDeliveryHandler:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, DeliveryChoiceResponse
         from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
 
         with patch("orderbot.tasks.delivery_handler.parse_delivery_choice_deterministic") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(choice="pickup", address=None)
@@ -486,11 +478,15 @@ class TestDeliveryHandler:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, DeliveryChoiceResponse
         from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
 
         sm = OrderStateMachine()
         sm._store_info = {"delivery_zip_codes": ["10001", "10002"]}
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_DELIVERY.value
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
 
         with patch("orderbot.tasks.delivery_handler.parse_delivery_choice_deterministic") as mock_parse:
             mock_parse.return_value = DeliveryChoiceResponse(
@@ -517,6 +513,7 @@ class TestDeliveryHandler:
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase
         from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
@@ -524,6 +521,9 @@ class TestDeliveryHandler:
         order.delivery_method.order_type = "delivery"
         order.delivery_method.address.street = "456 Broadway, NYC 10012"
         order.pending_field = "address_confirmation"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
 
         result = sm.checkout_handler.handle_delivery("yes", order)
 
@@ -595,8 +595,8 @@ class TestDeliveryHandler:
 class TestPhoneHandler:
     """Tests for _handle_phone."""
 
-    def test_valid_phone_completes_order(self):
-        """Test that valid phone number completes the order."""
+    def test_valid_phone_stores_and_transitions(self):
+        """Test that valid phone number is stored and transitions to confirm."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, PhoneResponse
         from orderbot.tasks.models import OrderTask
@@ -605,18 +605,18 @@ class TestPhoneHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "John"
+        order.customer_info.email = "john@gmail.com"
 
         with patch("orderbot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone="2015551234")
 
             result = sm.checkout_handler.handle_phone("201-555-1234", order)
 
-            assert result.is_complete is True
             assert order.customer_info.phone == "+12015551234"
-            assert order.checkout.confirmed is True
-            assert order.checkout.short_order_number is not None
-            assert "order number" in result.message.lower()
-            assert "John" in result.message
+            # Phone does NOT complete the order - it transitions to confirm
+            assert not result.is_complete
+            # Should show order summary for confirmation
+            assert "look right" in result.message.lower() or "correct" in result.message.lower()
 
     def test_no_phone_extracted_asks_again(self):
         """Test that when no phone is extracted, it asks again."""
@@ -676,32 +676,34 @@ class TestPhoneHandler:
             assert result.is_complete is False
             assert "too long" in result.message.lower()
 
-    def test_order_confirmation_format(self):
-        """Test that order confirmation message has expected format."""
+    def test_phone_transitions_to_confirm_with_summary(self):
+        """Test that after phone, order summary is shown for confirmation."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, PhoneResponse
         from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "Alex"
+        order.customer_info.email = "alex@gmail.com"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
 
         with patch("orderbot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone="9085559999")
 
             result = sm.checkout_handler.handle_phone("908-555-9999", order)
 
-            # Should mention order number
-            assert "order number" in result.message.lower()
-            # Should mention text notification
-            assert "text" in result.message.lower()
-            # Should thank by name
-            assert "Alex" in result.message
-            # Order number format is ORD-XXXXXX-XX
-            assert order.checkout.order_number.startswith("ORD-")
-            # short_order_number is just the last 2 digits
-            assert len(order.checkout.short_order_number) == 2
+            # Should show summary and ask for confirmation
+            assert "look right" in result.message.lower() or "correct" in result.message.lower()
+            # Phone should be stored
+            assert order.customer_info.phone == "+19085559999"
+            # Order should NOT be complete yet
+            assert not result.is_complete
 
     def test_phone_stored_in_e164_format(self):
         """Test that phone number is stored in E.164 format."""
@@ -713,6 +715,7 @@ class TestPhoneHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_PHONE.value
         order.customer_info.name = "Bob"
+        order.customer_info.email = "bob@gmail.com"
 
         with patch("orderbot.tasks.checkout_handler.parse_phone") as mock_parse:
             mock_parse.return_value = PhoneResponse(phone="7325551234")
@@ -721,8 +724,6 @@ class TestPhoneHandler:
 
             # Should be in E.164 format with +1 prefix
             assert order.customer_info.phone == "+17325551234"
-            # Also stored as payment link destination
-            assert order.payment.payment_link_destination == "+17325551234"
 
 
 # =============================================================================
@@ -753,7 +754,8 @@ class TestNameHandler:
             result = sm.checkout_handler.handle_name("John", order)
 
             assert order.customer_info.name == "John"
-            assert "does that look right" in result.message.lower()
+            # New flow: after name, asks for email
+            assert "email" in result.message.lower()
 
     def test_no_name_extracted_asks_again(self):
         """Test that when no name is extracted, it asks again."""
@@ -773,8 +775,8 @@ class TestNameHandler:
             assert order.customer_info.name is None
             assert "name" in result.message.lower()
 
-    def test_name_shows_order_summary(self):
-        """Test that after name is set, order summary is shown."""
+    def test_name_asks_for_email(self):
+        """Test that after name is set, system asks for email."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, NameResponse
         from orderbot.tasks.models import OrderTask
@@ -783,7 +785,7 @@ class TestNameHandler:
         sm = OrderStateMachine()
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_NAME.value
-        # Add a coffee for the order summary
+        # Add a coffee
         coffee = CoffeeItemTask(drink_type="latte", size="medium", iced=False)
         coffee.mark_complete()
         order.items.add_item(coffee)
@@ -793,9 +795,8 @@ class TestNameHandler:
 
             result = sm.checkout_handler.handle_name("Sarah", order)
 
-            # Summary should include the item
-            assert "latte" in result.message.lower()
-            assert "does that look right" in result.message.lower()
+            # Should ask for email address
+            assert "email" in result.message.lower()
 
     def test_name_with_prefix_extracts_just_name(self):
         """Test that 'My name is John' extracts just 'John'."""
@@ -819,8 +820,8 @@ class TestNameHandler:
 
             assert order.customer_info.name == "Mike"
 
-    def test_name_transitions_to_confirmation(self):
-        """Test that after name, phase transitions correctly."""
+    def test_name_transitions_to_email(self):
+        """Test that after name, phase transitions to email."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, NameResponse
         from orderbot.tasks.models import OrderTask
@@ -839,8 +840,9 @@ class TestNameHandler:
 
             result = sm.checkout_handler.handle_name("Lisa", order)
 
-            # Should transition to confirmation phase
-            assert order.phase == OrderPhase.CHECKOUT_CONFIRM.value
+            # Should transition to email phase (not confirm)
+            assert order.phase == OrderPhase.CHECKOUT_EMAIL.value
+            assert "email" in result.message.lower()
 
 
 # =============================================================================
@@ -850,8 +852,8 @@ class TestNameHandler:
 class TestConfirmationHandler:
     """Tests for _handle_confirmation."""
 
-    def test_confirmed_marks_order_reviewed(self):
-        """Test that confirming marks order_reviewed and asks text/email."""
+    def test_confirmed_transitions_to_payment_choice(self):
+        """Test that confirming transitions to payment method choice."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, ConfirmationResponse
         from orderbot.tasks.models import OrderTask
@@ -861,6 +863,8 @@ class TestConfirmationHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_CONFIRM.value
         order.customer_info.name = "John"
+        order.customer_info.email = "john@gmail.com"
+        order.customer_info.phone = "555-123-4567"
         order.delivery_method.order_type = "pickup"
         bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="cream cheese")
         bagel.mark_complete()
@@ -874,7 +878,13 @@ class TestConfirmationHandler:
             result = sm.checkout_handler.handle_confirmation("yes that looks good", order)
 
             assert order.checkout.order_reviewed is True
-            assert "text" in result.message.lower() or "email" in result.message.lower()
+            assert order.checkout.confirmed is True
+            assert not result.is_complete
+            assert order.phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+            assert order.checkout.order_number.startswith("ORD-")
+            assert "pay online" in result.message.lower() or "pay in store" in result.message.lower()
+            assert result.quick_replies is not None
+            assert len(result.quick_replies) == 2
 
     def test_wants_changes_asks_what_to_change(self):
         """Test that wants_changes response asks what to change."""
@@ -1027,189 +1037,217 @@ class TestConfirmationHandler:
 
 
 # =============================================================================
-# Greeting Handler Tests
+# New Checkout Flow Tests (Email -> Phone -> Confirm)
 # =============================================================================
 
-class TestPaymentMethodHandler:
-    """Tests for _handle_payment_method."""
+class TestNewCheckoutFlow:
+    """Tests for the new checkout flow: Name -> Email -> Phone -> Confirm -> Complete."""
 
-    def test_unclear_choice_returns_clarification(self):
-        """Test that unclear input asks for clarification."""
+    def test_email_stores_and_asks_phone(self):
+        """Test that email is stored and phone is asked next when not known."""
         from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from orderbot.tasks.schemas import OrderPhase, EmailResponse
         from orderbot.tasks.models import OrderTask
         from tests.helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
         order.customer_info.name = "John"
+        order.delivery_method.order_type = "pickup"
         bagel = BagelItemTask(bagel_type="plain", toasted=True)
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
-            mock_parse.return_value = PaymentMethodResponse(choice="unclear")
-
-            result = sm.checkout_handler.handle_payment_method("what?", order)
-
-            assert "text" in result.message.lower() or "email" in result.message.lower()
-
-    def test_text_without_phone_asks_for_phone(self):
-        """Test that selecting text without phone asks for phone number."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import BagelItemTask
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
-        order.customer_info.name = "John"
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
-        bagel.mark_complete()
-        order.items.add_item(bagel)
-
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
-            mock_parse.return_value = PaymentMethodResponse(choice="text")
-
-            result = sm.checkout_handler.handle_payment_method("text me", order)
-
-            assert "phone" in result.message.lower()
-            assert order.payment.method == "card_link"
-
-    def test_text_with_phone_completes_order(self):
-        """Test that selecting text with phone completes order."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import BagelItemTask
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
-        order.customer_info.name = "John"
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
-        bagel.mark_complete()
-        order.items.add_item(bagel)
-
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
-            mock_parse.return_value = PaymentMethodResponse(
-                choice="text", phone_number="2015551234"
-            )
-
-            result = sm.checkout_handler.handle_payment_method("text me at 201-555-1234", order)
-
-            assert result.is_complete
-            assert order.checkout.confirmed
-            assert order.customer_info.phone == "+12015551234"
-            assert order.checkout.order_number.startswith("ORD-")
-
-    def test_text_with_existing_phone_completes_order(self):
-        """Test that selecting text with already-set phone completes order."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import BagelItemTask
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
-        order.customer_info.name = "John"
-        order.customer_info.phone = "+12015551234"  # Already has phone
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
-        bagel.mark_complete()
-        order.items.add_item(bagel)
-
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
-            mock_parse.return_value = PaymentMethodResponse(choice="text")
-
-            result = sm.checkout_handler.handle_payment_method("text me", order)
-
-            assert result.is_complete
-            assert order.checkout.confirmed
-            assert "text" in result.message.lower()
-
-    def test_email_without_address_asks_for_email(self):
-        """Test that selecting email without address asks for email."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import BagelItemTask
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
-        order.customer_info.name = "John"
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
-        bagel.mark_complete()
-        order.items.add_item(bagel)
-
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
-            mock_parse.return_value = PaymentMethodResponse(choice="email")
-
-            result = sm.checkout_handler.handle_payment_method("email me", order)
-
-            assert "email" in result.message.lower()
-            assert order.phase == OrderPhase.CHECKOUT_EMAIL.value
-
-    def test_email_with_address_completes_order(self):
-        """Test that selecting email with address completes order."""
-        from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.schemas import OrderPhase, PaymentMethodResponse
-        from orderbot.tasks.models import OrderTask
-        from tests.helpers import BagelItemTask
-
-        sm = OrderStateMachine()
-        order = OrderTask()
-        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
-        order.customer_info.name = "John"
-        bagel = BagelItemTask(bagel_type="plain", toasted=True)
-        bagel.mark_complete()
-        order.items.add_item(bagel)
-
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse, \
+        with patch("orderbot.tasks.checkout_handler.parse_email") as mock_parse, \
              patch("orderbot.tasks.checkout_handler.validate_email_address") as mock_validate:
-            mock_parse.return_value = PaymentMethodResponse(
-                choice="email", email_address="john@example.com"
-            )
-            mock_validate.return_value = ("john@example.com", None)
+            mock_parse.return_value = EmailResponse(email="john@gmail.com")
+            mock_validate.return_value = ("john@gmail.com", None)
 
-            result = sm.checkout_handler.handle_payment_method("email me at john@example.com", order)
+            result = sm.checkout_handler.handle_email("john@gmail.com", order)
 
-            assert result.is_complete
-            assert order.checkout.confirmed
-            assert order.customer_info.email == "john@example.com"
-            assert order.checkout.order_number.startswith("ORD-")
+            assert order.customer_info.email == "john@gmail.com"
+            assert not result.is_complete
+            # Should ask for phone next
+            assert "phone" in result.message.lower()
 
-    def test_text_with_invalid_phone_returns_error(self):
-        """Test that invalid phone number returns error message."""
+    def test_email_skips_phone_when_already_known(self):
+        """Test that when phone is already known, email skips to confirm."""
         from orderbot.tasks.state_machine import OrderStateMachine
-        from orderbot.tasks.schemas import OrderPhase, PaymentMethodResponse
+        from orderbot.tasks.schemas import OrderPhase, EmailResponse
         from orderbot.tasks.models import OrderTask
         from tests.helpers import BagelItemTask
 
         sm = OrderStateMachine()
         order = OrderTask()
-        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
         order.customer_info.name = "John"
+        order.customer_info.phone = "+12015551234"  # Phone already known
+        order.delivery_method.order_type = "pickup"
         bagel = BagelItemTask(bagel_type="plain", toasted=True)
         bagel.mark_complete()
         order.items.add_item(bagel)
 
-        with patch("orderbot.tasks.checkout_handler.parse_payment_method_deterministic") as mock_parse:
-            mock_parse.return_value = PaymentMethodResponse(
-                choice="text", phone_number="123"  # Too short
+        with patch("orderbot.tasks.checkout_handler.parse_email") as mock_parse, \
+             patch("orderbot.tasks.checkout_handler.validate_email_address") as mock_validate:
+            mock_parse.return_value = EmailResponse(email="john@gmail.com")
+            mock_validate.return_value = ("john@gmail.com", None)
+
+            result = sm.checkout_handler.handle_email("john@gmail.com", order)
+
+            assert order.customer_info.email == "john@gmail.com"
+            assert not result.is_complete
+            # Should show order summary for confirmation (phone already known)
+            assert "look right" in result.message.lower() or "correct" in result.message.lower()
+
+    def test_phone_stores_and_shows_summary(self):
+        """Test that phone is stored and order summary is shown."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.schemas import OrderPhase, PhoneResponse
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PHONE.value
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@gmail.com"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("orderbot.tasks.checkout_handler.parse_phone") as mock_parse:
+            mock_parse.return_value = PhoneResponse(phone="2015551234")
+
+            result = sm.checkout_handler.handle_phone("201-555-1234", order)
+
+            assert order.customer_info.phone == "+12015551234"
+            assert not result.is_complete
+            # Should show order summary for confirmation
+            assert "look right" in result.message.lower() or "correct" in result.message.lower()
+
+    def test_confirm_after_email_and_phone_transitions_to_payment(self):
+        """Test that confirming after email and phone transitions to payment choice."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.schemas import OrderPhase, ConfirmationResponse
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@gmail.com"
+        order.customer_info.phone = "+12015551234"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("orderbot.tasks.checkout_handler.parse_confirmation_deterministic") as mock_parse:
+            mock_parse.return_value = ConfirmationResponse(
+                confirmed=True, wants_changes=False, asks_about_tax=False
             )
 
-            result = sm.checkout_handler.handle_payment_method("text me at 123", order)
+            result = sm.checkout_handler.handle_confirmation("yes that looks good", order)
 
             assert not result.is_complete
-            assert "short" in result.message.lower() or "number" in result.message.lower()
+            assert order.checkout.confirmed
+            assert order.checkout.order_reviewed
+            assert order.checkout.order_number.startswith("ORD-")
+            assert order.phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+            assert result.quick_replies is not None
+
+    def test_email_validation_error_asks_again(self):
+        """Test that invalid email returns error and asks again."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.schemas import OrderPhase, EmailResponse
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_EMAIL.value
+        order.customer_info.name = "John"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("orderbot.tasks.checkout_handler.parse_email") as mock_parse:
+            mock_parse.return_value = EmailResponse(email="notanemail")
+
+            result = sm.checkout_handler.handle_email("notanemail", order)
+
+            assert not result.is_complete
+            assert order.customer_info.email is None
+
+    def test_phone_validation_error_asks_again(self):
+        """Test that invalid phone returns error and asks again."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.schemas import OrderPhase, PhoneResponse
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PHONE.value
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@gmail.com"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("orderbot.tasks.checkout_handler.parse_phone") as mock_parse:
+            mock_parse.return_value = PhoneResponse(phone="123")  # Too short
+
+            result = sm.checkout_handler.handle_phone("123", order)
+
+            assert not result.is_complete
+            assert order.customer_info.phone is None
+
+    def test_finalize_sets_payment_link_destination_to_email(self):
+        """Test that finalization sets payment link destination to email.
+
+        Note: payment.method is NOT set during finalization — it is set
+        when the user chooses "pay online" or "pay in store".
+        """
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.schemas import OrderPhase, ConfirmationResponse
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
+
+        sm = OrderStateMachine()
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_CONFIRM.value
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@gmail.com"
+        order.customer_info.phone = "+12015551234"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True)
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+
+        with patch("orderbot.tasks.checkout_handler.parse_confirmation_deterministic") as mock_parse:
+            mock_parse.return_value = ConfirmationResponse(
+                confirmed=True, wants_changes=False, asks_about_tax=False
+            )
+
+            result = sm.checkout_handler.handle_confirmation("yes", order)
+
+            assert not result.is_complete
+            # payment.method is NOT set yet — user picks online/in-store next
+            assert order.payment.method is None
+            # Email is preferred as payment link destination
+            assert order.payment.payment_link_destination == "john@gmail.com"
 
 
 class TestEmailHandler:
-    """Tests for _handle_email."""
+    """Tests for handle_email in the new flow.
+
+    In the new flow, handle_email stores the email and transitions to
+    the next slot (phone if not known, or confirm). It does NOT complete the order.
+    """
 
     def test_no_email_asks_again(self):
         """Test that no email extracted asks for email again."""
@@ -1234,8 +1272,8 @@ class TestEmailHandler:
             assert "email" in result.message.lower()
             assert not result.is_complete
 
-    def test_valid_email_completes_order(self):
-        """Test that valid email completes order."""
+    def test_valid_email_stores_and_transitions(self):
+        """Test that valid email is stored and transitions to next slot."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.schemas import OrderPhase, EmailResponse
         from orderbot.tasks.models import OrderTask
@@ -1245,6 +1283,7 @@ class TestEmailHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_EMAIL.value
         order.customer_info.name = "John"
+        order.delivery_method.order_type = "pickup"
         bagel = BagelItemTask(bagel_type="plain", toasted=True)
         bagel.mark_complete()
         order.items.add_item(bagel)
@@ -1256,11 +1295,9 @@ class TestEmailHandler:
 
             result = sm.checkout_handler.handle_email("john@example.com", order)
 
-            assert result.is_complete
-            assert order.checkout.confirmed
+            # Email stored but order NOT complete
+            assert not result.is_complete
             assert order.customer_info.email == "john@example.com"
-            assert order.payment.payment_link_destination == "john@example.com"
-            assert order.checkout.order_number.startswith("ORD-")
 
     def test_invalid_email_returns_validation_error(self):
         """Test that invalid email returns validation error."""
@@ -1296,6 +1333,7 @@ class TestEmailHandler:
         order = OrderTask()
         order.phase = OrderPhase.CHECKOUT_EMAIL.value
         order.customer_info.name = "John"
+        order.delivery_method.order_type = "pickup"
         bagel = BagelItemTask(bagel_type="plain", toasted=True)
         bagel.mark_complete()
         order.items.add_item(bagel)
@@ -1308,8 +1346,117 @@ class TestEmailHandler:
 
             result = sm.checkout_handler.handle_email("John@EXAMPLE.COM", order)
 
-            assert result.is_complete
+            # Email stored but order NOT complete
+            assert not result.is_complete
             # email-validator normalizes the domain to lowercase
             assert order.customer_info.email == "John@example.com"
 
 
+# =============================================================================
+# Payment Method Choice Tests
+# =============================================================================
+
+class TestPaymentMethodChoice:
+    """Tests for handle_payment_choice (pay online vs pay in store)."""
+
+    def _make_confirmed_order(self):
+        """Helper to create a confirmed order ready for payment choice."""
+        from orderbot.tasks.schemas import OrderPhase
+        from orderbot.tasks.models import OrderTask
+        from tests.helpers import BagelItemTask
+
+        order = OrderTask()
+        order.phase = OrderPhase.CHECKOUT_PAYMENT_METHOD.value
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@gmail.com"
+        order.customer_info.phone = "+12015551234"
+        order.delivery_method.order_type = "pickup"
+        bagel = BagelItemTask(bagel_type="plain", toasted=True, spread="cream cheese")
+        bagel.mark_complete()
+        order.items.add_item(bagel)
+        order.checkout.generate_order_number()
+        order.checkout.confirmed = True
+        order.checkout.order_reviewed = True
+        return order
+
+    def test_pay_in_store_completes_order(self):
+        """Test that 'pay in store' sets method and completes the order."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+
+        sm = OrderStateMachine()
+        order = self._make_confirmed_order()
+
+        result = sm.checkout_handler.handle_payment_choice("pay in store", order)
+
+        assert result.is_complete
+        assert order.payment.method == "card_in_store"
+        assert order.checkout.short_order_number in result.message
+        assert "John" in result.message
+
+    def test_pay_online_completes_order(self):
+        """Test that 'pay online' sets method and completes the order."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+
+        sm = OrderStateMachine()
+        order = self._make_confirmed_order()
+
+        result = sm.checkout_handler.handle_payment_choice("pay online", order)
+
+        assert result.is_complete
+        assert order.payment.method == "card_link"
+        assert order.checkout.short_order_number in result.message
+        assert "John" in result.message
+        # Should include a quick reply with payment URL sentinel
+        assert result.quick_replies is not None
+        assert any(qr.get("url") == "__PAYMENT_URL__" for qr in result.quick_replies)
+
+    def test_unrecognized_payment_choice_reasks(self):
+        """Test that unrecognized input re-asks payment question."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+
+        sm = OrderStateMachine()
+        order = self._make_confirmed_order()
+
+        result = sm.checkout_handler.handle_payment_choice("hmm what?", order)
+
+        assert not result.is_complete
+        assert "pay online" in result.message.lower() or "pay in store" in result.message.lower()
+        assert result.quick_replies is not None
+        assert len(result.quick_replies) == 2
+
+    def test_pay_in_store_variations(self):
+        """Test various in-store payment phrases."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+
+        phrases = ["in store", "I'll pay in person", "at the counter", "pay later"]
+        for phrase in phrases:
+            sm = OrderStateMachine()
+            order = self._make_confirmed_order()
+            result = sm.checkout_handler.handle_payment_choice(phrase, order)
+            assert result.is_complete, f"Expected complete for '{phrase}'"
+            assert order.payment.method == "card_in_store", f"Expected card_in_store for '{phrase}'"
+
+    def test_pay_online_variations(self):
+        """Test various online payment phrases."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+
+        phrases = ["online", "pay now", "card", "credit"]
+        for phrase in phrases:
+            sm = OrderStateMachine()
+            order = self._make_confirmed_order()
+            result = sm.checkout_handler.handle_payment_choice(phrase, order)
+            assert result.is_complete, f"Expected complete for '{phrase}'"
+            assert order.payment.method == "card_link", f"Expected card_link for '{phrase}'"
+
+    def test_payment_choice_wired_in_state_machine(self):
+        """Test that CHECKOUT_PAYMENT_METHOD phase routes through state machine."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.schemas import OrderPhase
+
+        sm = OrderStateMachine()
+        order = self._make_confirmed_order()
+
+        result = sm.process("pay in store", order)
+
+        assert result.is_complete
+        assert order.payment.method == "card_in_store"

@@ -33,3 +33,11 @@ class ToastOrderStatus(str, Enum):
     SUBMITTED = "submitted"
     SYNCED = "synced"
     FAILED = "failed"
+
+
+class SquareOrderStatus(str, Enum):
+    """Status values for Square POS order sync."""
+    PENDING_SYNC = "pending_sync"
+    SUBMITTED = "submitted"
+    SYNCED = "synced"
+    FAILED = "failed"

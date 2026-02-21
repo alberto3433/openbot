@@ -538,7 +538,6 @@ CHECKOUT_PHASES = {
     OrderPhase.CHECKOUT_DELIVERY.value,
     OrderPhase.CHECKOUT_NAME.value,
     OrderPhase.CHECKOUT_CONFIRM.value,
-    OrderPhase.CHECKOUT_PAYMENT_METHOD.value,
     OrderPhase.CHECKOUT_PHONE.value,
     OrderPhase.CHECKOUT_EMAIL.value,
 }

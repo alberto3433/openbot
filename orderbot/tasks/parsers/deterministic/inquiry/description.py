@@ -6,6 +6,7 @@ import re
 from orderbot.cache import menu_cache
 
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import ITEM_DESCRIPTION_PATTERNS
 
@@ -81,7 +82,7 @@ def _try_strip_item_type_suffix(item_name: str) -> str:
 
 def parse_item_description_inquiry(text: str) -> OpenInputResponse | None:
     """Parse item description questions."""
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     if any(word in text_lower for word in ["my cart", "my order", "the cart", "the order"]):
         return None

@@ -3,6 +3,7 @@
 import logging
 
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import (
     DELIVERY_ZONE_PATTERNS,
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def parse_store_info_inquiry(text: str) -> OpenInputResponse | None:
     """Parse store info inquiries."""
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in STORE_HOURS_PATTERNS:
         if pattern.search(text_lower):

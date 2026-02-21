@@ -87,7 +87,6 @@ class MenuItemOut(OrmModel):
     Attributes:
         id: Database primary key
         name: Display name (e.g., "Turkey Club")
-        category: DEPRECATED - Derived from item_type.display_name for backward compatibility
         is_signature: Whether this is a pre-configured signature item
         base_price: Starting price in dollars
         available_qty: Legacy inventory count (use 86 system instead)
@@ -99,7 +98,6 @@ class MenuItemOut(OrmModel):
     id: int
     name: str
     description: str | None = None
-    category: str | None = None  # DEPRECATED - derived from item_type.display_name
     is_signature: bool
     base_price: float
     available_qty: int

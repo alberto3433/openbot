@@ -385,3 +385,7 @@ app.include_router(stripe_webhook_router)
 # Toast POS webhook mounted at root level (same pattern as Stripe)
 from .toast.webhook import toast_webhook_router
 app.include_router(toast_webhook_router)
+
+# Square POS webhook mounted at root level (same pattern as Toast/Stripe)
+from .square.webhook import square_webhook_router
+app.include_router(square_webhook_router)

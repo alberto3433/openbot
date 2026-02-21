@@ -7,7 +7,8 @@ Contains methods for response patterns, parsing helpers, and text matching.
 import re
 import logging
 
-from .base import ensure_cache_loaded, _SMART_QUOTE_MAP
+from .base import ensure_cache_loaded, normalize_text
+from .text_utils import _SMART_QUOTE_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class ParsingQueryMixin:
         Raises:
             MenuDataNotLoadedError: If cache is not loaded
         """
-        normalized = text.lower().strip()
+        normalized = normalize_text(text)
         # Normalize smart quotes from speech-to-text input (U+2018/2019/201C/201D)
         normalized = normalized.translate(_SMART_QUOTE_MAP)
 
@@ -228,7 +229,7 @@ class ParsingQueryMixin:
             if item_name in text_lower:
                 # Check if required phrases are present
                 for phrase in phrases.split(","):
-                    phrase = phrase.strip().lower()
+                    phrase = normalize_text(phrase)
                     if phrase and phrase in text_lower:
                         return True
 

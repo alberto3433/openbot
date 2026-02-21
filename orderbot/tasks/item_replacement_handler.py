@@ -23,7 +23,7 @@ from .parsers.intent_patterns import REPLACE_ITEM_PATTERN
 from .normalization import format_slug_for_display
 from .checkout_messages import changed_to_anything_else
 from .handler_utils import get_last_item, recalculate_and_summarize
-from .utils.text import find_first_word_boundary_match
+from .utils.text import find_first_word_boundary_match, normalize_text
 from .utils.pricing_utils import safe_recalculate_price
 
 if TYPE_CHECKING:
@@ -132,7 +132,7 @@ class ItemReplacementHandler:
         if not replacement_text:
             return None
 
-        replacement_text = replacement_text.strip().lower()
+        replacement_text = normalize_text(replacement_text)
         replacement_text = re.sub(r"^(?:a|an)\s+", "", replacement_text)
 
         item_type = last_item.menu_item_type

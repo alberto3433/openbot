@@ -1,151 +1,38 @@
-# Menu Classification Hierarchy - Options Analysis
+# Plan: Rollback Attribute-Context Type Switch Changes
 
-## Current System
+## Analysis
 
-Menu items flow through a strict chain: **MenuItem → ItemType → MenuDisplayGroup** (each step is many-to-one). Display groups are flat — no hierarchy. Each item type belongs to exactly ONE display group. Aliases on display groups allow recognition ("pastries" → "desserts_pastries"), but they're just synonyms pointing to the same flat group.
+Comparing the committed version (`HEAD`) against the working copy of `menu_item_matching.py`, there are **4 distinct changes** in the diff (226 lines added, 6 removed):
 
-**The problem**: If we create a "Candy Bars" display group and move candy items there, they disappear from "Snacks" queries. The system can't express "all candy bars are snacks, but not all snacks are candy bars."
+### Change 1: `_try_attribute_context_type_switch` function + call site — ROLLBACK
+- **What**: The entire new function (~160 lines) + 8-line call block in `_resolve_item_type_and_menu_item`
+- **Part of the feature**: YES — this IS the attribute-context type switch (Tier 1 + Tier 2)
+- **Action**: **ROLLBACK** — delete the function and remove the call
 
----
+### Change 2: Trigger-outside-span check in `_find_different_type_menu_item` — KEEP
+- **What**: Added ~40 lines that check if the detected type's trigger words exist OUTSIDE a matched menu item span. Prevents false positives like "One Applewood Chicken Sausage" triggering `egg_sandwich` because "sausage" trigger only appears inside the menu item name span.
+- **Part of the feature?**: NO — this is in `_find_different_type_menu_item` (step 4), independent improvement
+- **Action**: **KEEP**
 
-## Option 1: Parent-Child Hierarchy (Tree)
+### Change 3: Modifier filtering improvement in `_find_different_type_menu_item` — KEEP
+- **What**: Changed modifier check from `any(is_known_modifier(w) for w in split)` to content-word filtering with `all()`. Prevents "Side of Onion" from being blocked because "onion" is a modifier.
+- **Part of the feature?**: NO — independent fix in same function
+- **Action**: **KEEP**
 
-**Add `parent_id` to `menu_display_groups` table.**
+### Change 4: `_get_default_menu_item_for_type` disambiguation fix — KEEP
+- **What**: Changed from returning the first match to only returning when exactly one item name ends with the type display name.
+- **Part of the feature?**: NO — independent disambiguation fix
+- **Action**: **KEEP**
 
-```
-Snacks (parent=null)
-├── Candy Bars (parent=Snacks)
-├── Chips (parent=Snacks)
-└── Cookies (parent=Snacks)
+## Rollback Steps
 
-Drinks (parent=null)
-├── Hot Drinks (parent=Drinks)
-└── Cold Drinks (parent=Drinks)
-```
+- [ ] **Step 1**: Remove the call to `_try_attribute_context_type_switch` from `_resolve_item_type_and_menu_item` (delete the 8-line block at step 5, restore the direct return)
+- [ ] **Step 2**: Delete the entire `_try_attribute_context_type_switch` function definition
+- [ ] **Step 3**: Run parsing tests — verify no regressions
+- [ ] **Step 4**: Run full test suite — verify everything passes
 
-- Item types belong to the **most specific** (leaf) group
-- Query "snacks" → collects items from Snacks + all descendants
-- Query "candy bars" → collects items from Candy Bars only
-- Aliases still work: "candy" alias on the "Candy Bars" group
+## Scope
 
-**Schema change**: One column addition (`parent_id` FK to self).
-
-**Cache change**: When resolving a display group query, recursively collect all descendant group slugs, then gather item types from all of them.
-
-### Pros
-- **Minimal schema change** — single nullable FK column
-- **Automatic inheritance** — adding a candy bar to "Candy Bars" automatically makes it appear in "Snacks" queries with zero extra work
-- **Intuitive admin UX** — just pick a parent group from a dropdown
-- **Maintenance is simple** — hierarchy is defined once at the group level, not per-item
-- **Works well for the "menu categories" mental model** — menus are naturally tree-shaped (Drinks → Hot Drinks → Coffee, Tea)
-- **Cache is straightforward** — build adjacency list at startup, traverse on query
-
-### Cons
-- **Single hierarchy only** — an item type can only live in one leaf group. "Chocolate Pretzels" can't be under both "Candy" and "Pretzels" without picking one
-- **Depth management** — need to decide max depth (2-3 levels is practical; deeper gets confusing)
-- **"What do you have?" at root level** — needs to decide whether to show top-level groups only or flatten everything. Current behavior (show top-level) works naturally
-- **Cross-cutting categories don't fit** — "Gluten-free" or "Seasonal" don't belong in a product tree
-
----
-
-## Option 2: Multi-Group Membership (Many-to-Many)
-
-**New junction table `item_type_display_groups` allowing item types to belong to multiple display groups.**
-
-```
-item_type_display_groups
-├── item_type_id (FK → item_types)
-├── display_group_id (FK → menu_display_groups)
-└── is_primary (boolean, for "main" classification)
-```
-
-- Keep existing `menu_display_group_id` on item_types as the primary group
-- Add secondary memberships via junction table
-- "Candy Bar" item type → primary: "Candy Bars", secondary: "Snacks"
-- Query "snacks" → find all item types with "Snacks" as primary OR secondary membership
-- Query "candy bars" → find all item types with "Candy Bars" membership
-
-### Pros
-- **Maximum flexibility** — an item type can appear in any number of groups
-- **Cross-cutting categories work** — "Gluten-free", "Seasonal", "New Items" can be groups alongside "Snacks" and "Candy"
-- **No depth limits** — flat model, no tree traversal needed
-- **No structural constraints** — any grouping you want, you can express
-
-### Cons
-- **Manual maintenance per item type** — every candy bar item type needs BOTH "Candy Bars" and "Snacks" manually added. If you add a new candy bar and forget to also add it to "Snacks", it won't appear in snack queries. **This is the single biggest drawback** — it defeats the "all candies are snacks" invariant
-- **Consistency burden** — no enforcement of hierarchical rules. Admin has to "just know" that all candy items should also be tagged as snacks
-- **Proliferation risk** — with no structure, groups tend to multiply and overlap in messy ways
-- **"What do you have?" complexity** — need to decide which groups to show (primary only? all?) and avoid duplicates
-- **Larger schema change** — new junction table + migration of existing relationships
-
----
-
-## Option 3: Group Inclusion (DAG — Directed Acyclic Graph)
-
-**New junction table `display_group_includes` where groups can reference other groups.**
-
-```
-display_group_includes
-├── parent_group_id (FK → menu_display_groups)
-└── child_group_id (FK → menu_display_groups)
-```
-
-Example:
-```
-"Snacks" includes → ["Candy Bars", "Chips", "Cookies"]
-"Sweets" includes → ["Candy Bars", "Desserts"]
-```
-
-- Item types still belong to exactly ONE display group (the most specific)
-- "Candy Bars" items are in the "Candy Bars" group
-- "Snacks" is configured to include "Candy Bars", "Chips", etc.
-- Query "snacks" → resolve "Snacks" → find included groups → collect all items
-- Query "candy bars" → resolve "Candy Bars" → just its items
-- A child group can be included by **multiple** parent groups (DAG, not tree)
-
-### Pros
-- **Multiple parents** — "Candy Bars" can be under both "Snacks" AND "Sweets" simultaneously (unlike Option 1's single-parent tree)
-- **Automatic inheritance** — like Option 1, adding an item to "Candy Bars" automatically makes it appear in all parent groups
-- **Item types stay simple** — each belongs to one group (no junction table per item)
-- **Hierarchy defined at group level** — maintenance is low-frequency (set up group relationships once, rarely change)
-- **Flexible enough for cross-cutting** — "Seasonal" can include "Pumpkin Spice Latte" group and "Fall Pastries" group
-
-### Cons
-- **Cycle detection required** — need to prevent A includes B includes A (DAG validation)
-- **More complex cache** — need to build and traverse inclusion graph at startup
-- **Admin UX is harder to visualize** — a DAG is less intuitive than a tree. "Which groups include this group?" is harder to reason about than "what's the parent?"
-- **Two new concepts** — junction table + DAG traversal, vs Option 1's simple parent_id
-- **Overkill?** — for a bagel shop menu, multi-parent is rarely needed. A tree (Option 1) handles 95% of real cases
-
----
-
-## Comparison Matrix
-
-| Criteria                        | Option 1 (Tree)  | Option 2 (Multi-Group) | Option 3 (DAG)     |
-|---------------------------------|------------------|------------------------|---------------------|
-| Schema complexity               | Minimal (1 col)  | Medium (junction tbl)  | Medium (junction tbl)|
-| Automatic inheritance           | Yes              | **No** (manual)        | Yes                 |
-| Multiple parents                | No               | N/A (flat)             | Yes                 |
-| Cross-cutting categories        | No               | Yes                    | Yes                 |
-| Admin maintenance burden        | Low              | **High** (per-item)    | Low                 |
-| Cache complexity                | Low              | Low                    | Medium              |
-| Intuitive mental model          | High (tree)      | Medium (tags)          | Low (graph)         |
-| Risk of inconsistency           | Low              | **High**               | Low                 |
-| Handles 95% of real cases       | Yes              | Yes                    | Yes                 |
-| Handles edge cases (multi-path) | No               | Yes                    | Yes                 |
-
----
-
-## Recommendation
-
-**Option 1 (Parent-Child Tree)** is the best fit for this project:
-
-1. **Simplest change** — one nullable column, no new tables
-2. **Automatic inheritance** — the key invariant ("all candy bars are snacks") is enforced by structure, not human memory
-3. **Low maintenance** — set up the tree once, then just add items to leaf groups
-4. **Natural mental model** — menus are inherently tree-shaped
-5. **The 5% edge case** (item needs to be in two sibling groups) can be handled by aliases or by restructuring the tree slightly
-
-The only scenario where Option 1 falls short is true cross-cutting categories ("Gluten-free items" across Food and Drinks). But those are better served by a separate tagging/filtering system if ever needed, rather than complicating the core menu hierarchy.
-
-Option 3 (DAG) is the upgrade path if multi-parent becomes genuinely necessary later — the migration from tree to DAG is straightforward (replace `parent_id` column with junction table).
+- **Only file affected**: `orderbot/tasks/parsers/deterministic/menu_item_matching.py`
+- **No cache files affected** — the cache methods used by the function (`get_all_attribute_option_words`, `get_item_types_with_attribute`, etc.) are also used elsewhere and will remain
+- **No other parser files affected**

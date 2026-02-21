@@ -12,6 +12,7 @@ from collections import namedtuple
 from typing import Any
 
 from orderbot.cache import menu_cache
+from ...utils.text import normalize_text
 
 from .result_types import (
     AmbiguousSelection,
@@ -47,7 +48,7 @@ def _check_must_match(option: dict, text: str) -> bool:
 
     # Normalize to list (handle string or list format)
     if isinstance(must_match_raw, str):
-        must_match_list = [m.strip().lower() for m in must_match_raw.split(",") if m.strip()]
+        must_match_list = [normalize_text(m) for m in must_match_raw.split(",") if m.strip()]
     else:
         must_match_list = [str(m).lower() for m in must_match_raw]
 

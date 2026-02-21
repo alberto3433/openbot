@@ -7,6 +7,7 @@ from orderbot.cache.base import singularize
 from orderbot.cache import menu_cache
 
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 from ...inquiry_patterns import RECOMMENDATION_GENERAL_PATTERNS, RECOMMENDATION_TERM_PATTERNS
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ def parse_recommendation_inquiry(text: str) -> OpenInputResponse | None:
        b. Fallback: Search item_types by display_name/aliases
     3. Return structured match result with menu_item_ids or item_type_slug
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # 1. Check general patterns first (domain-agnostic, no term extraction)
     for pattern in RECOMMENDATION_GENERAL_PATTERNS:

@@ -268,7 +268,7 @@ class EarlyPatternHandler:
         Returns:
             StateMachineResult if modifier added, None otherwise.
         """
-        input_lower = strip_conversational_fillers(user_input.lower().strip())
+        input_lower = strip_conversational_fillers(normalize_text(user_input))
 
         # Don't treat "do you have X" questions as modifier inputs
         # These are availability inquiries, not order requests

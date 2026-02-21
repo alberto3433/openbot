@@ -251,7 +251,6 @@ class TestPydanticV2ModelValidate:
 
         assert result.id == menu_item.id
         assert result.name == "Test Sandwich Pydantic"
-        assert result.category == "Sandwich"  # Comes from ItemType.display_name
         assert result.base_price == 9.99  # Comes from MenuItemSizePrice
 
     def test_order_item_out_model_validate(self, db_session):

@@ -15,6 +15,7 @@ import logging
 from orderbot.cache import menu_cache
 
 from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity
+from ...utils.text import normalize_text
 
 from .item_indicator import (
     _has_item_indicator,
@@ -332,7 +333,7 @@ def _smart_split_and_tokenize(text: str) -> list["Token"]:
     """
     from orderbot.tasks.schemas.parser_responses import Token
 
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Strip ordering prefixes for compound phrase detection
     text_for_compound = _strip_ordering_prefix(text_lower)

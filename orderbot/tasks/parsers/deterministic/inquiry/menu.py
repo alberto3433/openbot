@@ -6,6 +6,7 @@ import re
 from orderbot.cache import menu_cache
 
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import MORE_MENU_ITEMS_PATTERNS
 
@@ -45,7 +46,7 @@ def parse_signature_menu_inquiry(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with asking_signature_menu=True, or None if not a match
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Patterns for specials/signature menu inquiries
     # "do you have any specials today?", "what are your specials?", "any specials?"
@@ -100,7 +101,7 @@ def parse_signature_menu_inquiry(text: str) -> OpenInputResponse | None:
 
 def parse_menu_query(text: str) -> OpenInputResponse | None:
     """Parse 'what X do you have?' type menu queries."""
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Check for "X by the pound" pattern first (e.g., "fish by the pound", "cheese by the pound")
     # This is a bare category reference that should list available items in that category
@@ -260,7 +261,7 @@ def parse_more_menu_items(text: str) -> OpenInputResponse | None:
     Also extracts the category from "what other X" patterns so the handler can
     start a fresh query if no pagination context exists.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in MORE_MENU_ITEMS_PATTERNS:
         if pattern.search(text_lower):

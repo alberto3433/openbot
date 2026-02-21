@@ -1,20 +1,25 @@
 """
 Core Loader for MenuDataCache.
 
-Contains the main load_from_db method and bulk data loading.
+Contains the main load/load_from_db methods and orchestrates all specialized loaders.
 Inherits from all specialized loader mixins.
 """
 
+from __future__ import annotations
+
 import logging
-import time
+from typing import TYPE_CHECKING
 
 from sqlalchemy.exc import OperationalError, ProgrammingError
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session
 
 from .menu_items import MenuItemLoaderMixin
 from .ingredients import IngredientLoaderMixin
 from .item_types import ItemTypeLoaderMixin
 from .patterns import PatternLoaderMixin
+
+if TYPE_CHECKING:
+    from ..provider import MenuProvider
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +34,13 @@ class LoaderMixin(
     Combined loader mixin for MenuDataCache.
 
     Inherits from all specialized loader mixins and provides the main
-    load_from_db orchestration method.
+    load/load_from_db orchestration methods.
     """
 
     def load_from_db(self, db: Session, fail_on_error: bool = True, force: bool = False) -> None:
-        """
-        Load all menu data from the database.
+        """Load all menu data from a PostgreSQL database.
+
+        Backward-compatible entry point that wraps DatabaseProvider.
 
         Args:
             db: SQLAlchemy database session
@@ -44,6 +50,25 @@ class LoaderMixin(
 
         Raises:
             RuntimeError: If fail_on_error=True and DB load fails
+        """
+        from ..provider import DatabaseProvider
+
+        self.load(DatabaseProvider(db), fail_on_error=fail_on_error, force=force)
+
+    def load(self, provider: MenuProvider, fail_on_error: bool = True, force: bool = False) -> None:
+        """Load all menu data from the given provider.
+
+        This is the primary entry point for loading menu data. The provider
+        abstracts the data source (database, Square API, etc.).
+
+        Args:
+            provider: A MenuProvider implementation that supplies menu data
+            fail_on_error: If True, raise exception on load errors (for startup)
+                          If False, log warning and keep existing cache
+            force: If True, reload even if already loaded (for manual refresh)
+
+        Raises:
+            RuntimeError: If fail_on_error=True and load fails
         """
         from datetime import datetime
 
@@ -59,10 +84,10 @@ class LoaderMixin(
                 return
 
             try:
-                logger.info("Loading menu data cache from database...")
+                logger.info("Loading menu data cache...")
 
-                # Bulk load all tables first to eliminate N+1 queries
-                bulk_data = self._bulk_load_all_tables(db)
+                # Bulk load all tables from provider
+                bulk_data = provider.load_bulk_data()
 
                 # All loaders now use bulk_data to avoid duplicate queries
                 self._load_known_menu_items_from_bulk(bulk_data)
@@ -77,7 +102,7 @@ class LoaderMixin(
                 self._load_global_attribute_options_from_bulk(bulk_data)
                 self._load_global_attribute_aliases_from_bulk(bulk_data)
                 self._load_item_type_metadata_from_bulk(bulk_data)
-                self._load_menu_index(db)  # Uses build_menu_index which queries DB
+                self._menu_index = provider.load_menu_index()
 
                 # Build prefix index for queries like "what iced drinks do you have?"
                 self._build_prefix_index_from_menu_index()
@@ -131,7 +156,7 @@ class LoaderMixin(
                 self._load_menu_display_groups_from_bulk(bulk_data)
 
                 # Load attribute inquiry keywords (data-driven mapping for "what types?" queries)
-                self._load_attribute_inquiry_keywords(db)
+                self._attribute_inquiry_keywords = provider.load_attribute_inquiry_keywords()
 
                 # Build keyword indices for partial matching
                 self._build_keyword_indices()
@@ -159,235 +184,3 @@ class LoaderMixin(
                 if fail_on_error:
                     raise RuntimeError(f"Failed to load menu data cache: {e}") from e
                 # Keep existing cache if available
-
-    def _bulk_load_all_tables(self, db: Session) -> dict:
-        """Load ALL tables needed for cache in minimal queries using eager loading.
-
-        This eliminates N+1 query patterns by loading all related data upfront
-        with selectinload/joinedload, then processing in memory.
-
-        Returns:
-            Dict with pre-loaded data for use by other loader methods.
-        """
-        from ...db.models import (
-            GlobalAttribute, GlobalAttributeOption, GlobalAttributeOptionSkip, Ingredient,
-            ItemType, ItemTypeGlobalAttribute, MenuItem,
-            ResponsePattern, ModifierQualifier,
-            ModifierCategory, IngredientCategory, GlobalAttributeAlias,
-            MenuItemIngredient, ItemTypeComponentSlot, ComponentSlotOption,
-            UnrecognizedOptionSuggestion, UnrecognizedIngredientSuggestion,
-            MenuDisplayGroup,
-        )
-
-        start_time = time.time()
-
-        # 1. Load GlobalAttribute with all options and their ingredients
-        global_attrs = (
-            db.query(GlobalAttribute)
-            .options(
-                selectinload(GlobalAttribute.options)
-                    .selectinload(GlobalAttributeOption.alias_records),
-                selectinload(GlobalAttribute.options)
-                    .selectinload(GlobalAttributeOption.ingredient)
-                    .selectinload(Ingredient.alias_records),
-                selectinload(GlobalAttribute.options)
-                    .selectinload(GlobalAttributeOption.ingredient)
-                    .selectinload(Ingredient.must_match_records),
-                # Load modifier_category via ingredient (derived at runtime)
-                selectinload(GlobalAttribute.options)
-                    .selectinload(GlobalAttributeOption.ingredient)
-                    .joinedload(Ingredient.modifier_category),
-                selectinload(GlobalAttribute.options)
-                    .joinedload(GlobalAttributeOption.forward_to_attribute),
-                # Load modifies_ingredient for deriving the slug
-                joinedload(GlobalAttribute.modifies_ingredient),
-            )
-            .all()
-        )
-
-        # 2. Load ItemType with all global attribute links
-        item_types = (
-            db.query(ItemType)
-            .options(
-                selectinload(ItemType.alias_records),
-                joinedload(ItemType.menu_display_group).joinedload(MenuDisplayGroup.overall_category),
-                selectinload(ItemType.global_attribute_links)
-                    .selectinload(ItemTypeGlobalAttribute.global_attribute)
-                    .selectinload(GlobalAttribute.options)
-                    .joinedload(GlobalAttributeOption.forward_to_attribute),
-            )
-            .all()
-        )
-
-        # 3. Load MenuItem with aliases, item_type, size_prices, and ingredient_links
-        menu_items = (
-            db.query(MenuItem)
-            .options(
-                selectinload(MenuItem.alias_records),
-                joinedload(MenuItem.item_type),
-                selectinload(MenuItem.size_prices),
-                selectinload(MenuItem.ingredient_links)
-                    .joinedload(MenuItemIngredient.ingredient),
-            )
-            .all()
-        )
-
-        # 4. Load Ingredient with aliases
-        ingredients = (
-            db.query(Ingredient)
-            .options(
-                selectinload(Ingredient.alias_records),
-                selectinload(Ingredient.must_match_records),
-            )
-            .all()
-        )
-
-        # 5. Load all GlobalAttributeOption for price lookups
-        global_attr_options = db.query(GlobalAttributeOption).all()
-
-        # 7. Load response patterns
-        response_patterns = db.query(ResponsePattern).all()
-
-        # 10. Load modifier qualifiers
-        try:
-            modifier_qualifiers = (
-                db.query(ModifierQualifier)
-                .filter(ModifierQualifier.is_active == True)  # noqa: E712
-                .all()
-            )
-        except (OperationalError, ProgrammingError):
-            modifier_qualifiers = []
-
-        # 11. Load modifier categories (with aliases eagerly loaded)
-        modifier_categories_list = (
-            db.query(ModifierCategory)
-            .options(selectinload(ModifierCategory.alias_records))
-            .all()
-        )
-
-        # 12. Load ingredient categories
-        ingredient_categories = db.query(IngredientCategory).all()
-
-        # 13. Load global attribute aliases
-        global_attr_aliases = (
-            db.query(GlobalAttributeAlias)
-            .options(joinedload(GlobalAttributeAlias.global_attribute))
-            .all()
-        )
-
-        # 14. Load menu item ingredients (default ingredients for signature items)
-        menu_item_ingredients = (
-            db.query(MenuItemIngredient)
-            .options(
-                joinedload(MenuItemIngredient.menu_item),
-                joinedload(MenuItemIngredient.ingredient),
-            )
-            .all()
-        )
-
-        # 15. Load component slots (for items that include configurable sub-items)
-        component_slots = (
-            db.query(ItemTypeComponentSlot)
-            .options(
-                joinedload(ItemTypeComponentSlot.parent_item_type),
-                selectinload(ItemTypeComponentSlot.slot_options)
-                    .joinedload(ComponentSlotOption.allowed_item_type),
-                selectinload(ItemTypeComponentSlot.slot_options)
-                    .joinedload(ComponentSlotOption.allowed_menu_item),
-            )
-            .all()
-        )
-
-        # 16. Load attribute option skip rules
-        try:
-            option_skip_rules = (
-                db.query(GlobalAttributeOptionSkip)
-                .options(
-                    joinedload(GlobalAttributeOptionSkip.triggering_option),
-                    joinedload(GlobalAttributeOptionSkip.skipped_attribute),
-                )
-                .all()
-            )
-        except (OperationalError, ProgrammingError):
-            # Table may not exist yet if migrations haven't run
-            option_skip_rules = []
-
-        # 17. Load unrecognized option suggestions (for detecting terms not in our menu)
-        try:
-            unrecognized_option_suggestions = (
-                db.query(UnrecognizedOptionSuggestion)
-                .filter(UnrecognizedOptionSuggestion.is_active == True)  # noqa: E712
-                .all()
-            )
-        except (OperationalError, ProgrammingError):
-            # Table may not exist yet if migrations haven't run
-            unrecognized_option_suggestions = []
-
-        # 18. Load unrecognized ingredient suggestions (for ingredients not on the menu)
-        try:
-            unrecognized_ingredient_suggestions = (
-                db.query(UnrecognizedIngredientSuggestion)
-                .filter(UnrecognizedIngredientSuggestion.is_active == True)  # noqa: E712
-                .all()
-            )
-        except (OperationalError, ProgrammingError):
-            # Table may not exist yet if migrations haven't run
-            unrecognized_ingredient_suggestions = []
-
-        # 19. Load menu display groups (for "what's on your menu?" responses)
-        try:
-            menu_display_groups = (
-                db.query(MenuDisplayGroup)
-                .options(selectinload(MenuDisplayGroup.alias_records))
-                .order_by(MenuDisplayGroup.display_order)
-                .all()
-            )
-        except (OperationalError, ProgrammingError):
-            # Table may not exist yet if migrations haven't run
-            menu_display_groups = []
-
-        elapsed = time.time() - start_time
-        logger.info(
-            "Bulk loaded all tables in %.2fs: %d global_attrs, %d item_types, "
-            "%d menu_items, %d ingredients",
-            elapsed,
-            len(global_attrs),
-            len(item_types),
-            len(menu_items),
-            len(ingredients),
-        )
-
-        return {
-            "global_attrs": global_attrs,
-            "item_types": item_types,
-            "menu_items": menu_items,
-            "ingredients": ingredients,
-            "global_attr_options": global_attr_options,
-            "categories": [],  # Removed - now using display groups
-            "menu_item_categories": [],  # Removed - now using display groups
-            "response_patterns": response_patterns,
-            "modifier_qualifiers": modifier_qualifiers,
-            "modifier_categories": modifier_categories_list,
-            "ingredient_categories": ingredient_categories,
-            "global_attr_aliases": global_attr_aliases,
-            "menu_item_ingredients": menu_item_ingredients,
-            "component_slots": component_slots,
-            "option_skip_rules": option_skip_rules,
-            "unrecognized_option_suggestions": unrecognized_option_suggestions,
-            "unrecognized_ingredient_suggestions": unrecognized_ingredient_suggestions,
-            "menu_display_groups": menu_display_groups,
-        }
-
-    def _load_menu_index(self, db: Session) -> None:
-        """Load and cache the menu index."""
-        from ...menu_index import build_menu_index
-
-        logger.info("Building menu index (this may take a moment)...")
-        start = time.time()
-        self._menu_index = build_menu_index(db)
-        elapsed = time.time() - start
-        logger.info(
-            "Menu index built in %.1f seconds with %d total items",
-            elapsed,
-            sum(len(v) for k, v in self._menu_index.items() if isinstance(v, list)),
-        )

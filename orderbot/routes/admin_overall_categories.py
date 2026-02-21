@@ -16,6 +16,7 @@ Endpoints:
 
 from sqlalchemy.orm import Session
 
+from ..cache.base import normalize_text
 from ..db.models import OverallCategory, MenuDisplayGroup
 from ..schemas.modifiers import (
     OverallCategoryAdminOut,
@@ -45,7 +46,7 @@ def _build_create_kwargs(payload: OverallCategoryAdminCreate, db: Session) -> di
     """Map frontend 'name' field to model 'display_name'."""
     return {
         "display_name": payload.name,
-        "slug": payload.slug.lower().strip(),
+        "slug": normalize_text(payload.slug),
     }
 
 
@@ -55,7 +56,7 @@ def _handle_before_update(item: OverallCategory, payload: OverallCategoryAdminUp
     if "name" in data and data["name"] is not None:
         item.display_name = data["name"]
     if "slug" in data and data["slug"] is not None:
-        item.slug = data["slug"].lower().strip()
+        item.slug = normalize_text(data["slug"])
 
 
 _crud = CRUDRouterFactory(

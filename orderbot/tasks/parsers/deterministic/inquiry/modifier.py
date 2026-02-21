@@ -3,6 +3,7 @@
 import logging
 
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import MODIFIER_INQUIRY_PATTERNS
 
@@ -25,7 +26,7 @@ def parse_modifier_inquiry(
             (e.g., {"latte": "coffee", "cappuccino": "coffee"})
             If None, item detection is skipped.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
     keywords = modifier_category_keywords or {}
     item_keywords = modifier_item_keywords or {}
 

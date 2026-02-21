@@ -123,6 +123,7 @@ class StoreOut(FullTimestampedModel):
     state_tax_rate: float = 0.0
     delivery_zip_codes: list[str] = []
     delivery_fee: float = 2.99
+    square_location_id: str | None = None
     deleted_at: datetime | None = None
 
 
@@ -177,6 +178,7 @@ class StoreCreate(BaseModel):
     state_tax_rate: float = 0.0
     delivery_zip_codes: list[str] = []
     delivery_fee: float = 2.99
+    square_location_id: str | None = None
 
 
 class StoreUpdate(BaseModel):
@@ -222,3 +224,4 @@ class StoreUpdate(BaseModel):
     state_tax_rate: float | None = None
     delivery_zip_codes: list[str] | None = None
     delivery_fee: float | None = None
+    square_location_id: str | None = None

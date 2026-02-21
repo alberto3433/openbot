@@ -47,9 +47,6 @@ def serialize_menu_item(
                 quantity=link.quantity,
             ))
 
-    # Derive category from item_type for backward compatibility
-    category = item.item_type.display_name if item.item_type else None
-
     # Check if item has ingredients (dietary values will be computed)
     has_ingredients = bool(item.ingredient_links) if include_ingredients else False
 
@@ -57,7 +54,6 @@ def serialize_menu_item(
         id=item.id,
         name=item.name,
         description=item.description,
-        category=category,
         is_signature=item.is_signature,
         base_price=float(item.base_price),
         available_qty=item.available_qty,

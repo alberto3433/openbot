@@ -877,6 +877,19 @@
             ${deliveryFee > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px;color:var(--text-secondary);"><span>Delivery Fee:</span><span>$${deliveryFee.toFixed(2)}</span></div>` : ''}
             <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);font-weight:600;font-size:15px;"><span>Total:</span><span>$${total.toFixed(2)}</span></div>
           </div>
+          ${(order.toast_order_guid || order.square_order_id) ? `
+          <div class="price-breakdown" style="margin-top:12px;padding:12px;border-radius:6px;">
+            <h3 style="font-size:14px;margin:0 0 8px 0;">POS Integration</h3>
+            ${order.toast_order_guid ? `
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Toast GUID:</span><span style="font-family:monospace;font-size:12px;">${order.toast_order_guid}</span></div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px;color:var(--text-secondary);"><span>Toast Status:</span><span>${order.toast_order_status || 'N/A'}</span></div>
+            ` : ''}
+            ${order.square_order_id ? `
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Square ID:</span><span style="font-family:monospace;font-size:12px;">${order.square_order_id}</span></div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px;color:var(--text-secondary);"><span>Square Status:</span><span>${order.square_order_status || 'N/A'}</span></div>
+            ` : ''}
+          </div>
+          ` : ''}
           ${notesHtml}
           ${historyHtml}
         `;

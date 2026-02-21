@@ -45,6 +45,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
+from ..cache.base import normalize_text
 from ..db import get_db
 from ..db.models import ResponsePattern
 from ..exceptions import ValidationError
@@ -92,7 +93,7 @@ def _check_composite_unique(
 def _on_before_create(payload: ResponsePatternCreate, db: Session) -> dict:
     """Validate and normalize before creating a response pattern."""
     _validate_pattern_type(payload.pattern_type)
-    normalized_pattern = payload.pattern.lower().strip()
+    normalized_pattern = normalize_text(payload.pattern)
     _check_composite_unique(db, payload.pattern_type, normalized_pattern)
     return {
         "pattern_type": payload.pattern_type,
@@ -109,7 +110,7 @@ def _on_before_update(
     if payload.pattern_type is not None:
         _validate_pattern_type(payload.pattern_type)
 
-    new_pattern = payload.pattern.lower().strip() if payload.pattern else item.pattern
+    new_pattern = normalize_text(payload.pattern) if payload.pattern else item.pattern
     new_type = payload.pattern_type if payload.pattern_type else item.pattern_type
 
     if new_pattern != item.pattern or new_type != item.pattern_type:

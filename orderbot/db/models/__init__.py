@@ -43,6 +43,9 @@ from .ingredients import (
     IngredientUnit,
 )
 
+# Customer models
+from .customers import Customer
+
 # Order models
 from .orders import NotificationLog, Order, OrderItem, OrderStatusHistory
 
@@ -106,6 +109,8 @@ __all__ = [
     "IngredientCategory",
     "IngredientSubcategory",
     "IngredientStoreAvailability",
+    # Customers
+    "Customer",
     # Orders
     "NotificationLog",
     "Order",

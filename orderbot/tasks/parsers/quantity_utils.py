@@ -252,7 +252,7 @@ def extract_additive_quantity(user_input: str, pattern: str) -> tuple[int, bool]
     if more_match:
         qty_word = more_match.group(1)
         if qty_word:
-            qty_word = qty_word.lower().strip()
+            qty_word = normalize_text(qty_word)
             if qty_word.isdigit():
                 return int(qty_word), True
             elif qty_word == "another":

@@ -10,6 +10,7 @@ from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import ATTRIBUTE_INQUIRY_PATTERNS
 
@@ -25,7 +26,7 @@ def _resolve_attribute_slug(text: str) -> str | None:
     Returns:
         Attribute slug if it has global options, None otherwise.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
     text_singular = singularize(text_lower)
 
     # Check if it's a global attribute with options
@@ -51,8 +52,8 @@ def _resolve_compound_attribute(item_text: str, signal_text: str) -> str | None:
     if not item_text or not signal_text:
         return None
 
-    item_lower = item_text.lower().strip()
-    signal_lower = signal_text.lower().strip()
+    item_lower = normalize_text(item_text)
+    signal_lower = normalize_text(signal_text)
     signal_singular = singularize(signal_lower)
 
     # Try {item}_{signal} patterns (e.g., "tea_flavor", "chai_flavor", "syrup_flavor")
@@ -81,7 +82,7 @@ def _resolve_ingredient_category(text: str) -> str | None:
     Returns:
         Ingredient category slug if found, None otherwise.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
     text_singular = singularize(text_lower)
 
     # Get all ingredient categories from cache
@@ -156,7 +157,7 @@ def parse_attribute_inquiry(text: str) -> OpenInputResponse | None:
         OpenInputResponse with asks_attribute_options=True if matched,
         None if not an attribute inquiry.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern, item_group, signal_group in ATTRIBUTE_INQUIRY_PATTERNS:
         match = pattern.search(text_lower)
@@ -262,7 +263,7 @@ def _resolve_item_type(text: str) -> str | None:
     if not text:
         return None
 
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Try singular form
     text_singular = singularize(text_lower)

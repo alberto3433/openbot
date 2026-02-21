@@ -117,8 +117,8 @@ class TestSlotPhaseAlignment:
         phase = orch.get_current_phase()
         assert phase == "checkout_name"
 
-    def test_checkout_confirm_aligns(self):
-        """Checkout confirm phase should align with orchestrator."""
+    def test_checkout_email_aligns(self):
+        """Checkout email phase should align with orchestrator after name."""
         from orderbot.tasks.slot_orchestrator import SlotOrchestrator
 
         order = OrderTask()
@@ -127,6 +127,23 @@ class TestSlotPhaseAlignment:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
+
+        orch = SlotOrchestrator(order)
+        phase = orch.get_current_phase()
+        assert phase == "checkout_email"
+
+    def test_checkout_confirm_aligns(self):
+        """Checkout confirm phase should align with orchestrator after email and phone."""
+        from orderbot.tasks.slot_orchestrator import SlotOrchestrator
+
+        order = OrderTask()
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
+        bagel.status = TaskStatus.COMPLETE
+        order.items.add_item(bagel)
+        order.delivery_method.order_type = "pickup"
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@example.com"
+        order.customer_info.phone = "+12015551234"
 
         orch = SlotOrchestrator(order)
         phase = orch.get_current_phase()
@@ -142,8 +159,9 @@ class TestSlotPhaseAlignment:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
+        order.customer_info.email = "john@example.com"
+        order.customer_info.phone = "+12015551234"
         order.checkout.order_reviewed = True  # User confirmed summary
-        order.payment.method = "in_store"
 
         orch = SlotOrchestrator(order)
         phase = orch.get_current_phase()
@@ -170,8 +188,9 @@ class TestEndToEndFlowWithSlots:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "Alice"
+        order.customer_info.email = "alice@example.com"
+        order.customer_info.phone = "+12015551234"
         order.checkout.order_reviewed = True  # User confirmed summary
-        order.payment.method = "in_store"
 
         # Verify orchestrator sees this as complete
         orch = SlotOrchestrator(order)
@@ -181,8 +200,8 @@ class TestEndToEndFlowWithSlots:
         assert progress["items"] is True
         assert progress["delivery_method"] is True
         assert progress["customer_name"] is True
+        assert progress["customer_email"] is True
         assert progress["order_confirm"] is True
-        assert progress["payment_method"] is True
 
     def test_delivery_flow_includes_address_slot(self, state_machine):
         """Verify delivery flow requires address slot."""

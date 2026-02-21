@@ -33,6 +33,18 @@ class AttributeQueryMixin:
         return self._item_type_attributes.get(item_type_slug, {})
 
     @ensure_cache_loaded
+    def get_item_types_with_attribute(self, attr_slug: str) -> set[str]:
+        """Get all item type slugs that have a given attribute.
+
+        Args:
+            attr_slug: The attribute slug to look up
+
+        Returns:
+            Set of item type slugs that have this attribute.
+        """
+        return self._attr_to_item_types.get(attr_slug, set()).copy()
+
+    @ensure_cache_loaded
     def has_conversation_attributes(self, item_type_slug: str) -> bool:
         """Check if an item type has any ask_in_conversation attributes.
 

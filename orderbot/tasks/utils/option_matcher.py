@@ -21,6 +21,7 @@ from .input_normalizer import InputNormalizer
 from .option_match_phases import MatchPhasesMixin
 from .option_match_numbered import NumberedListMatchMixin
 from .option_match_static import OptionMatchStaticMixin
+from .text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ class OptionMatcher(MatchPhasesMixin, NumberedListMatchMixin, OptionMatchStaticM
         3. Partial match: option name is contained in user input (skipped if exact_only)
         """
         user_lower = self.normalizer.normalize_for_matching(user_input)
-        user_raw_lower = user_input.lower().strip()
+        user_raw_lower = normalize_text(user_input)
 
         # Phase 0: Raw exact match (before normalization)
         match = self._phase_raw_exact_match(user_raw_lower, options, user_input)
@@ -132,13 +133,13 @@ class OptionMatcher(MatchPhasesMixin, NumberedListMatchMixin, OptionMatchStaticM
         Supports tokenized input: splits on "and", ",", "&", etc.
         """
         user_lower = self.normalizer.normalize_for_matching(user_input)
-        user_raw_lower = user_input.lower().strip()
+        user_raw_lower = normalize_text(user_input)
         matched: list[dict] = []
         matched_slugs: set[str] = set()
 
         # Get all input variants (raw, normalized, tokenized)
         all_inputs = self.normalizer.get_all_input_variants(user_input)
-        raw_tokens = [t.lower().strip() for t in self.normalizer.tokenize_multi_input(user_input)]
+        raw_tokens = [normalize_text(t) for t in self.normalizer.tokenize_multi_input(user_input)]
         normalized_tokens = [self.normalizer.normalize_for_matching(t) for t in raw_tokens]
 
         # Strip leading qualifier patterns from tokens for matching
@@ -328,7 +329,7 @@ class OptionMatcher(MatchPhasesMixin, NumberedListMatchMixin, OptionMatchStaticM
         # Find unmatched tokens
         unmatched: list[str] = []
         for token in tokens:
-            token_lower = token.lower().strip()
+            token_lower = normalize_text(token)
 
             # Skip stopwords
             if token_lower in stopwords:
@@ -340,7 +341,7 @@ class OptionMatcher(MatchPhasesMixin, NumberedListMatchMixin, OptionMatchStaticM
 
             # Strip leading quantity from token for matching (e.g., "2 milks" -> "milks")
             _, token_without_qty = self.normalizer.extract_leading_quantity(token)
-            token_without_qty_lower = token_without_qty.lower().strip() if token_without_qty else token_lower
+            token_without_qty_lower = normalize_text(token_without_qty) if token_without_qty else token_lower
 
             # Also try singularized form
             token_singular = self.normalizer.singularize(token_without_qty_lower)
@@ -419,7 +420,7 @@ class OptionMatcher(MatchPhasesMixin, NumberedListMatchMixin, OptionMatchStaticM
             - ([opt1], []) = single match, add it
             - ([], [opt1, opt2, opt3]) = single ambiguous term matches multiple, need disambiguation
         """
-        user_raw_lower = user_input.lower().strip()
+        user_raw_lower = normalize_text(user_input)
 
         # Check if input has explicit separators (user listing multiple items)
         separators = [" and ", ", ", " & ", " with "]

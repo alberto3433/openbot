@@ -4,25 +4,7 @@ Text formatting utilities for human-readable output.
 
 import re
 
-
-def normalize_text(text: str | None) -> str:
-    """Lowercase and strip whitespace from text for comparison.
-
-    Handles None gracefully by returning empty string.
-
-    Args:
-        text: The text to normalize, or None.
-
-    Returns:
-        Lowercased, stripped string.
-
-    Examples:
-        >>> normalize_text("  Hello World  ")
-        'hello world'
-        >>> normalize_text(None)
-        ''
-    """
-    return (text or "").lower().strip()
+from orderbot.cache.base import normalize_text  # noqa: F401 — canonical def in cache/base, re-exported here
 
 # =============================================================================
 # Unified Ordinal Definitions
@@ -84,7 +66,7 @@ def parse_selection(text: str, max_options: int) -> int | None:
         >>> parse_selection("hello", 5)  # Not a selection
         None
     """
-    text = text.strip().lower()
+    text = normalize_text(text)
 
     # Direct number
     if text.isdigit():
@@ -287,12 +269,13 @@ def strip_leading_article(text: str) -> str:
     return text
 
 
-def word_boundary_match(needle: str, haystack: str) -> bool:
+def word_boundary_match(needle: str, haystack: str, case_insensitive: bool = False) -> bool:
     """Check if needle appears as a whole word/phrase in haystack using word boundaries.
 
     Args:
         needle: The word/phrase to search for (will be regex-escaped).
         haystack: The text to search in.
+        case_insensitive: If True, match regardless of case.
 
     Returns:
         True if needle appears with word boundaries in haystack.
@@ -302,10 +285,11 @@ def word_boundary_match(needle: str, haystack: str) -> bool:
         True
         >>> word_boundary_match("ham", "graham cracker")
         False
+        >>> word_boundary_match("tea", "Hot Tea", case_insensitive=True)
+        True
     """
-    import re
-
-    return bool(re.search(rf'\b{re.escape(needle)}\b', haystack))
+    flags = re.IGNORECASE if case_insensitive else 0
+    return bool(re.search(rf'\b{re.escape(needle)}\b', haystack, flags))
 
 
 def find_first_word_boundary_match(

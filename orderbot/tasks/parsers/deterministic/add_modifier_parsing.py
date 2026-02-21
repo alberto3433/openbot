@@ -17,6 +17,7 @@ from ...schemas import (
 )
 
 from .extraction import extract_modifiers_with_qualifiers
+from ...utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def _parse_add_modifier_to_item(text: str) -> OpenInputResponse | None:
 
     Returns OpenInputResponse with modify_existing_item=True if detected, None otherwise.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Get known modifiers from all ingredient categories (database-driven)
     # Include both food and beverage modifiers (milk, sugar, syrup, etc.)

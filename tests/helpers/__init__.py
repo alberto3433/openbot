@@ -37,6 +37,21 @@ from .menu_data_builder import MenuDataBuilder
 # Conversation driver for multi-turn tests
 from .conversation_driver import ConversationDriver
 
+# Pricing test helpers
+from .pricing_helpers import (
+    get_menu_data,
+    get_pricing_engine,
+    find_menu_items_by_type,
+    find_first_menu_item,
+    find_menu_item_by_name,
+    get_priced_options,
+    get_zero_price_options,
+    get_all_item_type_slugs,
+    create_item_with_selections,
+    build_order_with_items,
+    make_store_info,
+)
+
 # Parsed item query helpers
 from .parsed_item_queries import (
     get_parsed_items,
@@ -95,4 +110,16 @@ __all__ = [
     "has_menu_item",
     "get_side_item",
     "has_side_item",
+    # Pricing test helpers
+    "get_menu_data",
+    "get_pricing_engine",
+    "find_menu_items_by_type",
+    "find_first_menu_item",
+    "find_menu_item_by_name",
+    "get_priced_options",
+    "get_zero_price_options",
+    "get_all_item_type_slugs",
+    "create_item_with_selections",
+    "build_order_with_items",
+    "make_store_info",
 ]

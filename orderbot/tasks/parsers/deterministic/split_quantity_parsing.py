@@ -15,6 +15,7 @@ from orderbot.cache import menu_cache
 
 from ...schemas import OpenInputResponse, ParsedItemEntry
 from ..constants import WORD_TO_NUM
+from ...utils.text import normalize_text
 from .item_building import build_parsed_item
 from .result_types import TextSpan
 
@@ -152,7 +153,7 @@ def _split_into_parts(text: str) -> list[tuple[int, str]]:
 
     result = []
     for qty_word, spec in raw_parts:
-        qty_word_lower = qty_word.lower().strip()
+        qty_word_lower = normalize_text(qty_word)
         if qty_word_lower in _ORDINAL_QTY_ONE:
             qty = 1
         elif qty_word_lower.isdigit():
@@ -272,7 +273,7 @@ def _parse_split_quantity_items(
     Returns:
         OpenInputResponse with parsed_items populated, or None if not a split-quantity order.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # 1. Detect item type from text
     item_type, matched_trigger = detect_configurable_item_type_func(text_lower)

@@ -102,6 +102,18 @@ class ItemTypeCoreQueryMixin:
         return all_types - configurable
 
     @ensure_cache_loaded
+    def get_generic_item_types(self) -> set[str]:
+        """Get item types flagged as generic (deprioritized in trigger matching).
+
+        Returns:
+            Set of item type slugs marked as generic in the database.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        return self._generic_item_types.copy()
+
+    @ensure_cache_loaded
     def item_type_has_side_choice(self, item_type_slug: str) -> bool:
         """Check if an item type has a side choice attribute.
 

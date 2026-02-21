@@ -6,6 +6,7 @@ import re
 from orderbot.cache import menu_cache
 
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import PRICE_INQUIRY_PATTERNS
 
@@ -36,7 +37,7 @@ def _try_category_price_response(item_text: str, original_text: str) -> OpenInpu
 
 def parse_price_inquiry(text: str) -> OpenInputResponse | None:
     """Parse price inquiry questions."""
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in PRICE_INQUIRY_PATTERNS:
         match = pattern.search(text_lower)

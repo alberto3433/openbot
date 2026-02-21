@@ -18,6 +18,7 @@ Endpoints:
 from fastapi import Depends, Query
 from sqlalchemy.orm import Session
 
+from ..cache.base import normalize_text
 from ..db import get_db
 from ..db.models import Ingredient, IngredientCategory, IngredientSubcategory
 from ..auth import verify_admin_credentials
@@ -34,8 +35,8 @@ from .crud_helpers import apply_payload_updates, check_slug_unique, make_list_bu
 
 def _handle_before_create(payload: IngredientSubcategoryCreate, db: Session) -> dict:
     """Validate parent category and build model kwargs."""
-    slug = payload.slug.lower().strip()
-    category_slug = payload.category_slug.lower().strip()
+    slug = normalize_text(payload.slug)
+    category_slug = normalize_text(payload.category_slug)
 
     # Validate parent category exists
     cat = db.query(IngredientCategory).filter(
@@ -55,7 +56,7 @@ def _handle_before_create(payload: IngredientSubcategoryCreate, db: Session) -> 
 def _handle_before_update(item, payload: IngredientSubcategoryUpdate, db: Session) -> None:
     """Apply updates with slug normalization and uniqueness check."""
     if payload.slug is not None:
-        new_slug = payload.slug.lower().strip()
+        new_slug = normalize_text(payload.slug)
         if new_slug != item.slug:
             check_slug_unique(
                 db, IngredientSubcategory, new_slug,

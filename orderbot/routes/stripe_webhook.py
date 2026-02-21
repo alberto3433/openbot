@@ -21,8 +21,7 @@ from sqlalchemy.orm import Session
 
 from ..config import STRIPE_WEBHOOK_SECRET
 from ..db import get_db
-from ..db.models import Order
-from ..exceptions import NOTIFICATION_ERRORS
+from ..db.models import Order, Company
 from ..schemas.enums import OrderStatus, PaymentStatus
 
 logger = logging.getLogger(__name__)
@@ -108,22 +107,24 @@ def _handle_checkout_completed(session_data: dict, db: Session) -> None:
     if order.status == OrderStatus.PENDING_PAYMENT:
         order.status = OrderStatus.CONFIRMED
 
+    # Backfill email from Stripe session if missing on order
+    if not order.customer_email:
+        stripe_email = (
+            (session_data.get("customer_details") or {}).get("email")
+            or session_data.get("customer_email")
+        )
+        if stripe_email:
+            order.customer_email = stripe_email
+            logger.info("Backfilled email on order #%d from Stripe: %s", order_id, stripe_email)
+
     db.commit()
     logger.info(
         "Order #%d payment confirmed (session: %s, intent: %s)",
         order_id, session_id, payment_intent,
     )
 
-    # Send payment confirmation notification
-    try:
-        from ..notification_service import notify_payment_received
-        from ..db.models import Company
-
-        company = db.query(Company).first()
-        store_name = company.name if company else "OrderBot"
-        notify_payment_received(db, order, store_name)
-    except NOTIFICATION_ERRORS as e:
-        logger.error("Failed to send payment notification for order #%d: %s", order_id, e)
+    # Send receipt email
+    _send_receipt_for_order(db, order)
 
 
 def _handle_checkout_expired(session_data: dict, db: Session) -> None:
@@ -149,3 +150,115 @@ def _handle_checkout_expired(session_data: dict, db: Session) -> None:
         order.payment_status = PaymentStatus.EXPIRED
         db.commit()
         logger.info("Order #%d checkout session expired: %s", order_id, session_id)
+
+        # Send expired email with a new payment link
+        _send_expired_link_for_order(db, order)
+
+
+def _build_email_kwargs(db: Session, order: Order) -> dict:
+    """Build common email kwargs from an Order and its items."""
+    company = db.query(Company).first()
+    store_name = company.name if company else "OrderBot"
+
+    items_list = []
+    for oi in order.items:
+        config = oi.item_config or {}
+        items_list.append({
+            "display_name": oi.menu_item_name,
+            "menu_item_name": oi.menu_item_name,
+            "quantity": oi.quantity,
+            "line_total": oi.line_total,
+            "unit_price": oi.unit_price,
+            "base_price": oi.unit_price,
+            "modifiers": config.get("modifiers", []),
+            "free_details": config.get("free_details", []),
+        })
+
+    return dict(
+        to_email=order.customer_email,
+        order_id=order.id,
+        amount=order.total_price or 0.0,
+        store_name=store_name,
+        customer_name=order.customer_name,
+        customer_phone=order.phone,
+        order_type=order.order_type,
+        items=items_list,
+        subtotal=order.subtotal,
+        city_tax=order.city_tax or 0,
+        state_tax=order.state_tax or 0,
+        delivery_fee=order.delivery_fee or 0,
+    )
+
+
+def _send_receipt_for_order(db: Session, order: Order) -> None:
+    """Send a receipt email for a paid order."""
+    if not order.customer_email:
+        logger.debug("No email on order #%d; skipping receipt email", order.id)
+        return
+
+    try:
+        from ..email_service import send_receipt_email
+
+        kwargs = _build_email_kwargs(db, order)
+        send_receipt_email(**kwargs)
+        logger.info("Receipt email sent for order #%d", order.id)
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        logger.error("Failed to send receipt email for order #%d: %s", order.id, e)
+
+
+def _send_expired_link_for_order(db: Session, order: Order) -> None:
+    """Send an expired-payment email with a fresh Stripe checkout link."""
+    if not order.customer_email:
+        logger.debug("No email on order #%d; skipping expired payment email", order.id)
+        return
+
+    try:
+        from ..email_service import send_payment_expired_email
+        from ..stripe_service import create_checkout_session, is_stripe_configured
+        from ..services.order import update_order_stripe_session
+
+        # Create a fresh Stripe checkout session
+        payment_url = None
+        if is_stripe_configured():
+            items_for_stripe = []
+            for oi in order.items:
+                amount_cents = round(oi.unit_price * 100) if oi.unit_price else 0
+                items_for_stripe.append({
+                    "name": oi.menu_item_name,
+                    "quantity": oi.quantity,
+                    "amount_cents": amount_cents,
+                })
+
+            # Add tax as separate line item if applicable
+            item_total_cents = sum(i["amount_cents"] * i["quantity"] for i in items_for_stripe)
+            order_total_cents = round((order.total_price or 0) * 100)
+            tax_cents = order_total_cents - item_total_cents
+            if tax_cents > 0:
+                items_for_stripe.append({
+                    "name": "Tax & Fees",
+                    "quantity": 1,
+                    "amount_cents": tax_cents,
+                })
+
+            result = create_checkout_session(
+                order_id=order.id,
+                line_items=items_for_stripe,
+                customer_email=order.customer_email,
+            )
+            if result:
+                payment_url = result["url"]
+                update_order_stripe_session(db, order.id, result["session_id"])
+                # Reset payment status to pending for the new session
+                order.payment_status = PaymentStatus.PENDING_PAYMENT
+                db.commit()
+
+        if not payment_url:
+            from ..config import BASE_URL
+            payment_url = f"{BASE_URL}/pay/{order.id}"
+
+        kwargs = _build_email_kwargs(db, order)
+        kwargs["payment_url"] = payment_url
+        send_payment_expired_email(**kwargs)
+        logger.info("Expired payment email sent for order #%d", order.id)
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        logger.error("Failed to send expired payment email for order #%d: %s", order.id, e)

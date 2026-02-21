@@ -14,6 +14,7 @@ from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 
 from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity
+from ...utils.text import normalize_text
 
 from .item_parsing import (
     _detect_item_type,
@@ -53,7 +54,7 @@ def _strip_ordering_prefix(text: str) -> str:
     Returns:
         Text with ordering prefix and article stripped
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Strip ordering prefixes (sorted by length, longest first)
     for prefix in sorted(ORDERING_PREFIXES, key=len, reverse=True):
@@ -179,6 +180,7 @@ def _select_best_trigger_match(
     # Get modifiers and attribute options for deprioritizing modifier-based triggers
     all_modifiers = menu_cache.get_all_modifier_words()
     all_attr_options = menu_cache.get_all_attribute_option_words()
+    generic_types = menu_cache.get_generic_item_types()
 
     # Item type priority: prefer specific types over generic ones
     # When trigger is the same word for multiple types, prefer the type
@@ -209,8 +211,7 @@ def _select_best_trigger_match(
         # Good: item type contains the trigger word (e.g., "egg_sandwich" contains "egg")
         if trigger_lower in item_type.lower():
             return 1
-        # Generic types have lower priority
-        generic_types = {"side", "snack", "beverage", "menu_item"}
+        # Generic types have lower priority (loaded from DB)
         if item_type in generic_types:
             return 4
         return 2
@@ -300,7 +301,7 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
         >>> _has_item_indicator("cream cheese")
         (False, None, None)
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Strip trailing politeness words (please, thanks, etc.) before matching
     text_for_matching = _strip_trailing_words(text_lower)
@@ -371,7 +372,7 @@ def _is_modifier_only(text: str) -> tuple[bool, list[str]]:
         >>> _is_modifier_only("large iced latte")
         (False, [])  # "latte" is an item trigger
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Remove quantity prefix
     _, remaining = _extract_leading_quantity(text_lower)
@@ -402,7 +403,7 @@ def _is_modifier_only(text: str) -> tuple[bool, list[str]]:
     # Check remaining words
     words = remaining_to_check.split()
     for word in words:
-        word = word.strip().lower()
+        word = normalize_text(word)
         if not word:
             continue
 

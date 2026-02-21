@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from orderbot.cache.base import normalize_text
 from orderbot.db.models import (
     Company,
     Ingredient,
@@ -143,7 +144,7 @@ def build_item_keywords(db: Session) -> dict[str, str]:
 
         # Add aliases from the child table (now a list)
         for alias in it.aliases:
-            alias = alias.strip().lower()
+            alias = normalize_text(alias)
             if alias:
                 keyword_to_slug[alias] = it.slug
 
@@ -312,7 +313,7 @@ def build_modifier_categories(db: Session) -> dict[str, Any]:
     for cat in categories:
         # Build keyword mappings from aliases (now a list from child table)
         for alias in cat.aliases:
-            alias = alias.strip().lower()
+            alias = normalize_text(alias)
             if alias:
                 keyword_to_category[alias] = cat.slug
 

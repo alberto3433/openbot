@@ -25,6 +25,7 @@ from ..quantity_utils import extract_leading_quantity, BASIC_WORD_TO_NUM
 
 from .pipeline import get_pipeline
 from ...shared_constants import ORDERING_PREFIX_RE, LEADING_ARTICLE_RE
+from ...utils.text import normalize_text
 
 # Re-exports from modify_item_parsing
 from .modify_item_parsing import (
@@ -98,7 +99,7 @@ def _extract_menu_item_modifications(
 
     def match_ingredient(term: str) -> dict[str, str] | None:
         """Try to match a term against valid ingredients for the item type."""
-        term = term.strip().lower()
+        term = normalize_text(term)
         if not term:
             return None
 
@@ -181,7 +182,7 @@ def _extract_menu_item_from_text(text: str) -> tuple[str | None, int, str | None
             This is useful for finding the span of the match in the original text
             to exclude from attribute/modifier extraction.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Strip ordering phrases like "I want", "add", "can I get", etc.
     text_lower = ORDERING_PREFIX_RE.sub('', text_lower)

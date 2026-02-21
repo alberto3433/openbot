@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from orderbot.cache import menu_cache
+from ...utils.text import normalize_text
 
 
 @dataclass
@@ -54,7 +55,7 @@ class BooleanParser:
         Returns:
             BooleanParseResult with the parsed value (or None if unparseable)
         """
-        user_lower = user_input.lower().strip()
+        user_lower = normalize_text(user_input)
 
         # Build alias lists from options
         true_aliases, false_aliases = self._extract_aliases(attr)
@@ -99,7 +100,7 @@ class BooleanParser:
         for opt in options:
             opt_aliases = opt.get("aliases") or []
             if isinstance(opt_aliases, str):
-                opt_aliases = [a.strip().lower() for a in opt_aliases.split(",")]
+                opt_aliases = [normalize_text(a) for a in opt_aliases.split(",")]
             else:
                 opt_aliases = [a.lower() for a in opt_aliases]
 

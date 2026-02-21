@@ -83,7 +83,7 @@ class ItemRemovalOperations:
         # Check if cancel term matches a cart item's menu_item_name — if so, skip modifier
         # removal. Prevents "Remove the Ham Egg and Cheese Sandwich" from stripping "ham"
         # as a modifier instead of removing the whole item.
-        cancel_lower = parsed.cancel_item.lower().strip()
+        cancel_lower = normalize_text(parsed.cancel_item)
         for item in active_items:
             item_name = (item.menu_item_name if isinstance(item, MenuItemTask) else '') or ''
             if item_name and item_name.lower() == cancel_lower:

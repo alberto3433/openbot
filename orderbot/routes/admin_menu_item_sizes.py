@@ -46,6 +46,7 @@ from ..schemas.menu_item_sizes import (
     SizeOut,
     SizeList,
 )
+from ..cache.base import normalize_text
 from ..services.store_service import get_or_create_company
 from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
 from .crud_helpers import apply_payload_updates, check_slug_unique, make_list_builder
@@ -99,7 +100,7 @@ def _size_to_out(size: MenuItemSize, db: Session) -> SizeOut:
 
 def _cat_before_create(payload: SizeCategoryCreate, db: Session) -> dict:
     company = get_or_create_company(db)
-    slug = payload.slug.lower().strip()
+    slug = normalize_text(payload.slug)
     existing = db.query(MenuItemSizeCategory).filter(
         MenuItemSizeCategory.company_id == company.id,
         MenuItemSizeCategory.slug == slug
@@ -118,7 +119,7 @@ def _cat_before_update(
     item: MenuItemSizeCategory, payload: SizeCategoryUpdate, db: Session
 ) -> None:
     if payload.slug is not None:
-        new_slug = payload.slug.lower().strip()
+        new_slug = normalize_text(payload.slug)
         check_slug_unique(
             db, MenuItemSizeCategory, new_slug,
             exclude_id=item.id,

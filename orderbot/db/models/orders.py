@@ -26,6 +26,7 @@ class Order(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     status = Column(String, nullable=False, default=OrderStatus.CONFIRMED, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
     customer_name = Column(String, nullable=True)
     phone = Column(String, nullable=True)
     customer_email = Column(String, nullable=True)  # Email for payment links
@@ -59,6 +60,11 @@ class Order(Base):
     toast_order_status = Column(String, nullable=True)  # pending_sync / submitted / failed / synced
     toast_submitted_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Square POS integration
+    square_order_id = Column(String, nullable=True, index=True)
+    square_order_status = Column(String, nullable=True)  # pending_sync / submitted / failed / synced
+    square_submitted_at = Column(DateTime(timezone=True), nullable=True)
+
     # Order-level special instructions (e.g., "light on the cream cheese", "extra crispy")
     special_instructions = Column(Text, nullable=True)
 
@@ -71,6 +77,7 @@ class Order(Base):
     staff_notes = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
 
+    customer = relationship("Customer", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     status_history = relationship("OrderStatusHistory", back_populates="order", cascade="all, delete-orphan")
 

@@ -124,6 +124,9 @@ class CompanyOut(OrmModel):
     primary_item_type: str = "Sandwich"
     signature_item_label: str | None = None
 
+    # Online Payment Provider
+    payment_provider: str = "stripe"
+
     # Payment Methods
     accepts_credit_cards: bool = True
     accepts_debit_cards: bool = True
@@ -209,6 +212,9 @@ class CompanyUpdate(BaseModel):
     logo_url: str | None = None
     business_hours: dict[str, Any] | None = None
     signature_item_label: str | None = None
+
+    # Online Payment Provider
+    payment_provider: str | None = None
 
     # Payment Methods
     accepts_credit_cards: bool | None = None

@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from ..db.models import Order
+from ..db.models import Customer, Order
 from .helpers import build_order_items_summary
 
 
@@ -95,6 +95,104 @@ def _order_item_to_dict(item) -> dict[str, Any]:
     if item.item_config:
         item_data.update(item.item_config)
     return item_data
+
+
+def find_or_create_customer(
+    db: Session,
+    name: str | None = None,
+    phone: str | None = None,
+    email: str | None = None,
+) -> Customer | None:
+    """Find an existing customer by phone or email, or create a new one.
+
+    Lookup priority:
+    1. By phone (normalized, last 10 digits)
+    2. By email (exact match, case-insensitive)
+
+    If found, updates any missing fields (e.g., adds email to existing record).
+    If not found, creates a new Customer record.
+
+    Args:
+        db: Database session
+        name: Customer name (optional)
+        phone: Customer phone (optional)
+        email: Customer email (optional)
+
+    Returns:
+        Customer record, or None if neither phone nor email provided
+    """
+    if not phone and not email:
+        return None
+
+    customer = None
+
+    # Try to find by phone first
+    if phone:
+        suffix = _normalize_phone_for_lookup(phone)
+        normalized_col = _get_normalized_phone_filter(Customer.phone)
+        customer = (
+            db.query(Customer)
+            .filter(Customer.phone.isnot(None))
+            .filter(normalized_col.like(f"%{suffix}%"))
+            .first()
+        )
+
+    # Fall back to email lookup
+    if not customer and email:
+        customer = (
+            db.query(Customer)
+            .filter(func.lower(Customer.email) == email.lower())
+            .first()
+        )
+
+    if customer:
+        # Update missing fields on existing record
+        updated = False
+        if name and not customer.name:
+            customer.name = name
+            updated = True
+        if phone and not customer.phone:
+            customer.phone = phone
+            updated = True
+        if email and not customer.email:
+            customer.email = email
+            updated = True
+        if updated:
+            db.flush()
+            logger.info("Updated customer #%d with new info", customer.id)
+
+        # Ensure Stripe customer exists
+        if customer.email and not customer.stripe_customer_id:
+            _ensure_stripe_customer(customer)
+            db.flush()
+
+        return customer
+
+    # Create new customer
+    customer = Customer(name=name, phone=phone, email=email)
+    db.add(customer)
+    db.flush()
+    logger.info("Created new customer #%d (phone=%s, email=%s)", customer.id, phone, email)
+
+    # Create Stripe Customer if email available and not yet created
+    if email and not customer.stripe_customer_id:
+        _ensure_stripe_customer(customer)
+        db.flush()
+
+    return customer
+
+
+def _ensure_stripe_customer(customer: Customer) -> None:
+    """Create a Stripe Customer if not already linked. Best-effort, never raises."""
+    try:
+        from ..stripe_service import create_or_get_stripe_customer
+        stripe_id = create_or_get_stripe_customer(
+            email=customer.email, name=customer.name, phone=customer.phone,
+        )
+        if stripe_id:
+            customer.stripe_customer_id = stripe_id
+    except (ImportError, OSError, ValueError, TypeError) as e:
+        logger.warning("Failed to create Stripe customer for #%d: %s", customer.id, e)
 
 
 def lookup_customer_by_phone(db: Session, phone: str) -> dict[str, Any] | None:

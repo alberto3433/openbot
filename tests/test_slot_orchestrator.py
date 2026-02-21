@@ -193,8 +193,8 @@ class TestSlotOrchestratorBasics:
         assert slot is not None
         assert slot.category == SlotCategory.CUSTOMER_NAME
 
-    def test_after_name_needs_confirm(self):
-        """After name, should ask for confirmation."""
+    def test_after_name_needs_email(self):
+        """After name, should ask for email (new flow)."""
         order = OrderTask()
         bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
@@ -206,75 +206,25 @@ class TestSlotOrchestratorBasics:
         slot = orch.get_next_slot()
 
         assert slot is not None
-        assert slot.category == SlotCategory.ORDER_CONFIRM
+        assert slot.category == SlotCategory.CUSTOMER_EMAIL
 
-    def test_after_confirm_needs_payment(self):
-        """After order reviewed (user said 'yes'), should ask for payment method."""
+    def test_after_name_needs_email(self):
+        """After name, should ask for email."""
         order = OrderTask()
         bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
-        order.checkout.order_reviewed = True  # User confirmed summary
 
         orch = SlotOrchestrator(order)
         slot = orch.get_next_slot()
 
         assert slot is not None
-        assert slot.category == SlotCategory.PAYMENT_METHOD
+        assert slot.category == SlotCategory.CUSTOMER_EMAIL
 
-    def test_in_store_payment_completes_order(self):
-        """In-store payment should complete the order (no notification needed)."""
-        order = OrderTask()
-        bagel = create_bagel_task(bagel_type="plain", toasted=True)
-        bagel.status = TaskStatus.COMPLETE
-        order.items.add_item(bagel)
-        order.delivery_method.order_type = "pickup"
-        order.customer_info.name = "John"
-        order.checkout.order_reviewed = True  # User confirmed summary
-        order.payment.method = "in_store"
-
-        orch = SlotOrchestrator(order)
-        slot = orch.get_next_slot()
-
-        assert slot is None
-        assert orch.is_complete()
-
-    def test_card_link_needs_notification(self):
-        """Card link payment should require notification method."""
-        order = OrderTask()
-        bagel = create_bagel_task(bagel_type="plain", toasted=True)
-        bagel.status = TaskStatus.COMPLETE
-        order.items.add_item(bagel)
-        order.delivery_method.order_type = "pickup"
-        order.customer_info.name = "John"
-        order.checkout.order_reviewed = True  # User confirmed summary
-        order.payment.method = "card_link"
-
-        orch = SlotOrchestrator(order)
-        slot = orch.get_next_slot()
-
-        assert slot is not None
-        assert slot.category == SlotCategory.NOTIFICATION
-
-    def test_notification_with_phone_completes(self):
-        """Providing phone for notification completes order."""
-        order = OrderTask()
-        bagel = create_bagel_task(bagel_type="plain", toasted=True)
-        bagel.status = TaskStatus.COMPLETE
-        order.items.add_item(bagel)
-        order.delivery_method.order_type = "pickup"
-        order.customer_info.name = "John"
-        order.customer_info.phone = "555-1234"
-        order.checkout.order_reviewed = True  # User confirmed summary
-        order.payment.method = "card_link"
-
-        orch = SlotOrchestrator(order)
-        assert orch.is_complete()
-
-    def test_notification_with_email_completes(self):
-        """Providing email for notification completes order."""
+    def test_after_email_needs_phone(self):
+        """After email, should ask for phone (if not already known)."""
         order = OrderTask()
         bagel = create_bagel_task(bagel_type="plain", toasted=True)
         bagel.status = TaskStatus.COMPLETE
@@ -282,8 +232,59 @@ class TestSlotOrchestratorBasics:
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
         order.customer_info.email = "john@example.com"
-        order.checkout.order_reviewed = True  # User confirmed summary
-        order.payment.method = "card_link"
+
+        orch = SlotOrchestrator(order)
+        slot = orch.get_next_slot()
+
+        assert slot is not None
+        assert slot.category == SlotCategory.CUSTOMER_PHONE
+
+    def test_after_email_and_phone_needs_confirm(self):
+        """After email and phone, should ask for order confirmation."""
+        order = OrderTask()
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
+        bagel.status = TaskStatus.COMPLETE
+        order.items.add_item(bagel)
+        order.delivery_method.order_type = "pickup"
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@example.com"
+        order.customer_info.phone = "+12015551234"
+
+        orch = SlotOrchestrator(order)
+        slot = orch.get_next_slot()
+
+        assert slot is not None
+        assert slot.category == SlotCategory.ORDER_CONFIRM
+
+    def test_phone_skipped_when_already_known(self):
+        """Phone slot should be skipped when phone is already known."""
+        order = OrderTask()
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
+        bagel.status = TaskStatus.COMPLETE
+        order.items.add_item(bagel)
+        order.delivery_method.order_type = "pickup"
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@example.com"
+        order.customer_info.phone = "+12015551234"  # Already known
+
+        orch = SlotOrchestrator(order)
+        slot = orch.get_next_slot()
+
+        # Should skip phone and go to confirm
+        assert slot is not None
+        assert slot.category == SlotCategory.ORDER_CONFIRM
+
+    def test_confirmed_order_is_complete(self):
+        """Order is complete after confirmation."""
+        order = OrderTask()
+        bagel = create_bagel_task(bagel_type="plain", toasted=True)
+        bagel.status = TaskStatus.COMPLETE
+        order.items.add_item(bagel)
+        order.delivery_method.order_type = "pickup"
+        order.customer_info.name = "John"
+        order.customer_info.email = "john@example.com"
+        order.customer_info.phone = "+12015551234"
+        order.checkout.order_reviewed = True
 
         orch = SlotOrchestrator(order)
         assert orch.is_complete()
@@ -333,8 +334,9 @@ class TestSlotOrchestratorPhaseDerivation:
         order.items.add_item(bagel)
         order.delivery_method.order_type = "pickup"
         order.customer_info.name = "John"
+        order.customer_info.email = "john@example.com"
+        order.customer_info.phone = "+12015551234"
         order.checkout.order_reviewed = True  # User confirmed summary
-        order.payment.method = "in_store"
 
         orch = SlotOrchestrator(order)
         assert orch.get_current_phase() == "complete"

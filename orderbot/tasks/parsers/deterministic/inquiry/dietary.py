@@ -14,6 +14,7 @@ import logging
 from .....cache import menu_cache
 from .....cache.base import singularize, contains_word_or_singular
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 from ...constants import clean_extracted_text
 from ...inquiry_patterns import (
     DIETARY_PROPERTIES,
@@ -74,7 +75,7 @@ def parse_dietary_category_inquiry(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with dietary flags and category set, or None if not a match
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in DIETARY_CATEGORY_PATTERNS:
         match = pattern.search(text_lower)
@@ -149,7 +150,7 @@ def parse_dietary_options_inquiry(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with dietary flags set, or None if not a dietary options inquiry
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in DIETARY_OPTIONS_PATTERNS:
         match = pattern.search(text_lower)
@@ -184,7 +185,7 @@ def parse_dietary_item_inquiry(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with dietary flags set, or None if not a dietary item inquiry
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in DIETARY_ITEM_PATTERNS:
         match = pattern.search(text_lower)
@@ -224,7 +225,7 @@ def parse_allergen_inquiry(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with allergen flags set, or None if not an allergen inquiry
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in ALLERGEN_ITEM_PATTERNS:
         match = pattern.search(text_lower)
@@ -238,7 +239,7 @@ def parse_allergen_inquiry(text: str) -> OpenInputResponse | None:
             for group in groups:
                 if not group:
                     continue
-                group_lower = group.lower().strip()
+                group_lower = normalize_text(group)
 
                 # Check if this group is an allergen term
                 if _normalize_allergen_property(group_lower) or group_lower in ("allergens", "allergen"):
@@ -282,7 +283,7 @@ def parse_allergen_free_options_inquiry(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with allergen-free flags set, or None if not a match
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in ALLERGEN_FREE_OPTIONS_PATTERNS:
         match = pattern.search(text_lower)
@@ -317,7 +318,7 @@ def parse_availability_inquiry(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with availability flags set, or None if not a match
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in AVAILABILITY_PATTERNS:
         match = pattern.search(text_lower)
@@ -352,7 +353,7 @@ def parse_customization_inquiry(text: str) -> OpenInputResponse | None:
     Returns:
         OpenInputResponse with customization flags set, or None if not a match
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     for pattern in CUSTOMIZATION_INQUIRY_PATTERNS:
         match = pattern.search(text_lower)

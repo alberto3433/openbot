@@ -105,12 +105,58 @@ def _find_different_type_menu_item(
         if match:
             if with_pos != -1 and match.start() > with_pos:
                 continue
+
+            # Check if the detected type's triggers exist OUTSIDE the matched menu item span.
+            # If not, the trigger word came from this menu item's name (false positive) — allow switch.
+            # e.g., "One Applewood Chicken Sausage" — "sausage" trigger is inside the match span,
+            # so the egg_sandwich detection was a false positive; switch to the side item type.
+            triggers_for_detected = menu_cache.get_item_type_triggers(detected_item_type)
+            text_outside = text_cleaned_lower[:match.start()] + " " + text_cleaned_lower[match.end():]
+            trigger_outside = any(
+                re.search(rf'\b{re.escape(t.lower())}\b', text_outside)
+                for t in triggers_for_detected
+            )
+
+            if not trigger_outside:
+                # Before switching, check if any multi-word trigger for the detected
+                # type matches the FULL text. Multi-word triggers like "bagel package"
+                # span both inside and outside the menu item match, so checking
+                # only outside the span misses them.
+                trigger_matches_full = any(
+                    re.search(rf'\b{re.escape(t.lower())}\b', text_cleaned_lower)
+                    for t in triggers_for_detected
+                    if ' ' in t
+                )
+                if trigger_matches_full:
+                    continue
+
+                # Trigger only existed within the menu item name — switch types
+                if item_type in configurable_slugs:
+                    logger.info(
+                        "CONFIGURABLE_ITEM: switching type '%s' -> '%s' - trigger only inside "
+                        "menu item '%s' span in '%s'",
+                        detected_item_type, item_type, item_name, text[:50],
+                    )
+                    return item_type
+                else:
+                    logger.info(
+                        "CONFIGURABLE_ITEM: rejecting '%s' - trigger only inside non-configurable "
+                        "menu item '%s' of type '%s'",
+                        text[:50], item_name, item_type,
+                    )
+                    return None
+
             # Don't switch types if the matching menu item name is a known modifier
             # e.g., "muenster cheese" in "muenster cheese omelette" should be treated
             # as a modifier for omelette, not a type switch to "cheese"
-            if menu_cache.is_known_modifier(item_name_lower) or any(
-                menu_cache.is_known_modifier(w) for w in item_name_lower.split()
-            ):
+            # Use all() with content-word filtering so multi-word item names like
+            # "Side of Onion" aren't blocked just because "onion" is a modifier
+            _filler_words = {'a', 'an', 'the', 'of', 'and', 'or', 'with', 'for'}
+            content_words = [w for w in item_name_lower.split() if w not in _filler_words]
+            all_words_are_modifiers = (
+                content_words and all(menu_cache.is_known_modifier(w) for w in content_words)
+            )
+            if menu_cache.is_known_modifier(item_name_lower) or all_words_are_modifiers:
                 logger.info(
                     "CONFIGURABLE_ITEM: skipping type switch '%s' -> '%s' - "
                     "'%s' is a known modifier for '%s'",
@@ -393,10 +439,11 @@ def _get_default_menu_item_for_type(item_type_slug: str) -> str | None:
         return item_names[0].title()
 
     # Look for item name ending with the type slug word
+    # Only use as default if exactly one item matches (otherwise disambiguation needed)
     type_display = item_type_slug.replace('_', ' ')
-    for name in item_names:
-        if name.lower().endswith(type_display):
-            return name.title()
+    matching = [name for name in item_names if name.lower().endswith(type_display)]
+    if len(matching) == 1:
+        return matching[0].title()
 
     # Multiple items, no clear default — return None so disambiguation can handle it
     return None

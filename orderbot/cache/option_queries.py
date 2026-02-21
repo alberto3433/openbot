@@ -68,7 +68,7 @@ class OptionQueryMixin:
                 return opt
             aliases = opt.get("aliases")
             if aliases:
-                alias_list = [a.strip().lower() for a in aliases]
+                alias_list = [normalize_text(a) for a in aliases]
                 if input_lower in alias_list:
                     return opt
         return None

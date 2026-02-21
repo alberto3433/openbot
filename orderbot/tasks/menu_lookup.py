@@ -8,32 +8,14 @@ Extracted from state_machine.py for better separation of concerns.
 """
 
 import logging
-import re
 
 from .normalization import normalize_for_match
 from .mixins import MenuDataMixin
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text, word_boundary_match
 from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
 logger = logging.getLogger(__name__)
-
-
-def _word_boundary_match(search_term: str, item_name: str) -> bool:
-    """Check if search_term appears as a complete word in item_name.
-
-    Uses word boundary matching to avoid false positives like
-    "tea" matching "Cheesesteak".
-
-    Args:
-        search_term: The term to search for (e.g., "tea")
-        item_name: The item name to search in (e.g., "Hot Tea")
-
-    Returns:
-        True if search_term appears as a complete word in item_name.
-    """
-    pattern = re.compile(rf'\b{re.escape(search_term)}\b', re.IGNORECASE)
-    return bool(pattern.search(item_name))
 
 
 class MenuLookup(MenuDataMixin):
@@ -117,7 +99,7 @@ class MenuLookup(MenuDataMixin):
         user_input_lower = user_input.lower()
 
         # Parse comma-separated phrases and check if user input contains at least one
-        phrases = [p.strip().lower() for p in required_phrases.split(",") if p.strip()]
+        phrases = [normalize_text(p) for p in required_phrases.split(",") if p.strip()]
         for phrase in phrases:
             if phrase in user_input_lower:
                 return True
@@ -267,7 +249,7 @@ class MenuLookup(MenuDataMixin):
             item_name_db = item.get("name", "")
             item_name_db_lower = item_name_db.lower()
             for search_term in search_terms:
-                if _word_boundary_match(search_term, item_name_db):
+                if word_boundary_match(search_term, item_name_db, case_insensitive=True):
                     if item_name_db_lower not in matched_names:
                         if self._passes_match_filter(item, item_name):
                             matches.append(item)

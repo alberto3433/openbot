@@ -16,6 +16,8 @@ Key differences from llm_parsers.py:
 import os
 import logging
 
+from ..utils.text import normalize_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -87,7 +89,7 @@ Reply with ONLY the category slug (lowercase, no quotes) or "none" if no match."
             temperature=0,
         )
 
-        result = response.choices[0].message.content.strip().lower()
+        result = normalize_text(response.choices[0].message.content)
 
         # Validate result is a known category slug
         valid_slugs = {cat.get("slug", "").lower() for cat in categories}

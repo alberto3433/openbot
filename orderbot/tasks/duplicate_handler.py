@@ -43,6 +43,7 @@ from .parsers.inquiry_patterns import (
     REORDER_ITEM_PATTERNS,
 )
 from .parsers.deterministic import DUPLICATE_ALL_PATTERN
+from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .models import OrderTask
@@ -126,7 +127,7 @@ class DuplicateHandler:
 
         items = pending_info.items
         count = pending_info.count
-        text = user_input.strip().lower()
+        text = normalize_text(user_input)
 
         # Check for "all items" / "everything" response
         if DUPLICATE_ALL_PATTERN.match(text):
@@ -261,7 +262,7 @@ class DuplicateHandler:
             )
 
         cart_items = pending_info.cart_items
-        text = user_input.strip().lower()
+        text = normalize_text(user_input)
 
         # Check if user wants to repeat previous order
         previous_order_patterns = [

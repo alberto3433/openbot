@@ -49,6 +49,7 @@ import re
 
 from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize  # Re-export for convenience
+from orderbot.cache.base import normalize_text
 from orderbot.exceptions import MenuDataNotLoadedError
 
 logger = logging.getLogger(__name__)
@@ -147,7 +148,7 @@ def strip_filler_words(user_input: str) -> str:
         >>> strip_filler_words("I want the first one")
         "first one"
     """
-    input_lower = user_input.lower().strip()
+    input_lower = normalize_text(user_input)
 
     # Remove ordering prefixes (longer phrases first)
     for prefix in sorted(_ORDERING_PREFIXES, key=len, reverse=True):
@@ -239,7 +240,7 @@ def normalize_for_option_match(text: str) -> str:
     Returns:
         Normalized text suitable for option matching
     """
-    text = text.lower().strip()
+    text = normalize_text(text)
 
     # Strip leading quantity patterns (numbers like "2", "2x", words like "two")
     from orderbot.tasks.parsers.quantity_utils import QTY_WORDS_RE
@@ -280,7 +281,7 @@ def resolve_to_canonical(
     Returns:
         Normalized value: canonical option slug, boolean, None, or cleaned input
     """
-    value_clean = value.lower().strip()
+    value_clean = normalize_text(value)
 
     # Get attribute info to check input_type
     attr_info = _get_attribute_info(attr_slug, item_type_slug)

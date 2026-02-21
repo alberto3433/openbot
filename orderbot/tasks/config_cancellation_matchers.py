@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from .parsers import CANCEL_ITEM_PATTERN, strip_conversational_fillers
 from .modifier_resolver import TRAILING_FILLERS
 from .models.utilities import parse_pending_field
+from .utils.text import normalize_text
 from orderbot.cache import menu_cache
 from orderbot.cache.base import get_singular_plural_variants
 
@@ -165,7 +166,7 @@ def _extract_cancel_description(user_input_stripped: str) -> str | None:
     cancel_desc = None
     for group in cancel_match.groups():
         if group:
-            cancel_desc = group.strip().lower()
+            cancel_desc = normalize_text(group)
             break
     if not cancel_desc:
         return None

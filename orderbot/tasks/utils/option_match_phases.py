@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from .text import word_boundary_match
+from .text import normalize_text, word_boundary_match
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class MatchPhasesMixin:
 
         user_lower = user_input.lower()
         if isinstance(must_match_raw, str):
-            must_match_list = [m.strip().lower() for m in must_match_raw.split(",") if m.strip()]
+            must_match_list = [normalize_text(m) for m in must_match_raw.split(",") if m.strip()]
         else:
             must_match_list = [str(m).lower() for m in must_match_raw]
 

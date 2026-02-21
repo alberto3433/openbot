@@ -38,6 +38,9 @@ class ItemType(Base):
     # Side choice: some items (e.g., omelettes) prompt for a side dish
     has_side_choice = Column(Boolean, nullable=False, default=False)
 
+    # Generic item types are deprioritized in trigger matching (e.g., broad catch-all types)
+    is_generic = Column(Boolean, nullable=False, default=False, server_default="false")
+
     # Variant pricing: which global attribute determines variant pricing
     # Example: "size" attribute for beverages (small, medium, large)
     variant_pricing_attribute_id = Column(

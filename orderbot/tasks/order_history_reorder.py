@@ -172,7 +172,7 @@ class OrderHistoryReorder:
             order.pending_field = None
             return None
 
-        text_lower = user_input.strip().lower()
+        text_lower = normalize_text(user_input)
 
         # Try to match by name
         for item in pending_items:
@@ -217,7 +217,7 @@ class OrderHistoryReorder:
             order.clear_pending()
             return None
 
-        text_lower = user_input.strip().lower()
+        text_lower = normalize_text(user_input)
 
         # Check for affirmative response
         if is_affirmative(text_lower):

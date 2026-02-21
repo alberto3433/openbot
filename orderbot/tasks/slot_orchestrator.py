@@ -30,9 +30,9 @@ class SlotCategory(str, Enum):
     DELIVERY_METHOD = "delivery_method"
     DELIVERY_ADDRESS = "delivery_address"
     CUSTOMER_NAME = "customer_name"
+    CUSTOMER_EMAIL = "customer_email"
+    CUSTOMER_PHONE = "customer_phone"
     ORDER_CONFIRM = "order_confirm"
-    PAYMENT_METHOD = "payment_method"
-    NOTIFICATION = "notification"
 
 
 @dataclass
@@ -80,23 +80,23 @@ ORDER_SLOTS: list[SlotDefinition] = [
         required=True,
     ),
     SlotDefinition(
+        category=SlotCategory.CUSTOMER_EMAIL,
+        field_path="customer_info.email",
+        question=CheckoutMessages.EMAIL,
+        required=True,
+    ),
+    SlotDefinition(
+        category=SlotCategory.CUSTOMER_PHONE,
+        field_path="customer_info.phone",
+        question=CheckoutMessages.PHONE,
+        required=True,
+        condition=lambda order: not order.customer_info.phone,  # Skip if already known (e.g., caller_id)
+    ),
+    SlotDefinition(
         category=SlotCategory.ORDER_CONFIRM,
         field_path="checkout.order_reviewed",  # User confirmed summary, not final order
         question=None,  # Generated dynamically with order summary
         required=True,
-    ),
-    SlotDefinition(
-        category=SlotCategory.PAYMENT_METHOD,
-        field_path="payment.method",
-        question="Would you like to pay in store, or should I text or email you a payment link?",
-        required=True,
-    ),
-    SlotDefinition(
-        category=SlotCategory.NOTIFICATION,
-        field_path="customer_info.phone",  # or email - handled specially
-        question="Should I text or email you the confirmation?",
-        required=True,
-        condition=lambda order: order.payment.method == "card_link",
     ),
 ]
 
@@ -145,10 +145,6 @@ class SlotOrchestrator:
                 return False
             # Items slot is filled when we have items AND all are complete
             return self.order.items.all_items_complete()
-
-        # Special handling for notification - need phone OR email
-        if slot.category == SlotCategory.NOTIFICATION:
-            return bool(self.order.customer_info.phone or self.order.customer_info.email)
 
         # Get the field value
         value = self._get_field_value(slot.field_path)
@@ -205,9 +201,9 @@ class SlotOrchestrator:
             SlotCategory.DELIVERY_METHOD: "checkout_delivery",
             SlotCategory.DELIVERY_ADDRESS: "checkout_address",
             SlotCategory.CUSTOMER_NAME: "checkout_name",
+            SlotCategory.CUSTOMER_EMAIL: "checkout_email",
+            SlotCategory.CUSTOMER_PHONE: "checkout_phone",
             SlotCategory.ORDER_CONFIRM: "checkout_confirm",
-            SlotCategory.PAYMENT_METHOD: "checkout_payment_method",
-            SlotCategory.NOTIFICATION: "checkout_notification",
         }
         return phase_map.get(next_slot.category, "unknown")
 

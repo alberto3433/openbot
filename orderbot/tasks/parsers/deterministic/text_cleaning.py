@@ -13,6 +13,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
+from ...utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .result_types import AttributeExtractionResult
@@ -140,7 +141,7 @@ def _strip_leading_attribute_words(text: str) -> str | None:
     Returns stripped text if any words were removed, None otherwise.
     """
     attr_option_words = menu_cache.get_all_attribute_option_words()
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
     original = text_lower
 
     while text_lower:

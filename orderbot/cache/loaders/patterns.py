@@ -8,6 +8,8 @@ and compound phrases.
 import logging
 import re
 
+from ..base import normalize_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,14 +79,14 @@ class PatternLoaderMixin:
 
         for ingredient in ingredients:
             if ingredient.abbreviation:
-                abbrev = ingredient.abbreviation.strip().lower()
+                abbrev = normalize_text(ingredient.abbreviation)
                 canonical = ingredient.name.lower()
                 if abbrev and canonical:
                     abbreviations[abbrev] = canonical
 
         for item in menu_items:
             if item.abbreviation:
-                abbrev = item.abbreviation.strip().lower()
+                abbrev = normalize_text(item.abbreviation)
                 canonical = item.name.lower()
                 if abbrev and canonical:
                     abbreviations[abbrev] = canonical
@@ -120,34 +122,3 @@ class PatternLoaderMixin:
         self._compound_phrases = compound_phrases
         logger.debug("Loaded %d compound phrases (from bulk)", len(compound_phrases))
 
-    def _load_attribute_inquiry_keywords(self, db) -> None:
-        """Load attribute inquiry keywords from the database.
-
-        This data-driven mapping replaces hardcoded common_mappings in
-        menu_options_inquiry_handler.py for queries like "what types of X do you have?".
-
-        Maps (keyword, item_type_slug) -> attribute_slug
-        e.g., ("types", "bagel") -> "bread"
-        """
-        from sqlalchemy import text
-
-        # Query all keywords from the database, joining to get slugs from FK relationships
-        result = db.execute(text("""
-            SELECT aik.keyword, it.slug as item_type_slug, ga.slug as attribute_slug
-            FROM attribute_inquiry_keywords aik
-            LEFT JOIN item_types it ON aik.item_type_id = it.id
-            JOIN global_attributes ga ON aik.global_attribute_id = ga.id
-        """))
-
-        keywords: dict[tuple[str, str | None], str] = {}
-        for row in result:
-            keyword = row[0].lower()
-            item_type = row[1]  # Can be None
-            attr_slug = row[2]
-            keywords[(keyword, item_type)] = attr_slug
-
-        self._attribute_inquiry_keywords = keywords
-        logger.debug(
-            "Loaded %d attribute inquiry keywords",
-            len(keywords),
-        )

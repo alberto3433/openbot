@@ -62,6 +62,19 @@ class QuickReplyBuilder:
             else:
                 for o in available_opts:
                     qr.append({"label": o["display_name"], "value": o["display_name"]})
+                # When a display_name doesn't appear in the question text,
+                # check the option's aliases for one that does (data-driven
+                # linkification fallback).
+                base_lower = base_question.lower()
+                for i, entry in enumerate(qr):
+                    if entry["label"].lower() in base_lower:
+                        continue
+                    opt = available_opts[i] if i < len(available_opts) else None
+                    if opt:
+                        for alias in opt.get("aliases", []):
+                            if alias.lower() in base_lower:
+                                qr[i] = {"label": alias, "value": entry["value"]}
+                                break
                 # For multi_select with category-grouped options, use category-level
                 # quick replies when the question mentions those categories.
                 # e.g., "Any milk, sweetener, or syrup?" -> clicking "milk" sends

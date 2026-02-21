@@ -19,6 +19,7 @@ from typing import Any
 from orderbot.cache import menu_cache
 
 from ..quantity_utils import WORD_TO_NUM, BASIC_WORD_TO_NUM, extract_quantity_word
+from ...utils.text import normalize_text
 
 # Re-export from sub-modules for backward compatibility
 from .qualifier_extraction import extract_modifiers_with_qualifiers
@@ -356,7 +357,7 @@ def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:
         >>> _extract_by_pound_info("half a pound of whitefish salad")
         ("1/2 lb", "whitefish salad")
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Weight patterns to detect (pattern, normalized weight_unit)
     weight_patterns = [

@@ -42,10 +42,57 @@ def is_stripe_configured() -> bool:
     return bool(STRIPE_SECRET_KEY)
 
 
+def create_or_get_stripe_customer(
+    email: str | None = None,
+    name: str | None = None,
+    phone: str | None = None,
+) -> str | None:
+    """Create a Stripe Customer or find existing by email.
+
+    Args:
+        email: Customer email (used for lookup and creation)
+        name: Customer name
+        phone: Customer phone
+
+    Returns:
+        Stripe Customer ID (cus_...) or None if Stripe not configured or error.
+    """
+    if not is_stripe_configured() or not email:
+        return None
+
+    stripe = _get_stripe()
+    if stripe is None:
+        return None
+
+    try:
+        # Search for existing customer by email
+        customers = stripe.Customer.list(email=email, limit=1)
+        if customers.data:
+            existing = customers.data[0]
+            logger.info("Found existing Stripe customer %s for %s", existing.id, email)
+            return existing.id
+
+        # Create new customer
+        params: dict[str, Any] = {"email": email}
+        if name:
+            params["name"] = name
+        if phone:
+            params["phone"] = phone
+
+        customer = stripe.Customer.create(**params)
+        logger.info("Created Stripe customer %s for %s", customer.id, email)
+        return customer.id
+
+    except Exception as e:
+        logger.error("Failed to create/get Stripe customer for %s: %s", email, e)
+        return None
+
+
 def create_checkout_session(
     order_id: int,
     line_items: list[dict[str, Any]],
     customer_email: str | None = None,
+    stripe_customer_id: str | None = None,
     success_url: str | None = None,
     cancel_url: str | None = None,
 ) -> dict[str, Any] | None:
@@ -59,6 +106,7 @@ def create_checkout_session(
             - quantity: Item quantity
             - amount_cents: Price in cents (integer)
         customer_email: Pre-fill customer email on checkout page.
+        stripe_customer_id: Stripe Customer ID (cus_...) for saved payment methods.
         success_url: URL to redirect after successful payment.
         cancel_url: URL to redirect if customer cancels.
 
@@ -95,15 +143,22 @@ def create_checkout_session(
     try:
         expires_at = int(time.time()) + STRIPE_CHECKOUT_EXPIRY_SECONDS
 
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            line_items=stripe_line_items,
-            customer_email=customer_email,
-            success_url=success_url,
-            cancel_url=cancel_url,
-            metadata={"order_id": str(order_id)},
-            expires_at=expires_at,
-        )
+        session_params: dict[str, Any] = {
+            "mode": "payment",
+            "line_items": stripe_line_items,
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+            "metadata": {"order_id": str(order_id)},
+            "expires_at": expires_at,
+        }
+
+        # Use Stripe Customer for saved payment methods; fall back to email pre-fill
+        if stripe_customer_id:
+            session_params["customer"] = stripe_customer_id
+        elif customer_email:
+            session_params["customer_email"] = customer_email
+
+        session = stripe.checkout.Session.create(**session_params)
 
         logger.info(
             "Stripe checkout session created: %s for order #%d",

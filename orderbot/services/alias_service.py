@@ -18,6 +18,8 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..cache.base import normalize_text
+
 from ..db.models import (
     GlobalAttributeOptionAlias,
     IngredientAlias,
@@ -116,7 +118,7 @@ def check_alias_uniqueness(
         - (True, None) if alias is unique
         - (False, "Alias 'x' already exists on ItemType 'y'") if duplicate found
     """
-    alias_lower = alias.strip().lower()
+    alias_lower = normalize_text(alias)
     if not alias_lower:
         return True, None
 

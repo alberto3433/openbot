@@ -393,6 +393,12 @@
           </div>
 
           <div class="form-group">
+            <label for="storeSquareLocationId">Square Location ID</label>
+            <input type="text" id="storeSquareLocationId" placeholder="e.g., LXXXXXXXXXXXXXXXXX" />
+            <div class="hint">Optional: Square Location ID for POS integration. Leave empty to disable Square sync for this store.</div>
+          </div>
+
+          <div class="form-group">
             <label>Accepted Payment Methods *</label>
             <div class="checkbox-group" id="paymentMethodsGroup">
               <div class="checkbox-item" data-value="cash">
@@ -583,6 +589,7 @@
           cityTaxRate: s.city_tax_rate || 0,
           stateTaxRate: s.state_tax_rate || 0,
           deliveryZipCodes: s.delivery_zip_codes || [],
+          squareLocationId: s.square_location_id || "",
           deletedAt: s.deleted_at
         }));
         renderStores();
@@ -766,6 +773,7 @@
       document.getElementById("storeCityTax").value = store.cityTaxRate ? (store.cityTaxRate * 100).toFixed(3) : "";
       document.getElementById("storeStateTax").value = store.stateTaxRate ? (store.stateTaxRate * 100).toFixed(3) : "";
       document.getElementById("storeDeliveryZips").value = (store.deliveryZipCodes || []).join(", ");
+      document.getElementById("storeSquareLocationId").value = store.squareLocationId || "";
       setPaymentMethodCheckboxes(store.paymentMethods || ["cash", "credit"]);
       hidePaymentError();
 
@@ -805,6 +813,7 @@
         ? deliveryZipsRaw.split(",").map(z => z.trim()).filter(z => z.length > 0)
         : [];
       const paymentMethods = getSelectedPaymentMethods();
+      const squareLocationId = document.getElementById("storeSquareLocationId").value.trim();
 
       if (!name || !address || !city || !state || !zip || !phone) {
         showStatus("Please fill in all required fields", "error");
@@ -835,7 +844,8 @@
         city_tax_rate: cityTaxRate,
         state_tax_rate: stateTaxRate,
         delivery_zip_codes: deliveryZipCodes,
-        payment_methods: paymentMethods
+        payment_methods: paymentMethods,
+        square_location_id: squareLocationId || null
       };
 
       setSaveButtonState(saveBtn, "saving");

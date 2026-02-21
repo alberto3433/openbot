@@ -193,10 +193,10 @@ class OrderStateMachine:
             OrderPhase.TAKING_ITEMS.value: self._handle_taking_items,
             OrderPhase.CHECKOUT_DELIVERY.value: self.checkout_handler.handle_delivery,
             OrderPhase.CHECKOUT_NAME.value: self.checkout_handler.handle_name,
-            OrderPhase.CHECKOUT_CONFIRM.value: self.checkout_handler.handle_confirmation,
-            OrderPhase.CHECKOUT_PAYMENT_METHOD.value: self.checkout_handler.handle_payment_method,
-            OrderPhase.CHECKOUT_PHONE.value: self.checkout_handler.handle_phone,
             OrderPhase.CHECKOUT_EMAIL.value: self.checkout_handler.handle_email,
+            OrderPhase.CHECKOUT_PHONE.value: self.checkout_handler.handle_phone,
+            OrderPhase.CHECKOUT_CONFIRM.value: self.checkout_handler.handle_confirmation,
+            OrderPhase.CHECKOUT_PAYMENT_METHOD.value: self.checkout_handler.handle_payment_choice,
         }
 
     # Handler accessors via registry
@@ -399,6 +399,15 @@ class OrderStateMachine:
         # Update all handlers with unified context
         self._update_handler_context(store_info, returning_customer, db_session)
 
+        # Pre-fill customer info from returning customer data (name, phone, email)
+        if returning_customer:
+            if returning_customer.get("name") and not order.customer_info.name:
+                order.customer_info.name = returning_customer["name"]
+            if returning_customer.get("phone") and not order.customer_info.phone:
+                order.customer_info.phone = returning_customer["phone"]
+            if returning_customer.get("email") and not order.customer_info.email:
+                order.customer_info.email = returning_customer["email"]
+
         # ID-based removal: bypass parsing entirely when item_id is provided
         if item_id:
             result = self._handle_id_based_removal(item_id, order)
@@ -422,10 +431,10 @@ class OrderStateMachine:
         phases_to_preserve = {
             OrderPhase.CHECKOUT_DELIVERY.value,
             OrderPhase.CHECKOUT_NAME.value,
-            OrderPhase.CHECKOUT_CONFIRM.value,
-            OrderPhase.CHECKOUT_PAYMENT_METHOD.value,
             OrderPhase.CHECKOUT_EMAIL.value,
             OrderPhase.CHECKOUT_PHONE.value,
+            OrderPhase.CHECKOUT_CONFIRM.value,
+            OrderPhase.CHECKOUT_PAYMENT_METHOD.value,
         }
         # CRITICAL: Don't transition from TAKING_ITEMS at the start of processing!
         # We need to parse the user's input first to see if they're adding more items.
@@ -604,7 +613,7 @@ class OrderStateMachine:
                 except IndexError:
                     break
                 if group:
-                    raw = group.lower().strip()
+                    raw = normalize_text(group)
                     qty = int(raw) if raw.isdigit() else BASIC_WORD_TO_NUM.get(raw, 0)
                     if qty == 1:
                         active_items = order.items.get_active_items()

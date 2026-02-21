@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 
 from ..normalization import strip_filler_words
-from .text import ORDINAL_PATTERNS
+from .text import ORDINAL_PATTERNS, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class NumberedListMatchMixin:
         """
         # Try raw exact match FIRST (before any normalization)
         # Handles cases like "Sugar in the Raw" where normalization would break it
-        raw_lower = user_input.lower().strip()
+        raw_lower = normalize_text(user_input)
         for opt in options:
             if opt.get(name_key, "").lower() == raw_lower:
                 logger.debug("NUMBERED_LIST: Exact raw match on %s", name_key)
@@ -139,7 +139,7 @@ class NumberedListMatchMixin:
             return None
 
         for pattern, idx in ORDINAL_PATTERNS:
-            if pattern in user_input or user_input == f"{pattern} one":
+            if user_input == pattern or user_input == f"{pattern} one":
                 if idx < len(options):
                     logger.debug(
                         "ORDINAL: Matched option %d ('%s') by pattern '%s'",

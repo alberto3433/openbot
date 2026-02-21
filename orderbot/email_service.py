@@ -438,6 +438,144 @@ Thanks,
         }
 
 
+def send_payment_expired_email(
+    to_email: str,
+    order_id: int,
+    amount: float,
+    store_name: str,
+    customer_name: str | None = None,
+    customer_phone: str | None = None,
+    order_type: str | None = None,
+    items: list | None = None,
+    subtotal: float | None = None,
+    city_tax: float | None = None,
+    state_tax: float | None = None,
+    delivery_fee: float | None = None,
+    payment_url: str | None = None,
+) -> dict:
+    """Send email notifying customer their payment link has expired with a new link.
+
+    Args:
+        to_email: Customer's email address
+        order_id: The order ID for reference
+        amount: The total amount due
+        store_name: Name of the store
+        customer_name: Optional customer name for personalization
+        customer_phone: Optional customer phone number
+        order_type: Optional order type (pickup/delivery)
+        items: Optional list of order items
+        subtotal: Optional subtotal before tax
+        city_tax: Optional city tax amount
+        state_tax: Optional state tax amount
+        delivery_fee: Optional delivery fee
+        payment_url: New Stripe checkout URL
+
+    Returns:
+        dict with status and details
+    """
+    if not payment_url:
+        payment_url = f"https://pay.example.com/order/{order_id}"
+
+    greeting = f"Hi {customer_name}," if customer_name else "Hi,"
+
+    order_details_text, order_details_html = _build_order_details_section(
+        customer_name, customer_phone, order_type,
+    )
+    items_text, items_html = _build_items_section(
+        items, subtotal, city_tax, state_tax, delivery_fee, amount,
+    )
+
+    subject = f"New Payment Link for Your {store_name} Order #{order_id}"
+
+    body_text = f"""{greeting}
+
+Your previous payment link for your {store_name} order has expired. No worries — here's a new one!
+{order_details_text}{items_text}
+Click here to complete your payment:
+{payment_url}
+
+If you have any questions, please call us.
+
+Thanks,
+{store_name}
+"""
+
+    body_html = f"""
+<html>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<p>{greeting}</p>
+<p>Your previous payment link for your <strong>{store_name}</strong> order has expired. No worries — here's a new one!</p>
+{order_details_html}
+{items_html}
+<p style="margin-top: 24px;"><a href="{payment_url}" style="background-color: #1976d2; color: white; padding: 14px 28px; text-decoration: none; display: inline-block; border-radius: 4px; font-weight: 500;">Complete Payment - ${amount:.2f}</a></p>
+<p style="color: #666; font-size: 13px;">Or copy this link: {payment_url}</p>
+<p>If you have any questions, please call us.</p>
+<p>Thanks,<br><strong>{store_name}</strong></p>
+</body>
+</html>
+"""
+
+    if not is_email_configured():
+        logger.info(
+            "MOCK EMAIL to %s: Subject: %s | Body: %s",
+            to_email, subject, body_text[:200] + "...",
+        )
+        return {
+            "status": "sent",
+            "to_email": to_email,
+            "subject": subject,
+            "payment_url": payment_url,
+            "mock": True,
+            "message": "Expired payment email logged (AWS SES not configured)",
+        }
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = AWS_SES_FROM_EMAIL
+        msg["To"] = to_email
+
+        msg.attach(MIMEText(body_text, "plain"))
+        msg.attach(MIMEText(body_html, "html"))
+
+        client = _get_ses_client()
+        if client is None:
+            return {
+                "status": "error",
+                "to_email": to_email,
+                "error": "boto3 not installed",
+                "mock": False,
+                "message": "Failed to send expired payment email: boto3 not installed",
+            }
+
+        client.send_raw_email(
+            Source=AWS_SES_FROM_EMAIL,
+            Destinations=[to_email],
+            RawMessage={"Data": msg.as_string()},
+        )
+
+        logger.info("Expired payment email sent to %s for order %d", to_email, order_id)
+
+        return {
+            "status": "sent",
+            "to_email": to_email,
+            "subject": subject,
+            "payment_url": payment_url,
+            "mock": False,
+            "message": "Expired payment email sent successfully",
+        }
+
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
+        logger.error("Failed to send expired payment email to %s: %s", to_email, str(e))
+        return {
+            "status": "error",
+            "to_email": to_email,
+            "error": str(e),
+            "mock": False,
+            "message": f"Failed to send expired payment email: {str(e)}",
+        }
+
+
 def send_report_email(
     session_id: str,
     store_id: str | None = None,

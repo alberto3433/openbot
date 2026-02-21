@@ -25,6 +25,7 @@ from ..constants import (
 )
 from ..quantity_utils import extract_quantity_for_pattern
 from ...shared_constants import ORDERING_PREFIX_RE, LEADING_ARTICLE_RE
+from ...utils.text import normalize_text
 
 # Import from specialized modules
 from .item_building import build_parsed_item
@@ -410,7 +411,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
         OpenInputResponse with parsed_items if a configurable item was detected,
         None otherwise.
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Strip ordering phrases for cleaner matching (these don't affect item detection)
     # Note: "i like" is NOT stripped - it's a statement, not an ordering phrase

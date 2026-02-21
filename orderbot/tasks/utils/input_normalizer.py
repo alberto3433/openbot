@@ -19,6 +19,7 @@ from orderbot.tasks.normalization import (
     singularize,
 )
 from orderbot.tasks.parsers.quantity_utils import extract_leading_quantity
+from .text import normalize_text
 
 
 class InputNormalizer:
@@ -126,12 +127,12 @@ class InputNormalizer:
         Returns:
             List of unique input variants for matching.
         """
-        user_raw_lower = user_input.lower().strip()
+        user_raw_lower = normalize_text(user_input)
         user_normalized = self.normalize_for_matching(user_input)
 
         # Tokenize input for compound inputs like "milk and sugar"
         tokens = self.tokenize_multi_input(user_input)
-        raw_tokens = [t.lower().strip() for t in tokens]
+        raw_tokens = [normalize_text(t) for t in tokens]
         normalized_tokens = [self.normalize_for_matching(t) for t in tokens]
 
         # Also include individual space-separated words from each token

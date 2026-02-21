@@ -394,6 +394,17 @@ def persist_confirmed_order(
         # Add order items for new orders
         _add_order_items(db, order, items)
 
+    # Link to Customer record (find or create)
+    try:
+        from .customer_service import find_or_create_customer
+        customer_record = find_or_create_customer(
+            db, name=customer.name, phone=customer.phone, email=customer.email,
+        )
+        if customer_record:
+            order.customer_id = customer_record.id
+    except (ValueError, TypeError) as e:
+        logger.warning("Failed to link customer to order #%d: %s", order.id, e)
+
     db.commit()
     logger.info("Order #%d persisted (status: confirmed)", order.id)
     return order

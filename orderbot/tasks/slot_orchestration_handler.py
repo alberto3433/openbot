@@ -81,9 +81,9 @@ class SlotOrchestrationHandler:
             SlotCategory.DELIVERY_METHOD: OrderPhase.CHECKOUT_DELIVERY,
             SlotCategory.DELIVERY_ADDRESS: OrderPhase.CHECKOUT_DELIVERY,  # Address is part of delivery
             SlotCategory.CUSTOMER_NAME: OrderPhase.CHECKOUT_NAME,
+            SlotCategory.CUSTOMER_EMAIL: OrderPhase.CHECKOUT_EMAIL,
+            SlotCategory.CUSTOMER_PHONE: OrderPhase.CHECKOUT_PHONE,
             SlotCategory.ORDER_CONFIRM: OrderPhase.CHECKOUT_CONFIRM,
-            SlotCategory.PAYMENT_METHOD: OrderPhase.CHECKOUT_PAYMENT_METHOD,
-            SlotCategory.NOTIFICATION: OrderPhase.CHECKOUT_PHONE,  # Will be refined later
         }
         return phase_map.get(next_slot.category, OrderPhase.TAKING_ITEMS)
 

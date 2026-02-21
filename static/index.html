@@ -1796,7 +1796,8 @@
         }
         if (idx !== -1) {
           var originalText = html.substring(idx, idx + escapedLabel.length);
-          var span = '<span class="quick-reply-inline" data-value="' + escapeAttr(qr.value) + '">' + originalText + '</span>';
+          var urlAttr = qr.url ? ' data-url="' + escapeAttr(qr.url) + '"' : '';
+          var span = '<span class="quick-reply-inline" data-value="' + escapeAttr(qr.value) + '"' + urlAttr + '>' + originalText + '</span>';
           replacements.push({idx: idx, length: escapedLabel.length, span: span});
           usedRanges.push({start: idx, end: idx + escapedLabel.length});
         }
@@ -1855,7 +1856,11 @@
     messagesEl.addEventListener("click", function(e) {
       var target = e.target.closest(".quick-reply-inline");
       if (target && !target.classList.contains("disabled")) {
-        sendMessage(target.dataset.value);
+        if (target.dataset.url) {
+          window.open(target.dataset.url, '_blank', 'noopener,noreferrer');
+        } else {
+          sendMessage(target.dataset.value);
+        }
         document.getElementById("chat-input").focus();
       }
     });

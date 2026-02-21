@@ -176,11 +176,6 @@ STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 # Example: "https://order.zuckersbagels.com" or "http://localhost:8000" for dev
 BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
 
-# Delay (seconds) before sending payment email after order confirmation.
-# If customer pays via chatbot button within this window, a receipt is sent instead.
-PAYMENT_EMAIL_DELAY_SECONDS: int = int(os.getenv("PAYMENT_EMAIL_DELAY_SECONDS", "180"))
-
-
 # =============================================================================
 # AWS Messaging Configuration (SNS for SMS, SES for Email)
 # =============================================================================

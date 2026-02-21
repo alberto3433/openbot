@@ -46,8 +46,6 @@ class MessageBuilder:
             return CheckoutMessages.NAME
         elif phase == OrderPhase.CHECKOUT_CONFIRM.value:
             return CheckoutMessages.CONFIRM
-        elif phase == OrderPhase.CHECKOUT_PAYMENT_METHOD.value:
-            return CheckoutMessages.PAYMENT_METHOD
         elif phase == OrderPhase.CHECKOUT_PHONE.value:
             return CheckoutMessages.PHONE
         elif phase == OrderPhase.CHECKOUT_EMAIL.value:

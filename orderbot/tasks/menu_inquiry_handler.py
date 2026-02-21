@@ -27,7 +27,7 @@ from .parsers.constants import (
     get_item_type_display_name,
 )
 from .handler_config import BaseHandler
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 from .price_inquiry_handler import PriceInquiryHandler
 from .category_resolver import (
     get_available_menu_categories_message,
@@ -314,7 +314,7 @@ class MenuInquiryHandler(BaseHandler):
                 if not required_phrases:
                     filtered_items.append(item)
                     continue
-                phrases = [p.strip().lower() for p in required_phrases.split(",") if p.strip()]
+                phrases = [normalize_text(p) for p in required_phrases.split(",") if p.strip()]
                 if any(phrase in category_slug.lower() for phrase in phrases):
                     filtered_items.append(item)
             category_items = filtered_items

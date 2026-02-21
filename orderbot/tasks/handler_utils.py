@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from .utils.pricing_utils import safe_recalculate_price
+from .utils.text import normalize_text
 
 if TYPE_CHECKING:
     from .models import OrderTask, MenuItemTask
@@ -280,7 +281,7 @@ def match_item_from_options(
     if not item_options or not user_input:
         return None
 
-    text = user_input.strip().lower()
+    text = normalize_text(user_input)
 
     # Try numeric selection first (1, 2, 3, etc.)
     if text.isdigit():
@@ -518,7 +519,7 @@ def find_attr_option_match(
             opt_slug = opt.get("slug", "").lower()
             opt_display = opt.get("display_name", "").lower()
             aliases = opt.get("aliases") or []
-            alias_list = [a.strip().lower() for a in aliases] if aliases else []
+            alias_list = [normalize_text(a) for a in aliases] if aliases else []
             if modifier_lower == opt_slug or modifier_lower == opt_display or modifier_lower in alias_list:
                 return (attr_slug, opt)
 

@@ -41,12 +41,11 @@ from .parsers.validators import (
 )
 from .parsers.validators import (
     parse_confirmation_deterministic,
-    parse_payment_method_deterministic,
 )
 from .handler_config import BaseStateHandler
 from .handler_utils import get_last_item, duplicate_last_item_to_qty
 from .normalization import format_slug_for_display
-from .utils.text import number_to_word
+from .utils.text import normalize_text, number_to_word
 from .delivery_handler import DeliveryHandler
 
 if TYPE_CHECKING:
@@ -99,59 +98,23 @@ class CheckoutHandler(BaseStateHandler):
         self._delivery_handler.set_context(ctx)
         self._delivery_handler.set_message_builder(self.message_builder)
 
-    def _finalize_order(
-        self,
-        order: OrderTask,
-        contact_value: str,
-        contact_type: str,
-    ) -> None:
-        """Finalize order: set payment, store contact, generate order number.
+    def _finalize_order(self, order: OrderTask) -> None:
+        """Finalize order: generate order number, mark confirmed.
+
+        Does NOT set payment method — that is chosen by the user in the
+        CHECKOUT_PAYMENT_METHOD phase.
 
         Args:
             order: The order to finalize.
-            contact_value: Validated phone number or email address.
-            contact_type: Either "phone" or "email".
         """
-        order.payment.method = "card_link"
-        if contact_type == "phone":
-            order.customer_info.phone = contact_value
-        else:
-            order.customer_info.email = contact_value
-        order.payment.payment_link_destination = contact_value
+        # Set payment link destination to email (preferred) or phone
+        destination = order.customer_info.email or order.customer_info.phone
+        if destination:
+            order.payment.payment_link_destination = destination
         order.checkout.generate_order_number()
         order.checkout.confirmed = True
         if self._transition_to_next_slot:
             self._transition_to_next_slot(order)
-
-    def _complete_order_with_contact(
-        self,
-        order: OrderTask,
-        contact_value: str,
-        contact_type: str,
-    ) -> StateMachineResult:
-        """Finalize order and return completion result with appropriate message.
-
-        Args:
-            order: The order to finalize.
-            contact_value: Validated phone number or email address.
-            contact_type: Either "phone" or "email".
-
-        Returns:
-            StateMachineResult with completion message.
-        """
-        self._finalize_order(order, contact_value, contact_type)
-
-        if contact_type == "phone":
-            confirmation_text = "We'll text you when it's ready."
-        else:
-            confirmation_text = f"We'll send the confirmation to {contact_value}."
-
-        return StateMachineResult(
-            message=f"Your order number is {order.checkout.short_order_number}. "
-                   f"{confirmation_text} Thank you, {order.customer_info.name}!",
-            order=order,
-            is_complete=True,
-        )
 
     def handle_delivery(
         self,
@@ -184,68 +147,8 @@ class CheckoutHandler(BaseStateHandler):
         if self._transition_to_next_slot:
             self._transition_to_next_slot(order)
 
-        # After collecting name, show order summary and ask for confirmation
-        order.set_phase(OrderPhase.CHECKOUT_CONFIRM)
-        summary = self.message_builder.build_order_summary(order)
         return StateMachineResult(
-            message=f"{summary}\n\nDoes that look right?",
-            order=order,
-        )
-
-    def handle_payment_method(
-        self,
-        user_input: str,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Handle text or email choice for order details."""
-        parsed = parse_payment_method_deterministic(user_input)
-
-        if parsed.choice == "unclear":
-            return StateMachineResult(
-                message=CheckoutMessages.PAYMENT_METHOD,
-                order=order,
-            )
-
-        if parsed.choice == "text":
-            # Text selected - set payment method and check for phone
-            order.payment.method = "card_link"
-            phone = parsed.phone_number or order.customer_info.phone
-            if phone:
-                validated_phone, error = self._validate_contact(phone, validate_phone_number, "phone")
-                if error:
-                    if self._transition_to_next_slot:
-                        self._transition_to_next_slot(order)
-                    return StateMachineResult(message=error, order=order)
-                return self._complete_order_with_contact(order, validated_phone, "phone")
-            else:
-                # Need to ask for phone number - orchestrator will say NOTIFICATION
-                if self._transition_to_next_slot:
-                    self._transition_to_next_slot(order)
-                return StateMachineResult(
-                    message=CheckoutMessages.PHONE_FOR_TEXT,
-                    order=order,
-                )
-
-        if parsed.choice == "email":
-            # Email selected - set payment method and check for email
-            order.payment.method = "card_link"
-            if parsed.email_address:
-                validated_email, error = self._validate_contact(parsed.email_address, validate_email_address, "email")
-                if error:
-                    order.set_phase(OrderPhase.CHECKOUT_EMAIL)
-                    return StateMachineResult(message=error, order=order)
-                return self._complete_order_with_contact(order, validated_email, "email")
-            else:
-                # Need to ask for email - explicitly set CHECKOUT_EMAIL phase
-                # (orchestrator maps NOTIFICATION to CHECKOUT_PHONE by default)
-                order.set_phase(OrderPhase.CHECKOUT_EMAIL)
-                return StateMachineResult(
-                    message=CheckoutMessages.EMAIL_FOR_SEND,
-                    order=order,
-                )
-
-        return StateMachineResult(
-            message=CheckoutMessages.PAYMENT_METHOD,
+            message=CheckoutMessages.EMAIL,
             order=order,
         )
 
@@ -268,62 +171,70 @@ class CheckoutHandler(BaseStateHandler):
             logger.info("%s validation failed for '%s': %s", contact_type.capitalize(), value, error)
         return validated, error
 
-    def _handle_contact_input(
-        self,
-        user_input: str,
-        order: OrderTask,
-        parser_func: Callable,
-        field_name: str,
-        validator_func: Callable,
-        contact_type: str,
-        retry_message: str,
-    ) -> StateMachineResult:
-        """Generic handler for contact info (phone/email) collection.
-
-        Args:
-            user_input: User's raw input
-            order: Current order state
-            parser_func: Parser function (parse_phone or parse_email)
-            field_name: Attribute name on parsed result ('phone' or 'email')
-            validator_func: Validation function for the contact type
-            contact_type: Type string for logging and completion ('phone' or 'email')
-            retry_message: Message to show if parsing fails
-
-        Returns:
-            StateMachineResult with validation error or completed order
-        """
-        parsed = parser_func(user_input, model=self.model)
-        parsed_value = getattr(parsed, field_name, None)
+    def handle_email(self, user_input: str, order: OrderTask) -> StateMachineResult:
+        """Handle email address collection."""
+        parsed = parse_email(user_input, model=self.model)
+        parsed_value = getattr(parsed, "email", None)
 
         if not parsed_value:
-            return StateMachineResult(message=retry_message, order=order)
+            return StateMachineResult(
+                message=CheckoutMessages.EMAIL_RETRY,
+                order=order,
+            )
 
-        validated_value, error = self._validate_contact(parsed_value, validator_func, contact_type)
+        validated_value, error = self._validate_contact(
+            parsed_value, validate_email_address, "email",
+        )
         if error:
             return StateMachineResult(message=error, order=order)
 
-        return self._complete_order_with_contact(order, validated_value, contact_type)
+        order.customer_info.email = validated_value
+        if self._transition_to_next_slot:
+            self._transition_to_next_slot(order)
 
-    def handle_phone(self, user_input: str, order: OrderTask) -> StateMachineResult:
-        """Handle phone number collection for text confirmation."""
-        return self._handle_contact_input(
-            user_input, order,
-            parser_func=parse_phone,
-            field_name="phone",
-            validator_func=validate_phone_number,
-            contact_type="phone",
-            retry_message=CheckoutMessages.PHONE_RETRY,
+        # Orchestrator will determine next phase (phone if needed, or confirm)
+        orchestrator = SlotOrchestrator(order)
+        next_slot = orchestrator.get_next_slot()
+
+        if next_slot and next_slot.category == SlotCategory.CUSTOMER_PHONE:
+            return StateMachineResult(
+                message=CheckoutMessages.PHONE,
+                order=order,
+            )
+
+        # Phone already known — go to confirmation
+        summary = self.message_builder.build_order_summary(order)
+        return StateMachineResult(
+            message=f"{summary}\n\nDoes that look right?",
+            order=order,
         )
 
-    def handle_email(self, user_input: str, order: OrderTask) -> StateMachineResult:
-        """Handle email address collection."""
-        return self._handle_contact_input(
-            user_input, order,
-            parser_func=parse_email,
-            field_name="email",
-            validator_func=validate_email_address,
-            contact_type="email",
-            retry_message=CheckoutMessages.EMAIL_RETRY,
+    def handle_phone(self, user_input: str, order: OrderTask) -> StateMachineResult:
+        """Handle phone number collection."""
+        parsed = parse_phone(user_input, model=self.model)
+        parsed_value = getattr(parsed, "phone", None)
+
+        if not parsed_value:
+            return StateMachineResult(
+                message=CheckoutMessages.PHONE_RETRY,
+                order=order,
+            )
+
+        validated_value, error = self._validate_contact(
+            parsed_value, validate_phone_number, "phone",
+        )
+        if error:
+            return StateMachineResult(message=error, order=order)
+
+        order.customer_info.phone = validated_value
+        if self._transition_to_next_slot:
+            self._transition_to_next_slot(order)
+
+        # After phone, go to confirmation
+        summary = self.message_builder.build_order_summary(order)
+        return StateMachineResult(
+            message=f"{summary}\n\nDoes that look right?",
+            order=order,
         )
 
     # =========================================================================
@@ -472,39 +383,99 @@ class CheckoutHandler(BaseStateHandler):
         )
 
     def _handle_confirmed(self, order: OrderTask) -> StateMachineResult:
-        """Handle user confirming the order."""
-        # Mark order as reviewed but not yet fully confirmed
+        """Handle user confirming the order.
+
+        Verifies all required slots are filled before finalizing.
+        If email or phone is missing, redirects to collect them first.
+        """
+        # Guard: ensure required customer info is collected before finalizing
+        if not order.customer_info.email:
+            order.set_phase(OrderPhase.CHECKOUT_EMAIL)
+            return StateMachineResult(
+                message=CheckoutMessages.EMAIL,
+                order=order,
+            )
+        if not order.customer_info.phone:
+            order.set_phase(OrderPhase.CHECKOUT_PHONE)
+            return StateMachineResult(
+                message=CheckoutMessages.PHONE,
+                order=order,
+            )
+
         order.checkout.order_reviewed = True
+        self._finalize_order(order)
 
-        # For returning customers, auto-send to their last used contact method
-        if self._returning_customer:
-            # Prefer email if available, otherwise use phone
-            email = self._returning_customer.get("email") or order.customer_info.email
-            phone = self._returning_customer.get("phone") or order.customer_info.phone
+        # Transition to payment method choice
+        order.set_phase(OrderPhase.CHECKOUT_PAYMENT_METHOD)
 
-            contact_value = email or phone
-            if contact_value:
-                contact_type = "email" if email else "phone"
-                self._finalize_order(order, contact_value, contact_type)
-                delivery_text = (
-                    f"An email with a payment link has been sent to {contact_value}"
-                    if contact_type == "email"
-                    else f"A text with a payment link has been sent to {contact_value}"
-                )
-                return StateMachineResult(
-                    message=f"{delivery_text}. "
-                           f"Your order number is {order.checkout.short_order_number}. "
-                           f"Thank you, {order.customer_info.name}!",
-                    order=order,
-                    is_complete=True,
-                )
-
-        # Use orchestrator to determine next phase (should be PAYMENT_METHOD)
-        if self._transition_to_next_slot:
-            self._transition_to_next_slot(order)
         return StateMachineResult(
-            message=CheckoutMessages.PAYMENT_METHOD,
+            message="Thank you! Would you like to pay online or pay in store?",
             order=order,
+            is_complete=False,
+            quick_replies=[
+                {"label": "Pay online", "value": "pay online", "url": "__PAYMENT_URL__"},
+                {"label": "Pay in store", "value": "pay in store"},
+            ],
+        )
+
+    def handle_payment_choice(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle user's payment method choice (pay online vs pay in store).
+
+        Args:
+            user_input: User's input text
+            order: The current order task
+        """
+        text = normalize_text(user_input)
+
+        # "Pay in store" patterns
+        in_store_patterns = [
+            "in store", "in-store", "in person", "at the store",
+            "at pickup", "at the counter", "when i get there",
+            "pay later", "pay there", "pay when",
+        ]
+        # "Pay online" patterns
+        online_patterns = [
+            "online", "pay now", "card", "credit", "debit",
+            "stripe", "pay online",
+        ]
+
+        is_in_store = any(p in text for p in in_store_patterns)
+        is_online = any(p in text for p in online_patterns)
+
+        if is_in_store and not is_online:
+            order.payment.method = "card_in_store"
+            return StateMachineResult(
+                message=f"Your order number is {order.checkout.short_order_number}. "
+                       f"Thank you, {order.customer_info.name}!",
+                order=order,
+                is_complete=True,
+            )
+
+        if is_online and not is_in_store:
+            order.payment.method = "card_link"
+            return StateMachineResult(
+                message=f"Your order number is {order.checkout.short_order_number}. "
+                       f"Thank you, {order.customer_info.name}!",
+                order=order,
+                is_complete=True,
+                quick_replies=[
+                    {"label": "Pay online", "value": "pay online", "url": "__PAYMENT_URL__"},
+                ],
+            )
+
+        # Unrecognized — re-ask
+        return StateMachineResult(
+            message="Would you like to pay online or pay in store?",
+            order=order,
+            is_complete=False,
+            quick_replies=[
+                {"label": "Pay online", "value": "pay online", "url": "__PAYMENT_URL__"},
+                {"label": "Pay in store", "value": "pay in store"},
+            ],
         )
 
     def handle_repeat_order(

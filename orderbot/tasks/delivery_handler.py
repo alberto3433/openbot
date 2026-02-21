@@ -239,13 +239,18 @@ class DeliveryHandler(BaseHandler):
     ) -> StateMachineResult:
         """Handle transition after delivery address is captured.
 
-        Checks if we already have customer info and skips to confirmation if so.
+        Uses the slot orchestrator to determine the next step, which
+        respects required fields like email and phone.
         """
         if transition_callback:
             transition_callback(order)
 
-        # If we already have the customer name, skip to confirmation
-        if order.customer_info.name:
+        # Let the orchestrator determine the correct next step
+        orchestrator = SlotOrchestrator(order)
+        next_slot = orchestrator.get_next_slot()
+
+        if next_slot is None or next_slot.category == SlotCategory.ORDER_CONFIRM:
+            # All info collected — show order summary for confirmation
             order.set_phase(OrderPhase.CHECKOUT_CONFIRM)
             if self._message_builder:
                 summary = self._message_builder.build_order_summary(order)
@@ -254,7 +259,8 @@ class DeliveryHandler(BaseHandler):
                     order=order,
                 )
 
+        # Ask the next required question (name, email, phone, etc.)
         return StateMachineResult(
-            message=CheckoutMessages.NAME,
+            message=next_slot.question or CheckoutMessages.NAME,
             order=order,
         )

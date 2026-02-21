@@ -9,6 +9,7 @@ import re
 import logging
 
 from orderbot.cache import menu_cache
+from ...utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ def extract_modifiers_with_qualifiers(
         >>> extract_modifiers_with_qualifiers("light extra mayo", {"mayo"})
         ([], [("mayo", "light", "extra")])  # Conflict detected
     """
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Get qualifier patterns from database (sorted by length for longest match first)
     qualifier_patterns = menu_cache.get_qualifier_patterns()

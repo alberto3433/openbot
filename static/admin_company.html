@@ -319,6 +319,24 @@
 
     <!-- Tab 2: Business Settings -->
     <div id="tab-business-settings" class="tab-content">
+      <!-- Online Payment Processing Section -->
+      <div class="section">
+        <div class="section-header"><span class="section-icon"><i data-lucide="globe" style="width:16px;height:16px;vertical-align:middle;"></i></span>Online Payment Processing</div>
+        <div class="section-body">
+          <div class="hint" style="margin-bottom: 12px;">Select which service processes online card payments</div>
+          <div style="display: flex; gap: 16px;">
+            <label class="checkbox-item" style="cursor: pointer;">
+              <input type="radio" name="paymentProvider" id="providerStripe" value="stripe" checked />
+              <span>Stripe</span>
+            </label>
+            <label class="checkbox-item" style="cursor: pointer;">
+              <input type="radio" name="paymentProvider" id="providerSquare" value="square" />
+              <span>Square</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <!-- Payment Methods Section -->
       <div class="section">
         <div class="section-header"><span class="section-icon"><i data-lucide="credit-card" style="width:16px;height:16px;vertical-align:middle;"></i></span>Payment Methods</div>
@@ -608,6 +626,11 @@
       document.getElementById("feedbackFormUrl").value = data.feedback_form_url || "";
       document.getElementById("logoUrl").value = data.logo_url || "";
 
+      // Online payment provider
+      const provider = data.payment_provider || "stripe";
+      document.getElementById("providerStripe").checked = (provider === "stripe");
+      document.getElementById("providerSquare").checked = (provider === "square");
+
       // Payment methods
       document.getElementById("acceptsCreditCards").checked = data.accepts_credit_cards ?? true;
       document.getElementById("acceptsDebitCards").checked = data.accepts_debit_cards ?? true;
@@ -705,6 +728,9 @@
         instagram_handle: document.getElementById("instagramHandle").value.trim() || null,
         feedback_form_url: document.getElementById("feedbackFormUrl").value.trim() || null,
         logo_url: document.getElementById("logoUrl").value.trim() || null,
+
+        // Online payment provider
+        payment_provider: document.querySelector('input[name="paymentProvider"]:checked').value,
 
         // Payment methods
         accepts_credit_cards: document.getElementById("acceptsCreditCards").checked,

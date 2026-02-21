@@ -7,6 +7,7 @@ from orderbot.cache import menu_cache
 from orderbot.cache.base import singularize
 
 from ....schemas import OpenInputResponse
+from ....utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ def _passes_required_match_filter(item: dict, user_input: str) -> bool:
     user_input_lower = user_input.lower()
 
     # Parse comma-separated phrases and check if user input contains at least one
-    phrases = [p.strip().lower() for p in required_phrases.split(",") if p.strip()]
+    phrases = [normalize_text(p) for p in required_phrases.split(",") if p.strip()]
     return any(phrase in user_input_lower for phrase in phrases)
 
 
@@ -190,7 +191,7 @@ def parse_ingredient_search(
     if not ingredient_to_items:
         return None
 
-    text_lower = text.lower().strip()
+    text_lower = normalize_text(text)
 
     # Patterns that indicate ingredient search:
     # - "chicken" (standalone ingredient)

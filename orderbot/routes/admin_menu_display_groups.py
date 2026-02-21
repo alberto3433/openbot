@@ -20,6 +20,7 @@ Authentication:
 All endpoints require admin authentication via HTTP Basic Auth.
 """
 
+from ..cache.base import normalize_text
 from ..db.models import MenuDisplayGroup, MenuDisplayGroupAlias, ItemType, OverallCategory
 from ..exceptions import ReferentialIntegrityError, ValidationError
 from ..schemas.menu_display_groups import (
@@ -66,7 +67,7 @@ def _validate_aliases(aliases: list[str], db, exclude_group_id: int | None = Non
     """Validate and normalize aliases, checking for duplicates."""
     normalized = []
     for alias in aliases:
-        alias = alias.lower().strip()
+        alias = normalize_text(alias)
         if not alias:
             continue
         if alias in normalized:
@@ -87,7 +88,7 @@ def _validate_aliases(aliases: list[str], db, exclude_group_id: int | None = Non
 
 def _build_create_kwargs(payload, db):
     """Build model kwargs from create payload with normalization."""
-    slug = payload.slug.lower().strip()
+    slug = normalize_text(payload.slug)
     display_name = payload.display_name.strip()
 
     # Validate category ID if provided
@@ -127,7 +128,7 @@ def _handle_create_pre_commit(item, payload, db):
     """Add aliases after the group is created (has ID) but before commit."""
     if payload.aliases:
         for alias in payload.aliases:
-            alias = alias.lower().strip()
+            alias = normalize_text(alias)
             if alias:
                 db.add(MenuDisplayGroupAlias(
                     menu_display_group_id=item.id,
@@ -138,7 +139,7 @@ def _handle_create_pre_commit(item, payload, db):
 def _handle_before_update(item, payload, db):
     """Apply update payload to item."""
     if payload.slug is not None:
-        item.slug = payload.slug.lower().strip()
+        item.slug = normalize_text(payload.slug)
 
     if payload.display_name is not None:
         item.display_name = payload.display_name.strip()

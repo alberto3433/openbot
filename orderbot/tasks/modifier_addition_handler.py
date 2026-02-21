@@ -18,6 +18,7 @@ from .parsers.quantity_utils import extract_leading_quantity
 from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
 from .utils.option_matcher import OptionMatcher
+from .utils.text import normalize_text
 from .models.utilities import parse_pending_field
 from .config.attribute_resolver import get_unanswered_mandatory
 from .config_flow_utils import (
@@ -142,7 +143,7 @@ class ModifierAdditionHandler:
     ) -> MenuItemTask | None:
         """Find an order item matching a target description flexibly."""
         from .handler_utils import find_matching_item
-        return find_matching_item(suffix.lower().strip(), order.items.items)
+        return find_matching_item(normalize_text(suffix), order.items.items)
 
     def _find_item_accepting_modifier(
         self,

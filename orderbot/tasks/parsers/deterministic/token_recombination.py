@@ -12,6 +12,7 @@ import logging
 from orderbot.cache import menu_cache
 
 from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity
+from ...utils.text import normalize_text
 from .item_indicator import _has_item_indicator
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ def _is_demotable_to_modifier(token: "Token") -> bool:
     Returns:
         True if the token's text is also a known modifier
     """
-    text = token.original.lower().strip()
+    text = normalize_text(token.original)
     # Strip quantity prefix (e.g., "2 lox" -> "lox")
     _, remaining = _extract_leading_quantity(text)
     check_text = remaining if remaining else text

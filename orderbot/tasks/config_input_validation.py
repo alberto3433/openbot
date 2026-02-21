@@ -48,7 +48,7 @@ def detect_modifier_inquiry(user_input: str) -> str | None:
     """
     match = _MODIFIER_INQUIRY_PATTERN.search(user_input)
     if match:
-        category = match.group(1).strip().lower()
+        category = normalize_text(match.group(1))
         logger.debug("Detected modifier inquiry for category: %s", category)
         return category
     return None

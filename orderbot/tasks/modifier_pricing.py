@@ -123,5 +123,5 @@ class ModifierPricingCalculator:
             MenuDataNotLoadedError: If menu_data is not available or item_type doesn't exist
         """
         # Resolve database alias (e.g., "lox" -> "Nova Scotia Salmon")
-        canonical_name = menu_cache.normalize_modifier(modifier_name.lower().strip())
+        canonical_name = menu_cache.normalize_modifier(normalize_text(modifier_name))
         return self.lookup_generic_modifier_price(canonical_name, item_type)

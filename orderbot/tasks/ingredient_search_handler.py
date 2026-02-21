@@ -18,7 +18,7 @@ from .models.pending_states import PendingIngredientSearch
 from .pending_fields import PendingField
 from .schemas import StateMachineResult
 from .response_utils import is_affirmative
-from .utils.text import format_english_list
+from .utils.text import format_english_list, normalize_text
 from .order_detection import (
     looks_like_order_attempt,
     extract_order_item_name,
@@ -324,5 +324,5 @@ class IngredientSearchHandler:
         unrecognized_handler = self._parent._unrecognized_handler
         if not unrecognized_handler or not unrecognized_handler._db_session:
             return False
-        curated = unrecognized_handler._check_curated_suggestions(text.lower().strip())
+        curated = unrecognized_handler._check_curated_suggestions(normalize_text(text))
         return curated is not None

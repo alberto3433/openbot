@@ -43,6 +43,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
+from ..cache.base import normalize_text
 from ..db import get_db
 from ..exceptions import ResourceNotFoundError, ValidationError
 from .crud_helpers import build_create_kwargs, apply_payload_updates
@@ -258,7 +259,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
 
             # Normalize string values
             if isinstance(value, str):
-                value = value.lower().strip()
+                value = normalize_text(value)
 
             query = db.query(self.model).filter(
                 getattr(self.model, field) == value
@@ -446,9 +447,9 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
                     current_value = getattr(item, field, None)
                     # Normalize for comparison
                     if isinstance(new_value, str):
-                        new_value = new_value.lower().strip()
+                        new_value = normalize_text(new_value)
                     if isinstance(current_value, str):
-                        current_value = current_value.lower().strip()
+                        current_value = normalize_text(current_value)
                     # Only check if value is actually changing
                     if new_value != current_value:
                         check_unique(db, payload, exclude_id=item_id)
@@ -464,7 +465,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
                     if hasattr(item, field):
                         # Normalize string values for unique fields
                         if field in unique_fields and isinstance(value, str):
-                            value = value.lower().strip()
+                            value = normalize_text(value)
                         setattr(item, field, value)
 
             db.commit()

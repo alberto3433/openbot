@@ -196,11 +196,13 @@ class MenuItemAdder:
             side_slot = menu_cache.get_component_slot(category, SIDE_SLOT_NAME)
             order.pending_field = PendingField.SIDE_CHOICE
             # Use prompt text from DB or fallback
-            question = (
-                side_slot.get("prompt_text")
-                if side_slot
-                else f"What side would you like with your {canonical_name}?"
-            )
+            if side_slot and side_slot.get("prompt_text"):
+                question = side_slot["prompt_text"]
+            elif side_slot and side_slot.get("display_name"):
+                slot_label = side_slot["display_name"].lower()
+                question = f"What {slot_label} would you like with your {canonical_name}?"
+            else:
+                question = f"What would you like with your {canonical_name}?"
             # Build quick replies from component slot options (data-driven)
             side_options = menu_cache.get_component_slot_options(category, SIDE_SLOT_NAME)
             qr = [{"label": o.get("display_name", o.get("allowed_item_type", "")), "value": o.get("display_name", o.get("allowed_item_type", ""))} for o in side_options] if side_options else None
@@ -252,7 +254,7 @@ class MenuItemAdder:
 
         # If item not found, return error message using hybrid handler
         if not menu_item:
-            logger.warning("Side item not found: '%s' - rejecting", side_item_name)
+            logger.warning("Component item not found: '%s' - rejecting", side_item_name)
             message, _, _qr = self._parent._unrecognized_handler.get_not_found_response(
                 side_item_name, order=order
             )
@@ -277,7 +279,7 @@ class MenuItemAdder:
             item.mark_complete()  # Side items don't need configuration
             order.items.add_item(item)
 
-        logger.info("Added %d side item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
+        logger.info("Added %d component item(s): %s (price: $%.2f each)", quantity, canonical_name, price)
         return (canonical_name, None)
 
     def _apply_pending_ingredient(

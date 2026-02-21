@@ -6,6 +6,7 @@ Extracted from configuring_item_handler.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, TaskStatus
@@ -27,6 +28,50 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _option_matcher = OptionMatcher()
+
+# Pattern to strip leading exclamatory words before checking for generic selection intent
+_EXCLAMATION_PREFIX_RE = re.compile(
+    r'^(?:great|awesome|perfect|nice|cool|sweet|wonderful|excellent'
+    r'|oh|alright|sounds?\s+good|absolutely|definitely)\s*[,!.]\s*',
+    re.IGNORECASE,
+)
+
+# Words that indicate generic selection intent (not a specific item reference)
+_GENERIC_SELECTION_WORDS = frozenset({
+    "one", "that", "it", "this", "that one", "this one", "",
+})
+
+
+def _is_generic_selection_attempt(user_input: str) -> bool:
+    """Check if input is a generic selection attempt without specifying which option.
+
+    Detects patterns like "yes", "great, I'll take one", "I'll have that",
+    "give me one" where the user wants to select from shown options but
+    didn't specify which one.
+
+    Args:
+        user_input: Raw user input text.
+
+    Returns:
+        True if the input expresses generic selection intent.
+    """
+    from .response_utils import is_affirmative
+    from .normalization import strip_ordering_prefix
+
+    user_lower = normalize_text(user_input)
+
+    # Direct affirmative: "yes", "sure", "ok", "yeah"
+    if is_affirmative(user_lower):
+        return True
+
+    # Strip leading exclamatory word + punctuation ("great," -> "")
+    cleaned = _EXCLAMATION_PREFIX_RE.sub('', user_lower)
+
+    # Strip ordering prefix ("I'll take " -> "")
+    remainder = strip_ordering_prefix(cleaned).strip().rstrip(",.!? ")
+
+    # If what remains is a generic word, not a specific item reference
+    return remainder in _GENERIC_SELECTION_WORDS
 
 
 class ConfigSelectionHandler:
@@ -222,6 +267,21 @@ class ConfigSelectionHandler:
         )
 
         if not selected_item:
+            # Check if user is expressing generic selection intent without
+            # specifying which option (e.g., "yes", "great, I'll take one").
+            # Re-ask disambiguation instead of treating as a new order.
+            if _is_generic_selection_attempt(user_input):
+                options_str = format_numbered_list(options)
+                qr = [
+                    {"label": o.get("name", ""), "value": o.get("name", "")}
+                    for o in options if o.get("name")
+                ]
+                return StateMachineResult(
+                    message=f"Which one would you like?\n{options_str}",
+                    order=order,
+                    quick_replies=qr,
+                )
+
             # No match against shown items — the user may be placing a full order
             # instead of selecting from the list. Delegate to taking_items_handler
             # which will parse the input fresh and process any items found.

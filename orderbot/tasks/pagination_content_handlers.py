@@ -10,7 +10,6 @@ import logging
 from typing import Callable, TYPE_CHECKING
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import singularize
 
 from .models import OrderTask
 from .models.pending_states import PendingIngredientSearch
@@ -29,6 +28,76 @@ class PaginationContentHandlers:
 
     def __init__(self, parent: "MenuPaginationHandler"):
         self._parent = parent
+
+    # ------------------------------------------------------------------
+    # Shared pagination helper
+    # ------------------------------------------------------------------
+
+    def _paginate_and_respond(
+        self,
+        order: OrderTask,
+        items: list[str],
+        offset: int,
+        *,
+        pagination_base: dict,
+        empty_message: str,
+        more_message: str,
+        done_message: str,
+        qr_value_fn: Callable[[str], str] | None = None,
+        conjunction: str = "and",
+    ) -> StateMachineResult:
+        """Shared pagination logic for all 'show more' handlers.
+
+        Args:
+            order: Current order state.
+            items: Full list of item name strings.
+            offset: Current offset into items.
+            pagination_base: Base dict for pagination state (helper adds "offset").
+            empty_message: Message when no items remain.
+            more_message: Message template with ``{items}`` when more items exist.
+            done_message: Message template with ``{items}`` for last batch.
+            qr_value_fn: Optional transform for quick-reply values (default: name).
+            conjunction: Word joining last item ("and" or "or").
+        """
+        if not items or offset >= len(items):
+            order.clear_menu_pagination()
+            return StateMachineResult(message=empty_message, order=order)
+
+        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
+        remaining = len(items) - (offset + len(batch))
+        has_more = remaining > 0
+
+        if has_more:
+            if conjunction == "and":
+                items_str = ", ".join(batch) + f", and {remaining} more"
+            else:
+                items_str = (
+                    format_english_list(batch, conjunction=conjunction)
+                    + f", and {remaining} more"
+                )
+            order.menu_query_pagination = {
+                **pagination_base,
+                "offset": offset + DEFAULT_PAGINATION_SIZE,
+            }
+            message = more_message.format(items=items_str)
+        else:
+            items_str = format_english_list(batch, conjunction=conjunction)
+            order.clear_menu_pagination()
+            message = done_message.format(items=items_str)
+
+        # Build quick replies
+        if qr_value_fn:
+            qr = [{"label": name, "value": qr_value_fn(name)} for name in batch]
+        else:
+            qr = [{"label": name, "value": name} for name in batch]
+        if has_more:
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
+
+    # ------------------------------------------------------------------
+    # Handlers that do NOT use the shared helper
+    # ------------------------------------------------------------------
 
     def _handle_more_ingredient_search_items(
         self,
@@ -119,6 +188,10 @@ class PaginationContentHandlers:
             order=order,
         )
 
+    # ------------------------------------------------------------------
+    # Handlers that use the shared helper
+    # ------------------------------------------------------------------
+
     def _handle_more_modifier_items(
         self,
         category: str,
@@ -146,340 +219,118 @@ class PaginationContentHandlers:
         # Normalize items (same logic as store_info_handler)
         items_list = self._parent._normalize_modifier_items(items_set, category)
 
-        if not items_list or offset >= len(items_list):
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's all we have. Would you like anything?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items_list[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items_list) - (offset + len(batch))
-        has_more = remaining > 0
-
-        # Format the list
-        if has_more:
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]}, {batch[1]}"
-            else:
-                items_str = ", ".join(batch)
-            items_str += f", and {remaining} more"
-
-            # Update pagination for next "what else"
-            new_offset = offset + DEFAULT_PAGINATION_SIZE
-            order.set_menu_pagination(category, new_offset, len(items_list))
-        else:
-            # Last batch
-            items_str = format_english_list(batch)
-            order.clear_menu_pagination()
-
-        # Build response
-        if has_more:
-            message = f"We also have {items_str}. Would you like any of these?"
-        else:
-            message = f"We also have {items_str}. That's all we have. Would you like any?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
-        if has_more:
-            qr.append({"label": f"{remaining} more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+        return self._paginate_and_respond(
+            order, items_list, offset,
+            pagination_base={"category": category, "total_items": len(items_list)},
+            empty_message="That's all we have. Would you like anything?",
+            more_message="We also have {items}. Would you like any of these?",
+            done_message="We also have {items}. That's all we have. Would you like any?",
+        )
 
     def _handle_more_item_types(
         self,
         order: OrderTask,
         pagination: dict,
     ) -> StateMachineResult:
-        """Handle 'show more' for item type suggestions (from 'what do you recommend?').
-
-        Args:
-            order: Current order state
-            pagination: Pagination dict with "items" list and "offset"
-        """
+        """Handle 'show more' for item type suggestions (from 'what do you recommend?')."""
         items = pagination.get("items", [])
         offset = pagination.get("offset", 0)
 
-        if not items or offset >= len(items):
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's everything we have. What would you like to order?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items) - (offset + len(batch))
-        has_more = remaining > 0
-
-        # Format the list
-        if has_more:
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]}, {batch[1]}"
-            else:
-                items_str = ", ".join(batch)
-            items_str += f", and {remaining} more"
-
-            # Update pagination for next "what else"
-            new_offset = offset + DEFAULT_PAGINATION_SIZE
-            order.menu_query_pagination = {
-                "type": "item_types",
-                "items": items,
-                "offset": new_offset,
-            }
-        else:
-            # Last batch
-            items_str = format_english_list(batch)
-            order.clear_menu_pagination()
-
-        # Build response
-        if has_more:
-            message = f"We also have {items_str}. Would you like any of these?"
-        else:
-            message = f"We also have {items_str}. That's everything! What would you like?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": f"What {name.lower()} do you have?"} for name in batch]
-        if has_more:
-            qr.append({"label": f"{remaining} more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+        return self._paginate_and_respond(
+            order, items, offset,
+            pagination_base={"type": "item_types", "items": items},
+            empty_message="That's everything we have. What would you like to order?",
+            more_message="We also have {items}. Would you like any of these?",
+            done_message="We also have {items}. That's everything! What would you like?",
+            qr_value_fn=lambda n: f"What {n.lower()} do you have?",
+        )
 
     def _handle_more_attribute_options(
         self,
         order: OrderTask,
         pagination: dict,
     ) -> StateMachineResult:
-        """Handle 'show more' for attribute options (from 'what bagel types?' response).
-
-        Args:
-            order: Current order state
-            pagination: Pagination dict with "items" list, "offset", and attribute context
-        """
+        """Handle 'show more' for attribute options (from 'what bagel types?' response)."""
         items = pagination.get("items", [])
         offset = pagination.get("offset", 0)
         attr_display = pagination.get("attribute_display", "options")
-        item_type = pagination.get("item_type")
 
-        if not items or offset >= len(items):
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message=f"That's all the {attr_display} we have. Would you like to order something?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items) - (offset + len(batch))
-        has_more = remaining > 0
-
-        # Format the list
-        if has_more:
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]}, {batch[1]}"
-            else:
-                items_str = ", ".join(batch)
-            items_str += f", and {remaining} more"
-
-            # Update pagination for next "what else"
-            new_offset = offset + DEFAULT_PAGINATION_SIZE
-            order.menu_query_pagination = {
+        return self._paginate_and_respond(
+            order, items, offset,
+            pagination_base={
                 "type": "attribute_options",
                 "attribute_slug": pagination.get("attribute_slug"),
                 "attribute_display": attr_display,
-                "item_type": item_type,
+                "item_type": pagination.get("item_type"),
                 "items": items,
-                "offset": new_offset,
-            }
-        else:
-            # Last batch
-            items_str = format_english_list(batch)
-            order.clear_menu_pagination()
-
-        # Build response
-        if has_more:
-            message = f"We also have {items_str}. Would you like any of these?"
-        else:
-            message = f"We also have {items_str}. That's all the {attr_display} we have. Would you like any?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
-        if has_more:
-            qr.append({"label": f"{remaining} more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+            },
+            empty_message=f"That's all the {attr_display} we have. Would you like to order something?",
+            more_message="We also have {items}. Would you like any of these?",
+            done_message=f"We also have {{items}}. That's all the {attr_display} we have. Would you like any?",
+        )
 
     def _handle_more_dietary_items(
         self,
         order: OrderTask,
         pagination: dict,
     ) -> StateMachineResult:
-        """Handle 'show more' for dietary item results (from 'what vegan options?' response).
-
-        Args:
-            order: Current order state
-            pagination: Pagination dict with "items" list, "offset", and dietary context
-        """
+        """Handle 'show more' for dietary item results (from 'what vegan options?' response)."""
         items = pagination.get("items", [])
         offset = pagination.get("offset", 0)
         dietary_display = pagination.get("dietary_display", "dietary")
         category = pagination.get("category")
+        category_suffix = f" {category}" if category else " options"
 
-        if not items or offset >= len(items):
-            order.clear_menu_pagination()
-            category_suffix = f" {category}" if category else " options"
-            return StateMachineResult(
-                message=f"That's all the {dietary_display}{category_suffix} we have. Would you like to order something?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items) - (offset + len(batch))
-        has_more = remaining > 0
-
-        # Format the list
-        if has_more:
-            if len(batch) == 1:
-                items_str = batch[0]
-            elif len(batch) == 2:
-                items_str = f"{batch[0]}, {batch[1]}"
-            else:
-                items_str = ", ".join(batch)
-            items_str += f", and {remaining} more"
-
-            # Update pagination for next "what else"
-            new_offset = offset + DEFAULT_PAGINATION_SIZE
-            order.menu_query_pagination = {
+        return self._paginate_and_respond(
+            order, items, offset,
+            pagination_base={
                 "type": "dietary_items",
                 "dietary_type": pagination.get("dietary_type"),
                 "dietary_display": dietary_display,
                 "category": category,
                 "items": items,
-                "offset": new_offset,
-            }
-        else:
-            # Last batch
-            items_str = format_english_list(batch)
-            order.clear_menu_pagination()
-
-        # Build response
-        if has_more:
-            message = f"We also have {items_str}. Would you like any of these?"
-        else:
-            category_suffix = f" {category}" if category else " options"
-            message = f"We also have {items_str}. That's all the {dietary_display}{category_suffix} we have. Would you like any?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
-        if has_more:
-            qr.append({"label": f"{remaining} more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+            },
+            empty_message=f"That's all the {dietary_display}{category_suffix} we have. Would you like to order something?",
+            more_message="We also have {items}. Would you like any of these?",
+            done_message=f"We also have {{items}}. That's all the {dietary_display}{category_suffix} we have. Would you like any?",
+        )
 
     def _handle_more_availability_items(
         self,
         order: OrderTask,
         pagination: dict,
     ) -> StateMachineResult:
-        """Handle 'show more' for availability inquiry results.
-
-        Args:
-            order: Current order state
-            pagination: Pagination dict with "items" list and "offset"
-        """
+        """Handle 'show more' for availability inquiry results."""
         items = pagination.get("items", [])
         offset = pagination.get("offset", 0)
 
-        if not items or offset >= len(items):
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's everything we have. Would you like to order something?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items) - (offset + len(batch))
-        has_more = remaining > 0
-
-        if has_more:
-            items_str = ", ".join(batch) + f", and {remaining} more"
-            order.menu_query_pagination = {
-                "type": "availability_items",
-                "items": items,
-                "offset": offset + DEFAULT_PAGINATION_SIZE,
-            }
-        else:
-            items_str = format_english_list(batch)
-            order.clear_menu_pagination()
-
-        if has_more:
-            message = f"We also have {items_str}. Would you like any of these?"
-        else:
-            message = f"We also have {items_str}. That's all we have. Would you like any of these?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
-        if has_more:
-            qr.append({"label": f"{remaining} more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+        return self._paginate_and_respond(
+            order, items, offset,
+            pagination_base={"type": "availability_items", "items": items},
+            empty_message="That's everything we have. Would you like to order something?",
+            more_message="We also have {items}. Would you like any of these?",
+            done_message="We also have {items}. That's all we have. Would you like any of these?",
+        )
 
     def _handle_more_display_group_items(
         self,
         order: OrderTask,
         pagination: dict,
     ) -> StateMachineResult:
-        """Handle 'show more' for display group items (from 'can I get a sandwich?' response).
-
-        Args:
-            order: Current order state
-            pagination: Pagination dict with "items" list, "offset", and "display_group"
-        """
+        """Handle 'show more' for display group items (from 'can I get a sandwich?' response)."""
         items = pagination.get("items", [])
         offset = pagination.get("offset", 0)
         display_group = pagination.get("display_group", "items")
 
-        if not items or offset >= len(items):
-            order.clear_menu_pagination()
-            return StateMachineResult(
-                message="That's all we have. Would you like to order something?",
-                order=order,
-            )
-
-        # Get next batch
-        batch = items[offset:offset + DEFAULT_PAGINATION_SIZE]
-        remaining = len(items) - (offset + len(batch))
-        has_more = remaining > 0
-
-        # Format the list
-        items_str = format_english_list(batch, conjunction="or")
-
-        if has_more:
-            # Update pagination for next "what else"
-            new_offset = offset + DEFAULT_PAGINATION_SIZE
-            order.menu_query_pagination = {
+        return self._paginate_and_respond(
+            order, items, offset,
+            pagination_base={
                 "type": "display_group_items",
                 "display_group": display_group,
                 "items": items,
-                "offset": new_offset,
-            }
-            message = f"We also have {items_str}, and {remaining} more. Would you like any of these?"
-        else:
-            order.clear_menu_pagination()
-            message = f"We also have {items_str}. That's all we have. Would you like any of these?"
-
-        # Build quick replies for inline clickable text
-        qr = [{"label": name, "value": name} for name in batch]
-        if has_more:
-            qr.append({"label": f"{remaining} more", "value": "what else?"})
-
-        return StateMachineResult(message=message, order=order, quick_replies=qr)
+            },
+            empty_message="That's all we have. Would you like to order something?",
+            more_message="We also have {items}. Would you like any of these?",
+            done_message="We also have {items}. That's all we have. Would you like any of these?",
+            conjunction="or",
+        )

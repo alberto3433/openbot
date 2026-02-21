@@ -192,7 +192,7 @@ def find_or_create_customer(
 def _ensure_stripe_customer(customer: Customer) -> None:
     """Create a Stripe Customer if not already linked. Best-effort, never raises."""
     try:
-        from ..stripe_service import create_or_get_stripe_customer
+        from .stripe_service import create_or_get_stripe_customer
         stripe_id = create_or_get_stripe_customer(
             email=customer.email, name=customer.name, phone=customer.phone,
         )

@@ -14,7 +14,7 @@ from typing import Callable, TYPE_CHECKING
 from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending_field
 from .schemas import OrderPhase, StateMachineResult
 from .utils.text import format_english_list
-from .checkout_messages import got_it_anything_else, CheckoutMessages
+from .checkout_messages import got_it_anything_else, CheckoutMessages, CONFIRM_QUICK_REPLIES
 from ..cache import menu_cache
 
 if TYPE_CHECKING:
@@ -276,6 +276,7 @@ class CheckoutUtilsHandler:
             return StateMachineResult(
                 message=f"{summary}\n\nDoes that look right?",
                 order=order,
+                quick_replies=CONFIRM_QUICK_REPLIES,
             )
         elif order.phase == OrderPhase.CHECKOUT_DELIVERY.value:
             # Handle CHECKOUT_DELIVERY phase - could be asking for order type OR address

@@ -72,6 +72,10 @@ MID_SENTENCE_HESITATION_FILLERS = frozenset({
     "please",
     # Discourse markers - safe mid-sentence, never appear in food names
     "basically", "honestly", "literally",
+    # Vocatives / address terms - never appear in food names
+    "sir", "ma'am", "madam", "dude", "man",
+    "bro", "bruh", "boss", "buddy", "bud",
+    "mate", "chief", "pal", "fam",
 })
 
 # Category 1: HESITATION_FILLERS - Strip from START of input only

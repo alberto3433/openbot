@@ -63,7 +63,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
-from ..tts import get_tts_provider
+from ..services.tts import get_tts_provider
 
 
 logger = logging.getLogger(__name__)

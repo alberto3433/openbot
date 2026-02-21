@@ -15,9 +15,9 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from .db.models import NotificationLog, Order
+from ..db.models import NotificationLog, Order
 from .email_service import send_payment_link_email, is_email_configured
-from .schemas.enums import NotificationStatus
+from ..schemas.enums import NotificationStatus
 from .sms_service import send_sms, is_sms_configured
 
 logger = logging.getLogger(__name__)
@@ -162,7 +162,7 @@ def _send_simple_email(
 ) -> None:
     """Send a simple text email via AWS SES and log the result."""
     from email.mime.text import MIMEText
-    from .config import AWS_SES_FROM_EMAIL
+    from ..config import AWS_SES_FROM_EMAIL
     from .email_service import _get_ses_client
 
     client = _get_ses_client()

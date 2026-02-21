@@ -21,15 +21,10 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..db.models import Company
+from .store_service import get_company
 
 
 logger = logging.getLogger(__name__)
-
-
-def _get_company(db: Session) -> Company | None:
-    """Get company record."""
-    return db.query(Company).first()
 
 
 def create_payment_url(
@@ -59,7 +54,7 @@ def create_payment_url(
             return None
 
         # Check company payment provider setting
-        company = _get_company(db)
+        company = get_company(db)
         provider = getattr(company, "payment_provider", "stripe") if company else "stripe"
 
         if provider == "square":
@@ -150,7 +145,7 @@ def create_stripe_session(
         is not configured or creation fails.
     """
     try:
-        from ..stripe_service import create_checkout_session, is_stripe_configured
+        from .stripe_service import create_checkout_session, is_stripe_configured
         if not is_stripe_configured():
             return None
 
@@ -240,7 +235,7 @@ def send_in_store_receipt(
         customer_email: Customer email address
     """
     try:
-        from ..email_service import send_receipt_email, is_email_configured
+        from .email_service import send_receipt_email, is_email_configured
         if not is_email_configured():
             return
 
@@ -248,7 +243,7 @@ def send_in_store_receipt(
         if not db_order_id:
             return
 
-        company = _get_company(db)
+        company = get_company(db)
         store_name = company.name if company else "OrderBot"
 
         items = order_state.get("items", [])

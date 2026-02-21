@@ -130,11 +130,13 @@ def strip_conversational_fillers(text: str) -> str:
     result = re.sub(r'\b(?:so|also)\b', ' ', result, flags=re.IGNORECASE)
     result = re.sub(r'\s+', ' ', result).strip()
 
-    # Strip trailing courtesy phrases like "thank you", "thanks", "and thank you"
+    # Strip trailing courtesy phrases and vocatives like "thank you", "thanks", "sir", "man"
     # This runs after mid-sentence "please" is already stripped, so:
     # "...Iced Tea please please and thank you" → "...Iced Tea and thank you" → "...Iced Tea"
     result = re.sub(
-        r'(?:[,\s]+(?:and\s+)?(?:thank\s+you|thanks|thx|please))+\s*$',
+        r'(?:[,\s]+(?:and\s+)?(?:thank\s+you|thanks|thx|please'
+        r"|sir|ma'am|madam|dude|man|bro|bruh|boss|buddy|bud|mate|chief|pal|fam"
+        r'))+\s*$',
         '', result, flags=re.IGNORECASE
     ).strip()
 

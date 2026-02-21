@@ -12,6 +12,7 @@ import re
 from typing import Callable, TYPE_CHECKING
 
 from ..cache.base import pluralize
+from .checkout_messages import CONFIRM_QUICK_REPLIES
 from .checkout_utils_handler import _PICKUP_DELIVERY_QR
 from .models import (
     OrderTask,
@@ -133,6 +134,7 @@ class OrderUtilsHandler:
             return StateMachineResult(
                 message=f"You already have {current_count} in your order.\n\n{summary}\n\nDoes that look right?",
                 order=order,
+                quick_replies=CONFIRM_QUICK_REPLIES,
             )
 
         # Add copies of the first matching item
@@ -163,6 +165,7 @@ class OrderUtilsHandler:
         return StateMachineResult(
             message=f"Got it, {target_quantity} {item_display}.\n\n{summary}\n\nDoes that look right?",
             order=order,
+            quick_replies=CONFIRM_QUICK_REPLIES,
         )
 
     def handle_tax_question(self, order: OrderTask) -> StateMachineResult:
@@ -176,9 +179,11 @@ class OrderUtilsHandler:
         # Format response
         if taxes.total > 0:
             message = f"Your subtotal is ${subtotal:.2f}. With tax, that comes to ${total_with_tax:.2f}. Does that look right?"
+            quick_replies = CONFIRM_QUICK_REPLIES
         else:
             # No tax configured - just show the subtotal
             message = f"Your total is ${subtotal:.2f}. Does that look right?"
+            quick_replies = CONFIRM_QUICK_REPLIES
 
         logger.info("TAX_QUESTION: subtotal=%.2f, city_tax=%.2f, state_tax=%.2f, total=%.2f",
                    subtotal, taxes.city_tax, taxes.state_tax, total_with_tax)
@@ -186,6 +191,7 @@ class OrderUtilsHandler:
         return StateMachineResult(
             message=message,
             order=order,
+            quick_replies=quick_replies,
         )
 
     def handle_order_status(self, order: OrderTask) -> StateMachineResult:

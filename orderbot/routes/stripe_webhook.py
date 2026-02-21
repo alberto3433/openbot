@@ -21,8 +21,9 @@ from sqlalchemy.orm import Session
 
 from ..config import STRIPE_WEBHOOK_SECRET
 from ..db import get_db
-from ..db.models import Order, Company
+from ..db.models import Order
 from ..schemas.enums import OrderStatus, PaymentStatus
+from ..services.store_service import get_company
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ def _handle_checkout_expired(session_data: dict, db: Session) -> None:
 
 def _build_email_kwargs(db: Session, order: Order) -> dict:
     """Build common email kwargs from an Order and its items."""
-    company = db.query(Company).first()
+    company = get_company(db)
     store_name = company.name if company else "OrderBot"
 
     items_list = []
@@ -197,7 +198,7 @@ def _send_receipt_for_order(db: Session, order: Order) -> None:
         return
 
     try:
-        from ..email_service import send_receipt_email
+        from ..services.email_service import send_receipt_email
 
         kwargs = _build_email_kwargs(db, order)
         send_receipt_email(**kwargs)
@@ -213,8 +214,8 @@ def _send_expired_link_for_order(db: Session, order: Order) -> None:
         return
 
     try:
-        from ..email_service import send_payment_expired_email
-        from ..stripe_service import create_checkout_session, is_stripe_configured
+        from ..services.email_service import send_payment_expired_email
+        from ..services.stripe_service import create_checkout_session, is_stripe_configured
         from ..services.order import update_order_stripe_session
 
         # Create a fresh Stripe checkout session

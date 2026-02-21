@@ -52,6 +52,7 @@ from ..schemas.modifiers import (
 )
 from ..schemas.serializers import serialize_item_type
 from .crud_factory import CRUDRouterFactory
+from .crud_helpers import apply_payload_updates
 
 
 logger = logging.getLogger(__name__)
@@ -95,10 +96,10 @@ def _handle_before_update(
     db: Session,
 ) -> None:
     """Apply update payload to item."""
-    if payload.slug is not None:
-        item.slug = payload.slug
-    if payload.display_name is not None:
-        item.display_name = payload.display_name
+    apply_payload_updates(
+        item, payload, db,
+        skip_fields={"aliases", "menu_display_group_id"},
+    )
     if payload.menu_display_group_id is not None:
         # Validate display group ID
         display_group = db.query(MenuDisplayGroup).filter(

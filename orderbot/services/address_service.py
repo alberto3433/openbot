@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import requests
 
-from orderbot.config import HTTP_REQUEST_TIMEOUT
+from ..config import HTTP_REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
 

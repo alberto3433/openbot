@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from orderbot.cache.base import normalize_text
 from orderbot.db.models import (
-    Company,
     Ingredient,
     ItemType,
     MenuItem,
     ModifierCategory,
     NeighborhoodZipCode,
 )
+from orderbot.services.store_service import get_company
 
 from .preloaders import (
     preload_global_attribute_options,
@@ -405,7 +405,7 @@ def build_company_info(db: Session) -> dict[str, Any]:
             "feedback_form_url": "https://survey.example.com/feedback"
         }
     """
-    company = db.query(Company).first()
+    company = get_company(db)
 
     if not company:
         return {}

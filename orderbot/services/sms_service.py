@@ -15,7 +15,7 @@ Environment variables:
 
 import logging
 
-from .config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SNS_FROM_NUMBER
+from ..config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SNS_FROM_NUMBER
 
 logger = logging.getLogger(__name__)
 

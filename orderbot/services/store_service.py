@@ -25,6 +25,7 @@ from .store_hours import parse_hours_config, is_store_open_now, get_next_open_ti
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "get_company",
     "get_or_create_company",
     "build_store_info",
     "invalidate_store_cache",
@@ -42,6 +43,11 @@ _STORE_CACHE_TTL = 300  # 5 minutes
 _store_cache_lock = threading.Lock()
 
 
+def get_company(db: Session) -> Company | None:
+    """Get the company record, or None if not configured."""
+    return db.query(Company).first()
+
+
 def get_or_create_company(db: Session) -> Company:
     """
     Get the company record or create a default one if none exists.
@@ -57,7 +63,7 @@ def get_or_create_company(db: Session) -> Company:
     Returns:
         The existing or newly created Company record
     """
-    company = db.query(Company).first()
+    company = get_company(db)
     if not company:
         company = Company(
             name="OrderBot Restaurant",
@@ -107,7 +113,7 @@ def build_store_info(
 
         # Get company name if not provided
         if not company_name:
-            company = db.query(Company).first()
+            company = get_company(db)
             company_name = company.name if company else "OrderBot"
 
         store_info = {

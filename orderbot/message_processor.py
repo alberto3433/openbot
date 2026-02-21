@@ -27,7 +27,7 @@ from .schemas.enums import OrderStatus
 from .tasks.state_machine_adapter import process_message_with_state_machine
 from .services.customer_service import lookup_customer_by_phone
 from .services.payment_service import create_payment_url, send_in_store_receipt
-from .services.store_service import build_store_info
+from .services.store_service import build_store_info, get_company
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +297,7 @@ class MessageProcessor:
     def _get_company(self) -> Company | None:
         """Get or cache company info."""
         if self._company is None:
-            self._company = self.db.query(Company).first()
+            self._company = get_company(self.db)
         return self._company
 
     def _get_random_store_id(self) -> str:

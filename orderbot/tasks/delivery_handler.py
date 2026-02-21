@@ -8,14 +8,14 @@ extracted from checkout_handler.py for better separation of concerns.
 import logging
 from typing import TYPE_CHECKING
 
-from .checkout_messages import CheckoutMessages
+from .checkout_messages import CheckoutMessages, CONFIRM_QUICK_REPLIES
 from .checkout_utils_handler import _PICKUP_DELIVERY_QR
 from .pending_fields import PendingField
 from .models import OrderTask
 from .schemas import OrderPhase, StateMachineResult
 from .slot_orchestrator import SlotOrchestrator, SlotCategory
 from .parsers.validators import parse_delivery_choice_deterministic
-from ..address_service import complete_address
+from ..services.address_service import complete_address
 from .handler_config import BaseHandler
 from .utils.text import normalize_text
 
@@ -257,6 +257,7 @@ class DeliveryHandler(BaseHandler):
                 return StateMachineResult(
                     message=f"{summary}\n\nDoes that look right?",
                     order=order,
+                    quick_replies=CONFIRM_QUICK_REPLIES,
                 )
 
         # Ask the next required question (name, email, phone, etc.)

@@ -15,7 +15,7 @@ import logging
 import time
 from typing import Any
 
-from .config import STRIPE_SECRET_KEY, STRIPE_CHECKOUT_EXPIRY_SECONDS, BASE_URL
+from ..config import STRIPE_SECRET_KEY, STRIPE_CHECKOUT_EXPIRY_SECONDS, BASE_URL
 
 logger = logging.getLogger(__name__)
 

@@ -189,12 +189,12 @@ orderbot/db.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
-orderbot/email_service.py:
+orderbot/services/email_service.py:
   - term: plain
     context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
+    reason: "MIME type parameter for MIMEText, not a food term"
 
-orderbot/notification_service.py:
+orderbot/services/notification_service.py:
   - term: plain
     context: all
     reason: "MIME type parameter for MIMEText, not a food term"
@@ -1705,13 +1705,13 @@ orderbot/tasks/taking_items_handler.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
-orderbot/tts.py:
+orderbot/services/tts.py:
   - term: nova
     context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
+    reason: "TTS voice name (OpenAI), not a food term"
   - term: side
     context: all
-    reason: "Legacy code - TODO: refactor to data-driven"
+    reason: "TTS provider parameter, not a food term"
 
 orderbot/voice_vapi.py:
   - term: bagels

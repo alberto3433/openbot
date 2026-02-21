@@ -237,7 +237,7 @@ class StoreInfoHandler(MenuDataMixin):
         # Check if it looks like an address (has numbers suggesting a street address)
         if re.search(r'\d+\s+\w+', query):
             # Try to geocode the address to get a zip code
-            from ..address_service import geocode_to_zip
+            from ..services.address_service import geocode_to_zip
             zip_code = geocode_to_zip(query)
             if zip_code:
                 logger.info("Geocoded '%s' to zip code: %s", query, zip_code)

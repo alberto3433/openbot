@@ -137,10 +137,10 @@ def _send_transition_notifications(db: Session, order: Order, new_status: str) -
     Best-effort: failures are logged but don't block the transition.
     """
     try:
-        from ..notification_service import notify_order_ready, notify_order_cancelled
-        from ..db.models import Company
+        from .notification_service import notify_order_ready, notify_order_cancelled
+        from .store_service import get_company
 
-        company = db.query(Company).first()
+        company = get_company(db)
         store_name = company.name if company else "OrderBot"
 
         if new_status == OrderStatus.READY:

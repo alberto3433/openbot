@@ -6,6 +6,9 @@ Import from here instead of hardcoding strings in handlers.
 """
 
 
+CONFIRM_QUICK_REPLIES = [{"label": "right", "value": "yes"}]
+
+
 class CheckoutMessages:
     """Standard messages for the checkout flow."""
 

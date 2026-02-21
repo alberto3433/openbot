@@ -4,7 +4,7 @@ Tests for the address completion service.
 
 from unittest.mock import patch, MagicMock
 
-from orderbot.address_service import (
+from orderbot.services.address_service import (
     complete_address,
     CompletedAddress,
     AddressCompletionResult,

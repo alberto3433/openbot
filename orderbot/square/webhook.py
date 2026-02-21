@@ -24,8 +24,9 @@ from sqlalchemy.orm import Session
 
 from ..config import SQUARE_WEBHOOK_SIGNATURE_KEY
 from ..db import get_db
-from ..db.models import Order, Company
+from ..db.models import Order
 from ..schemas.enums import PaymentStatus, SquareOrderStatus
+from ..services.store_service import get_company
 from ..services.order import InvalidStatusTransition
 
 logger = logging.getLogger(__name__)
@@ -219,11 +220,11 @@ def _send_receipt_for_order(db: Session, order: Order) -> None:
         return
 
     try:
-        from ..email_service import send_receipt_email, is_email_configured
+        from ..services.email_service import send_receipt_email, is_email_configured
         if not is_email_configured():
             return
 
-        company = db.query(Company).first()
+        company = get_company(db)
         store_name = company.name if company else "OrderBot"
 
         items_list = []

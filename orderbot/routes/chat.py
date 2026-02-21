@@ -389,7 +389,7 @@ def report_session(
 
     Sends an email with session details to the review team.
     """
-    from ..email_service import send_report_email
+    from ..services.email_service import send_report_email
 
     session = get_or_create_session(db, payload.session_id)
     if session is None:

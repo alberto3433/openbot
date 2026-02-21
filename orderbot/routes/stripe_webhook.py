@@ -61,7 +61,7 @@ async def handle_stripe_webhook(
     except ValueError:
         logger.warning("Invalid webhook payload")
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except (KeyError, TypeError, RuntimeError) as e:
+    except Exception as e:
         logger.warning("Webhook signature verification failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid signature")
 

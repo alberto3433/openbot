@@ -10,6 +10,7 @@ is interpreted in the context of that item - no new items can be created.
 """
 
 import logging
+import re
 
 from .models import (
     OrderTask,
@@ -533,6 +534,24 @@ class OrderStateMachine:
                 order.add_message("assistant", change_result.message)
                 return change_result
 
+        # Check for scheduling change request (e.g., "change pickup time")
+        if re.search(
+            r'\b(?:change|update|modify|set|edit)\s+(?:pickup|delivery|order)?\s*time\b',
+            user_input, re.IGNORECASE,
+        ):
+            return self._handle_scheduling_change_request(order)
+
+        # Check for "choose a time" response from scheduling quick replies
+        if re.search(
+            r'\bchoose\s+a?\s*(?:specific\s+)?time\b', user_input, re.IGNORECASE,
+        ):
+            msg = (
+                'Sure! Just tell me the time \u2014 for example, '
+                '"3pm", "tomorrow at noon", or "in 2 hours".'
+            )
+            order.add_message("assistant", msg)
+            return StateMachineResult(message=msg, order=order)
+
         # Check for time/scheduling expressions (e.g., "pickup at 3pm")
         # Only when input doesn't look like an item order (to avoid consuming
         # "everything bagel for pickup at 3pm" as just a scheduling request)
@@ -730,6 +749,27 @@ class OrderStateMachine:
         return StateMachineResult(
             message=f"Got it, your order will be scheduled for {day_part} at {display_time}. What can I get you?",
             order=order,
+        )
+
+    def _handle_scheduling_change_request(
+        self,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle a request to change pickup/delivery time.
+
+        Returns a question with quick reply options for scheduling.
+        """
+        msg = "When would you like your order ready?"
+        order.add_message("assistant", msg)
+        return StateMachineResult(
+            message=msg,
+            order=order,
+            quick_replies=[
+                {"label": "As soon as possible", "value": "as soon as possible"},
+                {"label": "In 30 minutes", "value": "in 30 minutes"},
+                {"label": "In 1 hour", "value": "in 1 hour"},
+                {"label": "Choose a time", "value": "I'd like to choose a specific time"},
+            ],
         )
 
     def _handle_id_based_removal(

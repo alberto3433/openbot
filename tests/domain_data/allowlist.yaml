@@ -734,6 +734,11 @@ orderbot/services/order.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/services/order_lifecycle.py:
+  - term: toast
+    context: all
+    reason: "Toast POS - software vendor, not food term"
+
 orderbot/services/session.py:
   - term: side
     context: all

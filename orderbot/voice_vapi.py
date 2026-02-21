@@ -21,7 +21,6 @@ from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from .db import get_db
@@ -47,56 +46,8 @@ _phone_sessions: dict[str, dict[str, Any]] = {}
 PHONE_SESSION_TTL_SECONDS = int(os.getenv("VAPI_SESSION_TTL", "1800"))  # 30 minutes default
 
 
-# ----- Pydantic Models for Vapi Request/Response -----
-
-class VapiMessage(BaseModel):
-    """OpenAI-compatible message format."""
-    role: str
-    content: str
-
-
-class VapiCallCustomer(BaseModel):
-    """Customer info from Vapi call object."""
-    number: str | None = None
-    name: str | None = None
-
-
-class VapiCall(BaseModel):
-    """Vapi call object with metadata."""
-    id: str | None = None
-    customer: VapiCallCustomer | None = None
-
-
-class VapiChatCompletionRequest(BaseModel):
-    """
-    OpenAI-compatible chat completion request from Vapi.
-
-    Vapi sends this format when using Custom LLM integration.
-    """
-    model_config = ConfigDict(extra="allow")  # Allow additional fields from Vapi
-
-    model: str | None = "gpt-4"
-    messages: list[VapiMessage] = Field(default_factory=list)
-    stream: bool = False
-    temperature: float | None = None
-    max_tokens: int | None = None
-    # Vapi-specific fields
-    call: VapiCall | None = None
-
-
-class VapiWebhookMessage(BaseModel):
-    """Vapi webhook message wrapper."""
-    model_config = ConfigDict(extra="allow")  # Additional fields vary by message type
-
-    type: str
-    call: dict[str, Any] | None = None
-    artifact: dict[str, Any] | None = None
-    endedReason: str | None = None
-
-
-class VapiWebhookRequest(BaseModel):
-    """Vapi webhook request envelope."""
-    message: VapiWebhookMessage
+# Pydantic models for Vapi request/response (see orderbot/schemas/vapi.py)
+from .schemas.vapi import VapiChatCompletionRequest, VapiWebhookRequest  # noqa: F401
 
 
 # ----- Session Management -----

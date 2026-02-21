@@ -66,9 +66,18 @@ _ASAP_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Relative time: "in 2 hours", "in 30 minutes", "in an hour"
+# Word-number mapping for relative time expressions
+_WORD_NUMBERS: dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40,
+    "forty-five": 45, "forty five": 45, "ninety": 90,
+}
+
+# Relative time: "in 2 hours", "in 30 minutes", "in an hour", "in one hour"
+_WORD_NUM_ALTS = "|".join(_WORD_NUMBERS.keys())
 _RELATIVE_RE = re.compile(
-    r"\bin\s+(?:(?:an?|(\d+))\s+)?(hours?|minutes?|mins?|hrs?)\b",
+    r"\bin\s+(?:(?:an?|(\d+)|(" + _WORD_NUM_ALTS + r"))\s+)?(hours?|minutes?|mins?|hrs?)\b",
     re.IGNORECASE,
 )
 
@@ -218,8 +227,13 @@ def parse_time_expression(
     # 4. Relative time: "in 2 hours", "in 30 minutes"
     m = _RELATIVE_RE.search(text)
     if m:
-        qty_str, unit = m.groups()
-        qty = int(qty_str) if qty_str else 1
+        digit_str, word_str, unit = m.groups()
+        if digit_str:
+            qty = int(digit_str)
+        elif word_str:
+            qty = _WORD_NUMBERS.get(word_str.lower(), 1)
+        else:
+            qty = 1  # "in an hour" / "in a minute"
         unit_lower = unit.lower()
         if unit_lower.startswith("h"):
             delta = timedelta(hours=qty)

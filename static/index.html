@@ -1053,6 +1053,21 @@
       height: 16px;
     }
 
+    .order-type-badge .scheduling-separator {
+      opacity: 0.5;
+    }
+
+    .order-type-badge .scheduling-time {
+      cursor: pointer;
+      border-bottom: 1px dashed currentColor;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+    }
+
+    .order-type-badge .scheduling-time:hover {
+      opacity: 1;
+    }
+
     /* Empty State */
     .order-empty {
       text-align: center;
@@ -1492,9 +1507,11 @@
         Your Order
       </div>
       <div class="order-panel-body" id="order-panel-body">
-        <div class="order-type-badge" id="order-type-badge" style="display: none;">
+        <div class="order-type-badge" id="order-type-badge">
           <span class="icon" id="order-type-icon"></span>
           <span id="order-type-text">Pickup</span>
+          <span class="scheduling-separator">·</span>
+          <span class="scheduling-time" id="scheduling-time" title="Change pickup time">Now</span>
         </div>
         <div class="order-empty" id="order-empty">
           <div class="icon"><i data-lucide="shopping-bag"></i></div>
@@ -1851,6 +1868,11 @@
       messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+
+    // Click handler for scheduling time badge
+    document.getElementById("scheduling-time").addEventListener("click", function() {
+      sendMessage("change pickup time");
+    });
 
     // Event delegation for inline quick reply clicks
     messagesEl.addEventListener("click", function(e) {
@@ -2696,11 +2718,13 @@
       orderItemsContainer.style.display = hasItems ? "block" : "none";
       orderPanelFooter.style.display = hasItems ? "block" : "none";
 
-      // Show order type badge regardless of whether items exist
+      // Show order type badge — always visible for scheduling access
       const orderType = state.order_type;
+      const schedulingTime = document.getElementById("scheduling-time");
+      const schedulingSep = orderTypeBadge.querySelector(".scheduling-separator");
+      const orderTypeIcon = document.getElementById("order-type-icon");
+      orderTypeBadge.style.display = "inline-flex";
       if (orderType) {
-        orderTypeBadge.style.display = "inline-flex";
-        const orderTypeIcon = document.getElementById("order-type-icon");
         if (orderType === "delivery") {
           orderTypeBadge.classList.add("delivery");
           updateLucideIcon(orderTypeIcon, "truck");
@@ -2710,9 +2734,16 @@
           updateLucideIcon(orderTypeIcon, "store");
           orderTypeText.textContent = "Pickup";
         }
+        schedulingSep.style.display = "";
       } else {
-        orderTypeBadge.style.display = "none";
+        orderTypeBadge.classList.remove("delivery");
+        updateLucideIcon(orderTypeIcon, "clock");
+        orderTypeText.textContent = "";
+        schedulingSep.style.display = "none";
       }
+      // Update scheduling time display (always visible)
+      const display = (state.scheduling && state.scheduling.pickup_time_display) || "Now";
+      schedulingTime.textContent = display;
 
       if (!hasItems) {
         mobileCartSummary.textContent = "Cart empty";

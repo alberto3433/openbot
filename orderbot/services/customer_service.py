@@ -23,6 +23,13 @@ from .helpers import build_order_items_summary
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "find_or_create_customer",
+    "lookup_customer_by_phone",
+    "lookup_customer_order_history",
+    "get_order_by_id",
+]
+
 _PHONE_STRIP_CHARS = ["-", " ", "(", ")"]
 
 

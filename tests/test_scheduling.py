@@ -283,6 +283,27 @@ class TestTimeParser:
         diff = result.time_value - now
         assert 0.9 * 3600 <= diff.total_seconds() <= 1.1 * 3600
 
+    def test_in_one_hour(self):
+        result = parse_time_expression("in one hour")
+        assert result is not None
+        now = datetime.now(ZoneInfo("America/New_York"))
+        diff = result.time_value - now
+        assert 0.9 * 3600 <= diff.total_seconds() <= 1.1 * 3600
+
+    def test_in_two_hours(self):
+        result = parse_time_expression("in two hours")
+        assert result is not None
+        now = datetime.now(ZoneInfo("America/New_York"))
+        diff = result.time_value - now
+        assert 1.9 * 3600 <= diff.total_seconds() <= 2.1 * 3600
+
+    def test_in_forty_five_minutes(self):
+        result = parse_time_expression("in forty-five minutes")
+        assert result is not None
+        now = datetime.now(ZoneInfo("America/New_York"))
+        diff = result.time_value - now
+        assert 44 * 60 <= diff.total_seconds() <= 46 * 60
+
     def test_tomorrow_at_time(self):
         result = parse_time_expression("tomorrow at 3pm")
         assert result is not None
@@ -453,3 +474,55 @@ class TestOrderSummaryScheduling:
 
         summary = builder.build_order_summary(order)
         assert "Scheduled for:" not in summary
+
+
+# =============================================================================
+# Test Scheduling UI Triggers (State Machine)
+# =============================================================================
+
+class TestSchedulingUITriggers:
+    """Test that scheduling change requests trigger the correct state machine responses."""
+
+    def test_change_pickup_time_triggers_question(self, order_and_sm):
+        """Send 'change pickup time' → returns question with quick replies."""
+        order, sm = order_and_sm
+        result = sm.process("change pickup time", order)
+        assert "when would you like" in result.message.lower()
+        assert result.quick_replies is not None
+        assert len(result.quick_replies) == 4
+        labels = [qr["label"] for qr in result.quick_replies]
+        assert "As soon as possible" in labels
+        assert "In 30 minutes" in labels
+        assert "In 1 hour" in labels
+        assert "Choose a time" in labels
+
+    def test_change_delivery_time_triggers_question(self, order_and_sm):
+        """'change delivery time' should also trigger scheduling question."""
+        order, sm = order_and_sm
+        result = sm.process("change delivery time", order)
+        assert "when would you like" in result.message.lower()
+        assert result.quick_replies is not None
+
+    def test_set_pickup_time_triggers_question(self, order_and_sm):
+        """'set pickup time' should trigger scheduling question."""
+        order, sm = order_and_sm
+        result = sm.process("set pickup time", order)
+        assert "when would you like" in result.message.lower()
+        assert result.quick_replies is not None
+
+    def test_choose_a_time_response(self, order_and_sm):
+        """Send "I'd like to choose a specific time" → returns instruction message."""
+        order, sm = order_and_sm
+        result = sm.process("I'd like to choose a specific time", order)
+        assert "tell me the time" in result.message.lower()
+        assert "3pm" in result.message.lower() or "3pm" in result.message
+
+    def test_scheduling_quick_replies_format(self, order_and_sm):
+        """Verify quick reply format matches [{label, value}] structure."""
+        order, sm = order_and_sm
+        result = sm.process("change pickup time", order)
+        for qr in result.quick_replies:
+            assert "label" in qr, f"Quick reply missing 'label': {qr}"
+            assert "value" in qr, f"Quick reply missing 'value': {qr}"
+            assert isinstance(qr["label"], str)
+            assert isinstance(qr["value"], str)

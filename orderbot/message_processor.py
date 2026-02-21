@@ -26,9 +26,12 @@ from .cache import menu_cache
 from .schemas.enums import OrderStatus
 from .tasks.state_machine_adapter import process_message_with_state_machine
 from .services.customer_service import lookup_customer_by_phone
+from .services.payment_service import create_payment_url, send_in_store_receipt
 from .services.store_service import build_store_info
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["MessageProcessor", "ProcessingContext", "ProcessingResult"]
 
 
 # -----------------------------------------------------------------------------
@@ -185,11 +188,11 @@ class MessageProcessor:
         # When Square is the payment provider, skip _submit_to_square() here
         # because the Payment Links API creates the Square order at checkout.
         if order_persisted and updated_order_state.get("db_order_id"):
-            self._submit_to_toast(updated_order_state)
+            self._submit_to_pos(updated_order_state, "toast")
             company = self._get_company()
             provider = getattr(company, "payment_provider", "stripe") if company else "stripe"
             if provider != "square":
-                self._submit_to_square(updated_order_state)
+                self._submit_to_pos(updated_order_state, "square")
 
         # Log analytics for ALL confirmed orders (regardless of customer info)
         if order_is_confirmed and order_not_yet_logged:
@@ -207,7 +210,8 @@ class MessageProcessor:
         # Create payment URL (only on first confirmation)
         payment_url = None
         if order_is_confirmed and order_not_yet_logged and updated_order_state.get("db_order_id"):
-            payment_url = self._create_payment_url(
+            payment_url = create_payment_url(
+                self.db,
                 updated_order_state,
                 customer_email=customer_email,
             )
@@ -218,8 +222,8 @@ class MessageProcessor:
         )
         if needs_payment_url and updated_order_state.get("db_order_id"):
             if not payment_url:
-                payment_url = self._create_payment_url(
-                    updated_order_state, customer_email=customer_email,
+                payment_url = create_payment_url(
+                    self.db, updated_order_state, customer_email=customer_email,
                 )
             if payment_url:
                 for qr in quick_replies:
@@ -232,7 +236,7 @@ class MessageProcessor:
                 and order_is_confirmed
                 and updated_order_state.get("db_order_id")
                 and customer_email):
-            self._send_in_store_receipt(updated_order_state, customer_email)
+            send_in_store_receipt(self.db, updated_order_state, customer_email)
 
         # 8. Update and save session
         session["history"] = history
@@ -328,67 +332,26 @@ class MessageProcessor:
             return False
 
     # -------------------------------------------------------------------------
-    # Toast POS Submission
+    # POS Submission
     # -------------------------------------------------------------------------
 
-    def _submit_to_toast(self, order_state: dict[str, Any]) -> bool:
-        """Submit confirmed order to Toast POS. Best-effort: never raises."""
+    def _submit_to_pos(self, order_state: dict[str, Any], provider: str) -> bool:
+        """Submit confirmed order to a POS provider. Best-effort: never raises."""
         try:
-            from .toast.service import is_toast_configured, submit_order
-            if not is_toast_configured():
+            if provider == "toast":
+                from .toast.service import is_toast_configured as is_configured, submit_order
+            else:
+                from .square.service import is_square_configured as is_configured, submit_order
+            if not is_configured():
                 return False
 
             result = submit_order(self.db, order_state)
             if result:
-                logger.info(
-                    "Order #%s submitted to Toast POS",
-                    order_state.get("db_order_id"),
-                )
+                logger.info("Order #%s submitted to %s POS", order_state.get("db_order_id"), provider)
                 return True
             return False
-        except (ImportError, OSError, SQLAlchemyError):
-            logger.exception(
-                "Failed to submit order #%s to Toast",
-                order_state.get("db_order_id"),
-            )
-            return False
-        except (ValueError, KeyError, TypeError, ConnectionError):
-            logger.exception(
-                "Unexpected error submitting order #%s to Toast",
-                order_state.get("db_order_id"),
-            )
-            return False
-
-    # -------------------------------------------------------------------------
-    # Square POS Submission
-    # -------------------------------------------------------------------------
-
-    def _submit_to_square(self, order_state: dict[str, Any]) -> bool:
-        """Submit confirmed order to Square POS. Best-effort: never raises."""
-        try:
-            from .square.service import is_square_configured, submit_order
-            if not is_square_configured():
-                return False
-
-            result = submit_order(self.db, order_state)
-            if result:
-                logger.info(
-                    "Order #%s submitted to Square POS",
-                    order_state.get("db_order_id"),
-                )
-                return True
-            return False
-        except (ImportError, OSError, SQLAlchemyError):
-            logger.exception(
-                "Failed to submit order #%s to Square",
-                order_state.get("db_order_id"),
-            )
-            return False
-        except (ValueError, KeyError, TypeError, ConnectionError):
-            logger.exception(
-                "Unexpected error submitting order #%s to Square",
-                order_state.get("db_order_id"),
-            )
+        except (ImportError, OSError, SQLAlchemyError, ValueError, KeyError, TypeError, ConnectionError):
+            logger.exception("Failed to submit order #%s to %s", order_state.get("db_order_id"), provider)
             return False
 
     # -------------------------------------------------------------------------
@@ -435,216 +398,3 @@ class MessageProcessor:
             logger.exception("Failed to log session analytics")
             return False
 
-    # -------------------------------------------------------------------------
-    # Payment Email
-    # -------------------------------------------------------------------------
-
-    def _create_payment_url(
-        self,
-        order_state: dict[str, Any],
-        customer_email: str | None,
-    ) -> str | None:
-        """Create a payment checkout URL using the configured provider.
-
-        Routes to Square Payment Links or Stripe Checkout based on the
-        company's payment_provider setting.
-
-        Returns the checkout URL if configured, otherwise a fallback
-        payment page URL so the button always appears for confirmed orders.
-        """
-        try:
-            db_order_id = order_state.get("db_order_id")
-            if not db_order_id:
-                return None
-
-            # Check company payment provider setting
-            company = self._get_company()
-            provider = getattr(company, "payment_provider", "stripe") if company else "stripe"
-
-            if provider == "square":
-                url = self._create_square_payment_link(order_state)
-                if url:
-                    return url
-            else:
-                items = order_state.get("items", [])
-                checkout_state = order_state.get("checkout_state", {})
-                order_total = (
-                    checkout_state.get("total")
-                    or order_state.get("total_price")
-                    or sum(item.get("line_total", 0) for item in items)
-                )
-
-                stripe_result = self._create_stripe_session(
-                    db_order_id, items, order_total, customer_email or "",
-                )
-                if stripe_result:
-                    return stripe_result["url"]
-
-            # Fallback URL when neither provider is configured
-            from .config import BASE_URL
-            return f"{BASE_URL}/pay/{db_order_id}"
-        except (OSError, ValueError, KeyError, TypeError, SQLAlchemyError):
-            logger.exception("Failed to create payment URL")
-            return None
-
-    def _create_square_payment_link(self, order_state: dict[str, Any]) -> str | None:
-        """Create a Square Payment Link and return the checkout URL.
-
-        Returns the Square checkout URL on success, None on failure.
-        """
-        try:
-            from .square.service import create_payment_link, is_square_configured
-            if not is_square_configured():
-                return None
-
-            result = create_payment_link(self.db, order_state)
-            if result:
-                logger.info(
-                    "Square payment link created for order #%s",
-                    order_state.get("db_order_id"),
-                )
-                return result["url"]
-            return None
-        except (ImportError, OSError, SQLAlchemyError):
-            logger.exception(
-                "Failed to create Square payment link for order #%s",
-                order_state.get("db_order_id"),
-            )
-            return None
-        except (ValueError, KeyError, TypeError, ConnectionError):
-            logger.exception(
-                "Unexpected error creating Square payment link for order #%s",
-                order_state.get("db_order_id"),
-            )
-            return None
-
-    def _create_stripe_session(
-        self,
-        order_id: int,
-        items: list[dict[str, Any]],
-        order_total: float,
-        customer_email: str,
-    ) -> dict[str, Any] | None:
-        """Create a Stripe Checkout Session and link it to the order.
-
-        Returns dict with 'session_id' and 'url' on success, None if Stripe
-        is not configured or creation fails.
-        """
-        try:
-            from .stripe_service import create_checkout_session, is_stripe_configured
-            if not is_stripe_configured():
-                return None
-
-            # Build line items for Stripe (one entry per order item)
-            stripe_line_items = []
-            for item in items:
-                name = item.get("display_name") or item.get("menu_item_name") or "Item"
-                quantity = item.get("quantity", 1)
-                line_total = item.get("line_total", 0)
-                amount_cents = round((line_total / quantity) * 100) if quantity > 0 else 0
-                stripe_line_items.append({
-                    "name": name,
-                    "quantity": quantity,
-                    "amount_cents": amount_cents,
-                })
-
-            # Add tax as a separate line item if present
-            checkout_state = self._get_order_state_checkout(items)
-            tax_total = round(order_total * 100) - sum(
-                item["amount_cents"] * item["quantity"] for item in stripe_line_items
-            )
-            if tax_total > 0:
-                stripe_line_items.append({
-                    "name": "Tax & Fees",
-                    "quantity": 1,
-                    "amount_cents": tax_total,
-                })
-
-            # Look up Stripe Customer ID for saved payment methods
-            stripe_customer_id = self._get_stripe_customer_id(customer_email)
-
-            result = create_checkout_session(
-                order_id=order_id,
-                line_items=stripe_line_items,
-                customer_email=customer_email,
-                stripe_customer_id=stripe_customer_id,
-            )
-
-            if result:
-                # Link Stripe session to order in DB
-                from .services.order import update_order_stripe_session
-                update_order_stripe_session(self.db, order_id, result["session_id"])
-
-            return result
-        except Exception:
-            logger.exception("Failed to create Stripe session for order #%d", order_id)
-            return None
-
-    def _get_stripe_customer_id(self, customer_email: str | None) -> str | None:
-        """Look up Stripe Customer ID from Customer table by email."""
-        if not customer_email:
-            return None
-        try:
-            from .db.models import Customer
-            from sqlalchemy import func
-            customer = (
-                self.db.query(Customer)
-                .filter(func.lower(Customer.email) == customer_email.lower())
-                .first()
-            )
-            return customer.stripe_customer_id if customer else None
-        except (ImportError, SQLAlchemyError, ValueError, TypeError):
-            return None
-
-    def _send_in_store_receipt(
-        self,
-        order_state: dict[str, Any],
-        customer_email: str,
-    ) -> None:
-        """Send a receipt email for pay-in-store orders.
-
-        For online payments the Stripe webhook triggers the receipt. For
-        in-store payments we send it here instead.
-        """
-        try:
-            from .email_service import send_receipt_email, is_email_configured
-            if not is_email_configured():
-                return
-
-            db_order_id = order_state.get("db_order_id")
-            if not db_order_id:
-                return
-
-            company = self._get_company()
-            store_name = company.name if company else "OrderBot"
-
-            items = order_state.get("items", [])
-            checkout_state = order_state.get("checkout_state", {})
-            order_total = (
-                checkout_state.get("total")
-                or order_state.get("total_price")
-                or sum(item.get("line_total", 0) for item in items)
-            )
-
-            send_receipt_email(
-                to_email=customer_email,
-                order_id=db_order_id,
-                amount=order_total,
-                store_name=store_name,
-                customer_name=order_state.get("customer", {}).get("name"),
-                customer_phone=order_state.get("customer", {}).get("phone"),
-                order_type=order_state.get("order_type"),
-                items=items,
-                subtotal=checkout_state.get("subtotal"),
-                city_tax=checkout_state.get("city_tax", 0),
-                state_tax=checkout_state.get("state_tax", 0),
-                delivery_fee=checkout_state.get("delivery_fee", 0),
-            )
-            logger.info("In-store receipt email sent for order #%s", db_order_id)
-        except (OSError, ValueError, KeyError, TypeError):
-            logger.exception("Failed to send in-store receipt email")
-
-    @staticmethod
-    def _get_order_state_checkout(items: list[dict[str, Any]]) -> dict[str, Any]:
-        """Helper to get checkout state from items."""
-        return {}

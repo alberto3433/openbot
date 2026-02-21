@@ -40,7 +40,7 @@ from ..schemas.global_attributes import (
 from ..exceptions import ResourceNotFoundError, ValidationError
 from ..schemas.serializers import serialize_item_type_link
 from .admin_global_attributes import admin_item_type_global_attrs_router
-from .crud_helpers import get_or_404
+from .crud_helpers import apply_payload_updates, get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -156,22 +156,7 @@ def update_item_type_global_attribute_link(
         raise ResourceNotFoundError("Link not found")
 
     # Apply updates
-    if payload.display_order is not None:
-        link.display_order = payload.display_order
-    if payload.is_required is not None:
-        link.is_required = payload.is_required
-    if payload.allow_none is not None:
-        link.allow_none = payload.allow_none
-    if payload.ask_in_conversation is not None:
-        link.ask_in_conversation = payload.ask_in_conversation
-    if payload.listen_only is not None:
-        link.listen_only = payload.listen_only
-    if payload.min_selections is not None:
-        link.min_selections = payload.min_selections
-    if payload.max_selections is not None:
-        link.max_selections = payload.max_selections
-    if "option_subcategory_filter" in payload.model_fields_set:
-        link.option_subcategory_filter = payload.option_subcategory_filter
+    apply_payload_updates(link, payload, db)
 
     db.commit()
     db.refresh(link)

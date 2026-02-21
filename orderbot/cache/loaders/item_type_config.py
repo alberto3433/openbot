@@ -7,7 +7,7 @@ item type fields, and item type metadata.
 
 import logging
 
-from ..base import build_index_by_key, pluralize
+from ..base import build_index_by_key, normalize_text, pluralize
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class ItemTypeConfigLoaderMixin:
 
             # Add item type aliases (e.g., "omelet" for "omelette")
             for alias in item_type.aliases:
-                alias_lower = alias.strip().lower()
+                alias_lower = normalize_text(alias)
                 if alias_lower:
                     triggers.add(alias_lower)
 
@@ -66,7 +66,7 @@ class ItemTypeConfigLoaderMixin:
                         # stripped trigger when it satisfies those phrases.
                         if item.required_match_phrases:
                             phrases = [
-                                p.strip().lower()
+                                normalize_text(p)
                                 for p in item.required_match_phrases.split(",")
                                 if p.strip()
                             ]
@@ -80,7 +80,7 @@ class ItemTypeConfigLoaderMixin:
 
                 # Aliases are already loaded via selectinload
                 for alias in item.aliases:
-                    alias_lower = alias.strip().lower()
+                    alias_lower = normalize_text(alias)
                     if alias_lower:
                         triggers.add(alias_lower)
 
@@ -123,7 +123,7 @@ class ItemTypeConfigLoaderMixin:
             }
 
             for alias in item_type.aliases:
-                alias = alias.strip().lower()
+                alias = normalize_text(alias)
                 if alias:
                     category_keywords[alias] = category_info
 
@@ -213,6 +213,7 @@ class ItemTypeConfigLoaderMixin:
         modifier_categories: dict[str, str | None] = {}
         item_keywords: set[str] = set()
         configurable_types: set[str] = set()
+        generic_types: set[str] = set()
         side_choice_config: dict[str, dict] = {}
 
         for item_type in item_types:
@@ -221,6 +222,9 @@ class ItemTypeConfigLoaderMixin:
                 modifier_categories[slug] = item_type.overall_category.slug
             else:
                 modifier_categories[slug] = None
+
+            if getattr(item_type, 'is_generic', False):
+                generic_types.add(slug)
 
             side_choice_config[slug] = {
                 "has_side_choice": item_type.has_side_choice,
@@ -246,6 +250,7 @@ class ItemTypeConfigLoaderMixin:
         self._item_type_modifier_categories = modifier_categories
         self._item_keywords = item_keywords
         self._configurable_item_types = configurable_types
+        self._generic_item_types = generic_types
         self._item_type_side_choice = side_choice_config
 
         logger.debug(

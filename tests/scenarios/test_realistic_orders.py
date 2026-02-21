@@ -55,8 +55,8 @@ class TestRealisticOrderScenarios:
             f"Should be everything bagel. Got: {bagel.get_summary()}"
 
         # Should have scallion cream cheese
-        has_scallion = any("scallion" in str(m).lower() for m in bagel.modifiers)
-        assert has_scallion, f"Should have scallion cream cheese. Modifiers: {bagel.modifiers}"
+        has_scallion = any("scallion" in str(m).lower() for m in bagel.selections)
+        assert has_scallion, f"Should have scallion cream cheese. Modifiers: {bagel.selections}"
 
     def test_scenario_02_plain_bagel_not_toasted_with_butter(self):
         """
@@ -605,11 +605,11 @@ class TestRealisticConversationFlows:
         # Check if bacon was added
         if items:
             bagel = items[0]
-            modifiers_str = str(bagel.modifiers).lower()
+            modifiers_str = str(bagel.selections).lower()
             has_bacon = "bacon" in modifiers_str
             # Bacon should be added or message should acknowledge it
             assert has_bacon or "bacon" in result3.message.lower(), \
-                f"Should have added bacon. Modifiers: {bagel.modifiers}, Message: {result3.message}"
+                f"Should have added bacon. Modifiers: {bagel.selections}, Message: {result3.message}"
 
     def test_flow_04_cancel_and_reorder(self):
         """

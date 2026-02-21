@@ -72,6 +72,7 @@ from ..services.alias_service import sync_entity_aliases
 from ..services.helpers import batch_load_store_availability
 from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
 from .crud_helpers import get_or_404
+from ..tasks.normalization import normalize_to_slug
 
 
 logger = logging.getLogger(__name__)
@@ -143,7 +144,7 @@ def _build_create_kwargs(payload: IngredientCreate, db: Session) -> dict[str, An
 
     return {
         "name": payload.name,
-        "slug": payload.name.lower().replace(" ", "_"),
+        "slug": normalize_to_slug(payload.name),
         "category": subcat.category_slug,
         "subcategory_id": subcat.id,
         "unit_id": unit_obj.id,

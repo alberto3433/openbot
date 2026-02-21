@@ -562,12 +562,12 @@ class TestMenuInquiries:
             f"Should have an iced coffee item. Items: {[getattr(i, 'menu_item_name', 'unknown') for i in active_items]}"
 
         # Check that caramel was applied as a modifier
-        modifiers = getattr(coffee_item, 'modifiers', [])
-        modifier_slugs = [m.get('slug', '').lower() for m in modifiers]
+        selections = getattr(coffee_item, 'selections', [])
+        selection_slugs = [m.get('slug', '').lower() for m in selections]
 
-        has_caramel = any('caramel' in slug for slug in modifier_slugs)
+        has_caramel = any('caramel' in slug for slug in selection_slugs)
         assert has_caramel, \
-            f"Caramel should be applied to the coffee. Modifiers: {modifiers}"
+            f"Caramel should be applied to the coffee. Selections: {selections}"
 
     def test_ingredient_suggestion_direct_item_selection(self):
         """
@@ -610,12 +610,12 @@ class TestMenuInquiries:
             f"Should have an iced latte item. Items: {[getattr(i, 'menu_item_name', 'unknown') for i in active_items]}"
 
         # Check that caramel was applied as a modifier
-        modifiers = getattr(latte_item, 'modifiers', [])
-        modifier_slugs = [m.get('slug', '').lower() for m in modifiers]
+        selections = getattr(latte_item, 'selections', [])
+        selection_slugs = [m.get('slug', '').lower() for m in selections]
 
-        has_caramel = any('caramel' in slug for slug in modifier_slugs)
+        has_caramel = any('caramel' in slug for slug in selection_slugs)
         assert has_caramel, \
-            f"Caramel should be applied to the latte. Modifiers: {modifiers}"
+            f"Caramel should be applied to the latte. Selections: {selections}"
 
 # =============================================================================
 # From test_resiliency_batch11.py

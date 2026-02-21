@@ -558,7 +558,7 @@ class TestReplacementModificationScenarios:
         bagel_after = bagels_after[0]
 
         # Check that modifiers were added (bacon and/or cheese)
-        modifier_slugs = {m.get("slug", "").lower() for m in bagel_after.modifiers}
+        modifier_slugs = {m.get("slug", "").lower() for m in bagel_after.selections}
         has_bacon = any("bacon" in slug for slug in modifier_slugs)
         has_cheese = any("cheese" in slug for slug in modifier_slugs)
 
@@ -570,7 +570,7 @@ class TestReplacementModificationScenarios:
 
         # Should have added at least one modifier (bacon or cheese)
         assert has_bacon or has_cheese, \
-            f"Should have added bacon or cheese. Modifiers: {bagel_after.modifiers}"
+            f"Should have added bacon or cheese. Modifiers: {bagel_after.selections}"
 
     def test_add_single_modifier_during_configuration(self):
         """
@@ -603,7 +603,7 @@ class TestReplacementModificationScenarios:
         bagel_after = bagels_after[0]
 
         # Check that bacon was added
-        modifier_slugs = {m.get("slug", "").lower() for m in bagel_after.modifiers}
+        modifier_slugs = {m.get("slug", "").lower() for m in bagel_after.selections}
         has_bacon = any("bacon" in slug for slug in modifier_slugs)
 
         # Should NOT say "let's finish first"
@@ -614,7 +614,7 @@ class TestReplacementModificationScenarios:
 
         # Should have added bacon
         assert has_bacon, \
-            f"Should have added bacon. Modifiers: {bagel_after.modifiers}"
+            f"Should have added bacon. Modifiers: {bagel_after.selections}"
 
         # Should acknowledge the addition
         added_acknowledged = "added" in msg_lower or "bacon" in msg_lower

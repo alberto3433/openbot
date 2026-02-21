@@ -12,6 +12,8 @@ and extracting quantities from user input. Consolidates duplicate implementation
 
 import re
 
+from orderbot.cache.base import normalize_text
+
 # =============================================================================
 # Word to Number Mapping
 # =============================================================================
@@ -104,7 +106,7 @@ def extract_quantity_word(text: str) -> int | None:
         >>> extract_quantity_word("hello")
         None
     """
-    text = text.lower().strip()
+    text = normalize_text(text)
     # Remove trailing "of" for phrases like "couple of"
     text = re.sub(r"\s+of$", "", text)
     # Normalize whitespace for compound expressions like "a  dozen" -> "a dozen"
@@ -287,7 +289,7 @@ def parse_make_it_n_quantity(num_str: str) -> int | None:
         >>> parse_make_it_n_quantity("invalid")
         None
     """
-    num_str = num_str.lower().strip()
+    num_str = normalize_text(num_str)
 
     if num_str.isdigit():
         qty = int(num_str)
@@ -342,7 +344,7 @@ def parse_numeric_input(user_input: str) -> int | None:
         >>> parse_numeric_input("hello")
         None
     """
-    user_lower = user_input.lower().strip()
+    user_lower = normalize_text(user_input)
 
     # Try raw digit match first: "3", "2 shots", etc.
     digit_match = re.search(r'\b(\d+)\b', user_lower)

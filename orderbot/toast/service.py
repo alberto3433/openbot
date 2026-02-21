@@ -55,14 +55,7 @@ def is_toast_configured() -> bool:
     return bool(TOAST_CLIENT_ID and TOAST_CLIENT_SECRET and TOAST_RESTAURANT_GUID)
 
 
-def _get_httpx():
-    """Lazy-import httpx to avoid hard dependency at module level."""
-    try:
-        import httpx
-        return httpx
-    except ImportError:
-        logger.warning("httpx package not installed; Toast POS integration disabled")
-        return None
+from ..pos_utils import get_httpx as _get_httpx
 
 
 def _authenticate() -> str | None:

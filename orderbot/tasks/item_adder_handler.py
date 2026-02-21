@@ -237,6 +237,7 @@ class ItemAdderHandler(MenuDataMixin):
                 if len(items_of_type) > 1:
                     # Item type with component slots (e.g., omelette) - need disambiguation
                     is_configurable_generic_request = False
+                    needs_item_selection = True
 
         # Override: If caller didn't specify an item name and type has multiple items,
         # the user provided only attributes (e.g., "large iced") — need disambiguation
@@ -340,6 +341,21 @@ class ItemAdderHandler(MenuDataMixin):
             order.unknown_item_request = item_name
             order.set_phase(OrderPhase.CONFIGURING_ITEM)
             return StateMachineResult(message="", order=order)
+        elif is_category_reference and filter_type:
+            # Category reference but lookup found 0 items (e.g., required_match_phrases
+            # filtered all out). Show all items of that type as disambiguation.
+            all_type_items = menu_cache.get_items_by_item_type(filter_type)
+            if len(all_type_items) > 1:
+                result = self.item_lookup_handler.disambiguation_handler.start_disambiguation(
+                    item_name=filter_type,
+                    matching_items=all_type_items,
+                    order=order,
+                    quantity=quantity,
+                    pending_field=PendingField.ITEM_SELECTION,
+                    modifiers=item_modifiers,
+                    show_prices=False,
+                )
+                return result
 
         return None
 
@@ -591,28 +607,3 @@ class ItemAdderHandler(MenuDataMixin):
             modifications=modifications,
         )
 
-    # =========================================================================
-    # Backward Compatibility
-    # =========================================================================
-
-    def _lookup_menu_item_with_disambiguation(
-        self,
-        item_name: str,
-        quantity: int,
-        order: OrderTask,
-        modifiers: dict | None = None,
-        pending_field: str = PendingField.ITEM_SELECTION,
-        item_type_filter: str | None = None,
-    ) -> tuple[dict | None, StateMachineResult | None]:
-        """Delegate to item_lookup_handler for menu item lookup with disambiguation.
-
-        This method is kept for backward compatibility.
-        """
-        return self.item_lookup_handler.lookup_menu_item_with_disambiguation(
-            item_name=item_name,
-            quantity=quantity,
-            order=order,
-            modifiers=modifiers,
-            pending_field=pending_field,
-            item_type_filter=item_type_filter,
-        )

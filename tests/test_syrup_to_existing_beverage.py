@@ -47,9 +47,9 @@ class TestSyrupToExistingBeverage:
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
 
         # Check that vanilla syrup was added with quantity 2 (unified selections list)
-        syrup_mods = [m for m in (item.modifiers or []) if m.get("category") == "syrup"]
+        syrup_mods = [m for m in (item.selections or []) if m.get("category") == "syrup"]
         vanilla_mods = [m for m in syrup_mods if "vanilla" in m.get("slug", "").lower()]
-        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found in selections: {item.modifiers}"
+        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found in selections: {item.selections}"
 
         vanilla_mod = vanilla_mods[0]
         assert vanilla_mod.get("quantity") == 2, f"Expected quantity 2, got {vanilla_mod.get('quantity')}"
@@ -92,10 +92,10 @@ class TestSyrupToExistingBeverage:
         assert item.has_attribute('size'), "Expected is_coffee_based_beverage to be True"
 
         # Check that vanilla syrup was added (unified selections list)
-        syrup_modifiers = [m for m in (item.modifiers or []) if m.get("category") == "syrup"]
+        syrup_modifiers = [m for m in (item.selections or []) if m.get("category") == "syrup"]
         syrup_slugs = [m.get("slug") for m in syrup_modifiers]
         # Slug is "vanilla_syrup" from database, check for substring match
-        assert any("vanilla" in slug for slug in syrup_slugs), f"Vanilla syrup not found in selections: {item.modifiers}"
+        assert any("vanilla" in slug for slug in syrup_slugs), f"Vanilla syrup not found in selections: {item.selections}"
 
     def test_add_sweetener_to_espresso(self):
         """
@@ -129,9 +129,9 @@ class TestSyrupToExistingBeverage:
         assert isinstance(item, MenuItemTask), f"Expected MenuItemTask, got {type(item).__name__}"
 
         # Check that sweetener was added (unified selections list)
-        sweetener_mods = [m for m in (item.modifiers or []) if m.get("category") == "sweetener"]
+        sweetener_mods = [m for m in (item.selections or []) if m.get("category") == "sweetener"]
         sweetener_slugs = [m.get("slug") for m in sweetener_mods]
-        assert "sweet_n_low" in sweetener_slugs, f"Sweet N Low not found in selections: {item.modifiers}"
+        assert "sweet_n_low" in sweetener_slugs, f"Sweet N Low not found in selections: {item.selections}"
 
     def test_two_vanilla_syrups_word_quantity_in_config(self):
         """
@@ -177,8 +177,8 @@ class TestSyrupToExistingBeverage:
         assert isinstance(espresso, MenuItemTask)
 
         # Config flow stores modifiers in the unified modifiers list
-        vanilla_sels = [s for s in espresso.modifiers if "vanilla" in s.get("slug", "").lower()]
-        assert len(vanilla_sels) == 1, f"Expected 1 vanilla selection, got: {espresso.modifiers}"
+        vanilla_sels = [s for s in espresso.selections if "vanilla" in s.get("slug", "").lower()]
+        assert len(vanilla_sels) == 1, f"Expected 1 vanilla selection, got: {espresso.selections}"
 
         vanilla_sel = vanilla_sels[0]
         assert vanilla_sel.get("quantity") == 2, f"Expected quantity 2, got {vanilla_sel.get('quantity')}"
@@ -231,8 +231,8 @@ class TestSyrupToExistingBeverage:
         assert isinstance(latte, MenuItemTask)
 
         # Find hazelnut syrup in modifiers
-        hazelnut_sels = [s for s in latte.modifiers if "hazelnut" in s.get("slug", "").lower()]
-        assert len(hazelnut_sels) == 1, f"Expected 1 hazelnut selection, got: {latte.modifiers}"
+        hazelnut_sels = [s for s in latte.selections if "hazelnut" in s.get("slug", "").lower()]
+        assert len(hazelnut_sels) == 1, f"Expected 1 hazelnut selection, got: {latte.selections}"
 
         hazelnut_sel = hazelnut_sels[0]
         assert hazelnut_sel.get("quantity") == 2, \
@@ -263,8 +263,8 @@ class TestQuantityPrefixes:
 
         # Check that bacon was added with quantity 2
         item = result.order.items.items[0]
-        bacon_mods = [m for m in (item.modifiers or []) if "bacon" in m.get("slug", "").lower()]
-        assert len(bacon_mods) >= 1, f"Bacon not found in modifiers: {item.modifiers}"
+        bacon_mods = [m for m in (item.selections or []) if "bacon" in m.get("slug", "").lower()]
+        assert len(bacon_mods) >= 1, f"Bacon not found in modifiers: {item.selections}"
 
         bacon_mod = bacon_mods[0]
         assert bacon_mod.get("quantity") == 2, f"Expected quantity 2, got {bacon_mod.get('quantity')}"
@@ -290,8 +290,8 @@ class TestQuantityPrefixes:
 
         # Check that bacon was added with quantity 2
         item = result.order.items.items[0]
-        bacon_mods = [m for m in (item.modifiers or []) if "bacon" in m.get("slug", "").lower()]
-        assert len(bacon_mods) >= 1, f"Bacon not found in modifiers: {item.modifiers}"
+        bacon_mods = [m for m in (item.selections or []) if "bacon" in m.get("slug", "").lower()]
+        assert len(bacon_mods) >= 1, f"Bacon not found in modifiers: {item.selections}"
 
         bacon_mod = bacon_mods[0]
         assert bacon_mod.get("quantity") == 2, f"Expected quantity 2, got {bacon_mod.get('quantity')}"
@@ -318,8 +318,8 @@ class TestQuantityPrefixes:
 
         # Check that vanilla syrup was added with quantity 3
         item = result.order.items.items[0]
-        vanilla_mods = [m for m in (item.modifiers or []) if "vanilla" in m.get("slug", "").lower()]
-        assert len(vanilla_mods) >= 1, f"Vanilla not found in modifiers: {item.modifiers}"
+        vanilla_mods = [m for m in (item.selections or []) if "vanilla" in m.get("slug", "").lower()]
+        assert len(vanilla_mods) >= 1, f"Vanilla not found in modifiers: {item.selections}"
 
         vanilla_mod = vanilla_mods[0]
         assert vanilla_mod.get("quantity") == 3, f"Expected quantity 3, got {vanilla_mod.get('quantity')}"
@@ -358,7 +358,7 @@ class TestShotsHandling:
         # Check that espresso_shots has quantity=2 (double = 2)
         # Note: quantity attributes store the unit slug (e.g., "shot") with quantity in modifiers
         item = result.order.items.items[0]
-        shot_mods = [m for m in item.modifiers if m.get("category") == "espresso_shots"]
+        shot_mods = [m for m in item.selections if m.get("category") == "espresso_shots"]
         assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {len(shot_mods)}"
         assert shot_mods[0].get("quantity") == 2, f"Expected quantity=2 (double), got {shot_mods[0].get('quantity')}"
 
@@ -385,7 +385,7 @@ class TestShotsHandling:
         # Check that espresso_shots has quantity=3 (triple = 3)
         # Note: quantity attributes store the unit slug (e.g., "shot") with quantity in modifiers
         item = result.order.items.items[0]
-        shot_mods = [m for m in item.modifiers if m.get("category") == "espresso_shots"]
+        shot_mods = [m for m in item.selections if m.get("category") == "espresso_shots"]
         assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {len(shot_mods)}"
         assert shot_mods[0].get("quantity") == 3, f"Expected quantity=3 (triple), got {shot_mods[0].get('quantity')}"
 
@@ -412,7 +412,7 @@ class TestShotsHandling:
         # Check that espresso_shots has quantity=2
         # Note: quantity attributes store the unit slug (e.g., "shot") with quantity in modifiers
         item = result.order.items.items[0]
-        shot_mods = [m for m in item.modifiers if m.get("category") == "espresso_shots"]
+        shot_mods = [m for m in item.selections if m.get("category") == "espresso_shots"]
         assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {len(shot_mods)}"
         assert shot_mods[0].get("quantity") == 2, f"Expected quantity=2, got {shot_mods[0].get('quantity')}"
 
@@ -522,7 +522,7 @@ class TestExtraShotAtCheckpoint:
         item = result.order.items.items[0]
         # Filter out the _declined marker (added when user said "no" to shots initially)
         shot_mods = [
-            m for m in (item.modifiers or [])
+            m for m in (item.selections or [])
             if "shot" in m.get("category", "").lower() and m.get("slug") != "_declined"
         ]
 
@@ -530,7 +530,7 @@ class TestExtraShotAtCheckpoint:
         if not shot_mods:
             print(f"DEBUG: Bot message: {result.message}")
             print(f"DEBUG: Pending field: {result.order.pending_field}")
-            print(f"DEBUG: Item modifiers: {item.modifiers}")
+            print(f"DEBUG: Item modifiers: {item.selections}")
             print(f"DEBUG: Item attribute_values: {item.attribute_values}")
 
         assert len(shot_mods) == 1, f"Expected 1 shot modifier, got {shot_mods}"
@@ -622,7 +622,7 @@ class TestOptionsInquiryAtCheckpoint:
         # Verify salt was added
         item = result.order.items.items[0]
         condiment_mods = [
-            m for m in (item.modifiers or [])
+            m for m in (item.selections or [])
             if m.get("category") == "condiments" or "salt" in m.get("slug", "").lower()
         ]
 
@@ -829,7 +829,7 @@ class TestOptionsInquiryAtCheckpoint:
 
         # Verify all three were added
         item = result.order.items.items[0]
-        modifiers = item.modifiers or []
+        modifiers = item.selections or []
         modifier_slugs = [m.get("slug", "").lower() for m in modifiers]
 
         assert any("salt" in slug for slug in modifier_slugs), (
@@ -891,8 +891,8 @@ class TestChangeRequestWithQuantity:
 
         # Check that vanilla syrup has quantity 2
         item = result.order.items.items[0]
-        vanilla_mods = [m for m in (item.modifiers or []) if "vanilla" in m.get("slug", "").lower()]
-        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found: {item.modifiers}"
+        vanilla_mods = [m for m in (item.selections or []) if "vanilla" in m.get("slug", "").lower()]
+        assert len(vanilla_mods) >= 1, f"Vanilla syrup not found: {item.selections}"
         assert vanilla_mods[0].get("quantity") == 2, (
             f"Expected quantity 2, got {vanilla_mods[0].get('quantity')}"
         )
@@ -960,7 +960,7 @@ class TestSyrupDisambiguationWithMultiInput:
 
         # Should NOT have added all syrups
         item = result.order.items.items[0]
-        syrup_mods = [m for m in (item.modifiers or [])
+        syrup_mods = [m for m in (item.selections or [])
                       if m.get("ingredient_category") == "syrup"]
         # Bug would add 4 syrups; fix should add 0 (waiting for disambiguation)
         assert len(syrup_mods) == 0, (
@@ -968,7 +968,7 @@ class TestSyrupDisambiguationWithMultiInput:
         )
 
         # Should have added oat milk (ingredient_category is 'milk')
-        milk_mods = [m for m in (item.modifiers or [])
+        milk_mods = [m for m in (item.selections or [])
                      if m.get("ingredient_category") == "milk"]
         assert len(milk_mods) == 1, f"Expected 1 milk modifier, got: {milk_mods}"
         assert "oat" in milk_mods[0].get("slug", "").lower(), (
@@ -1042,7 +1042,7 @@ class TestSyrupDisambiguationWithMultiInput:
 
         # Should have added vanilla syrup with quantity 2
         item = result.order.items.items[0]
-        vanilla_mods = [m for m in (item.modifiers or [])
+        vanilla_mods = [m for m in (item.selections or [])
                         if "vanilla" in m.get("slug", "").lower()]
         assert len(vanilla_mods) == 1, f"Expected 1 vanilla syrup, got: {vanilla_mods}"
         assert vanilla_mods[0].get("quantity") == 2, (

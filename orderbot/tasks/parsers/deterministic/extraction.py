@@ -304,7 +304,7 @@ def _extract_modifiers_generic(
             for pattern in detail.get("patterns", []):
                 pattern_to_slug[pattern.lower()] = detail_slug
 
-        for ingredient in valid_ingredients:
+        for ingredient in sorted(valid_ingredients, key=len, reverse=True):
             ing_lower = ingredient.lower()
             # Skip ingredients that overlap with attribute options - those are handled
             # via extract_attribute_values
@@ -393,18 +393,9 @@ def _extract_by_pound_info(text: str) -> tuple[str | None, str | None]:
 # so those must be defined before attribute_matching is loaded.
 
 from .attribute_matching import (  # noqa: E402
-    _check_must_match,
-    CandidateMatch,
-    _collect_option_candidates,
-    _apply_longest_match_first,
-    _count_token_option_matches,
-    _apply_token_matches,
-    _apply_reverse_matching,
-    _detect_unrecognized_size_terms,
     _extract_attribute_values,
 )
 
 from .inapplicable_detection import (  # noqa: E402
-    _detect_inapplicable_modifiers,
     _detect_inapplicable_attributes,
 )

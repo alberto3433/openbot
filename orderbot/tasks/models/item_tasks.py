@@ -164,21 +164,6 @@ class MenuItemTask(SelectionManagementMixin, DictAccessMixin, DisplayFormattingM
         return self.bundle_id
 
     # -------------------------------------------------------------------------
-    # Backward compatibility alias
-    # -------------------------------------------------------------------------
-
-    @property
-    def modifiers(self) -> list[dict]:
-        """DEPRECATED: Use `selections` instead. This alias exists for backward compatibility."""
-        return self.selections
-
-    @modifiers.setter
-    def modifiers(self, value: list[dict]) -> None:
-        """DEPRECATED: Use `selections` instead. This alias exists for backward compatibility."""
-        self._attr_cache = None  # Invalidate cache
-        self.selections = value
-
-    # -------------------------------------------------------------------------
     # Attribute query method (data-driven)
     # -------------------------------------------------------------------------
 

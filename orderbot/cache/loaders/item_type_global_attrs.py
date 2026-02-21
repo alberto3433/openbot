@@ -7,7 +7,7 @@ item type attributes, and global attribute aliases.
 
 import logging
 
-from ..base import build_index_by_key
+from ..base import build_index_by_key, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -247,9 +247,19 @@ class ItemTypeGlobalAttrsLoaderMixin:
             self._item_type_attributes[item_type.slug] = result
             self._field_to_slug_map[item_type.slug] = field_to_slug_map
 
+        # Build reverse index: attr_slug -> set of item_type_slugs that have that attribute
+        attr_to_types: dict[str, set[str]] = {}
+        for type_slug, attrs in self._item_type_attributes.items():
+            for attr_slug in attrs:
+                if attr_slug not in attr_to_types:
+                    attr_to_types[attr_slug] = set()
+                attr_to_types[attr_slug].add(type_slug)
+        self._attr_to_item_types = attr_to_types
+
         logger.debug(
-            "Pre-loaded attributes for %d item types (from bulk)",
+            "Pre-loaded attributes for %d item types (from bulk), %d attr->type mappings",
             len(self._item_type_attributes),
+            len(self._attr_to_item_types),
         )
 
         # Build option alias -> (item_type, attr_slug, option_slug) mapping
@@ -284,11 +294,11 @@ class ItemTypeGlobalAttrsLoaderMixin:
                     # Display name
                     display_name = opt.get("display_name")
                     if display_name:
-                        keys.append(display_name.lower().strip())
+                        keys.append(normalize_text(display_name))
 
                     # Aliases
                     for alias in (opt.get("aliases") or []):
-                        alias_lower = alias.lower().strip()
+                        alias_lower = normalize_text(alias)
                         if alias_lower:
                             keys.append(alias_lower)
 
@@ -320,14 +330,14 @@ class ItemTypeGlobalAttrsLoaderMixin:
                     # Display name
                     display_name = opt.get("display_name")
                     if display_name:
-                        display_key = display_name.lower().strip()
+                        display_key = normalize_text(display_name)
                         if display_key and len(option_to_item_types.get(display_key, set())) == 1:
                             if display_key not in option_alias_to_item_type:
                                 option_alias_to_item_type[display_key] = (item_type_slug, attr_slug, opt_slug)
 
                     # Aliases
                     for alias in (opt.get("aliases") or []):
-                        alias_lower = alias.lower().strip()
+                        alias_lower = normalize_text(alias)
                         if alias_lower and len(option_to_item_types.get(alias_lower, set())) == 1:
                             if alias_lower not in option_alias_to_item_type:
                                 option_alias_to_item_type[alias_lower] = (item_type_slug, attr_slug, opt_slug)

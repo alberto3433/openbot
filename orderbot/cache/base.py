@@ -26,6 +26,28 @@ logger = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+def normalize_text(text: str | None) -> str:
+    """Normalize text for comparison by lowercasing and stripping whitespace.
+
+    This is the canonical definition used by both cache and task modules.
+    Task modules import via ``from orderbot.tasks.utils.text import normalize_text``
+    which re-exports this function.
+
+    Args:
+        text: The text to normalize, or None.
+
+    Returns:
+        Lowercased and whitespace-stripped text (empty string for None).
+
+    Examples:
+        >>> normalize_text("  Bacon  ")
+        'bacon'
+        >>> normalize_text(None)
+        ''
+    """
+    return (text or "").lower().strip()
+
+
 def ensure_cache_loaded(func: F) -> F:
     """Decorator to ensure cache is loaded before method execution.
 
@@ -43,27 +65,6 @@ def ensure_cache_loaded(func: F) -> F:
         self._ensure_loaded()
         return func(self, *args, **kwargs)
     return wrapper  # type: ignore[return-value]
-
-
-def normalize_text(text: str) -> str:
-    """Normalize text for comparison by lowercasing and stripping whitespace.
-
-    This is the canonical way to normalize user input or database values
-    for case-insensitive matching throughout the codebase.
-
-    Args:
-        text: The text to normalize.
-
-    Returns:
-        Lowercased and whitespace-stripped text.
-
-    Examples:
-        >>> normalize_text("  Bacon  ")
-        'bacon'
-        >>> normalize_text("CREAM CHEESE")
-        'cream cheese'
-    """
-    return text.lower().strip()
 
 
 # Pattern for abbreviation periods (Dr., Mr., Mrs., Ms., St.)
@@ -129,11 +130,9 @@ def normalize_for_matching(text: str) -> str:
 # =============================================================================
 # Skip Words for Text Processing
 # =============================================================================
-# These basic skip word sets are also defined in orderbot/tasks/shared_constants.py.
-# They are kept here as well for backward compatibility with code that imports
-# from cache.base. The canonical single-source-of-truth for new code is
-# shared_constants.py, but duplicating these three simple frozensets avoids
-# creating a circular import (cache -> tasks -> cache).
+# These basic skip word sets are duplicated from orderbot/tasks/shared_constants.py.
+# Cannot import from shared_constants here because it triggers orderbot.tasks.__init__
+# which eventually imports back into orderbot.cache (circular import).
 SKIP_WORDS_BASIC = frozenset({'the', 'a', 'an'})
 SKIP_WORDS_CONJUNCTIONS = frozenset({'and', 'or', 'with'})
 SKIP_WORDS_PREPOSITIONS = frozenset({'on', 'in', 'to', 'of'})
@@ -452,6 +451,9 @@ class BaseCacheMixin:
         # Configurable item types (those with attributes defined)
         self._configurable_item_types: set[str] = set()
 
+        # Generic item types (deprioritized in trigger matching)
+        self._generic_item_types: set[str] = set()
+
         # Item type display names - maps item_type_slug -> {display_name, display_name_plural}
         # Used by get_categories_for_inference() for LLM category inference
         self._item_type_displays: dict[str, dict[str, str]] = {}
@@ -489,6 +491,10 @@ class BaseCacheMixin:
         # e.g., "earl grey" -> ("tea", "tea_flavor", "earl_gray")
         # Maps alias_lowercase -> (item_type_slug, attribute_slug, option_slug)
         self._option_alias_to_item_type: dict[str, tuple[str, str, str]] = {}
+
+        # Reverse index: attribute slug -> set of item type slugs that have that attribute
+        # Used for attribute-context type switching (e.g., "bread" attr -> {deli_sandwich, ...})
+        self._attr_to_item_types: dict[str, set[str]] = {}
 
         # Items with required match phrases - for exclusion logic during parsing
         # Maps item_name (lowercase) -> required_match_phrases string

@@ -70,6 +70,8 @@ MID_SENTENCE_HESITATION_FILLERS = frozenset({
     "ummmm", "errr",
     # Polite filler - safe mid-sentence, never appears in food names
     "please",
+    # Discourse markers - safe mid-sentence, never appear in food names
+    "basically", "honestly", "literally",
 })
 
 # Category 1: HESITATION_FILLERS - Strip from START of input only
@@ -185,10 +187,8 @@ REPEAT_ORDER_PATTERNS = re.compile(
 
 
 # =============================================================================
-# Re-exports from parser_utils (backward compatibility)
+# Re-exports from parser_utils (public API surface)
 # =============================================================================
-# DEPRECATED: Import directly from orderbot.tasks.parsers.parser_utils instead.
-# These re-exports exist only for backward compatibility with existing importers.
 from .parser_utils import (  # noqa: F401
     match_small_talk,
     get_order_redirect,
@@ -209,7 +209,6 @@ from .parser_utils import (  # noqa: F401
     parse_reduce_to_one_sentinel,
 )
 
-# DEPRECATED: Import directly from orderbot.tasks.parsers.deterministic.qualifier_extraction.
 from .deterministic.qualifier_extraction import QUALIFIER_PATTERNS  # noqa: F401
 
 # Note: CHANGE_REQUEST_PATTERNS moved to intent_patterns.py.

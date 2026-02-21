@@ -6,7 +6,7 @@ Contains loader methods for ingredients, modifiers, and related data.
 
 import logging
 
-from ..base import build_alias_mapping
+from ..base import build_alias_mapping, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class IngredientLoaderMixin:
                 self._ingredient_price_contexts[ing_name_lower] = contexts
                 # Aliases are already loaded via selectinload
                 for alias in ing.aliases:
-                    alias_lower = alias.lower().strip()
+                    alias_lower = normalize_text(alias)
                     if alias_lower and alias_lower != ing_name_lower:
                         self._ingredient_price_contexts[alias_lower] = contexts
 
@@ -164,7 +164,7 @@ class IngredientLoaderMixin:
 
             patterns = [name_lower]
             for alias in ing.aliases:
-                alias_lower = alias.strip().lower()
+                alias_lower = normalize_text(alias)
                 if alias_lower:
                     ingredients_by_category[category].add(alias_lower)
                     modifier_to_category[alias_lower] = category
@@ -233,7 +233,7 @@ class IngredientLoaderMixin:
 
                     # Add ingredient aliases
                     for alias in ingredient.aliases:
-                        alias_lower = alias.strip().lower()
+                        alias_lower = normalize_text(alias)
                         if alias_lower:
                             ingredients_for_item_type[item_type_slug][category].add(alias_lower)
 

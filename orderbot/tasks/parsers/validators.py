@@ -200,6 +200,7 @@ from ..schemas import (
 )
 from ..schemas.parser_responses import AttributeChoiceResponse
 from orderbot.cache import menu_cache
+from orderbot.cache.base import normalize_text
 
 
 def parse_confirmation_deterministic(user_input: str) -> ConfirmationResponse:
@@ -214,7 +215,7 @@ def parse_confirmation_deterministic(user_input: str) -> ConfirmationResponse:
     Returns:
         ConfirmationResponse with confirmed, wants_changes, or asks_about_tax
     """
-    text = user_input.lower().strip()
+    text = normalize_text(user_input)
 
     # Check for tax question patterns first
     tax_patterns = [
@@ -265,7 +266,7 @@ def parse_delivery_choice_deterministic(user_input: str) -> DeliveryChoiceRespon
     Returns:
         DeliveryChoiceResponse with choice and optional address
     """
-    text = user_input.lower().strip()
+    text = normalize_text(user_input)
     original = user_input.strip()
 
     # Pickup patterns
@@ -329,7 +330,7 @@ def parse_payment_method_deterministic(user_input: str) -> PaymentMethodResponse
     Returns:
         PaymentMethodResponse with choice, optional phone_number, optional email_address
     """
-    text = user_input.lower().strip()
+    text = normalize_text(user_input)
     original = user_input.strip()
 
     # Text/SMS patterns
@@ -518,7 +519,7 @@ def parse_side_choice_deterministic(
     Returns:
         AttributeChoiceResponse with matched value, unclear, or wants_cancel
     """
-    text = user_input.lower().strip()
+    text = normalize_text(user_input)
 
     # Check cancel patterns first
     cancel_patterns = ["remove", "cancel", "nevermind", "never mind", "skip", "don't want"]

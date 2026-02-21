@@ -9,7 +9,7 @@ import logging
 
 from orderbot.cache import menu_cache
 from orderbot.exceptions import MenuDataNotLoadedError
-from orderbot.tasks.normalization import format_slug_for_display
+from orderbot.tasks.normalization import format_slug_for_display, normalize_to_slug
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +275,7 @@ class SelectionManagementMixin:
 
         self._attr_cache = None  # Invalidate cache
 
-        target_slug = target.replace(" ", "_").lower()
+        target_slug = normalize_to_slug(target)
         removed_any = False
         i = 0
         while i < len(self.selections):

@@ -403,7 +403,7 @@ class TestCriticalOrderScenarios:
         assert latte["size"] == "large", f"Should be large, got {latte['size']}"
 
         # Check milk and syrup were captured (stored as modifiers)
-        modifier_slugs = [m.get('slug', '') for m in latte.modifiers]
+        modifier_slugs = [m.get('slug', '') for m in latte.selections]
         has_oat = any('oat' in slug for slug in modifier_slugs)
         has_vanilla = any('vanilla' in slug for slug in modifier_slugs)
         assert has_oat, f"Should have oat milk, got modifiers: {modifier_slugs}"

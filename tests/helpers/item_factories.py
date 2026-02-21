@@ -50,13 +50,13 @@ def _set_modifier_price(item: "MenuItemTask", category: str, slug: str, price: f
         slug: The modifier's slug
         price: The price to set
     """
-    for mod in item.modifiers:
+    for mod in item.selections:
         if mod.get("category") == category and mod.get("slug") == slug:
             mod["price"] = price
             return
     # If not found by exact slug match, try matching by category only (for spread, etc.)
     if slug:
-        for mod in item.modifiers:
+        for mod in item.selections:
             if mod.get("category") == category:
                 mod["price"] = price
                 return

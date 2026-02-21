@@ -9,7 +9,7 @@ import logging
 import re
 from collections import defaultdict
 
-from ..base import build_alias_mapping
+from ..base import build_alias_mapping, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class MenuItemLoaderMixin:
                 alias_to_canonical[without_the] = canonical_name
 
             for alias in item.aliases:
-                alias = alias.strip().lower()
+                alias = normalize_text(alias)
                 if alias:
                     menu_items.add(alias)
                     alias_to_canonical[alias] = canonical_name
@@ -108,7 +108,7 @@ class MenuItemLoaderMixin:
                 items_with_defaults_types[canonical_name] = item.item_type.slug
 
             for alias in item.aliases:
-                alias = alias.strip().lower()
+                alias = normalize_text(alias)
                 if alias:
                     items_with_defaults_aliases[alias] = canonical_name
 
@@ -238,7 +238,7 @@ class MenuItemLoaderMixin:
             unit_type_aliases[unit_type][base_name_lower] = (base_name, item_type_slug)
 
             for alias in item.aliases:
-                alias = alias.strip().lower()
+                alias = normalize_text(alias)
                 if alias:
                     unit_type_aliases[unit_type][alias] = (base_name, item_type_slug)
 
@@ -281,7 +281,7 @@ class MenuItemLoaderMixin:
             alias_to_canonical_by_type[item_type_slug][name_lower] = canonical_name
 
             for alias in item.aliases:
-                alias_lower = alias.strip().lower()
+                alias_lower = normalize_text(alias)
                 if alias_lower:
                     item_names_by_type[item_type_slug].add(alias_lower)
                     alias_to_canonical_by_type[item_type_slug][alias_lower] = canonical_name
@@ -332,7 +332,7 @@ class MenuItemLoaderMixin:
                     keyword_index[word].append(name_lower)
 
             for alias in item.aliases:
-                alias_lower = alias.lower().strip()
+                alias_lower = normalize_text(alias)
                 if alias_lower:
                     all_items[alias_lower] = item_data
                     for word in alias_lower.split():
@@ -484,7 +484,7 @@ class MenuItemLoaderMixin:
 
             # Also index by aliases
             for alias in item.aliases:
-                alias_lower = alias.strip().lower()
+                alias_lower = normalize_text(alias)
                 if alias_lower:
                     item_dietary_info[alias_lower] = dietary_info
 

@@ -69,6 +69,7 @@ from ..schemas.unrecognized_suggestions import (
     UnrecognizedIngredientSuggestionUpdate,
 )
 from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
+from ..cache.base import normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def _menu_item_before_create(
             f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
         )
 
-    pattern_normalized = payload.input_pattern.lower().strip()
+    pattern_normalized = normalize_text(payload.input_pattern)
 
     existing = db.query(UnrecognizedMenuItemSuggestion).filter(
         UnrecognizedMenuItemSuggestion.input_pattern == pattern_normalized,
@@ -148,7 +149,7 @@ def _menu_item_before_update(
         )
 
     new_pattern = (
-        payload.input_pattern.lower().strip()
+        normalize_text(payload.input_pattern)
         if payload.input_pattern else item.input_pattern
     )
     new_match_type = payload.match_type if payload.match_type else item.match_type
@@ -468,7 +469,7 @@ def _option_before_create(
     payload: UnrecognizedOptionSuggestionCreate, db: Session
 ) -> dict:
     """Validate and normalize payload, return kwargs for model creation."""
-    pattern_normalized = payload.input_pattern.lower().strip()
+    pattern_normalized = normalize_text(payload.input_pattern)
 
     existing = db.query(UnrecognizedOptionSuggestion).filter(
         UnrecognizedOptionSuggestion.input_pattern == pattern_normalized,
@@ -495,7 +496,7 @@ def _option_before_update(
 ) -> None:
     """Validate, normalize, and apply updates in place."""
     new_pattern = (
-        payload.input_pattern.lower().strip()
+        normalize_text(payload.input_pattern)
         if payload.input_pattern else item.input_pattern
     )
     new_attr_slug = payload.attribute_slug if payload.attribute_slug else item.attribute_slug
@@ -626,7 +627,7 @@ def _ingredient_before_create(
             f"Invalid match_type. Must be one of: {', '.join(VALID_MATCH_TYPES)}"
         )
 
-    pattern_normalized = payload.input_pattern.lower().strip()
+    pattern_normalized = normalize_text(payload.input_pattern)
 
     existing = db.query(UnrecognizedIngredientSuggestion).filter(
         UnrecognizedIngredientSuggestion.input_pattern == pattern_normalized,
@@ -675,7 +676,7 @@ def _ingredient_before_update(
         )
 
     new_pattern = (
-        payload.input_pattern.lower().strip()
+        normalize_text(payload.input_pattern)
         if payload.input_pattern else item.input_pattern
     )
     new_match_type = payload.match_type if payload.match_type else item.match_type

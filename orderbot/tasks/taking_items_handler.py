@@ -210,23 +210,14 @@ class TakingItemsHandler(MenuDataMixin):
     def set_context(
         self,
         ctx: "OrderContext | None" = None,
-        # Legacy kwargs for backward compatibility
-        returning_customer: dict | None = None,
-        set_repeat_info_callback: Callable[[bool, str | None], None] | None = None,
     ) -> None:
         """Set per-request context from unified OrderContext."""
         if ctx is not None:
             self._returning_customer = ctx.returning_customer
             self._set_repeat_info_callback = ctx.set_repeat_info_callback
-        else:
-            self._returning_customer = returning_customer
-            self._set_repeat_info_callback = set_repeat_info_callback
 
         # Propagate context to sub-handlers that need it
-        self._duplicate_handler.set_context(
-            returning_customer=self._returning_customer,
-            set_repeat_info_callback=self._set_repeat_info_callback,
-        )
+        self._duplicate_handler.set_context(ctx)
 
     def handle_greeting(
         self,

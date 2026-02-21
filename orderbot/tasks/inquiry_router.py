@@ -168,10 +168,12 @@ class InquiryRouter:
             item = parsed.availability_query_item
             if item and self.menu_inquiry_handler:
                 from ..cache import menu_cache
-                category_info = menu_cache.get_category_keyword_mapping(item)
-                display_group = menu_cache.get_display_group_by_slug(item) if not category_info else None
-                if category_info or display_group:
-                    return self.menu_inquiry_handler.handle_menu_query(item, order)
+                specific_item = menu_cache.resolve_menu_item_alias(item)
+                if not specific_item:
+                    category_info = menu_cache.get_category_keyword_mapping(item)
+                    display_group = menu_cache.get_display_group_by_slug(item) if not category_info else None
+                    if category_info or display_group:
+                        return self.menu_inquiry_handler.handle_menu_query(item, order)
             return self.dietary_inquiry_handler.handle_availability_inquiry(
                 parsed.availability_query_item, order
             )

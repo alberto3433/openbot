@@ -229,6 +229,8 @@ def _restore_checkout_state(order_dict: dict, order: OrderTask) -> None:
         order.checkout.mark_complete()
     if checkout_data.get("order_reviewed"):
         order.checkout.order_reviewed = True
+    if checkout_data.get("order_number"):
+        order.checkout.order_number = checkout_data["order_number"]
 
     if order_dict.get("payment_method"):
         order.payment.method = order_dict["payment_method"]
@@ -329,6 +331,7 @@ def _build_checkout_state(
         "tax": tax,
         "delivery_fee": delivery_fee,
         "total": total,
+        "order_number": order.checkout.order_number,
     }
 
 

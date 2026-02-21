@@ -51,14 +51,14 @@ class ItemType(Base):
     )
 
     @property
-    def overall_category(self):
+    def overall_category(self) -> str | None:
         """Get overall category from the display group."""
         if self.menu_display_group:
             return self.menu_display_group.overall_category
         return None
 
     @property
-    def overall_category_id(self):
+    def overall_category_id(self) -> int | None:
         """Get overall category ID from the display group."""
         if self.menu_display_group:
             return self.menu_display_group.overall_category_id

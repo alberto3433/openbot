@@ -10,6 +10,7 @@ Functions:
 - get_order_by_id: Get a specific order by ID with phone verification
 """
 
+import functools
 import logging
 from typing import Any
 
@@ -21,6 +22,8 @@ from .helpers import build_order_items_summary
 
 
 logger = logging.getLogger(__name__)
+
+_PHONE_STRIP_CHARS = ["-", " ", "(", ")"]
 
 
 def _normalize_phone_for_lookup(phone: str) -> str:
@@ -35,7 +38,9 @@ def _normalize_phone_for_lookup(phone: str) -> str:
     Returns:
         Normalized phone suffix (last 10 digits)
     """
-    normalized = phone.replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+    normalized = phone
+    for char in _PHONE_STRIP_CHARS:
+        normalized = normalized.replace(char, "")
     return normalized[-10:] if len(normalized) >= 10 else normalized
 
 
@@ -48,15 +53,10 @@ def _get_normalized_phone_filter(phone_column):
     Returns:
         SQLAlchemy expression with formatting characters removed
     """
-    return func.replace(
-        func.replace(
-            func.replace(
-                func.replace(phone_column, "-", ""),
-                " ", ""
-            ),
-            "(", ""
-        ),
-        ")", ""
+    return functools.reduce(
+        lambda col, char: func.replace(col, char, ""),
+        _PHONE_STRIP_CHARS,
+        phone_column,
     )
 
 

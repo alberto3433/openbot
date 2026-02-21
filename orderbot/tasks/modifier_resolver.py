@@ -28,8 +28,6 @@ __all__ = [
     "match_pattern_in_input",
     "match_any_pattern_in_input",
     "normalize_modifier_input",
-    "resolve_ingredient_category",
-    "find_all_categories_for_value",
     "belongs_to_category",
 ]
 
@@ -144,7 +142,7 @@ def normalize_modifier_input(
 # Category/Ingredient Resolution
 # ============================================================================
 
-def resolve_ingredient_category(slug_or_name: str) -> str | None:
+def _resolve_ingredient_category(slug_or_name: str) -> str | None:
     """Unified ingredient category lookup with fallbacks.
 
     Consolidates category resolution from:
@@ -183,20 +181,6 @@ def resolve_ingredient_category(slug_or_name: str) -> str | None:
     return None
 
 
-def find_all_categories_for_value(value: str) -> list[str]:
-    """Find all categories a modifier value could belong to.
-
-    Used for disambiguation when a value matches multiple categories.
-
-    Args:
-        value: Modifier value (e.g., "vanilla")
-
-    Returns:
-        List of matching category slugs
-    """
-    return menu_cache.find_all_categories_for_ingredient(value)
-
-
 def belongs_to_category(modifier: dict, target_category: str) -> bool:
     """Check if a modifier belongs to a specific category.
 
@@ -216,7 +200,7 @@ def belongs_to_category(modifier: dict, target_category: str) -> bool:
     # Look up ingredient category from slug
     slug = modifier.get("slug", "")
     if slug:
-        category = resolve_ingredient_category(slug)
+        category = _resolve_ingredient_category(slug)
         if category == target_category:
             return True
 

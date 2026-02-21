@@ -15,6 +15,12 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from .config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, AWS_SES_FROM_EMAIL
+from .email_templates import (
+    build_payment_link_email,
+    build_receipt_email,
+    build_payment_expired_email,
+    build_report_email,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,115 +51,76 @@ def is_email_configured() -> bool:
     return bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SES_FROM_EMAIL)
 
 
-def _build_order_details_section(
-    customer_name: str | None,
-    customer_phone: str | None,
-    order_type: str | None,
-) -> tuple[str, str]:
-    """Build order details text and HTML sections. Returns (text, html)."""
-    if not customer_name and not customer_phone and not order_type:
-        return "", ""
+def _send_email(to_email: str, subject: str, body_text: str, body_html: str, context: str) -> dict:
+    """Send an email via AWS SES, or log in mock mode.
 
-    text = "\nOrder Details:\n"
-    html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Order Details</h3>"
-    html += "<table style='border-collapse: collapse; width: 100%; max-width: 400px;'>"
+    Args:
+        to_email: Recipient email address.
+        subject: Email subject line.
+        body_text: Plain text body.
+        body_html: HTML body.
+        context: Short description for log messages (e.g. "payment link", "receipt").
 
-    if customer_name:
-        text += f"  Name: {customer_name}\n"
-        html += f"<tr><td style='padding: 4px 8px; color: #666;'>Name:</td><td style='padding: 4px 8px;'>{customer_name}</td></tr>"
-    if customer_phone:
-        text += f"  Phone: {customer_phone}\n"
-        html += f"<tr><td style='padding: 4px 8px; color: #666;'>Phone:</td><td style='padding: 4px 8px;'>{customer_phone}</td></tr>"
-    if order_type:
-        text += f"  Order Type: {order_type.title()}\n"
-        html += f"<tr><td style='padding: 4px 8px; color: #666;'>Order Type:</td><td style='padding: 4px 8px;'>{order_type.title()}</td></tr>"
+    Returns:
+        dict with status and details.
+    """
+    if not is_email_configured():
+        logger.info(
+            "MOCK EMAIL to %s: Subject: %s | Body: %s",
+            to_email, subject, body_text[:200] + "...",
+        )
+        return {
+            "status": "sent",
+            "to_email": to_email,
+            "subject": subject,
+            "mock": True,
+            "message": f"{context.title()} email logged (AWS SES not configured)",
+        }
 
-    html += "</table>"
-    return text, html
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = AWS_SES_FROM_EMAIL
+        msg["To"] = to_email
 
+        msg.attach(MIMEText(body_text, "plain"))
+        msg.attach(MIMEText(body_html, "html"))
 
-def _build_items_section(
-    items: list,
-    subtotal: float | None,
-    city_tax: float | None,
-    state_tax: float | None,
-    delivery_fee: float | None,
-    amount: float,
-) -> tuple[str, str]:
-    """Build items list with totals as text and HTML. Returns (text, html)."""
-    if not items:
-        return "", ""
+        client = _get_ses_client()
+        if client is None:
+            return {
+                "status": "error",
+                "to_email": to_email,
+                "error": "boto3 not installed",
+                "mock": False,
+                "message": f"Failed to send {context} email: boto3 not installed",
+            }
 
-    text = "\nItems:\n"
-    html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Items</h3>"
-    html += "<table style='border-collapse: collapse; width: 100%; max-width: 500px; border: 1px solid #eee;'>"
-    html += "<tr style='background: #f5f5f5;'><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Item</th><th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Details</th><th style='padding: 8px; text-align: right; border-bottom: 1px solid #ddd;'>Price</th></tr>"
+        client.send_raw_email(
+            Source=AWS_SES_FROM_EMAIL,
+            Destinations=[to_email],
+            RawMessage={"Data": msg.as_string()},
+        )
 
-    for item in items:
-        item_name = item.get("display_name") or item.get("menu_item_name", "Item")
-        quantity = item.get("quantity", 1)
-        line_total = item.get("line_total", 0)
-        base_price = item.get("base_price") or item.get("unit_price") or line_total
+        logger.info("%s email sent successfully to %s", context.title(), to_email)
 
-        modifiers = item.get("modifiers") or []
-        priced_modifiers = [m for m in modifiers if m.get("price", 0) > 0]
-        free_modifiers = [m.get("name", "") for m in modifiers if m.get("price", 0) == 0 and m.get("name")]
-        free_details = list(item.get("free_details") or []) + free_modifiers
-        details_str = ", ".join(free_details) if free_details else ""
+        return {
+            "status": "sent",
+            "to_email": to_email,
+            "subject": subject,
+            "mock": False,
+            "message": f"{context.title()} email sent successfully",
+        }
 
-        if priced_modifiers:
-            free_details_str = " • ".join(free_details) if free_details else ""
-            text += f"  {quantity}x {item_name} - ${base_price:.2f}\n"
-            if free_details_str:
-                text += f"    {free_details_str}\n"
-            for mod in priced_modifiers:
-                mod_price = mod.get("price", 0)
-                text += f"    + {mod['name']} ${mod_price:.2f}\n"
-
-            html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
-            html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{free_details_str}</td>"
-            html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${base_price:.2f}</td></tr>"
-            for mod in priced_modifiers:
-                mod_price = mod.get("price", 0)
-                html += f"<tr><td style='padding: 8px 8px 8px 24px; border-bottom: 1px solid #eee; color: #666;'>+ {mod['name']}</td>"
-                html += f"<td style='padding: 8px; border-bottom: 1px solid #eee;'></td>"
-                html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: #666;'>${mod_price:.2f}</td></tr>"
-        else:
-            text += f"  {quantity}x {item_name}"
-            if details_str:
-                text += f" ({details_str})"
-            text += f" - ${line_total:.2f}\n"
-
-            html += f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>{quantity}x {item_name}</td>"
-            html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; font-size: 13px;'>{details_str}</td>"
-            html += f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>${line_total:.2f}</td></tr>"
-
-    # Build totals section
-    if subtotal is not None:
-        html += f"<tr><td colspan='2' style='padding: 8px; text-align: right; border-top: 1px solid #ddd;'>Subtotal:</td><td style='padding: 8px; text-align: right; border-top: 1px solid #ddd;'>${subtotal:.2f}</td></tr>"
-        text += f"\nSubtotal: ${subtotal:.2f}\n"
-
-        if city_tax and city_tax > 0 and state_tax and state_tax > 0:
-            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>City Tax:</td><td style='padding: 8px; text-align: right;'>${city_tax:.2f}</td></tr>"
-            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>State Tax:</td><td style='padding: 8px; text-align: right;'>${state_tax:.2f}</td></tr>"
-            text += f"City Tax: ${city_tax:.2f}\n"
-            text += f"State Tax: ${state_tax:.2f}\n"
-        elif city_tax and city_tax > 0:
-            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Tax:</td><td style='padding: 8px; text-align: right;'>${city_tax:.2f}</td></tr>"
-            text += f"Tax: ${city_tax:.2f}\n"
-        elif state_tax and state_tax > 0:
-            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Tax:</td><td style='padding: 8px; text-align: right;'>${state_tax:.2f}</td></tr>"
-            text += f"Tax: ${state_tax:.2f}\n"
-
-        if delivery_fee and delivery_fee > 0:
-            html += f"<tr><td colspan='2' style='padding: 8px; text-align: right;'>Delivery Fee:</td><td style='padding: 8px; text-align: right;'>${delivery_fee:.2f}</td></tr>"
-            text += f"Delivery Fee: ${delivery_fee:.2f}\n"
-
-    html += f"<tr style='background: #f9f9f9;'><td colspan='2' style='padding: 8px; text-align: right;'><strong>Total:</strong></td><td style='padding: 8px; text-align: right;'><strong>${amount:.2f}</strong></td></tr>"
-    html += "</table>"
-    text += f"Total: ${amount:.2f}\n"
-
-    return text, html
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
+        logger.error("Failed to send %s email to %s: %s", context, to_email, str(e))
+        return {
+            "status": "error",
+            "to_email": to_email,
+            "error": str(e),
+            "mock": False,
+            "message": f"Failed to send {context} email: {str(e)}",
+        }
 
 
 def send_payment_link_email(
@@ -171,8 +138,7 @@ def send_payment_link_email(
     delivery_fee: float | None = None,
     payment_url: str | None = None,
 ) -> dict:
-    """
-    Send an email with a payment link to the customer.
+    """Send an email with a payment link to the customer.
 
     Args:
         to_email: Customer's email address
@@ -192,115 +158,21 @@ def send_payment_link_email(
     Returns:
         dict with status and details
     """
-    # Use provided Stripe URL or fall back to mock URL
     if not payment_url:
         payment_url = f"https://pay.example.com/order/{order_id}"
 
-    # Build the email content
-    greeting = f"Hi {customer_name}," if customer_name else "Hi,"
-
-    # Build order details and items sections
-    order_details_text, order_details_html = _build_order_details_section(
-        customer_name, customer_phone, order_type,
-    )
-    items_text, items_html = _build_items_section(
-        items, subtotal, city_tax, state_tax, delivery_fee, amount,
+    subject, body_text, body_html = build_payment_link_email(
+        order_id=order_id, amount=amount, store_name=store_name,
+        payment_url=payment_url, customer_name=customer_name,
+        customer_phone=customer_phone, order_type=order_type,
+        items=items, subtotal=subtotal, city_tax=city_tax,
+        state_tax=state_tax, delivery_fee=delivery_fee,
     )
 
-    subject = f"Payment Link for Your {store_name} Order #{order_id}"
-
-    body_text = f"""{greeting}
-
-Thank you for your order at {store_name}!
-{order_details_text}{items_text}
-Click here to complete your payment:
-{payment_url}
-
-If you have any questions, please call us.
-
-Thanks,
-{store_name}
-"""
-
-    body_html = f"""
-<html>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-<p>{greeting}</p>
-<p>Thank you for your order at <strong>{store_name}</strong>!</p>
-{order_details_html}
-{items_html}
-<p style="margin-top: 24px;"><a href="{payment_url}" style="background-color: #1976d2; color: white; padding: 14px 28px; text-decoration: none; display: inline-block; border-radius: 4px; font-weight: 500;">Complete Payment - ${amount:.2f}</a></p>
-<p style="color: #666; font-size: 13px;">Or copy this link: {payment_url}</p>
-<p>If you have any questions, please call us.</p>
-<p>Thanks,<br><strong>{store_name}</strong></p>
-</body>
-</html>
-"""
-
-    if not is_email_configured():
-        # Mock mode - just log the email
-        logger.info(
-            "MOCK EMAIL to %s: Subject: %s | Body: %s",
-            to_email,
-            subject,
-            body_text[:200] + "..."
-        )
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "payment_url": payment_url,
-            "mock": True,
-            "message": "Email logged (AWS SES not configured)",
-        }
-
-    # Send real email via AWS SES
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = AWS_SES_FROM_EMAIL
-        msg["To"] = to_email
-
-        # Attach both plain text and HTML versions
-        msg.attach(MIMEText(body_text, "plain"))
-        msg.attach(MIMEText(body_html, "html"))
-
-        client = _get_ses_client()
-        if client is None:
-            return {
-                "status": "error",
-                "to_email": to_email,
-                "error": "boto3 not installed",
-                "mock": False,
-                "message": "Failed to send email: boto3 not installed",
-            }
-
-        client.send_raw_email(
-            Source=AWS_SES_FROM_EMAIL,
-            Destinations=[to_email],
-            RawMessage={"Data": msg.as_string()},
-        )
-
-        logger.info("Email sent successfully to %s for order %d", to_email, order_id)
-
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "payment_url": payment_url,
-            "mock": False,
-            "message": "Email sent successfully",
-        }
-
-    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
-        logger.error("Failed to send email to %s: %s", to_email, str(e))
-        return {
-            "status": "error",
-            "to_email": to_email,
-            "error": str(e),
-            "mock": False,
-            "message": f"Failed to send email: {str(e)}",
-        }
+    result = _send_email(to_email, subject, body_text, body_html, "payment link")
+    if result.get("status") == "sent":
+        result["payment_url"] = payment_url
+    return result
 
 
 def send_receipt_email(
@@ -317,11 +189,7 @@ def send_receipt_email(
     state_tax: float | None = None,
     delivery_fee: float | None = None,
 ) -> dict:
-    """
-    Send a receipt email confirming payment was received.
-
-    Same structure as the payment link email, but replaces the payment button
-    with a "Payment received" confirmation banner.
+    """Send a receipt email confirming payment was received.
 
     Args:
         to_email: Customer's email address
@@ -340,102 +208,14 @@ def send_receipt_email(
     Returns:
         dict with status and details
     """
-    greeting = f"Hi {customer_name}," if customer_name else "Hi,"
-
-    order_details_text, order_details_html = _build_order_details_section(
-        customer_name, customer_phone, order_type,
-    )
-    items_text, items_html = _build_items_section(
-        items, subtotal, city_tax, state_tax, delivery_fee, amount,
+    subject, body_text, body_html = build_receipt_email(
+        order_id=order_id, amount=amount, store_name=store_name,
+        customer_name=customer_name, customer_phone=customer_phone,
+        order_type=order_type, items=items, subtotal=subtotal,
+        city_tax=city_tax, state_tax=state_tax, delivery_fee=delivery_fee,
     )
 
-    subject = f"Receipt for Your {store_name} Order #{order_id}"
-
-    body_text = f"""{greeting}
-
-Thank you for your payment! Your order at {store_name} has been received.
-{order_details_text}{items_text}
-Payment received: ${amount:.2f}
-
-If you have any questions, please call us.
-
-Thanks,
-{store_name}
-"""
-
-    body_html = f"""
-<html>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-<p>{greeting}</p>
-<p>Thank you for your payment! Your order at <strong>{store_name}</strong> has been received.</p>
-{order_details_html}
-{items_html}
-<div style="margin-top: 24px; padding: 16px 24px; background-color: #ECFDF5; border-radius: 8px; border: 1px solid #A7F3D0; text-align: center;">
-  <span style="color: #059669; font-weight: 600; font-size: 16px;">&#10003; Payment Received &mdash; ${amount:.2f}</span>
-</div>
-<p>If you have any questions, please call us.</p>
-<p>Thanks,<br><strong>{store_name}</strong></p>
-</body>
-</html>
-"""
-
-    if not is_email_configured():
-        logger.info(
-            "MOCK EMAIL to %s: Subject: %s | Body: %s",
-            to_email, subject, body_text[:200] + "...",
-        )
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "mock": True,
-            "message": "Receipt email logged (AWS SES not configured)",
-        }
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = AWS_SES_FROM_EMAIL
-        msg["To"] = to_email
-
-        msg.attach(MIMEText(body_text, "plain"))
-        msg.attach(MIMEText(body_html, "html"))
-
-        client = _get_ses_client()
-        if client is None:
-            return {
-                "status": "error",
-                "to_email": to_email,
-                "error": "boto3 not installed",
-                "mock": False,
-                "message": "Failed to send receipt email: boto3 not installed",
-            }
-
-        client.send_raw_email(
-            Source=AWS_SES_FROM_EMAIL,
-            Destinations=[to_email],
-            RawMessage={"Data": msg.as_string()},
-        )
-
-        logger.info("Receipt email sent successfully to %s for order %d", to_email, order_id)
-
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "mock": False,
-            "message": "Receipt email sent successfully",
-        }
-
-    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
-        logger.error("Failed to send receipt email to %s: %s", to_email, str(e))
-        return {
-            "status": "error",
-            "to_email": to_email,
-            "error": str(e),
-            "mock": False,
-            "message": f"Failed to send receipt email: {str(e)}",
-        }
+    return _send_email(to_email, subject, body_text, body_html, "receipt")
 
 
 def send_payment_expired_email(
@@ -476,104 +256,18 @@ def send_payment_expired_email(
     if not payment_url:
         payment_url = f"https://pay.example.com/order/{order_id}"
 
-    greeting = f"Hi {customer_name}," if customer_name else "Hi,"
-
-    order_details_text, order_details_html = _build_order_details_section(
-        customer_name, customer_phone, order_type,
+    subject, body_text, body_html = build_payment_expired_email(
+        order_id=order_id, amount=amount, store_name=store_name,
+        payment_url=payment_url, customer_name=customer_name,
+        customer_phone=customer_phone, order_type=order_type,
+        items=items, subtotal=subtotal, city_tax=city_tax,
+        state_tax=state_tax, delivery_fee=delivery_fee,
     )
-    items_text, items_html = _build_items_section(
-        items, subtotal, city_tax, state_tax, delivery_fee, amount,
-    )
 
-    subject = f"New Payment Link for Your {store_name} Order #{order_id}"
-
-    body_text = f"""{greeting}
-
-Your previous payment link for your {store_name} order has expired. No worries — here's a new one!
-{order_details_text}{items_text}
-Click here to complete your payment:
-{payment_url}
-
-If you have any questions, please call us.
-
-Thanks,
-{store_name}
-"""
-
-    body_html = f"""
-<html>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-<p>{greeting}</p>
-<p>Your previous payment link for your <strong>{store_name}</strong> order has expired. No worries — here's a new one!</p>
-{order_details_html}
-{items_html}
-<p style="margin-top: 24px;"><a href="{payment_url}" style="background-color: #1976d2; color: white; padding: 14px 28px; text-decoration: none; display: inline-block; border-radius: 4px; font-weight: 500;">Complete Payment - ${amount:.2f}</a></p>
-<p style="color: #666; font-size: 13px;">Or copy this link: {payment_url}</p>
-<p>If you have any questions, please call us.</p>
-<p>Thanks,<br><strong>{store_name}</strong></p>
-</body>
-</html>
-"""
-
-    if not is_email_configured():
-        logger.info(
-            "MOCK EMAIL to %s: Subject: %s | Body: %s",
-            to_email, subject, body_text[:200] + "...",
-        )
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "payment_url": payment_url,
-            "mock": True,
-            "message": "Expired payment email logged (AWS SES not configured)",
-        }
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = AWS_SES_FROM_EMAIL
-        msg["To"] = to_email
-
-        msg.attach(MIMEText(body_text, "plain"))
-        msg.attach(MIMEText(body_html, "html"))
-
-        client = _get_ses_client()
-        if client is None:
-            return {
-                "status": "error",
-                "to_email": to_email,
-                "error": "boto3 not installed",
-                "mock": False,
-                "message": "Failed to send expired payment email: boto3 not installed",
-            }
-
-        client.send_raw_email(
-            Source=AWS_SES_FROM_EMAIL,
-            Destinations=[to_email],
-            RawMessage={"Data": msg.as_string()},
-        )
-
-        logger.info("Expired payment email sent to %s for order %d", to_email, order_id)
-
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "payment_url": payment_url,
-            "mock": False,
-            "message": "Expired payment email sent successfully",
-        }
-
-    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
-        logger.error("Failed to send expired payment email to %s: %s", to_email, str(e))
-        return {
-            "status": "error",
-            "to_email": to_email,
-            "error": str(e),
-            "mock": False,
-            "message": f"Failed to send expired payment email: {str(e)}",
-        }
+    result = _send_email(to_email, subject, body_text, body_html, "expired payment")
+    if result.get("status") == "sent":
+        result["payment_url"] = payment_url
+    return result
 
 
 def send_report_email(
@@ -587,8 +281,7 @@ def send_report_email(
     item_count: int = 0,
     items: list[dict] | None = None,
 ) -> dict:
-    """
-    Send a conversation report email to the review team.
+    """Send a conversation report email to the review team.
 
     Args:
         session_id: UUID of the session being reported
@@ -599,189 +292,18 @@ def send_report_email(
         recent_messages: Last N messages from conversation history
         order_status: Current order status
         item_count: Number of items in cart
-        items: Cart items (adapter dict format with display_name, quantity, line_total, modifiers)
+        items: Cart items (adapter dict format)
 
     Returns:
         dict with status and details
     """
     to_email = "info@zervio.ai"
-    short_id = session_id[:8]
-    subject = f"Conversation Report - Session {short_id}"
 
-    # Build session details for plain text
-    details_text = f"Session ID: {session_id}\n"
-    if store_id:
-        details_text += f"Store ID: {store_id}\n"
-    if caller_id:
-        details_text += f"Caller ID: {caller_id}\n"
-    if customer_name:
-        details_text += f"Customer Name: {customer_name}\n"
-    if customer_phone:
-        details_text += f"Customer Phone: {customer_phone}\n"
-    if order_status:
-        details_text += f"Order Status: {order_status}\n"
-    details_text += f"Items in Cart: {item_count}\n"
+    subject, body_text, body_html = build_report_email(
+        session_id=session_id, store_id=store_id, caller_id=caller_id,
+        customer_name=customer_name, customer_phone=customer_phone,
+        recent_messages=recent_messages, order_status=order_status,
+        item_count=item_count, items=items,
+    )
 
-    # Build cart items section
-    cart_text = ""
-    cart_html = ""
-    if items:
-        cart_text = "\nCart Contents:\n"
-        cart_html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Cart Contents</h3>"
-        cart_html += (
-            "<table style='border-collapse: collapse; width: 100%; max-width: 500px; "
-            "border: 1px solid #eee;'>"
-            "<tr style='background: #f5f5f5;'>"
-            "<th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Item</th>"
-            "<th style='padding: 8px; text-align: left; border-bottom: 1px solid #ddd;'>Details</th>"
-            "<th style='padding: 8px; text-align: right; border-bottom: 1px solid #ddd;'>Price</th>"
-            "</tr>"
-        )
-        for cart_item in items:
-            name = cart_item.get("display_name") or cart_item.get("menu_item_name", "Item")
-            qty = cart_item.get("quantity", 1)
-            line_total = cart_item.get("line_total", 0)
-            mods = cart_item.get("modifiers") or []
-            mod_names = [m.get("name", "") for m in mods if m.get("name")]
-            details = ", ".join(mod_names)
-
-            cart_text += f"  {qty}x {name}"
-            if details:
-                cart_text += f" ({details})"
-            cart_text += f" - ${line_total:.2f}\n"
-
-            cart_html += (
-                f"<tr><td style='padding: 8px; border-bottom: 1px solid #eee;'>"
-                f"{qty}x {name}</td>"
-                f"<td style='padding: 8px; border-bottom: 1px solid #eee; color: #666; "
-                f"font-size: 13px;'>{details}</td>"
-                f"<td style='padding: 8px; border-bottom: 1px solid #eee; text-align: right;'>"
-                f"${line_total:.2f}</td></tr>"
-            )
-        cart_html += "</table>"
-
-    # Build messages section
-    messages_text = ""
-    messages_html = ""
-    if recent_messages:
-        messages_text = "\nRecent Messages:\n"
-        messages_html = "<h3 style='margin: 16px 0 8px 0; font-size: 16px;'>Recent Messages</h3>"
-        for msg in recent_messages:
-            role = msg.get("role", "unknown").title()
-            content = msg.get("content", "")
-            messages_text += f"  [{role}]: {content}\n"
-            bg = "#f0f4ff" if role == "Assistant" else "#f9f9f9"
-            messages_html += (
-                f"<div style='padding: 8px 12px; margin: 4px 0; "
-                f"background: {bg}; border-radius: 6px; font-size: 13px;'>"
-                f"<strong>{role}:</strong> {content}</div>"
-            )
-
-    body_text = f"""Conversation Report
-
-A user has flagged this conversation for review.
-
-Session Details:
-{details_text}
-{cart_text}
-{messages_text}
----
-This is an automated report from the ordering chatbot.
-"""
-
-    # Build session details HTML table
-    details_html = "<table style='border-collapse: collapse; width: 100%; max-width: 500px;'>"
-    detail_rows = [("Session ID", session_id)]
-    if store_id:
-        detail_rows.append(("Store ID", store_id))
-    if caller_id:
-        detail_rows.append(("Caller ID", caller_id))
-    if customer_name:
-        detail_rows.append(("Customer Name", customer_name))
-    if customer_phone:
-        detail_rows.append(("Customer Phone", customer_phone))
-    if order_status:
-        detail_rows.append(("Order Status", order_status))
-    detail_rows.append(("Items in Cart", str(item_count)))
-
-    for label, value in detail_rows:
-        details_html += (
-            f"<tr><td style='padding: 4px 8px; color: #666; white-space: nowrap;'>"
-            f"{label}:</td><td style='padding: 4px 8px;'>{value}</td></tr>"
-        )
-    details_html += "</table>"
-
-    body_html = f"""
-<html>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-<h2 style="margin: 0 0 16px 0; font-size: 20px;">Conversation Report</h2>
-<p>A user has flagged this conversation for review.</p>
-<h3 style="margin: 16px 0 8px 0; font-size: 16px;">Session Details</h3>
-{details_html}
-{cart_html}
-{messages_html}
-<hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
-<p style="color: #999; font-size: 12px;">This is an automated report from the ordering chatbot.</p>
-</body>
-</html>
-"""
-
-    if not is_email_configured():
-        logger.info(
-            "MOCK EMAIL to %s: Subject: %s | Body: %s",
-            to_email,
-            subject,
-            body_text[:200] + "..."
-        )
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "mock": True,
-            "message": "Report email logged (AWS SES not configured)",
-        }
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = AWS_SES_FROM_EMAIL
-        msg["To"] = to_email
-
-        msg.attach(MIMEText(body_text, "plain"))
-        msg.attach(MIMEText(body_html, "html"))
-
-        client = _get_ses_client()
-        if client is None:
-            return {
-                "status": "error",
-                "to_email": to_email,
-                "error": "boto3 not installed",
-                "mock": False,
-                "message": "Failed to send report email: boto3 not installed",
-            }
-
-        client.send_raw_email(
-            Source=AWS_SES_FROM_EMAIL,
-            Destinations=[to_email],
-            RawMessage={"Data": msg.as_string()},
-        )
-
-        logger.info("Report email sent successfully for session %s", short_id)
-
-        return {
-            "status": "sent",
-            "to_email": to_email,
-            "subject": subject,
-            "mock": False,
-            "message": "Report email sent successfully",
-        }
-
-    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError) as e:
-        logger.error("Failed to send report email for session %s: %s", short_id, str(e))
-        return {
-            "status": "error",
-            "to_email": to_email,
-            "error": str(e),
-            "mock": False,
-            "message": f"Failed to send report email: {str(e)}",
-        }
+    return _send_email(to_email, subject, body_text, body_html, "report")

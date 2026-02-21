@@ -67,10 +67,10 @@ def build_qr_for_pending_field(
 
     try:
         attrs = menu_cache.get_item_type_attributes(item_type)
-    except Exception:
+    except (KeyError, ValueError) as e:
         logger.warning(
-            "Failed to load attributes for item_type=%s, attr_slug=%s",
-            item_type, attr_slug, exc_info=True,
+            "Failed to load attributes for item_type=%s, attr_slug=%s: %s",
+            item_type, attr_slug, e, exc_info=True,
         )
         return None
 

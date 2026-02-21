@@ -180,7 +180,7 @@ def _merge_multiline_results(
     for line in lines:
         try:
             result = parse_open_input(line, ctx=ctx)
-        except Exception:
+        except (ValueError, KeyError, TypeError, AttributeError, re.error):
             logger.debug("Segment parse error for '%s', aborting split", line[:50])
             if require_all_produce_items:
                 return None

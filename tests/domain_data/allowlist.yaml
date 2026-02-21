@@ -1782,6 +1782,11 @@ orderbot/tasks/parsers/intent_patterns.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/tasks/parsers/patterns/quantity.py:
+  - term: everything
+    context: all
+    reason: "Generic word meaning 'all items' in duplicate-all pattern, not a food term"
+
 orderbot/tasks/parsers/deterministic/qualifier_extraction.py:
   - term: side
     line_range: [40, 40]

@@ -235,7 +235,7 @@ def chat_message_stream(
     request: Request,
     req: ChatMessageRequest,
     db: Session = Depends(get_db),
-):
+) -> StreamingResponse:
     """
     Streaming version of chat message endpoint.
 

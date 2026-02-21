@@ -13,6 +13,7 @@ __all__ = [
     "is_affirmative",
     "is_negative",
     "is_skip_response",
+    "is_move_on_response",
     "has_trailing_done_signal",
     "get_affirmative_patterns",
     "get_negative_patterns",
@@ -130,6 +131,44 @@ def has_trailing_done_signal(text: str) -> bool:
         tail = " ".join(words[-n:])
         if menu_cache.is_done(tail):
             return True
+    return False
+
+
+_MOVE_ON_PHRASES = frozenset({
+    "move on",
+    "skip",
+    "skip it",
+    "skip this",
+    "none of these",
+    "none of those",
+    "none of them",
+    "never mind",
+    "nevermind",
+    "forget it",
+    "forget about it",
+    "neither",
+    "next",
+    "pass",
+})
+
+
+def is_move_on_response(user_input: str) -> bool:
+    """Check if user input indicates they want to move past a disambiguation.
+
+    Detects phrases like "move on", "skip", "none of these", "never mind", etc.
+
+    Args:
+        user_input: The user's input text
+
+    Returns:
+        True if the input indicates moving on, False otherwise
+    """
+    user_lower = normalize_text(user_input)
+    if user_lower in _MOVE_ON_PHRASES:
+        return True
+    # Also treat negative responses as move-on intent in disambiguation context
+    if is_negative(user_lower):
+        return True
     return False
 
 

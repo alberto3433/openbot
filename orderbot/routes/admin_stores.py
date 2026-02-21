@@ -76,7 +76,7 @@ from ..db import get_db
 from ..db.models import Store
 from ..schemas.stores import StoreOut, StoreCreate, StoreUpdate
 from ..services.store_service import invalidate_store_cache
-from .crud_helpers import get_or_404
+from .crud_helpers import apply_payload_updates, get_or_404
 
 
 logger = logging.getLogger(__name__)
@@ -155,34 +155,7 @@ def update_store(
     """Update a store's information."""
     store = get_or_404(db, Store, store_id, id_column="store_id")
 
-    if payload.name is not None:
-        store.name = payload.name
-    if payload.address is not None:
-        store.address = payload.address
-    if payload.city is not None:
-        store.city = payload.city
-    if payload.state is not None:
-        store.state = payload.state
-    if payload.zip_code is not None:
-        store.zip_code = payload.zip_code
-    if payload.phone is not None:
-        store.phone = payload.phone
-    if "hours" in payload.model_fields_set:
-        store.hours = payload.hours
-    if payload.timezone is not None:
-        store.timezone = payload.timezone
-    if payload.status is not None:
-        store.status = payload.status
-    if payload.payment_methods is not None:
-        store.payment_methods = payload.payment_methods
-    if payload.city_tax_rate is not None:
-        store.city_tax_rate = payload.city_tax_rate
-    if payload.state_tax_rate is not None:
-        store.state_tax_rate = payload.state_tax_rate
-    if payload.delivery_zip_codes is not None:
-        store.delivery_zip_codes = payload.delivery_zip_codes
-    if payload.delivery_fee is not None:
-        store.delivery_fee = payload.delivery_fee
+    apply_payload_updates(store, payload, db)
 
     db.commit()
     db.refresh(store)

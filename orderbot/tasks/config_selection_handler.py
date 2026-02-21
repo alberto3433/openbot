@@ -238,9 +238,9 @@ class ConfigSelectionHandler:
         options = order.pending_item_options
         quantity = order.pending_item_quantity or 1
 
-        # Allow user to decline the selection (e.g., "no thanks" after menu inquiry)
-        from .response_utils import is_negative
-        if is_negative(user_lower):
+        # Allow user to decline the selection (e.g., "no thanks", "move on", "skip")
+        from .response_utils import is_move_on_response
+        if is_move_on_response(user_lower):
             order.pending_item_options = []
             order.clear_pending()
             return StateMachineResult(
@@ -454,6 +454,8 @@ class ConfigSelectionHandler:
         order: OrderTask,
     ) -> StateMachineResult:
         """Handle user selecting from multiple modifier options (e.g., cream cheese types)."""
+        from .response_utils import is_move_on_response
+
         if not order.pending_item_options:
             order.clear_pending()
             order.pending_modifier_target_item_index = None
@@ -466,14 +468,39 @@ class ConfigSelectionHandler:
         # Get the disambiguation handler through taking_items_handler
         disambiguation = self._taking_items_handler.item_adder_handler.disambiguation_handler
 
+        # Check for move-on/negative responses before matching
+        if is_move_on_response(user_input):
+            logger.info("MODIFIER SELECTION: User chose to move on/skip")
+            disambiguation.clear_disambiguation_state(order)
+            order.pending_modifier_target_item_index = None
+            order.pending_modifier_quantity = None
+            order.set_phase(OrderPhase.TAKING_ITEMS)
+            return StateMachineResult(
+                message="No problem! What else can I get for you?",
+                order=order,
+            )
+
         # Use existing disambiguation resolution
         selected = disambiguation.resolve_disambiguation(user_input, order)
 
         if not selected:
-            # Couldn't match - re-ask
+            # No match — try falling through to taking_items_handler for new item attempts
+            if self._taking_items_handler:
+                disambiguation.clear_disambiguation_state(order)
+                order.pending_modifier_target_item_index = None
+                order.pending_modifier_quantity = None
+                return self._taking_items_handler.handle_taking_items(user_input, order)
+
+            # Fallback: re-ask with move-on hint
+            reask = disambiguation.get_reask_message(order)
+            options = order.pending_item_options or []
+            qr = [{"label": o.get("name", ""), "value": o.get("name", "")}
+                  for o in options if o.get("name")]
+            qr.append({"label": "Move on", "value": "move on"})
             return StateMachineResult(
-                message=disambiguation.get_reask_message(order),
+                message=reask,
                 order=order,
+                quick_replies=qr,
             )
 
         # Get the target item and add the modifier

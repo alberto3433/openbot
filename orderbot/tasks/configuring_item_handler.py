@@ -234,6 +234,8 @@ class ConfiguringItemHandler:
 
         When user said "syrup" and we asked "Which syrup?", this handles their response.
         """
+        from .response_utils import is_move_on_response
+
         item = order.items.get_item_by_id(order.pending_item_id)
         if not item:
             order.clear_pending()
@@ -253,6 +255,21 @@ class ConfiguringItemHandler:
         ambig_info = order.pending_config_queue[0]
         attr_slug = ambig_info.get("attr_slug", "")
         matching_options = ambig_info.get("matching_options", [])
+
+        # Check for move-on responses ("skip", "none of these", "no", etc.)
+        if is_move_on_response(user_input):
+            logger.info(
+                "User chose to move on from ambiguous selection for %s",
+                attr_slug,
+            )
+            # Clear the ambiguous selection from the item
+            if isinstance(item, MenuItemTask) and item.ambiguous_selections:
+                item.ambiguous_selections.pop(0)
+            order.pending_config_queue = []
+            # Continue to the next question
+            if isinstance(item, MenuItemTask) and self.menu_item_handler:
+                return self.menu_item_handler.get_first_question(item, order)
+            return self.checkout_utils_handler.get_next_question(order)
 
         # Try to match user input against the options
         user_lower = normalize_text(user_input)
@@ -304,13 +321,29 @@ class ConfiguringItemHandler:
             if isinstance(item, MenuItemTask) and self.menu_item_handler:
                 return self.menu_item_handler.get_first_question(item, order)
 
-        # No match found - ask again or give an error
+        # No match found - try falling through to taking_items_handler for new item attempts
+        if self._taking_items_handler:
+            order.pending_config_queue = []
+            if isinstance(item, MenuItemTask) and item.ambiguous_selections:
+                item.ambiguous_selections.pop(0)
+            order.clear_pending()
+            return self._taking_items_handler.handle_taking_items(user_input, order)
+
+        # Fallback: re-ask with move-on hint
         option_names = [opt.get("display_name", opt.get("slug", "")) for opt in matching_options]
         options_str = format_english_list(option_names, conjunction="or")
+        qr = [{"label": opt.get("display_name", opt.get("slug", "")),
+               "value": opt.get("display_name", opt.get("slug", ""))}
+              for opt in matching_options]
+        qr.append({"label": "Move on", "value": "move on"})
 
         return StateMachineResult(
-            message=f"I didn't catch that. Which would you like? {options_str}?",
+            message=(
+                f"I didn't catch that. Which would you like? {options_str}?"
+                f' Or do you want to <u>move on</u>?'
+            ),
             order=order,
+            quick_replies=qr,
         )
 
     def _check_config_interceptors(
@@ -398,7 +431,8 @@ class ConfiguringItemHandler:
 
         try:
             attrs = menu_cache.get_item_type_attributes(item_type)
-        except Exception:
+        except (KeyError, ValueError) as e:
+            logger.debug("Failed to get attributes for %s: %s", item_type, e)
             return None
 
         attr = attrs.get(attr_slug)

@@ -297,7 +297,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # =============================================================================
 
 @app.get("/", include_in_schema=False)
-def root(request: Request):
+def root(request: Request) -> RedirectResponse:
     """Redirect root to static index page, preserving query parameters."""
     url = "/static/index.html"
     if request.query_params:

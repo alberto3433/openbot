@@ -214,7 +214,10 @@ class DisambiguationHandler:
             show_prices=show_prices,
             price_key="base_price",
         )
-        return f"I didn't catch which one. Please choose:\n{options_str}"
+        return (
+            f"I didn't catch which one. Please choose:\n{options_str}"
+            f'\n\nOr do you want to <u>move on</u>?'
+        )
 
     def clear_disambiguation_state(self, order: OrderTask) -> None:
         """Clear all disambiguation-related state from the order."""

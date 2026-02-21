@@ -86,12 +86,10 @@ from .admin_global_attributes import admin_global_attributes_router, admin_item_
 from . import admin_global_attribute_options  # noqa: F401
 from . import admin_item_type_global_attrs  # noqa: F401
 from .admin_menu_item_sizes import admin_size_categories_router, admin_sizes_router
-from .admin_unrecognized_suggestions import (
-    admin_unrecognized_menu_item_suggestions_router,
-    admin_unrecognized_menu_item_logs_router,
-    admin_unrecognized_option_suggestions_router,
-    admin_unrecognized_ingredient_suggestions_router,
-)
+from .admin_unrecognized_menu_items import admin_unrecognized_menu_item_suggestions_router
+from .admin_unrecognized_logs import admin_unrecognized_menu_item_logs_router
+from .admin_unrecognized_options import admin_unrecognized_option_suggestions_router
+from .admin_unrecognized_ingredients import admin_unrecognized_ingredient_suggestions_router
 from .admin_component_slots import admin_component_slots_router
 from .admin_overall_categories import admin_overall_categories_router
 from .public import public_stores_router, public_company_router

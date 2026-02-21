@@ -34,7 +34,7 @@ admin_component_slots_router = APIRouter(
 # =============================================================================
 
 @admin_component_slots_router.get("/item-types")
-def list_item_types_with_slots(db: Session = Depends(get_db)):
+def list_item_types_with_slots(db: Session = Depends(get_db)) -> list[dict]:
     """List all item types with their component slot counts."""
     item_types = (
         db.query(ItemType)
@@ -55,7 +55,7 @@ def list_item_types_with_slots(db: Session = Depends(get_db)):
 
 
 @admin_component_slots_router.get("/item-types/{item_type_id}/slots")
-def get_item_type_slots(item_type_id: int, db: Session = Depends(get_db)):
+def get_item_type_slots(item_type_id: int, db: Session = Depends(get_db)) -> dict:
     """Get all component slots for an item type."""
     item_type = get_or_404(db, ItemType, item_type_id, detail="Item type not found")
 
@@ -105,7 +105,7 @@ def create_component_slot(
     max_quantity: int = 1,
     display_order: int = 0,
     db: Session = Depends(get_db),
-):
+) -> dict:
     """Create a new component slot for an item type."""
     # Verify item type exists
     item_type = get_or_404(db, ItemType, item_type_id, detail="Item type not found")
@@ -159,7 +159,7 @@ def update_component_slot(
     max_quantity: int | None = None,
     display_order: int | None = None,
     db: Session = Depends(get_db),
-):
+) -> dict:
     """Update a component slot."""
     slot = get_or_404(db, ItemTypeComponentSlot, slot_id, detail="Slot not found")
 
@@ -194,7 +194,7 @@ def update_component_slot(
 
 
 @admin_component_slots_router.delete("/slots/{slot_id}")
-def delete_component_slot(slot_id: int, db: Session = Depends(get_db)):
+def delete_component_slot(slot_id: int, db: Session = Depends(get_db)) -> dict:
     """Delete a component slot and all its options."""
     slot = get_or_404(db, ItemTypeComponentSlot, slot_id, detail="Slot not found")
 
@@ -209,7 +209,7 @@ def delete_component_slot(slot_id: int, db: Session = Depends(get_db)):
 # =============================================================================
 
 @admin_component_slots_router.get("/slots/{slot_id}/options")
-def get_slot_options(slot_id: int, db: Session = Depends(get_db)):
+def get_slot_options(slot_id: int, db: Session = Depends(get_db)) -> dict:
     """Get all options for a component slot."""
     slot = (
         db.query(ItemTypeComponentSlot)
@@ -279,7 +279,7 @@ def add_slot_option(
     display_name: str | None = None,
     display_order: int = 0,
     db: Session = Depends(get_db),
-):
+) -> dict:
     """Add an option to a component slot."""
     slot = get_or_404(db, ItemTypeComponentSlot, slot_id, detail="Slot not found")
 
@@ -332,7 +332,7 @@ def update_slot_option(
     display_name: str | None = None,
     display_order: int | None = None,
     db: Session = Depends(get_db),
-):
+) -> dict:
     """Update a slot option."""
     option = get_or_404(db, ComponentSlotOption, option_id, detail="Option not found")
 
@@ -360,7 +360,7 @@ def update_slot_option(
 
 
 @admin_component_slots_router.delete("/options/{option_id}")
-def delete_slot_option(option_id: int, db: Session = Depends(get_db)):
+def delete_slot_option(option_id: int, db: Session = Depends(get_db)) -> dict:
     """Delete a slot option."""
     option = get_or_404(db, ComponentSlotOption, option_id, detail="Option not found")
 
@@ -379,7 +379,7 @@ def update_default_modifiers(
     option_id: int,
     modifiers: list = Body(...),
     db: Session = Depends(get_db),
-):
+) -> list[dict]:
     """Set default modifiers for a slot option.
 
     Accepts a JSON array of default modifier entries:
@@ -474,7 +474,7 @@ def _resolve_default_modifiers(
 # =============================================================================
 
 @admin_component_slots_router.get("/available-item-types")
-def list_available_item_types(db: Session = Depends(get_db)):
+def list_available_item_types(db: Session = Depends(get_db)) -> list[dict]:
     """List all item types available for slot options."""
     item_types = (
         db.query(ItemType)
@@ -492,7 +492,7 @@ def list_available_menu_items(
     search: str | None = None,
     limit: int = 50,
     db: Session = Depends(get_db),
-):
+) -> list[dict]:
     """List menu items available for slot options."""
     query = db.query(MenuItem).order_by(MenuItem.name)
 

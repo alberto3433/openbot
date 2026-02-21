@@ -209,7 +209,5 @@ from .parser_utils import (  # noqa: F401
     parse_reduce_to_one_sentinel,
 )
 
-from .deterministic.qualifier_extraction import QUALIFIER_PATTERNS  # noqa: F401
-
 # Note: CHANGE_REQUEST_PATTERNS moved to intent_patterns.py.
 # Cannot re-export here due to circular import. Import directly from intent_patterns.

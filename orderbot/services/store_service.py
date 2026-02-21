@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..db.models import Company, Store
+from .store_hours import parse_hours_config, is_store_open_now, get_next_open_time_display
 
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,11 @@ def build_store_info(
             "zip_code": None,
             "phone": None,
             "hours": None,
+            # Store hours / scheduling
+            "timezone": "America/New_York",
+            "is_open": True,
+            "hours_config": None,
+            "next_open_time": None,
             # All stores info for cross-store delivery lookup
             "all_stores": [],
         }
@@ -134,6 +140,18 @@ def build_store_info(
                 store_info["zip_code"] = store.zip_code
                 store_info["phone"] = store.phone
                 store_info["hours"] = store.hours
+
+                # Store hours / scheduling support
+                timezone_str = store.timezone or "America/New_York"
+                hours_config = parse_hours_config(store.hours if isinstance(store.hours, dict) else None)
+                store_open = is_store_open_now(hours_config, timezone_str)
+                store_info["timezone"] = timezone_str
+                store_info["is_open"] = store_open
+                store_info["hours_config"] = hours_config
+                if not store_open:
+                    store_info["next_open_time"] = get_next_open_time_display(hours_config, timezone_str)
+                else:
+                    store_info["next_open_time"] = None
 
         # Get all stores for delivery zone lookup
         all_stores = db.query(Store).filter(Store.status == "open").all()

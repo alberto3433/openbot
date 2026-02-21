@@ -351,6 +351,14 @@ def persist_confirmed_order(
         if order is None:
             existing_id = None
 
+    # Parse pickup_time into estimated_ready_at
+    estimated_ready_at = None
+    if customer.pickup_time:
+        try:
+            estimated_ready_at = datetime.fromisoformat(customer.pickup_time)
+        except (ValueError, TypeError):
+            logger.warning("Could not parse pickup_time '%s' as ISO datetime", customer.pickup_time)
+
     if order:
         # Update existing order
         order.status = OrderStatus.CONFIRMED
@@ -358,6 +366,7 @@ def persist_confirmed_order(
         order.phone = customer.phone
         order.customer_email = customer.email
         order.pickup_time = customer.pickup_time
+        order.estimated_ready_at = estimated_ready_at
         order.subtotal = totals.subtotal
         order.city_tax = totals.city_tax
         order.state_tax = totals.state_tax
@@ -376,6 +385,7 @@ def persist_confirmed_order(
             phone=customer.phone,
             customer_email=customer.email,
             pickup_time=customer.pickup_time,
+            estimated_ready_at=estimated_ready_at,
             subtotal=totals.subtotal,
             city_tax=totals.city_tax,
             state_tax=totals.state_tax,

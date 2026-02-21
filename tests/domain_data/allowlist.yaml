@@ -1273,6 +1273,11 @@ orderbot/tasks/parsers/constants.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/tasks/parsers/time_parser.py:
+  - term: lunch
+    context: all
+    reason: "Generic time-of-day reference (lunchtime = noon), not a food term"
+
 orderbot/tasks/parsers/deterministic.py:
   - term: bacon
     context: all
@@ -1786,12 +1791,6 @@ orderbot/tasks/parsers/patterns/quantity.py:
   - term: everything
     context: all
     reason: "Generic word meaning 'all items' in duplicate-all pattern, not a food term"
-
-orderbot/tasks/parsers/deterministic/qualifier_extraction.py:
-  - term: side
-    line_range: [40, 40]
-    context: code
-    reason: "Linguistic pattern 'on the side' - general ordering qualifier, not a food term"
 
 orderbot/tasks/parsers/parser_utils.py:
   - term: everything

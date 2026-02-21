@@ -75,12 +75,41 @@ class MessageBuilder:
             else:
                 lines.append(f"• {summary}")
 
+        # Show scheduled pickup time if set
+        pickup_time = order.delivery_method.pickup_time
+        if pickup_time:
+            display_time = self._format_pickup_time_display(pickup_time)
+            if display_time:
+                lines.append(f"\nScheduled for: {display_time}")
+
         # Add "plus tax" note
         subtotal = order.items.get_subtotal()
         if subtotal > 0:
             lines.append(f"\nThat's ${subtotal:.2f} plus tax.")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_pickup_time_display(pickup_time_iso: str) -> str | None:
+        """Format an ISO-8601 pickup time string for display in messages."""
+        try:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            dt = datetime.fromisoformat(pickup_time_iso)
+            now = datetime.now(dt.tzinfo or ZoneInfo("America/New_York"))
+            days_ahead = (dt.date() - now.date()).days
+            try:
+                time_str = dt.strftime("%-I:%M %p")
+            except ValueError:
+                time_str = dt.strftime("%I:%M %p").lstrip("0")
+            if days_ahead == 0:
+                return f"today at {time_str}"
+            elif days_ahead == 1:
+                return f"tomorrow at {time_str}"
+            else:
+                return f"{dt.strftime('%A')} at {time_str}"
+        except (ValueError, TypeError):
+            return pickup_time_iso
 
     def get_delivery_question(
         self,

@@ -39,6 +39,7 @@ from .parsers import (
     ORDERING_LANGUAGE_PATTERN,
 )
 from .parsers.quantity_utils import extract_make_it_n_target
+from .parsers.time_parser import parse_time_expression
 from .handler_utils import get_last_item, duplicate_last_item_to_qty
 from .checkout_messages import already_have_n_anything_else, thats_n_total_anything_else
 from .utils.text import normalize_text
@@ -532,6 +533,15 @@ class OrderStateMachine:
                 order.add_message("assistant", change_result.message)
                 return change_result
 
+        # Check for time/scheduling expressions (e.g., "pickup at 3pm")
+        # Only when input doesn't look like an item order (to avoid consuming
+        # "everything bagel for pickup at 3pm" as just a scheduling request)
+        if not _looks_like_new_order_attempt(user_input):
+            scheduling_result = self._handle_scheduling_expression(user_input, order)
+            if scheduling_result:
+                order.add_message("assistant", scheduling_result.message)
+                return scheduling_result
+
         return None
 
     def _log_slot_comparison(self, order: OrderTask) -> None:
@@ -654,6 +664,71 @@ class OrderStateMachine:
 
         return StateMachineResult(
             message=f"Sure, that's {target_qty} total. {suffix}",
+            order=order,
+        )
+
+    def _handle_scheduling_expression(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle time/scheduling expressions like 'pickup at 3pm'.
+
+        Parses time expressions from user input and validates against
+        store hours. Sets pickup_time on the delivery method task.
+
+        Returns:
+            StateMachineResult if a time expression was handled, None otherwise.
+        """
+        store_info = getattr(self, '_store_info', {})
+        timezone_str = store_info.get("timezone", "America/New_York")
+
+        parsed_time = parse_time_expression(user_input, timezone_str)
+        if parsed_time is None:
+            return None
+
+        if parsed_time.is_asap:
+            order.delivery_method.pickup_time = None
+            return StateMachineResult(
+                message="Got it, your order will be ready as soon as possible!",
+                order=order,
+            )
+
+        # Validate against store hours
+        from ..services.store_hours import validate_scheduled_time
+        hours_config = store_info.get("hours_config")
+        is_valid, error_msg = validate_scheduled_time(
+            parsed_time.time_value, hours_config, timezone_str,
+        )
+
+        if not is_valid:
+            return StateMachineResult(
+                message=error_msg,
+                order=order,
+            )
+
+        # Set the pickup time
+        order.delivery_method.pickup_time = parsed_time.time_value.isoformat()
+
+        # Format a friendly confirmation
+        try:
+            display_time = parsed_time.time_value.strftime("%I:%M %p").lstrip("0")
+        except ValueError:
+            display_time = parsed_time.time_value.strftime("%I:%M %p").lstrip("0")
+
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo(timezone_str))
+        days_ahead = (parsed_time.time_value.date() - now.date()).days
+        if days_ahead == 0:
+            day_part = "today"
+        elif days_ahead == 1:
+            day_part = "tomorrow"
+        else:
+            day_part = parsed_time.time_value.strftime("%A")
+
+        return StateMachineResult(
+            message=f"Got it, your order will be scheduled for {day_part} at {display_time}. What can I get you?",
             order=order,
         )
 

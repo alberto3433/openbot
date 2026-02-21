@@ -135,8 +135,24 @@ def chat_start(
     # Get signature label
     signature_label = company.signature_item_label or f"signature {primary_item_plural}"
 
+    # Check if store is currently open
+    store_is_open = store_info.get("is_open", True)
+    next_open_time = store_info.get("next_open_time")
+
     # Generate greeting
-    if returning_customer and returning_customer.get("name"):
+    if not store_is_open and next_open_time:
+        if returning_customer and returning_customer.get("name"):
+            customer_name = returning_customer["name"]
+            welcome = (
+                f"Hi {customer_name}! We're currently closed but we reopen {next_open_time}. "
+                f"Would you like to place an order for pickup then?"
+            )
+        else:
+            welcome = (
+                f"Hi! We're currently closed but we reopen {next_open_time}. "
+                f"Would you like to place an order for pickup then?"
+            )
+    elif returning_customer and returning_customer.get("name"):
         customer_name = returning_customer["name"]
         welcome = f"Hi {customer_name}, welcome to {store_name}! Would you like to repeat your last order or place a new pickup or delivery order?"
     else:
@@ -160,6 +176,7 @@ def chat_start(
         "store_id": store_id,
         "returning_customer": returning_customer,
         "store_info": store_info,  # Pre-loaded store info for faster message processing
+        "after_hours": not store_is_open,
     }
 
     save_session(db, session_id, session_data)
@@ -169,14 +186,20 @@ def chat_start(
 
     # Build quick replies for greeting — labels must match message text case
     # so the frontend can linkify them inline
-    pickup_delivery_qr = [
-        {"label": "pickup", "value": "pickup"},
-        {"label": "delivery", "value": "delivery"},
-    ]
-    if returning_customer and returning_customer.get("name"):
-        greeting_qr = [{"label": "Last order", "value": "repeat my last order"}] + pickup_delivery_qr
+    if not store_is_open and next_open_time:
+        greeting_qr = [
+            {"label": "Order for then", "value": "yes, order for then"},
+            {"label": "When do you open?", "value": "when do you open"},
+        ]
     else:
-        greeting_qr = pickup_delivery_qr
+        pickup_delivery_qr = [
+            {"label": "pickup", "value": "pickup"},
+            {"label": "delivery", "value": "delivery"},
+        ]
+        if returning_customer and returning_customer.get("name"):
+            greeting_qr = [{"label": "Last order", "value": "repeat my last order"}] + pickup_delivery_qr
+        else:
+            greeting_qr = pickup_delivery_qr
 
     return ChatStartResponse(
         session_id=session_id,

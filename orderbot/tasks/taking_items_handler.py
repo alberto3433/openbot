@@ -198,6 +198,7 @@ class TakingItemsHandler(MenuDataMixin):
         # Context set per-request
         self._returning_customer: dict | None = None
         self._set_repeat_info_callback: Callable[[bool, str | None], None] | None = None
+        self._store_info: dict = {}
 
     # Note: _modifier_category_keywords and _modifier_item_keywords are
     # inherited from MenuDataMixin via BaseHandler
@@ -215,6 +216,7 @@ class TakingItemsHandler(MenuDataMixin):
         if ctx is not None:
             self._returning_customer = ctx.returning_customer
             self._set_repeat_info_callback = ctx.set_repeat_info_callback
+            self._store_info = ctx.store_info
 
         # Propagate context to sub-handlers that need it
         self._duplicate_handler.set_context(ctx)
@@ -239,6 +241,22 @@ class TakingItemsHandler(MenuDataMixin):
             parsed.unclear,
             len(parsed.parsed_items),
         )
+
+        # After-hours: if store is closed and user confirms ordering
+        if not self._store_info.get("is_open", True):
+            if menu_cache.is_affirmative(user_input) or "order for then" in user_input.lower():
+                # Auto-schedule for next open time
+                from ..services.store_hours import get_next_open_time
+                timezone_str = self._store_info.get("timezone", "America/New_York")
+                hours_config = self._store_info.get("hours_config")
+                next_open = get_next_open_time(hours_config, timezone_str)
+                if next_open:
+                    order.delivery_method.pickup_time = next_open.isoformat()
+                    display = self._store_info.get("next_open_time", "when we reopen")
+                    return StateMachineResult(
+                        message=f"Great! Your order will be scheduled for {display}. What can I get you?",
+                        order=order,
+                    )
 
         if parsed.is_small_talk:
             from .parsers.constants import get_order_redirect

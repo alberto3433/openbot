@@ -29,6 +29,7 @@ class DeliveryMethodTask(BaseTask):
 
     order_type: Literal["pickup", "delivery"] | None = None
     address: AddressTask = Field(default_factory=AddressTask)
+    pickup_time: str | None = None  # ISO-8601 datetime string, None = ASAP
 
     def is_complete(self) -> bool:
         """Check if delivery method is complete."""

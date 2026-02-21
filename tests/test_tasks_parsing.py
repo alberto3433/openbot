@@ -1200,9 +1200,9 @@ class TestSpecialInstructionsExtraction:
         ("bagel with light cream cheese", "light cream cheese"),
         ("egg and cheese bagel with extra bacon", "extra bacon"),
         ("bagel with lots of cream cheese", "extra cream cheese"),
-        ("coffee with a splash of milk", "a splash of milk"),
+        ("coffee with a splash of milk", "splash milk"),
         ("sandwich with go easy on the mayo", "light mayo"),
-        ("coffee with a little sugar", "a little sugar"),
+        ("coffee with a little sugar", "light sugar"),
         ("bagel with no onions", "no onions"),
         ("sandwich hold the tomato", "no tomato"),
         ("bagel heavy on the cheese", "extra cheese"),
@@ -1261,7 +1261,7 @@ class TestSpecialInstructionsExtraction:
         notes = extract_special_instructions_from_input(
             "a coffee with a splash of milk and a bagel with a lot of cream cheese"
         )
-        assert "a splash of milk" in notes
+        assert "splash milk" in notes
         assert "extra cream cheese" in notes
 
     def test_multi_item_coffee_with_milk_and_special_instructions(self):

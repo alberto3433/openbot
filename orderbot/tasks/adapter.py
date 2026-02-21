@@ -197,6 +197,13 @@ def _restore_order_type(order_dict: dict, order: OrderTask) -> None:
             if order.delivery_method.address.street:
                 order.delivery_method.mark_complete()
 
+    # Restore pickup_time from customer block or scheduling block
+    customer = order_dict.get("customer", {})
+    scheduling = order_dict.get("scheduling", {})
+    pickup_time = customer.get("pickup_time") or scheduling.get("pickup_time")
+    if pickup_time:
+        order.delivery_method.pickup_time = pickup_time
+
 
 def _restore_items(order_dict: dict, order: OrderTask) -> None:
     """Convert item dicts to MenuItemTasks and add to order."""
@@ -325,6 +332,54 @@ def _build_checkout_state(
     }
 
 
+def _build_scheduling_dict(
+    pickup_time: str | None,
+    store_info: dict | None,
+) -> dict:
+    """Build the scheduling sub-dict for the API response.
+
+    Args:
+        pickup_time: ISO-8601 datetime string or None (ASAP).
+        store_info: Store info dict with is_open, timezone, etc.
+
+    Returns:
+        Scheduling dict for frontend consumption.
+    """
+    store_info = store_info or {}
+    is_scheduled = pickup_time is not None
+    pickup_time_display = None
+
+    if is_scheduled and pickup_time:
+        try:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            tz_str = store_info.get("timezone", "America/New_York")
+            tz = ZoneInfo(tz_str)
+            dt = datetime.fromisoformat(pickup_time)
+            now = datetime.now(tz)
+            days_ahead = (dt.date() - now.date()).days
+            try:
+                time_str = dt.strftime("%-I:%M %p")
+            except ValueError:
+                time_str = dt.strftime("%I:%M %p").lstrip("0")
+            if days_ahead == 0:
+                pickup_time_display = f"Today at {time_str}"
+            elif days_ahead == 1:
+                pickup_time_display = f"Tomorrow at {time_str}"
+            else:
+                pickup_time_display = f"{dt.strftime('%A')} at {time_str}"
+        except (ValueError, TypeError):
+            pickup_time_display = pickup_time
+
+    return {
+        "pickup_time": pickup_time,
+        "pickup_time_display": pickup_time_display,
+        "is_scheduled": is_scheduled,
+        "store_is_open": store_info.get("is_open", True),
+        "editable": True,
+    }
+
+
 # -----------------------------------------------------------------------------
 # State Conversion: OrderTask -> Dict
 # -----------------------------------------------------------------------------
@@ -373,7 +428,7 @@ def order_task_to_dict(
             "name": order.customer_info.name,
             "phone": order.customer_info.phone,
             "email": order.customer_info.email,
-            "pickup_time": None,
+            "pickup_time": order.delivery_method.pickup_time,
         },
         "special_instructions": order.special_instructions,
     }
@@ -393,6 +448,10 @@ def order_task_to_dict(
         order_dict["payment_link"] = order.payment.payment_link_destination
 
     order_dict["checkout_state"] = _build_checkout_state(order, subtotal, store_info)
+
+    # Scheduling data for frontend
+    pickup_time = order.delivery_method.pickup_time
+    order_dict["scheduling"] = _build_scheduling_dict(pickup_time, store_info)
 
     # Preserve conversation history
     order_dict["task_orchestrator_state"] = {

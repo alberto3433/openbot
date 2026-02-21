@@ -89,8 +89,8 @@ def singularize(word: str) -> str:
     try:
         result = _inflect_engine.singular_noun(word)
         return result if result else word
-    except (TypeError, ValueError):
-        # Handle edge cases where inflect fails on certain inputs
+    except Exception:
+        # inflect is fragile with unusual inputs (prepositional phrases, etc.)
         return word
 
 
@@ -133,12 +133,18 @@ def pluralize(word: str) -> str:
         return word
 
     # Skip if already plural (e.g., "snacks", "drinks") to avoid double-pluralization
-    if _inflect_engine.singular_noun(word):
-        return word
+    try:
+        if _inflect_engine.singular_noun(word):
+            return word
+    except Exception:
+        pass
 
     # Use inflect to get the plural form
-    result = _inflect_engine.plural_noun(word)
-    return result if result else word + 's'
+    try:
+        result = _inflect_engine.plural_noun(word)
+        return result if result else word + 's'
+    except Exception:
+        return word + 's'
 
 
 def build_index_by_key(

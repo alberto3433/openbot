@@ -143,6 +143,12 @@ def parse_open_input_deterministic(
     # Also strip the trailing article (a/an/the) so "just a bagel" -> "bagel".
     text = re.sub(r'^(?:just|some)\b[,\s]*(?:(?:a|an|the)\b\s*)?', '', text, flags=re.IGNORECASE).strip()
 
+    # Strip mid-sentence "just" (filler inside item names)
+    # e.g., "Apricot just Hamantaschen" -> "Apricot Hamantaschen"
+    # Safe here: quantity checks ("just one") already ran above.
+    text = re.sub(r'\bjust\b\s*', ' ', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'\s+', ' ', text)
+
     # Check for new item orders (split-qty, multi-item, configurable, direct, simple)
     new_items_result = _try_parse_new_items(text, order_type)
     if new_items_result:

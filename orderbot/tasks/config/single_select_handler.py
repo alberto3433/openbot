@@ -467,7 +467,6 @@ class SingleSelectHandler:
                 f"We have {options_text}, and {remaining} more. "
                 f"Would you like to hear more options or pick one of these?"
             )
-            order.config_options_page = 1
 
         # Store disambiguation state (including quantity from original input)
         order.pending_attr_disambiguation = PendingAttrDisambiguation(
@@ -477,6 +476,10 @@ class SingleSelectHandler:
             item_id=item.id,
         )
         order.setup_pending_config(item.id, f"{item.menu_item_type}:{attr_slug}")
+
+        # Set pagination page AFTER setup_pending_config (which resets it to 0)
+        if has_more:
+            order.config_options_page = 1
 
         logger.info(
             "Partial match: user said '%s', term '%s' matched %d options",

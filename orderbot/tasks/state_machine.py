@@ -364,6 +364,20 @@ class OrderStateMachine:
                 return result
             # If no result, the response wasn't understood - fall through to normal processing
 
+        if order.pending_scheduling:
+            order.pending_scheduling = False
+            scheduling_result = self._handle_scheduling_expression(user_input, order)
+            if scheduling_result:
+                order.add_message("assistant", scheduling_result.message)
+                return scheduling_result
+            # Input wasn't a valid time expression — give a hint
+            hint = (
+                "I didn't catch that. You can say something like "
+                '"3pm", "in 30 minutes", or "tomorrow at noon".'
+            )
+            order.add_message("assistant", hint)
+            return StateMachineResult(message=hint, order=order)
+
         return None
 
     def process(
@@ -549,6 +563,7 @@ class OrderStateMachine:
                 'Sure! Just tell me the time \u2014 for example, '
                 '"3pm", "tomorrow at noon", or "in 2 hours".'
             )
+            order.pending_scheduling = True
             order.add_message("assistant", msg)
             return StateMachineResult(message=msg, order=order)
 
@@ -760,6 +775,7 @@ class OrderStateMachine:
         Returns a question with quick reply options for scheduling.
         """
         msg = "When would you like your order ready?"
+        order.pending_scheduling = True
         order.add_message("assistant", msg)
         return StateMachineResult(
             message=msg,

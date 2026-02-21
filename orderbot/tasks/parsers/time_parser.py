@@ -66,12 +66,14 @@ _ASAP_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Word-number mapping for relative time expressions
+# Word-number mapping for relative time expressions and absolute time normalization
 _WORD_NUMBERS: dict[str, int] = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40,
-    "forty-five": 45, "forty five": 45, "ninety": 90,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40,
+    "forty-five": 45, "forty five": 45, "fifty": 50, "ninety": 90,
 }
 
 # Relative time: "in 2 hours", "in 30 minutes", "in an hour", "in one hour"
@@ -169,6 +171,32 @@ def _resolve_absolute_time(
     return result
 
 
+# Sorted longest-first to match multi-word numbers before single words
+_WORD_NUM_SORTED = sorted(_WORD_NUMBERS.keys(), key=len, reverse=True)
+_WORD_NUM_NORM_RE = re.compile(
+    r"\b(" + "|".join(re.escape(w) for w in _WORD_NUM_SORTED) + r")\b",
+    re.IGNORECASE,
+)
+
+# Space-separated hour + minute: "4 15" (no colon)
+_SPACE_TIME_RE = re.compile(
+    r"(?:at\s+)?(\d{1,2})\s+(\d{2})\s*(am|pm|a\.m\.|p\.m\.)?",
+    re.IGNORECASE,
+)
+
+
+def _normalize_word_numbers(text: str) -> str:
+    """Replace word numbers with digit equivalents.
+
+    Converts "four fifteen" → "4 15", "three thirty pm" → "3 30 pm", etc.
+    Processes longest tokens first to handle "forty five" before "five".
+    """
+    def _replace(m: re.Match) -> str:
+        return str(_WORD_NUMBERS[m.group().lower()])
+
+    return _WORD_NUM_NORM_RE.sub(_replace, text)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -188,6 +216,9 @@ def parse_time_expression(
     """
     tz = ZoneInfo(timezone_str)
     now = datetime.now(tz)
+
+    # Pre-process: convert word numbers to digits ("four fifteen" → "4 15")
+    text = _normalize_word_numbers(text)
 
     # 1. ASAP
     m = _ASAP_RE.search(text)
@@ -241,6 +272,18 @@ def parse_time_expression(
             delta = timedelta(minutes=qty)
         result_dt = now + delta
         return ParsedTime(time_value=result_dt, is_asap=False, raw_text=m.group())
+
+    # 4b. Space-separated hour + minute: "4 15", "4 15 pm" (from word-number normalization)
+    m = _SPACE_TIME_RE.search(text)
+    if m:
+        hour_s, min_s, ampm = m.groups()
+        hour = int(hour_s)
+        minute = int(min_s)
+        if hour > 24 or minute > 59:
+            pass  # Fall through — not a valid time
+        else:
+            result_dt = _resolve_absolute_time(hour, minute, ampm, now)
+            return ParsedTime(time_value=result_dt, is_asap=False, raw_text=m.group())
 
     # 5. Standalone absolute time with scheduling context: "pickup at 3pm", "for 3pm"
     # Only match if there's scheduling context to avoid false positives

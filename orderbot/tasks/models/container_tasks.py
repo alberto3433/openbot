@@ -55,6 +55,7 @@ _CLEARABLE_PENDING_FIELDS: tuple[tuple[str, object], ...] = (
     ("pending_reorder_offer_items", None),
     ("pending_dietary_followup", None),
     ("pending_quantity_addition", None),
+    ("pending_scheduling", False),
 )
 
 
@@ -326,6 +327,11 @@ class OrderTask(BaseTask):
     # Used when user says "add 3" with multiple item types in cart
     # Stores the quantity to add after disambiguation resolves
     pending_quantity_addition: int | None = None
+
+    # Pending scheduling state
+    # Set when bot asks "When would you like your order ready?" so next input
+    # is routed through the time parser instead of item ordering
+    pending_scheduling: bool = False
 
     # Legacy single-item property for backwards compatibility
     @property

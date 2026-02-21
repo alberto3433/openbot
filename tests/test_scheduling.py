@@ -526,3 +526,106 @@ class TestSchedulingUITriggers:
             assert "value" in qr, f"Quick reply missing 'value': {qr}"
             assert isinstance(qr["label"], str)
             assert isinstance(qr["value"], str)
+
+
+# =============================================================================
+# Test Word-Number Absolute Time Parsing
+# =============================================================================
+
+class TestWordNumberTimeParsing:
+    """Test that word-number absolute times are parsed correctly."""
+
+    def test_four_fifteen_parsed_as_time(self):
+        """'four fifteen' → 4:15 PM."""
+        result = parse_time_expression("four fifteen")
+        assert result is not None
+        assert result.is_asap is False
+        assert result.time_value.hour == 16
+        assert result.time_value.minute == 15
+
+    def test_three_thirty_pm_parsed(self):
+        """'three thirty pm' → 3:30 PM."""
+        result = parse_time_expression("three thirty pm")
+        assert result is not None
+        assert result.time_value.hour == 15
+        assert result.time_value.minute == 30
+
+    def test_eleven_forty_five_am(self):
+        """'eleven forty five am' → 11:45 AM (forty five normalizes to 45)."""
+        # "forty five" is a multi-word number that maps to 45
+        result = parse_time_expression("eleven forty-five am")
+        assert result is not None
+        assert result.time_value.hour == 11
+        assert result.time_value.minute == 45
+
+    def test_seven_am(self):
+        """'seven am' → 7:00 AM (single word-number with AM/PM)."""
+        result = parse_time_expression("seven am")
+        assert result is not None
+        assert result.time_value.hour == 7
+        assert result.time_value.minute == 0
+
+
+# =============================================================================
+# Test Pending Scheduling State Routing
+# =============================================================================
+
+class TestPendingSchedulingState:
+    """Test that pending_scheduling routes follow-up input through the time parser."""
+
+    def test_pending_scheduling_routes_time_input(self, order_and_sm):
+        """After 'change pickup time', input '4:15 pm' is handled as scheduling."""
+        order, sm = order_and_sm
+        # Trigger scheduling question
+        sm.process("change pickup time", order)
+        assert order.pending_scheduling is True
+
+        # Now send a time expression
+        result = sm.process("4:15 pm", order)
+        assert "scheduled" in result.message.lower() or "4:15" in result.message
+        assert order.pending_scheduling is False
+
+    def test_pending_scheduling_word_time(self, order_and_sm):
+        """After 'change pickup time', input 'four fifteen' is handled as scheduling."""
+        order, sm = order_and_sm
+        sm.process("change pickup time", order)
+        assert order.pending_scheduling is True
+
+        result = sm.process("four fifteen", order)
+        assert "scheduled" in result.message.lower() or "4:15" in result.message
+        assert order.pending_scheduling is False
+
+    def test_pending_scheduling_invalid_input_gives_hint(self, order_and_sm):
+        """After 'change pickup time', input 'bagel' gives a helpful hint."""
+        order, sm = order_and_sm
+        sm.process("change pickup time", order)
+        assert order.pending_scheduling is True
+
+        result = sm.process("bagel", order)
+        assert "didn't catch that" in result.message.lower()
+        assert "3pm" in result.message.lower() or "3pm" in result.message
+        assert order.pending_scheduling is False
+
+    def test_pending_scheduling_cleared_after_use(self, order_and_sm):
+        """After a scheduling response is handled, the flag is cleared."""
+        order, sm = order_and_sm
+        sm.process("change pickup time", order)
+        assert order.pending_scheduling is True
+
+        sm.process("in 30 minutes", order)
+        assert order.pending_scheduling is False
+
+    def test_choose_a_time_sets_pending(self, order_and_sm):
+        """After 'choose a time', pending_scheduling is set for follow-up."""
+        order, sm = order_and_sm
+        result = sm.process("I'd like to choose a specific time", order)
+        assert "tell me the time" in result.message.lower()
+        assert order.pending_scheduling is True
+
+    def test_choose_a_time_then_type_time(self, order_and_sm):
+        """Full flow: 'choose a time' → type 'three thirty pm' → scheduled."""
+        order, sm = order_and_sm
+        sm.process("I'd like to choose a specific time", order)
+        result = sm.process("three thirty pm", order)
+        assert "scheduled" in result.message.lower() or "3:30" in result.message
+        assert order.pending_scheduling is False

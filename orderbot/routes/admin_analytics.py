@@ -117,7 +117,7 @@ def list_sessions(
 
     items = []
     for s in sessions:
-        ended_at_str = s.ended_at.isoformat() + "Z" if s.ended_at else ""
+        ended_at_str = s.ended_at.isoformat().replace("+00:00", "Z") if s.ended_at else ""
         items.append(SessionAnalyticsOut(
             id=s.id,
             session_id=s.session_id,

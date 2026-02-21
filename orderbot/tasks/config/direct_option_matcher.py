@@ -9,6 +9,7 @@ Extracted from menu_item_config_handler.py to reduce file size.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from ..schemas import StateMachineResult
@@ -23,6 +24,9 @@ if TYPE_CHECKING:
     from .context import ConfigHandlerContext
 
 logger = logging.getLogger(__name__)
+
+# Strip leading articles/quantifiers that shouldn't participate in option matching
+_ARTICLE_STRIP_RE = re.compile(r'^(?:some|the|an|a)\s+', re.IGNORECASE)
 
 
 class DirectOptionMatcher:
@@ -200,6 +204,11 @@ class DirectOptionMatcher:
             if not token_clean:
                 continue
 
+            # Strip leading articles so "some mustard" → "mustard"
+            token_clean = _ARTICLE_STRIP_RE.sub('', token_clean)
+            if not token_clean:
+                continue
+
             # Strip quantity prefixes for matching
             match_input = token_clean
             quantity_prefixes = ["extra ", "additional ", "more ", "double ", "triple "]
@@ -208,7 +217,13 @@ class DirectOptionMatcher:
                     match_input = match_input[len(prefix):].strip()
                     break
 
-            for attr in unanswered:
+            # Prioritize multi_select attributes: multi-token input is almost
+            # always listing additive items, not changing a single_select value.
+            sorted_attrs = sorted(
+                unanswered,
+                key=lambda a: 0 if a.get("input_type") == "multi_select" else 1,
+            )
+            for attr in sorted_attrs:
                 attr_slug = attr["slug"]
                 options = attr.get("options", [])
                 if not options:
@@ -240,7 +255,7 @@ class DirectOptionMatcher:
                             continue
 
                         opt_name = opt["display_name"]
-                        qualifier = self._extract_qualifier(user_input, opt_name)
+                        qualifier = self._extract_qualifier(token_clean, opt_name)
                         opt_quantity = extract_quantity_for_pattern(
                             user_lower, opt_name.lower()
                         )
@@ -275,7 +290,7 @@ class DirectOptionMatcher:
                         continue
 
                     opt_name = matched_opt["display_name"]
-                    qualifier = self._extract_qualifier(user_input, opt_name)
+                    qualifier = self._extract_qualifier(token_clean, opt_name)
 
                     display_name = (
                         f"{opt_name} ({qualifier})" if qualifier else opt_name
@@ -502,7 +517,6 @@ class DirectOptionMatcher:
 
                     # Get base display name (without quantity prefix)
                     # e.g., "3 Eggs" -> "Egg", "Egg" -> "Egg"
-                    import re
                     base_display = existing_mod.get("display_name", modifies_slug.title())
                     base_display = re.sub(r'^\d+\s+', '', base_display)  # Remove leading "N "
                     if base_display.endswith("s") and len(base_display) > 1:
@@ -588,7 +602,6 @@ class DirectOptionMatcher:
 
         Returns 1 if no quantity found.
         """
-        import re
         match = re.match(r'^(\d+)', slug)
         if match:
             return int(match.group(1))

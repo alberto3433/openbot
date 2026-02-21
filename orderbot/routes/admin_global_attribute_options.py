@@ -144,13 +144,10 @@ def create_global_attribute_option(
     # Validate forward_to_attribute_id if provided
     forward_to_attribute_id = payload.forward_to_attribute_id
     if forward_to_attribute_id is not None:
-        forward_attr = db.query(GlobalAttribute).filter(
-            GlobalAttribute.id == forward_to_attribute_id
-        ).first()
-        if not forward_attr:
-            raise ValidationError(
-                f"Forward-to attribute with id {forward_to_attribute_id} not found"
-            )
+        get_or_404(
+            db, GlobalAttribute, forward_to_attribute_id,
+            detail=f"Forward-to attribute with id {forward_to_attribute_id} not found",
+        )
 
     option = GlobalAttributeOption(
         global_attribute_id=attr_id,
@@ -268,13 +265,10 @@ def update_global_attribute_option(
     if "forward_to_attribute_id" in payload.model_fields_set:
         if payload.forward_to_attribute_id is not None:
             # Validate forward-to attribute exists
-            forward_attr = db.query(GlobalAttribute).filter(
-                GlobalAttribute.id == payload.forward_to_attribute_id
-            ).first()
-            if not forward_attr:
-                raise ValidationError(
-                    f"Forward-to attribute with id {payload.forward_to_attribute_id} not found"
-                )
+            get_or_404(
+                db, GlobalAttribute, payload.forward_to_attribute_id,
+                detail=f"Forward-to attribute with id {payload.forward_to_attribute_id} not found",
+            )
         option.forward_to_attribute_id = payload.forward_to_attribute_id
 
     # Handle aliases - check model_fields_set to distinguish None from not provided

@@ -55,7 +55,7 @@ def is_toast_configured() -> bool:
     return bool(TOAST_CLIENT_ID and TOAST_CLIENT_SECRET and TOAST_RESTAURANT_GUID)
 
 
-from ..pos_utils import get_httpx as _get_httpx
+from ..services.pos_utils import get_httpx as _get_httpx
 
 
 def _authenticate() -> str | None:

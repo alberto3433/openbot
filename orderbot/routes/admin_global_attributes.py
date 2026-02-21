@@ -50,7 +50,7 @@ from ..schemas.serializers import (
     serialize_global_attribute_list,
 )
 from .crud_factory import CRUDRouterFactory
-from .crud_helpers import check_slug_unique
+from .crud_helpers import apply_payload_updates, check_slug_unique, get_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -104,21 +104,7 @@ def _handle_before_update(item: GlobalAttribute, payload: GlobalAttributeUpdate,
     """Apply update payload to item."""
     if payload.slug is not None and payload.slug != item.slug:
         check_slug_unique(db, GlobalAttribute, payload.slug, exclude_id=item.id)
-
-    if payload.slug:
-        item.slug = payload.slug
-    if payload.display_name:
-        item.display_name = payload.display_name
-    if payload.input_type:
-        item.input_type = payload.input_type
-    if "description" in payload.model_fields_set:
-        item.description = payload.description
-    if "question_text" in payload.model_fields_set:
-        item.question_text = payload.question_text
-    if "offer_question_text" in payload.model_fields_set:
-        item.offer_question_text = payload.offer_question_text
-    if "options_source_category" in payload.model_fields_set:
-        item.options_source_category = payload.options_source_category
+    apply_payload_updates(item, payload, db)
 
 
 def _handle_before_delete(item: GlobalAttribute, db: Session) -> None:
@@ -223,7 +209,10 @@ def create_global_attribute_with_options(
         # Auto-find matching ingredient by name or slug
         ingredient = None
         if opt_data.ingredient_id:
-            ingredient = db.query(Ingredient).filter(Ingredient.id == opt_data.ingredient_id).first()
+            ingredient = get_or_404(
+                db, Ingredient, opt_data.ingredient_id,
+                detail=f"Ingredient with id {opt_data.ingredient_id} not found",
+            )
         elif opt_data.slug and opt_data.display_name:
             ingredient = db.query(Ingredient).filter(
                 (Ingredient.name == opt_data.display_name) |

@@ -95,6 +95,7 @@ from .admin_overall_categories import admin_overall_categories_router
 from .public import public_stores_router, public_company_router
 from .stripe_webhook import stripe_webhook_router
 from .tts import tts_router
+from .voice_vapi import vapi_router
 
 __all__ = [
     "chat_router",
@@ -126,4 +127,5 @@ __all__ = [
     "public_company_router",
     "stripe_webhook_router",
     "tts_router",
+    "vapi_router",
 ]

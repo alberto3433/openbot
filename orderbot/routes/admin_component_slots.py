@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
-from ..exceptions import ResourceNotFoundError, ValidationError
+from ..exceptions import ValidationError
 from .crud_helpers import get_or_404
 from ..db.models import (
     GlobalAttributeOption,
@@ -211,17 +211,14 @@ def delete_component_slot(slot_id: int, db: Session = Depends(get_db)) -> dict:
 @admin_component_slots_router.get("/slots/{slot_id}/options")
 def get_slot_options(slot_id: int, db: Session = Depends(get_db)) -> dict:
     """Get all options for a component slot."""
-    slot = (
-        db.query(ItemTypeComponentSlot)
-        .filter(ItemTypeComponentSlot.id == slot_id)
-        .options(
+    slot = get_or_404(
+        db, ItemTypeComponentSlot, slot_id,
+        options=[
             joinedload(ItemTypeComponentSlot.slot_options).joinedload(ComponentSlotOption.allowed_item_type),
             joinedload(ItemTypeComponentSlot.slot_options).joinedload(ComponentSlotOption.allowed_menu_item),
-        )
-        .first()
+        ],
+        detail="Slot not found",
     )
-    if not slot:
-        raise ResourceNotFoundError("Slot not found")
 
     options = []
     for opt in sorted(slot.slot_options, key=lambda o: o.display_order):

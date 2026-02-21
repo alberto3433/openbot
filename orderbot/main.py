@@ -115,8 +115,8 @@ from .routes import (
     public_company_router,
     stripe_webhook_router,
     tts_router,
+    vapi_router,
 )
-from .voice_vapi import vapi_router
 from fastapi import APIRouter
 
 

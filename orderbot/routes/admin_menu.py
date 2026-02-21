@@ -43,6 +43,7 @@ from ..schemas.serializers import serialize_menu_item
 from ..services.alias_service import sync_entity_aliases
 from ..cache import menu_cache
 from .crud_factory import CRUDRouterFactory
+from .crud_helpers import get_or_404
 
 
 logger = logging.getLogger(__name__)
@@ -63,13 +64,10 @@ def _set_menu_item_size_prices(
         if size_category_id == 0:
             item.size_category_id = None
         else:
-            category = db.query(MenuItemSizeCategory).filter(
-                MenuItemSizeCategory.id == size_category_id
-            ).first()
-            if not category:
-                raise ValidationError(
-                    f"Size category with ID {size_category_id} not found"
-                )
+            get_or_404(
+                db, MenuItemSizeCategory, size_category_id,
+                detail=f"Size category with ID {size_category_id} not found",
+            )
             item.size_category_id = size_category_id
 
     if size_prices is not None:
@@ -82,9 +80,7 @@ def _set_menu_item_size_prices(
             size_id = sp.size_id if hasattr(sp, 'size_id') else sp.get('size_id')
             price = sp.price if hasattr(sp, 'price') else sp.get('price')
 
-            size = db.query(MenuItemSize).filter(MenuItemSize.id == size_id).first()
-            if not size:
-                raise ValidationError(f"Size with ID {size_id} not found")
+            get_or_404(db, MenuItemSize, size_id, detail=f"Size with ID {size_id} not found")
 
             db.add(MenuItemSizePrice(
                 menu_item_id=item.id,
@@ -110,11 +106,7 @@ def _set_menu_item_ingredients(
         ingredient_id = ing_data.get("ingredient_id")
         quantity = ing_data.get("quantity", 1)
 
-        ingredient = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
-        if not ingredient:
-            raise ValidationError(
-                f"Ingredient with ID {ingredient_id} not found"
-            )
+        get_or_404(db, Ingredient, ingredient_id, detail=f"Ingredient with ID {ingredient_id} not found")
 
         db.add(MenuItemIngredient(
             menu_item_id=item.id,

@@ -30,6 +30,7 @@ def get_or_404(
     *,
     id_column: str = "id",
     detail: str | None = None,
+    options: list | None = None,
 ):
     """
     Fetch a record by ID or raise ResourceNotFoundError (mapped to HTTP 404).
@@ -45,6 +46,7 @@ def get_or_404(
         id_value: The ID value to look up
         id_column: Column name to filter on (default: "id")
         detail: Custom error message. If None, auto-generates from model name.
+        options: Optional list of SQLAlchemy query options (e.g. joinedload).
 
     Returns:
         The found record
@@ -53,7 +55,10 @@ def get_or_404(
         ResourceNotFoundError: If record not found
     """
     column = getattr(model, id_column)
-    item = db.query(model).filter(column == id_value).first()
+    query = db.query(model)
+    if options:
+        query = query.options(*options)
+    item = query.filter(column == id_value).first()
     if not item:
         name = model.__name__.replace("_", " ")
         raise ResourceNotFoundError(detail or f"{name} not found")

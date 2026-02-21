@@ -50,7 +50,7 @@ def is_square_configured() -> bool:
     return bool(SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID)
 
 
-from ..pos_utils import get_httpx as _get_httpx
+from ..services.pos_utils import get_httpx as _get_httpx
 
 
 def _make_request(

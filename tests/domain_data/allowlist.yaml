@@ -1718,6 +1718,11 @@ orderbot/voice_vapi.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/routes/voice_vapi.py:
+  - term: bagels
+    context: all
+    reason: "Legacy code - TODO: refactor to data-driven"
+
 orderbot/cache/loaders/menu_items.py:
   - term: side
     context: all

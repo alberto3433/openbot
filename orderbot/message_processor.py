@@ -601,11 +601,8 @@ class MessageProcessor:
                 update_order_stripe_session(self.db, order_id, result["session_id"])
 
             return result
-        except (OSError, SQLAlchemyError, ValueError):
+        except Exception:
             logger.exception("Failed to create Stripe session for order #%d", order_id)
-            return None
-        except (KeyError, TypeError, ImportError):
-            logger.exception("Unexpected error creating Stripe session for order #%d", order_id)
             return None
 
     @staticmethod

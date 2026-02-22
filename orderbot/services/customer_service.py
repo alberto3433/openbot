@@ -154,9 +154,11 @@ def find_or_create_customer(
         )
 
     if customer:
-        # Update missing fields on existing record
+        # Update fields on existing record — name always takes the latest
+        # value so returning customers are greeted by whatever name they
+        # gave most recently (e.g. "Gonzalo" instead of earlier "Alberto").
         updated = False
-        if name and not customer.name:
+        if name and name != customer.name:
             customer.name = name
             updated = True
         if phone and not customer.phone:

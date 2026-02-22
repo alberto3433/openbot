@@ -116,6 +116,26 @@ def continue_config_with_message(
     order: OrderTask,
 ) -> StateMachineResult:
     """Return message + next config question, or proceed if item complete."""
+    # After an attribute change, check if the currently pending attribute
+    # should now be skipped (e.g., "black" coffee → skip milk/sweetener/syrup)
+    from .models.utilities import parse_pending_field
+    from .config.attribute_resolver import get_skipped_attributes, get_unanswered_mandatory
+
+    item_type, pending_attr = parse_pending_field(order.pending_field)
+    if item_type and pending_attr:
+        skipped = get_skipped_attributes(item)
+        if pending_attr in skipped:
+            logger.info(
+                "CONTINUE_CONFIG: pending attr '%s' now skipped — recalculating next question",
+                pending_attr,
+            )
+            unanswered = get_unanswered_mandatory(item, item_type)
+            if unanswered:
+                next_attr = unanswered[0]
+                order.pending_field = f"{item_type}:{next_attr['slug']}"
+            else:
+                order.pending_field = None
+
     current_question = config_helper_handler.get_current_config_question(order, item)
     if current_question:
         qr = build_qr_for_pending_field(order, current_question)

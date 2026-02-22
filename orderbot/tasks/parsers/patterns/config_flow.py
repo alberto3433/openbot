@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # "Can you make it X?" pattern for configuration
 CAN_YOU_MAKE_IT_PATTERN = re.compile(
-    r"^(?:"
+    r"^(?:no[,.]?\s+)?(?:"
     r"(?:can|could)\s+(?:you|i)\s+(?:make|get|have)\s+(?:it|that|this)\s+(.+?)"
     r"|"
     r"(?:is|are)\s+(?:it|that|this|they)\s+available\s+(.+?)"

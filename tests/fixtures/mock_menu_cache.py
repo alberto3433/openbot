@@ -181,7 +181,7 @@ def mock_get_item_type_attributes(item_type_slug):
     """Mock menu_cache.get_item_type_attributes for tests."""
     if item_type_slug == "bagel":
         return get_mock_bagel_attributes()
-    elif item_type_slug in ("coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based_beverage"):
+    elif item_type_slug in ("coffee_based_beverage", "cocoa_based_beverage", "espresso", "espresso_based_beverage"):
         return get_mock_coffee_attributes()
     elif item_type_slug == "spread_sandwich":
         return get_mock_spread_sandwich_attributes()
@@ -313,12 +313,12 @@ def mock_get_known_menu_items():
 
 def mock_get_configurable_item_type_slugs():
     """Return mock set of configurable item type slugs."""
-    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based_beverage", "spread_sandwich", "egg_bagel", "fruit_salad"}
+    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "espresso", "espresso_based_beverage", "spread_sandwich", "egg_bagel", "fruit_salad"}
 
 
 def mock_get_configurable_item_types():
     """Return mock set of configurable item types (same as slugs for tests)."""
-    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "coffee", "espresso", "espresso_based_beverage", "spread_sandwich", "egg_bagel", "fruit_salad"}
+    return {"bagel", "coffee_based_beverage", "cocoa_based_beverage", "espresso", "espresso_based_beverage", "spread_sandwich", "egg_bagel", "fruit_salad"}
 
 
 def mock_get_item_type_triggers(item_type_slug: str | None = None):
@@ -337,7 +337,6 @@ def mock_get_item_type_triggers(item_type_slug: str | None = None):
         "bagel": {"bagel", "bagels"},
         "coffee_based_beverage": {"coffee", "coffees", "chai", "cold brew"},
         "cocoa_based_beverage": {"hot chocolate"},
-        "coffee": {"coffee", "coffees"},
         "espresso": {"espresso", "espressos"},
         "espresso_based_beverage": {
             "latte", "lattes", "hot latte", "iced latte",

@@ -245,7 +245,8 @@ class ResponseVerifier:
 
         items = order_state.get("items", [])
         cart_item_names = {
-            item.get("name", "").lower() for item in items
+            (item.get("menu_item_name") or item.get("name") or "").lower()
+            for item in items
         }
 
         for expected_item in expected_items:

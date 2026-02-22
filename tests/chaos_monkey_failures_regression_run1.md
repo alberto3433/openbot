@@ -1,10 +1,11 @@
-# Chaos Monkey Regression Test Failures
+# Chaos Monkey Test Failures
 
-**Generated:** 2026-02-12
-**Test Command:** `python -m pytest tests/chaos_monkey/generated/ -v --tb=short -q`
-**Total Tests:** 201
-**Passed:** 193
-**Failed:** 8
+**Generated:** 2026-02-22T17:39:42.482631
+**Session Start:** 2026-02-22T17:29:18.348254
+**Total Tests:** 160
+**Passed:** 88
+**Failed:** 72
+**False Positives (not reproduced):** 5
 
 ---
 
@@ -12,141 +13,158 @@
 
 | Category | Count |
 |----------|-------|
-| Filler words not stripped in config path | 3 |
-| Item name not recognized (numeric prefix / special chars) | 3 |
-| Item removed from cart during modifier flow | 2 |
+| Other | 33 |
+| Order Type | 32 |
+| Item Recognition | 7 |
 
-## Filler words not stripped in config path
+## Other (33 failures, 1 distinct patterns)
 
-### Order The Pizza BEC with Sausage, then add The Lexington Omelette
+### Regression: order type confusion (The Avocado Toast) (+32 similar)
 
-**Test:** `test_failure_multi_item_20260211_212924_384179e7.py`
-**Failure:** Expected item 'The Lexington Omelette' in cart
+**Count:** 33
+**Pattern:** `regression | failed_to_send_message`
+**Type:** regression
+**Session:** `979ab8c0-78ff-4b3e-9cd7-709848c92a7c`
 
-**Steps to reproduce:**
+**Failure:** Failed to send message
+
+**Conversation:**
 ```
-sm = OrderStateMachine()
-order = OrderTask(); order.phase = "taking_items"
-
-sm.process("Can I get oh a The Pizza BEC with Sausage", order)
-sm.process("so Add a The Lexington Omelette", order)
-# FAIL: "so" filler not stripped, input treated as config answer instead of add-item
-```
-
-### Order Scottish Salmon, then add Maple Raisin Walnut Cream Cheese
-
-**Test:** `test_failure_multi_item_20260211_225400_d9208cb6.py`
-**Failure:** Expected item 'Maple Raisin Walnut Cream Cheese' in cart
-
-**Steps to reproduce:**
-```
-sm = OrderStateMachine()
-order = OrderTask(); order.phase = "taking_items"
-
-sm.process("I'll well have a Scottish Salmon", order)
-sm.process("excuse me And a Maple Raisin Walnut Cream Cheese", order)
-# FAIL: "excuse me" not stripped in config answer path, input treated as config answer
+User: I'd like a The Avocado Toast
+[FAILED: Failed to send message]
+User: this is for pickup
 ```
 
-### Order Iced Tea and Tofu Nova Sandwich, then modify
+**Other instances:**
+- Regression: phase restoration (Naked Blue Machine, Olipop Orange Squeeze)
+- Regression: qualifier persistence (iced Essentia Water 700ml)
+- Regression: phase restoration (Nova Scotia Salmon, Plain Cream Cheese)
+- Regression: qualifier persistence (iced Corned Beef)
+- Regression: phase restoration (Maple Raisin Walnut Cream Cheese Sandwich, Tofu Plain Sandwich)
+- Regression: attribute decline (Blueberry Cream Cheese Sandwich)
+- Regression: qualifier persistence (small Potato Salad)
+- Regression: instruction leak (Bagel Chips - BBQ)
+- Regression: order type confusion (The Alton Brown)
+- Regression: availability inquiry (Mini Black and White Cookie)
+- Regression: phase restoration (Vitamin Water Energy, Provolone Cheese)
+- Regression: phase restoration (Iced Tea, Tuna Salad)
+- Regression: order type mid-order (Salami)
+- Regression: availability inquiry (Plain Cream Cheese Sandwich)
+- Regression: phase restoration (Naked Strawberry Banana, Pop Daddy Pretzels - Yellow Mustard)
+- Regression: instruction leak (Pastrami)
+- Regression: qualifier persistence (large Fruit Salad)
+- Regression: availability inquiry (Diet Sprite)
+- Regression: qualifier persistence (large Potato Salad)
+- Regression: qualifier persistence (toasted Double Chocolate Muffin)
+- Regression: instruction leak (Diet Coke)
+- Regression: qualifier persistence (small Blondie Square)
+- Regression: attribute decline (The Truffled Egg)
+- Regression: order type mid-order (Oatmeal Raisin Cookie)
+- Regression: attribute decline (Hot Pastrami Sandwich)
+- Regression: qualifier persistence (toasted Fruit Salad)
+- Regression: availability inquiry (Joe's Green Tea)
+- Regression: attribute decline (The Delancey Omelette with Pastrami)
+- Regression: phase restoration (Snapple Iced Tea, All-Natural Smoked Turkey Sandwich)
+- Regression: qualifier persistence (large Side of Chicken Sausage)
+- Regression: phase restoration (Baked Salmon Salad Sandwich, Chocolate Croissant)
+- Regression: availability inquiry (Joyva Halva Chocolate)
 
-**Test:** `test_failure_modifier_flow_20260211_112031_fa264e41.py`
-**Failure:** Expected item 'Iced Tea' in cart
+## Order Type (32 failures, 2 distinct patterns)
 
-**Steps to reproduce:**
+### Regression: order type mid-order (The Pizza BEC with Pepperoni) (+16 similar)
+
+**Count:** 17
+**Pattern:** `regression | expected_order_type_pickup_got_none`
+**Type:** regression
+**Session:** `9d1cfa53-13dc-4335-b2ea-b28976acffe1`
+
+**Failure:** Expected order_type='pickup', got 'None'
+
+**Conversation:**
 ```
-sm = OrderStateMachine()
-order = OrderTask(); order.phase = "taking_items"
-
-sm.process("just Can I get a Iced Tea and a Tofu Nova Sandwich", order)
-sm.process("Also add well hazelnut", order)
-sm.process("hi there Take off the hazelnut", order)
-sm.process("With sweet n low please please", order)
-# FAIL: "hi there" filler not stripped before cancel pattern matching
-```
-
-**Root cause:** `strip_conversational_fillers()` is applied in `handle_add_modifiers_during_config()` and `check_cancellation_during_config()`, but NOT in the config answer path that processes user input as a response to a configuration question (e.g., "What kind of bagel?" or "How much?"). When the user says "excuse me And a Maple Raisin Walnut Cream Cheese" while being asked "How much?", the filler leaks through and the whole string is treated as an answer to the question.
-
-## Item name not recognized (numeric prefix / special chars)
-
-### Order 6 Bagel Package
-
-**Test:** `test_failure_single_item_20260211_225640_58342e60.py`
-**Failure:** Expected item '6 Bagel Package' in cart
-
-**Steps to reproduce:**
-```
-sm = OrderStateMachine()
-order = OrderTask(); order.phase = "taking_items"
-
-sm.process("Just a 6 Bagel Package", order)
-# FAIL: "6" is parsed as quantity, leaving "Bagel Package" which doesn't match any item
-```
-
-### Order 6 Bagel Package, then remove
-
-**Test:** `test_failure_cart_ops_20260211_111754_3856a994.py`
-**Failure:** Expected item '6 Bagel Package' in cart (never added in step 1)
-
-**Steps to reproduce:**
-```
-sm = OrderStateMachine()
-order = OrderTask(); order.phase = "taking_items"
-
-sm.process("I'll um have a 6 Bagel Package", order)
-sm.process("hey, I don't want the 6 Bagel Package anymore", order)
-# FAIL: Same as above — "6 Bagel Package" not recognized as an item
-```
-
-### Order Bagel Chips - Salt, then change quantity
-
-**Test:** `test_failure_cart_ops_20260212_103458_9a5a7fe9.py`
-**Failure:** Expected item 'Bagel Chips - Salt' in cart
-
-**Steps to reproduce:**
-```
-sm = OrderStateMachine()
-order = OrderTask(); order.phase = "taking_items"
-
-sm.process("I'll have a Bagel Chips - Salt thanks", order)
-sm.process("Actually, make that four if you don't mind", order)
-# FAIL: Item with hyphen in name not recognized by parser
+User: actually I'd like a The Pizza BEC with Pepperoni
+Bot: Sorry, we don't carry Pepperoni.
+User: hello, let's do pickup instead
+Bot: Got it, for the The Pizza BEC with Pepperoni. What kind of bread?
+[FAILED: Expected order_type='pickup', got 'None']
 ```
 
-**Root cause:** The deterministic parser strips leading numbers as quantities ("6 Bagel Package" becomes qty=6 + "Bagel Package"). Items with numeric prefixes in their actual name need special handling. Similarly, items with hyphens ("Bagel Chips - Salt") may not match due to tokenization.
+**Other instances:**
+- Regression: order type mid-order (Plain Cream Cheese)
+- Regression: order type confusion (Belly Lox)
+- Regression: order type confusion (Mozzarella Cheese Sandwich)
+- Regression: order type mid-order (Potato Salad)
+- Regression: order type confusion (Sable Sandwich)
+- Regression: order type confusion (Nova Cream Cheese Sandwich)
+- Regression: order type confusion (Tofu Vegetable Sandwich)
+- Regression: order type confusion (Bologna)
+- Regression: order type confusion (Iced Coffee)
+- Regression: order type confusion (Wild Pacific Salmon)
+- Regression: order type mid-order (The Tribeca)
+- Regression: order type confusion (The Grand Central)
+- Regression: order type confusion (Baker's Dozen)
+- Regression: order type confusion (Tofu Spread Sandwich)
+- Regression: order type mid-order (Vegetable Cream Cheese Sandwich)
+- Regression: order type mid-order (Scallion Cream Cheese Sandwich)
 
-## Item removed from cart during modifier flow
+### Regression: order type confusion (The Tribeca) (+14 similar)
 
-### Order Iced Chai Tea and Pastrami Salmon Sandwich, then modify
+**Count:** 15
+**Pattern:** `regression | expected_order_type_delivery_got_none`
+**Type:** regression
+**Session:** `0fb0aeb5-ff6b-490b-9339-35c85a123693`
 
-**Test:** `test_failure_modifier_flow_20260211_112203_ebbd565b.py`
-**Failure:** Expected item 'Iced Chai Tea' in cart
+**Failure:** Expected order_type='delivery', got 'None'
 
-**Steps to reproduce:**
+**Conversation:**
 ```
-sm = OrderStateMachine()
-order = OrderTask(); order.phase = "taking_items"
-
-sm.process("Can I get a Iced Chai Tea and a Pastrami Salmon Sandwich", order)
-sm.process("Add Soy Milk", order)
-sm.process("Hold the Soy Milk", order)
-sm.process("With vanilla syrup please", order)
-# FAIL: After "Hold the Soy Milk", the Iced Chai Tea item was removed from cart
+User: I'd like a The Tribeca
+Bot: Got it, for the The Tribeca. What kind of bread?
+User: make it delivery
+Bot: Let's finish with your The Tribeca first. What kind of bread?
+[FAILED: Expected order_type='delivery', got 'None']
 ```
 
-### Order Essentia Water 1L, then cancel
+**Other instances:**
+- Regression: order type mid-order (Tropicana Orange Juice 46 oz)
+- Regression: order type mid-order (Jalapeno Cream Cheese Sandwich)
+- Regression: order type mid-order (Dozen Bagels & 2 Cream Cheese)
+- Regression: order type confusion (Jalapeno Honey Cream Cheese Sandwich)
+- Regression: order type mid-order (Brownie)
+- Regression: order type confusion (The Truffled Egg)
+- Regression: order type confusion (American Cheese)
+- Regression: order type mid-order (Double Chocolate Muffin)
+- Regression: order type mid-order (Fruit Salad)
+- Regression: order type confusion (Iced Chai Tea)
+- Regression: order type mid-order (Mini Black and White Cookie)
+- Regression: order type confusion (Peanut Butter Sandwich)
+- Regression: order type mid-order (The Delancey with Corned Beef)
+- Regression: order type mid-order (Tofu Spread Sandwich)
 
-**Test:** `test_failure_cart_ops_20260211_074303_d5cce097.py`
-**Failure:** Expected item 'Essentia Water 1L' in cart after step 1
+## Item Recognition (7 failures, 1 distinct patterns)
 
-**Steps to reproduce:**
+### Regression: order type mid-order (Potato Salad) (+6 similar)
+
+**Count:** 7
+**Pattern:** `regression | modifier_not_in_order`
+**Type:** regression
+**Session:** `e20eea63-ace4-4fbb-ba44-a3b80217ea33`
+
+**Failure:** Expected item 'Potato Salad' not in cart. Cart contains: []
+
+**Conversation:**
 ```
-sm = OrderStateMachine()
-order = OrderTask(); order.phase = "taking_items"
-
-sm.process("I'll have a Essentia Water 1L", order)
-sm.process("Cancel the Essentia Water 1L", order)
-# FAIL: Item not in cart — either never added (recognition issue) or cancel removed it
+User: I'd like a Potato Salad please
+Bot: Got it, Potato Salad. Anything else?
+User: hello, switch to pickup
+Bot: Great, I'll set this up for pickup. What can I get for you?
+[FAILED: Expected item 'Potato Salad' not in cart. Cart contains: []]
 ```
 
-**Root cause:** In the Iced Chai Tea case, "Hold the Soy Milk" may be matching too broadly and removing the entire item instead of just the modifier. In the Essentia Water case, "1L" in the item name may cause recognition failure.
+**Other instances:**
+- Regression: order type mid-order (Side of Bacon)
+- Regression: order type confusion (Tropicana Orange Juice 46 oz)
+- Regression: order type confusion (Gatorade Fruit Punch)
+- Regression: order type confusion (Vitamin Water Energy)
+- Regression: instruction leak (6 Bagel Package)
+- Regression: order type confusion (Snapple Lemonade)

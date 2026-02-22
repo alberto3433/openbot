@@ -92,8 +92,12 @@ class ScenarioGenerator:
         for _ in range(batch_size):
             scenario = self._generate_weighted_scenario()
             if scenario:
-                # Apply mutation if configured
-                if self.rng.random() < self.config.mutation_probability:
+                # Apply mutation if configured (skip for regression scenarios
+                # since they test specific bug patterns that mutations confound)
+                if (
+                    scenario.scenario_type != "regression"
+                    and self.rng.random() < self.config.mutation_probability
+                ):
                     self._apply_mutations(scenario)
                 scenarios.append(scenario)
 
@@ -600,7 +604,13 @@ class ScenarioGenerator:
 
         if pattern == "order_type_confusion":
             item = self.rng.choice(self._menu_items)
-            return OrderTypeConfusionScenario(item=item, seed=seed)
+            attr_opts, bool_attrs = self._get_attribute_data_for_item_type(
+                item.get("item_type", "")
+            )
+            return OrderTypeConfusionScenario(
+                item=item, attribute_options=attr_opts,
+                boolean_attrs=bool_attrs, seed=seed,
+            )
 
         if pattern == "attribute_decline":
             # Need a configurable item with attribute options
@@ -630,7 +640,13 @@ class ScenarioGenerator:
 
         if pattern == "order_type_mid_order":
             item = self.rng.choice(self._menu_items)
-            return OrderTypeMidOrderScenario(item=item, seed=seed)
+            attr_opts, bool_attrs = self._get_attribute_data_for_item_type(
+                item.get("item_type", "")
+            )
+            return OrderTypeMidOrderScenario(
+                item=item, attribute_options=attr_opts,
+                boolean_attrs=bool_attrs, seed=seed,
+            )
 
         if pattern == "instruction_leak":
             item = self.rng.choice(self._menu_items)
@@ -640,8 +656,14 @@ class ScenarioGenerator:
             if len(self._menu_items) < 2:
                 return None
             items = self.rng.sample(self._menu_items, 2)
+            item1_type = items[0].get("item_type", "")
+            attr_opts, bool_attrs = self._get_attribute_data_for_item_type(
+                item1_type
+            )
             return PhaseRestorationScenario(
-                item1=items[0], item2=items[1], seed=seed,
+                item1=items[0], item2=items[1],
+                attribute_options=attr_opts, boolean_attrs=bool_attrs,
+                seed=seed,
             )
 
         if pattern == "availability_inquiry":

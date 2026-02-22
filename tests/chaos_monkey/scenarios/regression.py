@@ -16,6 +16,7 @@ Bug patterns tested:
 import random
 from typing import Any
 
+from tests.chaos_monkey.scenarios.answer_generator import ReactiveAnswerGenerator
 from tests.chaos_monkey.scenarios.base import (
     ActionType,
     BaseScenario,
@@ -29,13 +30,25 @@ class OrderTypeConfusionScenario(BaseScenario):
 
     Bug pattern #1: "make it pickup" after adding items emptied the cart
     because the order type change was confused as an item replacement.
+
+    This is a reactive scenario: it answers config questions first (since the
+    bot may defer order type during config), then checks that both the item
+    and order type are correctly set.
     """
 
     scenario_type = "regression"
 
+    # States for reactive answer generation
+    _STATE_ORDERING = "ordering"
+    _STATE_CONFIGURING = "configuring"
+    _STATE_SET_ORDER_TYPE = "set_order_type"
+    _STATE_DONE = "done"
+
     def __init__(
         self,
         item: dict[str, Any],
+        attribute_options: dict[str, list[str]] | None = None,
+        boolean_attrs: list[str] | None = None,
         seed: int | None = None,
     ) -> None:
         item_name = item.get("name", "Unknown")
@@ -43,21 +56,13 @@ class OrderTypeConfusionScenario(BaseScenario):
         self.item = item
         self.rng = random.Random(seed)
 
-    def generate(self) -> None:
-        item_name = self.item.get("name", "Unknown")
+        self._answer_gen = ReactiveAnswerGenerator(
+            attribute_options=attribute_options or {},
+            boolean_attrs=boolean_attrs or [],
+            seed=seed,
+        )
 
-        # Turn 1: Add an item
-        self.turns.append(ConversationTurn(
-            user_input=f"I'd like a {item_name}",
-            expected_actions=[
-                ExpectedAction(action_type=ActionType.ADD_ITEM, item_name=item_name),
-            ],
-            expected_items_in_cart=[item_name],
-            allow_disambiguation=True,
-        ))
-
-        # Turn 2: Set order type — item must remain in cart
-        order_type = self.rng.choice(["pickup", "delivery"])
+        self._order_type = self.rng.choice(["pickup", "delivery"])
         phrases = {
             "pickup": [
                 "make it pickup",
@@ -74,15 +79,60 @@ class OrderTypeConfusionScenario(BaseScenario):
                 "delivery please",
             ],
         }
-        phrase = self.rng.choice(phrases[order_type])
+        self._order_type_phrase = self.rng.choice(phrases[self._order_type])
+        self._state = self._STATE_ORDERING
+        self._config_turns = 0
 
+    def generate(self) -> None:
+        item_name = self.item.get("name", "Unknown")
+
+        # Turn 1: Add an item
         self.turns.append(ConversationTurn(
-            user_input=phrase,
+            user_input=f"I'd like a {item_name}",
+            expected_actions=[
+                ExpectedAction(action_type=ActionType.ADD_ITEM, item_name=item_name),
+            ],
             expected_items_in_cart=[item_name],
-            expected_order_type=order_type,
-            expect_item_count=1,
             allow_disambiguation=True,
         ))
+        self._state = self._STATE_CONFIGURING
+
+    def generate_answer(self, bot_response: str) -> str | None:
+        """React to bot responses: answer config, then set order type."""
+        response_lower = bot_response.lower()
+
+        if self._state == self._STATE_CONFIGURING:
+            # Answer config questions until bot asks "anything else?"
+            done_phrases = [
+                "anything else", "will that be all", "what else",
+                "ready to", "would you like anything", "can i get you anything",
+            ]
+            if any(p in response_lower for p in done_phrases):
+                # Config done — now set order type
+                self._state = self._STATE_SET_ORDER_TYPE
+                return self._order_type_phrase
+
+            # Safety: don't loop forever
+            self._config_turns += 1
+            if self._config_turns > 8:
+                self._state = self._STATE_SET_ORDER_TYPE
+                return self._order_type_phrase
+
+            # Try reactive answer for config questions
+            answer = self._answer_gen.generate_answer(bot_response)
+            if answer is not None:
+                return answer
+
+            # No config question detected — set order type now
+            self._state = self._STATE_SET_ORDER_TYPE
+            return self._order_type_phrase
+
+        if self._state == self._STATE_SET_ORDER_TYPE:
+            # We just sent the order type phrase — done
+            self._state = self._STATE_DONE
+            return None
+
+        return None
 
 
 class AttributeDeclineScenario(BaseScenario):
@@ -134,8 +184,8 @@ class AttributeDeclineScenario(BaseScenario):
             f"no {decline_option} please",
             f"not {decline_option}",
             f"skip the {decline_option}",
-            f"none",
-            f"no thanks",
+            "none",
+            "no thanks",
         ]
         phrase = self.rng.choice(decline_phrases)
 
@@ -196,13 +246,21 @@ class OrderTypeMidOrderScenario(BaseScenario):
 
     Bug pattern #5: "change it to delivery" mid-order was treated as a
     modifier change instead of setting the order type.
+
+    This is reactive: answers config questions first, then changes order type.
     """
 
     scenario_type = "regression"
 
+    _STATE_CONFIGURING = "configuring"
+    _STATE_SET_ORDER_TYPE = "set_order_type"
+    _STATE_DONE = "done"
+
     def __init__(
         self,
         item: dict[str, Any],
+        attribute_options: dict[str, list[str]] | None = None,
+        boolean_attrs: list[str] | None = None,
         seed: int | None = None,
     ) -> None:
         item_name = item.get("name", "Unknown")
@@ -210,21 +268,13 @@ class OrderTypeMidOrderScenario(BaseScenario):
         self.item = item
         self.rng = random.Random(seed)
 
-    def generate(self) -> None:
-        item_name = self.item.get("name", "Unknown")
+        self._answer_gen = ReactiveAnswerGenerator(
+            attribute_options=attribute_options or {},
+            boolean_attrs=boolean_attrs or [],
+            seed=seed,
+        )
 
-        # Turn 1: Add item
-        self.turns.append(ConversationTurn(
-            user_input=f"I'd like a {item_name}",
-            expected_actions=[
-                ExpectedAction(action_type=ActionType.ADD_ITEM, item_name=item_name),
-            ],
-            expected_items_in_cart=[item_name],
-            allow_disambiguation=True,
-        ))
-
-        # Turn 2: Change order type mid-order
-        order_type = self.rng.choice(["pickup", "delivery"])
+        self._order_type = self.rng.choice(["pickup", "delivery"])
         phrases = {
             "pickup": [
                 "change it to pickup",
@@ -239,15 +289,53 @@ class OrderTypeMidOrderScenario(BaseScenario):
                 "let's do delivery instead",
             ],
         }
-        phrase = self.rng.choice(phrases[order_type])
+        self._order_type_phrase = self.rng.choice(phrases[self._order_type])
+        self._state = self._STATE_CONFIGURING
+        self._config_turns = 0
 
+    def generate(self) -> None:
+        item_name = self.item.get("name", "Unknown")
+
+        # Turn 1: Add item
         self.turns.append(ConversationTurn(
-            user_input=phrase,
+            user_input=f"I'd like a {item_name}",
+            expected_actions=[
+                ExpectedAction(action_type=ActionType.ADD_ITEM, item_name=item_name),
+            ],
             expected_items_in_cart=[item_name],
-            expected_order_type=order_type,
-            expect_item_count=1,
             allow_disambiguation=True,
         ))
+
+    def generate_answer(self, bot_response: str) -> str | None:
+        """React to bot responses: answer config, then change order type."""
+        response_lower = bot_response.lower()
+
+        if self._state == self._STATE_CONFIGURING:
+            done_phrases = [
+                "anything else", "will that be all", "what else",
+                "ready to", "would you like anything", "can i get you anything",
+            ]
+            if any(p in response_lower for p in done_phrases):
+                self._state = self._STATE_SET_ORDER_TYPE
+                return self._order_type_phrase
+
+            self._config_turns += 1
+            if self._config_turns > 8:
+                self._state = self._STATE_SET_ORDER_TYPE
+                return self._order_type_phrase
+
+            answer = self._answer_gen.generate_answer(bot_response)
+            if answer is not None:
+                return answer
+
+            self._state = self._STATE_SET_ORDER_TYPE
+            return self._order_type_phrase
+
+        if self._state == self._STATE_SET_ORDER_TYPE:
+            self._state = self._STATE_DONE
+            return None
+
+        return None
 
 
 class InstructionLeakScenario(BaseScenario):
@@ -291,14 +379,24 @@ class PhaseRestorationScenario(BaseScenario):
 
     Bug pattern #6: After providing a name mid-order, the system lost track
     of the current phase and couldn't continue adding items.
+
+    This is reactive: answers config questions for item 1, provides name,
+    then adds item 2.
     """
 
     scenario_type = "regression"
+
+    _STATE_CONFIGURING = "configuring"
+    _STATE_GIVE_NAME = "give_name"
+    _STATE_ADD_ITEM2 = "add_item2"
+    _STATE_DONE = "done"
 
     def __init__(
         self,
         item1: dict[str, Any],
         item2: dict[str, Any],
+        attribute_options: dict[str, list[str]] | None = None,
+        boolean_attrs: list[str] | None = None,
         seed: int | None = None,
     ) -> None:
         name1 = item1.get("name", "Unknown")
@@ -308,9 +406,19 @@ class PhaseRestorationScenario(BaseScenario):
         self.item2 = item2
         self.rng = random.Random(seed)
 
+        self._answer_gen = ReactiveAnswerGenerator(
+            attribute_options=attribute_options or {},
+            boolean_attrs=boolean_attrs or [],
+            seed=seed,
+        )
+
+        self._state = self._STATE_CONFIGURING
+        self._config_turns = 0
+        test_names = ["Test", "Alex", "Jordan", "Sam", "Pat"]
+        self._test_name = self.rng.choice(test_names)
+
     def generate(self) -> None:
         name1 = self.item1.get("name", "Unknown")
-        name2 = self.item2.get("name", "Unknown")
 
         # Turn 1: Add first item
         self.turns.append(ConversationTurn(
@@ -322,21 +430,41 @@ class PhaseRestorationScenario(BaseScenario):
             allow_disambiguation=True,
         ))
 
-        # Turn 2: Provide customer name mid-order
-        test_names = ["Test", "Alex", "Jordan", "Sam", "Pat"]
-        name = self.rng.choice(test_names)
-        self.turns.append(ConversationTurn(
-            user_input=f"my name is {name}",
-            expected_items_in_cart=[name1],
-            allow_disambiguation=True,
-        ))
+    def generate_answer(self, bot_response: str) -> str | None:
+        """React to bot: config item 1, give name, add item 2."""
+        response_lower = bot_response.lower()
 
-        # Turn 3: Add second item — proves phase was restored
-        self.turns.append(ConversationTurn(
-            user_input=f"add a {name2}",
-            expected_items_in_cart=[name1, name2],
-            allow_disambiguation=True,
-        ))
+        if self._state == self._STATE_CONFIGURING:
+            done_phrases = [
+                "anything else", "will that be all", "what else",
+                "ready to", "would you like anything", "can i get you anything",
+            ]
+            if any(p in response_lower for p in done_phrases):
+                self._state = self._STATE_GIVE_NAME
+                return f"my name is {self._test_name}"
+
+            self._config_turns += 1
+            if self._config_turns > 8:
+                self._state = self._STATE_GIVE_NAME
+                return f"my name is {self._test_name}"
+
+            answer = self._answer_gen.generate_answer(bot_response)
+            if answer is not None:
+                return answer
+
+            self._state = self._STATE_GIVE_NAME
+            return f"my name is {self._test_name}"
+
+        if self._state == self._STATE_GIVE_NAME:
+            name2 = self.item2.get("name", "Unknown")
+            self._state = self._STATE_ADD_ITEM2
+            return f"actually, I also want a {name2}"
+
+        if self._state == self._STATE_ADD_ITEM2:
+            self._state = self._STATE_DONE
+            return None
+
+        return None
 
 
 class AvailabilityInquiryScenario(BaseScenario):

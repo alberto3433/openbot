@@ -112,6 +112,7 @@ _FLOW_STATE_FIELDS: list[tuple[str, object, type | None]] = [
     ("pending_replace_item_id", None, None),
     ("pending_ingredient_search", None, PendingIngredientSearch),
     ("pending_unmatched_pagination", None, PendingUnmatchedPagination),
+    ("return_to_phase", None, None),
 ]
 
 

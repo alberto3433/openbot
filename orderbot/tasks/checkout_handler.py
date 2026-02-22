@@ -127,6 +127,34 @@ class CheckoutHandler(BaseStateHandler):
             user_input, order, self._transition_to_next_slot
         )
 
+    def _restore_phase_if_editing(
+        self, order: OrderTask, field_label: str = "info"
+    ) -> StateMachineResult | None:
+        """If the user was editing a customer info field mid-order, restore to TAKING_ITEMS.
+
+        After a customer info edit (e.g. "change my phone"), always return to the
+        item-ordering phase so the user can keep adding items naturally. The checkout
+        flow will resume once they say they're done.
+
+        Args:
+            order: The current order task.
+            field_label: Human-readable label for the field that was updated
+                (e.g. "name", "email", "phone number").
+
+        Returns a StateMachineResult to acknowledge the update and continue,
+        or None if this was a normal (non-edit) collection flow.
+        """
+        if not order.return_to_phase:
+            return None
+
+        order.return_to_phase = None
+        order.checkout.order_reviewed = False
+        order.set_phase(OrderPhase.TAKING_ITEMS)
+        return StateMachineResult(
+            message=f"Got it, {field_label} updated. Anything else?",
+            order=order,
+        )
+
     def handle_name(
         self,
         user_input: str,
@@ -142,6 +170,11 @@ class CheckoutHandler(BaseStateHandler):
             )
 
         order.customer_info.name = parsed.name
+
+        restore = self._restore_phase_if_editing(order, "name")
+        if restore:
+            return restore
+
         if self._transition_to_next_slot:
             self._transition_to_next_slot(order)
 
@@ -187,6 +220,11 @@ class CheckoutHandler(BaseStateHandler):
             return StateMachineResult(message=error, order=order)
 
         order.customer_info.email = validated_value
+
+        restore = self._restore_phase_if_editing(order, "email")
+        if restore:
+            return restore
+
         if self._transition_to_next_slot:
             self._transition_to_next_slot(order)
 
@@ -226,6 +264,11 @@ class CheckoutHandler(BaseStateHandler):
             return StateMachineResult(message=error, order=order)
 
         order.customer_info.phone = validated_value
+
+        restore = self._restore_phase_if_editing(order, "phone number")
+        if restore:
+            return restore
+
         if self._transition_to_next_slot:
             self._transition_to_next_slot(order)
 

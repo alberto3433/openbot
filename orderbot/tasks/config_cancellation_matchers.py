@@ -203,6 +203,25 @@ def _should_defer_to_attribute_handler(cancel_desc: str, order: "OrderTask") -> 
             cancel_desc, pending_attr_slug,
         )
         return True
+
+    # Check if cancel_desc is a known attribute option for the CURRENT item type.
+    # e.g., "black" is a valid coffee_based_beverage option — defer to attribute handler
+    # rather than treating it as item/modifier removal.
+    # Scoped to current item type so "bacon" (an omelette meat option) doesn't
+    # defer when configuring a bagel.
+    item_type_slug, _ = parse_pending_field(order.pending_field)
+    if item_type_slug:
+        item_type_options = menu_cache.get_all_attribute_option_slugs_for_item_type(
+            item_type_slug
+        )
+        if cancel_desc in item_type_options:
+            logger.info(
+                "Cancel during config: '%s' is a known attribute option for '%s' - "
+                "deferring to attribute handler",
+                cancel_desc, item_type_slug,
+            )
+            return True
+
     return False
 
 

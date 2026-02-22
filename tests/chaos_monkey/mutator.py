@@ -17,6 +17,88 @@ class MutationResult:
 class TextMutator:
     """Applies various mutations to test inputs to find edge cases."""
 
+    # --- STT (Speech-to-Text) simulation dictionaries ---
+
+    # Bidirectional homophones
+    STT_HOMOPHONES: dict[str, list[str]] = {
+        "two": ["to", "too"],
+        "to": ["two", "too"],
+        "too": ["two", "to"],
+        "one": ["won"],
+        "won": ["one"],
+        "no": ["know"],
+        "know": ["no"],
+        "plain": ["plane"],
+        "plane": ["plain"],
+        "for": ["four", "fore"],
+        "four": ["for", "fore"],
+        "flour": ["flower"],
+        "flower": ["flour"],
+        "whole": ["hole"],
+        "hole": ["whole"],
+        "wrap": ["rap"],
+        "rap": ["wrap"],
+        "berry": ["bury"],
+        "bury": ["berry"],
+        "meat": ["meet"],
+        "meet": ["meat"],
+        "sweet": ["suite"],
+        "suite": ["sweet"],
+        "great": ["grate"],
+        "grate": ["great"],
+        "wheat": ["weet"],
+        "pair": ["pear", "pare"],
+        "pear": ["pair", "pare"],
+    }
+
+    # Food-domain STT misrecognitions
+    STT_FOOD_CONFUSIONS: dict[str, list[str]] = {
+        "lox": ["locks", "locs"],
+        "sesame": ["says me", "says a me"],
+        "bagel": ["beagle", "bail"],
+        "pumpernickel": ["pump nickel", "pumper nickel"],
+        "espresso": ["expresso"],
+        "croissant": ["crescent", "kwason"],
+        "focaccia": ["four gotcha", "fo catch a"],
+        "brioche": ["brie osh", "breeyosh"],
+        "prosciutto": ["pro shoot oh", "proshuto"],
+        "sriracha": ["sir racha", "shiracha"],
+        "acai": ["ah sigh", "a kai"],
+        "quinoa": ["keen wah", "kinoa"],
+        "jalapeno": ["holla peen yo", "jalapino"],
+        "chipotle": ["chipoltay", "chipolte"],
+        "matcha": ["match a", "motcha"],
+        "turmeric": ["tumeric", "ter meric"],
+        "caramel": ["carmel"],
+        "mozzarella": ["motzerella", "mots a rella"],
+    }
+
+    # Word boundary errors (splits and merges)
+    STT_BOUNDARY_ERRORS: dict[str, str] = {
+        "cream cheese": "cream she's",
+        "iced tea": "ice tea",
+        "ice cream": "I scream",
+        "everything": "every thing",
+        "without": "with out",
+        "scrambled": "scram bold",
+        "omelette": "om let",
+        "avocado": "have a cado",
+        "a lot": "alot",
+        "all right": "alright",
+    }
+
+    # Contraction misrecognitions
+    STT_CONTRACTION_ERRORS: dict[str, list[str]] = {
+        "i'll": ["isle", "aisle", "i will"],
+        "don't": ["donut", "dome"],
+        "can't": ["cant", "can"],
+        "won't": ["want", "wont"],
+        "i'd": ["id", "eyed"],
+        "i've": ["iv", "i of"],
+        "let's": ["lets", "less"],
+        "that's": ["thats", "that is"],
+    }
+
     # Synonyms for common ordering words
     ORDERING_SYNONYMS: dict[str, list[str]] = {
         "get": ["have", "order", "take", "grab", "want"],
@@ -83,7 +165,8 @@ class TextMutator:
         self.rng = random.Random(seed)
 
     def mutate(
-        self, text: str, mutation_count: int = 1, gentle: bool = False
+        self, text: str, mutation_count: int = 1, gentle: bool = False,
+        stt: bool = False,
     ) -> MutationResult:
         """Apply random mutations to the text.
 
@@ -91,6 +174,7 @@ class TextMutator:
             text: The original text to mutate.
             mutation_count: Number of mutations to attempt.
             gentle: If True, only use safe mutations (no typos, no word doubling).
+            stt: If True, use STT-specific mutation pool instead of text mutations.
 
         Returns:
             MutationResult with original and mutated text.
@@ -98,7 +182,18 @@ class TextMutator:
         mutated = text
         mutations_applied = []
 
-        if gentle:
+        if stt:
+            # STT mode: speech-to-text specific mutations
+            mutation_methods = [
+                self._apply_homophone,
+                self._apply_food_confusion,
+                self._apply_word_boundary_error,
+                self._apply_contraction_error,
+                self._apply_word_truncation,
+                self._apply_stuttering,
+                self._drop_connector,
+            ]
+        elif gentle:
             # Gentle mode: only safe mutations that don't touch item names
             mutation_methods = [
                 self._add_filler_word,
@@ -291,4 +386,113 @@ class TextMutator:
 
         idx = self.rng.randint(0, len(words) - 1)
         words.insert(idx + 1, words[idx])
+        return " ".join(words)
+
+    # --- STT (Speech-to-Text) mutation methods ---
+
+    def _apply_homophone(self, text: str) -> str:
+        """Swap a word with its homophone."""
+        words = text.split()
+        if not words:
+            return text
+
+        # Find words that have homophones
+        candidates = [
+            (i, w) for i, w in enumerate(words)
+            if w.lower() in self.STT_HOMOPHONES
+        ]
+        if not candidates:
+            return text
+
+        idx, word = self.rng.choice(candidates)
+        replacement = self.rng.choice(self.STT_HOMOPHONES[word.lower()])
+        # Preserve capitalization of first char
+        if word[0].isupper():
+            replacement = replacement.capitalize()
+        words[idx] = replacement
+        return " ".join(words)
+
+    def _apply_food_confusion(self, text: str) -> str:
+        """Replace a food term with an STT misrecognition."""
+        text_lower = text.lower()
+
+        # Try each food confusion (longest match first)
+        for food, confusions in sorted(
+            self.STT_FOOD_CONFUSIONS.items(), key=lambda x: -len(x[0])
+        ):
+            if food in text_lower:
+                replacement = self.rng.choice(confusions)
+                pattern = re.compile(re.escape(food), re.IGNORECASE)
+                return pattern.sub(replacement, text, count=1)
+
+        return text
+
+    def _apply_word_boundary_error(self, text: str) -> str:
+        """Merge or split word boundaries."""
+        text_lower = text.lower()
+
+        for phrase, replacement in self.STT_BOUNDARY_ERRORS.items():
+            if phrase in text_lower:
+                pattern = re.compile(re.escape(phrase), re.IGNORECASE)
+                return pattern.sub(replacement, text, count=1)
+
+        return text
+
+    def _apply_contraction_error(self, text: str) -> str:
+        """Mangle contractions."""
+        text_lower = text.lower()
+
+        for contraction, replacements in self.STT_CONTRACTION_ERRORS.items():
+            if contraction in text_lower:
+                replacement = self.rng.choice(replacements)
+                pattern = re.compile(re.escape(contraction), re.IGNORECASE)
+                return pattern.sub(replacement, text, count=1)
+
+        return text
+
+    def _apply_word_truncation(self, text: str) -> str:
+        """Cut the ending off a long word (7+ chars), simulating STT cutoff."""
+        words = text.split()
+        if not words:
+            return text
+
+        candidates = [i for i, w in enumerate(words) if len(w) >= 7]
+        if not candidates:
+            return text
+
+        idx = self.rng.choice(candidates)
+        word = words[idx]
+        # Cut off 2-3 chars from the end
+        cut = self.rng.randint(2, min(3, len(word) - 4))
+        words[idx] = word[:-cut]
+        return " ".join(words)
+
+    def _apply_stuttering(self, text: str) -> str:
+        """Repeat 1-3 words, simulating natural speech disfluency."""
+        words = text.split()
+        if not words:
+            return text
+
+        # Pick a starting position and repeat count
+        start = self.rng.randint(0, len(words) - 1)
+        repeat_count = self.rng.randint(1, min(3, len(words) - start))
+        repeated = words[start:start + repeat_count]
+
+        # Insert the repeated words right after the original
+        result = words[:start + repeat_count] + repeated + words[start + repeat_count:]
+        return " ".join(result)
+
+    def _drop_connector(self, text: str) -> str:
+        """Drop a connector word (a, an, the, and, with)."""
+        connectors = {"a", "an", "the", "and", "with"}
+        words = text.split()
+        if not words:
+            return text
+
+        candidates = [i for i, w in enumerate(words) if w.lower() in connectors]
+        if not candidates:
+            return text
+
+        idx = self.rng.choice(candidates)
+        words.pop(idx)
         return " ".join(words)

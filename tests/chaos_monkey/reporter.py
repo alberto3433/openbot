@@ -228,6 +228,29 @@ class FailureReporter:
                             lines.append(f"- {other.scenario_name}")
                         lines.append("")
 
+        # STT Resilience Summary (only when STT-induced failures exist)
+        stt_failures = by_category.get(FailureCategory.STT_INDUCED, [])
+        if stt_failures:
+            lines.append("## STT Resilience Summary")
+            lines.append("")
+            lines.append(
+                f"**{len(stt_failures)} failures** were caused by STT-simulated "
+                f"input corruption (not real parser bugs)."
+            )
+            lines.append("")
+            lines.append("| Original Input | Corrupted Input | Bot Response |")
+            lines.append("|----------------|-----------------|--------------|")
+            for result in stt_failures:
+                first_fail = result.get_first_failure()
+                if first_fail:
+                    original = first_fail.original_input or "N/A"
+                    corrupted = first_fail.user_input
+                    resp = (first_fail.actual_response or "")[:80]
+                    if len(first_fail.actual_response or "") > 80:
+                        resp += "..."
+                    lines.append(f"| {original} | {corrupted} | {resp} |")
+            lines.append("")
+
         # Write the report
         report_path.write_text("\n".join(lines), encoding="utf-8")
         logger.info("Failure report written to %s", report_path)

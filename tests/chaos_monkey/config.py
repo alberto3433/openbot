@@ -21,6 +21,9 @@ class ChaosMonkeyConfig:
     use_llm: bool = False  # Enable LLM-generated phrasings
     llm_phrasing_ratio: float = 0.1  # 10% of tests use LLM phrasings
 
+    # Input mode: "text" (default) or "voice" (STT simulation)
+    input_mode: str = "text"
+
     # Mutation settings
     mutation_probability: float = 0.2  # 20% of inputs get mutated
     gentle_mutations: bool = True  # Use gentle mutations (no typos, no word doubling)
@@ -61,3 +64,5 @@ class ChaosMonkeyConfig:
             raise ValueError("mutation_probability must be between 0 and 1")
         if self.llm_phrasing_ratio < 0 or self.llm_phrasing_ratio > 1:
             raise ValueError("llm_phrasing_ratio must be between 0 and 1")
+        if self.input_mode not in ("text", "voice"):
+            raise ValueError(f"input_mode must be 'text' or 'voice', got '{self.input_mode}'")

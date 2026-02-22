@@ -97,8 +97,16 @@ class ResponseVerifier:
             cart_items = order_state.get("items", [])
             if not cart_items:
                 turn.passed = False
-                turn.failure_category = FailureCategory.MENU_ITEM_NOT_FOUND
-                turn.failure_reason = f"Item not found: {response[:100]}"
+                # If this turn was STT-mutated, categorize as STT-induced
+                if turn.stt_mutated:
+                    turn.failure_category = FailureCategory.STT_INDUCED
+                    turn.failure_reason = (
+                        f"STT-induced not found (original: "
+                        f"'{turn.original_input}'): {response[:100]}"
+                    )
+                else:
+                    turn.failure_category = FailureCategory.MENU_ITEM_NOT_FOUND
+                    turn.failure_reason = f"Item not found: {response[:100]}"
                 return
 
         # Verify cart contents (primary verification for add_item scenarios)

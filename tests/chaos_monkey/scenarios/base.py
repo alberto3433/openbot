@@ -34,6 +34,7 @@ class FailureCategory(Enum):
     PRICING_ERROR = "Pricing Error"
     MODIFIER_HANDLING = "Modifier Handling"
     CART_OPERATION = "Cart Operation"
+    STT_INDUCED = "STT-Induced Failure"
     OTHER = "Other"
 
 
@@ -58,6 +59,10 @@ class ConversationTurn:
     expected_question_about: str | None = None  # Attribute being asked about
     allow_disambiguation: bool = False  # Whether disambiguation is acceptable
     is_menu_inquiry: bool = False  # If True, "not found" responses are acceptable
+
+    # STT mutation tracking
+    stt_mutated: bool = False
+    original_input: str | None = None
 
     # Filled in after execution
     actual_response: str | None = None

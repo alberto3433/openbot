@@ -40,6 +40,9 @@ Examples:
   # Quick test run (1 minute)
   python -m tests.chaos_monkey.cli -d 60
 
+  # Voice mode — test STT resilience
+  python -m tests.chaos_monkey.cli -d 300 --input-mode voice
+
   # High rate limit and larger batches
   python -m tests.chaos_monkey.cli -d 7200 -b 20 -r 60
         """,
@@ -100,6 +103,14 @@ Examples:
     )
 
     parser.add_argument(
+        "--input-mode",
+        type=str,
+        default="text",
+        choices=["text", "voice"],
+        help="Input mode: 'text' (default) or 'voice' (STT simulation)",
+    )
+
+    parser.add_argument(
         "--scenario-type",
         type=str,
         default=None,
@@ -140,6 +151,13 @@ Examples:
     setup_logging(args.verbose)
     logger = logging.getLogger(__name__)
 
+    # Determine mutation probability — auto-increase for voice mode
+    # unless the user explicitly set --mutation-prob
+    mutation_prob = args.mutation_prob
+    mutation_prob_is_default = mutation_prob == 0.2
+    if args.input_mode == "voice" and mutation_prob_is_default:
+        mutation_prob = 0.4
+
     # Build configuration
     config = ChaosMonkeyConfig(
         duration_seconds=args.duration,
@@ -148,7 +166,8 @@ Examples:
         request_delay_seconds=args.request_delay,
         use_llm=args.use_llm,
         llm_phrasing_ratio=args.llm_ratio,
-        mutation_probability=args.mutation_prob,
+        input_mode=args.input_mode,
+        mutation_probability=mutation_prob,
         gentle_mutations=not args.aggressive,
         api_base_url=args.api_url,
     )
@@ -173,7 +192,8 @@ Examples:
     logger.info("  Rate limit: %d req/min", args.rate_limit)
     logger.info("  Request delay: %.1f seconds", args.request_delay)
     logger.info("  Use LLM: %s", args.use_llm)
-    logger.info("  Mutation probability: %.1f%%", args.mutation_prob * 100)
+    logger.info("  Input mode: %s", args.input_mode)
+    logger.info("  Mutation probability: %.1f%%", mutation_prob * 100)
     logger.info("  Gentle mutations: %s", config.gentle_mutations)
     logger.info("  Scenario type: %s", args.scenario_type or "mixed")
     logger.info("  API URL: %s", args.api_url)

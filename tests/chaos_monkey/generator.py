@@ -708,10 +708,22 @@ class ScenarioGenerator:
 
     def _apply_mutations(self, scenario: BaseScenario) -> None:
         """Apply text mutations to scenario turns."""
+        is_voice = self.config.input_mode == "voice"
         gentle = self.config.gentle_mutations
         for turn in scenario.get_turns():
-            # Apply just 1 mutation to keep inputs recognizable
-            result = self.mutator.mutate(turn.user_input, mutation_count=1, gentle=gentle)
+            if is_voice:
+                # Voice mode: STT-specific mutations, 2 per turn
+                result = self.mutator.mutate(
+                    turn.user_input, mutation_count=2, stt=True,
+                )
+                if result.mutations_applied:
+                    turn.stt_mutated = True
+                    turn.original_input = result.original
+            else:
+                # Text mode: 1 gentle/aggressive mutation
+                result = self.mutator.mutate(
+                    turn.user_input, mutation_count=1, gentle=gentle,
+                )
             turn.user_input = result.mutated
 
     def get_stats(self) -> dict[str, Any]:

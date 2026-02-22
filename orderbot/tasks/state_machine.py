@@ -373,6 +373,13 @@ class OrderStateMachine:
                 return result
             # If no result, the response wasn't understood - fall through to normal processing
 
+        if order.pending_store_change:
+            order.pending_store_change = False
+            store_result = self._handle_store_selection(user_input, order)
+            if store_result:
+                order.add_message("assistant", store_result.message)
+                return store_result
+
         if order.pending_scheduling:
             order.pending_scheduling = False
             scheduling_result = self._handle_scheduling_expression(user_input, order)
@@ -604,6 +611,10 @@ class OrderStateMachine:
         ):
             order.delivery_method.order_type = "pickup"
             return self._handle_scheduling_change_request(order)
+
+        # Check for store change request (e.g., "change store", "switch store")
+        if re.search(r'\b(?:change|switch|update)\s+store\b', user_input, re.IGNORECASE):
+            return self._handle_store_change_request(order)
 
         # Check for scheduling change request (e.g., "change pickup time")
         if re.search(
@@ -868,6 +879,87 @@ class OrderStateMachine:
                 {"label": "In 1 hour", "value": "in 1 hour"},
                 {"label": "Choose a time", "value": "I'd like to choose a specific time"},
             ],
+        )
+
+    def _handle_store_change_request(
+        self,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Handle a request to change the ordering store.
+
+        Shows available stores as quick replies.
+        """
+        all_stores = self._store_info.get("all_stores", [])
+        if not all_stores or len(all_stores) <= 1:
+            msg = "There's only one store available right now."
+            order.add_message("assistant", msg)
+            return StateMachineResult(message=msg, order=order)
+
+        order.pending_store_change = True
+        msg = "Which store would you like to order from?"
+        quick_replies = []
+        for s in all_stores:
+            raw = s.get("name", "")
+            short = raw.split(" - ")[-1] if " - " in raw else raw
+            quick_replies.append({"label": short, "value": s["store_id"]})
+
+        order.add_message("assistant", msg)
+        return StateMachineResult(
+            message=msg,
+            order=order,
+            quick_replies=quick_replies,
+        )
+
+    def _handle_store_selection(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle the user's store selection after a pending_store_change prompt.
+
+        Matches by store_id (exact, for quick-reply taps) or by name substring.
+        Sets a transient ``_new_store_id`` key on the order so the message
+        processor can update the session.
+        """
+        all_stores = self._store_info.get("all_stores", [])
+        text_lower = user_input.strip().lower()
+
+        matched_store = None
+        for s in all_stores:
+            if s["store_id"] == user_input.strip():
+                matched_store = s
+                break
+        if not matched_store:
+            for s in all_stores:
+                name_lower = s.get("name", "").lower()
+                short_lower = (
+                    name_lower.split(" - ")[-1] if " - " in name_lower else name_lower
+                )
+                if text_lower in name_lower or text_lower == short_lower:
+                    matched_store = s
+                    break
+
+        if matched_store:
+            order._new_store_id = matched_store["store_id"]
+            raw = matched_store.get("name", "")
+            short = raw.split(" - ")[-1] if " - " in raw else raw
+            return StateMachineResult(
+                message=f"Switched to {short}. What can I get you?",
+                order=order,
+            )
+
+        # No match — re-prompt with quick replies
+        msg = "I didn't find that store. Please pick one:"
+        quick_replies = []
+        for s in all_stores:
+            raw = s.get("name", "")
+            short = raw.split(" - ")[-1] if " - " in raw else raw
+            quick_replies.append({"label": short, "value": s["store_id"]})
+        order.pending_store_change = True
+        return StateMachineResult(
+            message=msg,
+            order=order,
+            quick_replies=quick_replies,
         )
 
     # Compiled pattern for customer info change requests

@@ -113,6 +113,7 @@ _FLOW_STATE_FIELDS: list[tuple[str, object, type | None]] = [
     ("pending_ingredient_search", None, PendingIngredientSearch),
     ("pending_unmatched_pagination", None, PendingUnmatchedPagination),
     ("return_to_phase", None, None),
+    ("pending_store_change", False, None),
 ]
 
 
@@ -456,6 +457,16 @@ def order_task_to_dict(
     # Scheduling data for frontend
     pickup_time = order.delivery_method.pickup_time
     order_dict["scheduling"] = _build_scheduling_dict(pickup_time, store_info)
+
+    # Store info for frontend badge
+    if store_info:
+        raw_name = store_info.get("name", "")
+        short = raw_name.split(" - ")[-1] if " - " in raw_name else raw_name
+        order_dict["store"] = {
+            "store_id": store_info.get("store_id"),
+            "name": raw_name,
+            "short_name": short,
+        }
 
     # Preserve conversation history
     order_dict["task_orchestrator_state"] = {

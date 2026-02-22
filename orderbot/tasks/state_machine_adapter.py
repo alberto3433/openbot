@@ -149,6 +149,11 @@ def process_message_with_state_machine(
     # Pass pricing engine for consistent modifier price lookups
     updated_dict = order_task_to_dict(result.order, store_info=store_info, pricing=sm.pricing)
 
+    # Propagate transient store change signal if set
+    new_store_id = getattr(result.order, "_new_store_id", None)
+    if new_store_id:
+        updated_dict["_new_store_id"] = new_store_id
+
     # Build actions list for compatibility
     actions = _infer_actions_from_result(order_state_dict, updated_dict, result)
 

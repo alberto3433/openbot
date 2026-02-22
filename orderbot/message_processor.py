@@ -150,6 +150,34 @@ class MessageProcessor:
             item_id=ctx.item_id,
         )
 
+        # 4b. Handle store change signal from state machine
+        new_store_id = updated_order_state.get("_new_store_id")
+        if new_store_id:
+            del updated_order_state["_new_store_id"]
+            if new_store_id != session_store_id:
+                session["store_id"] = new_store_id
+                session_store_id = new_store_id
+                new_store_info = self._build_store_info(new_store_id)
+                session["store_info"] = new_store_info
+                store_info = new_store_info
+                # Recalculate taxes with new store's rates
+                from .services.tax_utils import calculate_order_total
+                subtotal = updated_order_state.get("checkout_state", {}).get("subtotal", 0)
+                if subtotal > 0:
+                    is_delivery = updated_order_state.get("order_type") == "delivery"
+                    totals = calculate_order_total(subtotal, new_store_info, is_delivery)
+                    cs = updated_order_state.get("checkout_state", {})
+                    cs.update(totals)
+                    updated_order_state["checkout_state"] = cs
+                # Update store dict in order state for frontend
+                raw_name = new_store_info.get("name", "")
+                short = raw_name.split(" - ")[-1] if " - " in raw_name else raw_name
+                updated_order_state["store"] = {
+                    "store_id": new_store_id,
+                    "name": raw_name,
+                    "short_name": short,
+                }
+
         # 5. Update history
         history.append({"role": "user", "content": ctx.user_message})
         history.append({"role": "assistant", "content": reply})

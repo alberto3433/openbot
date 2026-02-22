@@ -303,9 +303,18 @@ def build_email_kwargs_from_order(db: Session, order: Order) -> dict:
     ``send_expired_link_email`` from a persisted ``Order`` row.
     """
     from .store_service import get_company
+    from ..db.models import Store
 
-    company = get_company(db)
-    store_name = company.name if company else "OrderBot"
+    # Prefer specific Store.name (e.g., "Zucker's - East Brunswick")
+    # over Company.name (e.g., "Zucker's Bagels")
+    store_name = None
+    if order.store_id:
+        store = db.query(Store).filter(Store.store_id == order.store_id).first()
+        if store:
+            store_name = store.name
+    if not store_name:
+        company = get_company(db)
+        store_name = company.name if company else "OrderBot"
 
     items_list = []
     for oi in order.items:

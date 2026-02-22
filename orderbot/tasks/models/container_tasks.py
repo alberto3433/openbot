@@ -56,6 +56,7 @@ _CLEARABLE_PENDING_FIELDS: tuple[tuple[str, object], ...] = (
     ("pending_dietary_followup", None),
     ("pending_quantity_addition", None),
     ("pending_scheduling", False),
+    ("pending_store_change", False),
 )
 
 
@@ -332,6 +333,11 @@ class OrderTask(BaseTask):
     # Set when bot asks "When would you like your order ready?" so next input
     # is routed through the time parser instead of item ordering
     pending_scheduling: bool = False
+
+    # Pending store change state
+    # Set when bot asks "Which store would you like to order from?" so next
+    # input is matched against available stores
+    pending_store_change: bool = False
 
     # Phase to return to after a customer info edit (name/phone/email change).
     # Set when the user clicks "change my name" etc. mid-order, so that after

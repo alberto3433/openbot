@@ -1158,6 +1158,21 @@
       opacity: 1;
     }
 
+    .order-type-badge .store-separator {
+      opacity: 0.5;
+    }
+
+    .order-type-badge .store-name {
+      cursor: pointer;
+      border-bottom: 1px dashed currentColor;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+    }
+
+    .order-type-badge .store-name:hover {
+      opacity: 1;
+    }
+
     /* Empty State */
     .order-empty {
       text-align: center;
@@ -1624,6 +1639,8 @@
           <span id="order-type-text">Pickup</span>
           <span class="scheduling-separator">·</span>
           <span class="scheduling-time" id="scheduling-time" title="Change pickup time">Now</span>
+          <span class="store-separator" id="store-separator" style="display:none">&middot;</span>
+          <span class="store-name" id="store-name-badge" title="Change store" style="display:none"></span>
         </div>
         <div class="order-empty" id="order-empty">
           <div class="icon"><i data-lucide="shopping-bag"></i></div>
@@ -1988,6 +2005,11 @@
     // Click handler for scheduling time badge
     document.getElementById("scheduling-time").addEventListener("click", function() {
       sendMessage("change pickup time");
+    });
+
+    // Click handler for store name badge
+    document.getElementById("store-name-badge").addEventListener("click", function() {
+      sendMessage("change store");
     });
 
     // Click handler for editable customer info fields
@@ -2928,6 +2950,23 @@
       // Update scheduling time display (always visible)
       const display = (state.scheduling && state.scheduling.pickup_time_display) || "Now";
       schedulingTime.textContent = display;
+
+      // Update store name badge
+      const storeNameBadge = document.getElementById("store-name-badge");
+      const storeSep = document.getElementById("store-separator");
+      let shortStoreName = (state.store && state.store.short_name) || STORE_NAMES[currentStoreId] || null;
+      if (shortStoreName) {
+        storeNameBadge.textContent = shortStoreName;
+        storeNameBadge.style.display = "";
+        storeSep.style.display = "";
+      } else {
+        storeNameBadge.style.display = "none";
+        storeSep.style.display = "none";
+      }
+      // Update currentStoreId if store changed
+      if (state.store && state.store.store_id) {
+        currentStoreId = state.store.store_id;
+      }
 
       if (!hasItems) {
         mobileCartSummary.textContent = "Cart empty";

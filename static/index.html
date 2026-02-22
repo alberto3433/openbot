@@ -2067,6 +2067,7 @@
         if (data.returning_customer) {
           console.log("Returning customer:", data.returning_customer);
           // Pre-populate order panel with returning customer info
+          if (!orderState.customer) orderState.customer = {};
           if (data.returning_customer.name) orderState.customer.name = data.returning_customer.name;
           if (data.returning_customer.phone) orderState.customer.phone = data.returning_customer.phone;
           renderOrderPanel(orderState);

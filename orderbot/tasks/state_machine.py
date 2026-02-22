@@ -548,6 +548,16 @@ class OrderStateMachine:
                 order.add_message("assistant", change_result.message)
                 return change_result
 
+        # Check for early scheduling intent (e.g., "can I pickup my order later?")
+        if re.search(
+            r'\b(?:pick\s*up|pickup)\b.*\blater\b'
+            r'|\blater\b.*\b(?:pick\s*up|pickup)\b'
+            r'|\bschedule\s+(?:a\s+)?(?:pick\s*up|pickup)\b',
+            user_input, re.IGNORECASE,
+        ):
+            order.delivery_method.order_type = "pickup"
+            return self._handle_scheduling_change_request(order)
+
         # Check for scheduling change request (e.g., "change pickup time")
         if re.search(
             r'\b(?:change|update|modify|set|edit)\s+(?:pickup|delivery|order)?\s*time\b',

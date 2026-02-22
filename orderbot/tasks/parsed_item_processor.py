@@ -450,10 +450,6 @@ class ParsedItemProcessor:
             for item_id, display_name, item_type in added_items:
                 item = order.items.get_item_by_id(item_id)
                 if item:
-                    logger.info(
-                        "INAPPLICABLE_CHECK: item=%s, inapplicable_attributes=%s",
-                        display_name, item.inapplicable_attributes,
-                    )
                     note = build_inapplicable_note(item)
                     if note:
                         notes.append(note)

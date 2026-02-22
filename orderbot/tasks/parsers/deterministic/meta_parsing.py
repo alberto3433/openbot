@@ -30,12 +30,19 @@ def _is_only_filler(text: str) -> bool:
     Returns:
         True if text is empty or only contains filler words
     """
-    # Remove common filler words and check if anything meaningful remains
+    from ...shared_constants import ORDERING_PREFIX_RE
+
+    # Strip ordering language from start ("can I have", "I'd like", etc.)
+    stripped = ORDERING_PREFIX_RE.sub('', text.strip(), count=1).strip()
+
     filler_words = {
         "and", "also", "i", "want", "would", "like", "to", "a", "an", "the", "please",
         "this", "is", "it", "that", "for", "can", "you", "be",
+        "have", "get", "new", "order", "place", "make", "my", "me",
     }
-    words = text.lower().split()
+    # Strip punctuation from each word so "please?" matches "please"
+    words = [w.strip('?!.,;:') for w in stripped.lower().split()]
+    words = [w for w in words if w]  # Remove empty strings
     meaningful_words = [w for w in words if w not in filler_words]
     return len(meaningful_words) == 0
 

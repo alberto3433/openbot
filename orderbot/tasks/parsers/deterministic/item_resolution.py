@@ -129,9 +129,16 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
         mod_list.append(Selection(slug=f"no_{rem['slug']}", category=rem.get("category")))
 
     # Detect inapplicable attribute words: known attribute options (e.g., "small")
-    # that don't apply to this item type (e.g., sandwich has no size attribute)
+    # that don't apply to this item type (e.g., sandwich has no size attribute).
+    # item_type_for_mods may be None for non-configurable items (e.g., sodas);
+    # resolve via _menu_items cache so detection still runs.
+    item_type_for_detection = item_type_for_mods
+    if not item_type_for_detection:
+        item_data = menu_cache._menu_items.get(menu_item.lower())
+        if item_data:
+            item_type_for_detection = item_data.get("item_type")
     inapplicable_attrs = _detect_inapplicable_attributes(
-        text_lower, menu_item, menu_item_span, item_type_for_mods
+        text_lower, menu_item, menu_item_span, item_type_for_detection
     )
 
     parsed_items = [

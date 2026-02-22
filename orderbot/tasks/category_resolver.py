@@ -39,13 +39,21 @@ def get_available_menu_categories_message() -> str:
     return "our menu items"
 
 
-def find_matching_item_types(query: str, items_by_type: dict) -> list[str]:
+def find_matching_item_types(
+    query: str, items_by_type: dict, exact_only: bool = False
+) -> list[str]:
     """Find item types that match a query term.
 
     Checks for:
     1. Exact slug match (query == item_type_slug)
     2. Singular form match (singularize(query) == item_type_slug)
     3. Slug contains singular query as a word (e.g., "tea" matches "iced_tea")
+       — only when exact_only=False
+
+    Args:
+        query: The search term.
+        items_by_type: Dict of item_type_slug -> items.
+        exact_only: If True, only return exact/singular slug matches (skip partial).
 
     Returns:
         List of matching item type slugs, empty if none found.
@@ -60,7 +68,7 @@ def find_matching_item_types(query: str, items_by_type: dict) -> list[str]:
             matching.append(item_type_slug)
         # Partial match: item type contains the query as a word
         # e.g., "tea" matches "iced_tea" (tea is a word in iced_tea)
-        elif singular in item_type_slug.split('_'):
+        elif not exact_only and singular in item_type_slug.split('_'):
             matching.append(item_type_slug)
 
     return matching
@@ -70,26 +78,61 @@ def get_items_for_category(menu_query_type: str, menu_data: dict | None) -> tupl
     """Get items and display name for a menu category.
 
     Uses DB-driven approach with lookup_type:
-    1. Check if query matches item type slugs (more specific than display groups)
-    2. Check if query matches a display group slug (e.g., "breads")
-    3. Look up category in menu_cache.get_category_keyword_mapping()
-    4. If lookup_type=="category", query via MenuItemCategory join table
-    5. If lookup_type=="item_type", query by item_type_id
-    6. Fall back to direct slug in items_by_type (for pagination state)
-    7. Fall back to partial string matching on all items
+    1. Exact item type slug match → use all matches (exact + partial), skip display groups
+       e.g., "bagels" → "bagel" exact → bagel items only (not all "breads")
+       e.g., "beverage" → "beverage" exact + partial "espresso_based_beverage" etc.
+    2. Display group match (no exact type match)
+       e.g., "drinks" → display group → all drink types (not just "energy_drink")
+    3. Partial item type match (no exact match, no display group)
+       e.g., "tea" → partial "iced_tea" → iced tea items
+    4. Look up category in menu_cache.get_category_keyword_mapping()
+    5. If lookup_type=="category", query via MenuItemCategory join table
+    6. If lookup_type=="item_type", query by item_type_id
+    7. Fall back to direct slug in items_by_type (for pagination state)
+    8. Fall back to partial string matching on all items
 
     Returns:
         Tuple of (items list, category_key for pagination)
     """
     items_by_type = menu_data.get("items_by_type", {}) if menu_data else {}
 
-    # Check display groups first (e.g., "breads", "sandwiches", "drinks")
-    # Display groups aggregate multiple item types and handle hierarchical queries
+    # Find all item type matches (exact + partial) and exact-only matches
+    all_matching_types = find_matching_item_types(menu_query_type, items_by_type)
+    exact_matching_types = find_matching_item_types(menu_query_type, items_by_type, exact_only=True)
+
+    # If there's an exact item type slug match, use ALL matches (exact + partial)
+    # and skip display groups. This ensures:
+    # - "bagels" → exact "bagel" → returns only bagel items (not all "breads")
+    # - "beverage" → exact "beverage" + partial "espresso_based_beverage" etc. → all beverage types
+    if exact_matching_types:
+        items = []
+        for item_type_slug in all_matching_types:
+            items.extend(items_by_type.get(item_type_slug, []))
+
+        # Also search by name to catch items with the search term in their name
+        name_matched_items = menu_cache.search_menu_items_by_term(menu_query_type)
+        if name_matched_items:
+            existing_names = {item.get("name", "").lower() for item in items}
+            for item in name_matched_items:
+                item_name = item.get("name", "").lower()
+                if item_name and item_name not in existing_names:
+                    items.append(item)
+                    existing_names.add(item_name)
+
+        if items:
+            logger.info(
+                "Menu query: '%s' matched %d item type(s): %s with %d items (exact match)",
+                menu_query_type, len(all_matching_types), all_matching_types, len(items)
+            )
+            return items, exact_matching_types[0]
+
+    # No exact item type match — check display groups (e.g., "breads", "sandwiches", "drinks")
+    # Display groups win over partial item type matches so "drinks" shows all drinks,
+    # not just "energy_drink" (which would be a partial match on "drink")
     display_group = menu_cache.get_display_group_by_slug(menu_query_type)
     if display_group:
         item_type_slugs = menu_cache.get_item_types_in_display_group(display_group["slug"])
         if item_type_slugs:
-            # Collect items from all item types in this display group
             items = []
             for item_type_slug in item_type_slugs:
                 items.extend(items_by_type.get(item_type_slug, []))
@@ -100,19 +143,15 @@ def get_items_for_category(menu_query_type: str, menu_data: dict | None) -> tupl
                 )
                 return items, display_group["slug"]
 
-    # Check for item type matches (slug-based matching)
-    matching_item_types = find_matching_item_types(menu_query_type, items_by_type)
-    if matching_item_types:
+    # No exact match and no display group — use partial item type matches
+    # e.g., "tea" → partial match "iced_tea" → returns iced tea items
+    if all_matching_types:
         items = []
-        for item_type_slug in matching_item_types:
+        for item_type_slug in all_matching_types:
             items.extend(items_by_type.get(item_type_slug, []))
 
-        # Also search by name to catch items like "Snapple Iced Tea" when searching for "tea"
-        # This finds items with the search term in their name, regardless of item type
         name_matched_items = menu_cache.search_menu_items_by_term(menu_query_type)
         if name_matched_items:
-            # Add name-matched items that aren't already included (avoid duplicates)
-            # Use lowercase names for deduplication since items may not have IDs
             existing_names = {item.get("name", "").lower() for item in items}
             for item in name_matched_items:
                 item_name = item.get("name", "").lower()
@@ -122,11 +161,10 @@ def get_items_for_category(menu_query_type: str, menu_data: dict | None) -> tupl
 
         if items:
             logger.info(
-                "Menu query: '%s' matched %d item type(s): %s with %d items (including name matches)",
-                menu_query_type, len(matching_item_types), matching_item_types, len(items)
+                "Menu query: '%s' matched %d item type(s): %s with %d items (partial match)",
+                menu_query_type, len(all_matching_types), all_matching_types, len(items)
             )
-            # Use first matching type as the category key for pagination
-            return items, matching_item_types[0]
+            return items, all_matching_types[0]
 
     # Look up category info from DB-loaded cache
     # This ensures "beverage" maps to sized_beverage/espresso_based_beverage per DB config

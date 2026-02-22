@@ -31,6 +31,7 @@ from .schemas import (
 )
 from .parsers import parse_open_input
 from .parsers.deterministic import get_pipeline
+from .parsers.patterns.filler import strip_conversational_fillers
 from .item_cancellation_handler import ItemCancellationHandler
 from .item_replacement_handler import ItemReplacementHandler
 from .item_modification_handler import ItemModificationHandler
@@ -338,7 +339,10 @@ class TakingItemsHandler(MenuDataMixin):
                 logger.info("Selections from input: %s", extracted_selections)
 
         # Extract order-level special instructions from user input
-        instructions_result = _pipeline.extract_special_instructions(user_input)
+        # Strip conversational fillers first (e.g., "no but" prefix) to avoid
+        # noise like "no but can" leaking into instructions
+        cleaned_for_instructions = strip_conversational_fillers(user_input)
+        instructions_result = _pipeline.extract_special_instructions(cleaned_for_instructions)
         if instructions_result and instructions_result.instructions:
             # Filter out instructions already captured as item-level selections
             # (e.g., "cheese on the side" when blueberry_cream_cheese is a selection)
@@ -423,6 +427,22 @@ class TakingItemsHandler(MenuDataMixin):
                     instr,
                 )
                 continue
+
+            # Check if base_word references an item name itself (e.g., "coffee on the side"
+            # when a "Hot Coffee" was parsed as a separate item)
+            all_item_name_words: set[str] = set()
+            for item in parsed.parsed_items:
+                if item.item_name:
+                    all_item_name_words.update(w.lower() for w in item.item_name.split())
+            if all_item_name_words and any(
+                w in all_item_name_words for w in base_word.split() if len(w) >= 3
+            ):
+                logger.debug(
+                    "Filtering order-level instruction '%s' - references parsed item name",
+                    instr,
+                )
+                continue
+
             filtered.append(instr)
         return filtered
 

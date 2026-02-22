@@ -34,11 +34,13 @@ def _filter_duplicate_instructions(
     special_instructions: list[str],
     attr_result,
     modifier_selections: list[Selection],
+    item_name: str = "",
 ) -> list[str]:
     """Filter out special instructions already captured as attribute or modifier selections.
 
     For example, if "shot" is in attr_result.values, the instruction "extra shot" is
-    redundant and should be removed.
+    redundant and should be removed. Also filters instructions whose base word matches
+    the item name itself (e.g., "coffee on the side" when ordering a Hot Coffee).
 
     Returns:
         Filtered list of special instructions with duplicates removed.
@@ -55,6 +57,10 @@ def _filter_duplicate_instructions(
             captured_slugs.add(attr_val.lower())
     for sel in modifier_selections:
         captured_slugs.add(sel.slug.lower())
+
+    # Build set of item name words for filtering instructions that reference the item itself
+    # e.g., "Hot Coffee" -> {"hot", "coffee"}
+    item_name_words = {w.lower() for w in item_name.split()} if item_name else set()
 
     # Filter instructions: remove if the item word matches a captured slug
     # "extra shot" -> check if "shot" is captured
@@ -80,8 +86,14 @@ def _filter_duplicate_instructions(
 
         # If item_word is already captured as a selection, skip this instruction
         # Also check suffix match (e.g., "cheese" matches "blueberry_cream_cheese")
+        # Also filter if item_word matches the item name itself (e.g., "coffee" for "Hot Coffee")
         if item_word in captured_slugs or any(s.endswith(f"_{item_word}") for s in captured_slugs):
             logger.debug("Filtering duplicate instruction '%s' - already captured as selection", instr)
+            continue
+        if item_name_words and any(
+            w in item_name_words for w in item_word.split() if len(w) >= 3
+        ):
+            logger.debug("Filtering instruction '%s' - references the item itself ('%s')", instr, item_name)
             continue
         filtered_instructions.append(instr)
     return filtered_instructions

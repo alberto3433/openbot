@@ -655,6 +655,19 @@ class TestReplacementPatternDetection:
         assert bagel is not None
         assert bagel.attribute_values.get("bread") == "everything_bagel"
 
+    @pytest.mark.parametrize("text", [
+        "make it pickup",
+        "make it delivery",
+    ])
+    def test_replacement_with_order_type_does_not_set_replace(self, text):
+        """'make it pickup/delivery' should set order_type, not replace_last_item."""
+        result = parse_open_input_deterministic(text)
+        assert result is not None, f"Expected parsed result for: {text}"
+        assert result.order_type is not None, f"Expected order_type for: {text}"
+        assert result.replace_last_item is False, (
+            f"'replace_last_item' should be False for order-type input: {text}"
+        )
+
 
 # =============================================================================
 # Cancellation Pattern Tests

@@ -182,7 +182,7 @@ class TestCompleteAddressWithExistingZip:
 class TestCompleteAddressWithNominatim:
     """Tests for Nominatim API integration (mocked)."""
 
-    @patch("orderbot.address_service.requests.get")
+    @patch("orderbot.services.address_service.requests.get")
     def test_single_match_in_delivery_area(self, mock_get):
         """Test successful address completion with single match."""
         mock_response = MagicMock()
@@ -208,7 +208,7 @@ class TestCompleteAddressWithNominatim:
         assert result.addresses[0].zip_code == "10007"
         assert result.addresses[0].house_number == "143"
 
-    @patch("orderbot.address_service.requests.get")
+    @patch("orderbot.services.address_service.requests.get")
     def test_no_matches_in_delivery_area(self, mock_get):
         """Test when address exists but not in delivery area."""
         mock_response = MagicMock()
@@ -232,7 +232,7 @@ class TestCompleteAddressWithNominatim:
         assert not result.success
         assert "couldn't find" in result.error_message.lower()
 
-    @patch("orderbot.address_service.requests.get")
+    @patch("orderbot.services.address_service.requests.get")
     def test_multiple_matches_needs_clarification(self, mock_get):
         """Test when multiple addresses match in different ZIP codes."""
         mock_response = MagicMock()
@@ -265,7 +265,7 @@ class TestCompleteAddressWithNominatim:
         assert result.needs_clarification
         assert len(result.addresses) == 2
 
-    @patch("orderbot.address_service.requests.get")
+    @patch("orderbot.services.address_service.requests.get")
     def test_deduplicates_same_zip(self, mock_get):
         """Test that duplicate ZIP codes are deduplicated."""
         mock_response = MagicMock()
@@ -288,7 +288,7 @@ class TestCompleteAddressWithNominatim:
         assert len(result.addresses) == 1  # Deduplicated
         assert not result.needs_clarification
 
-    @patch("orderbot.address_service.requests.get")
+    @patch("orderbot.services.address_service.requests.get")
     def test_api_error_handled(self, mock_get):
         """Test handling of API errors."""
         mock_get.side_effect = Exception("Network error")
@@ -298,7 +298,7 @@ class TestCompleteAddressWithNominatim:
         assert not result.success
         assert "couldn't verify" in result.error_message.lower()
 
-    @patch("orderbot.address_service.requests.get")
+    @patch("orderbot.services.address_service.requests.get")
     def test_empty_api_response(self, mock_get):
         """Test handling of empty API response."""
         mock_response = MagicMock()
@@ -311,7 +311,7 @@ class TestCompleteAddressWithNominatim:
         assert not result.success
         assert "couldn't find" in result.error_message.lower()
 
-    @patch("orderbot.address_service.requests.get")
+    @patch("orderbot.services.address_service.requests.get")
     def test_apartment_number_stripped_for_query(self, mock_get):
         """Test that apartment numbers are stripped before querying Nominatim."""
         mock_response = MagicMock()
@@ -342,7 +342,7 @@ class TestCompleteAddressWithNominatim:
         assert "#3A" not in query_param
         assert "355 W 39th St" in query_param
 
-    @patch("orderbot.address_service.requests.get")
+    @patch("orderbot.services.address_service.requests.get")
     def test_apartment_preserved_in_full_address_with_existing_zip(self, mock_get):
         """Test that apartment is preserved when ZIP is already provided."""
         # When ZIP is already in address, we don't call Nominatim

@@ -312,6 +312,10 @@ def parse_open_input(
                 ctx=ctx,
             )
             if parsed_replacement:
+                # If the "replacement item" resolved to an order type (e.g. "make it
+                # pickup"), return it as an order type change — not an item replacement.
+                if parsed_replacement.order_type and not parsed_replacement.parsed_items:
+                    return parsed_replacement
                 parsed_replacement.replace_last_item = True
                 return parsed_replacement
 

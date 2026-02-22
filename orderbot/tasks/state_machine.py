@@ -541,6 +541,14 @@ class OrderStateMachine:
             order.add_message("assistant", make_it_n_result.message)
             return make_it_n_result
 
+        # Check for order type change requests (e.g., "change it to delivery")
+        # Must run before modifier change handler to prevent "delivery" being treated as a modifier
+        if order.delivery_method.order_type:
+            order_type_result = self._handle_order_type_change(user_input, order)
+            if order_type_result:
+                order.add_message("assistant", order_type_result.message)
+                return order_type_result
+
         # Check for modifier change requests (works when not mid-configuration)
         if order.items.get_item_count() > 0 and not order.is_configuring_item():
             change_result = self.config_helper_handler.handle_modifier_change_request(user_input, order)
@@ -587,6 +595,54 @@ class OrderStateMachine:
                 return scheduling_result
 
         return None
+
+    def _handle_order_type_change(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle order type change requests (e.g., 'change it to delivery').
+
+        Detects patterns like "change/switch/make it to delivery/pickup" and
+        applies the order type change. If switching to delivery, transitions to
+        address collection. If switching to pickup, re-shows confirmation.
+
+        Returns:
+            StateMachineResult if an order type change was handled, None otherwise.
+        """
+        match = re.search(
+            r'(?:change|switch|make)\s+(?:it|that|the\s+order)?\s*(?:to|for)\s+'
+            r'(delivery|deliver(?:ed)?|pickup|pick\s*up)',
+            user_input, re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        new_type = "delivery" if "deliv" in match.group(1).lower() else "pickup"
+
+        if order.delivery_method.order_type == new_type:
+            return None  # Already that type, let other handlers process
+
+        old_type = order.delivery_method.order_type
+        order.delivery_method.order_type = new_type
+        logger.info("ORDER TYPE CHANGE: %s -> %s", old_type, new_type)
+
+        if new_type == "delivery":
+            # Need to collect delivery address
+            order.set_phase(OrderPhase.CHECKOUT_DELIVERY)
+            return StateMachineResult(
+                message="Changed to delivery. What's the delivery address?",
+                order=order,
+            )
+        else:
+            # Switching to pickup — clear any delivery address
+            from .models.order_flow import AddressTask
+            order.delivery_method.address = AddressTask()
+            # Re-show order confirmation
+            order.set_phase(OrderPhase.CHECKOUT_CONFIRM)
+            summary = self.message_builder.build_order_summary(order)
+            return StateMachineResult(
+                message=f"Changed to pickup. {summary} Does that look right?",
+                order=order,
+            )
 
     def _log_slot_comparison(self, order: OrderTask) -> None:
         """Delegate to slot orchestration handler."""

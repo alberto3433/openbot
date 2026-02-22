@@ -235,7 +235,7 @@ def _select_best_trigger_match(
             if m[1] >= text_length * _HIGH_COVERAGE_THRESHOLD
         ]
         if high_cov:
-            high_cov.sort(key=lambda x: -x[1])  # longest first
+            high_cov.sort(key=lambda x: (_type_priority(x[2], x[3]), -x[1]))
             best = high_cov[0]
             return True, best[2], best[3]
 

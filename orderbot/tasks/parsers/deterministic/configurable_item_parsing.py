@@ -362,7 +362,7 @@ def _extract_and_build_configurable_item(
 
     # Filter out special instructions already captured as selections
     special_instructions = _filter_duplicate_instructions(
-        special_instructions, attr_result, modifier_selections,
+        special_instructions, attr_result, modifier_selections, item_name,
     )
 
     logger.info(

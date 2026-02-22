@@ -189,7 +189,7 @@ class MultiSelectHandler:
 
         # Case 2: Multi-token input where one token matched multiple options
         return self._disambiguate_multi_token(
-            tokens, options, item, order, attr, attr_slug, quantity,
+            tokens, options, item, order, attr, attr_slug, quantity, user_input,
         )
 
     def _disambiguate_single_token(
@@ -232,18 +232,25 @@ class MultiSelectHandler:
             for match in unambiguous_matches:
                 if match["slug"] not in existing_slugs:
                     opt_price = self._resolve_option_price(match, item.menu_item_type)
+                    # Extract qualifier (e.g., "extra" from "extra milk")
+                    qualifier = None
+                    if self._extract_qualifier:
+                        qualifier = self._extract_qualifier(user_input, match["display_name"])
+                    display_name = match["display_name"]
+                    if qualifier:
+                        display_name = f"{display_name} ({qualifier})"
                     item.add_selection(
                         match["slug"],
                         attr_slug,
                         quantity=1,
                         price=opt_price,
-                        display_name=match["display_name"],
+                        display_name=display_name,
                         ingredient_category=match.get("ingredient_category"),
                     )
                     existing_slugs.add(match["slug"])
                     logger.info(
                         "MULTI_SELECT: added unambiguous word match '%s'",
-                        match["display_name"]
+                        display_name
                     )
 
         if first_ambiguous_options is None:
@@ -265,6 +272,7 @@ class MultiSelectHandler:
         attr: dict,
         attr_slug: str,
         quantity: int,
+        user_input: str = "",
     ) -> StateMachineResult | None:
         """Handle disambiguation when one token in multi-token input matches multiple options.
 
@@ -293,14 +301,22 @@ class MultiSelectHandler:
 
             # Apply non-ambiguous matches from other tokens first
             self._apply_unambiguous_other_tokens(
-                tokens, token, options, item, attr_slug,
+                tokens, token, options, item, attr_slug, user_input,
             )
 
+            # Extract qualifier from the ambiguous token (e.g., "a little" from "a little syrup")
+            token_qualifier = None
+            if self._extract_qualifier and token_matches:
+                token_qualifier = self._extract_qualifier(token, token_matches[0]["display_name"])
+
             # Store disambiguation state for the ambiguous token
+            disambiguation_mods: dict = {"_quantity": token_qty}
+            if token_qualifier:
+                disambiguation_mods["_qualifier"] = token_qualifier
             order.pending_attr_disambiguation = PendingAttrDisambiguation(
                 options=token_matches,
                 attr_slug=attr_slug,
-                modifiers={"_quantity": token_qty},
+                modifiers=disambiguation_mods,
                 item_id=item.id,
             )
             options_text = self._format_display_list(token_matches)
@@ -346,6 +362,7 @@ class MultiSelectHandler:
         options: list[dict],
         item: MenuItemTask,
         attr_slug: str,
+        user_input: str = "",
     ) -> None:
         """Apply non-ambiguous matches from other tokens before disambiguation."""
         for other_token in tokens:
@@ -370,17 +387,26 @@ class MultiSelectHandler:
                 existing_slugs = {sel.get("slug") for sel in item.get_selections(attr_slug)}
                 if best_match["slug"] not in existing_slugs:
                     opt_price = self._resolve_option_price(best_match, item.menu_item_type)
+                    # Extract qualifier from full user input or token text
+                    qualifier = None
+                    if self._extract_qualifier:
+                        qualifier = self._extract_qualifier(
+                            user_input or other_token, best_match["display_name"],
+                        )
+                    display_name = best_match["display_name"]
+                    if qualifier:
+                        display_name = f"{display_name} ({qualifier})"
                     item.add_selection(
                         best_match["slug"],
                         attr_slug,
                         quantity=1,
                         price=opt_price,
-                        display_name=best_match["display_name"],
+                        display_name=display_name,
                         ingredient_category=best_match.get("ingredient_category"),
                     )
                     logger.info(
                         "MULTI_SELECT: added unambiguous match '%s' before disambiguation",
-                        best_match["display_name"]
+                        display_name
                     )
 
     def _build_disambiguation_response(

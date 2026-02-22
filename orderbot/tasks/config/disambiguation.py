@@ -184,7 +184,12 @@ class ConfigDisambiguationHandler:
         stored_qty = stored_modifiers.pop("_quantity", None)
         if quantity == 1 and stored_qty and stored_qty > 1:
             quantity = stored_qty
+        # Use stored qualifier from original input as fallback
+        # (e.g., user said "a little syrup", then answered "Vanilla Syrup" without qualifier)
+        stored_qualifier = stored_modifiers.pop("_qualifier", None)
         qualifier = self._extract_qualifier_for_option(user_input, selected["display_name"])
+        if not qualifier:
+            qualifier = stored_qualifier
 
         opt_price = selected.get("price") or selected.get("price_modifier") or 0
         selection = {
@@ -203,12 +208,15 @@ class ConfigDisambiguationHandler:
             item.remove_selection(attr_slug)
 
         # Add selection using the unified API
+        display_name = selected["display_name"]
+        if qualifier:
+            display_name = f"{display_name} ({qualifier})"
         item.add_selection(
             selected["slug"],
             attr_slug,
             quantity=quantity,
             price=opt_price,
-            display_name=selected["display_name"],
+            display_name=display_name,
             ingredient_category=selected.get("ingredient_category"),
         )
 

@@ -109,8 +109,8 @@ async def _synthesize_and_cache(
             if entry is not None:
                 entry["bytes"] = audio_bytes
                 logger.debug("TTS prefetch complete: %s (%d bytes)", audio_id, len(audio_bytes))
-    except Exception:
-        logger.warning("TTS prefetch failed for %s", audio_id, exc_info=True)
+    except (ConnectionError, TimeoutError, OSError, ValueError) as e:
+        logger.warning("TTS prefetch failed for %s: %s", audio_id, e, exc_info=True)
     finally:
         # Always unblock waiters
         with _cache_lock:

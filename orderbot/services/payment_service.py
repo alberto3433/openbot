@@ -189,7 +189,7 @@ def create_stripe_session(
             update_order_stripe_session(db, order_id, result["session_id"])
 
         return result
-    except Exception:
+    except (ConnectionError, TimeoutError, ValueError, KeyError) as e:
         logger.exception("Failed to create Stripe session for order #%d", order_id)
         return None
 

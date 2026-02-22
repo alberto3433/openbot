@@ -130,7 +130,8 @@ class MenuDataCache(
                 except (RuntimeError, ConnectionError, OSError, ValueError, KeyError) as e:
                     logger.error("Error in background refresh: %s", e)
                     # Wait before retrying to avoid tight error loops
-                    await asyncio.sleep(3600)  # 1 hour
+                    from ..constants import CACHE_RETRY_DELAY_SECONDS
+                    await asyncio.sleep(CACHE_RETRY_DELAY_SECONDS)
 
         self._refresh_task = asyncio.create_task(refresh_loop())
         logger.info("Background cache refresh task started")

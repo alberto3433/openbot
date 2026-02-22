@@ -9,6 +9,7 @@ import logging
 import re
 from collections import defaultdict
 
+from ...constants import MIN_KEYWORD_LENGTH, MIN_PREFIX_WORDS
 from ..base import build_alias_mapping, normalize_text
 
 logger = logging.getLogger(__name__)
@@ -328,7 +329,7 @@ class MenuItemLoaderMixin:
             all_items[name_lower] = item_data
 
             for word in name_lower.split():
-                if len(word) >= 3 and word not in {"the", "and", "with"}:
+                if len(word) >= MIN_KEYWORD_LENGTH and word not in {"the", "and", "with"}:
                     keyword_index[word].append(name_lower)
 
             for alias in item.aliases:
@@ -336,7 +337,7 @@ class MenuItemLoaderMixin:
                 if alias_lower:
                     all_items[alias_lower] = item_data
                     for word in alias_lower.split():
-                        if len(word) >= 3 and word not in {"the", "and", "with"}:
+                        if len(word) >= MIN_KEYWORD_LENGTH and word not in {"the", "and", "with"}:
                             keyword_index[word].append(name_lower)
 
         self._all_menu_items_by_name = all_items
@@ -408,7 +409,7 @@ class MenuItemLoaderMixin:
 
                 # Only index multi-word names (e.g., "Iced Coffee", not "Latte")
                 words = name.split()
-                if len(words) >= 2:
+                if len(words) >= MIN_PREFIX_WORDS:
                     prefix = words[0].lower()
                     if prefix not in prefix_index:
                         prefix_index[prefix] = []

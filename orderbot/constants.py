@@ -64,3 +64,26 @@ SCORE_WORD_MATCH_BASE = 20
 
 # Bonus points per additional matching word
 SCORE_WORD_MATCH_BONUS = 5
+
+# =============================================================================
+# Cache Configuration
+# =============================================================================
+
+# Hour (0-23) for daily background cache refresh (local time)
+CACHE_REFRESH_HOUR = 3
+
+# Seconds to wait before retrying after a failed cache refresh
+CACHE_RETRY_DELAY_SECONDS = 3600
+
+# =============================================================================
+# Search Index Thresholds
+# =============================================================================
+
+# Minimum word length for keyword indexing in recommendation search
+MIN_KEYWORD_LENGTH = 3
+
+# Minimum word length for general search index entries
+MIN_INDEX_WORD_LENGTH = 2
+
+# Minimum number of words in an item name for prefix indexing
+MIN_PREFIX_WORDS = 2

@@ -18,6 +18,7 @@ from typing import Any, Callable, TypeVar
 
 import inflect
 
+from ..constants import CACHE_REFRESH_HOUR, MIN_INDEX_WORD_LENGTH
 from ..exceptions import MenuDataNotLoadedError
 from .text_utils import normalize_text, normalize_for_matching  # noqa: F401 — re-exported
 from .constants import (  # noqa: F401 — re-exported
@@ -89,7 +90,7 @@ def singularize(word: str) -> str:
     try:
         result = _inflect_engine.singular_noun(word)
         return result if result else word
-    except Exception:
+    except (TypeError, ValueError):
         # inflect is fragile with unusual inputs (prepositional phrases, etc.)
         return word
 
@@ -136,14 +137,14 @@ def pluralize(word: str) -> str:
     try:
         if _inflect_engine.singular_noun(word):
             return word
-    except Exception:
+    except (TypeError, ValueError):
         pass
 
     # Use inflect to get the plural form
     try:
         result = _inflect_engine.plural_noun(word)
         return result if result else word + 's'
-    except Exception:
+    except (TypeError, ValueError):
         return word + 's'
 
 
@@ -554,7 +555,7 @@ class BaseCacheMixin:
         self._refresh_lock = threading.Lock()
 
         # Background refresh settings
-        self._refresh_hour: int = 3  # 3 AM local time
+        self._refresh_hour: int = CACHE_REFRESH_HOUR
         self._refresh_task: asyncio.Task | None = None
 
     def _ensure_loaded(self) -> None:
@@ -589,7 +590,7 @@ class BaseCacheMixin:
         for item in items:
             words = item.lower().split()
             for word in words:
-                if word not in skip_words and len(word) > 2:
+                if word not in skip_words and len(word) > MIN_INDEX_WORD_LENGTH:
                     if item not in index[word]:
                         index[word].append(item)
 

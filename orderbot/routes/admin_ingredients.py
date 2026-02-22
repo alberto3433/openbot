@@ -57,7 +57,7 @@ from ..db.models import (
     MenuItemIngredient,
     MenuItemStoreAvailability,
 )
-from ..exceptions import ReferentialIntegrityError, ResourceNotFoundError, ValidationError
+from ..exceptions import ReferentialIntegrityError, ValidationError
 from ..schemas.ingredients import (
     IngredientListOut,
     IngredientOut,
@@ -117,12 +117,7 @@ def _sync_ingredient_to_global_options(db: Session, ingredient: Ingredient) -> i
 
 def _resolve_subcategory(db: Session, subcategory_slug: str) -> "IngredientSubcategory":
     """Look up an IngredientSubcategory by slug."""
-    subcat = db.query(IngredientSubcategory).filter(
-        IngredientSubcategory.slug == subcategory_slug
-    ).first()
-    if not subcat:
-        raise ValidationError(f"Invalid subcategory: '{subcategory_slug}'")
-    return subcat
+    return get_or_404(db, IngredientSubcategory, subcategory_slug, id_column="slug", detail=f"Invalid subcategory: '{subcategory_slug}'")
 
 
 # =============================================================================

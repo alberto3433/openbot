@@ -21,10 +21,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ..db.models import ChatSession, Store, SessionAnalytics
+from ..db.models import ChatSession, SessionAnalytics
 from ..schemas.enums import OrderStatus
 from .customer_service import lookup_customer_by_phone
-from .store_service import get_company
+from .store_service import build_store_info, get_company
 
 
 logger = logging.getLogger(__name__)
@@ -140,11 +140,8 @@ def get_or_create_phone_session(
     bot_name = company.bot_persona_name if company else "Sammy"
 
     # Get store name
-    store_name = company_name
-    if store_id:
-        store = db.query(Store).filter(Store.store_id == store_id).first()
-        if store:
-            store_name = store.name
+    store_info = build_store_info(db, store_id, company_name=company_name)
+    store_name = store_info["name"]
 
     # Check for returning customer
     returning_customer = lookup_customer_by_phone(db, normalized_phone)

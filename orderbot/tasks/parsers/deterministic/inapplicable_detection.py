@@ -129,4 +129,10 @@ def _detect_inapplicable_attributes(
                 seen_attrs.add(attr_slug)
                 results.append({"word": word_clean, "attribute_slug": attr_slug})
 
+    logger.info(
+        "INAPPLICABLE_DETECT: text='%s', item_type=%s, outside='%s', "
+        "item_attrs=%s, results=%s",
+        text_lower[:50], item_type_slug, outside_text.strip()[:50],
+        item_attr_slugs, results,
+    )
     return results

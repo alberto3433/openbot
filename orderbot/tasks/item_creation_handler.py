@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Callable
 
 from .models import MenuItemTask
 from .schemas import StateMachineResult
-from .checkout_messages import got_it_anything_else
+from .checkout_messages import got_it_anything_else, build_inapplicable_note
 from .builders import ItemBuilder, ItemBuildContext
 
 if TYPE_CHECKING:
@@ -322,12 +322,13 @@ class ItemCreationHandler:
         # Use get_display_name() to include unit suffix (e.g., "(3 pack)")
         display_name = first_item.get_display_name()
         if ctx.quantity > 1:
-            return StateMachineResult(
-                message=got_it_anything_else(f"{ctx.quantity} {display_name}"),
-                order=order,
-            )
+            message = got_it_anything_else(f"{ctx.quantity} {display_name}")
         else:
-            return StateMachineResult(
-                message=got_it_anything_else(display_name),
-                order=order,
-            )
+            message = got_it_anything_else(display_name)
+
+        # Prepend note for inapplicable attributes (e.g., "large coke")
+        note = build_inapplicable_note(first_item)
+        if note:
+            message = note + " " + message
+
+        return StateMachineResult(message=message, order=order)

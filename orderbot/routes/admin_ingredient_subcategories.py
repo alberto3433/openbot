@@ -30,7 +30,7 @@ from ..schemas.ingredient_subcategories import (
     IngredientSubcategoryUpdate,
 )
 from .crud_factory import CRUDRouterFactory
-from .crud_helpers import apply_payload_updates, check_slug_unique, make_list_builder
+from .crud_helpers import apply_payload_updates, check_slug_unique, get_or_404, make_list_builder
 
 
 def _handle_before_create(payload: IngredientSubcategoryCreate, db: Session) -> dict:
@@ -39,11 +39,7 @@ def _handle_before_create(payload: IngredientSubcategoryCreate, db: Session) -> 
     category_slug = normalize_text(payload.category_slug)
 
     # Validate parent category exists
-    cat = db.query(IngredientCategory).filter(
-        IngredientCategory.slug == category_slug
-    ).first()
-    if not cat:
-        raise ValidationError(f"Category '{category_slug}' not found")
+    get_or_404(db, IngredientCategory, category_slug, id_column="slug", detail=f"Category '{category_slug}' not found")
 
     return {
         "slug": slug,

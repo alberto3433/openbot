@@ -45,8 +45,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ..db.models import Order, OrderItem, Store
+from ..db.models import Order, OrderItem
 from ..schemas.enums import OrderStatus, PaymentStatus
+from .store_service import build_store_info
 
 
 logger = logging.getLogger(__name__)
@@ -165,21 +166,11 @@ def _get_store_tax_info(db: Session, store_id: str | None) -> TaxInfo:
     Returns:
         TaxInfo with rates and fees (defaults to 0 if store not found)
     """
-    city_tax_rate = 0.0
-    state_tax_rate = 0.0
-    delivery_fee = 0.0
-
-    if store_id:
-        store = db.query(Store).filter(Store.store_id == store_id).first()
-        if store:
-            city_tax_rate = store.city_tax_rate or 0.0
-            state_tax_rate = store.state_tax_rate or 0.0
-            delivery_fee = store.delivery_fee if store.delivery_fee is not None else 0.0
-
+    store_info = build_store_info(db, store_id)
     return TaxInfo(
-        city_tax_rate=city_tax_rate,
-        state_tax_rate=state_tax_rate,
-        delivery_fee=delivery_fee,
+        city_tax_rate=store_info["city_tax_rate"],
+        state_tax_rate=store_info["state_tax_rate"],
+        delivery_fee=store_info.get("delivery_fee", 0.0),
     )
 
 

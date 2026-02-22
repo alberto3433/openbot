@@ -19,7 +19,7 @@ from .schemas import (
     ParsedItemEntry,
     ParsedItem,
 )
-from .checkout_messages import got_it_anything_else
+from .checkout_messages import got_it_anything_else, build_inapplicable_note
 from .utils.text import format_english_list
 from .utils.constants import is_price_metadata_key
 
@@ -445,8 +445,23 @@ class ParsedItemProcessor:
         logger.info("Items needing configuration: %d", len(items_needing_config))
 
         if not items_needing_config:
+            # Check added items for inapplicable attributes (e.g., "large coke")
+            notes: list[str] = []
+            for item_id, display_name, item_type in added_items:
+                item = order.items.get_item_by_id(item_id)
+                if item:
+                    logger.info(
+                        "INAPPLICABLE_CHECK: item=%s, inapplicable_attributes=%s",
+                        display_name, item.inapplicable_attributes,
+                    )
+                    note = build_inapplicable_note(item)
+                    if note:
+                        notes.append(note)
+
             items_str = format_english_list(summaries)
             message = got_it_anything_else(items_str)
+            if notes:
+                message = " ".join(notes) + " " + message
             return StateMachineResult(message=message, order=order)
 
         # Queue items 2+ for later configuration

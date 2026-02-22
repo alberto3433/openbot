@@ -5,6 +5,10 @@ This module contains all the standard messages used during the checkout flow.
 Import from here instead of hardcoding strings in handlers.
 """
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import MenuItemTask
 
 CONFIRM_QUICK_REPLIES = [{"label": "right", "value": "yes"}]
 
@@ -260,3 +264,35 @@ def modifier_not_available_for_item(modifier_name: str, item_name: str) -> str:
         Formatted rejection message
     """
     return f"Sorry, {modifier_name} isn't available for the {item_name}. Anything else?"
+
+
+def build_inapplicable_note(item: "MenuItemTask") -> str | None:
+    """Build a note for inapplicable attribute words (e.g., "large" on a non-sized item).
+
+    Pops the first entry from the item's inapplicable_attributes list and returns
+    a note like "Just a heads up, Coca-Cola only comes in one size."
+
+    This mirrors question_builder.handle_inapplicable_attributes() but is usable
+    outside the config flow (e.g., for non-configurable items).
+
+    Args:
+        item: The MenuItemTask to check.
+
+    Returns:
+        A note string to prepend to the response, or None if nothing to report.
+    """
+    if not item.inapplicable_attributes:
+        return None
+
+    from orderbot.cache import menu_cache
+
+    entry = item.inapplicable_attributes.pop(0)
+    attr_slug = entry.get("attribute_slug", "")
+    item_name = item.get_display_name()
+
+    attr_display = menu_cache.get_attribute_display_name(attr_slug)
+
+    if attr_slug == "size":
+        return f"Just a heads up, {item_name} only comes in one size."
+    else:
+        return f"Just a heads up, {item_name} doesn't have {attr_display.lower()} options."

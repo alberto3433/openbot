@@ -162,6 +162,14 @@ async def lifespan(app: FastAPI):
         from .tasks.parsers.intent_patterns import warmup_patterns
         logger.info("Pre-compiling parser patterns...")
         warmup_patterns()
+
+        # Pre-initialize TTS provider so first request doesn't pay import/init cost
+        from .services.tts import get_tts_provider
+        try:
+            get_tts_provider()
+            logger.info("TTS provider initialized")
+        except Exception as e:
+            logger.warning("TTS provider not available: %s", e)
     except (RuntimeError, ImportError, ConnectionError, OSError) as e:
         logger.error("Failed to initialize menu data cache: %s", e)
         raise RuntimeError(f"Server startup failed: Could not load menu data cache: {e}") from e

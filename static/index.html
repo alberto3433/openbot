@@ -283,6 +283,7 @@
        Chat Container
        ===================================================== */
     .chat-container {
+      position: relative;
       flex: 1;
       background: var(--bg-secondary);
       border-radius: 16px;
@@ -778,6 +779,95 @@
     @keyframes pulse {
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.05); }
+    }
+
+    /* =====================================================
+       Welcome Overlay
+       ===================================================== */
+    .welcome-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-secondary);
+      cursor: pointer;
+      transition: opacity 0.4s ease;
+    }
+
+    .welcome-overlay.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .welcome-overlay-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      padding: 40px;
+      user-select: none;
+    }
+
+    .welcome-logo {
+      width: 120px;
+      height: auto;
+      mix-blend-mode: multiply;
+    }
+
+    [data-theme="dark"] .welcome-logo {
+      filter: invert(1);
+      mix-blend-mode: screen;
+    }
+
+    .welcome-title {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text-primary);
+      text-align: center;
+      letter-spacing: -0.01em;
+    }
+
+    .welcome-start-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: var(--brand-primary);
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(212, 117, 78, 0.35);
+      animation: welcome-pulse 2s ease-in-out infinite;
+      transition: transform 0.15s ease;
+    }
+
+    .welcome-start-btn:hover {
+      transform: scale(1.08);
+    }
+
+    .welcome-start-btn svg {
+      width: 36px;
+      height: 36px;
+      fill: #FFFFFF;
+      margin-left: 4px; /* optical centering for play triangle */
+    }
+
+    .welcome-hint {
+      font-size: 14px;
+      color: var(--text-tertiary);
+      letter-spacing: 0.02em;
+    }
+
+    @keyframes welcome-pulse {
+      0%, 100% {
+        box-shadow: 0 4px 20px rgba(212, 117, 78, 0.35);
+      }
+      50% {
+        box-shadow: 0 4px 32px rgba(212, 117, 78, 0.55), 0 0 0 12px rgba(212, 117, 78, 0.08);
+      }
     }
 
     /* =====================================================
@@ -1433,6 +1523,17 @@
       <img src="/static/images/logo-light.png" alt="Zucker's Bagels" class="sidebar-logo">
     </div>
     <div class="chat-container">
+      <!-- Welcome Overlay -->
+      <div class="welcome-overlay" id="welcome-overlay" style="display:none;">
+        <div class="welcome-overlay-content">
+          <img src="/static/images/logo-light.png" alt="" class="welcome-logo">
+          <div class="welcome-title" id="welcome-title">Welcome</div>
+          <button class="welcome-start-btn" aria-label="Start order">
+            <svg viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>
+          </button>
+          <div class="welcome-hint">Tap to start your order</div>
+        </div>
+      </div>
       <!-- Caller ID Simulation Panel -->
       <details class="caller-id-panel" id="caller-id-panel">
         <summary>Simulate Incoming Call (Dev Mode)</summary>
@@ -2162,18 +2263,31 @@
       // Initialize TTS mute button icon
       updateMuteButtonUI();
 
-      await loadAppVersion();
-      await loadCompanyInfo();
-      await loadTTSVoices();
-      const availableStores = await loadStoresAndPopulateDropdown();
+      const [,,, availableStores] = await Promise.all([
+        loadAppVersion(),
+        loadCompanyInfo(),
+        loadTTSVoices(),
+        loadStoresAndPopulateDropdown(),
+      ]);
       const urlParams = new URLSearchParams(window.location.search);
       const storeIdParam = urlParams.get("store") || urlParams.get("store_id");
       const callerIdParam = urlParams.get("caller_id");
       if (storeIdParam && STORE_NAMES[storeIdParam]) storeSelect.value = storeIdParam;
       if (callerIdParam) callerIdInput.value = callerIdParam;
       const storeId = storeIdParam && STORE_NAMES[storeIdParam] ? storeIdParam : storeSelect.value;
-      if (storeId) startSession(callerIdParam || null, storeId);
-      else {
+      if (storeId) {
+        // Show welcome overlay — user click enables audio then starts session
+        const overlay = document.getElementById("welcome-overlay");
+        const welcomeTitle = document.getElementById("welcome-title");
+        welcomeTitle.textContent = companyInfo.name || "Welcome";
+        overlay.style.display = "";
+        overlay.addEventListener("click", async () => {
+          overlay.classList.add("fade-out");
+          audioEnabled = true;
+          await startSession(callerIdParam || null, storeId);
+          setTimeout(() => overlay.remove(), 400);
+        }, { once: true });
+      } else {
         headerEl.textContent = "No stores available";
         setStatus("Please add stores");
       }

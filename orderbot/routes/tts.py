@@ -61,14 +61,17 @@ Usage:
 
 import asyncio
 import logging
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from ..services.tts import get_tts_provider
+from ..db import get_db
+from ..services.tts import get_configured_tts_provider, BaseTTSProvider
 from ..services.tts_cache import get_cached_audio
 
 
 logger = logging.getLogger(__name__)
+
 
 # Router definition
 tts_router = APIRouter(prefix="/tts", tags=["Text-to-Speech"])
@@ -98,6 +101,7 @@ class VoicesResponse(BaseModel):
     """Response containing list of available voices."""
     provider: str = "openai"
     voices: list[VoiceInfo]
+    default_voice: str | None = None
 
 
 # =============================================================================
@@ -105,17 +109,25 @@ class VoicesResponse(BaseModel):
 # =============================================================================
 
 @tts_router.get("/voices", response_model=VoicesResponse)
-async def list_voices() -> VoicesResponse:
+async def list_voices(db: Session = Depends(get_db)) -> VoicesResponse:
     """
     List available TTS voices.
 
-    Returns voices supported by the configured TTS provider.
-    Voice availability depends on provider configuration.
+    Returns voices supported by the configured TTS provider,
+    plus the admin-configured default voice (if any).
     """
     try:
-        provider = get_tts_provider()
-        # Use the voices property (not a method)
+        provider = get_configured_tts_provider(db)
         voices = provider.voices
+
+        # Read the company's default voice setting
+        default_voice = None
+        try:
+            from ..services.store_service import get_or_create_company
+            company = get_or_create_company(db)
+            default_voice = company.tts_default_voice
+        except (ImportError, OSError, ValueError, TypeError) as e:
+            logger.debug("Could not read default voice from company: %s", e)
 
         return VoicesResponse(
             provider=provider.name,
@@ -128,7 +140,8 @@ async def list_voices() -> VoicesResponse:
                     description=v.description,
                 )
                 for v in voices
-            ]
+            ],
+            default_voice=default_voice,
         )
     except ValueError as e:
         logger.warning("TTS provider error: %s", str(e))
@@ -139,7 +152,7 @@ async def list_voices() -> VoicesResponse:
 
 
 @tts_router.post("/synthesize")
-async def synthesize_speech(req: SynthesizeRequest):
+async def synthesize_speech(req: SynthesizeRequest, db: Session = Depends(get_db)):
     """
     Convert text to speech audio.
 
@@ -159,7 +172,7 @@ async def synthesize_speech(req: SynthesizeRequest):
         raise HTTPException(status_code=400, detail="Text too long (max 5000 chars)")
 
     try:
-        provider = get_tts_provider()
+        provider = get_configured_tts_provider(db)
 
         audio_bytes = await provider.synthesize(
             text=req.text,

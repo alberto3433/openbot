@@ -84,7 +84,7 @@ class MenuItem(Base):
     order_items = relationship(
         "OrderItem",
         back_populates="menu_item",
-        cascade="all, delete-orphan",
+        cascade="save-update, merge",
     )
     store_availability = relationship("MenuItemStoreAvailability", back_populates="menu_item")
     alias_records = relationship("MenuItemAlias", back_populates="menu_item")

@@ -5,7 +5,7 @@ This module provides a deterministic state machine approach to order capture.
 Instead of one large parser trying to interpret everything, each state has
 its own focused parser that can only produce valid outputs for that state.
 
-Key insight: When pending_item_id points to an incomplete item, ALL input
+Key insight: When pending_item_ids points to an incomplete item, ALL input
 is interpreted in the context of that item - no new items can be created.
 """
 
@@ -41,8 +41,17 @@ from .parsers import (
 )
 from .parsers.quantity_utils import extract_make_it_n_target
 from .parsers.time_parser import parse_time_expression
-from .handler_utils import get_last_item, duplicate_last_item_to_qty
-from .checkout_messages import already_have_n_anything_else, thats_n_total_anything_else
+from .handler_utils import (
+    get_last_item,
+    duplicate_last_item_to_qty,
+    handle_make_it_one,
+    handle_already_at_target,
+)
+from .checkout_messages import (
+    CheckoutMessages,
+    already_have_n_anything_else,
+    thats_n_total_anything_else,
+)
 from .utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
@@ -157,7 +166,7 @@ class OrderStateMachine:
     State machine for order capture.
 
     The key principle: when we're waiting for input on a specific item
-    (pending_item_id is set), we use a constrained parser that can ONLY
+    (pending_item_ids is set), we use a constrained parser that can ONLY
     interpret input as answers for that item. No new items can be created.
     """
 
@@ -403,6 +412,44 @@ class OrderStateMachine:
         Returns:
             StateMachineResult with response message and updated order
         """
+        order = self._initialize_order(order, returning_customer, store_info, db_session)
+
+        # ID-based removal: bypass parsing entirely when item_id is provided
+        id_result = self._handle_id_removal(item_id, user_input, order)
+        if id_result:
+            return id_result
+
+        # Add user message to history
+        order.add_message("user", user_input)
+
+        # Run global pattern checks (order status, history, pending states, make-it-N, modifier change)
+        global_result = self._check_global_patterns(user_input, order)
+        if global_result:
+            return global_result
+
+        self._derive_phase(order)
+
+        logger.info("STATE MACHINE: Processing '%s' in phase %s (pending_field=%s, pending_items=%s)",
+                   user_input[:50], order.phase, order.pending_field, order.pending_item_ids)
+
+        result = self._dispatch_to_handler(user_input, order)
+
+        # Add bot message to history
+        order.add_message("assistant", result.message)
+
+        # Log slot comparison for debugging
+        self._log_slot_comparison(order)
+
+        return result
+
+    def _initialize_order(
+        self,
+        order: OrderTask | None,
+        returning_customer: dict | None,
+        store_info: dict | None,
+        db_session: object,
+    ) -> OrderTask:
+        """Set up order, reset flags, update context, and pre-fill customer info."""
         if order is None:
             order = OrderTask()
 
@@ -424,26 +471,27 @@ class OrderStateMachine:
             if returning_customer.get("email") and not order.customer_info.email:
                 order.customer_info.email = returning_customer["email"]
 
-        # ID-based removal: bypass parsing entirely when item_id is provided
-        if item_id:
-            result = self._handle_id_based_removal(item_id, order)
-            if result:
-                order.add_message("user", user_input)
-                order.add_message("assistant", result.message)
-                return result
+        return order
 
-        # Add user message to history
-        order.add_message("user", user_input)
+    def _handle_id_removal(
+        self,
+        item_id: str | None,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle ID-based item removal, bypassing parsing."""
+        if not item_id:
+            return None
+        result = self._handle_id_based_removal(item_id, order)
+        if result:
+            order.add_message("user", user_input)
+            order.add_message("assistant", result.message)
+            return result
+        return None
 
-        # Run global pattern checks (order status, history, pending states, make-it-N, modifier change)
-        global_result = self._check_global_patterns(user_input, order)
-        if global_result:
-            return global_result
-
-        # Derive phase from OrderTask state via orchestrator
-        # Note: is_configuring_item() takes precedence (based on pending_item_ids)
-        # Also: Don't overwrite checkout phases that are explicitly set by handlers
-        # The orchestrator shouldn't override these - we're already in a specific checkout flow
+    def _derive_phase(self, order: OrderTask) -> None:
+        """Derive the current phase from OrderTask state via orchestrator."""
+        # Don't overwrite checkout phases that are explicitly set by handlers
         phases_to_preserve = {
             OrderPhase.CHECKOUT_DELIVERY.value,
             OrderPhase.CHECKOUT_NAME.value,
@@ -459,34 +507,25 @@ class OrderStateMachine:
         # The transition to checkout should only happen in _handle_taking_items when
         # the user explicitly says they're done (done_ordering=True).
         if order.phase == OrderPhase.TAKING_ITEMS.value and order.items.get_item_count() > 0:
-            # Intentionally stay in TAKING_ITEMS - don't auto-transition to checkout
-            pass
+            pass  # Intentionally stay in TAKING_ITEMS
         elif not order.is_configuring_item() and order.phase not in phases_to_preserve:
             self._transition_to_next_slot(order)
 
-        logger.info("STATE MACHINE: Processing '%s' in phase %s (pending_field=%s, pending_items=%s)",
-                   user_input[:50], order.phase, order.pending_field, order.pending_item_ids)
-
-        # Route to appropriate handler based on phase
+    def _dispatch_to_handler(
+        self, user_input: str, order: OrderTask
+    ) -> StateMachineResult:
+        """Route to the appropriate handler based on current phase."""
         if order.is_configuring_item():
-            result = self._handle_configuring_item(user_input, order)
-        else:
-            handler = self._phase_dispatch.get(order.phase)
-            if handler:
-                result = handler(user_input, order)
-            else:
-                result = StateMachineResult(
-                    message="I'm not sure what to do. Can you try again?",
-                    order=order,
-                )
+            return self._handle_configuring_item(user_input, order)
 
-        # Add bot message to history
-        order.add_message("assistant", result.message)
+        handler = self._phase_dispatch.get(order.phase)
+        if handler:
+            return handler(user_input, order)
 
-        # Log slot comparison for debugging
-        self._log_slot_comparison(order)
-
-        return result
+        return StateMachineResult(
+            message="I'm not sure what to do. Can you try again?",
+            order=order,
+        )
 
     def _check_global_patterns(
         self,
@@ -593,6 +632,12 @@ class OrderStateMachine:
             if scheduling_result:
                 order.add_message("assistant", scheduling_result.message)
                 return scheduling_result
+
+        # Check for customer info change requests (e.g., "change my name")
+        customer_change_result = self._handle_customer_info_change(user_input, order)
+        if customer_change_result:
+            order.add_message("assistant", customer_change_result.message)
+            return customer_change_result
 
         return None
 
@@ -712,33 +757,7 @@ class OrderStateMachine:
 
         target_qty = extract_make_it_n_target(make_it_n_match)
         if not target_qty:
-            # extract_make_it_n_target returns None for qty < 2.
-            # If the user said "make that one" / "actually, make it one",
-            # the pattern matched but qty=1 was filtered out.  Handle it
-            # here so the input doesn't silently fall through.
-            from .parsers.quantity_utils import BASIC_WORD_TO_NUM
-            for i in range(1, 15):
-                try:
-                    group = make_it_n_match.group(i)
-                except IndexError:
-                    break
-                if group:
-                    raw = normalize_text(group)
-                    qty = int(raw) if raw.isdigit() else BASIC_WORD_TO_NUM.get(raw, 0)
-                    if qty == 1:
-                        active_items = order.items.get_active_items()
-                        if active_items:
-                            last_item = get_last_item(active_items)
-                            last_name = last_item.get_summary()
-                            current_count = sum(
-                                1 for it in active_items if it.get_summary() == last_name
-                            )
-                            return StateMachineResult(
-                                message=already_have_n_anything_else(current_count, last_name),
-                                order=order,
-                            )
-                    break
-            return None
+            return handle_make_it_one(make_it_n_match, order)
 
         result = duplicate_last_item_to_qty(order, target_qty, count_existing=True)
         if result is None:
@@ -746,17 +765,14 @@ class OrderStateMachine:
 
         target_qty, last_item_name, added_count = result
 
-        if added_count <= 0:
-            current_count = target_qty - added_count  # reconstruct actual count
-            return StateMachineResult(
-                message=already_have_n_anything_else(current_count, last_item_name),
-                order=order,
-            )
+        already = handle_already_at_target(order, target_qty, added_count, last_item_name)
+        if already:
+            return already
 
         # If mid-configuration, re-ask the pending config question
         suffix = "Anything else?"
-        if order.is_configuring_item() and order.pending_item_id:
-            config_item = order.items.get_item_by_id(order.pending_item_id)
+        if order.is_configuring_item() and order.first_pending_item_id:
+            config_item = order.items.get_item_by_id(order.first_pending_item_id)
             if config_item:
                 question = self.config_helper_handler.get_current_config_question(order, config_item)
                 if question:
@@ -854,6 +870,60 @@ class OrderStateMachine:
             ],
         )
 
+    # Compiled pattern for customer info change requests
+    _CUSTOMER_INFO_CHANGE_RE = re.compile(
+        r'\b(?:change|update|edit)\s+(?:my\s+)?'
+        r'(name|phone(?:\s+number)?|email(?:\s+address)?)\b',
+        re.IGNORECASE,
+    )
+
+    def _handle_customer_info_change(
+        self,
+        user_input: str,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle requests to change customer name, phone, or email.
+
+        Detects patterns like "change my name", "update my email", etc.
+        Clears the relevant field and transitions to the appropriate checkout phase
+        so the orchestrator re-collects it.
+
+        Args:
+            user_input: The user's input text.
+            order: The current order task.
+
+        Returns:
+            StateMachineResult if a change was requested, None otherwise.
+        """
+        match = self._CUSTOMER_INFO_CHANGE_RE.search(user_input)
+        if not match:
+            return None
+
+        field = match.group(1).lower()
+
+        # Map matched field to (customer_info attr, checkout phase, re-ask message)
+        field_map = {
+            "name": ("name", OrderPhase.CHECKOUT_NAME, "Sure! What name should I put on the order?"),
+            "phone": ("phone", OrderPhase.CHECKOUT_PHONE, CheckoutMessages.PHONE),
+            "email": ("email", OrderPhase.CHECKOUT_EMAIL, CheckoutMessages.EMAIL),
+        }
+
+        # Normalize "phone number" → "phone", "email address" → "email"
+        key = "phone" if field.startswith("phone") else "email" if field.startswith("email") else field
+        if key not in field_map:
+            return None
+
+        attr, phase, msg = field_map[key]
+        if not getattr(order.customer_info, attr):
+            return None
+
+        # Save current phase so checkout handlers can restore it after re-collection
+        order.return_to_phase = order.phase
+        setattr(order.customer_info, attr, None)
+        order.checkout.order_reviewed = False
+        order.set_phase(phase)
+        return StateMachineResult(message=msg, order=order)
+
     def _handle_id_based_removal(
         self,
         item_id: str,
@@ -883,7 +953,7 @@ class OrderStateMachine:
         removed_name = item.get_summary()
 
         # If the item being removed is currently being configured, clear pending state
-        if order.pending_item_id == item_id:
+        if order.first_pending_item_id == item_id:
             order.clear_pending()
             order.set_phase(OrderPhase.TAKING_ITEMS)
 

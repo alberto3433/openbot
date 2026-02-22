@@ -17,7 +17,7 @@ import time
 import uuid
 import os
 from typing import Any
-from datetime import datetime
+from ..utils.datetime_helpers import utc_now
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -44,10 +44,6 @@ vapi_router = APIRouter(prefix="/voice/vapi", tags=["Voice - Vapi"])
 
 # Environment configuration
 VAPI_SECRET_KEY = os.getenv("VAPI_SECRET_KEY", "")  # Optional: for webhook authentication
-
-
-# Pydantic models for Vapi request/response (see orderbot/schemas/vapi.py)
-from ..schemas.vapi import VapiChatCompletionRequest, VapiWebhookRequest  # noqa: F401
 
 
 # ----- OpenAI-Compatible Streaming -----
@@ -99,6 +95,83 @@ async def _generate_sse_stream(text: str, model: str = "sammy-bot"):
 
 # ----- Main Endpoints -----
 
+def _parse_vapi_request(data: dict) -> tuple[list, bool, dict, str, str]:
+    """Unpack a Vapi request and extract phone number + store_id.
+
+    Returns:
+        (messages, stream, call_info, phone_number, store_id)
+    """
+    messages = data.get("messages", [])
+    stream = data.get("stream", False)
+    call_info = data.get("call", {})
+    customer = call_info.get("customer", {}) if call_info else {}
+
+    phone_number = customer.get("number")
+    if not phone_number:
+        phone_number = data.get("metadata", {}).get("phoneNumber")
+    if not phone_number:
+        logger.warning("No phone number in Vapi request, using call ID as fallback")
+        phone_number = call_info.get("id", f"unknown-{uuid.uuid4().hex[:8]}")
+
+    store_id = data.get("metadata", {}).get("store_id")
+    if not store_id:
+        store_id = "zuckers_tribeca"
+        logger.info("Defaulting VAPI call to Tribeca store")
+
+    return messages, stream, call_info, phone_number, store_id
+
+
+def _prepare_vapi_session(
+    db: Session,
+    phone_number: str,
+    store_id: str,
+    session_data: dict,
+    order_state: dict,
+) -> dict | None:
+    """Look up returning customer and pre-fill order state fields.
+
+    Returns the returning_customer dict (or None).
+    """
+    returning_customer = session_data.get("returning_customer")
+
+    if not returning_customer and phone_number:
+        returning_customer = lookup_customer_by_phone(db, phone_number)
+        if returning_customer:
+            session_data["returning_customer"] = returning_customer
+            logger.info("Looked up returning customer: %s", returning_customer.get("name"))
+
+    if not order_state.get("customer"):
+        order_state["customer"] = {}
+
+    if returning_customer and returning_customer.get("name"):
+        if not order_state["customer"].get("name"):
+            order_state["customer"]["name"] = returning_customer["name"]
+            logger.info("Pre-filled customer name in order state: %s", returning_customer["name"])
+
+    if phone_number and not order_state["customer"].get("phone"):
+        order_state["customer"]["phone"] = phone_number
+        logger.info("Pre-filled customer phone in order state: %s", phone_number[-4:])
+
+    if returning_customer and returning_customer.get("email"):
+        if not order_state["customer"].get("email"):
+            order_state["customer"]["email"] = returning_customer["email"]
+            logger.info("Pre-filled customer email in order state: %s", returning_customer["email"])
+
+    return returning_customer
+
+
+def _personalize_vapi_greeting(
+    reply: str, history: list[dict], returning_customer: dict | None
+) -> str:
+    """Prepend a personalized greeting for the first message to a returning customer."""
+    user_message_count = sum(1 for msg in history if msg.get("role") == "user")
+    if user_message_count <= 1 and returning_customer and returning_customer.get("name"):
+        customer_name = returning_customer.get("name")
+        reply = f"Hi {customer_name}! Great to hear from you again. " + reply
+        logger.info("Added personalized greeting for returning customer: %s", customer_name)
+    return reply
+
+
 @vapi_router.post("/chat/completions")
 async def vapi_chat_completions(
     request: Request,
@@ -109,12 +182,6 @@ async def vapi_chat_completions(
 
     Vapi sends transcribed speech in OpenAI format, we process it through
     our bot logic and return a response that Vapi will speak to the caller.
-
-    This endpoint:
-    1. Extracts caller phone number from Vapi's call object
-    2. Maps phone to session (creating new session if needed)
-    3. Processes the user's message through existing bot logic
-    4. Returns OpenAI-compatible response (streaming or non-streaming)
     """
     try:
         data = await request.json()
@@ -122,31 +189,7 @@ async def vapi_chat_completions(
         logger.error("Failed to parse Vapi request JSON: %s", e)
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # Parse request
-    messages = data.get("messages", [])
-    stream = data.get("stream", False)
-    call_info = data.get("call", {})
-    customer = call_info.get("customer", {}) if call_info else {}
-
-    # Extract phone number
-    phone_number = customer.get("number")
-    if not phone_number:
-        # Try to find phone in other locations Vapi might put it
-        phone_number = data.get("metadata", {}).get("phoneNumber")
-
-    if not phone_number:
-        logger.warning("No phone number in Vapi request, using call ID as fallback")
-        phone_number = call_info.get("id", f"unknown-{uuid.uuid4().hex[:8]}")
-
-    # Extract store_id from metadata if provided
-    store_id = data.get("metadata", {}).get("store_id")
-
-    # Default to Tribeca store for VAPI calls
-    # The main VAPI phone number (732-813-9409) is for Tribeca
-    # This can be overridden by passing store_id in metadata
-    if not store_id:
-        store_id = "zuckers_tribeca"
-        logger.info("Defaulting VAPI call to Tribeca store")
+    messages, stream, call_info, phone_number, store_id = _parse_vapi_request(data)
 
     # Get or create session for this phone number
     session_id = get_or_create_phone_session(db, phone_number, store_id)
@@ -164,7 +207,6 @@ async def vapi_chat_completions(
             break
 
     if not user_message:
-        # No user message - might be initial call, return greeting
         greeting = session_data["history"][0]["content"] if session_data["history"] else "Hello!"
         if stream:
             return StreamingResponse(
@@ -176,44 +218,12 @@ async def vapi_chat_completions(
 
     logger.info("Voice message from %s: %s", phone_number[-4:], user_message[:50])
 
-    # Get session context
-    history = session_data["history"]
     order_state = session_data["order"]
-    returning_customer = session_data.get("returning_customer")
     session_store_id = session_data.get("store_id") or store_id
-
-    # Look up returning customer if not already in session (e.g., resumed from DB)
-    if not returning_customer and phone_number:
-        returning_customer = lookup_customer_by_phone(db, phone_number)
-        if returning_customer:
-            session_data["returning_customer"] = returning_customer
-            logger.info("Looked up returning customer: %s", returning_customer.get("name"))
-
-    # Ensure customer info is in order state if we know it (so bot doesn't ask again)
-    if not order_state.get("customer"):
-        order_state["customer"] = {}
-
-    # Pre-fill name from returning customer lookup
-    if returning_customer and returning_customer.get("name"):
-        if not order_state["customer"].get("name"):
-            order_state["customer"]["name"] = returning_customer["name"]
-            logger.info("Pre-filled customer name in order state: %s", returning_customer["name"])
-
-    # Pre-fill phone from caller ID
-    if phone_number and not order_state["customer"].get("phone"):
-        order_state["customer"]["phone"] = phone_number
-        logger.info("Pre-filled customer phone in order state: %s", phone_number[-4:])
-
-    # Pre-fill email from returning customer lookup
-    if returning_customer and returning_customer.get("email"):
-        if not order_state["customer"].get("email"):
-            order_state["customer"]["email"] = returning_customer["email"]
-            logger.info("Pre-filled customer email in order state: %s", returning_customer["email"])
-
-    # Get cached menu index
-    menu_index = menu_cache.get_menu_index(session_store_id)
+    returning_customer = _prepare_vapi_session(db, phone_number, store_id, session_data, order_state)
 
     # Check if menu needs to be sent
+    menu_index = menu_cache.get_menu_index(session_store_id)
     current_menu_version = get_menu_version(menu_index)
     include_menu = session_data.get("menu_version") != current_menu_version
 
@@ -228,7 +238,7 @@ async def vapi_chat_completions(
             session_id=session_id,
             caller_id=phone_number,
             store_id=session_store_id,
-            session=session_data,  # Pass pre-loaded session
+            session=session_data,
         ))
 
         reply = result.reply
@@ -249,19 +259,9 @@ async def vapi_chat_completions(
         else:
             return _build_completion_response(error_reply)
 
-    # Check if this is the first user message - add personalized greeting
-    # This is VAPI-specific: prepend greeting for returning customers
-    user_message_count = sum(1 for msg in history if msg.get("role") == "user")
-    if user_message_count <= 1 and returning_customer and returning_customer.get("name"):
-        # This is the first exchange with a returning customer
-        # Prepend a personalized greeting to the LLM's response
-        customer_name = returning_customer.get("name")
-        greeting_prefix = f"Hi {customer_name}! Great to hear from you again. "
-        reply = greeting_prefix + reply
-        logger.info("Added personalized greeting for returning customer: %s", customer_name)
+    reply = _personalize_vapi_greeting(reply, history, returning_customer)
 
-    # Update phone session cache with new session data
-    # MessageProcessor already saved to database, but we need to update our local cache
+    # Update phone session cache
     session_data["history"] = result.session.get("history", [])
     session_data["order"] = order_state
     normalized_phone = "".join(c for c in phone_number if c.isdigit() or c == "+")
@@ -271,7 +271,6 @@ async def vapi_chat_completions(
 
     logger.info("Voice reply to %s: %s", phone_number[-4:], reply[:50])
 
-    # Return response
     if stream:
         return StreamingResponse(
             _generate_sse_stream(reply),
@@ -428,5 +427,5 @@ async def vapi_health():
     return {
         "status": "ok",
         "service": "sammy-bot-voice",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_now().isoformat(),
     }

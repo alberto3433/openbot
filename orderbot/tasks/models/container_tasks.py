@@ -333,19 +333,15 @@ class OrderTask(BaseTask):
     # is routed through the time parser instead of item ordering
     pending_scheduling: bool = False
 
-    # Legacy single-item property for backwards compatibility
-    @property
-    def pending_item_id(self) -> str | None:
-        """Get the first pending item ID (backwards compat)."""
-        return self.pending_item_ids[0] if self.pending_item_ids else None
+    # Phase to return to after a customer info edit (name/phone/email change).
+    # Set when the user clicks "change my name" etc. mid-order, so that after
+    # the field is re-collected the order returns to the original phase.
+    return_to_phase: str | None = None
 
-    @pending_item_id.setter
-    def pending_item_id(self, value: str | None):
-        """Set a single pending item ID (backwards compat)."""
-        if value is None:
-            self.pending_item_ids = []
-        else:
-            self.pending_item_ids = [value]
+    @property
+    def first_pending_item_id(self) -> str | None:
+        """Get the first pending item ID, or None if the queue is empty."""
+        return self.pending_item_ids[0] if self.pending_item_ids else None
 
     def is_configuring_item(self) -> bool:
         """Check if we're waiting for input on a specific item or menu inquiry."""
@@ -382,7 +378,7 @@ class OrderTask(BaseTask):
         """
         from orderbot.tasks.schemas import OrderPhase
         self.set_phase(OrderPhase.CONFIGURING_ITEM)
-        self.pending_item_id = item_id
+        self.pending_item_ids = [item_id]
         self.pending_field = pending_field
         self.config_options_page = 0
 

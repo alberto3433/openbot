@@ -16,7 +16,9 @@ All endpoints require admin authentication via HTTP Basic Auth.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from ..utils.datetime_helpers import utc_now
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -51,7 +53,7 @@ def list_logs(
     days: int = Query(7, ge=1, le=90, description="Days of history to include"),
 ) -> list[UnrecognizedMenuItemLogEntry]:
     """List unrecognized item log entries."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utc_now() - timedelta(days=days)
     query = db.query(UnrecognizedMenuItemLog).filter(
         UnrecognizedMenuItemLog.created_at >= cutoff
     )
@@ -83,7 +85,7 @@ def get_log_stats(
     days: int = Query(7, ge=1, le=90, description="Days of history to include"),
 ) -> UnrecognizedMenuItemLogStats:
     """Get statistics for unrecognized item logs."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utc_now() - timedelta(days=days)
 
     logs = db.query(UnrecognizedMenuItemLog).filter(
         UnrecognizedMenuItemLog.created_at >= cutoff
@@ -144,7 +146,7 @@ def clear_old_logs(
     days: int = Query(30, ge=1, le=365, description="Delete logs older than this many days"),
 ) -> dict:
     """Clear old unrecognized item logs."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utc_now() - timedelta(days=days)
 
     deleted = db.query(UnrecognizedMenuItemLog).filter(
         UnrecognizedMenuItemLog.created_at < cutoff

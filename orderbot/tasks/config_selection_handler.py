@@ -214,7 +214,7 @@ class ConfigSelectionHandler:
             return self.menu_item_handler.get_first_question(first_item, order)
 
         # Fallback
-        order.pending_item_id = first_item_id
+        order.pending_item_ids = [first_item_id]
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         return StateMachineResult(
             message=f"Got it, {first_item_name}! Any preferences?",
@@ -243,6 +243,7 @@ class ConfigSelectionHandler:
         if is_move_on_response(user_lower):
             order.pending_item_options = []
             order.clear_pending()
+            order.set_phase(OrderPhase.TAKING_ITEMS)
             return StateMachineResult(
                 message="No problem! What else can I get for you?",
                 order=order,

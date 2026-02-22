@@ -175,7 +175,7 @@ class ConfiguringItemHandler:
         if handler:
             return handler(user_input, order)
 
-        item = order.items.get_item_by_id(order.pending_item_id)
+        item = order.items.get_item_by_id(order.first_pending_item_id)
         if item is None:
             order.clear_pending()
             return StateMachineResult(
@@ -236,7 +236,7 @@ class ConfiguringItemHandler:
         """
         from .response_utils import is_move_on_response
 
-        item = order.items.get_item_by_id(order.pending_item_id)
+        item = order.items.get_item_by_id(order.first_pending_item_id)
         if not item:
             order.clear_pending()
             return StateMachineResult(

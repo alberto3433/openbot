@@ -55,6 +55,22 @@ def prefetch_tts(text: str, voice_id: str | None = None, speed: float = 1.0) -> 
     if not text or not text.strip():
         return None
 
+    # Resolve the TTS provider name synchronously (DB access) so the async
+    # coroutine doesn't need to open its own session.
+    provider_name: str | None = None
+    try:
+        from ..db import SessionLocal
+        from .store_service import get_or_create_company
+
+        db = SessionLocal()
+        try:
+            company = get_or_create_company(db)
+            provider_name = company.tts_provider
+        finally:
+            db.close()
+    except (ImportError, OSError, ValueError, TypeError) as exc:
+        logger.debug("Could not read TTS provider from company: %s", exc)
+
     audio_id = uuid.uuid4().hex[:16]
     ready_event = threading.Event()
 
@@ -69,7 +85,7 @@ def prefetch_tts(text: str, voice_id: str | None = None, speed: float = 1.0) -> 
 
     # Schedule the async TTS synthesis on the main event loop
     asyncio.run_coroutine_threadsafe(
-        _synthesize_and_cache(audio_id, text, voice_id, speed),
+        _synthesize_and_cache(audio_id, text, voice_id, speed, provider_name),
         _main_loop,
     )
 
@@ -78,12 +94,14 @@ def prefetch_tts(text: str, voice_id: str | None = None, speed: float = 1.0) -> 
 
 
 async def _synthesize_and_cache(
-    audio_id: str, text: str, voice_id: str | None, speed: float
+    audio_id: str, text: str, voice_id: str | None, speed: float,
+    provider_name: str | None = None,
 ) -> None:
     """Run TTS synthesis and store result in cache. Always sets ready event."""
     try:
         from .tts import get_tts_provider
-        provider = get_tts_provider()
+
+        provider = get_tts_provider(provider_name)
         audio_bytes = await provider.synthesize(text=text, voice_id=voice_id, speed=speed)
 
         with _cache_lock:

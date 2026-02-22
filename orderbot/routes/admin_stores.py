@@ -67,7 +67,7 @@ Usage:
 
 import logging
 import uuid
-from datetime import datetime
+from ..utils.datetime_helpers import utc_now
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -173,7 +173,7 @@ def delete_store(
     """Soft-delete a store (sets deleted_at timestamp)."""
     store = get_or_404(db, Store, store_id, id_column="store_id")
 
-    store.deleted_at = datetime.utcnow()
+    store.deleted_at = utc_now()
     store.status = "deleted"
     db.commit()
     invalidate_store_cache(store_id)

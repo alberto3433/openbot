@@ -49,6 +49,10 @@ Routes raise HTTPException for error conditions:
 - 429: Too many requests (rate limited)
 - 503: Service unavailable (missing configuration)
 
+Convention: Always use specific exception tuples in ``except`` clauses
+(e.g. ``except (ValueError, KeyError, TypeError)``). Never use bare
+``except Exception``.
+
 Usage:
 ------
 Import routers in main.py:

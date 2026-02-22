@@ -475,7 +475,7 @@ class ParsedItemProcessor:
             return self.item_adder_handler.menu_item_handler.get_first_question(first_item, order)
 
         # Fallback if handler not available
-        order.pending_item_id = first_item_id
+        order.pending_item_ids = [first_item_id]
         order.set_phase(OrderPhase.CONFIGURING_ITEM)
         return StateMachineResult(
             message=f"Got it, {first_item_name}! Any preferences?",

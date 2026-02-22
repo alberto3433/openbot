@@ -137,6 +137,17 @@ class ConfigModificationHandler:
             return result
 
         # 1d. Check for ANY menu item matching (cross-type replacement)
+        # Skip when in active attribute config and modifier is a known attribute option
+        # (e.g., "black" is a coffee style option — don't search for cookies/drinks)
+        if order.pending_field and ":" in order.pending_field:
+            is_known, _ = menu_cache.is_known_attribute_option(modifier_lower)
+            if is_known:
+                logger.info(
+                    "CAN_YOU_MAKE_IT: '%s' is a known attribute option during "
+                    "attribute config — deferring to attribute handler",
+                    modifier_lower,
+                )
+                return None
         result = self._try_replace_with_any_menu_item(modifier, item, order)
         if result:
             return result
@@ -539,7 +550,7 @@ class ConfigModificationHandler:
 
         if is_affirmative(user_input):
             # Get the current item being configured and remove it
-            current_item = order.items.get_item_by_id(order.pending_item_id)
+            current_item = order.items.get_item_by_id(order.first_pending_item_id)
             if current_item:
                 order.items.remove_item(current_item)
 
@@ -565,7 +576,7 @@ class ConfigModificationHandler:
             # User declined - continue with original item
             order.pending_switch_item = None
             # Get the original item and continue configuration
-            original_item = order.items.get_item_by_id(order.pending_item_id)
+            original_item = order.items.get_item_by_id(order.first_pending_item_id)
             if original_item:
                 # Clear the confirm_item_switch field and restore previous config state
                 # Get the next question for the original item

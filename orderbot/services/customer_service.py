@@ -380,7 +380,9 @@ def lookup_customer_order_history(
 
         None if no orders found for this phone number
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
+
+    from ..utils.datetime_helpers import utc_now
 
     if not phone:
         return None
@@ -388,7 +390,7 @@ def lookup_customer_order_history(
     phone_filter = _phone_matches(phone)
 
     # Calculate cutoff date
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = utc_now() - timedelta(days=days)
 
     # Find orders within the time window
     orders = (

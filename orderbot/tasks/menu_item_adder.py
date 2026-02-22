@@ -191,7 +191,7 @@ class MenuItemAdder:
         if has_component_slots:
             # Set state to wait for component slot selection (applies to first item, others will be configured after)
             order.phase = OrderPhase.CONFIGURING_ITEM
-            order.pending_item_id = first_item.id
+            order.pending_item_ids = [first_item.id]
             # Get component slot configuration from DB (e.g., "side" slot)
             side_slot = menu_cache.get_component_slot(category, SIDE_SLOT_NAME)
             order.pending_field = PendingField.SIDE_CHOICE

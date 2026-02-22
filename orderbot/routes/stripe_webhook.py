@@ -23,6 +23,7 @@ from ..config import STRIPE_WEBHOOK_SECRET
 from ..db import get_db
 from ..db.models import Order
 from ..schemas.enums import OrderStatus, PaymentStatus
+from ..services.order import build_email_kwargs_from_order
 from ..services.store_service import get_company
 
 logger = logging.getLogger(__name__)
@@ -158,37 +159,7 @@ def _handle_checkout_expired(session_data: dict, db: Session) -> None:
 
 def _build_email_kwargs(db: Session, order: Order) -> dict:
     """Build common email kwargs from an Order and its items."""
-    company = get_company(db)
-    store_name = company.name if company else "OrderBot"
-
-    items_list = []
-    for oi in order.items:
-        config = oi.item_config or {}
-        items_list.append({
-            "display_name": oi.menu_item_name,
-            "menu_item_name": oi.menu_item_name,
-            "quantity": oi.quantity,
-            "line_total": oi.line_total,
-            "unit_price": oi.unit_price,
-            "base_price": oi.unit_price,
-            "modifiers": config.get("modifiers", []),
-            "free_details": config.get("free_details", []),
-        })
-
-    return dict(
-        to_email=order.customer_email,
-        order_id=order.id,
-        amount=order.total_price or 0.0,
-        store_name=store_name,
-        customer_name=order.customer_name,
-        customer_phone=order.phone,
-        order_type=order.order_type,
-        items=items_list,
-        subtotal=order.subtotal,
-        city_tax=order.city_tax or 0,
-        state_tax=order.state_tax or 0,
-        delivery_fee=order.delivery_fee or 0,
-    )
+    return build_email_kwargs_from_order(db, order)
 
 
 def _send_receipt_for_order(db: Session, order: Order) -> None:

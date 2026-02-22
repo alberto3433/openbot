@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 # The optional third element is a Pydantic model class for dict→model coercion
 # on restore (after JSON round-trip). Adding a new field here automatically
 # handles both serialize and restore — no separate mapping needed.
-# Note: pending_item_id is a computed property — do NOT include it here.
+# Note: first_pending_item_id is a computed property — do NOT include it here.
 _FLOW_STATE_FIELDS: list[tuple[str, object, type | None]] = [
     ("phase", "greeting", None),
     ("pending_item_ids", [], None),

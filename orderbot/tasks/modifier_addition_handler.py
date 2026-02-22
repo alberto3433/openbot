@@ -532,7 +532,7 @@ class ModifierAdditionHandler:
         item_text, parsed = extracted
 
         original_pending_field = order.pending_field
-        original_pending_item_id = order.pending_item_id
+        original_pending_item_ids = order.pending_item_ids[:]
 
         pricing = self._taking_items_handler.pricing if self._taking_items_handler else None
         processor = ParsedItemProcessor(
@@ -563,7 +563,7 @@ class ModifierAdditionHandler:
                 )
 
         order.pending_field = original_pending_field
-        order.pending_item_id = original_pending_item_id
+        order.pending_item_ids = original_pending_item_ids
 
         logger.info(
             "ADD_ITEM_DURING_CONFIG: Added %d item(s), continuing config for %s",

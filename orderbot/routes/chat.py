@@ -98,6 +98,80 @@ from ..rate_limiting import limiter
 # Chat Endpoints
 # =============================================================================
 
+def _generate_greeting(
+    returning_customer: dict | None,
+    store_name: str,
+    store_is_open: bool,
+    next_open_time: str | None,
+) -> str:
+    """Build the welcome message for a new chat session."""
+    if not store_is_open and next_open_time:
+        if returning_customer and returning_customer.get("name"):
+            return (
+                f"Hi {returning_customer['name']}! We're currently closed but we reopen {next_open_time}. "
+                f"Would you like to place an order for pickup then?"
+            )
+        return (
+            f"Hi! We're currently closed but we reopen {next_open_time}. "
+            f"Would you like to place an order for pickup then?"
+        )
+    if returning_customer and returning_customer.get("name"):
+        return f"Hi {returning_customer['name']}, welcome to {store_name}! Would you like to repeat your last order or place a new pickup or delivery order?"
+    return f"Hi, welcome to {store_name}! Can I take your pickup or delivery order?"
+
+
+def _build_initial_session_data(
+    welcome: str,
+    returning_customer: dict | None,
+    resolved_customer_id: int | None,
+    caller_id: str | None,
+    store_id: str | None,
+    store_info: dict,
+    store_is_open: bool,
+) -> dict:
+    """Build the initial session data dict for a new chat session."""
+    return {
+        "history": [{"role": "assistant", "content": welcome}],
+        "order": {
+            "status": OrderStatus.PENDING,
+            "items": [],
+            "customer": {
+                "name": returning_customer.get("name") if returning_customer else None,
+                "phone": returning_customer.get("phone") if returning_customer else None,
+                "pickup_time": None,
+            },
+            "total_price": 0.0,
+        },
+        "menu_version": None,
+        "caller_id": caller_id,
+        "customer_id": resolved_customer_id,
+        "store_id": store_id,
+        "returning_customer": returning_customer,
+        "store_info": store_info,
+        "after_hours": not store_is_open,
+    }
+
+
+def _build_greeting_quick_replies(
+    store_is_open: bool,
+    next_open_time: str | None,
+    returning_customer: dict | None,
+) -> list[dict[str, str]]:
+    """Build quick-reply buttons for the greeting message."""
+    if not store_is_open and next_open_time:
+        return [
+            {"label": "Order for then", "value": "yes, order for then"},
+            {"label": "When do you open?", "value": "when do you open"},
+        ]
+    pickup_delivery_qr = [
+        {"label": "pickup", "value": "pickup"},
+        {"label": "delivery", "value": "delivery"},
+    ]
+    if returning_customer and returning_customer.get("name"):
+        return [{"label": "Last order", "value": "repeat my last order"}] + pickup_delivery_qr
+    return pickup_delivery_qr
+
+
 @chat_router.post("/start", response_model=ChatStartResponse)
 @limiter.limit(get_rate_limit_chat)
 def chat_start(
@@ -116,11 +190,7 @@ def chat_start(
     session_id = str(uuid.uuid4())
 
     company = get_or_create_company(db)
-
-    # Build full store_info and cache in session (for use by MessageProcessor later)
     store_info = build_store_info(db, store_id, company_name=company.name)
-
-    # Get store name from the cached store_info
     store_name = store_info.get("name") or company.name
 
     # Check for returning customer — priority: customer_id > caller_id
@@ -137,79 +207,21 @@ def chat_start(
         returning_customer = lookup_customer_by_phone(db, caller_id)
         logger.info("Caller ID lookup: %s -> %s", caller_id, "found" if returning_customer else "new customer")
 
-    # Get primary item type for greeting
-    primary_item_type = get_primary_item_type_name(db)
-    primary_item_plural = primary_item_type.lower() + ("es" if primary_item_type.lower().endswith("ch") else "s")
-
-    # Get signature label
-    signature_label = company.signature_item_label or f"signature {primary_item_plural}"
-
-    # Check if store is currently open
     store_is_open = store_info.get("is_open", True)
     next_open_time = store_info.get("next_open_time")
 
-    # Generate greeting
-    if not store_is_open and next_open_time:
-        if returning_customer and returning_customer.get("name"):
-            customer_name = returning_customer["name"]
-            welcome = (
-                f"Hi {customer_name}! We're currently closed but we reopen {next_open_time}. "
-                f"Would you like to place an order for pickup then?"
-            )
-        else:
-            welcome = (
-                f"Hi! We're currently closed but we reopen {next_open_time}. "
-                f"Would you like to place an order for pickup then?"
-            )
-    elif returning_customer and returning_customer.get("name"):
-        customer_name = returning_customer["name"]
-        welcome = f"Hi {customer_name}, welcome to {store_name}! Would you like to repeat your last order or place a new pickup or delivery order?"
-    else:
-        welcome = f"Hi, welcome to {store_name}! Can I take your pickup or delivery order?"
+    welcome = _generate_greeting(returning_customer, store_name, store_is_open, next_open_time)
 
-    # Initialize session
-    session_data = {
-        "history": [{"role": "assistant", "content": welcome}],
-        "order": {
-            "status": OrderStatus.PENDING,
-            "items": [],
-            "customer": {
-                "name": returning_customer.get("name") if returning_customer else None,
-                "phone": returning_customer.get("phone") if returning_customer else None,
-                "pickup_time": None,
-            },
-            "total_price": 0.0,
-        },
-        "menu_version": None,
-        "caller_id": caller_id,
-        "customer_id": resolved_customer_id,
-        "store_id": store_id,
-        "returning_customer": returning_customer,
-        "store_info": store_info,  # Pre-loaded store info for faster message processing
-        "after_hours": not store_is_open,
-    }
-
+    session_data = _build_initial_session_data(
+        welcome, returning_customer, resolved_customer_id,
+        caller_id, store_id, store_info, store_is_open,
+    )
     save_session(db, session_id, session_data)
 
     logger.info("New chat session started: %s (store: %s, caller_id: %s)",
                 session_id[:8], store_id or "default", caller_id or "none")
 
-    # Build quick replies for greeting — labels must match message text case
-    # so the frontend can linkify them inline
-    if not store_is_open and next_open_time:
-        greeting_qr = [
-            {"label": "Order for then", "value": "yes, order for then"},
-            {"label": "When do you open?", "value": "when do you open"},
-        ]
-    else:
-        pickup_delivery_qr = [
-            {"label": "pickup", "value": "pickup"},
-            {"label": "delivery", "value": "delivery"},
-        ]
-        if returning_customer and returning_customer.get("name"):
-            greeting_qr = [{"label": "Last order", "value": "repeat my last order"}] + pickup_delivery_qr
-        else:
-            greeting_qr = pickup_delivery_qr
+    greeting_qr = _build_greeting_quick_replies(store_is_open, next_open_time, returning_customer)
 
     # Prefetch TTS audio for the greeting (synthesis runs in background)
     from ..services.tts_cache import prefetch_tts
@@ -295,6 +307,9 @@ def chat_message_stream(
 
     def generate_stream():
         nonlocal session
+        # The streaming generator runs in a background thread after the
+        # request-scoped ``db`` session has been closed, so it needs its
+        # own independent database session.
         stream_db = SessionLocal()
 
         try:

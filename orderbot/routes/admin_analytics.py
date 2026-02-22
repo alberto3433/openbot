@@ -56,7 +56,9 @@ Usage:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from ..utils.datetime_helpers import utc_now
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -161,7 +163,7 @@ def get_summary(
     Returns high-level metrics including completion rates, revenue,
     abandonment breakdown, and recent trends.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utc_now() - timedelta(days=days)
 
     # Base query for the time period
     query = db.query(SessionAnalytics).filter(SessionAnalytics.ended_at >= cutoff)
@@ -213,7 +215,7 @@ def get_summary(
     # Recent trend (last 7 days)
     recent_trend: list[dict[str, Any]] = []
     for i in range(6, -1, -1):
-        day = datetime.utcnow().date() - timedelta(days=i)
+        day = utc_now().date() - timedelta(days=i)
         day_start = datetime.combine(day, datetime.min.time())
         day_end = datetime.combine(day, datetime.max.time())
 

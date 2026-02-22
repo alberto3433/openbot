@@ -41,7 +41,7 @@ class TestStateMachineMultiBagel:
             bagel.mark_in_progress()
             order.items.add_item(bagel)
 
-        order.pending_item_id = order.items.items[0].id
+        order.pending_item_ids = [order.items.items[0].id]
         sm = OrderStateMachine()
 
         # Uses autouse fixture to mock menu_cache.get_item_type_attributes
@@ -109,7 +109,7 @@ class TestPriceRecalculationInvariants:
 
         order.phase = OrderPhase.CONFIGURING_ITEM.value
         order.pending_field = "bagel:spread_type"
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
 
         # Provide menu_data with both items_by_type and item_types for pricing
         sm = OrderStateMachine(menu_data={
@@ -498,7 +498,7 @@ class TestAdditionalItemsAfterBagel:
         bagel["toasted"] = None  # Not yet answered
         bagel["spread_type"] = None
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
         order.pending_field = "bagel:toasted"
 
         sm = OrderStateMachine()
@@ -686,7 +686,7 @@ class TestSpreadQuestionSkip:
         )
         bagel.mark_in_progress()
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
         order.pending_field = "bagel:toasted"
 
         # Simulate answering "toasted" question (function takes: user_input, item, order)
@@ -722,7 +722,7 @@ class TestSpreadQuestionSkip:
         )
         bagel.mark_in_progress()
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
         order.pending_field = "bagel:toasted"
 
         # Simulate answering "toasted" question (function takes: user_input, item, order)
@@ -1723,7 +1723,7 @@ class TestCheeseChoice:
         bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
 
         result = sm.configuring_item_handler.handle_configuring_item("american please", order)
 
@@ -1746,7 +1746,7 @@ class TestCheeseChoice:
         bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
 
         result = sm.configuring_item_handler.handle_configuring_item("cheddar", order)
 
@@ -1767,7 +1767,7 @@ class TestCheeseChoice:
         bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
 
         result = sm.configuring_item_handler.handle_configuring_item("swiss cheese", order)
 
@@ -1788,7 +1788,7 @@ class TestCheeseChoice:
         bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
 
         # Test alternate spelling "munster"
         result = sm.configuring_item_handler.handle_configuring_item("munster", order)
@@ -1810,7 +1810,7 @@ class TestCheeseChoice:
         bagel["needs_cheese_clarification"] = True
         bagel.mark_in_progress()
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
 
         result = sm.configuring_item_handler.handle_configuring_item("brie", order)
 
@@ -1853,7 +1853,7 @@ class TestCoffeeSize:
         )
         coffee.mark_in_progress()
         order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        order.pending_item_ids = [coffee.id]
 
         result = sm.configuring_item_handler.handle_configuring_item("small please", order)
 
@@ -1885,7 +1885,7 @@ class TestCoffeeSize:
         )
         coffee.mark_in_progress()
         order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        order.pending_item_ids = [coffee.id]
 
         result = sm.configuring_item_handler.handle_configuring_item("I'll take a large", order)
 
@@ -1911,7 +1911,7 @@ class TestCoffeeSize:
         coffee = CoffeeItemTask(drink_type="latte")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        order.pending_item_ids = [coffee.id]
 
         # "extra large" should NOT match "large" — "extra" is meaningful
         result = sm.configuring_item_handler.handle_configuring_item("extra large", order)
@@ -1936,7 +1936,7 @@ class TestCoffeeSize:
         coffee = CoffeeItemTask(drink_type="espresso")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        order.pending_item_ids = [coffee.id]
 
         # Use unclear input that doesn't match any valid size
         result = sm.configuring_item_handler.handle_configuring_item("hmm", order)
@@ -1960,7 +1960,7 @@ class TestCoffeeSize:
         latte = CoffeeItemTask(drink_type="latte")
         latte.mark_in_progress()
         order.items.add_item(latte)
-        order.pending_item_id = latte.id
+        order.pending_item_ids = [latte.id]
 
         # Use _handle_configuring_item which includes cancellation check
         # Say "remove the latte" since latte != coffee in menu taxonomy
@@ -1988,7 +1988,7 @@ class TestCoffeeSize:
         cappuccino = CoffeeItemTask(drink_type="cappuccino")
         cappuccino.mark_in_progress()
         order.items.add_item(cappuccino)
-        order.pending_item_id = cappuccino.id
+        order.pending_item_ids = [cappuccino.id]
 
         result = sm._handle_configuring_item("cancel this", order)
 
@@ -2023,7 +2023,7 @@ class TestCoffeeSize:
         latte2 = CoffeeItemTask(drink_type="latte")
         latte2.mark_in_progress()
         order.items.add_item(latte2)
-        order.pending_item_id = latte2.id
+        order.pending_item_ids = [latte2.id]
 
         result = sm._handle_configuring_item("remove the lattes", order)
 
@@ -2059,7 +2059,7 @@ class TestAnotherItemDuringConfig:
         coffee = CoffeeItemTask(drink_type="latte")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        order.pending_item_ids = [coffee.id]
 
         result = sm.configuring_item_handler._check_config_interceptors(
             "another latte", coffee, order
@@ -2085,7 +2085,7 @@ class TestAnotherItemDuringConfig:
         bagel = BagelItemTask(bagel_type="plain")
         bagel.mark_in_progress()
         order.items.add_item(bagel)
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
 
         result = sm.configuring_item_handler._check_config_interceptors(
             "one more bagel", bagel, order
@@ -2111,7 +2111,7 @@ class TestAnotherItemDuringConfig:
         coffee = CoffeeItemTask(drink_type="espresso")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        order.pending_item_ids = [coffee.id]
 
         result = sm.configuring_item_handler._check_config_interceptors(
             "and another", coffee, order
@@ -2136,7 +2136,7 @@ class TestAnotherItemDuringConfig:
         coffee = CoffeeItemTask(drink_type="latte")
         coffee.mark_in_progress()
         order.items.add_item(coffee)
-        order.pending_item_id = coffee.id
+        order.pending_item_ids = [coffee.id]
 
         result = sm.configuring_item_handler._check_config_interceptors(
             "small", coffee, order
@@ -2465,8 +2465,8 @@ class TestBagelModifierRemoval:
             spread=None,
         )
         order.items.add_item(bagel)
-        # Set pending_item_id so is_configuring_item() returns True
-        order.pending_item_id = bagel.id
+        # Set pending_item_ids so is_configuring_item() returns True
+        order.pending_item_ids = [bagel.id]
 
         # User says "plain cream cheese" in response to spread question
         result = sm.process("plain cream cheese", order)
@@ -2512,7 +2512,7 @@ class TestSideChoice:
         )
         omelette.mark_in_progress()
         order.items.add_item(omelette)
-        order.pending_item_id = omelette.id
+        order.pending_item_ids = [omelette.id]
 
         result = sm.config_helper_handler.handle_side_choice("fruit salad please", omelette, order)
 
@@ -2548,7 +2548,7 @@ class TestSideChoice:
         )
         omelette.mark_in_progress()
         order.items.add_item(omelette)
-        order.pending_item_id = omelette.id
+        order.pending_item_ids = [omelette.id]
 
         # "bagel" is a valid side choice - should create child and ask for bagel type
         result = sm.config_helper_handler.handle_side_choice("bagel", omelette, order)
@@ -2584,7 +2584,7 @@ class TestSideChoice:
         )
         omelette.mark_in_progress()
         order.items.add_item(omelette)
-        order.pending_item_id = omelette.id
+        order.pending_item_ids = [omelette.id]
 
         result = sm.config_helper_handler.handle_side_choice("plain bagel", omelette, order)
 
@@ -2619,7 +2619,7 @@ class TestSideChoice:
         )
         omelette.mark_in_progress()
         order.items.add_item(omelette)
-        order.pending_item_id = omelette.id
+        order.pending_item_ids = [omelette.id]
 
         # Select "plain bagel" as side - creates bundle-included child
         sm.config_helper_handler.handle_side_choice("plain bagel", omelette, order)
@@ -2655,7 +2655,7 @@ class TestSideChoice:
         )
         omelette.mark_in_progress()
         order.items.add_item(omelette)
-        order.pending_item_id = omelette.id
+        order.pending_item_ids = [omelette.id]
 
         # Select "bagel" as side (without specifying type) - creates unconfigured child
         sm.config_helper_handler.handle_side_choice("bagel", omelette, order)
@@ -2704,7 +2704,7 @@ class TestSideChoice:
         )
         omelette.mark_in_progress()
         order.items.add_item(omelette)
-        order.pending_item_id = omelette.id
+        order.pending_item_ids = [omelette.id]
 
         # Select "bagel" as side - creates bundle-included child
         sm.config_helper_handler.handle_side_choice("bagel", omelette, order)
@@ -3174,7 +3174,7 @@ class TestModifierRemovalDuringConfig:
 
         # Set up config state (asking about toasted)
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
         order.pending_field = "bagel:toasted"
 
         # Process "remove the bacon"
@@ -3221,7 +3221,7 @@ class TestModifierRemovalDuringConfig:
         order.items.add_item(bagel)
 
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
         order.pending_field = "bagel:toasted"
 
         result = sm.process("remove the egg", order)
@@ -3259,7 +3259,7 @@ class TestModifierRemovalDuringConfig:
         order.items.add_item(bagel)
 
         order.phase = OrderPhase.CONFIGURING_ITEM.value
-        order.pending_item_id = bagel.id
+        order.pending_item_ids = [bagel.id]
         order.pending_field = "bagel:toasted"
 
         result = sm.process("remove the lox", order)
@@ -3363,7 +3363,7 @@ class TestUnavailableAttributeOptions:
             unavailable_selections={"size": {"attempted_slug": "medium", "attempted_display": "Medium"}}
         )
         order.items.add_item(item)
-        order.pending_item_id = item.id
+        order.pending_item_ids = [item.id]
 
         # Mock attribute definition with available options only
         mock_attr = {

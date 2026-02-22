@@ -296,6 +296,47 @@ def persist_pending_order(
     return order
 
 
+def build_email_kwargs_from_order(db: Session, order: Order) -> dict:
+    """Build common email kwargs from an Order and its items.
+
+    Extracts the data needed by ``send_receipt_email`` /
+    ``send_expired_link_email`` from a persisted ``Order`` row.
+    """
+    from .store_service import get_company
+
+    company = get_company(db)
+    store_name = company.name if company else "OrderBot"
+
+    items_list = []
+    for oi in order.items:
+        config = oi.item_config or {}
+        items_list.append({
+            "display_name": oi.menu_item_name,
+            "menu_item_name": oi.menu_item_name,
+            "quantity": oi.quantity,
+            "line_total": oi.line_total,
+            "unit_price": oi.unit_price,
+            "base_price": oi.unit_price,
+            "modifiers": config.get("modifiers", []),
+            "free_details": config.get("free_details", []),
+        })
+
+    return dict(
+        to_email=order.customer_email,
+        order_id=order.id,
+        amount=order.total_price or 0.0,
+        store_name=store_name,
+        customer_name=order.customer_name,
+        customer_phone=order.phone,
+        order_type=order.order_type,
+        items=items_list,
+        subtotal=order.subtotal,
+        city_tax=order.city_tax or 0,
+        state_tax=order.state_tax or 0,
+        delivery_fee=order.delivery_fee or 0,
+    )
+
+
 def persist_confirmed_order(
     db: Session,
     order_state: dict[str, Any],
@@ -341,16 +382,32 @@ def persist_confirmed_order(
         totals.state_tax, tax_info.state_tax_rate * 100, totals.delivery_fee, totals.total
     )
 
-    # Create or update Order row
+    order = _upsert_order_record(
+        db, order_state, customer, totals, order_type, store_id, items,
+    )
+    _link_customer_record(db, order, customer, order_state)
+
+    db.commit()
+    logger.info("Order #%d persisted (status: confirmed)", order.id)
+    return order
+
+
+def _upsert_order_record(
+    db: Session,
+    order_state: dict[str, Any],
+    customer: CustomerInfo,
+    totals: OrderTotals,
+    order_type: str,
+    store_id: str | None,
+    items: list[dict],
+) -> Order:
+    """Create or update the Order row and its items."""
     existing_id = order_state.get("db_order_id")
     order: Order | None = None
 
     if existing_id:
         order = db.get(Order, existing_id)
-        if order is None:
-            existing_id = None
 
-    # Parse pickup_time into estimated_ready_at
     estimated_ready_at = None
     if customer.pickup_time:
         try:
@@ -358,67 +415,56 @@ def persist_confirmed_order(
         except (ValueError, TypeError):
             logger.warning("Could not parse pickup_time '%s' as ISO datetime", customer.pickup_time)
 
+    common_fields = dict(
+        status=OrderStatus.CONFIRMED,
+        customer_name=customer.name,
+        phone=customer.phone,
+        customer_email=customer.email,
+        pickup_time=customer.pickup_time,
+        estimated_ready_at=estimated_ready_at,
+        subtotal=totals.subtotal,
+        city_tax=totals.city_tax,
+        state_tax=totals.state_tax,
+        delivery_fee=totals.delivery_fee,
+        total_price=totals.total,
+        store_id=store_id,
+        order_type=order_type,
+        delivery_address=order_state.get("delivery_address"),
+        payment_method=order_state.get("payment_method"),
+        special_instructions=order_state.get("special_instructions"),
+    )
+
     if order:
-        # Update existing order
-        order.status = OrderStatus.CONFIRMED
-        order.customer_name = customer.name
-        order.phone = customer.phone
-        order.customer_email = customer.email
-        order.pickup_time = customer.pickup_time
-        order.estimated_ready_at = estimated_ready_at
-        order.subtotal = totals.subtotal
-        order.city_tax = totals.city_tax
-        order.state_tax = totals.state_tax
-        order.delivery_fee = totals.delivery_fee
-        order.total_price = totals.total
-        order.store_id = store_id
-        order.order_type = order_type
-        order.delivery_address = order_state.get("delivery_address")
-        order.payment_method = order_state.get("payment_method")
-        order.special_instructions = order_state.get("special_instructions")
+        for key, value in common_fields.items():
+            setattr(order, key, value)
     else:
-        # Create new order
-        order = Order(
-            status=OrderStatus.CONFIRMED,
-            customer_name=customer.name,
-            phone=customer.phone,
-            customer_email=customer.email,
-            pickup_time=customer.pickup_time,
-            estimated_ready_at=estimated_ready_at,
-            subtotal=totals.subtotal,
-            city_tax=totals.city_tax,
-            state_tax=totals.state_tax,
-            delivery_fee=totals.delivery_fee,
-            total_price=totals.total,
-            store_id=store_id,
-            order_type=order_type,
-            delivery_address=order_state.get("delivery_address"),
-            payment_method=order_state.get("payment_method"),
-            special_instructions=order_state.get("special_instructions"),
-        )
+        order = Order(**common_fields)
         db.add(order)
         db.flush()
         order_state["db_order_id"] = order.id
-
-        # Add order items for new orders
         _add_order_items(db, order, items)
 
-    # Link to Customer record (find or create)
+    return order
+
+
+def _link_customer_record(
+    db: Session,
+    order: Order,
+    customer: CustomerInfo,
+    order_state: dict[str, Any],
+) -> None:
+    """Find or create a Customer record and link it to the order."""
     try:
         from .customer_service import find_or_create_customer
+
         customer_record = find_or_create_customer(
             db, name=customer.name, phone=customer.phone, email=customer.email,
         )
         if customer_record:
             order.customer_id = customer_record.id
-            # Expose customer_id so frontend can store it for returning visits
             order_state["customer_id"] = customer_record.id
     except (ValueError, TypeError) as e:
         logger.warning("Failed to link customer to order #%d: %s", order.id, e)
-
-    db.commit()
-    logger.info("Order #%d persisted (status: confirmed)", order.id)
-    return order
 
 
 def update_order_stripe_session(

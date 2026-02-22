@@ -931,7 +931,7 @@ class TestSyrupDisambiguationWithMultiInput:
         latte.attribute_values["size"] = "large"
         latte.attribute_values["iced"] = True
         order.items.add_item(latte)
-        order.pending_item_id = latte.id
+        order.pending_item_ids = [latte.id]
         order.pending_field = "coffee_based_beverage:milk_sweetener_syrup"
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
@@ -989,7 +989,7 @@ class TestSyrupDisambiguationWithMultiInput:
         latte.attribute_values["size"] = "large"
         latte.attribute_values["iced"] = True
         order.items.add_item(latte)
-        order.pending_item_id = latte.id
+        order.pending_item_ids = [latte.id]
         order.pending_field = "coffee_based_beverage:milk_sweetener_syrup"
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 
@@ -1026,7 +1026,7 @@ class TestSyrupDisambiguationWithMultiInput:
         latte.attribute_values["size"] = "large"
         latte.attribute_values["iced"] = True
         order.items.add_item(latte)
-        order.pending_item_id = latte.id
+        order.pending_item_ids = [latte.id]
         order.pending_field = "coffee_based_beverage:milk_sweetener_syrup"
         order.phase = OrderPhase.CONFIGURING_ITEM.value
 

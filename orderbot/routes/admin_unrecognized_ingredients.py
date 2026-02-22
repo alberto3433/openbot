@@ -29,6 +29,7 @@ from ..schemas.unrecognized_suggestions import (
     UnrecognizedIngredientSuggestionUpdate,
 )
 from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
+from .crud_helpers import get_or_404
 from ..cache.base import normalize_text
 
 # Valid match types
@@ -78,9 +79,7 @@ def _ingredient_create_pre_commit(
     if payload.alternative_ingredient_names:
         alternatives = []
         for name in payload.alternative_ingredient_names:
-            ingredient = db.query(Ingredient).filter(Ingredient.name == name).first()
-            if not ingredient:
-                raise ValidationError(f"Ingredient '{name}' not found")
+            ingredient = get_or_404(db, Ingredient, name, id_column="name", detail=f"Ingredient '{name}' not found")
             alternatives.append(ingredient)
         item.alternative_ingredients = alternatives
 
@@ -128,9 +127,7 @@ def _ingredient_before_update(
     if payload.alternative_ingredient_names is not None:
         alternatives = []
         for name in payload.alternative_ingredient_names:
-            ingredient = db.query(Ingredient).filter(Ingredient.name == name).first()
-            if not ingredient:
-                raise ValidationError(f"Ingredient '{name}' not found")
+            ingredient = get_or_404(db, Ingredient, name, id_column="name", detail=f"Ingredient '{name}' not found")
             alternatives.append(ingredient)
         item.alternative_ingredients = alternatives
 

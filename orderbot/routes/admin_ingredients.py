@@ -136,9 +136,7 @@ def _build_create_kwargs(payload: IngredientCreate, db: Session) -> dict[str, An
     if existing:
         raise ValidationError(f"Ingredient '{payload.name}' already exists")
 
-    unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
-    if not unit_obj:
-        raise ValidationError(f"Invalid unit: {payload.unit}")
+    unit_obj = get_or_404(db, IngredientUnit, payload.unit, id_column="name", detail=f"Invalid unit: {payload.unit}")
 
     subcat = _resolve_subcategory(db, payload.subcategory)
 
@@ -177,9 +175,7 @@ def _handle_before_update(item: Ingredient, payload: IngredientUpdate, db: Sessi
     if payload.name is not None:
         item.name = payload.name
     if payload.unit is not None:
-        unit_obj = db.query(IngredientUnit).filter(IngredientUnit.name == payload.unit).first()
-        if not unit_obj:
-            raise ValidationError(f"Invalid unit: {payload.unit}")
+        unit_obj = get_or_404(db, IngredientUnit, payload.unit, id_column="name", detail=f"Invalid unit: {payload.unit}")
         item.unit_id = unit_obj.id
     if payload.track_inventory is not None:
         item.track_inventory = payload.track_inventory

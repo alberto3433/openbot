@@ -36,6 +36,7 @@ from ..schemas.unrecognized_suggestions import (
     UnrecognizedMenuItemSuggestionStats,
 )
 from .crud_factory import CRUDRouterFactory, reorder_routes_static_first
+from .crud_helpers import get_or_404
 from ..cache.base import normalize_text
 
 # Valid match types
@@ -69,13 +70,7 @@ def _menu_item_before_create(
 
     item_type_id = None
     if payload.suggested_item_type_slug:
-        item_type = db.query(ItemType).filter(
-            ItemType.slug == payload.suggested_item_type_slug
-        ).first()
-        if not item_type:
-            raise ValidationError(
-                f"Item type '{payload.suggested_item_type_slug}' not found"
-            )
+        item_type = get_or_404(db, ItemType, payload.suggested_item_type_slug, id_column="slug", detail=f"Item type '{payload.suggested_item_type_slug}' not found")
         item_type_id = item_type.id
 
     return {
@@ -95,9 +90,7 @@ def _menu_item_create_pre_commit(
     if payload.suggested_menu_item_names:
         menu_items = []
         for name in payload.suggested_menu_item_names:
-            menu_item = db.query(MenuItem).filter(MenuItem.name == name).first()
-            if not menu_item:
-                raise ValidationError(f"Menu item '{name}' not found")
+            menu_item = get_or_404(db, MenuItem, name, id_column="name", detail=f"Menu item '{name}' not found")
             menu_items.append(menu_item)
         item.suggested_menu_items = menu_items
 

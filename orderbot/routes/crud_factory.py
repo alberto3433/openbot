@@ -45,8 +45,8 @@ from sqlalchemy.orm import Session
 from ..auth import verify_admin_credentials
 from ..cache.base import normalize_text
 from ..db import get_db
-from ..exceptions import ResourceNotFoundError, ValidationError
-from .crud_helpers import build_create_kwargs, apply_payload_updates
+from ..exceptions import ValidationError
+from .crud_helpers import build_create_kwargs, apply_payload_updates, get_or_404
 
 
 # Type variables for generic model and schema types
@@ -396,9 +396,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             **path_params,
         ):
             item_id = path_params.get(id_param_name)
-            item = db.query(model).filter(model.id == item_id).first()
-            if not item:
-                raise ResourceNotFoundError(not_found_message)
+            item = get_or_404(db, model, item_id, detail=not_found_message)
             return to_response(item, db)
 
         _set_id_param_signature(get_item, id_param_name)
@@ -436,9 +434,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             **path_params,
         ):
             item_id = path_params.get(id_param_name)
-            item = db.query(model).filter(model.id == item_id).first()
-            if not item:
-                raise ResourceNotFoundError(not_found_message)
+            item = get_or_404(db, model, item_id, detail=not_found_message)
 
             # Check uniqueness for fields being updated
             for field in unique_fields:
@@ -511,9 +507,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             **path_params,
         ):
             item_id = path_params.get(id_param_name)
-            item = db.query(model).filter(model.id == item_id).first()
-            if not item:
-                raise ResourceNotFoundError(not_found_message)
+            item = get_or_404(db, model, item_id, detail=not_found_message)
 
             if on_before_delete:
                 on_before_delete(item, db)

@@ -133,21 +133,13 @@ def _menu_item_before_update(
         if payload.suggested_item_type_slug == "":
             item.suggested_item_type_id = None
         else:
-            it = db.query(ItemType).filter(
-                ItemType.slug == payload.suggested_item_type_slug
-            ).first()
-            if not it:
-                raise ValidationError(
-                    f"Item type '{payload.suggested_item_type_slug}' not found"
-                )
+            it = get_or_404(db, ItemType, payload.suggested_item_type_slug, id_column="slug", detail=f"Item type '{payload.suggested_item_type_slug}' not found")
             item.suggested_item_type_id = it.id
 
     if payload.suggested_menu_item_names is not None:
         menu_items = []
         for name in payload.suggested_menu_item_names:
-            mi = db.query(MenuItem).filter(MenuItem.name == name).first()
-            if not mi:
-                raise ValidationError(f"Menu item '{name}' not found")
+            mi = get_or_404(db, MenuItem, name, id_column="name", detail=f"Menu item '{name}' not found")
             menu_items.append(mi)
         item.suggested_menu_items = menu_items
 

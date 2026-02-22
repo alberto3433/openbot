@@ -1622,20 +1622,6 @@
         <div id="order-items-container" style="display: none;">
           <div id="order-items-list"></div>
         </div>
-        <div class="order-customer" id="order-customer" style="display: none;">
-          <div class="order-customer-row" id="customer-name-row">
-            <span class="icon"><i data-lucide="user"></i></span>
-            <span id="customer-name"></span>
-          </div>
-          <div class="order-customer-row" id="customer-phone-row" style="display: none;">
-            <span class="icon"><i data-lucide="phone"></i></span>
-            <span id="customer-phone"></span>
-          </div>
-          <div class="order-customer-row" id="customer-address-row" style="display: none;">
-            <span class="icon"><i data-lucide="map-pin"></i></span>
-            <span id="customer-address"></span>
-          </div>
-        </div>
       </div>
       <div class="order-panel-footer" id="order-panel-footer" style="display: none;">
         <div class="order-totals">
@@ -1661,6 +1647,20 @@
           </div>
         </div>
         <div class="order-status" id="order-status-badge" style="display: none;">Order Confirmed!</div>
+        <div class="order-customer" id="order-customer" style="display: none;">
+          <div class="order-customer-row" id="customer-name-row">
+            <span class="icon"><i data-lucide="user"></i></span>
+            <span id="customer-name"></span>
+          </div>
+          <div class="order-customer-row" id="customer-phone-row" style="display: none;">
+            <span class="icon"><i data-lucide="phone"></i></span>
+            <span id="customer-phone"></span>
+          </div>
+          <div class="order-customer-row" id="customer-address-row" style="display: none;">
+            <span class="icon"><i data-lucide="map-pin"></i></span>
+            <span id="customer-address"></span>
+          </div>
+        </div>
         <div class="order-special-instructions" id="order-special-instructions" style="display: none;">
           <div class="order-special-instructions-header">
             <span class="icon"><i data-lucide="file-text"></i></span>
@@ -2064,14 +2064,7 @@
           messageCount++;
           conversationHistory.push({ role: "assistant", content: data.message });
         }
-        if (data.returning_customer) {
-          console.log("Returning customer:", data.returning_customer);
-          // Pre-populate order panel with returning customer info
-          if (!orderState.customer) orderState.customer = {};
-          if (data.returning_customer.name) orderState.customer.name = data.returning_customer.name;
-          if (data.returning_customer.phone) orderState.customer.phone = data.returning_customer.phone;
-          renderOrderPanel(orderState);
-        }
+        if (data.returning_customer) console.log("Returning customer:", data.returning_customer);
 
         // Enable input now that session is ready
         inputEl.disabled = false;
@@ -2909,20 +2902,6 @@
       const display = (state.scheduling && state.scheduling.pickup_time_display) || "Now";
       schedulingTime.textContent = display;
 
-      // Show customer info even before items are added (returning customer)
-      const customer = state.customer || {};
-      if (customer.name || customer.phone || state.delivery_address) {
-        orderCustomer.style.display = "block";
-        document.getElementById("customer-name-row").style.display = customer.name ? "flex" : "none";
-        customerNameEl.textContent = customer.name || "";
-        customerPhoneRow.style.display = customer.phone ? "flex" : "none";
-        customerPhoneEl.textContent = customer.phone || "";
-        customerAddressRow.style.display = state.delivery_address ? "flex" : "none";
-        customerAddressEl.textContent = state.delivery_address || "";
-      } else {
-        orderCustomer.style.display = "none";
-      }
-
       if (!hasItems) {
         mobileCartSummary.textContent = "Cart empty";
         mobileCartTotal.textContent = "$0.00";
@@ -2960,6 +2939,19 @@
         orderStatusBadge.textContent = "✓ Order Confirmed!";
       } else {
         orderStatusBadge.style.display = "none";
+      }
+
+      const customer = state.customer || {};
+      if (customer.name || customer.phone || state.delivery_address) {
+        orderCustomer.style.display = "block";
+        document.getElementById("customer-name-row").style.display = customer.name ? "flex" : "none";
+        customerNameEl.textContent = customer.name || "";
+        customerPhoneRow.style.display = customer.phone ? "flex" : "none";
+        customerPhoneEl.textContent = customer.phone || "";
+        customerAddressRow.style.display = state.delivery_address ? "flex" : "none";
+        customerAddressEl.textContent = state.delivery_address || "";
+      } else {
+        orderCustomer.style.display = "none";
       }
 
       // Display order-level special instructions

@@ -562,7 +562,9 @@ tbody tr:last-child td {
   max-width: 500px;
   width: 90%;
   max-height: 90vh;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--card-border);
 }
@@ -576,6 +578,12 @@ tbody tr:last-child td {
   justify-content: space-between;
   align-items: center;
   color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.modal-header h2,
+.modal-header h3 {
+  margin: 0;
 }
 
 .modal-header .close-btn {
@@ -608,6 +616,9 @@ tbody tr:last-child td {
 
 .modal-body {
   padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -617,6 +628,7 @@ tbody tr:last-child td {
   justify-content: flex-end;
   gap: 12px;
   background: var(--card-header-bg);
+  flex-shrink: 0;
 }
 
 /* =====================================================

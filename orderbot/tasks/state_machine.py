@@ -587,6 +587,13 @@ class OrderStateMachine:
             order.add_message("assistant", make_it_n_result.message)
             return make_it_n_result
 
+        # Check for store change request (e.g., "change store", "switch store")
+        # Must run BEFORE modifier change handler and taking_items parser,
+        # which would interpret "change store" as a modifier change or item replacement
+        if re.search(r'\b(?:change|switch|update)\s+store\b', user_input, re.IGNORECASE):
+            logger.info("STORE CHANGE: User requested store change")
+            return self._handle_store_change_request(order)
+
         # Check for order type change requests (e.g., "change it to delivery")
         # Must run before modifier change handler to prevent "delivery" being treated as a modifier
         if order.delivery_method.order_type:
@@ -611,10 +618,6 @@ class OrderStateMachine:
         ):
             order.delivery_method.order_type = "pickup"
             return self._handle_scheduling_change_request(order)
-
-        # Check for store change request (e.g., "change store", "switch store")
-        if re.search(r'\b(?:change|switch|update)\s+store\b', user_input, re.IGNORECASE):
-            return self._handle_store_change_request(order)
 
         # Check for scheduling change request (e.g., "change pickup time")
         if re.search(

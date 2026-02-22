@@ -234,7 +234,8 @@ def _check_standalone_ingredient(text: str) -> OpenInputResponse | None:
     """
     # Strip common ordering phrases
     text_lower = normalize_text(text)
-    for prefix in ["i want ", "i'd like ", "i would like ", "give me ", "can i get ", "can i have "]:
+    for prefix in ["i want ", "i'd like ", "i would like ", "i'll do ", "i'll take ",
+                    "i'll have ", "i'll get ", "i'll grab ", "give me ", "can i get ", "can i have "]:
         if text_lower.startswith(prefix):
             text_lower = text_lower[len(prefix):].strip()
             break

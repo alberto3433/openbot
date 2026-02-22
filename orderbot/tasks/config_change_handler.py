@@ -212,6 +212,15 @@ class ConfigChangeHandler:
                             change_request.new_value
                         )
                         return None
+
+                # If still unknown after all resolution, give a friendly message
+                if attr_slug == UNKNOWN_ATTRIBUTE_SLUG:
+                    last_item = get_last_item(active_items)
+                    item_name = last_item.menu_item_name if last_item else "that item"
+                    return StateMachineResult(
+                        message=f"I'm not sure how to change the {item_name} that way. Could you tell me what you'd like instead?",
+                        order=order,
+                    )
             if not active_items:
                 return StateMachineResult(
                     message="I don't see any items to change. What would you like to order?",

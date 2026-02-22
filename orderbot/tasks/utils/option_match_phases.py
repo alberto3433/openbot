@@ -17,6 +17,21 @@ from .text import normalize_text, word_boundary_match
 
 logger = logging.getLogger(__name__)
 
+# Domain-agnostic modifier words that, when appearing before a matched option
+# in Phase 3, indicate the user intended a DIFFERENT option (e.g. "extra large"
+# is not the same as "large").  Only words that alter or negate the meaning of
+# what follows belong here.
+_PHASE3_PREFIX_MODIFIERS: set[str] = {
+    # Intensifiers / size modifiers
+    "extra", "super", "ultra", "mega", "double", "triple",
+    # Negators
+    "not", "no", "non", "without", "never",
+    # Degree modifiers
+    "very", "really", "extremely", "too",
+    # Diminutives
+    "half", "mini", "micro",
+}
+
 
 class MatchPhasesMixin:
     """Mixin providing multi-phase matching methods for OptionMatcher."""
@@ -93,9 +108,15 @@ class MatchPhasesMixin:
         Collects all matches and returns the one with the longest matching
         text, so that "Gluten Free Cinnamon Raisin Bagel" beats
         "Cinnamon Raisin Bagel" when both appear in the input.
+
+        After finding the best match, validates that words appearing BEFORE the
+        matched text are only conversational filler (e.g. "I'll take a large").
+        If meaningful prefix words remain (e.g. "extra" in "extra large"),
+        rejects the match since intensifiers/negators precede what they modify.
         """
         best_match: dict | None = None
         best_length = 0
+        best_matched_text: str = ""
 
         for opt in options:
             if not self._passes_must_match(original_input, opt):
@@ -105,12 +126,14 @@ class MatchPhasesMixin:
                 if len(display_lower) > best_length:
                     best_match = opt
                     best_length = len(display_lower)
+                    best_matched_text = display_lower
                 continue
             slug_readable = opt["slug"].replace("_", " ")
             if slug_readable in user_lower and self._is_whole_word_match(slug_readable, user_lower):
                 if len(slug_readable) > best_length:
                     best_match = opt
                     best_length = len(slug_readable)
+                    best_matched_text = slug_readable
                 continue
             for alias in self._get_aliases(opt):
                 alias_lower = alias.lower()
@@ -119,7 +142,27 @@ class MatchPhasesMixin:
                         if len(alias_lower) > best_length:
                             best_match = opt
                             best_length = len(alias_lower)
+                            best_matched_text = alias_lower
                         break
+
+        # Prefix validation: reject if words BEFORE the match contain
+        # intensifiers or negators that change the option's meaning.
+        # e.g. "extra large" → "extra" modifies "large" → reject
+        # but  "plain bagel" → "plain" is a descriptor, not a modifier → accept
+        if best_match and best_matched_text:
+            match_pos = user_lower.find(best_matched_text)
+            prefix = user_lower[:match_pos].strip() if match_pos > 0 else ""
+            if prefix:
+                prefix_words = prefix.split()
+                modifiers = [w for w in prefix_words if w in _PHASE3_PREFIX_MODIFIERS]
+                if modifiers:
+                    logger.debug(
+                        "Phase 3 REJECTED: '%s' matched '%s' but prefix has "
+                        "modifier words: %s",
+                        user_lower, best_matched_text, modifiers,
+                    )
+                    return None
+
         return best_match
 
     def _passes_must_match(self, user_input: str, opt: dict) -> bool:

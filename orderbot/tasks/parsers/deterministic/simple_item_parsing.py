@@ -36,7 +36,8 @@ def _parse_simple_item_deterministic(text: str) -> OpenInputResponse | None:
 
     # Strip ordering phrases and articles (but preserve numbers - they may be part of item names)
     text_lower = re.sub(
-        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|i\'?ll\s+have\s+|i\s+will\s+have\s+|'
+        r'^(i\s+want\s+|i\s+would\s+like\s+|i\'?d\s+like\s+|'
+        r'i\'?ll\s+(?:have|do|take|grab|get)\s+|i\s+will\s+have\s+|'
         r'can\s+i\s+(get|have)\s+|give\s+me\s+|let\s+me\s+(get|have)\s+)',
         '', text_lower
     )

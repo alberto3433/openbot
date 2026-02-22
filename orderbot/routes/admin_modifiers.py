@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session
 from ..auth import verify_admin_credentials
 from ..db import get_db
 from ..db.models import ItemType, MenuItem, ItemTypeGlobalAttribute, GlobalAttribute, MenuDisplayGroup, OverallCategory
-from ..exceptions import ReferentialIntegrityError, ValidationError
+from ..exceptions import ReferentialIntegrityError
 from ..services.alias_service import sync_entity_aliases
 from ..schemas.modifiers import (
     GlobalAttributeRef,
@@ -52,7 +52,7 @@ from ..schemas.modifiers import (
 )
 from ..schemas.serializers import serialize_item_type
 from .crud_factory import CRUDRouterFactory
-from .crud_helpers import apply_payload_updates
+from .crud_helpers import apply_payload_updates, get_or_404
 
 
 logger = logging.getLogger(__name__)
@@ -65,13 +65,10 @@ logger = logging.getLogger(__name__)
 def _build_create_kwargs(payload: ItemTypeCreate, db: Session) -> dict[str, Any]:
     """Build model kwargs from create payload."""
     # Validate display group ID (required)
-    display_group = db.query(MenuDisplayGroup).filter(
-        MenuDisplayGroup.id == payload.menu_display_group_id
-    ).first()
-    if not display_group:
-        raise ValidationError(
-            f"Menu display group with id {payload.menu_display_group_id} not found"
-        )
+    get_or_404(
+        db, MenuDisplayGroup, payload.menu_display_group_id,
+        detail=f"Menu display group with id {payload.menu_display_group_id} not found",
+    )
 
     return {
         "slug": payload.slug,
@@ -102,13 +99,10 @@ def _handle_before_update(
     )
     if payload.menu_display_group_id is not None:
         # Validate display group ID
-        display_group = db.query(MenuDisplayGroup).filter(
-            MenuDisplayGroup.id == payload.menu_display_group_id
-        ).first()
-        if not display_group:
-            raise ValidationError(
-                f"Menu display group with id {payload.menu_display_group_id} not found"
-            )
+        get_or_404(
+            db, MenuDisplayGroup, payload.menu_display_group_id,
+            detail=f"Menu display group with id {payload.menu_display_group_id} not found",
+        )
         item.menu_display_group_id = payload.menu_display_group_id
     if payload.aliases is not None:
         sync_entity_aliases(db, item, payload.aliases, "item_type")

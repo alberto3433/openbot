@@ -440,7 +440,7 @@ def _parse_configurable_item(text: str) -> OpenInputResponse | None:
     quantity = 1
     item_qty_span = None
     qty_match = re.match(
-        r"^(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|"
+        r"^(?:i(?:'?d|\s*would)?\s*(?:like|want|need|take|have|get)|i'?ll\s*(?:have|do|take|grab|get)|"
         r"(?:can|could|may)\s+i\s+(?:get|have)|"
         r"give\s+me|"
         r"let\s*(?:me|'s)\s*(?:get|have)|"

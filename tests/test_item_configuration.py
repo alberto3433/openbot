@@ -1894,11 +1894,11 @@ class TestCoffeeSize:
         assert "shot" in result.message.lower() or "extra" in result.message.lower()
 
     def test_invalid_size_reprompts(self, menu_cache_loaded):
-        """Test that invalid size re-prompts user.
+        """Test that invalid size like 'extra large' re-prompts user.
 
-        NOTE: With data-driven architecture, the handler uses deterministic validation
-        against database options. "extra large" contains "large" so it matches.
-        We use an input that truly doesn't match any valid size.
+        Phase 3 residual validation rejects 'extra large' because 'extra' is a
+        meaningful modifier, not conversational filler.  The system should ask
+        for a valid size instead of incorrectly matching 'large'.
         """
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
@@ -1913,18 +1913,15 @@ class TestCoffeeSize:
         order.items.add_item(coffee)
         order.pending_item_id = coffee.id
 
-        # Use input that doesn't contain any valid size (not small, large)
-        result = sm.configuring_item_handler.handle_configuring_item("jumbo", order)
+        # "extra large" should NOT match "large" — "extra" is meaningful
+        result = sm.configuring_item_handler.handle_configuring_item("extra large", order)
 
-        # Size should either remain None (reprompt) or be set if jumbo matches something
-        # With data-driven approach, unknown size may get clarification or reprompt
+        assert coffee["size"] is None, (
+            f"Size should remain unset for 'extra large', but got: {coffee['size']}"
+        )
         msg_lower = result.message.lower()
-        # Accept either: size not set + reprompt, OR size set if jumbo was mapped
-        if coffee["size"] is None:
-            # Should prompt for valid size
-            assert "size" in msg_lower or "small" in msg_lower or "large" in msg_lower, \
-                f"Should ask about size, got: {result.message}"
-        # If size was set, test passes (jumbo might map to a valid size)
+        assert "size" in msg_lower or "small" in msg_lower or "large" in msg_lower, \
+            f"Should re-prompt for valid size, got: {result.message}"
 
     def test_size_with_drink_name_in_prompt(self):
         """Test that reprompt shows available sizes when input is unclear."""

@@ -2048,6 +2048,7 @@
         callerIdPanel.removeAttribute("open");
 
         if (data.message) {
+          window.__nextAudioId = data.audio_id || null;
           addMessage("assistant", data.message, data.quick_replies);
           lastBotMessage = data.message;
           messageCount++;
@@ -2169,7 +2170,7 @@
                     lastBotMessage = fullReply;
                     messageCount++;
                     conversationHistory.push({ role: "assistant", content: fullReply });
-                    if (typeof speakText === "function") speakText(fullReply);
+                    if (typeof speakText === "function") speakText(fullReply, event.audio_id || null);
                   }
                   if (event.payment_url) {
                     renderPaymentButton(event.payment_url);
@@ -2394,9 +2395,9 @@
       }
     }
 
-    async function speakText(text) {
+    async function speakText(text, audioId = null) {
       if (ttsMuted || !text || !ttsReady || !ttsSelectedVoice) return;
-      ttsQueue.push(text);
+      ttsQueue.push({ text, audioId });
       if (ttsSpeaking) return;
       await processQueue();
     }
@@ -2407,20 +2408,36 @@
         return;
       }
       ttsSpeaking = true;
-      const text = ttsQueue.shift();
+      const item = ttsQueue.shift();
+      const text = item.text;
+      const audioId = item.audioId;
       try {
         setTTSStatus("Speaking...", "speaking");
         if (ttsAudio) {
           ttsAudio.pause();
           ttsAudio = null;
         }
-        const response = await fetch("/api/v1/tts/synthesize", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, voice: ttsSelectedVoice, speed: 1.0 })
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const audioBlob = await response.blob();
+        // Try prefetched audio first, fall back to on-demand synthesis
+        let audioBlob = null;
+        if (audioId) {
+          try {
+            const prefetchResp = await fetch(`/api/v1/tts/audio/${audioId}`);
+            if (prefetchResp.ok) {
+              audioBlob = await prefetchResp.blob();
+            }
+          } catch (e) {
+            console.debug("[TTS] Prefetch fetch failed, falling back to on-demand", e);
+          }
+        }
+        if (!audioBlob) {
+          const response = await fetch("/api/v1/tts/synthesize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, voice: ttsSelectedVoice, speed: 1.0 })
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          audioBlob = await response.blob();
+        }
         const audioUrl = URL.createObjectURL(audioBlob);
         ttsAudio = new Audio(audioUrl);
         ttsAudio.onended = () => {
@@ -2607,7 +2624,11 @@
     const originalAddMessage = addMessage;
     addMessage = function(role, text, quickReplies) {
       originalAddMessage(role, text, quickReplies);
-      if (role === "assistant" && text) speakText(text);
+      if (role === "assistant" && text) {
+        const audioId = window.__nextAudioId || null;
+        window.__nextAudioId = null;
+        speakText(text, audioId);
+      }
     };
 
     // =====================================================

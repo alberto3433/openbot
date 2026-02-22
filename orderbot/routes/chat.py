@@ -201,11 +201,16 @@ def chat_start(
         else:
             greeting_qr = pickup_delivery_qr
 
+    # Prefetch TTS audio for the greeting (synthesis runs in background)
+    from ..services.tts_cache import prefetch_tts
+    audio_id = prefetch_tts(welcome)
+
     return ChatStartResponse(
         session_id=session_id,
         message=welcome,
         returning_customer=returning_customer,
         quick_replies=greeting_qr,
+        audio_id=audio_id,
     )
 
 
@@ -292,6 +297,10 @@ def chat_message_stream(
                 session=session,
             ))
 
+            # Prefetch TTS audio in parallel with token streaming
+            from ..services.tts_cache import prefetch_tts
+            audio_id = prefetch_tts(result.reply) if result.reply else None
+
             words = result.reply.split()
             for i, word in enumerate(words):
                 token = word + (" " if i < len(words) - 1 else "")
@@ -312,6 +321,8 @@ def chat_message_stream(
                 final_event['quick_replies'] = result.quick_replies
             if result.payment_url:
                 final_event['payment_url'] = result.payment_url
+            if audio_id:
+                final_event['audio_id'] = audio_id
             yield f"data: {json.dumps(final_event)}\n\n"
 
         except (ValueError, KeyError, TypeError, AttributeError, SQLAlchemyError) as e:

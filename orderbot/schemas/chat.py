@@ -90,6 +90,7 @@ class ChatStartResponse(BaseModel):
     message: str
     returning_customer: ReturningCustomerInfo | None = None
     quick_replies: list[dict[str, str]] | None = None
+    audio_id: str | None = None
 
 
 class ChatMessageRequest(BaseModel):

@@ -59,11 +59,13 @@ Usage:
     # Returns: audio/mpeg binary data
 """
 
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from ..services.tts import get_tts_provider
+from ..services.tts_cache import get_cached_audio
 
 
 logger = logging.getLogger(__name__)
@@ -179,3 +181,21 @@ async def synthesize_speech(req: SynthesizeRequest):
     except (ConnectionError, TimeoutError, RuntimeError, OSError) as e:
         logger.error("TTS synthesis failed: %s", str(e))
         raise HTTPException(status_code=500, detail="Speech synthesis failed")
+
+
+@tts_router.get("/audio/{audio_id}")
+async def get_prefetched_audio(audio_id: str) -> Response:
+    """
+    Retrieve pre-synthesized TTS audio by ID.
+
+    Audio is prefetched during reply generation so it's ready by the time
+    the frontend requests it. Falls back to on-demand synthesis if not found.
+    """
+    audio_bytes = await asyncio.to_thread(get_cached_audio, audio_id)
+    if audio_bytes is None:
+        raise HTTPException(status_code=404, detail="Audio not found or expired")
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "no-cache"},
+    )

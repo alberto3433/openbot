@@ -170,6 +170,12 @@ async def lifespan(app: FastAPI):
             logger.info("TTS provider initialized")
         except Exception as e:
             logger.warning("TTS provider not available: %s", e)
+
+        # Initialize TTS prefetch cache with the running event loop
+        import asyncio
+        from .services.tts_cache import init_tts_cache
+        init_tts_cache(asyncio.get_running_loop())
+        logger.info("TTS prefetch cache initialized")
     except (RuntimeError, ImportError, ConnectionError, OSError) as e:
         logger.error("Failed to initialize menu data cache: %s", e)
         raise RuntimeError(f"Server startup failed: Could not load menu data cache: {e}") from e

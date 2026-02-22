@@ -226,6 +226,7 @@ def get_or_create_session(db: Session, session_id: str) -> dict[str, Any] | None
             "menu_version": db_session.menu_version_sent,
             "store_id": db_session.store_id,
             "caller_id": db_session.caller_id,
+            "customer_id": db_session.customer_id,
         }
 
         # Add to cache for future access
@@ -293,6 +294,7 @@ def save_session(db: Session, session_id: str, session_data: dict[str, Any]) -> 
         db_session.menu_version_sent = session_data.get("menu_version")
         db_session.store_id = session_data.get("store_id")
         db_session.caller_id = session_data.get("caller_id")
+        db_session.customer_id = session_data.get("customer_id")
 
         # Force SQLAlchemy to detect changes to mutable JSON columns
         # Without this, in-place mutations (like list.append()) are not detected
@@ -307,6 +309,7 @@ def save_session(db: Session, session_id: str, session_data: dict[str, Any]) -> 
             menu_version_sent=session_data.get("menu_version"),
             store_id=session_data.get("store_id"),
             caller_id=session_data.get("caller_id"),
+            customer_id=session_data.get("customer_id"),
         )
         db.add(db_session)
 

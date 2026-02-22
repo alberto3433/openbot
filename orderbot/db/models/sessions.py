@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     JSON,
     String,
@@ -42,6 +43,9 @@ class ChatSession(Base):
 
     # Caller ID for returning customer identification
     caller_id = Column(String, nullable=True)
+
+    # Linked customer (for returning customer recognition)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

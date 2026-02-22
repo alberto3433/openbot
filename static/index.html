@@ -2021,6 +2021,11 @@
           params.append("caller_id", callerId);
           currentCallerId = callerId;
         }
+        // Include stored customer_id for returning customer recognition
+        const storedCustomerId = localStorage.getItem("customer_id");
+        if (storedCustomerId) {
+          params.append("customer_id", storedCustomerId);
+        }
         if (storeId) {
           params.append("store_id", storeId);
           currentStoreId = storeId;
@@ -2033,6 +2038,11 @@
         sessionId = data.session_id;
         connected = true;
         sessionStartTime = Date.now();
+
+        // Store customer_id if returned (recognized returning customer)
+        if (data.customer_id) {
+          localStorage.setItem("customer_id", data.customer_id);
+        }
 
         let headerText = `v${appVersion} | ` + sessionId.substring(0, 8);
         if (storeId && STORE_NAMES[storeId]) headerText += ` | ${STORE_NAMES[storeId]}`;
@@ -2107,6 +2117,10 @@
           orderState = data.order_state;
           if (orderState.status === "confirmed") orderConfirmed = true;
         }
+        // Store customer_id for returning customer recognition
+        if (data.customer_id) {
+          localStorage.setItem("customer_id", data.customer_id);
+        }
         setStatus("Connected");
       } catch (err) {
         hideTypingIndicator();
@@ -2178,6 +2192,10 @@
                   if (event.order_state) {
                     orderState = event.order_state;
                     if (orderState.status === "confirmed") orderConfirmed = true;
+                  }
+                  // Store customer_id for returning customer recognition
+                  if (event.customer_id) {
+                    localStorage.setItem("customer_id", event.customer_id);
                   }
                   setStatus("Connected");
                 }
@@ -2369,7 +2387,11 @@
         if (ttsSelectedVoice && ttsVoices.some(v => v.id === ttsSelectedVoice)) {
           ttsVoiceSelect.value = ttsSelectedVoice;
         } else if (ttsVoices.length > 0) {
-          const defaultVoice = ttsVoices.find(v => v.id === "nova") || ttsVoices[0];
+          // Use server-provided default voice, then "nova", then first voice
+          const serverDefault = data.default_voice;
+          const defaultVoice = (serverDefault && ttsVoices.find(v => v.id === serverDefault))
+            || ttsVoices.find(v => v.id === "nova")
+            || ttsVoices[0];
           ttsVoiceSelect.value = defaultVoice.id;
           ttsSelectedVoice = defaultVoice.id;
         }

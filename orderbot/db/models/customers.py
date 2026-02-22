@@ -29,6 +29,9 @@ class Customer(Base):
     email = Column(String, nullable=True, index=True)
     stripe_customer_id = Column(String, nullable=True, index=True)
 
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    preferred_store_id = Column(String, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,

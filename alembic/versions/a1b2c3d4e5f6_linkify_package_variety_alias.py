@@ -36,8 +36,12 @@ def upgrade() -> None:
         "global_attributes",
         sa.column("id", sa.Integer),
         sa.column("slug", sa.String),
-        sa.column("item_type_id", sa.Integer),
         sa.column("question_text", sa.String),
+    )
+    itga = sa.table(
+        "item_type_global_attributes",
+        sa.column("item_type_id", sa.Integer),
+        sa.column("global_attribute_id", sa.Integer),
     )
     global_opts = sa.table(
         "global_attribute_options",
@@ -61,11 +65,18 @@ def upgrade() -> None:
     bagel_package_id = row[0]
 
     # --- 1. Add alias for the custom option of package_variety ---
+    # Look up via junction table (item_type_global_attributes)
     variety_attr = bind.execute(
-        sa.select(global_attrs.c.id).where(
+        sa.select(global_attrs.c.id)
+        .select_from(
+            global_attrs.join(
+                itga, global_attrs.c.id == itga.c.global_attribute_id
+            )
+        )
+        .where(
             sa.and_(
                 global_attrs.c.slug == "package_variety",
-                global_attrs.c.item_type_id == bagel_package_id,
+                itga.c.item_type_id == bagel_package_id,
             )
         )
     ).fetchone()
@@ -96,16 +107,27 @@ def upgrade() -> None:
                 )
 
     # --- 2. Update package_contents question text ---
-    bind.execute(
-        global_attrs.update()
+    contents_attr = bind.execute(
+        sa.select(global_attrs.c.id)
+        .select_from(
+            global_attrs.join(
+                itga, global_attrs.c.id == itga.c.global_attribute_id
+            )
+        )
         .where(
             sa.and_(
                 global_attrs.c.slug == "package_contents",
-                global_attrs.c.item_type_id == bagel_package_id,
+                itga.c.item_type_id == bagel_package_id,
             )
         )
-        .values(question_text="What types would you like?")
-    )
+    ).fetchone()
+
+    if contents_attr:
+        bind.execute(
+            global_attrs.update()
+            .where(global_attrs.c.id == contents_attr[0])
+            .values(question_text="What types would you like?")
+        )
 
 
 def downgrade() -> None:
@@ -122,8 +144,12 @@ def downgrade() -> None:
         "global_attributes",
         sa.column("id", sa.Integer),
         sa.column("slug", sa.String),
-        sa.column("item_type_id", sa.Integer),
         sa.column("question_text", sa.String),
+    )
+    itga = sa.table(
+        "item_type_global_attributes",
+        sa.column("item_type_id", sa.Integer),
+        sa.column("global_attribute_id", sa.Integer),
     )
     aliases_table = sa.table(
         "global_attribute_option_aliases",
@@ -143,13 +169,24 @@ def downgrade() -> None:
         sa.select(item_types.c.id).where(item_types.c.slug == "bagel_package")
     ).fetchone()
     if row:
-        bind.execute(
-            global_attrs.update()
+        contents_attr = bind.execute(
+            sa.select(global_attrs.c.id)
+            .select_from(
+                global_attrs.join(
+                    itga, global_attrs.c.id == itga.c.global_attribute_id
+                )
+            )
             .where(
                 sa.and_(
                     global_attrs.c.slug == "package_contents",
-                    global_attrs.c.item_type_id == row[0],
+                    itga.c.item_type_id == row[0],
                 )
             )
-            .values(question_text="What types of bagels would you like in your package? You can say things like '6 plain, 3 everything, 3 sesame'.")
-        )
+        ).fetchone()
+
+        if contents_attr:
+            bind.execute(
+                global_attrs.update()
+                .where(global_attrs.c.id == contents_attr[0])
+                .values(question_text="What types of bagels would you like in your package? You can say things like '6 plain, 3 everything, 3 sesame'.")
+            )

@@ -68,7 +68,7 @@ from ..db import get_db
 from ..db.models import SessionAnalytics
 from ..schemas.enums import OrderStatus
 from ..services.session import get_or_create_session, save_session
-from ..services.customer_service import lookup_customer_by_phone
+from ..services.customer_service import lookup_customer_by_id, lookup_customer_by_phone
 from ..services.helpers import get_primary_item_type_name
 from ..services.store_service import get_or_create_company, build_store_info
 from ..schemas.chat import (
@@ -104,6 +104,7 @@ def chat_start(
     request: Request,
     db: Session = Depends(get_db),
     caller_id: str | None = Query(None, description="Simulated caller ID / phone number"),
+    customer_id: int | None = Query(None, description="Returning customer ID from localStorage"),
     store_id: str | None = Query(None, description="Store identifier"),
 ) -> ChatStartResponse:
     """
@@ -122,9 +123,17 @@ def chat_start(
     # Get store name from the cached store_info
     store_name = store_info.get("name") or company.name
 
-    # Check for returning customer
+    # Check for returning customer — priority: customer_id > caller_id
     returning_customer = None
-    if caller_id:
+    resolved_customer_id = None
+    if customer_id:
+        returning_customer = lookup_customer_by_id(db, customer_id)
+        if returning_customer:
+            resolved_customer_id = returning_customer.get("customer_id")
+            logger.info("Customer ID lookup: %d -> found (%s)", customer_id, returning_customer.get("name"))
+        else:
+            logger.info("Customer ID lookup: %d -> not found", customer_id)
+    if not returning_customer and caller_id:
         returning_customer = lookup_customer_by_phone(db, caller_id)
         logger.info("Caller ID lookup: %s -> %s", caller_id, "found" if returning_customer else "new customer")
 
@@ -173,6 +182,7 @@ def chat_start(
         },
         "menu_version": None,
         "caller_id": caller_id,
+        "customer_id": resolved_customer_id,
         "store_id": store_id,
         "returning_customer": returning_customer,
         "store_info": store_info,  # Pre-loaded store info for faster message processing
@@ -211,6 +221,7 @@ def chat_start(
         returning_customer=returning_customer,
         quick_replies=greeting_qr,
         audio_id=audio_id,
+        customer_id=resolved_customer_id,
     )
 
 
@@ -244,6 +255,7 @@ def chat_message(
             actions=processed_actions,
             quick_replies=result.quick_replies,
             payment_url=result.payment_url,
+            customer_id=result.order_state.get("customer_id"),
         )
 
     except ValueError as e:
@@ -323,6 +335,9 @@ def chat_message_stream(
                 final_event['payment_url'] = result.payment_url
             if audio_id:
                 final_event['audio_id'] = audio_id
+            # Include customer_id when available (after order confirmation)
+            if result.order_state.get('customer_id'):
+                final_event['customer_id'] = result.order_state['customer_id']
             yield f"data: {json.dumps(final_event)}\n\n"
 
         except (ValueError, KeyError, TypeError, AttributeError, SQLAlchemyError) as e:

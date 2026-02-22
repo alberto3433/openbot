@@ -85,12 +85,14 @@ class ChatStartResponse(BaseModel):
         session_id: UUID for this chat session (use in subsequent requests)
         message: Initial greeting from the bot (personalized for returning customers)
         returning_customer: Present if caller_id matched a previous customer
+        customer_id: Recognized customer ID (for localStorage persistence)
     """
     session_id: str
     message: str
     returning_customer: ReturningCustomerInfo | None = None
     quick_replies: list[dict[str, str]] | None = None
     audio_id: str | None = None
+    customer_id: int | None = None
 
 
 class ChatMessageRequest(BaseModel):
@@ -150,6 +152,8 @@ class ChatMessageResponse(BaseModel):
         actions: List of structured actions performed (for UI updates)
         quick_replies: Inline clickable items in the reply text.
             Each dict has "label" (text to highlight) and "value" (text to send on click).
+        customer_id: Set after order confirmation when customer record is created/found.
+            Frontend should store this in localStorage for returning customer recognition.
     """
     reply: str
     order_state: dict[str, Any]
@@ -159,6 +163,7 @@ class ChatMessageResponse(BaseModel):
     )
     quick_replies: list[dict[str, str]] | None = None
     payment_url: str | None = None
+    customer_id: int | None = None
 
 
 class ReportSessionRequest(BaseModel):

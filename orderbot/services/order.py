@@ -411,6 +411,8 @@ def persist_confirmed_order(
         )
         if customer_record:
             order.customer_id = customer_record.id
+            # Expose customer_id so frontend can store it for returning visits
+            order_state["customer_id"] = customer_record.id
     except (ValueError, TypeError) as e:
         logger.warning("Failed to link customer to order #%d: %s", order.id, e)
 

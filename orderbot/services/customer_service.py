@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "find_or_create_customer",
+    "lookup_customer_by_id",
     "lookup_customer_by_phone",
     "lookup_customer_order_history",
     "get_order_by_id",
@@ -200,6 +201,80 @@ def _ensure_stripe_customer(customer: Customer) -> None:
             customer.stripe_customer_id = stripe_id
     except (ImportError, OSError, ValueError, TypeError) as e:
         logger.warning("Failed to create Stripe customer for #%d: %s", customer.id, e)
+
+
+def lookup_customer_by_id(db: Session, customer_id: int) -> dict[str, Any] | None:
+    """Look up a returning customer by their customer ID.
+
+    Used when a web visitor returns with a stored customer_id from localStorage.
+    Updates last_seen_at on successful lookup.
+
+    Args:
+        db: Database session
+        customer_id: The customer's primary key ID
+
+    Returns:
+        Dict with customer info if found (same format as lookup_customer_by_phone):
+        - customer_id, name, phone, email, order_count, last_order_items, etc.
+
+        None if customer not found or has no orders
+    """
+    from datetime import datetime, timezone
+
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return None
+
+    # Update last_seen_at
+    customer.last_seen_at = datetime.now(timezone.utc)
+    db.flush()
+
+    # Find most recent order for this customer
+    recent_order = (
+        db.query(Order)
+        .options(joinedload(Order.items))
+        .filter(Order.customer_id == customer.id)
+        .order_by(Order.created_at.desc())
+        .first()
+    )
+
+    if not recent_order:
+        # Customer exists but has no orders yet — return basic info
+        return {
+            "customer_id": customer.id,
+            "name": customer.name,
+            "phone": customer.phone,
+            "email": customer.email,
+            "order_count": 0,
+            "last_order_id": None,
+            "last_order_items": [],
+            "last_order_date": None,
+            "last_order_type": None,
+            "last_order_address": None,
+        }
+
+    order_count = (
+        db.query(Order)
+        .filter(Order.customer_id == customer.id)
+        .count()
+    )
+
+    last_order_items = [
+        _order_item_to_dict(item) for item in recent_order.items
+    ] if recent_order.items else []
+
+    return {
+        "customer_id": customer.id,
+        "name": customer.name or recent_order.customer_name,
+        "phone": customer.phone or recent_order.phone,
+        "email": customer.email or recent_order.customer_email,
+        "order_count": order_count,
+        "last_order_id": recent_order.id,
+        "last_order_items": last_order_items,
+        "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
+        "last_order_type": recent_order.order_type,
+        "last_order_address": recent_order.delivery_address,
+    }
 
 
 def lookup_customer_by_phone(db: Session, phone: str) -> dict[str, Any] | None:

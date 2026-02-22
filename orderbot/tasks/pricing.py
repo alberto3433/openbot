@@ -17,6 +17,7 @@ Sub-calculators:
 """
 
 import logging
+from functools import cached_property
 from typing import Callable
 
 from .mixins import MenuDataMixin
@@ -139,43 +140,29 @@ class PricingEngine(MenuDataMixin):
         self._menu_data = menu_data or {}
         self._lookup_menu_item = menu_lookup_func
 
-        # Lazy-loaded sub-calculators to avoid circular imports
-        self._upcharge_calculator = None
-        self._variant_calculator = None
-        self._modifier_calculator = None
-        self._attribute_lookup = None
-
-    @property
+    @cached_property
     def upcharge_calculator(self):
-        """Get the attribute upcharge calculator (lazy-loaded)."""
-        if self._upcharge_calculator is None:
-            from .attribute_upcharge_calculator import AttributeUpchargeCalculator
-            self._upcharge_calculator = AttributeUpchargeCalculator(self)
-        return self._upcharge_calculator
+        """Attribute upcharge calculator (lazy-loaded to avoid circular imports)."""
+        from .attribute_upcharge_calculator import AttributeUpchargeCalculator
+        return AttributeUpchargeCalculator(self)
 
-    @property
+    @cached_property
     def variant_calculator(self):
-        """Get the variant pricing calculator (lazy-loaded)."""
-        if self._variant_calculator is None:
-            from .variant_pricing import VariantPricingCalculator
-            self._variant_calculator = VariantPricingCalculator(self)
-        return self._variant_calculator
+        """Variant pricing calculator (lazy-loaded to avoid circular imports)."""
+        from .variant_pricing import VariantPricingCalculator
+        return VariantPricingCalculator(self)
 
-    @property
+    @cached_property
     def modifier_calculator(self):
-        """Get the modifier pricing calculator (lazy-loaded)."""
-        if self._modifier_calculator is None:
-            from .modifier_pricing import ModifierPricingCalculator
-            self._modifier_calculator = ModifierPricingCalculator(self)
-        return self._modifier_calculator
+        """Modifier pricing calculator (lazy-loaded to avoid circular imports)."""
+        from .modifier_pricing import ModifierPricingCalculator
+        return ModifierPricingCalculator(self)
 
-    @property
+    @cached_property
     def attribute_lookup(self):
-        """Get the attribute pricing lookup (lazy-loaded)."""
-        if self._attribute_lookup is None:
-            from .attribute_pricing_lookup import AttributePricingLookup
-            self._attribute_lookup = AttributePricingLookup(self)
-        return self._attribute_lookup
+        """Attribute pricing lookup (lazy-loaded to avoid circular imports)."""
+        from .attribute_pricing_lookup import AttributePricingLookup
+        return AttributePricingLookup(self)
 
     # =========================================================================
     # Shared Helper

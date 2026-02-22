@@ -110,6 +110,10 @@ class Company(Base):
     # Online Payment Provider
     payment_provider = Column(String, nullable=False, default="stripe")  # "stripe" or "square"
 
+    # TTS Provider
+    tts_provider = Column(String, nullable=False, default="openai")  # "openai", "elevenlabs", "cartesia"
+    tts_default_voice = Column(String, nullable=True)  # Provider-specific voice ID
+
     # Payment Methods
     accepts_credit_cards = Column(Boolean, nullable=False, default=True)
     accepts_debit_cards = Column(Boolean, nullable=False, default=True)

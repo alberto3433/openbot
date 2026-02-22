@@ -87,9 +87,23 @@ def update_company(
     """Update company settings."""
     company = get_or_create_company(db)
 
+    # Track whether TTS provider is changing
+    old_tts_provider = company.tts_provider
+
     apply_payload_updates(company, payload, db)
 
     db.commit()
     db.refresh(company)
     logger.info("Updated company settings: %s", company.name)
+
+    # If TTS provider changed, invalidate and re-initialize the singleton
+    if payload.tts_provider is not None and payload.tts_provider != old_tts_provider:
+        from ..services.tts import invalidate_tts_provider, get_tts_provider
+        invalidate_tts_provider()
+        try:
+            get_tts_provider(company.tts_provider)
+            logger.info("TTS provider switched to: %s", company.tts_provider)
+        except (ValueError, ImportError, OSError) as e:
+            logger.warning("New TTS provider '%s' failed to initialize: %s", company.tts_provider, e)
+
     return CompanyOut.model_validate(company)

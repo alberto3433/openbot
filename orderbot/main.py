@@ -163,10 +163,22 @@ async def lifespan(app: FastAPI):
         logger.info("Pre-compiling parser patterns...")
         warmup_patterns()
 
-        # Pre-initialize TTS provider so first request doesn't pay import/init cost
+        # Pre-initialize TTS provider from Company settings (or env var fallback)
         from .services.tts import get_tts_provider
         try:
-            get_tts_provider()
+            tts_provider_name = None
+            try:
+                db2 = SessionLocal()
+                try:
+                    from .services.store_service import get_or_create_company
+                    company = get_or_create_company(db2)
+                    if company.tts_provider:
+                        tts_provider_name = company.tts_provider
+                finally:
+                    db2.close()
+            except Exception as e:
+                logger.warning("Could not read TTS provider from DB, using env var: %s", e)
+            get_tts_provider(tts_provider_name)
             logger.info("TTS provider initialized")
         except Exception as e:
             logger.warning("TTS provider not available: %s", e)

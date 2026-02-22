@@ -130,6 +130,8 @@ class ScenarioGenerator:
             return self._generate_realistic_order_scenario()
         elif scenario_type == "corpus_order":
             return self._generate_corpus_order_scenario()
+        elif scenario_type == "regression":
+            return self._generate_regression_scenario()
         else:
             logger.warning("Unknown scenario type: %s", scenario_type)
             return None
@@ -566,6 +568,86 @@ class ScenarioGenerator:
 
         # All candidates failed slot filling
         logger.debug("Could not fill slots for any corpus pattern")
+        return None
+
+    def _generate_regression_scenario(self) -> BaseScenario | None:
+        """Generate a regression scenario testing a known bug pattern."""
+        from tests.chaos_monkey.scenarios.regression import (
+            AttributeDeclineScenario,
+            AvailabilityInquiryScenario,
+            InstructionLeakScenario,
+            OrderTypeConfusionScenario,
+            OrderTypeMidOrderScenario,
+            PhaseRestorationScenario,
+            QualifierPersistenceScenario,
+        )
+
+        if not self._menu_items:
+            return None
+
+        # Weighted random selection of regression pattern
+        patterns = [
+            "order_type_confusion",
+            "attribute_decline",
+            "qualifier_persistence",
+            "order_type_mid_order",
+            "instruction_leak",
+            "phase_restoration",
+            "availability_inquiry",
+        ]
+        pattern = self.rng.choice(patterns)
+        seed = self.rng.randint(0, 2**31)
+
+        if pattern == "order_type_confusion":
+            item = self.rng.choice(self._menu_items)
+            return OrderTypeConfusionScenario(item=item, seed=seed)
+
+        if pattern == "attribute_decline":
+            # Need a configurable item with attribute options
+            configurable = [
+                mi for mi in self._menu_items
+                if self.menu_cache.is_item_type_configurable(
+                    mi.get("item_type", "")
+                )
+            ]
+            if not configurable:
+                return None
+            item = self.rng.choice(configurable)
+            attr_opts, _ = self._get_attribute_data_for_item_type(
+                item.get("item_type", "")
+            )
+            return AttributeDeclineScenario(
+                item=item, attribute_options=attr_opts, seed=seed,
+            )
+
+        if pattern == "qualifier_persistence":
+            qualifiers = ["large", "small", "iced", "hot", "toasted"]
+            qualifier = self.rng.choice(qualifiers)
+            item = self.rng.choice(self._menu_items)
+            return QualifierPersistenceScenario(
+                item=item, qualifier=qualifier, seed=seed,
+            )
+
+        if pattern == "order_type_mid_order":
+            item = self.rng.choice(self._menu_items)
+            return OrderTypeMidOrderScenario(item=item, seed=seed)
+
+        if pattern == "instruction_leak":
+            item = self.rng.choice(self._menu_items)
+            return InstructionLeakScenario(item=item, seed=seed)
+
+        if pattern == "phase_restoration":
+            if len(self._menu_items) < 2:
+                return None
+            items = self.rng.sample(self._menu_items, 2)
+            return PhaseRestorationScenario(
+                item1=items[0], item2=items[1], seed=seed,
+            )
+
+        if pattern == "availability_inquiry":
+            item = self.rng.choice(self._menu_items)
+            return AvailabilityInquiryScenario(item=item, seed=seed)
+
         return None
 
     def _fill_pattern_slots(

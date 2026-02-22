@@ -130,6 +130,73 @@ class ResponseVerifier:
                 turn.failure_reason = question_result["reason"]
                 return
 
+        # Deep verification: order type
+        if turn.expected_order_type:
+            actual_order_type = order_state.get("order_type")
+            if actual_order_type != turn.expected_order_type:
+                turn.passed = False
+                turn.failure_category = FailureCategory.ORDER_TYPE
+                turn.failure_reason = (
+                    f"Expected order_type='{turn.expected_order_type}', "
+                    f"got '{actual_order_type}'"
+                )
+                return
+
+        # Deep verification: attribute values on items
+        if turn.expected_attribute_values:
+            items = order_state.get("items", [])
+            for item in items:
+                attrs = item.get("attribute_values", {})
+                for key, expected_val in turn.expected_attribute_values.items():
+                    actual_val = attrs.get(key)
+                    if actual_val is not None and actual_val != expected_val:
+                        turn.passed = False
+                        turn.failure_category = FailureCategory.ATTRIBUTE_VALUE
+                        turn.failure_reason = (
+                            f"Expected {key}='{expected_val}', got '{actual_val}'"
+                        )
+                        return
+
+        # Deep verification: total quantity
+        if turn.expected_quantity is not None:
+            items = order_state.get("items", [])
+            total_qty = sum(item.get("quantity", 1) for item in items)
+            if total_qty != turn.expected_quantity:
+                turn.passed = False
+                turn.failure_category = FailureCategory.CART_OPERATION
+                turn.failure_reason = (
+                    f"Expected total quantity {turn.expected_quantity}, "
+                    f"got {total_qty}"
+                )
+                return
+
+        # Deep verification: item count
+        if turn.expect_item_count is not None:
+            items = order_state.get("items", [])
+            if len(items) != turn.expect_item_count:
+                turn.passed = False
+                turn.failure_category = FailureCategory.CART_OPERATION
+                turn.failure_reason = (
+                    f"Expected {turn.expect_item_count} items in cart, "
+                    f"got {len(items)}"
+                )
+                return
+
+        # Deep verification: no instruction leak
+        if turn.expect_no_special_instruction_contains:
+            items = order_state.get("items", [])
+            needle = turn.expect_no_special_instruction_contains.lower()
+            for item in items:
+                for instr in item.get("special_instructions", []):
+                    if needle in instr.lower():
+                        turn.passed = False
+                        turn.failure_category = FailureCategory.OTHER
+                        turn.failure_reason = (
+                            f"Special instruction '{instr}' contains "
+                            f"'{turn.expect_no_special_instruction_contains}'"
+                        )
+                        return
+
         turn.passed = True
 
     def _is_system_error(self, response: str) -> bool:

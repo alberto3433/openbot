@@ -127,6 +127,10 @@ class CompanyOut(OrmModel):
     # Online Payment Provider
     payment_provider: str = "stripe"
 
+    # TTS Provider
+    tts_provider: str = "openai"
+    tts_default_voice: str | None = None
+
     # Payment Methods
     accepts_credit_cards: bool = True
     accepts_debit_cards: bool = True
@@ -215,6 +219,10 @@ class CompanyUpdate(BaseModel):
 
     # Online Payment Provider
     payment_provider: str | None = None
+
+    # TTS Provider
+    tts_provider: str | None = None
+    tts_default_voice: str | None = None
 
     # Payment Methods
     accepts_credit_cards: bool | None = None

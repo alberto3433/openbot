@@ -1220,6 +1220,17 @@
       flex-shrink: 0;
     }
 
+    .order-customer-row .customer-value {
+      cursor: pointer;
+      border-bottom: 1px dashed transparent;
+      transition: border-color 0.15s, opacity 0.15s;
+    }
+
+    .order-customer-row .customer-value:hover {
+      border-bottom-color: currentColor;
+      opacity: 0.85;
+    }
+
     .order-special-instructions {
       margin-top: 14px;
       padding-top: 14px;
@@ -1650,11 +1661,15 @@
         <div class="order-customer" id="order-customer" style="display: none;">
           <div class="order-customer-row" id="customer-name-row">
             <span class="icon"><i data-lucide="user"></i></span>
-            <span id="customer-name"></span>
+            <span class="customer-value" data-field="name" id="customer-name"></span>
           </div>
           <div class="order-customer-row" id="customer-phone-row" style="display: none;">
             <span class="icon"><i data-lucide="phone"></i></span>
-            <span id="customer-phone"></span>
+            <span class="customer-value" data-field="phone" id="customer-phone"></span>
+          </div>
+          <div class="order-customer-row" id="customer-email-row" style="display: none;">
+            <span class="icon"><i data-lucide="mail"></i></span>
+            <span class="customer-value" data-field="email" id="customer-email"></span>
           </div>
           <div class="order-customer-row" id="customer-address-row" style="display: none;">
             <span class="icon"><i data-lucide="map-pin"></i></span>
@@ -1973,6 +1988,16 @@
     // Click handler for scheduling time badge
     document.getElementById("scheduling-time").addEventListener("click", function() {
       sendMessage("change pickup time");
+    });
+
+    // Click handler for editable customer info fields
+    document.getElementById("order-customer").addEventListener("click", function(e) {
+      var target = e.target.closest(".customer-value");
+      if (!target) return;
+      var field = target.dataset.field;
+      if (field === "name") sendMessage("change my name");
+      else if (field === "phone") sendMessage("change my phone number");
+      else if (field === "email") sendMessage("change my email");
     });
 
     // Event delegation for inline quick reply clicks
@@ -2783,6 +2808,8 @@
     const customerNameEl = document.getElementById("customer-name");
     const customerPhoneEl = document.getElementById("customer-phone");
     const customerPhoneRow = document.getElementById("customer-phone-row");
+    const customerEmailEl = document.getElementById("customer-email");
+    const customerEmailRow = document.getElementById("customer-email-row");
     const customerAddressEl = document.getElementById("customer-address");
     const customerAddressRow = document.getElementById("customer-address-row");
     const orderSpecialInstructions = document.getElementById("order-special-instructions");
@@ -2942,12 +2969,14 @@
       }
 
       const customer = state.customer || {};
-      if (customer.name || customer.phone || state.delivery_address) {
+      if (customer.name || customer.phone || customer.email || state.delivery_address) {
         orderCustomer.style.display = "block";
         document.getElementById("customer-name-row").style.display = customer.name ? "flex" : "none";
         customerNameEl.textContent = customer.name || "";
         customerPhoneRow.style.display = customer.phone ? "flex" : "none";
         customerPhoneEl.textContent = customer.phone || "";
+        customerEmailRow.style.display = customer.email ? "flex" : "none";
+        customerEmailEl.textContent = customer.email || "";
         customerAddressRow.style.display = state.delivery_address ? "flex" : "none";
         customerAddressEl.textContent = state.delivery_address || "";
       } else {

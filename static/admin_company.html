@@ -337,6 +337,40 @@
         </div>
       </div>
 
+      <!-- TTS Provider Section -->
+      <div class="section">
+        <div class="section-header"><span class="section-icon"><i data-lucide="volume-2" style="width:16px;height:16px;vertical-align:middle;"></i></span>Text-to-Speech Provider</div>
+        <div class="section-body">
+          <div class="hint" style="margin-bottom: 12px;">Select which service provides voice synthesis for the chatbot</div>
+          <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+            <label class="checkbox-item" style="cursor: pointer;">
+              <input type="radio" name="ttsProvider" id="ttsProviderOpenai" value="openai" checked />
+              <span>OpenAI</span>
+            </label>
+            <label class="checkbox-item" style="cursor: pointer;">
+              <input type="radio" name="ttsProvider" id="ttsProviderElevenlabs" value="elevenlabs" />
+              <span>ElevenLabs</span>
+            </label>
+            <label class="checkbox-item" style="cursor: pointer;">
+              <input type="radio" name="ttsProvider" id="ttsProviderCartesia" value="cartesia" />
+              <span>Cartesia</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label for="ttsDefaultVoice">Default Voice</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select id="ttsDefaultVoice" style="flex: 1;">
+                <option value="">Loading voices...</option>
+              </select>
+              <button type="button" class="btn" id="ttsTestVoiceBtn" style="white-space: nowrap;">
+                <span class="icon"><i data-lucide="play"></i></span> Test
+              </button>
+            </div>
+            <div class="hint">This voice is used when customers haven't chosen their own preference</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Payment Methods Section -->
       <div class="section">
         <div class="section-header"><span class="section-icon"><i data-lucide="credit-card" style="width:16px;height:16px;vertical-align:middle;"></i></span>Payment Methods</div>
@@ -631,6 +665,13 @@
       document.getElementById("providerStripe").checked = (provider === "stripe");
       document.getElementById("providerSquare").checked = (provider === "square");
 
+      // TTS provider
+      const ttsProvider = data.tts_provider || "openai";
+      document.getElementById("ttsProviderOpenai").checked = (ttsProvider === "openai");
+      document.getElementById("ttsProviderElevenlabs").checked = (ttsProvider === "elevenlabs");
+      document.getElementById("ttsProviderCartesia").checked = (ttsProvider === "cartesia");
+      loadTTSVoices(data.tts_default_voice);
+
       // Payment methods
       document.getElementById("acceptsCreditCards").checked = data.accepts_credit_cards ?? true;
       document.getElementById("acceptsDebitCards").checked = data.accepts_debit_cards ?? true;
@@ -732,6 +773,10 @@
         // Online payment provider
         payment_provider: document.querySelector('input[name="paymentProvider"]:checked').value,
 
+        // TTS provider
+        tts_provider: document.querySelector('input[name="ttsProvider"]:checked').value,
+        tts_default_voice: document.getElementById("ttsDefaultVoice").value || null,
+
         // Payment methods
         accepts_credit_cards: document.getElementById("acceptsCreditCards").checked,
         accepts_debit_cards: document.getElementById("acceptsDebitCards").checked,
@@ -776,9 +821,14 @@
         }
 
         const data = await response.json();
+        // If TTS provider changed, reload voices from the new provider
+        const providerChanged = originalData && originalData.tts_provider !== data.tts_provider;
         originalData = data;
         setSaveButtonState(activeButton, "saved");
         showToast("Settings saved successfully", "success");
+        if (providerChanged) {
+          loadTTSVoices(data.tts_default_voice);
+        }
       } catch (error) {
         console.error("Failed to save company settings:", error);
         setSaveButtonState(activeButton, "error");
@@ -841,6 +891,97 @@
         showToast(`Failed to refresh: ${error.message}`, "error");
       }
     }
+
+    // TTS voice management
+    let ttsTestAudio = null;
+
+    async function loadTTSVoices(selectedVoiceId) {
+      const select = document.getElementById("ttsDefaultVoice");
+      select.innerHTML = '<option value="">Loading voices...</option>';
+      try {
+        const response = await fetch("/api/v1/tts/voices", { credentials: 'include' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const voices = data.voices || [];
+        select.innerHTML = '<option value="">(Use provider default)</option>';
+        voices.forEach(voice => {
+          const opt = document.createElement("option");
+          opt.value = voice.id;
+          let label = voice.name;
+          if (voice.gender || voice.accent) {
+            label += ` (${[voice.gender, voice.accent].filter(Boolean).join(", ")})`;
+          }
+          opt.textContent = label;
+          select.appendChild(opt);
+        });
+        // Set the selected voice
+        if (selectedVoiceId) {
+          select.value = selectedVoiceId;
+        }
+      } catch (error) {
+        console.error("Failed to load TTS voices:", error);
+        select.innerHTML = '<option value="">Failed to load voices</option>';
+      }
+    }
+
+    async function testTTSVoice() {
+      const voiceId = document.getElementById("ttsDefaultVoice").value;
+      const btn = document.getElementById("ttsTestVoiceBtn");
+      const originalHTML = btn.innerHTML;
+
+      // Stop any currently playing test audio
+      if (ttsTestAudio) {
+        ttsTestAudio.pause();
+        ttsTestAudio = null;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="icon"><i data-lucide="loader"></i></span> Testing...';
+      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [btn] });
+
+      try {
+        const response = await fetch("/api/v1/tts/synthesize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: "Hi there! Welcome to our store. How can I help you today?",
+            voice: voiceId || undefined,
+            speed: 1.0
+          }),
+          credentials: 'include'
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const blob = await response.blob();
+        const audioUrl = URL.createObjectURL(blob);
+        ttsTestAudio = new Audio(audioUrl);
+        ttsTestAudio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          ttsTestAudio = null;
+          btn.disabled = false;
+          btn.innerHTML = originalHTML;
+          if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [btn] });
+        };
+        ttsTestAudio.onerror = () => {
+          URL.revokeObjectURL(audioUrl);
+          ttsTestAudio = null;
+          btn.disabled = false;
+          btn.innerHTML = originalHTML;
+          if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [btn] });
+          showToast("Audio playback failed", "error");
+        };
+        await ttsTestAudio.play();
+      } catch (error) {
+        console.error("TTS test failed:", error);
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+        if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [btn] });
+        showToast(`Voice test failed: ${error.message}`, "error");
+      }
+    }
+
+    document.getElementById("ttsTestVoiceBtn").addEventListener("click", testTTSVoice);
 
     // Event listeners - both save buttons call the same function
     document.getElementById("saveBtnCompany").addEventListener("click", function() {

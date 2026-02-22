@@ -34,6 +34,8 @@ class FailureCategory(Enum):
     PRICING_ERROR = "Pricing Error"
     MODIFIER_HANDLING = "Modifier Handling"
     CART_OPERATION = "Cart Operation"
+    ATTRIBUTE_VALUE = "Attribute Value"
+    ORDER_TYPE = "Order Type"
     STT_INDUCED = "STT-Induced Failure"
     OTHER = "Other"
 
@@ -59,6 +61,13 @@ class ConversationTurn:
     expected_question_about: str | None = None  # Attribute being asked about
     allow_disambiguation: bool = False  # Whether disambiguation is acceptable
     is_menu_inquiry: bool = False  # If True, "not found" responses are acceptable
+
+    # Deep verification fields
+    expected_order_type: str | None = None  # Expected order_state["order_type"]
+    expected_attribute_values: dict[str, Any] | None = None  # Expected attr key-value pairs
+    expected_quantity: int | None = None  # Expected total quantity in cart
+    expect_item_count: int | None = None  # Expected number of items in cart
+    expect_no_special_instruction_contains: str | None = None  # String that must NOT be in instructions
 
     # STT mutation tracking
     stt_mutated: bool = False

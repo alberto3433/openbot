@@ -175,6 +175,33 @@ class BundleModificationHandler:
             return None
 
         matcher = OptionMatcher()
+
+        # Priority check: if input exact-matches an option on the PENDING attribute,
+        # let the normal attribute handler process it instead of redirecting.
+        # This prevents "onion" (valid bread option) from being stolen by toppings.
+        pending_config = all_attrs.get(pending_attr)
+        if pending_config:
+            pending_options = pending_config.get("options", [])
+            if pending_options:
+                pending_match, _ = matcher.match_single(user_input, pending_options, exact_only=True)
+                if pending_match:
+                    logger.info(
+                        "CROSS_ATTR_PRIORITY: '%s' matches pending attr %s (slug=%s), skipping cross-attr",
+                        user_input, pending_attr, pending_match.get("slug"),
+                    )
+                    return None
+                else:
+                    slugs = [o.get("slug") for o in pending_options[:5]]
+                    logger.info(
+                        "CROSS_ATTR_PRIORITY: '%s' did NOT match pending attr %s options (sample slugs: %s)",
+                        user_input, pending_attr, slugs,
+                    )
+            else:
+                logger.info("CROSS_ATTR_PRIORITY: pending attr %s has no options", pending_attr)
+        else:
+            logger.info("CROSS_ATTR_PRIORITY: pending attr '%s' not found in all_attrs (keys: %s)",
+                         pending_attr, list(all_attrs.keys()))
+
         matched_attr_slug: str | None = None
         matched_option: dict | None = None
 

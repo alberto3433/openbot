@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
 
+from ..utils.pricing_utils import safe_recalculate_price
 from ..parsers.constants import HALF_POUND_PATTERN
 from ..models import OrderTask, MenuItemTask
 from ..models.pending_states import PendingUnmatchedPagination
@@ -506,6 +507,11 @@ class SelectInputHandler:
             qr = build_quick_replies(names)
             if has_more:
                 qr.append({"label": "more", "value": "what else?"})
+
+            # Recalculate price for selections already applied above.
+            # Normally advance_callback handles this, but it's skipped when
+            # unmatched tokens keep us on the current question.
+            safe_recalculate_price(self.pricing, item, "after multi-select with unmatched tokens")
 
             return StateMachineResult(message=message, order=order, quick_replies=qr)
 

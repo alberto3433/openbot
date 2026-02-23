@@ -365,6 +365,17 @@ class ScenarioGenerator:
 
         return attribute_options, boolean_attrs
 
+    def _item_has_attribute(self, item: dict[str, Any], attr_slug: str) -> bool:
+        """Check if an item's type has a specific attribute defined."""
+        item_type = item.get("item_type", "")
+        if not item_type:
+            return False
+        try:
+            attrs = self.menu_cache.get_item_type_attributes(item_type)
+            return attr_slug in attrs
+        except Exception:
+            return False
+
     def _generate_realistic_order_scenario(self) -> BaseScenario | None:
         """Generate a reactive realistic order scenario (1-2 items, answer config)."""
         from tests.chaos_monkey.scenarios.realistic_order import RealisticOrderScenario
@@ -631,9 +642,30 @@ class ScenarioGenerator:
             )
 
         if pattern == "qualifier_persistence":
-            qualifiers = ["large", "small", "iced", "hot", "toasted"]
-            qualifier = self.rng.choice(qualifiers)
-            item = self.rng.choice(self._menu_items)
+            # Only pair qualifiers with items that have matching attributes
+            # (e.g., "large"/"small" → sized items, "iced" → iced items).
+            # Exclude "Side of X" — the parser treats the ingredient as a
+            # modifier and matches a different item entirely.
+            qualifier_attr_map = {
+                "large": "size", "small": "size",
+                "iced": "iced", "hot": "iced",
+                "toasted": "toasted",
+            }
+            qualifier = self.rng.choice(list(qualifier_attr_map.keys()))
+            target_attr = qualifier_attr_map[qualifier]
+            candidates = [
+                mi for mi in self._menu_items
+                if self._item_has_attribute(mi, target_attr)
+                and not mi.get("name", "").lower().startswith("side of")
+            ]
+            if not candidates:
+                candidates = [
+                    mi for mi in self._menu_items
+                    if not mi.get("name", "").lower().startswith("side of")
+                ]
+            if not candidates:
+                candidates = self._menu_items
+            item = self.rng.choice(candidates)
             return QualifierPersistenceScenario(
                 item=item, qualifier=qualifier, seed=seed,
             )
@@ -649,13 +681,32 @@ class ScenarioGenerator:
             )
 
         if pattern == "instruction_leak":
-            item = self.rng.choice(self._menu_items)
+            # Only use multi-word items — single-word items like "Flatz"
+            # legitimately become "flatz on the side" as instruction.
+            # Exclude "Side of X" items — the parser treats the ingredient
+            # (e.g. "avocado") as a modifier and matches a different item.
+            multi_word = [
+                mi for mi in self._menu_items
+                if len(mi.get("name", "").split()) >= 2
+                and not mi.get("name", "").lower().startswith("side of")
+            ]
+            if not multi_word:
+                return None
+            item = self.rng.choice(multi_word)
             return InstructionLeakScenario(item=item, seed=seed)
 
         if pattern == "phase_restoration":
-            if len(self._menu_items) < 2:
+            # Filter out items with generic names that trigger disambiguation
+            # (e.g., "Bagel" alone is ambiguous — "Plain Bagel" is specific)
+            specific = [
+                mi for mi in self._menu_items
+                if len(mi.get("name", "").split()) >= 2
+            ]
+            if len(specific) < 2:
+                specific = self._menu_items
+            if len(specific) < 2:
                 return None
-            items = self.rng.sample(self._menu_items, 2)
+            items = self.rng.sample(specific, 2)
             item1_type = items[0].get("item_type", "")
             attr_opts, bool_attrs = self._get_attribute_data_for_item_type(
                 item1_type

@@ -28,6 +28,7 @@ class Customer(Base):
     phone = Column(String, nullable=True, index=True)
     email = Column(String, nullable=True, index=True)
     stripe_customer_id = Column(String, nullable=True, index=True)
+    delivery_address = Column(String, nullable=True)
 
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     preferred_store_id = Column(String, nullable=True)

@@ -132,16 +132,20 @@ class DeliveryHandler(BaseHandler):
         next_slot = orchestrator.get_next_slot()
 
         if next_slot and next_slot.category == SlotCategory.DELIVERY_ADDRESS:
-            # Check for previous delivery address from repeat order
-            if self._is_repeat_order and self._returning_customer:
-                last_address = self._returning_customer.get("last_order_address")
-                if last_address:
+            # Check for saved delivery address from any returning customer
+            if self._returning_customer:
+                saved_address = self._returning_customer.get("delivery_address")
+                if saved_address:
                     # Pre-fill the address and ask for confirmation
-                    order.delivery_method.address.street = last_address
+                    order.delivery_method.address.street = saved_address
                     order.pending_field = PendingField.ADDRESS_CONFIRMATION
                     return StateMachineResult(
-                        message=f"I have {last_address}. Is that correct?",
+                        message=f"Deliver to {saved_address}?",
                         order=order,
+                        quick_replies=[
+                            {"label": "Yes", "value": "yes"},
+                            {"label": "No", "value": "no"},
+                        ],
                     )
             # Need to collect address fresh
             return StateMachineResult(

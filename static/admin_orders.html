@@ -113,6 +113,9 @@
     tr.selected {
       background: #dbeafe;
     }
+    [data-theme="dark"] tr.selected {
+      background: rgba(59, 130, 246, 0.15);
+    }
 
     .pagination {
       margin-top: 8px;
@@ -173,6 +176,13 @@
     .status-ready { background: #e0e7ff; color: #3730a3; }
     .status-completed { background: #d1d5db; color: #374151; }
     .status-cancelled { background: #fee2e2; color: #991b1b; }
+    [data-theme="dark"] .status-pending { background: rgba(217, 119, 6, 0.2); color: #FBBF24; }
+    [data-theme="dark"] .status-pending_payment { background: rgba(234, 88, 12, 0.2); color: #FB923C; }
+    [data-theme="dark"] .status-confirmed { background: rgba(22, 163, 74, 0.2); color: #4ADE80; }
+    [data-theme="dark"] .status-preparing { background: rgba(59, 130, 246, 0.2); color: #60A5FA; }
+    [data-theme="dark"] .status-ready { background: rgba(99, 102, 241, 0.2); color: #A5B4FC; }
+    [data-theme="dark"] .status-completed { background: rgba(107, 114, 128, 0.2); color: #9CA3AF; }
+    [data-theme="dark"] .status-cancelled { background: rgba(239, 68, 68, 0.2); color: #FCA5A5; }
 
     .payment-badge {
       padding: 3px 8px;
@@ -183,6 +193,9 @@
     .payment-paid { background: #dcfce7; color: #166534; }
     .payment-unpaid { background: #fef9c3; color: #92400e; }
     .payment-pending_payment { background: #fed7aa; color: #9a3412; }
+    [data-theme="dark"] .payment-paid { background: rgba(22, 163, 74, 0.2); color: #4ADE80; }
+    [data-theme="dark"] .payment-unpaid { background: rgba(217, 119, 6, 0.2); color: #FBBF24; }
+    [data-theme="dark"] .payment-pending_payment { background: rgba(234, 88, 12, 0.2); color: #FB923C; }
 
     .details-grid {
       display: grid;

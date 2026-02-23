@@ -56,7 +56,7 @@ Usage:
 """
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from ..utils.datetime_helpers import utc_now
 from typing import Any

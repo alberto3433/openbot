@@ -613,15 +613,16 @@
     }
 
     function renderTrendChart(trend) {
-      const maxTotal = Math.max(...trend.map(d => d.total), 1);
+      const maxTotal = Math.max(...trend.map(d => d.completed + d.abandoned), 1);
 
       trendChartEl.innerHTML = trend.map(d => {
+        const total = d.completed + d.abandoned;
         const completedHeight = Math.max((d.completed / maxTotal) * 60, d.completed > 0 ? 2 : 0);
         const abandonedHeight = Math.max((d.abandoned / maxTotal) * 60, d.abandoned > 0 ? 2 : 0);
         const dayName = new Date(d.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" });
         return `
           <div class="trend-day">
-            <div class="trend-count">${d.total}</div>
+            <div class="trend-count">${total}</div>
             <div class="trend-stack">
               <div class="trend-bar-completed" style="height: ${completedHeight}px;" title="Completed: ${d.completed}"></div>
               <div class="trend-bar-abandoned" style="height: ${abandonedHeight}px;" title="Abandoned: ${d.abandoned}"></div>

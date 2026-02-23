@@ -110,6 +110,7 @@ def find_or_create_customer(
     name: str | None = None,
     phone: str | None = None,
     email: str | None = None,
+    delivery_address: str | None = None,
 ) -> Customer | None:
     """Find an existing customer by phone or email, or create a new one.
 
@@ -125,6 +126,7 @@ def find_or_create_customer(
         name: Customer name (optional)
         phone: Customer phone (optional)
         email: Customer email (optional)
+        delivery_address: Delivery address to persist (optional)
 
     Returns:
         Customer record, or None if neither phone nor email provided
@@ -167,6 +169,9 @@ def find_or_create_customer(
         if email and email.lower() != (customer.email or "").lower():
             customer.email = email
             updated = True
+        if delivery_address and delivery_address != customer.delivery_address:
+            customer.delivery_address = delivery_address
+            updated = True
         if updated:
             db.flush()
             logger.info("Updated customer #%d with new info", customer.id)
@@ -179,7 +184,7 @@ def find_or_create_customer(
         return customer
 
     # Create new customer
-    customer = Customer(name=name, phone=phone, email=email)
+    customer = Customer(name=name, phone=phone, email=email, delivery_address=delivery_address)
     db.add(customer)
     db.flush()
     logger.info("Created new customer #%d (phone=%s, email=%s)", customer.id, phone, email)
@@ -255,6 +260,7 @@ def lookup_customer_by_id(db: Session, customer_id: int) -> dict[str, Any] | Non
             "last_order_date": None,
             "last_order_type": None,
             "last_order_address": None,
+            "delivery_address": customer.delivery_address,
         }
 
     order_count = (
@@ -280,6 +286,7 @@ def lookup_customer_by_id(db: Session, customer_id: int) -> dict[str, Any] | Non
         "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
         "last_order_type": recent_order.order_type,
         "last_order_address": recent_order.delivery_address,
+        "delivery_address": customer.delivery_address,
     }
 
 
@@ -339,12 +346,14 @@ def lookup_customer_by_phone(db: Session, phone: str) -> dict[str, Any] | None:
     # Get last order items for "usual" feature
     last_order_items = [_order_item_to_dict(item) for item in recent_order.items] if recent_order.items else []
 
-    # Look up preferred store from Customer record (if linked)
+    # Look up preferred store and delivery address from Customer record (if linked)
     preferred_store_id = None
+    saved_delivery_address = None
     if recent_order.customer_id:
         customer = db.get(Customer, recent_order.customer_id)
         if customer:
             preferred_store_id = customer.preferred_store_id
+            saved_delivery_address = customer.delivery_address
 
     return {
         "name": recent_order.customer_name,
@@ -357,6 +366,7 @@ def lookup_customer_by_phone(db: Session, phone: str) -> dict[str, Any] | None:
         "last_order_date": recent_order.created_at.isoformat() if recent_order.created_at else None,
         "last_order_type": recent_order.order_type,  # "pickup" or "delivery"
         "last_order_address": recent_order.delivery_address,  # For repeat delivery orders
+        "delivery_address": saved_delivery_address,
     }
 
 

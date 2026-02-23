@@ -26,7 +26,7 @@ from .modification_parsing import (
 )
 from .tokenization import _parse_multi_item_order
 from .extraction import _detect_inapplicable_attributes
-from .text_cleaning import _extract_replacement_item, _filter_duplicate_modifications, _strip_leading_attribute_words
+from .text_cleaning import _extract_replacement_item, _filter_duplicate_modifications, _strip_leading_attribute_words, _strip_one_leading_attribute_word
 from .order_type_parsing import _add_order_type_to_response
 from ...utils.text import normalize_text
 
@@ -210,20 +210,78 @@ def _try_parse_new_items(
     if ingredient_result:
         return ingredient_result
 
-    # Fallback: strip leading attribute option words and retry
+    # Fallback: strip leading attribute option words ONE AT A TIME and retry
     # Handles cases like "large orange juice" where "large" is a size attribute word
     # but Orange Juice is non-configurable, so the attribute word is just noise.
-    # Only runs after ALL parsers fail, so legitimate matches are never affected.
+    # Strips one word per iteration to avoid over-stripping (e.g., "small 3 bagel package"
+    # should strip "small" then match "3 bagel package", not strip both "small" and "3").
     if not _is_retry:
-        stripped_text = _strip_leading_attribute_words(text)
-        if stripped_text:
+        text_to_strip = text
+        stripped_words: list[str] = []
+        for _ in range(3):  # max 3 leading attribute words
+            one_stripped, word = _strip_one_leading_attribute_word(text_to_strip)
+            if not one_stripped:
+                break
+            stripped_words.append(word)
             logger.info(
-                "ATTR_STRIP_RETRY: retrying with '%s' (original: '%s')",
-                stripped_text, text[:50],
+                "ATTR_STRIP_RETRY: retrying with '%s' (stripped '%s' from '%s')",
+                one_stripped, word, text[:50],
             )
-            return _try_parse_new_items(stripped_text, order_type, _is_retry=True)
+            result = _try_parse_new_items(one_stripped, order_type, _is_retry=True)
+            if result:
+                _annotate_stripped_as_inapplicable(result, stripped_words, one_stripped)
+                return result
+            text_to_strip = one_stripped
 
     return None
+
+
+def _annotate_stripped_as_inapplicable(
+    result: OpenInputResponse,
+    stripped_words: list[str],
+    matched_text: str,
+) -> None:
+    """Mark stripped attribute words as inapplicable on parsed items.
+
+    When ATTR_STRIP_RETRY strips leading words like "small" before matching
+    "3 bagel package", this annotates the parsed items so the user gets feedback
+    like "Heads up, this item doesn't have size options."
+
+    Args:
+        result: The successful parse result to annotate.
+        stripped_words: Words that were stripped (e.g., ["small"]).
+        matched_text: The text that actually matched after stripping.
+    """
+    if not result.parsed_items or not stripped_words:
+        return
+
+    all_option_words = menu_cache.get_all_attribute_option_words()
+
+    for item in result.parsed_items:
+        item_type = item.item_type
+        if not item_type or item_type == "menu_item":
+            continue
+
+        item_attrs = menu_cache.get_item_type_attributes(item_type)
+        item_attr_slugs = set(item_attrs.keys()) if item_attrs else set()
+
+        for word in stripped_words:
+            if word in all_option_words:
+                attr_slug = all_option_words[word]
+                # Skip synthetic variant slugs (e.g., "_variant_espresso_based_beverage")
+                # — they have no real display name and produce garbled readback messages
+                if attr_slug.startswith("_variant_"):
+                    continue
+                if attr_slug not in item_attr_slugs:
+                    if not item.inapplicable_attributes:
+                        item.inapplicable_attributes = []
+                    # Avoid duplicate entries
+                    existing = {ia.get("word") for ia in item.inapplicable_attributes}
+                    if word not in existing:
+                        item.inapplicable_attributes.append({
+                            "word": word,
+                            "attribute_slug": attr_slug,
+                        })
 
 
 def _check_standalone_ingredient(text: str) -> OpenInputResponse | None:

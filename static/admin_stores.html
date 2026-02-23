@@ -68,6 +68,14 @@
       background: #ffebee;
       color: #c62828;
     }
+    [data-theme="dark"] .store-badge.open {
+      background: rgba(46, 125, 50, 0.2);
+      color: #66BB6A;
+    }
+    [data-theme="dark"] .store-badge.closed {
+      background: rgba(198, 40, 40, 0.2);
+      color: #EF5350;
+    }
     .store-actions {
       display: flex;
       flex-direction: column;
@@ -104,6 +112,13 @@
     .action-btn.danger:hover {
       background: #ffebee;
     }
+    [data-theme="dark"] .action-btn.danger {
+      color: #EF5350;
+      border-color: rgba(239, 83, 80, 0.3);
+    }
+    [data-theme="dark"] .action-btn.danger:hover {
+      background: rgba(198, 40, 40, 0.15);
+    }
     .status-bar {
       padding: 10px 16px;
       background: #e3f2fd;
@@ -120,6 +135,18 @@
     .status-bar.success {
       background: #e8f5e9;
       color: #2e7d32;
+    }
+    [data-theme="dark"] .status-bar {
+      background: rgba(21, 101, 192, 0.15);
+      color: #64B5F6;
+    }
+    [data-theme="dark"] .status-bar.error {
+      background: rgba(198, 40, 40, 0.15);
+      color: #EF5350;
+    }
+    [data-theme="dark"] .status-bar.success {
+      background: rgba(46, 125, 50, 0.15);
+      color: #66BB6A;
     }
     .add-btn {
       padding: 10px 20px;
@@ -173,6 +200,15 @@
     .checkbox-item.selected {
       background: #e3f2fd;
       border-color: var(--brand-primary);
+      color: #1565c0;
+    }
+    [data-theme="dark"] .checkbox-item.selected {
+      background: rgba(212, 117, 78, 0.15);
+      border-color: var(--brand-primary);
+      color: #FFFFFF;
+    }
+    [data-theme="dark"] .checkbox-item.selected label {
+      color: #FFFFFF;
     }
     .checkbox-item input[type="checkbox"] {
       width: 16px;
@@ -194,6 +230,25 @@
     .form-error.visible {
       display: block;
     }
+    [data-theme="dark"] .form-error {
+      color: #EF5350;
+    }
+    .section-header.archived {
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .section-header.archived .count {
+      background: #ffcc80;
+      color: #e65100;
+    }
+    [data-theme="dark"] .section-header.archived {
+      background: rgba(230, 81, 0, 0.15);
+      color: #FFB74D;
+    }
+    [data-theme="dark"] .section-header.archived .count {
+      background: rgba(230, 81, 0, 0.25);
+      color: #FFB74D;
+    }
     .payment-badge {
       font-size: 10px;
       padding: 2px 6px;
@@ -205,6 +260,9 @@
     .payment-badge.cash { background: #e8f5e9; color: #2e7d32; }
     .payment-badge.credit { background: #e3f2fd; color: #1565c0; }
     .payment-badge.bitcoin { background: #fff3e0; color: #e65100; }
+    [data-theme="dark"] .payment-badge.cash { background: rgba(46, 125, 50, 0.2); color: #66BB6A; }
+    [data-theme="dark"] .payment-badge.credit { background: rgba(21, 101, 192, 0.2); color: #64B5F6; }
+    [data-theme="dark"] .payment-badge.bitcoin { background: rgba(230, 81, 0, 0.2); color: #FFB74D; }
 
     /* Button state styles */
     .btn.saving {
@@ -387,9 +445,11 @@
           </div>
 
           <div class="form-group">
-            <label for="storeDeliveryZips">Delivery ZIP Codes</label>
-            <input type="text" id="storeDeliveryZips" placeholder="e.g., 10007, 10013, 10006, 10038" />
-            <div class="hint">Comma-separated list of ZIP codes where delivery is available. Leave empty to disable delivery.</div>
+            <label>Delivery ZIP Codes</label>
+            <div class="tag-input-container" id="deliveryZipsContainer" onclick="document.getElementById('deliveryZipsInput').focus()">
+              <input id="deliveryZipsInput" class="tag-input" type="text" placeholder="Type ZIP and press Enter..." />
+            </div>
+            <div class="hint">Press Enter to add each ZIP code. Leave empty to disable delivery.</div>
           </div>
 
           <div class="form-group">
@@ -448,14 +508,15 @@
   <!-- Deleted Stores Section (shown when there are deleted stores) -->
   <div class="container" id="deletedStoresContainer" style="display: none;">
     <div class="section">
-      <div class="section-header" style="background: #fff3e0; color: #e65100;">
+      <div class="section-header archived">
         <span>Archived Stores</span>
-        <span class="count" id="deletedStoreCount" style="background: #ffcc80; color: #e65100;">0</span>
+        <span class="count" id="deletedStoreCount">0</span>
       </div>
       <ul class="store-list" id="deletedStoreList"></ul>
     </div>
   </div>
 
+  <script src="/static/admin_common.js"></script>
   <script>
     // API base URL
     const API_BASE = "/api/v1/admin/stores";
@@ -560,6 +621,11 @@
     const deletedStoreList = document.getElementById("deletedStoreList");
     const deletedStoreCount = document.getElementById("deletedStoreCount");
 
+    // Delivery ZIP tag input
+    const deliveryZipsContainer = document.getElementById("deliveryZipsContainer");
+    const deliveryZipsInput = document.getElementById("deliveryZipsInput");
+    setupTagInput(deliveryZipsInput, deliveryZipsContainer);
+
     // Current state
     let stores = [];
     let editingStoreId = null;
@@ -653,7 +719,6 @@
           </div>
           <div class="store-actions">
             <button class="action-btn primary edit-btn" data-id="${store.id}">Edit</button>
-            <button class="action-btn">View Orders</button>
           </div>
         </li>
       `).join("");
@@ -666,14 +731,6 @@
         });
       });
 
-      // Add click handlers for View Orders (placeholder)
-      document.querySelectorAll(".action-btn:not(.edit-btn):not(.primary)").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const storeName = e.target.closest(".store-item").querySelector(".store-name").textContent;
-          showStatus(`View Orders for "${storeName}" - Coming soon!`, "info");
-        });
-      });
     }
 
     // Escape HTML to prevent XSS
@@ -731,6 +788,7 @@
       deleteBtn.style.display = "none";
       storeForm.reset();
       document.getElementById("storeId").value = "";
+      clearTags(deliveryZipsContainer, deliveryZipsInput);
       setPaymentMethodCheckboxes(["cash", "credit"]); // Default payment methods
       hidePaymentError();
       storeModal.classList.add("active");
@@ -772,7 +830,7 @@
       // Convert decimal tax rates to percentages for display
       document.getElementById("storeCityTax").value = store.cityTaxRate ? (store.cityTaxRate * 100).toFixed(3) : "";
       document.getElementById("storeStateTax").value = store.stateTaxRate ? (store.stateTaxRate * 100).toFixed(3) : "";
-      document.getElementById("storeDeliveryZips").value = (store.deliveryZipCodes || []).join(", ");
+      setTags(deliveryZipsContainer, deliveryZipsInput, store.deliveryZipCodes || []);
       document.getElementById("storeSquareLocationId").value = store.squareLocationId || "";
       setPaymentMethodCheckboxes(store.paymentMethods || ["cash", "credit"]);
       hidePaymentError();
@@ -808,10 +866,7 @@
       // Convert percentages to decimals for API (e.g., 4.5% -> 0.045)
       const cityTaxRate = parseFloat(document.getElementById("storeCityTax").value) / 100 || 0;
       const stateTaxRate = parseFloat(document.getElementById("storeStateTax").value) / 100 || 0;
-      const deliveryZipsRaw = document.getElementById("storeDeliveryZips").value.trim();
-      const deliveryZipCodes = deliveryZipsRaw
-        ? deliveryZipsRaw.split(",").map(z => z.trim()).filter(z => z.length > 0)
-        : [];
+      const deliveryZipCodes = getTagValues(deliveryZipsContainer);
       const paymentMethods = getSelectedPaymentMethods();
       const squareLocationId = document.getElementById("storeSquareLocationId").value.trim();
 
@@ -1040,7 +1095,7 @@
 
     // Handle form submission with Enter key
     storeForm.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") {
+      if (e.key === "Enter" && e.target.tagName !== "TEXTAREA" && !e.target.classList.contains("tag-input")) {
         e.preventDefault();
         saveStore();
       }

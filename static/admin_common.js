@@ -21,6 +21,11 @@ function escapeHtml(text) {
  * @param {HTMLInputElement} inputEl - The input element
  */
 function createTagElement(text, container, inputEl) {
+  // Check for duplicates (case-insensitive)
+  const existing = getTagValues(container);
+  if (existing.some(v => v.toLowerCase() === text.toLowerCase())) {
+    return false;
+  }
   const tag = document.createElement("span");
   tag.className = "tag-item";
   tag.innerHTML = `<span class="tag-text">${escapeHtml(text)}</span><span class="tag-remove">&times;</span>`;
@@ -76,7 +81,10 @@ function setupTagInput(inputEl, container) {
       e.preventDefault();
       const value = inputEl.value.trim();
       if (value) {
-        createTagElement(value, container, inputEl);
+        const added = createTagElement(value, container, inputEl);
+        if (added === false && typeof showToast === "function") {
+          showToast(`"${value}" already added`, "info");
+        }
         inputEl.value = "";
       }
     } else if (e.key === "Backspace" && !inputEl.value) {

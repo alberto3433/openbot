@@ -131,6 +131,28 @@ def _strip_noise_phrases(text: str) -> str:
     return text
 
 
+def _strip_one_leading_attribute_word(text: str) -> tuple[str | None, str | None]:
+    """Strip the FIRST leading attribute option word only.
+
+    Unlike _strip_leading_attribute_words which strips ALL leading attribute words
+    in a while loop, this strips exactly one word and returns immediately. Used for
+    iterative retry where each stripped word is tested individually.
+
+    Returns:
+        (stripped_text, stripped_word) if a word was removed, (None, None) otherwise.
+    """
+    attr_option_words = menu_cache.get_all_attribute_option_words()
+    text_lower = normalize_text(text)
+
+    # Try longest options first (e.g., "extra large" before "extra")
+    for option_word in sorted(attr_option_words.keys(), key=len, reverse=True):
+        if re.match(rf'^{re.escape(option_word)}\s+', text_lower):
+            stripped = text_lower[len(option_word):].strip()
+            if stripped:
+                return stripped, option_word
+    return None, None
+
+
 def _strip_leading_attribute_words(text: str) -> str | None:
     """Strip leading attribute option words from text for retry parsing.
 

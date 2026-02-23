@@ -331,6 +331,7 @@ class MessageProcessor:
         name = cust.get("name")
         phone = cust.get("phone")
         email = cust.get("email")
+        delivery_address = order_state.get("delivery_address")
 
         if not name or not (phone or email):
             return
@@ -338,6 +339,7 @@ class MessageProcessor:
         try:
             customer = find_or_create_customer(
                 self.db, name=name, phone=phone, email=email,
+                delivery_address=delivery_address,
             )
             if customer and not session.get("customer_id"):
                 session["customer_id"] = customer.id

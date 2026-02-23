@@ -124,6 +124,9 @@ def _detect_inapplicable_attributes(
         # Check if this word is a known attribute option
         if word_clean in all_option_words:
             attr_slug = all_option_words[word_clean]
+            # Skip synthetic variant slugs — they have no displayable attribute name
+            if attr_slug.startswith("_variant_"):
+                continue
             # Only flag if the item type does NOT have this attribute
             if attr_slug not in item_attr_slugs and attr_slug not in seen_attrs:
                 seen_attrs.add(attr_slug)

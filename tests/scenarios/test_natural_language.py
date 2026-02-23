@@ -8,19 +8,14 @@ Run with: pytest tests/scenarios/ -v
 """
 
 import pytest
-from orderbot.tasks.state_machine import OrderStateMachine
-from orderbot.tasks.models import OrderTask
-from orderbot.tasks.schemas import OrderPhase
 
 
 class TestPoliteVariations:
     """Different levels of politeness in ordering."""
 
-    def test_very_polite_order(self):
+    def test_very_polite_order(self, order_and_sm):
         """Very polite ordering style."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process(
             "Excuse me, could I please have an everything bagel toasted "
@@ -31,33 +26,27 @@ class TestPoliteVariations:
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_casual_order(self):
+    def test_casual_order(self, order_and_sm):
         """Very casual ordering style."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("yo lemme get an everything bagel with cream cheese", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_terse_order(self):
+    def test_terse_order(self, order_and_sm):
         """Very brief terse order."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("everything bagel toasted cream cheese", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_demanding_order(self):
+    def test_demanding_order(self, order_and_sm):
         """Demanding style order."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process(
             "I need an everything bagel toasted with scallion right now",
@@ -71,55 +60,45 @@ class TestPoliteVariations:
 class TestSlangAndAbbreviations:
     """Tests for slang and common abbreviations."""
 
-    def test_bec_abbreviation(self):
+    def test_bec_abbreviation(self, order_and_sm):
         """BEC abbreviation."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("BEC on everything", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_sec_abbreviation(self):
+    def test_sec_abbreviation(self, order_and_sm):
         """SEC (sausage egg cheese) abbreviation."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("SEC on plain", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1 or result.message is not None, "Should have item or response"
 
-    def test_schmear_slang(self):
+    def test_schmear_slang(self, order_and_sm):
         """Schmear for cream cheese."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("everything bagel with a schmear", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_works_slang(self):
+    def test_works_slang(self, order_and_sm):
         """'The works' for all toppings."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("lox bagel with the works", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_cuppa_joe(self):
+    def test_cuppa_joe(self, order_and_sm):
         """Cup of joe for coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("large cuppa joe", order)
 
@@ -130,110 +109,90 @@ class TestSlangAndAbbreviations:
 class TestIntentPhrasing:
     """Different ways to express ordering intent."""
 
-    def test_can_i_get(self):
+    def test_can_i_get(self, order_and_sm):
         """'Can I get' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("Can I get an everything bagel toasted?", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_could_i_have(self):
+    def test_could_i_have(self, order_and_sm):
         """'Could I have' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("Could I have a large latte please?", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_id_like(self):
+    def test_id_like(self, order_and_sm):
         """'I'd like' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("I'd like a sesame bagel with butter", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_ill_have(self):
+    def test_ill_have(self, order_and_sm):
         """'I'll have' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("I'll have the BEC on everything", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_give_me(self):
+    def test_give_me(self, order_and_sm):
         """'Give me' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("Give me a plain bagel with cream cheese", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_let_me_get(self):
+    def test_let_me_get(self, order_and_sm):
         """'Let me get' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("Let me get a medium hot coffee", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_hook_me_up(self):
+    def test_hook_me_up(self, order_and_sm):
         """'Hook me up' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("hook me up with a large iced latte", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_i_need(self):
+    def test_i_need(self, order_and_sm):
         """'I need' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("I need a coffee and a bagel", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_i_want(self):
+    def test_i_want(self, order_and_sm):
         """'I want' phrasing."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("I want an everything bagel", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_i_would_like_chai_tea(self):
+    def test_i_would_like_chai_tea(self, order_and_sm):
         """'I would like' phrasing adds chai tea to cart."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("I would like a chai tea", order)
 
@@ -249,11 +208,9 @@ class TestIntentPhrasing:
 class TestAffirmativeResponses:
     """Different ways to say yes."""
 
-    def test_yes_response(self):
+    def test_yes_response(self, order_and_sm):
         """Simple yes."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel", order)
         result2 = sm.process("yes", result1.order)
@@ -261,11 +218,9 @@ class TestAffirmativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_yeah_response(self):
+    def test_yeah_response(self, order_and_sm):
         """Yeah."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel", order)
         result2 = sm.process("yeah", result1.order)
@@ -273,11 +228,9 @@ class TestAffirmativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_yep_response(self):
+    def test_yep_response(self, order_and_sm):
         """Yep."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Sesame bagel", order)
         result2 = sm.process("yep", result1.order)
@@ -285,11 +238,9 @@ class TestAffirmativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_sure_response(self):
+    def test_sure_response(self, order_and_sm):
         """Sure."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel", order)
         result2 = sm.process("sure", result1.order)
@@ -297,11 +248,9 @@ class TestAffirmativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_please_response(self):
+    def test_please_response(self, order_and_sm):
         """Please as affirmative."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel", order)
         result2 = sm.process("please", result1.order)
@@ -309,11 +258,9 @@ class TestAffirmativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_absolutely_response(self):
+    def test_absolutely_response(self, order_and_sm):
         """Absolutely."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel", order)
         result2 = sm.process("absolutely", result1.order)
@@ -321,11 +268,9 @@ class TestAffirmativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_for_sure_response(self):
+    def test_for_sure_response(self, order_and_sm):
         """For sure."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Sesame bagel", order)
         result2 = sm.process("for sure", result1.order)
@@ -337,11 +282,9 @@ class TestAffirmativeResponses:
 class TestNegativeResponses:
     """Different ways to say no."""
 
-    def test_no_response(self):
+    def test_no_response(self, order_and_sm):
         """Simple no."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel", order)
         result2 = sm.process("no", result1.order)
@@ -349,11 +292,9 @@ class TestNegativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_nah_response(self):
+    def test_nah_response(self, order_and_sm):
         """Nah."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel", order)
         result2 = sm.process("nah", result1.order)
@@ -361,11 +302,9 @@ class TestNegativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_nope_response(self):
+    def test_nope_response(self, order_and_sm):
         """Nope."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Sesame bagel", order)
         result2 = sm.process("nope", result1.order)
@@ -373,11 +312,9 @@ class TestNegativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_no_thanks_response(self):
+    def test_no_thanks_response(self, order_and_sm):
         """No thanks."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel", order)
         result2 = sm.process("no thanks", result1.order)
@@ -385,11 +322,9 @@ class TestNegativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_im_good_response(self):
+    def test_im_good_response(self, order_and_sm):
         """I'm good."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel", order)
         result2 = sm.process("I'm good", result1.order)
@@ -397,11 +332,9 @@ class TestNegativeResponses:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_pass_response(self):
+    def test_pass_response(self, order_and_sm):
         """Pass."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel", order)
         result2 = sm.process("pass", result1.order)
@@ -413,77 +346,63 @@ class TestNegativeResponses:
 class TestSizeVariations:
     """Different ways to express sizes."""
 
-    def test_small_coffee(self):
+    def test_small_coffee(self, order_and_sm):
         """Small coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("small coffee", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_medium_coffee(self):
+    def test_medium_coffee(self, order_and_sm):
         """Medium coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("medium latte", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_large_coffee(self):
+    def test_large_coffee(self, order_and_sm):
         """Large coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("large cappuccino", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_tall_coffee(self):
+    def test_tall_coffee(self, order_and_sm):
         """Tall (Starbucks size) coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("tall latte", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1 or result.message is not None, "Should have item or response"
 
-    def test_grande_coffee(self):
+    def test_grande_coffee(self, order_and_sm):
         """Grande (Starbucks size) coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("grande americano", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1 or result.message is not None, "Should have item or response"
 
-    def test_venti_coffee(self):
+    def test_venti_coffee(self, order_and_sm):
         """Venti (Starbucks size) coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("venti coffee", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1 or result.message is not None, "Should have item or response"
 
-    def test_regular_size(self):
+    def test_regular_size(self, order_and_sm):
         """Regular size."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("regular coffee", order)
 
@@ -494,66 +413,54 @@ class TestSizeVariations:
 class TestTemperatureVariations:
     """Different ways to express hot/iced."""
 
-    def test_hot_explicit(self):
+    def test_hot_explicit(self, order_and_sm):
         """Explicitly hot."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("hot latte please", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_iced_explicit(self):
+    def test_iced_explicit(self, order_and_sm):
         """Explicitly iced."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("iced americano", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_cold_for_iced(self):
+    def test_cold_for_iced(self, order_and_sm):
         """Cold instead of iced."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("cold coffee", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_warm_for_hot(self):
+    def test_warm_for_hot(self, order_and_sm):
         """Warm instead of hot."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("warm latte", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_on_ice(self):
+    def test_on_ice(self, order_and_sm):
         """'On ice' for iced."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("latte on ice", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_over_ice(self):
+    def test_over_ice(self, order_and_sm):
         """'Over ice' for iced."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("coffee over ice", order)
 

@@ -74,6 +74,14 @@ from .constants import (
     WORD_TO_NUM,
 )
 
+from .patterns import (
+    PICKUP_LATER_PATTERN,
+    TIME_UPDATE_PATTERN,
+    TIME_SELECTION_PATTERN,
+    STORE_CHANGE_PATTERN,
+    ORDER_TYPE_CHANGE_PATTERN,
+)
+
 from ..normalization import normalize_for_match
 
 __all__ = [
@@ -119,4 +127,11 @@ __all__ = [
 
     # === Pattern Utilities ===
     "strip_conversational_fillers",
+
+    # === Scheduling & Order Management Patterns ===
+    "PICKUP_LATER_PATTERN",
+    "TIME_UPDATE_PATTERN",
+    "TIME_SELECTION_PATTERN",
+    "STORE_CHANGE_PATTERN",
+    "ORDER_TYPE_CHANGE_PATTERN",
 ]

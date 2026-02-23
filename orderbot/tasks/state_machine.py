@@ -38,6 +38,13 @@ from .parsers import (
     # Unified data-driven pattern for detecting new item orders
     _get_configurable_item_pattern,
     ORDERING_LANGUAGE_PATTERN,
+    # Scheduling patterns
+    PICKUP_LATER_PATTERN,
+    TIME_UPDATE_PATTERN,
+    TIME_SELECTION_PATTERN,
+    # Order management patterns
+    STORE_CHANGE_PATTERN,
+    ORDER_TYPE_CHANGE_PATTERN,
 )
 from .parsers.quantity_utils import extract_make_it_n_target
 from .parsers.time_parser import parse_time_expression
@@ -540,95 +547,112 @@ class OrderStateMachine:
     ) -> StateMachineResult | None:
         """Check global patterns that apply regardless of current phase.
 
-        Checks (order matters):
-        1. Order status inquiry
-        2. Order history inquiry
-        3. View last order
-        4. Pending state dispatch
-        5. Make-it-N quantity change (MUST precede modifier change)
-        6. Modifier change request (guard: items > 0 and not configuring)
+        Order matters — e.g. make-it-N must precede modifier change,
+        store change must precede modifier change, etc.
 
         Returns:
             StateMachineResult if a global pattern matched, None otherwise.
         """
-        # Check for order status request (works from any state)
-        if ORDER_STATUS_PATTERN.search(user_input):
-            logger.info("ORDER STATUS: User asked for order status")
-            result = self.order_utils_handler.handle_order_status(order)
+        return (
+            self._check_order_status_inquiry(user_input, order)
+            or self._check_order_history_inquiry(user_input, order)
+            or self._check_view_last_order(user_input, order)
+            or self._dispatch_pending_states(user_input, order)
+            or self._check_make_it_n_pattern(user_input, order)
+            or self._check_store_change_pattern(user_input, order)
+            or self._check_order_type_change_pattern(user_input, order)
+            or self._check_modifier_change_pattern(user_input, order)
+            or self._check_scheduling_patterns(user_input, order)
+            or self._check_customer_info_change_pattern(user_input, order)
+        )
+
+    # ── Extracted global-pattern helpers ─────────────────────────────
+
+    def _check_order_status_inquiry(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        if not ORDER_STATUS_PATTERN.search(user_input):
+            return None
+        logger.info("ORDER STATUS: User asked for order status")
+        result = self.order_utils_handler.handle_order_status(order)
+        order.add_message("assistant", result.message)
+        return result
+
+    def _check_order_history_inquiry(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        if not self.order_history_handler.is_order_history_inquiry(user_input):
+            return None
+        logger.info("ORDER HISTORY: User asked for order history")
+        result = self.order_history_handler.handle_order_history_inquiry(order)
+        if result:
             order.add_message("assistant", result.message)
-            return result
+        return result
 
-        # Check for order history inquiry (works from any state)
-        if self.order_history_handler.is_order_history_inquiry(user_input):
-            logger.info("ORDER HISTORY: User asked for order history")
-            result = self.order_history_handler.handle_order_history_inquiry(order)
-            if result:
-                order.add_message("assistant", result.message)
-                return result
+    def _check_view_last_order(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        if not self.order_history_handler.is_view_last_order(user_input):
+            return None
+        logger.info("ORDER HISTORY: User asked for last order details")
+        result = self.order_history_handler.handle_view_last_order(order)
+        if result:
+            order.add_message("assistant", result.message)
+        return result
 
-        # Check for view last order inquiry (works from any state)
-        if self.order_history_handler.is_view_last_order(user_input):
-            logger.info("ORDER HISTORY: User asked for last order details")
-            result = self.order_history_handler.handle_view_last_order(order)
-            if result:
-                order.add_message("assistant", result.message)
-                return result
+    def _check_make_it_n_pattern(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Must precede modifier change to avoid 'make that two' being parsed as a modifier."""
+        result = self._handle_make_it_n(user_input, order)
+        if result:
+            order.add_message("assistant", result.message)
+        return result
 
-        pending_result = self._dispatch_pending_states(user_input, order)
-        if pending_result:
-            return pending_result
+    def _check_store_change_pattern(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Must precede modifier change handler which would interpret 'change store' as a modifier."""
+        if not STORE_CHANGE_PATTERN.search(user_input):
+            return None
+        logger.info("STORE CHANGE: User requested store change")
+        return self._handle_store_change_request(order)
 
-        # Check for "make it 2" pattern early (works from any state with items)
-        # This must be BEFORE modifier change requests to prevent "actually make that two"
-        # from being matched as a modifier change (with "two" parsed as the modifier value)
-        make_it_n_result = self._handle_make_it_n(user_input, order)
-        if make_it_n_result:
-            order.add_message("assistant", make_it_n_result.message)
-            return make_it_n_result
+    def _check_order_type_change_pattern(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Must precede modifier change to avoid 'delivery' being treated as a modifier."""
+        if not order.delivery_method.order_type:
+            return None
+        result = self._handle_order_type_change(user_input, order)
+        if result:
+            order.add_message("assistant", result.message)
+        return result
 
-        # Check for store change request (e.g., "change store", "switch store")
-        # Must run BEFORE modifier change handler and taking_items parser,
-        # which would interpret "change store" as a modifier change or item replacement
-        if re.search(r'\b(?:change|switch|update)\s+store\b', user_input, re.IGNORECASE):
-            logger.info("STORE CHANGE: User requested store change")
-            return self._handle_store_change_request(order)
+    def _check_modifier_change_pattern(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        if order.items.get_item_count() == 0 or order.is_configuring_item():
+            return None
+        result = self.config_helper_handler.handle_modifier_change_request(user_input, order)
+        if result:
+            order.add_message("assistant", result.message)
+        return result
 
-        # Check for order type change requests (e.g., "change it to delivery")
-        # Must run before modifier change handler to prevent "delivery" being treated as a modifier
-        if order.delivery_method.order_type:
-            order_type_result = self._handle_order_type_change(user_input, order)
-            if order_type_result:
-                order.add_message("assistant", order_type_result.message)
-                return order_type_result
-
-        # Check for modifier change requests (works when not mid-configuration)
-        if order.items.get_item_count() > 0 and not order.is_configuring_item():
-            change_result = self.config_helper_handler.handle_modifier_change_request(user_input, order)
-            if change_result:
-                order.add_message("assistant", change_result.message)
-                return change_result
-
-        # Check for early scheduling intent (e.g., "can I pickup my order later?")
-        if re.search(
-            r'\b(?:pick\s*up|pickup)\b.*\blater\b'
-            r'|\blater\b.*\b(?:pick\s*up|pickup)\b'
-            r'|\bschedule\s+(?:a\s+)?(?:pick\s*up|pickup)\b',
-            user_input, re.IGNORECASE,
-        ):
+    def _check_scheduling_patterns(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        # Early scheduling intent (e.g., "can I pickup my order later?")
+        if PICKUP_LATER_PATTERN.search(user_input):
             order.delivery_method.order_type = "pickup"
             return self._handle_scheduling_change_request(order)
 
-        # Check for scheduling change request (e.g., "change pickup time")
-        if re.search(
-            r'\b(?:change|update|modify|set|edit)\s+(?:pickup|delivery|order)?\s*time\b',
-            user_input, re.IGNORECASE,
-        ):
+        # Scheduling change request (e.g., "change pickup time")
+        if TIME_UPDATE_PATTERN.search(user_input):
             return self._handle_scheduling_change_request(order)
 
-        # Check for "choose a time" response from scheduling quick replies
-        if re.search(
-            r'\bchoose\s+a?\s*(?:specific\s+)?time\b', user_input, re.IGNORECASE,
-        ):
+        # "Choose a time" response from scheduling quick replies
+        if TIME_SELECTION_PATTERN.search(user_input):
             msg = (
                 'Sure! Just tell me the time \u2014 for example, '
                 '"3pm", "tomorrow at noon", or "in 2 hours".'
@@ -637,22 +661,23 @@ class OrderStateMachine:
             order.add_message("assistant", msg)
             return StateMachineResult(message=msg, order=order)
 
-        # Check for time/scheduling expressions (e.g., "pickup at 3pm")
-        # Only when input doesn't look like an item order (to avoid consuming
-        # "everything bagel for pickup at 3pm" as just a scheduling request)
+        # Time/scheduling expressions (e.g., "pickup at 3pm") — only when
+        # input doesn't look like an item order
         if not _looks_like_new_order_attempt(user_input):
-            scheduling_result = self._handle_scheduling_expression(user_input, order)
-            if scheduling_result:
-                order.add_message("assistant", scheduling_result.message)
-                return scheduling_result
-
-        # Check for customer info change requests (e.g., "change my name")
-        customer_change_result = self._handle_customer_info_change(user_input, order)
-        if customer_change_result:
-            order.add_message("assistant", customer_change_result.message)
-            return customer_change_result
+            result = self._handle_scheduling_expression(user_input, order)
+            if result:
+                order.add_message("assistant", result.message)
+                return result
 
         return None
+
+    def _check_customer_info_change_pattern(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        result = self._handle_customer_info_change(user_input, order)
+        if result:
+            order.add_message("assistant", result.message)
+        return result
 
     def _handle_order_type_change(
         self, user_input: str, order: OrderTask,
@@ -666,11 +691,7 @@ class OrderStateMachine:
         Returns:
             StateMachineResult if an order type change was handled, None otherwise.
         """
-        match = re.search(
-            r'(?:change|switch|make)\s+(?:it|that|the\s+order)?\s*(?:to|for)\s+'
-            r'(delivery|deliver(?:ed)?|pickup|pick\s*up)',
-            user_input, re.IGNORECASE,
-        )
+        match = ORDER_TYPE_CHANGE_PATTERN.search(user_input)
         if not match:
             return None
 

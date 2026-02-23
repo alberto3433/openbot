@@ -11,6 +11,8 @@ Submodules:
 - filler: Filler word detection and stripping utilities
 - config_flow: Configuration request patterns, done-ordering, configurable item detection
 - status: Tax question and order status inquiry patterns
+- scheduling: Pickup-later, time change, time selection patterns
+- order_management: Store change, order type change patterns
 """
 
 # Item action patterns
@@ -61,6 +63,19 @@ from .status import (
     ORDER_STATUS_PATTERN,
 )
 
+# Scheduling patterns
+from .scheduling import (
+    PICKUP_LATER_PATTERN,
+    TIME_UPDATE_PATTERN,
+    TIME_SELECTION_PATTERN,
+)
+
+# Order management patterns
+from .order_management import (
+    STORE_CHANGE_PATTERN,
+    ORDER_TYPE_CHANGE_PATTERN,
+)
+
 __all__ = [
     # Item actions
     "REPLACE_ITEM_PATTERN",
@@ -95,4 +110,11 @@ __all__ = [
     # Status
     "TAX_QUESTION_PATTERN",
     "ORDER_STATUS_PATTERN",
+    # Scheduling
+    "PICKUP_LATER_PATTERN",
+    "TIME_UPDATE_PATTERN",
+    "TIME_SELECTION_PATTERN",
+    # Order management
+    "STORE_CHANGE_PATTERN",
+    "ORDER_TYPE_CHANGE_PATTERN",
 ]

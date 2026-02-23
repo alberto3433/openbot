@@ -10,65 +10,25 @@ Endpoints:
 ----------
 - GET /admin/stores: List all stores
 - POST /admin/stores: Create a new store
-- GET /admin/stores/{id}: Get store details
-- PUT /admin/stores/{id}: Update a store
-- DELETE /admin/stores/{id}: Soft-delete a store
-- POST /admin/stores/{id}/restore: Restore a deleted store
+- GET /admin/stores/{store_id}: Get store details
+- PUT /admin/stores/{store_id}: Update a store
+- DELETE /admin/stores/{store_id}: Soft-delete a store
+- POST /admin/stores/{store_id}/restore: Restore a deleted store
 
 Authentication:
 ---------------
 All endpoints require admin authentication via HTTP Basic Auth.
 
-Multi-Tenant Architecture:
---------------------------
-Each store location can have:
-- Unique address, phone, and operating hours
-- Different tax rates (city and state)
-- Custom delivery zones (by zip code)
-- Independent 86 status for ingredients/items
-- Separate order and analytics tracking
-
-Store Status:
--------------
-- "open": Operating normally
-- "closed": Temporarily closed
-- Soft-deleted stores have deleted_at timestamp set
-
 Soft Delete:
 ------------
 Stores are soft-deleted (deleted_at set) rather than removed from the
 database. This preserves order history and allows restoration.
-
-Tax Configuration:
-------------------
-Each store has city_tax_rate and state_tax_rate as decimals.
-Example: 0.045 = 4.5% tax rate
-
-Delivery Zones:
----------------
-delivery_zip_codes is a list of zip codes the store delivers to.
-Used to validate delivery addresses during checkout.
-
-Usage:
-------
-    # Create a new store
-    POST /admin/stores
-    {
-        "name": "Downtown Location",
-        "address": "123 Main St",
-        "city": "New York",
-        "state": "NY",
-        "zip_code": "10001",
-        "phone": "212-555-0100",
-        "city_tax_rate": 0.045,
-        "state_tax_rate": 0.04
-    }
 """
 
 import logging
 import uuid
-from ..utils.datetime_helpers import utc_now
-from fastapi import APIRouter, Depends
+
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
@@ -76,93 +36,66 @@ from ..db import get_db
 from ..db.models import Store
 from ..schemas.stores import StoreOut, StoreCreate, StoreUpdate
 from ..services.store_service import invalidate_store_cache
+from ..utils.datetime_helpers import utc_now
+from .crud_factory import CRUDRouterFactory
 from .crud_helpers import apply_payload_updates, get_or_404
 
 
 logger = logging.getLogger(__name__)
 
-# Router definition
-admin_stores_router = APIRouter(prefix="/admin/stores", tags=["Admin - Stores"])
-
 
 # =============================================================================
-# Store Endpoints
+# Factory hooks
 # =============================================================================
 
-@admin_stores_router.get("", response_model=list[StoreOut])
-def list_stores(
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> list[StoreOut]:
-    """List all stores including soft-deleted ones."""
-    stores = db.query(Store).order_by(Store.name).all()
-    return [StoreOut.model_validate(s) for s in stores]
+def _before_create(payload: StoreCreate, db: Session) -> dict:
+    """Generate a unique store_id and build model kwargs from the payload."""
+    kwargs = payload.model_dump()
+    kwargs["store_id"] = f"store_{uuid.uuid4().hex[:8]}"
+    return kwargs
 
 
-@admin_stores_router.post("", response_model=StoreOut, status_code=201)
-def create_store(
-    payload: StoreCreate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> StoreOut:
-    """Create a new store location."""
-    # Generate unique store_id
-    store_id = f"store_{uuid.uuid4().hex[:8]}"
-
-    store = Store(
-        store_id=store_id,
-        name=payload.name,
-        address=payload.address,
-        city=payload.city,
-        state=payload.state,
-        zip_code=payload.zip_code,
-        phone=payload.phone,
-        hours=payload.hours,
-        timezone=payload.timezone,
-        status=payload.status,
-        payment_methods=payload.payment_methods,
-        city_tax_rate=payload.city_tax_rate,
-        state_tax_rate=payload.state_tax_rate,
-        delivery_zip_codes=payload.delivery_zip_codes,
-        delivery_fee=payload.delivery_fee,
-    )
-    db.add(store)
-    db.commit()
-    db.refresh(store)
-    invalidate_store_cache(store_id)
-    logger.info("Created store: %s (id=%s)", store.name, store.store_id)
-    return StoreOut.model_validate(store)
+def _after_create(store: Store, db: Session) -> None:
+    invalidate_store_cache(store.store_id)
 
 
-@admin_stores_router.get("/{store_id}", response_model=StoreOut)
-def get_store(
-    store_id: str,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> StoreOut:
-    """Get a specific store by ID."""
-    store = get_or_404(db, Store, store_id, id_column="store_id")
-    return StoreOut.model_validate(store)
+def _after_update(store: Store, db: Session) -> None:
+    invalidate_store_cache(store.store_id)
 
 
-@admin_stores_router.put("/{store_id}", response_model=StoreOut)
-def update_store(
-    store_id: str,
-    payload: StoreUpdate,
-    db: Session = Depends(get_db),
-    _admin: str = Depends(verify_admin_credentials),
-) -> StoreOut:
-    """Update a store's information."""
-    store = get_or_404(db, Store, store_id, id_column="store_id")
-
+def _before_update(store: Store, payload: StoreUpdate, db: Session) -> None:
     apply_payload_updates(store, payload, db)
 
-    db.commit()
-    db.refresh(store)
-    invalidate_store_cache(store_id)
-    logger.info("Updated store: %s (id=%s)", store.name, store.store_id)
-    return StoreOut.model_validate(store)
 
+# =============================================================================
+# CRUD factory (handles list, create, get, update)
+# =============================================================================
+
+_crud = CRUDRouterFactory(
+    model=Store,
+    create_schema=StoreCreate,
+    update_schema=StoreUpdate,
+    response_schema=StoreOut,
+    prefix="/admin/stores",
+    tags=["Admin - Stores"],
+    id_param="store_id",
+    id_column="store_id",
+    id_type=str,
+    not_found_message="Store not found",
+    order_by=["name"],
+    on_before_create=_before_create,
+    on_after_create=_after_create,
+    on_before_update=_before_update,
+    on_after_update=_after_update,
+    skip_delete=True,  # Stores use soft-delete below
+)
+
+admin_stores_router = _crud.router
+
+
+# =============================================================================
+# Manual endpoints: soft-delete + restore
+# =============================================================================
 
 @admin_stores_router.delete("/{store_id}", status_code=204)
 def delete_store(
@@ -172,13 +105,11 @@ def delete_store(
 ) -> None:
     """Soft-delete a store (sets deleted_at timestamp)."""
     store = get_or_404(db, Store, store_id, id_column="store_id")
-
     store.deleted_at = utc_now()
     store.status = "deleted"
     db.commit()
     invalidate_store_cache(store_id)
     logger.info("Soft-deleted store: %s (id=%s)", store.name, store.store_id)
-    return None
 
 
 @admin_stores_router.post("/{store_id}/restore", response_model=StoreOut)
@@ -189,7 +120,6 @@ def restore_store(
 ) -> StoreOut:
     """Restore a soft-deleted store."""
     store = get_or_404(db, Store, store_id, id_column="store_id")
-
     store.deleted_at = None
     store.status = "open"
     db.commit()

@@ -8,19 +8,14 @@ Run with: pytest tests/scenarios/ -v
 """
 
 import pytest
-from orderbot.tasks.state_machine import OrderStateMachine
-from orderbot.tasks.models import OrderTask
-from orderbot.tasks.schemas import OrderPhase
 
 
 class TestAddModifiers:
     """Tests for adding modifiers to items."""
 
-    def test_add_bacon_to_existing_bagel(self):
+    def test_add_bacon_to_existing_bagel(self, order_and_sm):
         """Add bacon to bagel mid-order."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel with cream cheese", order)
         result2 = sm.process("add bacon to that", result1.order)
@@ -28,11 +23,9 @@ class TestAddModifiers:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_add_extra_cheese(self):
+    def test_add_extra_cheese(self, order_and_sm):
         """Add extra cheese to sandwich."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("BEC on everything", order)
         result2 = sm.process("make it extra cheese", result1.order)
@@ -40,11 +33,9 @@ class TestAddModifiers:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_add_shot_to_coffee(self):
+    def test_add_shot_to_coffee(self, order_and_sm):
         """Add espresso shot to coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Large iced latte", order)
         result2 = sm.process("add an extra shot", result1.order)
@@ -52,11 +43,9 @@ class TestAddModifiers:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_add_syrup_after_ordering(self):
+    def test_add_syrup_after_ordering(self, order_and_sm):
         """Add syrup to coffee after initial order."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Medium hot latte", order)
         result2 = sm.process("can you add vanilla syrup", result1.order)
@@ -64,11 +53,9 @@ class TestAddModifiers:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_add_avocado(self):
+    def test_add_avocado(self, order_and_sm):
         """Add avocado to sandwich."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Turkey sandwich", order)
         result2 = sm.process("add avocado please", result1.order)
@@ -76,11 +63,9 @@ class TestAddModifiers:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_add_multiple_modifiers_at_once(self):
+    def test_add_multiple_modifiers_at_once(self, order_and_sm):
         """Add multiple modifiers in one request."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel toasted", order)
         result2 = sm.process("add cream cheese, lox, and capers", result1.order)
@@ -92,66 +77,54 @@ class TestAddModifiers:
 class TestRemoveModifiers:
     """Tests for removing modifiers from items."""
 
-    def test_remove_cheese_from_bec(self):
+    def test_remove_cheese_from_bec(self, order_and_sm):
         """Remove cheese from BEC."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("BEC on everything, no cheese", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_remove_onion_from_lox(self):
+    def test_remove_onion_from_lox(self, order_and_sm):
         """Remove onion from lox bagel."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("Lox on everything bagel, hold the onion", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_remove_ice_from_coffee(self):
+    def test_remove_ice_from_coffee(self, order_and_sm):
         """Remove ice from iced coffee."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("Large iced coffee, easy on the ice", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_hold_the_mayo(self):
+    def test_hold_the_mayo(self, order_and_sm):
         """Hold the mayo on sandwich."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("Turkey club, hold the mayo", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_without_tomato(self):
+    def test_without_tomato(self, order_and_sm):
         """Without tomato on sandwich."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("BLT without tomato", order)
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_no_butter(self):
+    def test_no_butter(self, order_and_sm):
         """Explicit no butter request."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process("Plain bagel toasted, no butter", order)
 
@@ -162,11 +135,9 @@ class TestRemoveModifiers:
 class TestChangeRequests:
     """Tests for changing attributes mid-order."""
 
-    def test_change_bagel_type(self):
+    def test_change_bagel_type(self, order_and_sm):
         """Change bagel type after ordering."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Sesame bagel with cream cheese", order)
         result2 = sm.process("actually make that everything", result1.order)
@@ -174,11 +145,9 @@ class TestChangeRequests:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_change_size(self):
+    def test_change_size(self, order_and_sm):
         """Change coffee size."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Medium latte", order)
         result2 = sm.process("make it a large instead", result1.order)
@@ -186,11 +155,9 @@ class TestChangeRequests:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_change_hot_to_iced(self):
+    def test_change_hot_to_iced(self, order_and_sm):
         """Change hot to iced."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Large latte", order)
         result2 = sm.process("wait, make that iced", result1.order)
@@ -198,11 +165,9 @@ class TestChangeRequests:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_change_milk_type(self):
+    def test_change_milk_type(self, order_and_sm):
         """Change milk type."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Large latte with whole milk", order)
         result2 = sm.process("actually oat milk please", result1.order)
@@ -210,11 +175,9 @@ class TestChangeRequests:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_change_toasted_status(self):
+    def test_change_toasted_status(self, order_and_sm):
         """Change toasted to not toasted."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel toasted", order)
         result2 = sm.process("don't toast it actually", result1.order)
@@ -222,11 +185,9 @@ class TestChangeRequests:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_change_spread_type(self):
+    def test_change_spread_type(self, order_and_sm):
         """Change spread type."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel with plain cream cheese", order)
         result2 = sm.process("switch that to scallion cream cheese", result1.order)
@@ -238,11 +199,9 @@ class TestChangeRequests:
 class TestCancelRequests:
     """Tests for canceling items or parts of orders."""
 
-    def test_cancel_last_item(self):
+    def test_cancel_last_item(self, order_and_sm):
         """Cancel the last item ordered."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel with cream cheese", order)
         result2 = sm.process("Large iced latte", result1.order)
@@ -252,11 +211,9 @@ class TestCancelRequests:
         # Should still have bagel but not latte
         assert result3.message is not None, "Should have a response"
 
-    def test_cancel_that(self):
+    def test_cancel_that(self, order_and_sm):
         """Cancel using 'cancel that'."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Sesame bagel", order)
         result2 = sm.process("cancel that", result1.order)
@@ -264,33 +221,27 @@ class TestCancelRequests:
         # Should acknowledge cancellation
         assert result2.message is not None, "Should have a response"
 
-    def test_nevermind(self):
+    def test_nevermind(self, order_and_sm):
         """Cancel using 'nevermind'."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("BEC on everything", order)
         result2 = sm.process("nevermind on that", result1.order)
 
         assert result2.message is not None, "Should have a response"
 
-    def test_remove_specific_item(self):
+    def test_remove_specific_item(self, order_and_sm):
         """Remove a specific item from multi-item order."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel and a coffee", order)
         result2 = sm.process("remove the bagel", result1.order)
 
         assert result2.message is not None, "Should have a response"
 
-    def test_start_over(self):
+    def test_start_over(self, order_and_sm):
         """Start the order over."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel with lox", order)
         result2 = sm.process("Large coffee", result1.order)
@@ -302,11 +253,9 @@ class TestCancelRequests:
 class TestSubstitutions:
     """Tests for ingredient substitutions."""
 
-    def test_substitute_bread(self):
+    def test_substitute_bread(self, order_and_sm):
         """Substitute bread type."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process(
             "BEC, but can you do it on a plain bagel instead of everything",
@@ -316,11 +265,9 @@ class TestSubstitutions:
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_substitute_cheese(self):
+    def test_substitute_cheese(self, order_and_sm):
         """Substitute cheese type."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process(
             "BEC with swiss instead of american",
@@ -330,11 +277,9 @@ class TestSubstitutions:
         items = result.order.items.get_active_items()
         assert len(items) >= 1 or result.message is not None, "Should have item or response"
 
-    def test_substitute_milk(self):
+    def test_substitute_milk(self, order_and_sm):
         """Substitute milk type."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process(
             "Latte with almond milk instead of regular",
@@ -344,11 +289,9 @@ class TestSubstitutions:
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_egg_white_substitution(self):
+    def test_egg_white_substitution(self, order_and_sm):
         """Substitute with egg whites."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result = sm.process(
             "BEC with egg whites instead of regular eggs",
@@ -362,11 +305,9 @@ class TestSubstitutions:
 class TestComplexModifications:
     """Complex modification scenarios."""
 
-    def test_multiple_changes_one_request(self):
+    def test_multiple_changes_one_request(self, order_and_sm):
         """Multiple changes in one request."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Sesame bagel with plain cream cheese", order)
         result2 = sm.process(
@@ -377,11 +318,9 @@ class TestComplexModifications:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_add_and_remove_same_request(self):
+    def test_add_and_remove_same_request(self, order_and_sm):
         """Add and remove in same request."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("BEC on everything", order)
         result2 = sm.process("add avocado but remove the cheese", result1.order)
@@ -389,11 +328,9 @@ class TestComplexModifications:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_change_mind_twice(self):
+    def test_change_mind_twice(self, order_and_sm):
         """Change mind multiple times."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Sesame bagel", order)
         result2 = sm.process("make it everything", result1.order)
@@ -402,11 +339,9 @@ class TestComplexModifications:
         items = result3.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_modify_during_config(self):
+    def test_modify_during_config(self, order_and_sm):
         """Modify item while being asked config questions."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Plain bagel", order)
         # During config, add modifier and answer
@@ -415,11 +350,9 @@ class TestComplexModifications:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
 
-    def test_modify_earlier_item(self):
+    def test_modify_earlier_item(self, order_and_sm):
         """Modify an earlier item after ordering new one."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel with cream cheese", order)
         result2 = sm.process("and a large coffee", result1.order)
@@ -432,11 +365,9 @@ class TestComplexModifications:
 class TestQuantityModifications:
     """Modifications to quantities."""
 
-    def test_change_quantity_up(self):
+    def test_change_quantity_up(self, order_and_sm):
         """Increase quantity."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Two everything bagels", order)
         result2 = sm.process("make that three actually", result1.order)
@@ -444,11 +375,9 @@ class TestQuantityModifications:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have items"
 
-    def test_change_quantity_down(self):
+    def test_change_quantity_down(self, order_and_sm):
         """Decrease quantity."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Four coffees", order)
         result2 = sm.process("only need two now", result1.order)
@@ -456,11 +385,9 @@ class TestQuantityModifications:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have items"
 
-    def test_add_one_more(self):
+    def test_add_one_more(self, order_and_sm):
         """Add one more of same item."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("Everything bagel with cream cheese", order)
         result2 = sm.process("add one more of those", result1.order)
@@ -468,11 +395,9 @@ class TestQuantityModifications:
         items = result2.order.items.get_active_items()
         assert len(items) >= 1, "Should have items"
 
-    def test_double_it(self):
+    def test_double_it(self, order_and_sm):
         """Double the quantity."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         result1 = sm.process("2 BECs", order)
         result2 = sm.process("double that", result1.order)
@@ -489,16 +414,14 @@ class TestAddEggDuringConfig:
     if the ingredient maps to an attribute with options.
     """
 
-    def test_add_egg_to_bagel_with_existing_egg_asks_style(self):
+    def test_add_egg_to_bagel_with_existing_egg_asks_style(self, order_and_sm):
         """Add egg to bagel that already has scrambled eggs asks for egg style.
 
         When a bagel already has 'scrambled eggs' and user says 'add an egg',
         the system should ask which egg style (scrambled, fried, etc.) instead
         of rejecting with 'Egg isn't available for the Bagel'.
         """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         # Order bagel with scrambled eggs
         result1 = sm.process("bagel toasted with scrambled eggs", order)
@@ -518,11 +441,9 @@ class TestAddEggDuringConfig:
         assert has_egg_style, \
             f"Expected system to ask about egg style, got: {result2.message}"
 
-    def test_add_egg_to_plain_bagel_asks_style(self):
+    def test_add_egg_to_plain_bagel_asks_style(self, order_and_sm):
         """Add egg to plain bagel (no existing egg) asks for egg style."""
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         # Order plain bagel (no egg yet)
         result1 = sm.process("plain bagel toasted", order)
@@ -537,15 +458,13 @@ class TestAddEggDuringConfig:
         # Should ask about egg style or acknowledge adding
         assert result2.message is not None, "Should have a response"
 
-    def test_add_2_eggs_to_existing_egg_gives_3_total(self):
+    def test_add_2_eggs_to_existing_egg_gives_3_total(self, order_and_sm):
         """Add 2 eggs to bagel with 1 egg should result in 3 eggs total.
 
         When a bagel has 1 scrambled egg and user says 'add 2 eggs', the
         system should end up with 3 eggs total, not replace with 2.
         """
-        order = OrderTask()
-        order.phase = OrderPhase.TAKING_ITEMS.value
-        sm = OrderStateMachine()
+        order, sm = order_and_sm
 
         # Order bagel with scrambled eggs (1 egg)
         result1 = sm.process("plain bagel toasted with scrambled eggs", order)

@@ -72,8 +72,8 @@ def reorder_routes_static_first(router: APIRouter) -> None:
     router.routes[:] = static + param
 
 
-def _set_id_param_signature(handler: Callable, id_param_name: str) -> None:
-    """Replace **path_params with an explicit int path parameter in a handler's signature.
+def _set_id_param_signature(handler: Callable, id_param_name: str, id_type: type = int) -> None:
+    """Replace **path_params with an explicit path parameter in a handler's signature.
 
     FastAPI needs explicit parameters in the signature to generate the correct
     OpenAPI spec and path parameter extraction. This rewrites the handler's
@@ -82,13 +82,14 @@ def _set_id_param_signature(handler: Callable, id_param_name: str) -> None:
     Args:
         handler: The async handler function to modify (mutated in place).
         id_param_name: Name of the path parameter (e.g., "item_type_id").
+        id_type: Python type for the path parameter (default: int).
     """
     sig = inspect.signature(handler)
     params = [p for p in sig.parameters.values() if p.kind != inspect.Parameter.VAR_KEYWORD]
     id_param = inspect.Parameter(
         id_param_name,
         inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        annotation=int,
+        annotation=id_type,
     )
     params.insert(0, id_param)
     handler.__signature__ = sig.replace(parameters=params)
@@ -133,6 +134,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         prefix: str,
         tags: list[str],
         id_param: str = "id",
+        id_column: str = "id",
+        id_type: type = int,
         not_found_message: str = "Resource not found",
         unique_fields: list[str] | None = None,
         order_by: list[str] | None = None,
@@ -148,6 +151,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         list_response_builder: Callable[[list[ResponseSchemaType], int], ListResponseType] | None = None,
         normalize_fields: dict[str, str] | None = None,
         skip_list: bool = False,
+        skip_delete: bool = False,
     ):
         """
         Initialize the CRUD router factory.
@@ -160,6 +164,11 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             prefix: URL prefix for all routes (e.g., "/admin/categories")
             tags: OpenAPI tags for route grouping
             id_param: Name of the ID path parameter (default: "id")
+            id_column: Name of the model column to filter on (default: "id").
+                       Use when the lookup column differs from the primary key
+                       (e.g., "store_id" for string-based identifiers).
+            id_type: Python type for the ID path parameter (default: int).
+                     Use str for string-based identifiers.
             not_found_message: Error message when item not found
             unique_fields: List of field names that must be unique
             order_by: List of field names to order results by
@@ -182,12 +191,16 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             skip_list: If True, don't register the list endpoint. Useful when
                        the list endpoint needs custom logic (filters, computed fields)
                        and is defined separately on the parent router.
+            skip_delete: If True, don't register the delete endpoint. Useful when
+                         deletion requires custom logic (e.g., soft-delete).
         """
         self.model = model
         self.create_schema = create_schema
         self.update_schema = update_schema
         self.response_schema = response_schema
         self.id_param = id_param
+        self.id_column = id_column
+        self.id_type = id_type
         self.not_found_message = not_found_message
         self.unique_fields = unique_fields or []
         self.order_by = order_by or []
@@ -201,6 +214,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         self.list_response_schema = list_response_schema
         self.list_response_builder = list_response_builder
         self._skip_list = skip_list
+        self._skip_delete = skip_delete
 
         # Auto-generate normalization callbacks when normalize_fields is provided
         if normalize_fields:
@@ -265,7 +279,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
                 getattr(self.model, field) == value
             )
             if exclude_id is not None:
-                query = query.filter(self.model.id != exclude_id)
+                id_col = getattr(self.model, self.id_column)
+                query = query.filter(id_col != exclude_id)
 
             existing = query.first()
             if existing:
@@ -284,7 +299,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         self._register_create()
         self._register_get()
         self._register_update()
-        self._register_delete()
+        if not self._skip_delete:
+            self._register_delete()
 
     def _register_list(self) -> None:
         """Register the list endpoint."""
@@ -346,9 +362,10 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
                 self.on_after_create(item, db)
 
             self.logger.info(
-                "Created %s: id=%d",
+                "Created %s: %s=%s",
                 self._get_model_name().lower(),
-                item.id
+                self.id_column,
+                getattr(item, self.id_column),
             )
 
             return self._model_to_response(item, db)
@@ -389,6 +406,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         not_found_message = self.not_found_message
         to_response = self._model_to_response
         id_param_name = self.id_param  # Capture in closure
+        id_column_name = self.id_column
+        id_type = self.id_type
 
         async def get_item(
             db: Session = Depends(get_db),
@@ -396,10 +415,10 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             **path_params,
         ):
             item_id = path_params.get(id_param_name)
-            item = get_or_404(db, model, item_id, detail=not_found_message)
+            item = get_or_404(db, model, item_id, id_column=id_column_name, detail=not_found_message)
             return to_response(item, db)
 
-        _set_id_param_signature(get_item, id_param_name)
+        _set_id_param_signature(get_item, id_param_name, id_type)
         return get_item
 
     def _register_update(self) -> None:
@@ -426,6 +445,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         logger = self.logger
         model_name = self._get_model_name()
         id_param_name = self.id_param  # Capture in closure
+        id_column_name = self.id_column
+        id_type = self.id_type
 
         async def update_item(
             payload: update_schema,
@@ -434,7 +455,7 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             **path_params,
         ):
             item_id = path_params.get(id_param_name)
-            item = get_or_404(db, model, item_id, detail=not_found_message)
+            item = get_or_404(db, model, item_id, id_column=id_column_name, detail=not_found_message)
 
             # Check uniqueness for fields being updated
             for field in unique_fields:
@@ -471,14 +492,15 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
                 on_after_update(item, db)
 
             logger.info(
-                "Updated %s: id=%d",
+                "Updated %s: %s=%s",
                 model_name.lower(),
-                item.id
+                id_column_name,
+                getattr(item, id_column_name),
             )
 
             return to_response(item, db)
 
-        _set_id_param_signature(update_item, id_param_name)
+        _set_id_param_signature(update_item, id_param_name, id_type)
         return update_item
 
     def _register_delete(self) -> None:
@@ -500,6 +522,8 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
         logger = self.logger
         model_name = self._get_model_name()
         id_param_name = self.id_param  # Capture in closure
+        id_column_name = self.id_column
+        id_type = self.id_type
 
         async def delete_item(
             db: Session = Depends(get_db),
@@ -507,20 +531,21 @@ class CRUDRouterFactory(Generic[ModelType, CreateSchemaType, UpdateSchemaType, R
             **path_params,
         ):
             item_id = path_params.get(id_param_name)
-            item = get_or_404(db, model, item_id, detail=not_found_message)
+            item = get_or_404(db, model, item_id, id_column=id_column_name, detail=not_found_message)
 
             if on_before_delete:
                 on_before_delete(item, db)
 
             logger.info(
-                "Deleting %s: id=%d",
+                "Deleting %s: %s=%s",
                 model_name.lower(),
-                item.id
+                id_column_name,
+                getattr(item, id_column_name),
             )
 
             db.delete(item)
             db.commit()
             return None
 
-        _set_id_param_signature(delete_item, id_param_name)
+        _set_id_param_signature(delete_item, id_param_name, id_type)
         return delete_item

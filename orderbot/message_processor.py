@@ -343,16 +343,6 @@ class MessageProcessor:
                 session["customer_id"] = customer.id
                 order_state["customer_id"] = customer.id
                 logger.info("Synced customer #%d early (before confirmation)", customer.id)
-
-            # Sync preferred store if the session has one and the record differs
-            store_id = session.get("store_id")
-            if customer and store_id and customer.preferred_store_id != store_id:
-                customer.preferred_store_id = store_id
-                self.db.flush()
-                logger.info(
-                    "Synced preferred_store_id=%s for customer #%d",
-                    store_id, customer.id,
-                )
         except SQLAlchemyError:
             logger.exception("Failed to sync customer record early")
 

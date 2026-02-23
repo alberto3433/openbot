@@ -206,12 +206,15 @@ def chat_start(
         returning_customer = lookup_customer_by_phone(db, caller_id)
         logger.info("Caller ID lookup: %s -> %s", caller_id, "found" if returning_customer else "new customer")
 
-    # Use customer's preferred store when no explicit store_id provided
-    if not store_id and returning_customer:
+    # Returning customer's preferred store overrides the frontend default.
+    # The frontend always sends a store_id (from localStorage or default),
+    # but the customer deliberately chose their preferred store last time.
+    if returning_customer:
         preferred = returning_customer.get("preferred_store_id")
         if preferred:
+            if preferred != store_id:
+                logger.info("Overriding frontend store %s with preferred store %s", store_id, preferred)
             store_id = preferred
-            logger.info("Using preferred store %s for returning customer", store_id)
 
     store_info = build_store_info(db, store_id, company_name=company.name)
     store_name = store_info.get("name") or company.name

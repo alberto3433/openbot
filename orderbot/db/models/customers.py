@@ -31,6 +31,7 @@ class Customer(Base):
 
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     preferred_store_id = Column(String, nullable=True)
+    preferred_voice = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(

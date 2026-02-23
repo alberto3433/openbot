@@ -60,12 +60,13 @@ import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..config import get_rate_limit_chat, get_random_store_id
 from ..db import get_db
-from ..db.models import SessionAnalytics
+from ..db.models import Customer, SessionAnalytics
 from ..schemas.enums import OrderStatus
 from ..services.session import get_or_create_session, save_session
 from ..services.customer_service import lookup_customer_by_id, lookup_customer_by_phone
@@ -239,6 +240,8 @@ def chat_start(
     from ..services.tts_cache import prefetch_tts
     audio_id = prefetch_tts(welcome)
 
+    preferred_voice = returning_customer.get("preferred_voice") if returning_customer else None
+
     return ChatStartResponse(
         session_id=session_id,
         message=welcome,
@@ -246,6 +249,7 @@ def chat_start(
         quick_replies=greeting_qr,
         audio_id=audio_id,
         customer_id=resolved_customer_id,
+        preferred_voice=preferred_voice,
     )
 
 
@@ -518,3 +522,29 @@ def report_session(
         logger.error("Report endpoint failed for session %s: %s",
                      payload.session_id[:8], str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to send report")
+
+
+class VoicePreferenceRequest(BaseModel):
+    """Request body for saving a customer's preferred TTS voice."""
+    session_id: str
+    voice: str
+
+
+@chat_router.post("/voice-preference", status_code=204)
+def save_voice_preference(
+    payload: VoicePreferenceRequest,
+    db: Session = Depends(get_db),
+) -> None:
+    """Save the customer's preferred TTS voice to their profile."""
+    session = get_or_create_session(db, payload.session_id)
+    if session is None:
+        return None
+
+    customer_id = session.get("customer_id")
+    if not customer_id:
+        return None
+
+    customer = db.get(Customer, customer_id)
+    if customer:
+        customer.preferred_voice = payload.voice
+        db.commit()

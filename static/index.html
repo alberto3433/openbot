@@ -304,70 +304,7 @@
       margin: 0;
     }
 
-    /* Caller ID Panel */
-    .caller-id-panel {
-      padding: 12px 20px;
-      background: var(--warning-bg);
-      border-bottom: 1px solid var(--border-light);
-      font-size: 13px;
-    }
 
-    .caller-id-panel summary {
-      cursor: pointer;
-      color: var(--warning-text);
-      font-weight: 600;
-      user-select: none;
-    }
-
-    .caller-id-panel summary:hover {
-      text-decoration: underline;
-    }
-
-    .caller-id-content {
-      margin-top: 10px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .caller-id-content input,
-    .caller-id-content select {
-      flex: 1;
-      padding: 8px 12px;
-      border: 1px solid var(--input-border);
-      border-radius: 8px;
-      font-size: 13px;
-      background: var(--bg-input);
-      color: var(--text-primary);
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .caller-id-content input:focus,
-    .caller-id-content select:focus {
-      outline: none;
-      border-color: var(--input-focus-border);
-      box-shadow: var(--input-focus-shadow);
-    }
-
-    .caller-id-content button {
-      padding: 8px 16px;
-      background: var(--brand-accent);
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-inverse);
-      transition: background-color 0.2s ease, transform 0.1s ease;
-    }
-
-    .caller-id-content button:hover {
-      background: #E09520;
-    }
-
-    .caller-id-content button:active {
-      transform: scale(0.98);
-    }
 
     .returning-customer-badge {
       background: var(--success-bg);
@@ -1560,25 +1497,6 @@
           <div class="welcome-hint">Tap to start your order</div>
         </div>
       </div>
-      <!-- Caller ID Simulation Panel -->
-      <details class="caller-id-panel" id="caller-id-panel">
-        <summary>Simulate Incoming Call (Dev Mode)</summary>
-        <div class="caller-id-content">
-          <label for="store-select" style="white-space: nowrap; font-weight: 500;">Store:</label>
-          <select id="store-select"></select>
-        </div>
-        <div class="caller-id-content" style="margin-top: 10px;">
-          <input
-            type="tel"
-            id="caller-id-input"
-            placeholder="Enter phone number (e.g., 555-123-4567)"
-          />
-          <button type="button" id="start-with-caller-id">Start Call</button>
-        </div>
-        <div style="margin-top: 8px; color: var(--text-tertiary); font-size: 12px;">
-          Select a store and optionally enter a phone number.
-        </div>
-      </details>
 
       <!-- TTS Voice Controls -->
       <div class="tts-controls" id="tts-controls">
@@ -1793,11 +1711,6 @@
     const statusEl = document.getElementById("status-bar");
     const formEl = document.getElementById("chat-form");
     const inputEl = document.getElementById("chat-input");
-    const callerIdPanel = document.getElementById("caller-id-panel");
-    const callerIdInput = document.getElementById("caller-id-input");
-    const storeSelect = document.getElementById("store-select");
-    const startWithCallerIdBtn = document.getElementById("start-with-caller-id");
-
     let STORE_NAMES = {};
     const USE_STREAMING = true;
     let appVersion = "...";
@@ -1834,7 +1747,7 @@
       }
     }
 
-    async function loadStoresAndPopulateDropdown() {
+    async function loadStores() {
       let stores = [];
       try {
         const response = await fetch("/api/v1/stores");
@@ -1852,21 +1765,6 @@
         const shortName = store.name.includes(" - ") ? store.name.split(" - ").pop() : store.name;
         STORE_NAMES[store.id] = shortName;
       });
-
-      storeSelect.innerHTML = "";
-      if (availableStores.length === 0) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "No stores available";
-        storeSelect.appendChild(opt);
-      } else {
-        availableStores.forEach(store => {
-          const opt = document.createElement("option");
-          opt.value = store.id;
-          opt.textContent = STORE_NAMES[store.id];
-          storeSelect.appendChild(opt);
-        });
-      }
       return availableStores;
     }
 
@@ -2083,13 +1981,17 @@
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         const data = await resp.json();
         sessionId = data.session_id;
-        sessionStorage.setItem("sessionId", sessionId);
         connected = true;
         sessionStartTime = Date.now();
 
         // Store customer_id if returned (recognized returning customer)
         if (data.customer_id) {
           localStorage.setItem("customer_id", data.customer_id);
+        }
+
+        // Apply preferred voice from DB (overrides localStorage)
+        if (data.preferred_voice) {
+          window.__preferredVoiceFromDB = data.preferred_voice;
         }
 
         let headerText = `v${appVersion} | ` + sessionId.substring(0, 8);
@@ -2103,7 +2005,6 @@
         }
 
         setStatus("Connected");
-        callerIdPanel.removeAttribute("open");
 
         if (data.message) {
           window.__nextAudioId = data.audio_id || null;
@@ -2124,65 +2025,6 @@
         console.error("Error starting session:", err);
         headerEl.textContent = "Error starting session";
         setStatus("Failed to connect");
-      }
-    }
-
-    async function restoreSession(savedSessionId, storeId) {
-      try {
-        setStatus("Restoring session...");
-        const resp = await fetch(`/api/v1/chat/session/${savedSessionId}`);
-        if (!resp.ok) {
-          // Session expired or not found — clear stale storage and fall through
-          sessionStorage.removeItem("sessionId");
-          return false;
-        }
-        const data = await resp.json();
-
-        sessionId = data.session_id;
-        connected = true;
-        sessionStartTime = Date.now();
-        currentStoreId = data.store_id || storeId;
-
-        // Restore order state
-        orderState = data.order_state || { status: "pending", items: [], total_price: 0 };
-
-        // Build header
-        let headerText = `v${appVersion} | ` + sessionId.substring(0, 8);
-        if (currentStoreId && STORE_NAMES[currentStoreId]) headerText += ` | ${STORE_NAMES[currentStoreId]}`;
-        headerEl.textContent = headerText;
-
-        setStatus("Connected");
-        callerIdPanel.removeAttribute("open");
-
-        // Replay conversation history into chat bubbles
-        const history = data.history || [];
-        for (const msg of history) {
-          addMessage(msg.role, msg.content);
-          if (msg.role === "assistant") lastBotMessage = msg.content;
-          if (msg.role === "user") lastUserMessage = msg.content;
-          messageCount++;
-          conversationHistory.push({ role: msg.role, content: msg.content });
-        }
-
-        // Render sidebar order panel
-        renderOrderPanel(orderState);
-
-        // Mark abandon as already sent so refresh doesn't double-log
-        abandonAnalyticsSent = true;
-
-        // Enable input
-        inputEl.disabled = false;
-        inputEl.placeholder = "Type your message...";
-        inputEl.focus();
-        document.getElementById("mic-btn").disabled = false;
-        document.getElementById("send-btn").disabled = false;
-        if (messageCount >= 1) replayBtn.disabled = false;
-
-        return true;
-      } catch (err) {
-        console.error("Error restoring session:", err);
-        sessionStorage.removeItem("sessionId");
-        return false;
       }
     }
 
@@ -2355,31 +2197,6 @@
       sendMessage(text);
     });
 
-    startWithCallerIdBtn.addEventListener("click", () => {
-      const callerId = callerIdInput.value.trim();
-      const storeId = storeSelect.value;
-      if (sessionId) {
-        sessionId = null;
-        sessionStorage.removeItem("sessionId");
-        connected = false;
-        messagesEl.innerHTML = "";
-        messageCount = 0;
-        orderState = { status: "pending", items: [], total_price: 0 };
-        lastBotMessage = null;
-        lastUserMessage = null;
-        orderConfirmed = false;
-        conversationHistory = [];
-        abandonAnalyticsSent = false;
-        reportSent = false;
-        reportBtn.classList.remove("sent");
-        reportBtn.disabled = false;
-        reportBtnLabel.textContent = "Report";
-        replayBtn.disabled = true;
-        replayBtnLabel.textContent = "Replay";
-      }
-      startSession(callerId || null, storeId);
-    });
-
     window.addEventListener("load", async () => {
       // Initialize Lucide icons
       if (typeof lucide !== 'undefined') {
@@ -2394,36 +2211,15 @@
         loadAppVersion(),
         loadCompanyInfo(),
         loadTTSVoices(),
-        loadStoresAndPopulateDropdown(),
+        loadStores(),
       ]);
       const urlParams = new URLSearchParams(window.location.search);
       const storeIdParam = urlParams.get("store") || urlParams.get("store_id");
       const callerIdParam = urlParams.get("caller_id");
-      if (storeIdParam && STORE_NAMES[storeIdParam]) storeSelect.value = storeIdParam;
-      if (callerIdParam) callerIdInput.value = callerIdParam;
-      const storeId = storeIdParam && STORE_NAMES[storeIdParam] ? storeIdParam : storeSelect.value;
+      const storeId = storeIdParam && STORE_NAMES[storeIdParam]
+        ? storeIdParam
+        : availableStores.length > 0 ? availableStores[0].id : null;
       if (storeId) {
-        // Check for existing session to restore (survives page refresh)
-        const savedSessionId = sessionStorage.getItem("sessionId");
-        if (savedSessionId) {
-          const overlay = document.getElementById("welcome-overlay");
-          overlay.style.display = "none";
-          const restored = await restoreSession(savedSessionId, storeId);
-          if (restored) {
-            // Session restored — skip welcome overlay
-          } else {
-            // Stale session — fall through to normal welcome flow
-            overlay.style.display = "";
-            const welcomeTitle = document.getElementById("welcome-title");
-            welcomeTitle.textContent = companyInfo.name || "Welcome";
-            overlay.addEventListener("click", async () => {
-              overlay.classList.add("fade-out");
-              audioEnabled = true;
-              await startSession(callerIdParam || null, storeId);
-              setTimeout(() => overlay.remove(), 400);
-            }, { once: true });
-          }
-        } else {
         // Show welcome overlay — user click enables audio then starts session
         const overlay = document.getElementById("welcome-overlay");
         const welcomeTitle = document.getElementById("welcome-title");
@@ -2435,7 +2231,6 @@
           await startSession(callerIdParam || null, storeId);
           setTimeout(() => overlay.remove(), 400);
         }, { once: true });
-        }
       } else {
         headerEl.textContent = "No stores available";
         setStatus("Please add stores");
@@ -2514,7 +2309,13 @@
           opt.textContent = label;
           ttsVoiceSelect.appendChild(opt);
         });
-        if (ttsSelectedVoice && ttsVoices.some(v => v.id === ttsSelectedVoice)) {
+        // DB-stored preference overrides localStorage
+        if (window.__preferredVoiceFromDB && ttsVoices.some(v => v.id === window.__preferredVoiceFromDB)) {
+          ttsSelectedVoice = window.__preferredVoiceFromDB;
+          ttsVoiceSelect.value = ttsSelectedVoice;
+          localStorage.setItem("tts_voice", ttsSelectedVoice);
+          delete window.__preferredVoiceFromDB;
+        } else if (ttsSelectedVoice && ttsVoices.some(v => v.id === ttsSelectedVoice)) {
           ttsVoiceSelect.value = ttsSelectedVoice;
         } else if (ttsVoices.length > 0) {
           // Use server-provided default voice, then "nova", then first voice
@@ -2656,6 +2457,13 @@
     ttsVoiceSelect.addEventListener("change", () => {
       ttsSelectedVoice = ttsVoiceSelect.value;
       localStorage.setItem("tts_voice", ttsSelectedVoice);
+      if (sessionId) {
+        fetch("/api/v1/chat/voice-preference", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, voice: ttsSelectedVoice })
+        }).catch(err => console.debug("[TTS] Failed to save voice preference:", err));
+      }
     });
 
     ttsMuteBtn.addEventListener("click", () => {
@@ -2722,9 +2530,8 @@
       replayBtnLabel.textContent = "Replaying...";
       replayBtn.classList.add("running");
 
-      // 2. Reset session state (same pattern as startWithCallerIdBtn handler)
+      // 2. Reset session state
       sessionId = null;
-      sessionStorage.removeItem("sessionId");
       connected = false;
       messagesEl.innerHTML = "";
       messageCount = 0;

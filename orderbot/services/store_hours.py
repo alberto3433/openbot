@@ -35,6 +35,9 @@ _DAY_ALIASES: dict[str, int] = {
 _WEEKDAY_NAMES = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday",
                   4: "Friday", 5: "Saturday", 6: "Sunday"}
 
+_WEEKDAY_SHORT = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu",
+                  4: "Fri", 5: "Sat", 6: "Sun"}
+
 # Regex to parse compact hour strings like "7-5", "07:00-17:00", "7am-5pm"
 _HOUR_RANGE_RE = re.compile(
     r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?",
@@ -63,25 +66,48 @@ def _normalise_day_key(key: str) -> int | None:
     return _DAY_ALIASES.get(key.lower().strip())
 
 
+def _parse_single_range(value: dict) -> tuple[time, time] | None:
+    """Parse a single ``{"open": "07:00", "close": "17:00"}`` dict into (open, close)."""
+    try:
+        open_parts = str(value["open"]).split(":")
+        close_parts = str(value["close"]).split(":")
+        open_t = time(int(open_parts[0]), int(open_parts[1]) if len(open_parts) > 1 else 0)
+        close_t = time(int(close_parts[0]), int(close_parts[1]) if len(close_parts) > 1 else 0)
+        return (open_t, close_t)
+    except (KeyError, ValueError, IndexError):
+        return None
+
+
+def _format_time_12h(t: time) -> str:
+    """Format a time as '7:00 AM' style string."""
+    try:
+        return t.strftime("%-I:%M %p")
+    except ValueError:
+        # Windows doesn't support %-I
+        return t.strftime("%I:%M %p").lstrip("0")
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-HoursConfig = dict[int, tuple[time, time]]  # weekday -> (open, close)
+# weekday -> list of (open, close) ranges
+HoursConfig = dict[int, list[tuple[time, time]]]
 
 
 def parse_hours_config(raw_hours: Any) -> HoursConfig | None:
-    """Normalise hours from various DB formats into ``{weekday: (open, close)}``.
+    """Normalise hours from various DB formats into ``{weekday: [(open, close), ...]}``.
 
     Accepted input shapes:
 
-    * ``{"mon": "7-5", "tue": "7:00-17:00"}``   — compact string ranges
-    * ``{"mon": {"open": "07:00", "close": "17:00"}}`` — structured dicts
-    * ``{"monday": "7am-5pm"}``   — full day names with AM/PM
+    * ``{"monday": [{"open": "07:00", "close": "21:00"}]}``  — new list-of-ranges format
+    * ``{"mon": "7-5", "tue": "7:00-17:00"}``   — compact string ranges (legacy)
+    * ``{"mon": {"open": "07:00", "close": "17:00"}}`` — single dict (legacy)
+    * ``{"monday": "7am-5pm"}``   — full day names with AM/PM (legacy)
     * ``None`` / empty / unparseable → returns ``None``
 
     Returns:
-        Normalised mapping weekday-int → (open_time, close_time), or None.
+        Normalised mapping weekday-int → list of (open_time, close_time), or None.
     """
     if not raw_hours or not isinstance(raw_hours, dict):
         return None
@@ -92,16 +118,24 @@ def parse_hours_config(raw_hours: Any) -> HoursConfig | None:
         if weekday is None:
             continue
 
-        if isinstance(value, dict):
-            # {"open": "07:00", "close": "17:00"}
-            try:
-                open_parts = str(value["open"]).split(":")
-                close_parts = str(value["close"]).split(":")
-                open_t = time(int(open_parts[0]), int(open_parts[1]) if len(open_parts) > 1 else 0)
-                close_t = time(int(close_parts[0]), int(close_parts[1]) if len(close_parts) > 1 else 0)
-                result[weekday] = (open_t, close_t)
-            except (KeyError, ValueError, IndexError):
-                continue
+        if isinstance(value, list):
+            # New format: [{"open": "07:00", "close": "21:00"}, ...]
+            ranges: list[tuple[time, time]] = []
+            for entry in value:
+                if isinstance(entry, dict):
+                    parsed = _parse_single_range(entry)
+                    if parsed:
+                        ranges.append(parsed)
+            if ranges:
+                result[weekday] = ranges
+            # Empty list = closed, so we don't add an entry
+
+        elif isinstance(value, dict):
+            # Legacy single dict: {"open": "07:00", "close": "17:00"}
+            parsed = _parse_single_range(value)
+            if parsed:
+                result[weekday] = [parsed]
+
         elif isinstance(value, str):
             if value.lower() in ("closed", "off", ""):
                 continue
@@ -114,7 +148,7 @@ def parse_hours_config(raw_hours: Any) -> HoursConfig | None:
             # Heuristic: if close <= open and no AM/PM given, assume close is PM
             if close_t <= open_t and not close_ap:
                 close_t = time(close_t.hour + 12, close_t.minute)
-            result[weekday] = (open_t, close_t)
+            result[weekday] = [(open_t, close_t)]
 
     return result if result else None
 
@@ -135,12 +169,11 @@ def is_store_open_now(hours_config: HoursConfig | None, timezone_str: str) -> bo
 
     now = datetime.now(ZoneInfo(timezone_str))
     weekday = now.weekday()  # 0=Mon
-    hours_entry = hours_config.get(weekday)
-    if hours_entry is None:
+    ranges = hours_config.get(weekday)
+    if ranges is None:
         return False  # No entry for today → closed
 
-    open_t, close_t = hours_entry
-    return open_t <= now.time() < close_t
+    return any(open_t <= now.time() < close_t for open_t, close_t in ranges)
 
 
 def get_next_open_time(
@@ -161,15 +194,17 @@ def get_next_open_time(
     for day_offset in range(0, 8):
         candidate = now + timedelta(days=day_offset)
         weekday = candidate.weekday()
-        hours_entry = hours_config.get(weekday)
-        if hours_entry is None:
+        ranges = hours_config.get(weekday)
+        if ranges is None:
             continue
 
-        open_t, _ = hours_entry
-        open_dt = candidate.replace(hour=open_t.hour, minute=open_t.minute, second=0, microsecond=0)
-
-        if open_dt > now:
-            return open_dt
+        # Check each range sorted by open time — find earliest future open
+        for open_t, _ in sorted(ranges, key=lambda r: r[0]):
+            open_dt = candidate.replace(
+                hour=open_t.hour, minute=open_t.minute, second=0, microsecond=0,
+            )
+            if open_dt > now:
+                return open_dt
 
     return None
 
@@ -189,12 +224,7 @@ def get_next_open_time_display(
 
     now = datetime.now(ZoneInfo(timezone_str))
     days_ahead = (next_open.date() - now.date()).days
-    time_str = next_open.strftime("%-I:%M %p").lstrip("0") if hasattr(next_open, "strftime") else ""
-    # Windows strftime doesn't support %-I; fall back
-    try:
-        time_str = next_open.strftime("%-I:%M %p")
-    except ValueError:
-        time_str = next_open.strftime("%I:%M %p").lstrip("0")
+    time_str = _format_time_12h(next_open.time())
 
     if days_ahead == 0:
         return f"today at {time_str}"
@@ -241,19 +271,87 @@ def validate_scheduled_time(
     # Check: store is open at that time
     if hours_config is not None:
         weekday = requested_time.weekday()
-        hours_entry = hours_config.get(weekday)
-        if hours_entry is None:
+        ranges = hours_config.get(weekday)
+        if ranges is None:
             day_name = _WEEKDAY_NAMES[weekday]
             return False, f"We're closed on {day_name}s. Would you like to pick another time?"
 
-        open_t, close_t = hours_entry
         req_time = requested_time.time()
-        if req_time < open_t or req_time >= close_t:
-            open_str = open_t.strftime("%I:%M %p").lstrip("0")
-            close_str = close_t.strftime("%I:%M %p").lstrip("0")
+        if not any(open_t <= req_time < close_t for open_t, close_t in ranges):
+            # Build error message showing all ranges for that day
+            range_strs = [
+                f"{_format_time_12h(open_t)} to {_format_time_12h(close_t)}"
+                for open_t, close_t in sorted(ranges, key=lambda r: r[0])
+            ]
+            hours_display = " and ".join(range_strs)
             return False, (
-                f"We're open from {open_str} to {close_str} that day. "
+                f"We're open {hours_display} that day. "
                 f"Could you pick a time during those hours?"
             )
 
     return True, None
+
+
+def format_hours_display(hours: dict | None) -> str | None:
+    """Convert structured hours JSON to a human-readable string.
+
+    Groups consecutive days with identical hours for compact display.
+
+    Examples:
+        ``"Mon-Fri 7:00 AM - 9:00 PM, Sat-Sun Closed"``
+        ``"Mon-Thu 7:00 AM - 9:00 PM, Fri 7:00 AM - 2:00 PM & 5:00 PM - 9:00 PM"``
+
+    Args:
+        hours: Structured hours dict from DB (``{"monday": [...], ...}``).
+
+    Returns:
+        Human-readable hours string, or None if hours is None/empty.
+    """
+    if not hours or not isinstance(hours, dict):
+        return None
+
+    day_order = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    day_short = {"monday": "Mon", "tuesday": "Tue", "wednesday": "Wed",
+                 "thursday": "Thu", "friday": "Fri", "saturday": "Sat", "sunday": "Sun"}
+
+    # Build a description for each day
+    day_descriptions: list[tuple[str, str]] = []  # (short_name, description)
+    for day in day_order:
+        short = day_short[day]
+        ranges = hours.get(day, [])
+        if not ranges:
+            day_descriptions.append((short, "Closed"))
+        else:
+            range_strs = []
+            for r in ranges:
+                if isinstance(r, dict) and "open" in r and "close" in r:
+                    try:
+                        op = r["open"].split(":")
+                        cl = r["close"].split(":")
+                        open_t = time(int(op[0]), int(op[1]) if len(op) > 1 else 0)
+                        close_t = time(int(cl[0]), int(cl[1]) if len(cl) > 1 else 0)
+                        range_strs.append(f"{_format_time_12h(open_t)} - {_format_time_12h(close_t)}")
+                    except (ValueError, IndexError):
+                        continue
+            if range_strs:
+                day_descriptions.append((short, " & ".join(range_strs)))
+            else:
+                day_descriptions.append((short, "Closed"))
+
+    # Group consecutive days with the same description
+    groups: list[tuple[list[str], str]] = []
+    for short_name, desc in day_descriptions:
+        if groups and groups[-1][1] == desc:
+            groups[-1][0].append(short_name)
+        else:
+            groups.append(([short_name], desc))
+
+    # Format groups
+    parts = []
+    for names, desc in groups:
+        if len(names) == 1:
+            parts.append(f"{names[0]} {desc}")
+        else:
+            parts.append(f"{names[0]}-{names[-1]} {desc}")
+
+    return ", ".join(parts) if parts else None

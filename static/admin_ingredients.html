@@ -687,72 +687,12 @@
 
   <script src="/static/admin_common.js"></script>
   <script>
-    // =====================================================
-    // Theme Toggle
-    // =====================================================
-    const themeToggle = document.getElementById('theme-toggle');
-    const themeIcon = document.getElementById('theme-icon');
-    const themeText = document.getElementById('theme-text');
-    const html = document.documentElement;
-
-    // Load saved theme or default to light
-    const savedTheme = localStorage.getItem('admin_theme') || 'light';
-    html.setAttribute('data-theme', savedTheme);
-    updateThemeButton(savedTheme);
-
-    function updateThemeButton(theme) {
-      themeIcon.innerHTML = theme === 'dark'
-        ? '<i data-lucide="moon"></i>'
-        : '<i data-lucide="sun"></i>';
-      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
-      if (typeof lucide !== 'undefined') {
-        lucide.createIcons({ nodes: [themeIcon] });
-      }
-    }
-
-    themeToggle.addEventListener('click', () => {
-      const currentTheme = html.getAttribute('data-theme');
-      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-      html.setAttribute('data-theme', newTheme);
-      localStorage.setItem('admin_theme', newTheme);
-      updateThemeButton(newTheme);
-    });
-
-    // Initialize Lucide icons
-    document.addEventListener('DOMContentLoaded', () => {
-      if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
-      }
-      // Mark active nav link based on current URL
-      const currentPath = window.location.pathname;
-      document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
-        // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
-        const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
-        const linkPage = hrefMatch ? hrefMatch[1] : null;
-        // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
-        const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
-        const currentPage = currentMatch ? currentMatch[1] : null;
-
-        if (linkPage && currentPage && linkPage === currentPage) {
-          link.classList.add('active');
-          // Also mark parent dropdown label as active
-          const navGroup = link.closest('.nav-group');
-          if (navGroup) {
-            const label = navGroup.querySelector('.nav-group-label');
-            if (label) label.classList.add('active');
-          }
-        }
-      });
-      updateThemeButton(html.getAttribute('data-theme'));
-    });
+    initAdminPage();
 
     // =====================================================
     // API and State
     // =====================================================
     const API_BASE = "/api/v1/admin/ingredients";
-
-    // Auth credentials storage
-    let authCredentials = null;
 
     // State
     let allIngredients = [];
@@ -764,7 +704,6 @@
     let referencesLoaded = false;
 
     // DOM elements
-    const toastContainer = document.getElementById("toastContainer");
     const searchInput = document.getElementById("searchInput");
     const categoryFilter = document.getElementById("categoryFilter");
     const storeSelector = document.getElementById("storeSelector");
@@ -783,64 +722,6 @@
     // Initialize tag inputs
     setupTagInput(aliasInput, aliasesContainer);
     setupTagInput(mustMatchInput, mustMatchContainer);
-
-    // Authenticated fetch helper
-    async function authFetch(url, options = {}) {
-      let response = await fetch(url, { ...options, credentials: 'include' });
-
-      if (response.status === 401 && authCredentials) {
-        response = await fetch(url, {
-          ...options,
-          headers: {
-            ...options.headers,
-            'Authorization': 'Basic ' + authCredentials
-          }
-        });
-      }
-
-      if (response.status === 401) {
-        const username = prompt('Admin username:');
-        if (!username) throw new Error('Authentication cancelled');
-        const password = prompt('Admin password:');
-        if (!password) throw new Error('Authentication cancelled');
-
-        authCredentials = btoa(username + ':' + password);
-
-        response = await fetch(url, {
-          ...options,
-          headers: {
-            ...options.headers,
-            'Authorization': 'Basic ' + authCredentials
-          }
-        });
-
-        if (response.status === 401) {
-          authCredentials = null;
-          throw new Error('Invalid credentials');
-        }
-      }
-
-      return response;
-    }
-
-    // Toast notification
-    function showToast(message, type = "info", duration = 3000) {
-      const toast = document.createElement("div");
-      toast.className = `toast ${type}`;
-      const iconNames = { success: "check", error: "x", info: "info" };
-      toast.innerHTML = `
-        <span class="icon"><i data-lucide="${iconNames[type] || iconNames.info}"></i></span>
-        <span class="toast-content">${message}</span>
-      `;
-      toastContainer.appendChild(toast);
-      if (typeof lucide !== 'undefined') {
-        lucide.createIcons({ nodes: [toast] });
-      }
-      setTimeout(() => {
-        toast.style.animation = "slideOut 0.3s ease forwards";
-        setTimeout(() => toast.remove(), 300);
-      }, duration);
-    }
 
     // Parse and format alias duplicate errors for better display
     function formatAliasError(errorMessage) {
@@ -863,51 +744,6 @@
       return `<div class="toast-title">Duplicate synonym found</div>
         <div class="toast-detail">This synonym already exists elsewhere:</div>
         ${duplicates.join('')}`;
-    }
-
-    // Button state management
-    function setSaveButtonState(button, state, originalText = "Save") {
-      if (!button) return;
-      const iconHtml = '<span class="icon"><i data-lucide="save"></i></span>';
-      switch (state) {
-        case "saving":
-          button.disabled = true;
-          button.classList.add("saving");
-          button.classList.remove("saved");
-          button.innerHTML = "Saving...";
-          break;
-        case "saved":
-          button.disabled = false;
-          button.classList.remove("saving");
-          button.classList.add("saved");
-          button.innerHTML = iconHtml + " Saved!";
-          if (typeof lucide !== 'undefined') {
-            lucide.createIcons({ nodes: [button] });
-          }
-          setTimeout(() => {
-            button.classList.remove("saved");
-            button.innerHTML = iconHtml + " " + originalText;
-            if (typeof lucide !== 'undefined') {
-              lucide.createIcons({ nodes: [button] });
-            }
-          }, 2000);
-          break;
-        case "error":
-        default:
-          button.disabled = false;
-          button.classList.remove("saving", "saved");
-          button.innerHTML = iconHtml + " " + originalText;
-          if (typeof lucide !== 'undefined') {
-            lucide.createIcons({ nodes: [button] });
-          }
-      }
-    }
-
-    // Escape HTML to prevent XSS
-    function escapeHtml(text) {
-      const div = document.createElement("div");
-      div.textContent = text || "";
-      return div.innerHTML;
     }
 
     function getCurrentStoreId() {

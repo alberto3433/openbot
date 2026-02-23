@@ -38,9 +38,9 @@ class TestParseHoursConfig:
         result = parse_hours_config(raw)
         assert result is not None
         assert 0 in result  # Monday
-        assert result[0] == (time(7, 0), time(17, 0))
-        assert result[1] == (time(7, 0), time(17, 0))
-        assert result[2] == (time(8, 0), time(18, 0))
+        assert result[0] == [(time(7, 0), time(17, 0))]
+        assert result[1] == [(time(7, 0), time(17, 0))]
+        assert result[2] == [(time(8, 0), time(18, 0))]
 
     def test_structured_dict_format(self):
         raw = {
@@ -49,15 +49,25 @@ class TestParseHoursConfig:
         }
         result = parse_hours_config(raw)
         assert result is not None
-        assert result[0] == (time(7, 0), time(17, 0))
-        assert result[4] == (time(6, 0), time(20, 0))
+        assert result[0] == [(time(7, 0), time(17, 0))]
+        assert result[4] == [(time(6, 0), time(20, 0))]
 
     def test_ampm_format(self):
         raw = {"monday": "7am-5pm", "saturday": "8am-3pm"}
         result = parse_hours_config(raw)
         assert result is not None
-        assert result[0] == (time(7, 0), time(17, 0))
-        assert result[5] == (time(8, 0), time(15, 0))
+        assert result[0] == [(time(7, 0), time(17, 0))]
+        assert result[5] == [(time(8, 0), time(15, 0))]
+
+    def test_list_of_ranges_format(self):
+        raw = {
+            "monday": [{"open": "07:00", "close": "14:00"}, {"open": "17:00", "close": "21:00"}],
+            "tuesday": [],
+        }
+        result = parse_hours_config(raw)
+        assert result is not None
+        assert result[0] == [(time(7, 0), time(14, 0)), (time(17, 0), time(21, 0))]
+        assert 1 not in result  # Empty list = closed
 
     def test_closed_day(self):
         raw = {"mon": "7-5", "sun": "closed"}
@@ -89,7 +99,7 @@ class TestIsStoreOpenNow:
     @pytest.fixture
     def weekday_hours(self) -> HoursConfig:
         """Standard Mon-Fri 7am-5pm hours."""
-        return {i: (time(7, 0), time(17, 0)) for i in range(5)}
+        return {i: [(time(7, 0), time(17, 0))] for i in range(5)}
 
     def test_open_during_hours(self, weekday_hours):
         # Mock: Wednesday at 10am
@@ -122,7 +132,7 @@ class TestGetNextOpenTime:
 
     @pytest.fixture
     def weekday_hours(self) -> HoursConfig:
-        return {i: (time(7, 0), time(17, 0)) for i in range(5)}
+        return {i: [(time(7, 0), time(17, 0))] for i in range(5)}
 
     def test_next_open_when_closed_evening(self, weekday_hours):
         with patch("orderbot.services.store_hours.datetime") as mock_dt:
@@ -155,7 +165,7 @@ class TestValidateScheduledTime:
 
     @pytest.fixture
     def weekday_hours(self) -> HoursConfig:
-        return {i: (time(7, 0), time(17, 0)) for i in range(5)}
+        return {i: [(time(7, 0), time(17, 0))] for i in range(5)}
 
     def test_valid_time(self, weekday_hours):
         tz = ZoneInfo("America/New_York")

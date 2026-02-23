@@ -132,6 +132,8 @@ class ScenarioGenerator:
             return self._generate_tricky_scenario()
         elif scenario_type == "realistic_order":
             return self._generate_realistic_order_scenario()
+        elif scenario_type == "complex_order":
+            return self._generate_complex_order_scenario()
         elif scenario_type == "corpus_order":
             return self._generate_corpus_order_scenario()
         elif scenario_type == "regression":
@@ -415,6 +417,56 @@ class ScenarioGenerator:
             items=items,
             attribute_options=all_attribute_options,
             boolean_attrs=all_boolean_attrs,
+            seed=self.rng.randint(0, 2**31),
+        )
+
+    def _generate_complex_order_scenario(self) -> BaseScenario | None:
+        """Generate a complex single-line order with inline attributes and modifiers."""
+        from tests.chaos_monkey.scenarios.complex_order import ComplexOrderScenario
+
+        if not self._menu_items:
+            return None
+
+        # Filter to configurable items only (they have attributes to inline)
+        configurable_items = [
+            item for item in self._menu_items
+            if self.menu_cache.is_item_type_configurable(item.get("item_type", ""))
+        ]
+
+        if not configurable_items:
+            return None
+
+        # Exclude "Side of X" items and single-word items (too simple for complex orders)
+        candidates = [
+            item for item in configurable_items
+            if not item.get("name", "").lower().startswith("side of")
+            and len(item.get("name", "").split()) >= 2
+        ]
+
+        if not candidates:
+            candidates = configurable_items
+
+        item = self.rng.choice(candidates)
+        item_type = item.get("item_type", "")
+
+        # Get attribute data
+        attribute_options, boolean_attrs = self._get_attribute_data_for_item_type(
+            item_type
+        )
+
+        # Get valid modifiers for this item type
+        valid_ingredients = self.menu_cache.get_ingredients_by_category_for_item_type(
+            item_type
+        )
+        valid_modifiers: list[str] = []
+        for category_ingredients in valid_ingredients.values():
+            valid_modifiers.extend(self._filter_display_names(category_ingredients))
+
+        return ComplexOrderScenario(
+            item=item,
+            attribute_options=attribute_options,
+            boolean_attrs=boolean_attrs,
+            modifiers=valid_modifiers,
             seed=self.rng.randint(0, 2**31),
         )
 

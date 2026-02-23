@@ -74,10 +74,34 @@ Usage:
 """
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from .base import FullTimestampedModel
+
+VALID_DAYS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+
+
+def _validate_hours_structure(v: Any) -> dict | None:
+    """Validate hours JSON structure: {day: [{open: "HH:MM", close: "HH:MM"}, ...]}."""
+    if v is None:
+        return None
+    if not isinstance(v, dict):
+        raise ValueError("hours must be a JSON object")
+    for day, ranges in v.items():
+        if day.lower() not in VALID_DAYS:
+            raise ValueError(f"Invalid day name: {day}. Must be one of: {', '.join(sorted(VALID_DAYS))}")
+        if not isinstance(ranges, list):
+            raise ValueError(f"Hours for {day} must be a list of time ranges")
+        for r in ranges:
+            if not isinstance(r, dict) or "open" not in r or "close" not in r:
+                raise ValueError(f"Each time range must have 'open' and 'close' keys")
+            for key in ("open", "close"):
+                val = r[key]
+                if not isinstance(val, str) or len(val) != 5 or val[2] != ":":
+                    raise ValueError(f"Time values must be in HH:MM format, got: {val}")
+    return v
 
 
 class StoreOut(FullTimestampedModel):
@@ -115,7 +139,7 @@ class StoreOut(FullTimestampedModel):
     state: str
     zip_code: str
     phone: str
-    hours: str | None = None
+    hours: dict | None = None
     timezone: str = "America/New_York"
     status: str
     payment_methods: list[str] = []
@@ -170,7 +194,7 @@ class StoreCreate(BaseModel):
     state: str
     zip_code: str
     phone: str
-    hours: str | None = None
+    hours: dict | None = None
     timezone: str = "America/New_York"
     status: str = "open"
     payment_methods: list[str] = ["cash", "credit"]
@@ -179,6 +203,11 @@ class StoreCreate(BaseModel):
     delivery_zip_codes: list[str] = []
     delivery_fee: float = 2.99
     square_location_id: str | None = None
+
+    @field_validator("hours")
+    @classmethod
+    def validate_hours(cls, v: Any) -> dict | None:
+        return _validate_hours_structure(v)
 
 
 class StoreUpdate(BaseModel):
@@ -216,7 +245,7 @@ class StoreUpdate(BaseModel):
     state: str | None = None
     zip_code: str | None = None
     phone: str | None = None
-    hours: str | None = None
+    hours: dict | None = None
     timezone: str | None = None
     status: str | None = None
     payment_methods: list[str] | None = None
@@ -225,3 +254,8 @@ class StoreUpdate(BaseModel):
     delivery_zip_codes: list[str] | None = None
     delivery_fee: float | None = None
     square_location_id: str | None = None
+
+    @field_validator("hours")
+    @classmethod
+    def validate_hours(cls, v: Any) -> dict | None:
+        return _validate_hours_structure(v)

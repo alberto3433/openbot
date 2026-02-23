@@ -3,6 +3,168 @@
  * Shared utility functions for admin pages
  */
 
+// ── Auth ────────────────────────────────────────────────────────────
+let _adminAuthCredentials = null;
+
+/**
+ * Fetch wrapper that handles Basic-auth 401 challenges.
+ * Caches credentials after the first successful prompt.
+ * @param {string} url - URL to fetch
+ * @param {object} options - fetch options
+ * @returns {Promise<Response>}
+ */
+async function authFetch(url, options = {}) {
+  let response = await fetch(url, { ...options, credentials: "include" });
+
+  if (response.status === 401 && _adminAuthCredentials) {
+    response = await fetch(url, {
+      ...options,
+      headers: { ...options.headers, Authorization: "Basic " + _adminAuthCredentials },
+    });
+  }
+
+  if (response.status === 401) {
+    const username = prompt("Admin username:");
+    if (!username) throw new Error("Authentication cancelled");
+    const password = prompt("Admin password:");
+    if (!password) throw new Error("Authentication cancelled");
+
+    _adminAuthCredentials = btoa(username + ":" + password);
+
+    response = await fetch(url, {
+      ...options,
+      headers: { ...options.headers, Authorization: "Basic " + _adminAuthCredentials },
+    });
+
+    if (response.status === 401) {
+      _adminAuthCredentials = null;
+      throw new Error("Invalid credentials");
+    }
+  }
+  return response;
+}
+
+// ── Toast ───────────────────────────────────────────────────────────
+
+/**
+ * Show a toast notification.
+ * @param {string} message - Message text
+ * @param {"info"|"success"|"error"} type - Toast type
+ * @param {number} duration - Auto-dismiss in ms (default 3000)
+ */
+function showToast(message, type = "info", duration = 3000) {
+  const container = document.getElementById("toastContainer");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  const iconName = type === "success" ? "check-circle" : type === "error" ? "x-circle" : "info";
+  toast.innerHTML = `<span class="icon"><i data-lucide="${iconName}"></i></span><span>${message}</span>`;
+  container.appendChild(toast);
+  if (typeof lucide !== "undefined") lucide.createIcons({ nodes: [toast] });
+  setTimeout(() => {
+    toast.style.animation = "slideOut 0.3s ease forwards";
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+// ── Save-button state ───────────────────────────────────────────────
+
+/**
+ * Transition a save button between saving / saved / error states.
+ * @param {HTMLButtonElement|null} button
+ * @param {"saving"|"saved"|"error"} state
+ * @param {string} originalText - Label to restore after saved/error
+ */
+function setSaveButtonState(button, state, originalText = "Save") {
+  if (!button) return;
+  switch (state) {
+    case "saving":
+      button.disabled = true;
+      button.classList.add("saving");
+      button.classList.remove("saved");
+      button.textContent = "Saving...";
+      break;
+    case "saved":
+      button.disabled = false;
+      button.classList.remove("saving");
+      button.classList.add("saved");
+      button.textContent = "Saved!";
+      setTimeout(() => {
+        button.classList.remove("saved");
+        button.textContent = originalText;
+      }, 2000);
+      break;
+    case "error":
+    default:
+      button.disabled = false;
+      button.classList.remove("saving", "saved");
+      button.textContent = originalText;
+  }
+}
+
+// ── Page init ───────────────────────────────────────────────────────
+
+/**
+ * One-call initialiser for every admin page:
+ *   - Theme toggle (dark / light)
+ *   - Active nav-link highlighting
+ *   - Lucide icon rendering
+ *
+ * Call at the end of each page's inline <script>.
+ */
+function initAdminPage() {
+  // Theme toggle
+  const themeToggle = document.getElementById("theme-toggle");
+  const themeIcon = document.getElementById("theme-icon");
+  const themeText = document.getElementById("theme-text");
+  const htmlEl = document.documentElement;
+
+  function updateThemeButton(theme) {
+    if (themeIcon) {
+      themeIcon.innerHTML = theme === "dark"
+        ? '<i data-lucide="moon"></i>'
+        : '<i data-lucide="sun"></i>';
+      if (typeof lucide !== "undefined") lucide.createIcons({ nodes: [themeIcon] });
+    }
+    if (themeText) themeText.textContent = theme === "dark" ? "Dark" : "Light";
+  }
+
+  const savedTheme = localStorage.getItem("admin_theme") || "light";
+  htmlEl.setAttribute("data-theme", savedTheme);
+  updateThemeButton(savedTheme);
+
+  if (themeToggle) {
+    themeToggle.addEventListener("click", () => {
+      const newTheme = htmlEl.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      htmlEl.setAttribute("data-theme", newTheme);
+      localStorage.setItem("admin_theme", newTheme);
+      updateThemeButton(newTheme);
+    });
+  }
+
+  // Active nav-link highlighting
+  const currentPath = window.location.pathname;
+  document.querySelectorAll(".app-header .nav-links a, .app-header .nav-dropdown a").forEach(link => {
+    const hrefMatch = link.getAttribute("href").match(/admin_(\w+)\.html/);
+    const linkPage = hrefMatch ? hrefMatch[1] : null;
+    const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
+    const currentPage = currentMatch ? currentMatch[1] : null;
+    if (linkPage && currentPage && linkPage === currentPage) {
+      link.classList.add("active");
+      const navGroup = link.closest(".nav-group");
+      if (navGroup) {
+        const label = navGroup.querySelector(".nav-group-label");
+        if (label) label.classList.add("active");
+      }
+    }
+  });
+
+  // Render all Lucide icons
+  if (typeof lucide !== "undefined") lucide.createIcons();
+}
+
+// ── Escape HTML ─────────────────────────────────────────────────────
+
 /**
  * Escape HTML entities to prevent XSS
  * @param {string} text - Text to escape
@@ -120,26 +282,14 @@ function setupRefreshCacheButton(buttonId = "refreshCacheBtn") {
     btn.textContent = "Refreshing...";
 
     try {
-      // Use authFetch if available, otherwise fall back to fetch
-      const fetchFn = typeof authFetch === "function" ? authFetch : fetch;
-      const response = await fetchFn("/api/v1/admin/menu/cache/refresh", { method: "POST" });
+      const response = await authFetch("/api/v1/admin/menu/cache/refresh", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const result = await response.json();
-
-      // Use showToast if available
-      if (typeof showToast === "function") {
-        showToast("Cache refreshed successfully", "success");
-      } else {
-        alert("Cache refreshed successfully");
-      }
+      showToast("Cache refreshed successfully", "success");
       console.log("Cache refresh result:", result);
     } catch (err) {
       console.error("Error refreshing cache:", err);
-      if (typeof showToast === "function") {
-        showToast("Failed to refresh cache", "error");
-      } else {
-        alert("Failed to refresh cache: " + err.message);
-      }
+      showToast("Failed to refresh cache", "error");
     } finally {
       btn.style.pointerEvents = "";
       btn.textContent = originalText;

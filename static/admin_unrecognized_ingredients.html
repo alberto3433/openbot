@@ -424,29 +424,6 @@
     let selectedIngredients = [];  // Currently selected ingredient names
 
     // =========================================================================
-    // Toast notifications
-    // =========================================================================
-    function showToast(message, type = 'info') {
-      const container = document.getElementById('toastContainer');
-      const toast = document.createElement('div');
-      toast.className = `toast ${type}`;
-      const iconNames = { success: 'check', error: 'x', info: 'info' };
-      toast.innerHTML = `<span class="icon"><i data-lucide="${iconNames[type] || iconNames.info}"></i></span><span>${escapeHtml(message)}</span>`;
-      container.appendChild(toast);
-      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
-      setTimeout(() => {
-        toast.style.animation = 'slideOut 0.3s ease forwards';
-        setTimeout(() => toast.remove(), 300);
-      }, 4000);
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    // =========================================================================
     // Stats (computed client-side from the full list)
     // =========================================================================
     function computeAndRenderStats(data) {
@@ -790,53 +767,9 @@
       loadIngredientLookups();
       loadSuggestions();
       setupIngredientsMultiSelect();
-
-      // Initialize Lucide icons
-      if (typeof lucide !== 'undefined') lucide.createIcons();
-
-      // Mark active nav link based on current URL
-      const currentPath = window.location.pathname;
-      document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
-        const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
-        const linkPage = hrefMatch ? hrefMatch[1] : null;
-        const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
-        const currentPage = currentMatch ? currentMatch[1] : null;
-
-        if (linkPage && currentPage && linkPage === currentPage) {
-          link.classList.add('active');
-          const navGroup = link.closest('.nav-group');
-          if (navGroup) {
-            const label = navGroup.querySelector('.nav-group-label');
-            if (label) label.classList.add('active');
-          }
-        }
-      });
     });
 
-    // =========================================================================
-    // Theme Toggle
-    // =========================================================================
-    const themeToggle = document.getElementById('theme-toggle');
-    const themeIcon = document.getElementById('theme-icon');
-    const themeText = document.getElementById('theme-text');
-    const htmlEl = document.documentElement;
-
-    const savedTheme = localStorage.getItem('admin_theme') || 'light';
-    htmlEl.setAttribute('data-theme', savedTheme);
-    updateThemeButton(savedTheme);
-
-    function updateThemeButton(theme) {
-      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
-      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
-      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
-    }
-
-    themeToggle.addEventListener('click', () => {
-      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-      htmlEl.setAttribute('data-theme', newTheme);
-      localStorage.setItem('admin_theme', newTheme);
-      updateThemeButton(newTheme);
-    });
+    initAdminPage();
   </script>
 </body>
 </html>

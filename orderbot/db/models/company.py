@@ -41,7 +41,7 @@ class Store(Base):
     state = Column(String(2), nullable=False)  # e.g., "NJ"
     zip_code = Column(String(10), nullable=False)
     phone = Column(String, nullable=False)
-    hours = Column(Text, nullable=True)  # Store hours description
+    hours = Column(JSON, nullable=True)  # Structured store hours (JSONB)
     timezone = Column(String, nullable=False, default="America/New_York")  # IANA timezone, e.g., "America/Los_Angeles"
     status = Column(String, nullable=False, default="open")  # "open" or "closed"
     payment_methods = Column(JSON, nullable=False, default=list)  # ["cash", "credit", "bitcoin"]

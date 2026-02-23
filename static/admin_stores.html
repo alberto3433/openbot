@@ -297,6 +297,86 @@
     .form-row .form-group {
       flex: 1;
     }
+
+    /* Hours Editor Styles */
+    .hours-editor {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .hours-day {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px;
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      background: var(--bg-secondary);
+    }
+    .hours-day.closed {
+      opacity: 0.5;
+    }
+    .hours-day-label {
+      min-width: 40px;
+      font-weight: 600;
+      font-size: 13px;
+      padding-top: 6px;
+    }
+    .hours-day-toggle {
+      margin-top: 6px;
+    }
+    .hours-ranges {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .hours-range-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .hours-range-row select {
+      padding: 4px 6px;
+      font-size: 13px;
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+    }
+    .hours-range-row .range-sep {
+      font-size: 12px;
+      color: var(--text-tertiary);
+    }
+    .hours-add-range {
+      background: none;
+      border: 1px dashed var(--border-light);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      align-self: flex-start;
+    }
+    .hours-add-range:hover {
+      border-color: var(--text-tertiary);
+      color: var(--text-primary);
+    }
+    .hours-remove-range {
+      background: none;
+      border: none;
+      color: #c62828;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 4px;
+      line-height: 1;
+    }
+    .hours-remove-range:hover {
+      color: #b71c1c;
+    }
+    [data-theme="dark"] .hours-remove-range {
+      color: #EF5350;
+    }
   </style>
 </head>
 <body>
@@ -403,9 +483,9 @@
           </div>
 
           <div class="form-group">
-            <label for="storeHours">Store Hours</label>
-            <textarea id="storeHours" placeholder="e.g., Mon-Sat 10:00 AM - 9:00 PM, Sun 11:00 AM - 7:00 PM"></textarea>
-            <div class="hint">Enter the store's operating hours</div>
+            <label>Store Hours</label>
+            <div class="hours-editor" id="hoursEditor"></div>
+            <div class="hint">Check each day the store is open and set time ranges. Use "+" for split shifts.</div>
           </div>
 
           <div class="form-group">
@@ -518,99 +598,180 @@
 
   <script src="/static/admin_common.js"></script>
   <script>
-    // API base URL
-    const API_BASE = "/api/v1/admin/stores";
+    // Hours editor helpers
+    const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+    const DAY_SHORT = { monday: "Mon", tuesday: "Tue", wednesday: "Wed", thursday: "Thu", friday: "Fri", saturday: "Sat", sunday: "Sun" };
 
-    // Auth credentials storage (cached after first successful auth)
-    let authCredentials = null;
-
-    // Authenticated fetch helper - prompts for credentials on 401
-    async function authFetch(url, options = {}) {
-      // First try with credentials: include (uses browser's cached auth)
-      let response = await fetch(url, { ...options, credentials: 'include' });
-
-      // If unauthorized and we have stored credentials, try with Authorization header
-      if (response.status === 401 && authCredentials) {
-        response = await fetch(url, {
-          ...options,
-          headers: {
-            ...options.headers,
-            'Authorization': 'Basic ' + authCredentials
-          }
-        });
-      }
-
-      // If still unauthorized, prompt for credentials
-      if (response.status === 401) {
-        const username = prompt('Admin username:');
-        if (!username) throw new Error('Authentication cancelled');
-        const password = prompt('Admin password:');
-        if (!password) throw new Error('Authentication cancelled');
-
-        authCredentials = btoa(username + ':' + password);
-
-        response = await fetch(url, {
-          ...options,
-          headers: {
-            ...options.headers,
-            'Authorization': 'Basic ' + authCredentials
-          }
-        });
-
-        if (response.status === 401) {
-          authCredentials = null;
-          throw new Error('Invalid credentials');
+    function generateTimeOptions(selected) {
+      let html = "";
+      for (let h = 5; h <= 23; h++) {
+        for (let m = 0; m < 60; m += 30) {
+          const val = String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+          const ampm = h < 12 ? "AM" : "PM";
+          const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+          const label = displayH + ":" + String(m).padStart(2, "0") + " " + ampm;
+          html += `<option value="${val}"${val === selected ? " selected" : ""}>${label}</option>`;
         }
       }
-
-      return response;
+      // Add midnight (next day)
+      html += `<option value="00:00"${"00:00" === selected ? " selected" : ""}>12:00 AM</option>`;
+      return html;
     }
+
+    function addTimeRange(container, open, close) {
+      const row = document.createElement("div");
+      row.className = "hours-range-row";
+      row.innerHTML = `
+        <select class="range-open">${generateTimeOptions(open || "07:00")}</select>
+        <span class="range-sep">to</span>
+        <select class="range-close">${generateTimeOptions(close || "21:00")}</select>
+        <button type="button" class="hours-remove-range" title="Remove range">&times;</button>
+      `;
+      row.querySelector(".hours-remove-range").addEventListener("click", () => {
+        row.remove();
+        // If no ranges left, uncheck the day
+        const dayDiv = container.closest(".hours-day");
+        if (container.querySelectorAll(".hours-range-row").length === 0) {
+          dayDiv.querySelector(".hours-day-toggle").checked = false;
+          dayDiv.classList.add("closed");
+          container.style.display = "none";
+        }
+      });
+      // Insert before the "+" button
+      const addBtn = container.querySelector(".hours-add-range");
+      container.insertBefore(row, addBtn);
+    }
+
+    function buildHoursEditor() {
+      const editor = document.getElementById("hoursEditor");
+      editor.innerHTML = "";
+      DAYS.forEach(day => {
+        const div = document.createElement("div");
+        div.className = "hours-day closed";
+        div.dataset.day = day;
+        div.innerHTML = `
+          <input type="checkbox" class="hours-day-toggle" />
+          <span class="hours-day-label">${DAY_SHORT[day]}</span>
+          <div class="hours-ranges" style="display:none;">
+            <button type="button" class="hours-add-range">+ Add range</button>
+          </div>
+        `;
+        const toggle = div.querySelector(".hours-day-toggle");
+        const ranges = div.querySelector(".hours-ranges");
+        const addBtn = div.querySelector(".hours-add-range");
+
+        toggle.addEventListener("change", () => {
+          if (toggle.checked) {
+            div.classList.remove("closed");
+            ranges.style.display = "";
+            if (ranges.querySelectorAll(".hours-range-row").length === 0) {
+              addTimeRange(ranges, "07:00", "21:00");
+            }
+          } else {
+            div.classList.add("closed");
+            ranges.style.display = "none";
+          }
+        });
+
+        addBtn.addEventListener("click", () => {
+          addTimeRange(ranges, "07:00", "21:00");
+        });
+
+        editor.appendChild(div);
+      });
+    }
+
+    function getHoursFromEditor() {
+      const result = {};
+      const editor = document.getElementById("hoursEditor");
+      DAYS.forEach(day => {
+        const dayDiv = editor.querySelector(`.hours-day[data-day="${day}"]`);
+        const toggle = dayDiv.querySelector(".hours-day-toggle");
+        if (!toggle.checked) {
+          result[day] = [];
+          return;
+        }
+        const ranges = [];
+        dayDiv.querySelectorAll(".hours-range-row").forEach(row => {
+          ranges.push({
+            open: row.querySelector(".range-open").value,
+            close: row.querySelector(".range-close").value
+          });
+        });
+        result[day] = ranges;
+      });
+      return result;
+    }
+
+    function setHoursEditor(hours) {
+      buildHoursEditor();
+      if (!hours || typeof hours !== "object") return;
+      const editor = document.getElementById("hoursEditor");
+      DAYS.forEach(day => {
+        const ranges = hours[day];
+        if (!ranges || !Array.isArray(ranges) || ranges.length === 0) return;
+        const dayDiv = editor.querySelector(`.hours-day[data-day="${day}"]`);
+        const toggle = dayDiv.querySelector(".hours-day-toggle");
+        const rangesContainer = dayDiv.querySelector(".hours-ranges");
+        toggle.checked = true;
+        dayDiv.classList.remove("closed");
+        rangesContainer.style.display = "";
+        ranges.forEach(r => {
+          addTimeRange(rangesContainer, r.open, r.close);
+        });
+      });
+    }
+
+    function formatHoursForList(hours) {
+      if (!hours || typeof hours !== "object") return "";
+      const parts = [];
+      const dayOrder = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+      const dayShort = { monday: "Mon", tuesday: "Tue", wednesday: "Wed", thursday: "Thu", friday: "Fri", saturday: "Sat", sunday: "Sun" };
+
+      // Build description for each day
+      const descs = dayOrder.map(day => {
+        const ranges = hours[day];
+        if (!ranges || !Array.isArray(ranges) || ranges.length === 0) return { short: dayShort[day], desc: "Closed" };
+        const rangeStrs = ranges.map(r => {
+          const openStr = formatTime12h(r.open);
+          const closeStr = formatTime12h(r.close);
+          return openStr + " - " + closeStr;
+        });
+        return { short: dayShort[day], desc: rangeStrs.join(" & ") };
+      });
+
+      // Group consecutive days with same description
+      const groups = [];
+      descs.forEach(d => {
+        if (groups.length && groups[groups.length - 1].desc === d.desc) {
+          groups[groups.length - 1].names.push(d.short);
+        } else {
+          groups.push({ names: [d.short], desc: d.desc });
+        }
+      });
+
+      return groups.map(g => {
+        const label = g.names.length === 1 ? g.names[0] : g.names[0] + "-" + g.names[g.names.length - 1];
+        return label + " " + g.desc;
+      }).join(", ");
+    }
+
+    function formatTime12h(timeStr) {
+      if (!timeStr) return "";
+      const [hStr, mStr] = timeStr.split(":");
+      let h = parseInt(hStr, 10);
+      const m = mStr || "00";
+      const ampm = h < 12 ? "AM" : "PM";
+      const displayH = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return displayH + ":" + m + " " + ampm;
+    }
+
+    // API base URL
+    const API_BASE = "/api/v1/admin/stores";
 
     // DOM elements
     const statusBar = document.getElementById("statusBar");
     const storeList = document.getElementById("storeList");
-    const toastContainer = document.getElementById("toastContainer");
-
-    // Toast notification system
-    function showToast(message, type = "info") {
-      const toast = document.createElement("div");
-      toast.className = `toast ${type}`;
-      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
-      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
-      toastContainer.appendChild(toast);
-      setTimeout(() => {
-        toast.style.animation = "slideOut 0.3s ease forwards";
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
-    }
-
-    // Button state management
-    function setSaveButtonState(button, state, originalText = "Save Store") {
-      if (!button) return;
-      switch (state) {
-        case "saving":
-          button.disabled = true;
-          button.classList.add("saving");
-          button.classList.remove("saved");
-          button.textContent = "Saving...";
-          break;
-        case "saved":
-          button.disabled = false;
-          button.classList.remove("saving");
-          button.classList.add("saved");
-          button.textContent = "Saved!";
-          setTimeout(() => {
-            button.classList.remove("saved");
-            button.textContent = originalText;
-          }, 2000);
-          break;
-        case "error":
-        default:
-          button.disabled = false;
-          button.classList.remove("saving", "saved");
-          button.textContent = originalText;
-      }
-    }
     const storeCount = document.getElementById("storeCount");
     const storeModal = document.getElementById("storeModal");
     const deleteModal = document.getElementById("deleteModal");
@@ -708,7 +869,7 @@
             <span class="store-name">${escapeHtml(store.name)}</span>
             <span class="store-address">${escapeHtml(formatAddress(store))}</span>
             <span class="store-phone">${escapeHtml(store.phone)}</span>
-            ${store.hours ? `<div class="store-hours">Hours: ${escapeHtml(store.hours)}</div>` : ''}
+            ${store.hours && typeof store.hours === 'object' ? `<div class="store-hours">Hours: ${escapeHtml(formatHoursForList(store.hours))}</div>` : ''}
             <div class="store-meta">
               <span class="store-badge ${store.status === 'open' ? 'open' : 'closed'}">
                 ${store.status === 'open' ? 'Open' : 'Closed'}
@@ -731,13 +892,6 @@
         });
       });
 
-    }
-
-    // Escape HTML to prevent XSS
-    function escapeHtml(text) {
-      const div = document.createElement("div");
-      div.textContent = text;
-      return div.innerHTML;
     }
 
     // Format payment methods for display
@@ -788,6 +942,7 @@
       deleteBtn.style.display = "none";
       storeForm.reset();
       document.getElementById("storeId").value = "";
+      setHoursEditor(null);
       clearTags(deliveryZipsContainer, deliveryZipsInput);
       setPaymentMethodCheckboxes(["cash", "credit"]); // Default payment methods
       hidePaymentError();
@@ -824,7 +979,7 @@
       document.getElementById("storeState").value = store.state;
       document.getElementById("storeZip").value = store.zip;
       document.getElementById("storePhone").value = store.phone;
-      document.getElementById("storeHours").value = store.hours || "";
+      setHoursEditor(store.hours);
       document.getElementById("storeTimezone").value = store.timezone || "America/New_York";
       document.getElementById("storeStatus").value = store.status;
       // Convert decimal tax rates to percentages for display
@@ -860,7 +1015,7 @@
       const state = document.getElementById("storeState").value.trim().toUpperCase();
       const zip = document.getElementById("storeZip").value.trim();
       const phone = document.getElementById("storePhone").value.trim();
-      const hours = document.getElementById("storeHours").value.trim();
+      const hours = getHoursFromEditor();
       const timezone = document.getElementById("storeTimezone").value;
       const status = document.getElementById("storeStatus").value;
       // Convert percentages to decimals for API (e.g., 4.5% -> 0.045)
@@ -893,7 +1048,7 @@
         state,
         zip_code: zip,
         phone,
-        hours: hours || null,
+        hours: hours,
         timezone,
         status,
         city_tax_rate: cityTaxRate,
@@ -1121,51 +1276,7 @@
       });
     });
 
-    // Theme Toggle
-    const themeToggle = document.getElementById('theme-toggle');
-    const themeIcon = document.getElementById('theme-icon');
-    const themeText = document.getElementById('theme-text');
-    const htmlEl = document.documentElement;
-
-    const savedTheme = localStorage.getItem('admin_theme') || 'light';
-    htmlEl.setAttribute('data-theme', savedTheme);
-    updateThemeButton(savedTheme);
-
-    function updateThemeButton(theme) {
-      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
-      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
-      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
-    }
-
-    themeToggle.addEventListener('click', () => {
-      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-      htmlEl.setAttribute('data-theme', newTheme);
-      localStorage.setItem('admin_theme', newTheme);
-      updateThemeButton(newTheme);
-    });
-
-    // Initialize Lucide icons
-    if (typeof lucide !== 'undefined') lucide.createIcons();
-    // Mark active nav link based on current URL
-    const currentPath = window.location.pathname;
-    document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
-      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
-      const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
-      const linkPage = hrefMatch ? hrefMatch[1] : null;
-      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
-      const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
-      const currentPage = currentMatch ? currentMatch[1] : null;
-
-      if (linkPage && currentPage && linkPage === currentPage) {
-        link.classList.add('active');
-        // Also mark parent dropdown label as active
-        const navGroup = link.closest('.nav-group');
-        if (navGroup) {
-          const label = navGroup.querySelector('.nav-group-label');
-          if (label) label.classList.add('active');
-        }
-      }
-    });
+    initAdminPage();
 
     // Initial load
     loadStores();

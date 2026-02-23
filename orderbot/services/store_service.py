@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..db.models import Company, Store
-from .store_hours import parse_hours_config, is_store_open_now, get_next_open_time_display
+from .store_hours import parse_hours_config, is_store_open_now, get_next_open_time_display, format_hours_display
 
 
 logger = logging.getLogger(__name__)
@@ -152,11 +152,11 @@ def build_store_info(
                 store_info["state"] = store.state
                 store_info["zip_code"] = store.zip_code
                 store_info["phone"] = store.phone
-                store_info["hours"] = store.hours
+                store_info["hours"] = format_hours_display(store.hours)
 
                 # Store hours / scheduling support
                 timezone_str = store.timezone or "America/New_York"
-                hours_config = parse_hours_config(store.hours if isinstance(store.hours, dict) else None)
+                hours_config = parse_hours_config(store.hours)
                 store_open = is_store_open_now(hours_config, timezone_str)
                 store_info["timezone"] = timezone_str
                 store_info["is_open"] = store_open

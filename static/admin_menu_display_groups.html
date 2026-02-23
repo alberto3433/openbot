@@ -198,66 +198,8 @@
     </div>
   </div>
 
+  <script src="/static/admin_common.js"></script>
   <script>
-    // =====================================================
-    // Theme Toggle
-    // =====================================================
-    const themeToggle = document.getElementById('theme-toggle');
-    const themeIcon = document.getElementById('theme-icon');
-    const themeText = document.getElementById('theme-text');
-    const html = document.documentElement;
-
-    // Load saved theme or default to light
-    const savedTheme = localStorage.getItem('admin_theme') || 'light';
-    html.setAttribute('data-theme', savedTheme);
-    updateThemeButton(savedTheme);
-
-    function updateThemeButton(theme) {
-      themeIcon.innerHTML = theme === 'dark'
-        ? '<i data-lucide="moon"></i>'
-        : '<i data-lucide="sun"></i>';
-      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
-      if (typeof lucide !== 'undefined') {
-        lucide.createIcons({ nodes: [themeIcon] });
-      }
-    }
-
-    themeToggle.addEventListener('click', () => {
-      const currentTheme = html.getAttribute('data-theme');
-      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-      html.setAttribute('data-theme', newTheme);
-      localStorage.setItem('admin_theme', newTheme);
-      updateThemeButton(newTheme);
-    });
-
-    // Initialize Lucide icons
-    document.addEventListener('DOMContentLoaded', () => {
-      if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
-      }
-      // Mark active nav link based on current URL
-      const currentPath = window.location.pathname;
-      document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
-        // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
-        const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
-        const linkPage = hrefMatch ? hrefMatch[1] : null;
-        // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
-        const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
-        const currentPage = currentMatch ? currentMatch[1] : null;
-
-        if (linkPage && currentPage && linkPage === currentPage) {
-          link.classList.add('active');
-          // Also mark parent dropdown label as active
-          const navGroup = link.closest('.nav-group');
-          if (navGroup) {
-            const label = navGroup.querySelector('.nav-group-label');
-            if (label) label.classList.add('active');
-          }
-        }
-      });
-      updateThemeButton(html.getAttribute('data-theme'));
-    });
-
     // =====================================================
     // API and State
     // =====================================================
@@ -265,56 +207,6 @@
     const CATEGORIES_API = "/api/v1/admin/modifiers/overall-categories";
     let groups = [];
     let categories = [];
-
-    // Toast container reference
-    const toastContainer = document.getElementById("toastContainer");
-
-    // Toast notification function
-    function showToast(message, type = "info") {
-      const toast = document.createElement("div");
-      toast.className = `toast ${type}`;
-      const iconNames = { success: "check", error: "x", info: "info" };
-      toast.innerHTML = `
-        <span class="icon"><i data-lucide="${iconNames[type] || iconNames.info}"></i></span>
-        <span>${message}</span>
-      `;
-      toastContainer.appendChild(toast);
-      if (typeof lucide !== 'undefined') {
-        lucide.createIcons({ nodes: [toast] });
-      }
-      setTimeout(() => {
-        toast.style.animation = "slideOut 0.3s ease forwards";
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
-    }
-
-    // Button state management
-    function setSaveButtonState(button, state, originalText = "Save") {
-      if (!button) return;
-      switch (state) {
-        case "saving":
-          button.disabled = true;
-          button.classList.add("saving");
-          button.classList.remove("saved");
-          button.textContent = "Saving...";
-          break;
-        case "saved":
-          button.disabled = false;
-          button.classList.remove("saving");
-          button.classList.add("saved");
-          button.textContent = "Saved!";
-          setTimeout(() => {
-            button.classList.remove("saved");
-            button.textContent = originalText;
-          }, 2000);
-          break;
-        case "error":
-        default:
-          button.disabled = false;
-          button.classList.remove("saving", "saved");
-          button.textContent = originalText;
-      }
-    }
 
     // Load groups from API
     async function loadGroups() {
@@ -530,13 +422,6 @@
       }
     }
 
-    // Escape HTML
-    function escapeHtml(text) {
-      const div = document.createElement("div");
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
     // Auto-generate slug from name
     document.getElementById("displayNameInput").addEventListener("input", function(e) {
       const slugInput = document.getElementById("slugInput");
@@ -568,6 +453,7 @@
     // Initial load
     loadGroups();
     loadCategories();
+    initAdminPage();
   </script>
 </body>
 </html>

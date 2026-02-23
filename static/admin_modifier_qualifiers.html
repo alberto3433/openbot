@@ -286,54 +286,11 @@
     </div>
   </div>
 
+  <script src="/static/admin_common.js"></script>
   <script>
     const API_BASE = "/api/v1/admin/modifier-qualifiers";
     let qualifiers = [];
     let currentFilter = "all";
-
-    // Toast container reference
-    const toastContainer = document.getElementById("toastContainer");
-
-    // Toast notification function
-    function showToast(message, type = "info") {
-      const toast = document.createElement("div");
-      toast.className = `toast ${type}`;
-      const icons = { success: "\u2713", error: "\u2715", info: "\u2139" };
-      toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span>`;
-      toastContainer.appendChild(toast);
-      setTimeout(() => {
-        toast.style.animation = "slideOut 0.3s ease forwards";
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
-    }
-
-    // Button state management
-    function setSaveButtonState(button, state, originalText = "Save") {
-      if (!button) return;
-      switch (state) {
-        case "saving":
-          button.disabled = true;
-          button.classList.add("saving");
-          button.classList.remove("saved");
-          button.textContent = "Saving...";
-          break;
-        case "saved":
-          button.disabled = false;
-          button.classList.remove("saving");
-          button.classList.add("saved");
-          button.textContent = "Saved!";
-          setTimeout(() => {
-            button.classList.remove("saved");
-            button.textContent = originalText;
-          }, 2000);
-          break;
-        case "error":
-        default:
-          button.disabled = false;
-          button.classList.remove("saving", "saved");
-          button.textContent = originalText;
-      }
-    }
 
     // Show status message
     function showStatus(message, type = "info") {
@@ -532,13 +489,6 @@
       }
     }
 
-    // Escape HTML
-    function escapeHtml(text) {
-      const div = document.createElement("div");
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
     // Close modal on outside click
     document.getElementById("qualifierModal").addEventListener("click", function(e) {
       if (e.target === this) closeModal();
@@ -549,54 +499,9 @@
       if (e.key === "Escape") closeModal();
     });
 
-    // Theme Toggle
-    const themeToggle = document.getElementById('theme-toggle');
-    const themeIcon = document.getElementById('theme-icon');
-    const themeText = document.getElementById('theme-text');
-    const htmlEl = document.documentElement;
-
-    const savedTheme = localStorage.getItem('admin_theme') || 'light';
-    htmlEl.setAttribute('data-theme', savedTheme);
-    updateThemeButton(savedTheme);
-
-    function updateThemeButton(theme) {
-      themeIcon.innerHTML = theme === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
-      themeText.textContent = theme === 'dark' ? 'Dark' : 'Light';
-      if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [themeIcon] });
-    }
-
-    themeToggle.addEventListener('click', () => {
-      const newTheme = htmlEl.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-      htmlEl.setAttribute('data-theme', newTheme);
-      localStorage.setItem('admin_theme', newTheme);
-      updateThemeButton(newTheme);
-    });
-
-    // Initialize Lucide icons
-    if (typeof lucide !== 'undefined') lucide.createIcons();
-    // Mark active nav link based on current URL
-    const currentPath = window.location.pathname;
-    document.querySelectorAll('.app-header .nav-links a, .app-header .nav-dropdown a').forEach(link => {
-      // Extract page name from href (e.g., /static/admin_item_types.html -> item_types)
-      const hrefMatch = link.getAttribute('href').match(/admin_(\w+)\.html/);
-      const linkPage = hrefMatch ? hrefMatch[1] : null;
-      // Extract page name from current URL (e.g., /admin-ui/item_types -> item_types)
-      const currentMatch = currentPath.match(/\/admin-ui\/(\w+)/);
-      const currentPage = currentMatch ? currentMatch[1] : null;
-
-      if (linkPage && currentPage && linkPage === currentPage) {
-        link.classList.add('active');
-        // Also mark parent dropdown label as active
-        const navGroup = link.closest('.nav-group');
-        if (navGroup) {
-          const label = navGroup.querySelector('.nav-group-label');
-          if (label) label.classList.add('active');
-        }
-      }
-    });
-
     // Initial load
     loadQualifiers();
+    initAdminPage();
   </script>
 </body>
 </html>

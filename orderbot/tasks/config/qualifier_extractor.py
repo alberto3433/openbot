@@ -11,6 +11,7 @@ import re
 
 from orderbot.cache import menu_cache
 from orderbot.constants import QUALIFIER_PROXIMITY_THRESHOLD
+from orderbot.tasks.parsers.quantity_utils import QUANTITY_MODIFIER_WORDS
 
 __all__ = ["QualifierExtractor"]
 
@@ -106,5 +107,10 @@ class QualifierExtractor:
                             best_qualifier = info["normalized_form"]
                             best_distance = distance
                             best_is_before = is_before
+
+        # Filter out quantity-indicating qualifiers (double, triple, extra, etc.)
+        # These are already captured as numeric quantities and shouldn't appear in display names
+        if best_qualifier and best_qualifier.lower() in QUANTITY_MODIFIER_WORDS:
+            return None
 
         return best_qualifier

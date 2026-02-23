@@ -137,7 +137,9 @@ class ConfigFallbackInterceptor:
         # can show its own attribute options with proper pagination)
         if pending_is_attr_config and modifier_category:
             _, pending_attr_slug = parse_pending_field(order.pending_field)
-            if modifier_category == pending_attr_slug:
+            singular_category = singularize(modifier_category)
+            attr_parts = pending_attr_slug.split("_")
+            if modifier_category == pending_attr_slug or singular_category in attr_parts:
                 # Matches current attribute - let config handler show attribute options
                 modifier_category = None
             else:

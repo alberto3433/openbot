@@ -399,7 +399,7 @@ def chat_message_stream(
                 final_event['customer_id'] = result.order_state['customer_id']
             yield f"data: {json.dumps(final_event)}\n\n"
 
-        except (ValueError, KeyError, TypeError, AttributeError, SQLAlchemyError) as e:
+        except Exception as e:
             logger.error("MessageProcessor failed in stream: %s", e, exc_info=True)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 

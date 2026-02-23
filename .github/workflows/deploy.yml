@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: deploy-apprunner
+  cancel-in-progress: true
+
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: orderbot
@@ -40,5 +44,16 @@ jobs:
 
       - name: Deploy to App Runner
         run: |
-          aws apprunner start-deployment --service-arn $APP_RUNNER_SERVICE_ARN
-          echo "Deployment started. Check AWS Console for status."
+          for i in 1 2 3 4 5; do
+            STATUS=$(aws apprunner describe-service --service-arn $APP_RUNNER_SERVICE_ARN --query 'Service.Status' --output text)
+            echo "Attempt $i: Service status is $STATUS"
+            if [ "$STATUS" = "RUNNING" ]; then
+              aws apprunner start-deployment --service-arn $APP_RUNNER_SERVICE_ARN
+              echo "Deployment started."
+              exit 0
+            fi
+            echo "Service not in RUNNING state, waiting 30s..."
+            sleep 30
+          done
+          echo "Service did not reach RUNNING state after 5 attempts."
+          exit 1

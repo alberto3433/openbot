@@ -247,6 +247,7 @@ def lookup_customer_by_id(db: Session, customer_id: int) -> dict[str, Any] | Non
             "name": customer.name,
             "phone": customer.phone,
             "email": customer.email,
+            "preferred_store_id": customer.preferred_store_id,
             "order_count": 0,
             "last_order_id": None,
             "last_order_items": [],
@@ -270,6 +271,7 @@ def lookup_customer_by_id(db: Session, customer_id: int) -> dict[str, Any] | Non
         "name": customer.name or recent_order.customer_name,
         "phone": customer.phone or recent_order.phone,
         "email": customer.email or recent_order.customer_email,
+        "preferred_store_id": customer.preferred_store_id,
         "order_count": order_count,
         "last_order_id": recent_order.id,
         "last_order_items": last_order_items,
@@ -335,10 +337,18 @@ def lookup_customer_by_phone(db: Session, phone: str) -> dict[str, Any] | None:
     # Get last order items for "usual" feature
     last_order_items = [_order_item_to_dict(item) for item in recent_order.items] if recent_order.items else []
 
+    # Look up preferred store from Customer record (if linked)
+    preferred_store_id = None
+    if recent_order.customer_id:
+        customer = db.get(Customer, recent_order.customer_id)
+        if customer:
+            preferred_store_id = customer.preferred_store_id
+
     return {
         "name": recent_order.customer_name,
         "phone": recent_order.phone,
         "email": recent_order.customer_email,
+        "preferred_store_id": preferred_store_id,
         "order_count": order_count,
         "last_order_id": recent_order.id,
         "last_order_items": last_order_items,

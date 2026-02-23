@@ -75,6 +75,7 @@ from ..schemas.chat import (
     ChatStartResponse,
     ChatMessageRequest,
     ChatMessageResponse,
+    ChatRestoreResponse,
     ActionOut,
     AbandonedSessionRequest,
     ReportSessionRequest,
@@ -190,8 +191,6 @@ def chat_start(
     session_id = str(uuid.uuid4())
 
     company = get_or_create_company(db)
-    store_info = build_store_info(db, store_id, company_name=company.name)
-    store_name = store_info.get("name") or company.name
 
     # Check for returning customer — priority: customer_id > caller_id
     returning_customer = None
@@ -206,6 +205,16 @@ def chat_start(
     if not returning_customer and caller_id:
         returning_customer = lookup_customer_by_phone(db, caller_id)
         logger.info("Caller ID lookup: %s -> %s", caller_id, "found" if returning_customer else "new customer")
+
+    # Use customer's preferred store when no explicit store_id provided
+    if not store_id and returning_customer:
+        preferred = returning_customer.get("preferred_store_id")
+        if preferred:
+            store_id = preferred
+            logger.info("Using preferred store %s for returning customer", store_id)
+
+    store_info = build_store_info(db, store_id, company_name=company.name)
+    store_name = store_info.get("name") or company.name
 
     store_is_open = store_info.get("is_open", True)
     next_open_time = store_info.get("next_open_time")
@@ -234,6 +243,34 @@ def chat_start(
         quick_replies=greeting_qr,
         audio_id=audio_id,
         customer_id=resolved_customer_id,
+    )
+
+
+@chat_router.get("/session/{session_id}", response_model=ChatRestoreResponse)
+def chat_restore_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+) -> ChatRestoreResponse:
+    """
+    Restore an existing chat session.
+
+    Returns conversation history, order state, and store info so the
+    frontend can rebuild the UI after a page refresh.
+    """
+    session = get_or_create_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    store_id = session.get("store_id")
+    store_info = build_store_info(db, store_id) if store_id else None
+
+    return ChatRestoreResponse(
+        session_id=session_id,
+        history=session.get("history", []),
+        order_state=session.get("order", {}),
+        store_id=store_id,
+        customer_id=session.get("customer_id"),
+        store_info=store_info,
     )
 
 

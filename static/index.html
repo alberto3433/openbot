@@ -2083,6 +2083,7 @@
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         const data = await resp.json();
         sessionId = data.session_id;
+        sessionStorage.setItem("sessionId", sessionId);
         connected = true;
         sessionStartTime = Date.now();
 
@@ -2123,6 +2124,65 @@
         console.error("Error starting session:", err);
         headerEl.textContent = "Error starting session";
         setStatus("Failed to connect");
+      }
+    }
+
+    async function restoreSession(savedSessionId, storeId) {
+      try {
+        setStatus("Restoring session...");
+        const resp = await fetch(`/api/v1/chat/session/${savedSessionId}`);
+        if (!resp.ok) {
+          // Session expired or not found — clear stale storage and fall through
+          sessionStorage.removeItem("sessionId");
+          return false;
+        }
+        const data = await resp.json();
+
+        sessionId = data.session_id;
+        connected = true;
+        sessionStartTime = Date.now();
+        currentStoreId = data.store_id || storeId;
+
+        // Restore order state
+        orderState = data.order_state || { status: "pending", items: [], total_price: 0 };
+
+        // Build header
+        let headerText = `v${appVersion} | ` + sessionId.substring(0, 8);
+        if (currentStoreId && STORE_NAMES[currentStoreId]) headerText += ` | ${STORE_NAMES[currentStoreId]}`;
+        headerEl.textContent = headerText;
+
+        setStatus("Connected");
+        callerIdPanel.removeAttribute("open");
+
+        // Replay conversation history into chat bubbles
+        const history = data.history || [];
+        for (const msg of history) {
+          addMessage(msg.role, msg.content);
+          if (msg.role === "assistant") lastBotMessage = msg.content;
+          if (msg.role === "user") lastUserMessage = msg.content;
+          messageCount++;
+          conversationHistory.push({ role: msg.role, content: msg.content });
+        }
+
+        // Render sidebar order panel
+        renderOrderPanel(orderState);
+
+        // Mark abandon as already sent so refresh doesn't double-log
+        abandonAnalyticsSent = true;
+
+        // Enable input
+        inputEl.disabled = false;
+        inputEl.placeholder = "Type your message...";
+        inputEl.focus();
+        document.getElementById("mic-btn").disabled = false;
+        document.getElementById("send-btn").disabled = false;
+        if (messageCount >= 1) replayBtn.disabled = false;
+
+        return true;
+      } catch (err) {
+        console.error("Error restoring session:", err);
+        sessionStorage.removeItem("sessionId");
+        return false;
       }
     }
 
@@ -2300,6 +2360,7 @@
       const storeId = storeSelect.value;
       if (sessionId) {
         sessionId = null;
+        sessionStorage.removeItem("sessionId");
         connected = false;
         messagesEl.innerHTML = "";
         messageCount = 0;
@@ -2342,6 +2403,27 @@
       if (callerIdParam) callerIdInput.value = callerIdParam;
       const storeId = storeIdParam && STORE_NAMES[storeIdParam] ? storeIdParam : storeSelect.value;
       if (storeId) {
+        // Check for existing session to restore (survives page refresh)
+        const savedSessionId = sessionStorage.getItem("sessionId");
+        if (savedSessionId) {
+          const overlay = document.getElementById("welcome-overlay");
+          overlay.style.display = "none";
+          const restored = await restoreSession(savedSessionId, storeId);
+          if (restored) {
+            // Session restored — skip welcome overlay
+          } else {
+            // Stale session — fall through to normal welcome flow
+            overlay.style.display = "";
+            const welcomeTitle = document.getElementById("welcome-title");
+            welcomeTitle.textContent = companyInfo.name || "Welcome";
+            overlay.addEventListener("click", async () => {
+              overlay.classList.add("fade-out");
+              audioEnabled = true;
+              await startSession(callerIdParam || null, storeId);
+              setTimeout(() => overlay.remove(), 400);
+            }, { once: true });
+          }
+        } else {
         // Show welcome overlay — user click enables audio then starts session
         const overlay = document.getElementById("welcome-overlay");
         const welcomeTitle = document.getElementById("welcome-title");
@@ -2353,6 +2435,7 @@
           await startSession(callerIdParam || null, storeId);
           setTimeout(() => overlay.remove(), 400);
         }, { once: true });
+        }
       } else {
         headerEl.textContent = "No stores available";
         setStatus("Please add stores");
@@ -2641,6 +2724,7 @@
 
       // 2. Reset session state (same pattern as startWithCallerIdBtn handler)
       sessionId = null;
+      sessionStorage.removeItem("sessionId");
       connected = false;
       messagesEl.innerHTML = "";
       messageCount = 0;

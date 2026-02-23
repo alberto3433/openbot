@@ -177,6 +177,8 @@ class MessageProcessor:
                     "name": raw_name,
                     "short_name": short,
                 }
+                # Persist preferred store on the customer record
+                self._update_preferred_store(session, new_store_id)
 
         # 5. Update history
         history.append({"role": "user", "content": ctx.user_message})
@@ -332,6 +334,34 @@ class MessageProcessor:
         """Get a random store ID."""
         from .config import get_random_store_id
         return get_random_store_id()
+
+    # -------------------------------------------------------------------------
+    # Store Preference
+    # -------------------------------------------------------------------------
+
+    def _update_preferred_store(
+        self, session: dict[str, Any], store_id: str,
+    ) -> None:
+        """Persist the customer's preferred store so it survives sessions.
+
+        Looks up the Customer record via customer_id stored in the session
+        and sets preferred_store_id.
+        """
+        customer_id = session.get("customer_id")
+        if not customer_id:
+            return
+        try:
+            from .db.models import Customer
+            customer = self.db.get(Customer, customer_id)
+            if customer:
+                customer.preferred_store_id = store_id
+                self.db.flush()
+                logger.info(
+                    "Updated preferred_store_id=%s for customer #%d",
+                    store_id, customer_id,
+                )
+        except SQLAlchemyError:
+            logger.exception("Failed to update preferred_store_id for customer #%d", customer_id)
 
     # -------------------------------------------------------------------------
     # Order Persistence

@@ -179,6 +179,22 @@ class ReportSessionRequest(BaseModel):
     session_id: str
 
 
+class ChatRestoreResponse(BaseModel):
+    """
+    Response from restoring an existing chat session.
+
+    Returned by GET /chat/session/{session_id}. Contains everything needed
+    to rebuild the UI after a page refresh: conversation history, order state,
+    and store info.
+    """
+    session_id: str
+    history: list[dict[str, Any]]
+    order_state: dict[str, Any]
+    store_id: str | None = None
+    customer_id: int | None = None
+    store_info: dict[str, Any] | None = None
+
+
 class AbandonedSessionRequest(BaseModel):
     """
     Request body for logging an abandoned session.

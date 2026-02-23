@@ -374,7 +374,6 @@ class OrderStateMachine:
             # If no result, the response wasn't understood - fall through to normal processing
 
         if order.pending_store_change:
-            order.pending_store_change = False
             store_result = self._handle_store_selection(user_input, order)
             if store_result:
                 order.add_message("assistant", store_result.message)
@@ -890,7 +889,8 @@ class OrderStateMachine:
     ) -> StateMachineResult:
         """Handle a request to change the ordering store.
 
-        Shows available stores as quick replies.
+        Shows "from" as a linkified word. Clicking it triggers the paginated
+        store list via _handle_store_selection.
         """
         all_stores = self._store_info.get("all_stores", [])
         if not all_stores or len(all_stores) <= 1:
@@ -899,18 +899,13 @@ class OrderStateMachine:
             return StateMachineResult(message=msg, order=order)
 
         order.pending_store_change = True
+        order.pending_store_page = 0
         msg = "Which store would you like to order from?"
-        quick_replies = []
-        for s in all_stores:
-            raw = s.get("name", "")
-            short = raw.split(" - ")[-1] if " - " in raw else raw
-            quick_replies.append({"label": short, "value": s["store_id"]})
-
         order.add_message("assistant", msg)
         return StateMachineResult(
             message=msg,
             order=order,
-            quick_replies=quick_replies,
+            quick_replies=[{"label": "from", "value": "show stores"}],
         )
 
     def _handle_store_selection(
@@ -920,13 +915,75 @@ class OrderStateMachine:
     ) -> StateMachineResult | None:
         """Handle the user's store selection after a pending_store_change prompt.
 
-        Matches by store_id (exact, for quick-reply taps) or by name substring.
+        Handles three input types:
+        1. "show stores" (from clicking the "from" link) — show first page
+        2. "what else?" / "show more" — show next page
+        3. Store name or ID — change the store
+
         Sets a transient ``_new_store_id`` key on the order so the message
         processor can update the session.
         """
+        from .parsers.constants import DEFAULT_PAGINATION_SIZE
+
         all_stores = self._store_info.get("all_stores", [])
         text_lower = user_input.strip().lower()
 
+        # --- Show stores / show more ---
+        is_show = text_lower == "show stores"
+        is_more = text_lower in ("what else?", "what else", "show more", "more")
+
+        if is_show or is_more:
+            if is_show:
+                order.pending_store_page = 0
+            page = order.pending_store_page
+            page_size = DEFAULT_PAGINATION_SIZE
+            start = page * page_size
+            end = start + page_size
+            page_stores = all_stores[start:end]
+            has_more = end < len(all_stores)
+
+            if not page_stores:
+                order.pending_store_page = 0
+                msg = "That's all the stores."
+                order.pending_store_change = True
+                return StateMachineResult(message=msg, order=order)
+
+            # Build short names
+            names = []
+            for s in page_stores:
+                raw = s.get("name", "")
+                short = raw.split(" - ")[-1] if " - " in raw else raw
+                names.append(short)
+
+            # Format message
+            if page == 0:
+                if has_more:
+                    names_str = ", ".join(names) + ", and more"
+                    msg = f"We have {names_str} — want to see more?"
+                else:
+                    if len(names) > 1:
+                        msg = "We have " + ", ".join(names[:-1]) + " or " + names[-1] + "."
+                    else:
+                        msg = f"We have {names[0]}."
+            else:
+                if has_more:
+                    msg = "We also have " + ", ".join(names) + ", and more."
+                else:
+                    msg = "And finally, " + ", ".join(names) + ". That's all of them."
+
+            # Build quick replies — each store name linkified + "more" if paginated
+            # Use short name as value so it displays nicely as the user message
+            qr = []
+            for s, short in zip(page_stores, names):
+                qr.append({"label": short, "value": short})
+            if has_more:
+                qr.append({"label": "more", "value": "what else?"})
+
+            order.pending_store_page = page + 1
+            order.pending_store_change = True
+            return StateMachineResult(message=msg, order=order, quick_replies=qr)
+
+        # --- Store selection by ID or name ---
         matched_store = None
         for s in all_stores:
             if s["store_id"] == user_input.strip():
@@ -943,6 +1000,7 @@ class OrderStateMachine:
                     break
 
         if matched_store:
+            order.pending_store_change = False
             order._new_store_id = matched_store["store_id"]
             raw = matched_store.get("name", "")
             short = raw.split(" - ")[-1] if " - " in raw else raw
@@ -951,18 +1009,13 @@ class OrderStateMachine:
                 order=order,
             )
 
-        # No match — re-prompt with quick replies
-        msg = "I didn't find that store. Please pick one:"
-        quick_replies = []
-        for s in all_stores:
-            raw = s.get("name", "")
-            short = raw.split(" - ")[-1] if " - " in raw else raw
-            quick_replies.append({"label": short, "value": s["store_id"]})
+        # No match — re-prompt with "from" link
         order.pending_store_change = True
+        msg = "I didn't catch that store. Which store would you like to order from?"
         return StateMachineResult(
             message=msg,
             order=order,
-            quick_replies=quick_replies,
+            quick_replies=[{"label": "from", "value": "show stores"}],
         )
 
     # Compiled pattern for customer info change requests

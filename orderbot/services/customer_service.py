@@ -161,10 +161,10 @@ def find_or_create_customer(
         if name and name != customer.name:
             customer.name = name
             updated = True
-        if phone and not customer.phone:
+        if phone and phone != customer.phone:
             customer.phone = phone
             updated = True
-        if email and not customer.email:
+        if email and email.lower() != (customer.email or "").lower():
             customer.email = email
             updated = True
         if updated:

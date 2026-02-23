@@ -25,7 +25,7 @@ from .db.models import SessionAnalytics, Company
 from .cache import menu_cache
 from .schemas.enums import OrderStatus
 from .tasks.state_machine_adapter import process_message_with_state_machine
-from .services.customer_service import lookup_customer_by_phone
+from .services.customer_service import find_or_create_customer, lookup_customer_by_phone
 from .services.payment_service import create_payment_url, send_in_store_receipt
 from .services.store_service import build_store_info, get_company
 
@@ -194,6 +194,9 @@ class MessageProcessor:
             updated_order_state.setdefault("customer", {})
             updated_order_state["customer"]["phone"] = session_caller_id
 
+        # 6b. Sync customer record to DB as soon as name + contact is available
+        self._sync_customer_record(session, updated_order_state)
+
         # 7. Handle confirmed order
         order_persisted = False
         analytics_logged = False
@@ -312,6 +315,46 @@ class MessageProcessor:
         Delegates to the shared lookup_customer_by_phone helper in services.helpers.
         """
         return lookup_customer_by_phone(self.db, phone)
+
+    def _sync_customer_record(
+        self,
+        session: dict[str, Any],
+        order_state: dict[str, Any],
+    ) -> None:
+        """Create or update a Customer record as soon as name + contact is available.
+
+        Runs on every message so the record is persisted the moment checkout
+        collects enough info, even if the user abandons the order. Uses
+        find_or_create_customer() which is idempotent.
+        """
+        cust = order_state.get("customer", {})
+        name = cust.get("name")
+        phone = cust.get("phone")
+        email = cust.get("email")
+
+        if not name or not (phone or email):
+            return
+
+        try:
+            customer = find_or_create_customer(
+                self.db, name=name, phone=phone, email=email,
+            )
+            if customer and not session.get("customer_id"):
+                session["customer_id"] = customer.id
+                order_state["customer_id"] = customer.id
+                logger.info("Synced customer #%d early (before confirmation)", customer.id)
+
+            # Sync preferred store if the session has one and the record differs
+            store_id = session.get("store_id")
+            if customer and store_id and customer.preferred_store_id != store_id:
+                customer.preferred_store_id = store_id
+                self.db.flush()
+                logger.info(
+                    "Synced preferred_store_id=%s for customer #%d",
+                    store_id, customer.id,
+                )
+        except SQLAlchemyError:
+            logger.exception("Failed to sync customer record early")
 
     # -------------------------------------------------------------------------
     # Store Info

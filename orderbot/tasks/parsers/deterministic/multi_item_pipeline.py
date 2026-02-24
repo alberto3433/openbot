@@ -258,10 +258,25 @@ def _other_tokens_are_potential_modifiers(tokens: list["Token"], text: str) -> b
     other_tokens = [t for t in tokens[1:] if t.token_type != "separator"]
     # Only skip if ALL other tokens could be modifiers (even if also classified as items)
     # e.g., "butter" is both a menu item AND a spread - in "bagel, butter" context, it's a modifier
+    first_type = tokens[0].item_type
     if other_tokens:
-        if all(_is_potential_modifier(t.original) for t in other_tokens):
-            logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
-            return True
+        for t in other_tokens:
+            # A token classified as a different item type that isn't also a known
+            # modifier/ingredient cannot be a modifier for the first item.
+            # e.g., "earl gray" classified as tea in "bagel and earl gray" is a
+            # separate item, not a modifier for the bagel.
+            if (
+                t.token_type == "item"
+                and t.item_type
+                and first_type
+                and t.item_type != first_type
+                and not menu_cache.is_known_modifier(t.original.lower().strip())
+            ):
+                return False
+            if not _is_potential_modifier(t.original):
+                return False
+        logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
+        return True
 
     return False
 

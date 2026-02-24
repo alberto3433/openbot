@@ -11,7 +11,7 @@ import logging
 
 from orderbot.cache import menu_cache
 
-from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity
+from ..quantity_utils import QUANTITY_MODIFIER_WORDS, extract_leading_quantity as _extract_leading_quantity
 from ...utils.text import normalize_text
 from .item_indicator import _has_item_indicator
 
@@ -35,6 +35,14 @@ def _is_demotable_to_modifier(token: "Token") -> bool:
     # Strip quantity prefix (e.g., "2 lox" -> "lox")
     _, remaining = _extract_leading_quantity(text)
     check_text = remaining if remaining else text
+
+    # Strip quantity modifier words (e.g., "extra cream cheese" -> "cream cheese")
+    check_lower = check_text.lower()
+    for word in QUANTITY_MODIFIER_WORDS:
+        if check_lower.startswith(word + " "):
+            check_text = check_text[len(word):].strip()
+            break
+
     return menu_cache.is_known_modifier(check_text)
 
 

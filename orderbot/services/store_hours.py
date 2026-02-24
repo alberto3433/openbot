@@ -355,3 +355,28 @@ def format_hours_display(hours: dict | None) -> str | None:
             parts.append(f"{names[0]}-{names[-1]} {desc}")
 
     return ", ".join(parts) if parts else None
+
+
+def get_default_pickup_time_iso(
+    store_info: dict,
+    lead_minutes: int = 15,
+) -> str | None:
+    """Compute an ISO-8601 default pickup time for after-hours orders.
+
+    Returns the next open time plus ``lead_minutes`` so the kitchen has
+    time to prepare the order once the store opens.
+
+    Args:
+        store_info: Store info dict (must contain ``hours_config`` and ``timezone``).
+        lead_minutes: Minutes to add after the store opens (default 15).
+
+    Returns:
+        ISO-8601 datetime string, or None if next open time can't be determined.
+    """
+    hours_config = store_info.get("hours_config")
+    timezone_str = store_info.get("timezone", "America/New_York")
+    next_open = get_next_open_time(hours_config, timezone_str)
+    if next_open is None:
+        return None
+    pickup_dt = next_open + timedelta(minutes=lead_minutes)
+    return pickup_dt.isoformat()

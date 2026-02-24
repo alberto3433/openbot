@@ -130,6 +130,7 @@ def _build_initial_session_data(
     store_id: str | None,
     store_info: dict,
     store_is_open: bool,
+    default_pickup_time: str | None = None,
 ) -> dict:
     """Build the initial session data dict for a new chat session."""
     return {
@@ -140,7 +141,7 @@ def _build_initial_session_data(
             "customer": {
                 "name": returning_customer.get("name") if returning_customer else None,
                 "phone": returning_customer.get("phone") if returning_customer else None,
-                "pickup_time": None,
+                "pickup_time": default_pickup_time,
             },
             "total_price": 0.0,
         },
@@ -223,11 +224,18 @@ def chat_start(
     store_is_open = store_info.get("is_open", True)
     next_open_time = store_info.get("next_open_time")
 
+    # When store is closed, default pickup time to 15 min after next open
+    # (gives the kitchen time to prepare the order)
+    default_pickup_time = None
+    if not store_is_open:
+        from ..services.store_hours import get_default_pickup_time_iso
+        default_pickup_time = get_default_pickup_time_iso(store_info, lead_minutes=15)
+
     welcome = _generate_greeting(returning_customer, store_name, store_is_open, next_open_time)
 
     session_data = _build_initial_session_data(
         welcome, returning_customer, resolved_customer_id,
-        caller_id, store_id, store_info, store_is_open,
+        caller_id, store_id, store_info, store_is_open, default_pickup_time,
     )
     save_session(db, session_id, session_data)
 

@@ -399,3 +399,8 @@ def apply_mock_menu_cache(monkeypatch):
     import orderbot.tasks.parsers.constants as parser_constants
     # Mock known menu items - required for multi-item parsing
     monkeypatch.setattr(parser_constants, "get_known_menu_items", mock_get_known_menu_items)
+    # Reset module-level caches in parser modules that cache DB data.
+    # Without this, caches built from mock data persist after monkeypatch
+    # reverts menu_cache methods, causing cross-file test failures under xdist.
+    import orderbot.tasks.parsers.deterministic.split_quantity_parsing as sqp
+    monkeypatch.setattr(sqp, "_SPLIT_INDICATOR_PATTERNS_CACHE", None)

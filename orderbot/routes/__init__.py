@@ -88,6 +88,7 @@ from .admin_menu_display_groups import admin_menu_display_groups_router
 from .admin_global_attributes import admin_global_attributes_router, admin_item_type_global_attrs_router
 # Import submodules so their routes get registered on the shared routers
 from . import admin_global_attribute_options  # noqa: F401
+from . import admin_global_attribute_skip_rules  # noqa: F401
 from . import admin_item_type_global_attrs  # noqa: F401
 from .admin_menu_item_sizes import admin_size_categories_router, admin_sizes_router
 from .admin_unrecognized_menu_items import admin_unrecognized_menu_item_suggestions_router

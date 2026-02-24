@@ -2015,6 +2015,12 @@
         }
         if (data.returning_customer) console.log("Returning customer:", data.returning_customer);
 
+        // Apply initial scheduling from server (e.g., after-hours default pickup time)
+        if (data.scheduling) {
+          orderState.scheduling = data.scheduling;
+          renderOrderPanel(orderState);
+        }
+
         // Enable input now that session is ready
         inputEl.disabled = false;
         inputEl.placeholder = "Type your message...";

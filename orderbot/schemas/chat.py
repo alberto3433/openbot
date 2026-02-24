@@ -94,6 +94,7 @@ class ChatStartResponse(BaseModel):
     audio_id: str | None = None
     customer_id: int | None = None
     preferred_voice: str | None = None
+    scheduling: dict[str, Any] | None = None
 
 
 class ChatMessageRequest(BaseModel):

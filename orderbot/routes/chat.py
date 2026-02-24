@@ -250,6 +250,10 @@ def chat_start(
 
     preferred_voice = returning_customer.get("preferred_voice") if returning_customer else None
 
+    # Build initial scheduling dict so the frontend shows the correct pickup time
+    from ..tasks.adapter import _build_scheduling_dict
+    scheduling = _build_scheduling_dict(default_pickup_time, store_info)
+
     return ChatStartResponse(
         session_id=session_id,
         message=welcome,
@@ -258,6 +262,7 @@ def chat_start(
         audio_id=audio_id,
         customer_id=resolved_customer_id,
         preferred_voice=preferred_voice,
+        scheduling=scheduling,
     )
 
 

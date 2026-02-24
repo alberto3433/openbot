@@ -461,9 +461,15 @@ class ConfigQuestionFlow:
                 q = f"Add {display}?"
             questions.append(q)
             display = attr.get("display_name") or attr["slug"]
+            # Boolean attributes (toasted, scooped) → click selects the positive
+            # choice directly instead of asking "What scoopeds do you have?"
+            if attr.get("input_type") == "boolean":
+                value = display.lower()
+            else:
+                value = f"What {pluralize(display.lower())} do you have?"
             quick_replies.append({
                 "label": q,
-                "value": f"What {pluralize(display.lower())} do you have?",
+                "value": value,
             })
         return "No? " + " ".join(questions), quick_replies
 

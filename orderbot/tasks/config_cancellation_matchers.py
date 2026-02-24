@@ -180,7 +180,9 @@ def _extract_cancel_description(user_input_stripped: str) -> str | None:
     return cancel_desc
 
 
-def _should_defer_to_attribute_handler(cancel_desc: str, order: "OrderTask") -> bool:
+def _should_defer_to_attribute_handler(
+    cancel_desc: str, order: "OrderTask", user_input: str = "",
+) -> bool:
     """Check if cancel_desc matches the pending attribute slug.
 
     If so, this is a decline/skip ("no cheese" during cheese config means
@@ -221,6 +223,34 @@ def _should_defer_to_attribute_handler(cancel_desc: str, order: "OrderTask") -> 
                 cancel_desc, item_type_slug,
             )
             return True
+
+    # For "no X" inputs only: if the pending attribute is optional and
+    # cancel_desc isn't a known modifier/ingredient, defer to the attribute
+    # handler. It handles "no X" as a skip for optional attributes.
+    # e.g., "no black" during milk_sweetener_syrup → "black" isn't a modifier
+    # → defer → attribute handler skips the attribute.
+    # Only applies to "no X" pattern — "cancel X" / "remove X" have explicit
+    # removal intent and should NOT defer.
+    input_lower = user_input.lower().strip()
+    is_no_pattern = (
+        input_lower.startswith("no ")
+        and not input_lower.startswith("no more ")
+    )
+    if is_no_pattern and item_type_slug:
+        item_type_attrs = menu_cache.get_item_type_attributes(item_type_slug)
+        if item_type_attrs and pending_attr_slug in item_type_attrs:
+            attr_info = item_type_attrs[pending_attr_slug]
+            is_skippable = (
+                not attr_info.get("is_required", True)
+                or attr_info.get("allow_none", False)
+            )
+            if is_skippable and not menu_cache.is_known_modifier(cancel_desc):
+                logger.info(
+                    "Cancel during config: '%s' not a known modifier and "
+                    "attribute '%s' is skippable - deferring to attribute handler",
+                    cancel_desc, pending_attr_slug,
+                )
+                return True
 
     return False
 

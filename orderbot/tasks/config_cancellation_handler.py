@@ -84,7 +84,9 @@ class ConfigCancellationHandler:
         logger.info("Cancel request during config: '%s'", cancel_desc)
 
         # Defer to attribute handler if cancel matches pending attribute
-        if self._should_defer_to_attribute_handler(cancel_desc, order):
+        if self._should_defer_to_attribute_handler(
+            cancel_desc, order, user_input_stripped
+        ):
             return None
 
         # Try removing an already-set attribute by name
@@ -140,8 +142,10 @@ class ConfigCancellationHandler:
         return _extract_cancel_description(user_input_stripped)
 
     @staticmethod
-    def _should_defer_to_attribute_handler(cancel_desc: str, order: OrderTask) -> bool:
-        return _should_defer_to_attribute_handler(cancel_desc, order)
+    def _should_defer_to_attribute_handler(
+        cancel_desc: str, order: OrderTask, user_input: str = "",
+    ) -> bool:
+        return _should_defer_to_attribute_handler(cancel_desc, order, user_input)
 
     @staticmethod
     def _cancel_matches_item_or_type(

@@ -10,12 +10,28 @@ from ..parsers import strip_conversational_fillers
 from ..schemas import StateMachineResult
 from ..utils import OptionMatcher
 from ..utils.text import normalize_text
+from ..parsers.inquiry_patterns import ITEM_DESCRIPTION_PATTERNS
 from ..response_utils import is_affirmative
 
 if TYPE_CHECKING:
     from .handler import MenuItemConfigHandler
 
 logger = logging.getLogger(__name__)
+
+
+def _filter_options_by_category(options: list[dict], category: str | None) -> list[dict]:
+    """Filter options to only those matching a specific ingredient_category.
+
+    Args:
+        options: Full list of option dicts.
+        category: The ingredient_category to keep, or None to return all.
+
+    Returns:
+        Filtered list (or original list if category is None).
+    """
+    if not category:
+        return options
+    return [o for o in options if o.get("ingredient_category") == category]
 
 
 class ConfigInputDispatch:
@@ -65,14 +81,29 @@ class ConfigInputDispatch:
             if order.config_options_page > 0 and (
                 self._parent._options_inquiry_handler.is_show_more_request(user_input) or is_affirmative(user_input)
             ):
-                return self._parent._options_inquiry_handler.handle_options_inquiry(item, order, attr, options, is_show_more=True)
+                filtered = _filter_options_by_category(options, order.config_options_category_filter)
+                return self._parent._options_inquiry_handler.handle_options_inquiry(item, order, attr, filtered, is_show_more=True)
 
             # Check if user is asking about available options
             # Pass the attribute display name as topic for context-aware detection
             # e.g., "what bread do you have" when asking about bread
             topic = attr.get("display_name", "")
             if self._parent._options_inquiry_handler.is_options_inquiry(user_input, topic=topic):
-                return self._parent._options_inquiry_handler.handle_options_inquiry(item, order, attr, options, is_show_more=False)
+                cat = self._parent._options_inquiry_handler.extract_inquiry_category(user_input, options)
+                order.config_options_category_filter = cat
+                filtered = _filter_options_by_category(options, cat)
+                return self._parent._options_inquiry_handler.handle_options_inquiry(item, order, attr, filtered, is_show_more=False)
+
+            # Check if user is asking about item contents ("what's in/on the X?")
+            # Redirect to showing the pending attribute's options.
+            if any(p.search(user_input) for p in ITEM_DESCRIPTION_PATTERNS):
+                item_name = item.menu_item_name or "your item"
+                filtered = _filter_options_by_category(options, order.config_options_category_filter)
+                result = self._parent._options_inquiry_handler.handle_options_inquiry(
+                    item, order, attr, filtered, is_show_more=False
+                )
+                result.message = f"Let's complete the {item_name}. {result.message}"
+                return result
 
         # Check if user is asking about a DIFFERENT attribute's options
         # e.g., "what toppings do you have?" while being asked about condiments
@@ -82,7 +113,10 @@ class ConfigInputDispatch:
             if diff_options:
                 # Switch to showing the different attribute's options
                 order.pending_field = f"{item_type}:{different_attr['slug']}"
-                return self._parent._options_inquiry_handler.handle_options_inquiry(item, order, different_attr, diff_options, is_show_more=False)
+                cat = self._parent._options_inquiry_handler.extract_inquiry_category(user_input, diff_options)
+                order.config_options_category_filter = cat
+                filtered = _filter_options_by_category(diff_options, cat)
+                return self._parent._options_inquiry_handler.handle_options_inquiry(item, order, different_attr, filtered, is_show_more=False)
 
         # Reset options page when user provides an actual answer
         order.config_options_page = 0

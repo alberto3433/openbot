@@ -20,7 +20,7 @@ from .item_parsing import (
     _detect_item_type,
     _find_trigger_matches,
 )
-from .item_type_detection import _HIGH_COVERAGE_THRESHOLD
+from .item_type_detection import _HIGH_COVERAGE_THRESHOLD, _try_option_alias_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -337,6 +337,21 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
 
     matches = _collect_trigger_matches(text_for_matching, text_singularized, texts_to_try)
     if not matches:
+        # Strategy 3b: Option alias fallback (e.g., "earl gray" → tea)
+        # Only use as item indicator when the matched attribute is a
+        # multi-option choice asked in conversation. Multi-option attributes
+        # (tea_flavor with 6 flavors) identify the product — picking "earl gray"
+        # means ordering a tea. Single-option attributes (shots with just "shot")
+        # are binary add-ons — "extra shot" is a modifier, not a new item.
+        fallback = _try_option_alias_fallback(text_for_matching)
+        if fallback:
+            item_type_slug, inferred_attrs = fallback
+            attr_slug = next(iter(inferred_attrs))
+            attrs = menu_cache.get_item_type_attributes(item_type_slug)
+            attr_config = attrs.get(attr_slug, {}) if attrs else {}
+            has_multiple_options = len(attr_config.get("options", [])) > 1
+            if attr_config.get("ask_in_conversation", False) and has_multiple_options:
+                return True, item_type_slug, None
         return False, None, None
 
     # Strategy 4: Score and select best trigger match

@@ -16,7 +16,7 @@ Usage:
 """
 
 from .core import MenuDataCache
-from .base import singularize, pluralize, get_singular_plural_variants
+from .pluralization import singularize, pluralize, get_singular_plural_variants
 
 # Singleton instance
 menu_cache = MenuDataCache()

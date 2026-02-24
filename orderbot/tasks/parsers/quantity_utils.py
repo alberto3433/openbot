@@ -54,6 +54,30 @@ QUANTITY_MODIFIER_WORDS: frozenset[str] = frozenset({
     "more", "extra", "double", "triple", "another", "additional", "few", "couple"
 })
 
+
+def strip_quantity_modifier_prefix(text: str) -> str:
+    """Strip a leading quantity modifier word from text.
+
+    Args:
+        text: Text that may start with a quantity modifier word.
+
+    Returns:
+        Text with the modifier word removed, or the original text if none found.
+
+    Examples:
+        >>> strip_quantity_modifier_prefix("extra cream cheese")
+        'cream cheese'
+        >>> strip_quantity_modifier_prefix("double bacon")
+        'bacon'
+        >>> strip_quantity_modifier_prefix("cream cheese")
+        'cream cheese'
+    """
+    text_lower = text.lower()
+    for word in QUANTITY_MODIFIER_WORDS:
+        if text_lower.startswith(word + " "):
+            return text[len(word):].strip()
+    return text
+
 # Reverse mapping: number to word (for display purposes)
 NUM_TO_WORD: dict[int, str] = {
     1: "one", 2: "two", 3: "three", 4: "four", 5: "five",

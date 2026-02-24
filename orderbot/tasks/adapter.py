@@ -115,6 +115,8 @@ _FLOW_STATE_FIELDS: list[tuple[str, object, type | None]] = [
     ("return_to_phase", None, None),
     ("pending_store_change", False, None),
     ("pending_store_page", 0, None),
+    ("store_confirmed", False, None),
+    ("pending_store_order_text", None, None),
 ]
 
 

@@ -21,7 +21,7 @@ from ..constants import (
     SKIP_WORDS,
 )
 from ..intent_patterns import ADD_MORE_PATTERN, ADD_N_MORE_PATTERN
-from ..quantity_utils import extract_leading_quantity, BASIC_WORD_TO_NUM
+from ..quantity_utils import extract_leading_quantity, strip_quantity_modifier_prefix, BASIC_WORD_TO_NUM
 
 from .pipeline import get_pipeline
 from ...shared_constants import ORDERING_PREFIX_RE, LEADING_ARTICLE_RE
@@ -103,9 +103,8 @@ def _extract_menu_item_modifications(
         if not term:
             return None
 
-        # Handle "extra X" by stripping the "extra" prefix
-        if term.startswith("extra "):
-            term = term[6:].strip()
+        # Handle "extra X", "double X", etc. by stripping the quantity prefix
+        term = strip_quantity_modifier_prefix(term)
 
         # Direct match
         if term in ingredient_to_category:

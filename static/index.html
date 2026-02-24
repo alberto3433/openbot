@@ -2226,8 +2226,8 @@
       const callerIdParam = urlParams.get("caller_id");
       const storeId = storeIdParam && STORE_NAMES[storeIdParam]
         ? storeIdParam
-        : availableStores.length > 0 ? availableStores[0].id : null;
-      if (storeId) {
+        : null;
+      if (storeId || availableStores.length > 0) {
         // Show welcome overlay — user click enables audio then starts session
         const overlay = document.getElementById("welcome-overlay");
         const welcomeTitle = document.getElementById("welcome-title");

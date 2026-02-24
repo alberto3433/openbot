@@ -446,6 +446,64 @@ class TakingItemsHandler(MenuDataMixin):
             filtered.append(instr)
         return filtered
 
+    def _intercept_for_store_selection(
+        self,
+        parsed: "OpenInputResponse",
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Prompt user to select a store before adding items.
+
+        Called when ``store_confirmed`` is False and the user tries to add
+        items. Single-store companies are auto-confirmed.
+
+        The user's original input is saved in ``pending_store_order_text``
+        so it can be replayed after the store is confirmed.
+
+        Args:
+            parsed: The parsed open input (may contain order_type).
+            order: The current order task.
+
+        Returns:
+            StateMachineResult with store selection prompt or, for
+            single-store companies, re-invokes item processing.
+        """
+        all_stores = self._store_info.get("all_stores", [])
+
+        # Single store → auto-confirm, process items normally
+        if len(all_stores) <= 1:
+            order.store_confirmed = True
+            if all_stores:
+                order._new_store_id = all_stores[0]["store_id"]
+            return self.handle_taking_items_with_parsed(parsed, order)
+
+        # Save the user's original item request so it can be replayed
+        # after store selection. Pull from conversation history (last user msg).
+        for msg_entry in reversed(order.conversation_history):
+            if msg_entry.get("role") == "user":
+                order.pending_store_order_text = msg_entry["content"]
+                break
+
+        # Capture order type if mentioned ("I'd like a pickup order for a bagel")
+        if parsed.order_type:
+            order.delivery_method.order_type = parsed.order_type
+
+        # Customize prompt based on delivery method
+        order_type = order.delivery_method.order_type
+        if order_type == "pickup":
+            msg = "Before we get started, which location would you like to pick up from?"
+        elif order_type == "delivery":
+            msg = "Before we get started, which store should we deliver from?"
+        else:
+            msg = "Before we get started, which location would you like to order from?"
+
+        order.pending_store_change = True
+        order.pending_store_page = 0
+        return StateMachineResult(
+            message=msg,
+            order=order,
+            quick_replies=[{"label": "from", "value": "show stores"}],
+        )
+
     def handle_taking_items_with_parsed(
         self,
         parsed: "OpenInputResponse",
@@ -464,6 +522,10 @@ class TakingItemsHandler(MenuDataMixin):
         if not parsed.wants_more_menu_items:
             order.clear_menu_pagination()
             order.pending_ingredient_search = None
+
+        # Require store selection before adding items (new customers only)
+        if not order.store_confirmed and parsed.parsed_items:
+            return self._intercept_for_store_selection(parsed, order)
 
         if parsed.done_ordering:
             return self.checkout_utils_handler.transition_to_checkout(order)

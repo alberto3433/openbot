@@ -63,9 +63,11 @@ class HandlerFactory:
         """Phase 1: Build handlers with no dependencies."""
         from ..slot_orchestration_handler import SlotOrchestrationHandler
         from ..disambiguation_handler import DisambiguationHandler
+        from ..store_and_scheduling_handler import StoreAndSchedulingHandler
 
         self._handlers["slot_orchestration"] = SlotOrchestrationHandler()
         self._handlers["disambiguation"] = DisambiguationHandler()
+        self._handlers["store_and_scheduling"] = StoreAndSchedulingHandler()
 
     def _build_phase_2_utilities(self) -> None:
         """Phase 2: Build utility handlers that depend only on config."""
@@ -149,6 +151,7 @@ class HandlerFactory:
         from ..config_modification_handler import ConfigModificationHandler
         from ..bundle_modification_handler import BundleModificationHandler
         from ..modifier_addition_handler import ModifierAdditionHandler
+        from ..order_modification_handler import OrderModificationHandler
 
         self._handlers["config_cancellation"] = ConfigCancellationHandler(
             configure_next_incomplete_item=self._callbacks.configure_next_incomplete_item,
@@ -182,6 +185,11 @@ class HandlerFactory:
             checkout_utils_handler=self._handlers["checkout_utils"],
             modifier_change_handler=self._handlers["modifier_change"],
             item_adder_handler=self._handlers["item_adder"],
+        )
+        self._handlers["order_modification"] = OrderModificationHandler(
+            message_builder=self._config.message_builder,
+            config_helper_handler=self._handlers["config_helper"],
+            configure_next_incomplete_item=self._callbacks.configure_next_incomplete_item,
         )
 
     def _build_phase_5_top_level(self) -> None:
@@ -254,6 +262,7 @@ class HandlerFactory:
         return [
             "checkout",
             "store_info",
+            "store_and_scheduling",
             "order_utils",
             "checkout_utils",
             "taking_items",

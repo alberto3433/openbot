@@ -10,7 +10,6 @@ is interpreted in the context of that item - no new items can be created.
 """
 
 import logging
-import re
 
 from .models import (
     OrderTask,
@@ -44,20 +43,6 @@ from .parsers import (
     TIME_SELECTION_PATTERN,
     # Order management patterns
     STORE_CHANGE_PATTERN,
-    ORDER_TYPE_CHANGE_PATTERN,
-)
-from .parsers.quantity_utils import extract_make_it_n_target
-from .parsers.time_parser import parse_time_expression
-from .handler_utils import (
-    get_last_item,
-    duplicate_last_item_to_qty,
-    handle_make_it_one,
-    handle_already_at_target,
-)
-from .checkout_messages import (
-    CheckoutMessages,
-    already_have_n_anything_else,
-    thats_n_total_anything_else,
 )
 from .utils.text import normalize_text
 
@@ -205,7 +190,7 @@ class OrderStateMachine:
             configure_next_incomplete_item=self._configure_next_incomplete_item,
         )
 
-        # Phase → handler dispatch (built once, not per-call)
+        # Phase -> handler dispatch (built once, not per-call)
         self._phase_dispatch = {
             OrderPhase.GREETING.value: self._handle_greeting,
             OrderPhase.TAKING_ITEMS.value: self._handle_taking_items,
@@ -233,6 +218,14 @@ class OrderStateMachine:
     @property
     def store_info_handler(self):
         return self._registry.store_info
+
+    @property
+    def store_and_scheduling_handler(self):
+        return self._registry.store_and_scheduling
+
+    @property
+    def order_modification_handler(self):
+        return self._registry.order_modification
 
     @property
     def menu_inquiry_handler(self):
@@ -381,9 +374,23 @@ class OrderStateMachine:
             # If no result, the response wasn't understood - fall through to normal processing
 
         if order.pending_store_change:
-            store_result = self._handle_store_selection(user_input, order)
+            store_result = self.store_and_scheduling_handler.handle_store_selection(user_input, order)
             if store_result:
                 order.add_message("assistant", store_result.message)
+                # After first-time store confirmation, replay the saved item order
+                if order.store_confirmed and order.pending_store_order_text:
+                    saved_text = order.pending_store_order_text
+                    order.pending_store_order_text = None
+                    logger.info("Replaying saved order text after store selection: '%s'", saved_text)
+                    replay_result = self.taking_items_handler.handle_taking_items(saved_text, order)
+                    order.add_message("assistant", replay_result.message)
+                    # Combine the store confirmation and item processing messages
+                    combined_msg = f"{store_result.message}\n\n{replay_result.message}"
+                    return StateMachineResult(
+                        message=combined_msg,
+                        order=replay_result.order,
+                        quick_replies=replay_result.quick_replies,
+                    )
                 return store_result
 
         if order.pending_store_hours_inquiry:
@@ -394,11 +401,11 @@ class OrderStateMachine:
 
         if order.pending_scheduling:
             order.pending_scheduling = False
-            scheduling_result = self._handle_scheduling_expression(user_input, order)
+            scheduling_result = self.store_and_scheduling_handler.handle_scheduling_expression(user_input, order)
             if scheduling_result:
                 order.add_message("assistant", scheduling_result.message)
                 return scheduling_result
-            # Input wasn't a valid time expression — give a hint
+            # Input wasn't a valid time expression -- give a hint
             hint = (
                 "I didn't catch that. You can say something like "
                 '"3pm", "in 30 minutes", or "tomorrow at noon".'
@@ -501,7 +508,7 @@ class OrderStateMachine:
         """Handle ID-based item removal, bypassing parsing."""
         if not item_id:
             return None
-        result = self._handle_id_based_removal(item_id, order)
+        result = self.order_modification_handler.handle_id_based_removal(item_id, order)
         if result:
             order.add_message("user", user_input)
             order.add_message("assistant", result.message)
@@ -553,7 +560,7 @@ class OrderStateMachine:
     ) -> StateMachineResult | None:
         """Check global patterns that apply regardless of current phase.
 
-        Order matters — e.g. make-it-N must precede modifier change,
+        Order matters -- e.g. make-it-N must precede modifier change,
         store change must precede modifier change, etc.
 
         Returns:
@@ -572,7 +579,7 @@ class OrderStateMachine:
             or self._check_customer_info_change_pattern(user_input, order)
         )
 
-    # ── Extracted global-pattern helpers ─────────────────────────────
+    # -- Extracted global-pattern helpers --
 
     def _check_order_status_inquiry(
         self, user_input: str, order: OrderTask,
@@ -610,7 +617,7 @@ class OrderStateMachine:
         self, user_input: str, order: OrderTask,
     ) -> StateMachineResult | None:
         """Must precede modifier change to avoid 'make that two' being parsed as a modifier."""
-        result = self._handle_make_it_n(user_input, order)
+        result = self.order_modification_handler.handle_make_it_n(user_input, order)
         if result:
             order.add_message("assistant", result.message)
         return result
@@ -622,7 +629,7 @@ class OrderStateMachine:
         if not STORE_CHANGE_PATTERN.search(user_input):
             return None
         logger.info("STORE CHANGE: User requested store change")
-        return self._handle_store_change_request(order)
+        return self.store_and_scheduling_handler.handle_store_change_request(order)
 
     def _check_order_type_change_pattern(
         self, user_input: str, order: OrderTask,
@@ -630,7 +637,7 @@ class OrderStateMachine:
         """Must precede modifier change to avoid 'delivery' being treated as a modifier."""
         if not order.delivery_method.order_type:
             return None
-        result = self._handle_order_type_change(user_input, order)
+        result = self.order_modification_handler.handle_order_type_change(user_input, order)
         if result:
             order.add_message("assistant", result.message)
         return result
@@ -651,11 +658,11 @@ class OrderStateMachine:
         # Early scheduling intent (e.g., "can I pickup my order later?")
         if PICKUP_LATER_PATTERN.search(user_input):
             order.delivery_method.order_type = "pickup"
-            return self._handle_scheduling_change_request(order)
+            return self.store_and_scheduling_handler.handle_scheduling_change_request(order)
 
         # Scheduling change request (e.g., "change pickup time")
         if TIME_UPDATE_PATTERN.search(user_input):
-            return self._handle_scheduling_change_request(order)
+            return self.store_and_scheduling_handler.handle_scheduling_change_request(order)
 
         # "Choose a time" response from scheduling quick replies
         if TIME_SELECTION_PATTERN.search(user_input):
@@ -667,10 +674,10 @@ class OrderStateMachine:
             order.add_message("assistant", msg)
             return StateMachineResult(message=msg, order=order)
 
-        # Time/scheduling expressions (e.g., "pickup at 3pm") — only when
+        # Time/scheduling expressions (e.g., "pickup at 3pm") -- only when
         # input doesn't look like an item order
         if not _looks_like_new_order_attempt(user_input):
-            result = self._handle_scheduling_expression(user_input, order)
+            result = self.store_and_scheduling_handler.handle_scheduling_expression(user_input, order)
             if result:
                 order.add_message("assistant", result.message)
                 return result
@@ -680,54 +687,10 @@ class OrderStateMachine:
     def _check_customer_info_change_pattern(
         self, user_input: str, order: OrderTask,
     ) -> StateMachineResult | None:
-        result = self._handle_customer_info_change(user_input, order)
+        result = self.order_modification_handler.handle_customer_info_change(user_input, order)
         if result:
             order.add_message("assistant", result.message)
         return result
-
-    def _handle_order_type_change(
-        self, user_input: str, order: OrderTask,
-    ) -> StateMachineResult | None:
-        """Handle order type change requests (e.g., 'change it to delivery').
-
-        Detects patterns like "change/switch/make it to delivery/pickup" and
-        applies the order type change. If switching to delivery, transitions to
-        address collection. If switching to pickup, re-shows confirmation.
-
-        Returns:
-            StateMachineResult if an order type change was handled, None otherwise.
-        """
-        match = ORDER_TYPE_CHANGE_PATTERN.search(user_input)
-        if not match:
-            return None
-
-        new_type = "delivery" if "deliv" in match.group(1).lower() else "pickup"
-
-        if order.delivery_method.order_type == new_type:
-            return None  # Already that type, let other handlers process
-
-        old_type = order.delivery_method.order_type
-        order.delivery_method.order_type = new_type
-        logger.info("ORDER TYPE CHANGE: %s -> %s", old_type, new_type)
-
-        if new_type == "delivery":
-            # Need to collect delivery address
-            order.set_phase(OrderPhase.CHECKOUT_DELIVERY)
-            return StateMachineResult(
-                message="Changed to delivery. What's the delivery address?",
-                order=order,
-            )
-        else:
-            # Switching to pickup — clear any delivery address
-            from .models.order_flow import AddressTask
-            order.delivery_method.address = AddressTask()
-            # Re-show order confirmation
-            order.set_phase(OrderPhase.CHECKOUT_CONFIRM)
-            summary = self.message_builder.build_order_summary(order)
-            return StateMachineResult(
-                message=f"Changed to pickup. {summary} Does that look right?",
-                order=order,
-            )
 
     def _log_slot_comparison(self, order: OrderTask) -> None:
         """Delegate to slot orchestration handler."""
@@ -777,374 +740,6 @@ class OrderStateMachine:
 
         # Use menu_item_handler for all item types - it handles data-driven configuration
         return self.menu_item_handler.get_first_question(item, order)
-
-    def _handle_make_it_n(
-        self, user_input: str, order: OrderTask
-    ) -> StateMachineResult | None:
-        """Handle 'make it N' quantity duplication pattern.
-
-        Detects patterns like "make it 2", "actually make that three" and
-        duplicates the last item to reach the target quantity.
-
-        Returns:
-            StateMachineResult if handled, None otherwise.
-        """
-        from .parsers.deterministic import MAKE_IT_N_PATTERN
-
-        make_it_n_match = MAKE_IT_N_PATTERN.match(user_input.strip())
-        if not make_it_n_match or order.items.get_item_count() == 0:
-            return None
-
-        target_qty = extract_make_it_n_target(make_it_n_match)
-        if not target_qty:
-            return handle_make_it_one(make_it_n_match, order)
-
-        result = duplicate_last_item_to_qty(order, target_qty, count_existing=True)
-        if result is None:
-            return None
-
-        target_qty, last_item_name, added_count = result
-
-        already = handle_already_at_target(order, target_qty, added_count, last_item_name)
-        if already:
-            return already
-
-        # If mid-configuration, re-ask the pending config question
-        suffix = "Anything else?"
-        if order.is_configuring_item() and order.first_pending_item_id:
-            config_item = order.items.get_item_by_id(order.first_pending_item_id)
-            if config_item:
-                question = self.config_helper_handler.get_current_config_question(order, config_item)
-                if question:
-                    suffix = question
-
-        return StateMachineResult(
-            message=f"Sure, that's {target_qty} total. {suffix}",
-            order=order,
-        )
-
-    def _handle_scheduling_expression(
-        self,
-        user_input: str,
-        order: OrderTask,
-    ) -> StateMachineResult | None:
-        """Handle time/scheduling expressions like 'pickup at 3pm'.
-
-        Parses time expressions from user input and validates against
-        store hours. Sets pickup_time on the delivery method task.
-
-        Returns:
-            StateMachineResult if a time expression was handled, None otherwise.
-        """
-        store_info = getattr(self, '_store_info', {})
-        timezone_str = store_info.get("timezone", "America/New_York")
-
-        parsed_time = parse_time_expression(user_input, timezone_str)
-        if parsed_time is None:
-            return None
-
-        if parsed_time.is_asap:
-            order.delivery_method.pickup_time = None
-            return StateMachineResult(
-                message="Got it, your order will be ready as soon as possible!",
-                order=order,
-            )
-
-        # Validate against store hours
-        from ..services.store_hours import validate_scheduled_time
-        hours_config = store_info.get("hours_config")
-        is_valid, error_msg = validate_scheduled_time(
-            parsed_time.time_value, hours_config, timezone_str,
-        )
-
-        if not is_valid:
-            return StateMachineResult(
-                message=error_msg,
-                order=order,
-            )
-
-        # Set the pickup time
-        order.delivery_method.pickup_time = parsed_time.time_value.isoformat()
-
-        # Format a friendly confirmation
-        try:
-            display_time = parsed_time.time_value.strftime("%I:%M %p").lstrip("0")
-        except ValueError:
-            display_time = parsed_time.time_value.strftime("%I:%M %p").lstrip("0")
-
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        now = datetime.now(ZoneInfo(timezone_str))
-        days_ahead = (parsed_time.time_value.date() - now.date()).days
-        if days_ahead == 0:
-            day_part = "today"
-        elif days_ahead == 1:
-            day_part = "tomorrow"
-        else:
-            day_part = parsed_time.time_value.strftime("%A")
-
-        return StateMachineResult(
-            message=f"Got it, your order will be scheduled for {day_part} at {display_time}. What can I get you?",
-            order=order,
-        )
-
-    def _handle_scheduling_change_request(
-        self,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Handle a request to change pickup/delivery time.
-
-        Returns a question with quick reply options for scheduling.
-        """
-        msg = "When would you like your order ready?"
-        order.pending_scheduling = True
-        order.add_message("assistant", msg)
-        return StateMachineResult(
-            message=msg,
-            order=order,
-            quick_replies=[
-                {"label": "As soon as possible", "value": "as soon as possible"},
-                {"label": "In 30 minutes", "value": "in 30 minutes"},
-                {"label": "In 1 hour", "value": "in 1 hour"},
-                {"label": "Choose a time", "value": "I'd like to choose a specific time"},
-            ],
-        )
-
-    def _handle_store_change_request(
-        self,
-        order: OrderTask,
-    ) -> StateMachineResult:
-        """Handle a request to change the ordering store.
-
-        Shows "from" as a linkified word. Clicking it triggers the paginated
-        store list via _handle_store_selection.
-        """
-        all_stores = self._store_info.get("all_stores", [])
-        if not all_stores or len(all_stores) <= 1:
-            msg = "There's only one store available right now."
-            order.add_message("assistant", msg)
-            return StateMachineResult(message=msg, order=order)
-
-        order.pending_store_change = True
-        order.pending_store_page = 0
-        msg = "Which store would you like to order from?"
-        order.add_message("assistant", msg)
-        return StateMachineResult(
-            message=msg,
-            order=order,
-            quick_replies=[{"label": "from", "value": "show stores"}],
-        )
-
-    def _handle_store_selection(
-        self,
-        user_input: str,
-        order: OrderTask,
-    ) -> StateMachineResult | None:
-        """Handle the user's store selection after a pending_store_change prompt.
-
-        Handles three input types:
-        1. "show stores" (from clicking the "from" link) — show first page
-        2. "what else?" / "show more" — show next page
-        3. Store name or ID — change the store
-
-        Sets a transient ``_new_store_id`` key on the order so the message
-        processor can update the session.
-        """
-        from .parsers.constants import DEFAULT_PAGINATION_SIZE
-
-        all_stores = self._store_info.get("all_stores", [])
-        text_lower = user_input.strip().lower()
-
-        # --- Show stores / show more ---
-        is_show = text_lower == "show stores"
-        is_more = text_lower in ("what else?", "what else", "show more", "more")
-
-        if is_show or is_more:
-            if is_show:
-                order.pending_store_page = 0
-            page = order.pending_store_page
-            page_size = DEFAULT_PAGINATION_SIZE
-            start = page * page_size
-            end = start + page_size
-            page_stores = all_stores[start:end]
-            has_more = end < len(all_stores)
-
-            if not page_stores:
-                order.pending_store_page = 0
-                msg = "That's all the stores."
-                order.pending_store_change = True
-                return StateMachineResult(message=msg, order=order)
-
-            # Build short names
-            names = []
-            for s in page_stores:
-                raw = s.get("name", "")
-                short = raw.split(" - ")[-1] if " - " in raw else raw
-                names.append(short)
-
-            # Format message
-            if page == 0:
-                if has_more:
-                    names_str = ", ".join(names) + ", and more"
-                    msg = f"We have {names_str} — want to see more?"
-                else:
-                    if len(names) > 1:
-                        msg = "We have " + ", ".join(names[:-1]) + " or " + names[-1] + "."
-                    else:
-                        msg = f"We have {names[0]}."
-            else:
-                if has_more:
-                    msg = "We also have " + ", ".join(names) + ", and more."
-                else:
-                    msg = "And finally, " + ", ".join(names) + ". That's all of them."
-
-            # Build quick replies — each store name linkified + "more" if paginated
-            # Use short name as value so it displays nicely as the user message
-            qr = []
-            for s, short in zip(page_stores, names):
-                qr.append({"label": short, "value": short})
-            if has_more:
-                qr.append({"label": "more", "value": "what else?"})
-
-            order.pending_store_page = page + 1
-            order.pending_store_change = True
-            return StateMachineResult(message=msg, order=order, quick_replies=qr)
-
-        # --- Store selection by ID or name ---
-        matched_store = None
-        for s in all_stores:
-            if s["store_id"] == user_input.strip():
-                matched_store = s
-                break
-        if not matched_store:
-            for s in all_stores:
-                name_lower = s.get("name", "").lower()
-                short_lower = (
-                    name_lower.split(" - ")[-1] if " - " in name_lower else name_lower
-                )
-                if text_lower in name_lower or text_lower == short_lower:
-                    matched_store = s
-                    break
-
-        if matched_store:
-            order.pending_store_change = False
-            order._new_store_id = matched_store["store_id"]
-            raw = matched_store.get("name", "")
-            short = raw.split(" - ")[-1] if " - " in raw else raw
-            return StateMachineResult(
-                message=f"Switched to {short}. What can I get you?",
-                order=order,
-            )
-
-        # No match — re-prompt with "from" link
-        order.pending_store_change = True
-        msg = "I didn't catch that store. Which store would you like to order from?"
-        return StateMachineResult(
-            message=msg,
-            order=order,
-            quick_replies=[{"label": "from", "value": "show stores"}],
-        )
-
-    # Compiled pattern for customer info change requests
-    _CUSTOMER_INFO_CHANGE_RE = re.compile(
-        r'\b(?:change|update|edit)\s+(?:my\s+)?'
-        r'(name|phone(?:\s+number)?|email(?:\s+address)?)\b',
-        re.IGNORECASE,
-    )
-
-    def _handle_customer_info_change(
-        self,
-        user_input: str,
-        order: OrderTask,
-    ) -> StateMachineResult | None:
-        """Handle requests to change customer name, phone, or email.
-
-        Detects patterns like "change my name", "update my email", etc.
-        Clears the relevant field and transitions to the appropriate checkout phase
-        so the orchestrator re-collects it.
-
-        Args:
-            user_input: The user's input text.
-            order: The current order task.
-
-        Returns:
-            StateMachineResult if a change was requested, None otherwise.
-        """
-        match = self._CUSTOMER_INFO_CHANGE_RE.search(user_input)
-        if not match:
-            return None
-
-        field = match.group(1).lower()
-
-        # Map matched field to (customer_info attr, checkout phase, re-ask message)
-        field_map = {
-            "name": ("name", OrderPhase.CHECKOUT_NAME, "Sure! What name should I put on the order?"),
-            "phone": ("phone", OrderPhase.CHECKOUT_PHONE, CheckoutMessages.PHONE),
-            "email": ("email", OrderPhase.CHECKOUT_EMAIL, CheckoutMessages.EMAIL),
-        }
-
-        # Normalize "phone number" → "phone", "email address" → "email"
-        key = "phone" if field.startswith("phone") else "email" if field.startswith("email") else field
-        if key not in field_map:
-            return None
-
-        attr, phase, msg = field_map[key]
-        if not getattr(order.customer_info, attr):
-            return None
-
-        # Save current phase so checkout handlers can restore it after re-collection
-        order.return_to_phase = order.phase
-        setattr(order.customer_info, attr, None)
-        order.checkout.order_reviewed = False
-        order.set_phase(phase)
-        return StateMachineResult(message=msg, order=order)
-
-    def _handle_id_based_removal(
-        self,
-        item_id: str,
-        order: OrderTask,
-    ) -> StateMachineResult | None:
-        """Handle removal of a specific item by its unique ID.
-
-        Called when the frontend passes an item_id (e.g., from the cart X button).
-        Bypasses text-based parsing entirely for exact item targeting.
-
-        Args:
-            item_id: The unique ID of the item to remove
-            order: The current order task
-
-        Returns:
-            StateMachineResult if handled, None if item_id is invalid
-        """
-        from .handler_utils import build_removal_response
-
-        item = order.items.get_active_item_by_id(item_id)
-        if item is None:
-            return StateMachineResult(
-                message="That item has already been removed. Anything else?",
-                order=order,
-            )
-
-        removed_name = item.get_summary()
-
-        # If the item being removed is currently being configured, clear pending state
-        if order.first_pending_item_id == item_id:
-            order.clear_pending()
-            order.set_phase(OrderPhase.TAKING_ITEMS)
-
-        # Also remove from pending config queue if present
-        order.pending_config_queue = [
-            entry for entry in order.pending_config_queue
-            if not (isinstance(entry, dict) and entry.get("item_id") == item_id)
-        ]
-
-        order.items.remove_item_with_bundle(item_id)
-
-        return build_removal_response(
-            order,
-            removed_name,
-            configure_next_incomplete=self._configure_next_incomplete_item,
-        )
 
     def _handle_greeting(
         self,

@@ -283,6 +283,23 @@ def _try_split_on_with_article(text_lower: str) -> list["Token"] | None:
         if not has_next_item:
             continue
 
+        # When there's only one "with", it almost always connects a modifier
+        # to the preceding item. Only split if text is NOT a known modifier.
+        if len(positions) == 1:
+            words = after_article.split()
+            is_modifier_context = False
+            for i in range(len(words)):
+                candidate = " ".join(words[i:])
+                if menu_cache.is_known_modifier(candidate):
+                    is_modifier_context = True
+                    break
+            if is_modifier_context:
+                logger.debug(
+                    "Skipping 'with [article]' split - modifier context: '%s'",
+                    after_article[:40],
+                )
+                continue
+
         # Verify first part also has an item
         first_part = text_lower[:pos].strip()
         has_first, first_type, first_resolved = _has_item_indicator(first_part)

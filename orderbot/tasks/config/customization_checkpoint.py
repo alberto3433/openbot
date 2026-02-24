@@ -23,6 +23,7 @@ from ..parsers.quantity_utils import (
     QUANTITY_MODIFIER_WORDS,
 )
 from .attribute_resolver import get_mandatory_attributes
+from .config_input_dispatch import _filter_options_by_category
 from .flows import IngredientFallbackHandler
 from ..parsers.intent_patterns import ORDERING_LANGUAGE_PATTERN
 from ..utils.text import normalize_text
@@ -253,8 +254,11 @@ class CustomizationCheckpointHandler:
             if options:
                 # Set pending_field to the attribute so pagination ("show more") works
                 order.pending_field = f"{item_type}:{inquiry_attr['slug']}"
+                cat = self._options_inquiry_handler.extract_inquiry_category(user_input, options)
+                order.config_options_category_filter = cat
+                filtered = _filter_options_by_category(options, cat)
                 return self._options_inquiry_handler.handle_options_inquiry(
-                    item, order, inquiry_attr, options, is_show_more=False
+                    item, order, inquiry_attr, filtered, is_show_more=False
                 )
 
         # Check for "yes" - user wants to see the list
@@ -461,8 +465,11 @@ class CustomizationCheckpointHandler:
                 # Set pending_field to this attribute so "what else?" goes through
                 # _handle_attribute_answer() which has show-more pagination logic
                 order.pending_field = f"{item.menu_item_type}:{attr['slug']}"
+                cat = self._options_inquiry_handler.extract_inquiry_category(user_input, options)
+                order.config_options_category_filter = cat
+                filtered = _filter_options_by_category(options, cat)
                 return self._options_inquiry_handler.handle_options_inquiry(
-                    item, order, attr, options, is_show_more=False
+                    item, order, attr, filtered, is_show_more=False
                 )
 
         # For boolean attributes, set value directly without asking

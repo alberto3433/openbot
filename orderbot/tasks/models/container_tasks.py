@@ -44,6 +44,7 @@ _CLEARABLE_PENDING_FIELDS: tuple[tuple[str, object], ...] = (
     ("pending_item_ids", list),
     ("pending_field", None),
     ("config_options_page", 0),
+    ("config_options_category_filter", None),
     ("pending_suggested_item", None),
     ("pending_switch_item", None),
     ("pending_replace_item_id", None),
@@ -289,6 +290,11 @@ class OrderTask(BaseTask):
     # 0 = first page (default), 1 = second page, etc.
     config_options_page: int = 0
 
+    # Category filter for options inquiry pagination.
+    # When user asks "what syrups do you have?", stores "syrup" so that
+    # subsequent "show more" requests stay filtered to that category.
+    config_options_category_filter: str | None = None
+
     # Names of items in a multi-item order that need configuration
     # Used to build final summary like "Great, both toasted. Anything else?"
     multi_item_config_names: list[str] = Field(default_factory=list)
@@ -345,6 +351,16 @@ class OrderTask(BaseTask):
     # Pagination page for store list (0-indexed, advances on "show more")
     pending_store_page: int = 0
 
+    # Whether the customer has explicitly chosen a store (URL param, returning
+    # customer preferred store, single-store auto-confirm, or manual selection).
+    # When False, item ordering is intercepted to prompt for store choice first.
+    store_confirmed: bool = False
+
+    # Raw user input saved when store selection intercepts an item order.
+    # After the store is confirmed, this text is re-processed so the user
+    # doesn't have to repeat their order.
+    pending_store_order_text: str | None = None
+
     # Pending store hours inquiry state
     # Set when bot shows paginated store hours list, so "show more" advances pages
     pending_store_hours_inquiry: bool = False
@@ -398,6 +414,7 @@ class OrderTask(BaseTask):
         self.pending_item_ids = [item_id]
         self.pending_field = pending_field
         self.config_options_page = 0
+        self.config_options_category_filter = None
 
     def clear_menu_pagination(self):
         """Clear menu query pagination state."""

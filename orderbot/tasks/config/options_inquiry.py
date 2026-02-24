@@ -10,6 +10,8 @@ Extracted from menu_item_config_handler.py for better separation of concerns.
 import re
 from typing import TYPE_CHECKING
 
+from orderbot.cache.pluralization import singularize
+
 from ..schemas import StateMachineResult
 from ..parsers.constants import DEFAULT_PAGINATION_SIZE
 from ..utils.text import format_english_list, normalize_text
@@ -145,6 +147,56 @@ class OptionsInquiryHandler:
                             return True
 
         return False
+
+    def extract_inquiry_category(
+        self, user_input: str, options: list[dict]
+    ) -> str | None:
+        """Extract the ingredient_category the user is asking about.
+
+        When a combined attribute (e.g., milk_sweetener_syrup) has options from
+        multiple ingredient categories, this method determines which specific
+        category the user wants to see.
+
+        Args:
+            user_input: The user's input text
+            options: The full list of option dicts for the attribute
+
+        Returns:
+            The matching ingredient_category string, or None if no specific
+            category was detected (show all options).
+        """
+        # Collect distinct categories from options
+        categories = {
+            opt["ingredient_category"]
+            for opt in options
+            if opt.get("ingredient_category")
+        }
+        if len(categories) <= 1:
+            return None  # Single or no category — no filtering needed
+
+        input_lower = normalize_text(user_input)
+
+        # Extract the topic word from inquiry patterns
+        topic_patterns = [
+            r"what\s+(?:kind\s+of\s+)?(\w+)\s+(?:do\s+you\s+have|options|are\s+there|are\s+available|available)",
+            r"(?:show|list)\s+(?:me\s+)?(?:the\s+)?(\w+)",
+            r"what\s+(\w+)\s+can\s+i\s+(?:add|get|have)",
+            r"what\s+(?:types?|kinds?)\s+of\s+(\w+)",
+            r"what\s+(\w+)\s+choices?\s+(?:do\s+you\s+have|are\s+there|are\s+available)",
+            r"what\s+are\s+(?:the|my)\s+(\w+)\s+(?:options?|choices?)",
+        ]
+
+        for pattern in topic_patterns:
+            match = re.search(pattern, input_lower)
+            if match:
+                topic = match.group(1).strip()
+                singular = singularize(topic)
+                if singular in categories:
+                    return singular
+                if topic in categories:
+                    return topic
+
+        return None
 
     def detect_different_attribute_inquiry(
         self, user_input: str, item_type: str, current_attr_slug: str

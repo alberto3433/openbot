@@ -71,6 +71,8 @@ Import routers in main.py:
 """
 
 from .chat import chat_router
+from . import chat_messages  # noqa: F401
+from . import chat_analytics  # noqa: F401
 from .admin_menu import admin_menu_router
 from .admin_orders import admin_orders_router
 from .admin_ingredients import admin_ingredients_router

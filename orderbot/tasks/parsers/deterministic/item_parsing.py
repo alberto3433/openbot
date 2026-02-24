@@ -214,6 +214,12 @@ def _parse_item_generic(
         resolved_name = _match_menu_item_name_for_type(text, item_type)
         if resolved_name:
             item_name = resolved_name
+        else:
+            # No specific menu item matched from text — try type default
+            # e.g., "early gray tea" with type "tea" → "Hot Tea"
+            default_name = _get_default_menu_item_for_type(item_type)
+            if default_name:
+                item_name = default_name
 
     # Extract quantity from text
     quantity = 1

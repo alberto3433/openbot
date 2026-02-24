@@ -224,7 +224,7 @@ class TestValidateScheduledTime:
                     requested, weekday_hours, "America/New_York",
                 )
                 assert is_valid is False
-                assert "open from" in error.lower()
+                assert "we're open" in error.lower()
                 break
 
     def test_none_hours_always_valid(self):

@@ -394,7 +394,7 @@ def persist_confirmed_order(
     order = _upsert_order_record(
         db, order_state, customer, totals, order_type, store_id, items,
     )
-    _link_customer_record(db, order, customer, order_state)
+    _link_customer_record(db, order, customer, order_state, store_id=store_id)
 
     db.commit()
     logger.info("Order #%d persisted (status: confirmed)", order.id)
@@ -461,6 +461,7 @@ def _link_customer_record(
     order: Order,
     customer: CustomerInfo,
     order_state: dict[str, Any],
+    store_id: str | None = None,
 ) -> None:
     """Find or create a Customer record and link it to the order."""
     try:
@@ -472,6 +473,13 @@ def _link_customer_record(
         if customer_record:
             order.customer_id = customer_record.id
             order_state["customer_id"] = customer_record.id
+            # Set preferred store on first order (don't overwrite explicit choice)
+            if store_id and not customer_record.preferred_store_id:
+                customer_record.preferred_store_id = store_id
+                logger.info(
+                    "Set preferred_store_id=%s for customer #%d",
+                    store_id, customer_record.id,
+                )
     except (ValueError, TypeError) as e:
         logger.warning("Failed to link customer to order #%d: %s", order.id, e)
 

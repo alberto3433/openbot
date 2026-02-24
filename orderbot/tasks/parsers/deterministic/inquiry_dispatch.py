@@ -109,15 +109,17 @@ def _try_parse_inquiry(text: str, ctx: ParserContext) -> OpenInputResponse | Non
     if ingredient_search_result:
         return ingredient_search_result
 
+    # Check for store info inquiries BEFORE menu queries
+    # "what are your store hours?" must not be caught by the broad menu pattern
+    # "what are your <anything>?" which would treat "store hours" as a menu category
+    store_info_result = parse_store_info_inquiry(text)
+    if store_info_result:
+        return store_info_result
+
     # Check for menu category queries ("what sweets do you have?", "what desserts do you have?")
     menu_query_result = parse_menu_query(text)
     if menu_query_result:
         return menu_query_result
-
-    # Check for store info inquiries
-    store_info_result = parse_store_info_inquiry(text)
-    if store_info_result:
-        return store_info_result
 
     # Check for item description inquiries
     item_desc_result = parse_item_description_inquiry(text)

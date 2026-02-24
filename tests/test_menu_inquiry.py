@@ -283,34 +283,200 @@ class TestStoreInfoInquiries:
     """Tests for store hours, location, and delivery zone inquiries."""
 
     def test_store_hours_inquiry(self):
-        """Test store hours inquiry returns hours info."""
+        """Test store hours inquiry with preferred store returns that store's hours (Tier 2)."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
 
         sm = OrderStateMachine()
-        sm._store_info = {
-            "hours": "7am-4pm Monday-Friday, 8am-3pm Saturday-Sunday",
+        sm.store_info_handler.set_context(OrderContext(store_info={
+            "hours": "Mon-Fri 7:00 AM - 4:00 PM, Sat-Sun 8:00 AM - 3:00 PM",
             "name": "Test Bagels",
-        }
+            "status": "open",
+            "all_stores": [
+                {
+                    "store_id": "s1", "name": "Test Bagels",
+                    "hours": {"monday": [{"open": "07:00", "close": "16:00"}]},
+                    "hours_display": "Mon-Fri 7:00 AM - 4:00 PM",
+                    "status": "open",
+                },
+            ],
+        }))
 
         order = OrderTask()
         result = sm.store_info_handler.handle_store_hours_inquiry(order)
 
-        assert "7am" in result.message or "hours" in result.message.lower()
+        assert "Test Bagels" in result.message
+        assert "open" in result.message.lower()
+        assert "7:00 AM" in result.message
+
+    def test_store_hours_preferred_store_closed(self):
+        """Test store hours when preferred store is temporarily closed (Tier 2)."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
+
+        sm = OrderStateMachine()
+        sm.store_info_handler.set_context(OrderContext(store_info={
+            "hours": "Mon-Fri 7:00 AM - 4:00 PM",
+            "name": "East Brunswick",
+            "status": "closed",
+            "all_stores": [],
+        }))
+
+        order = OrderTask()
+        result = sm.store_info_handler.handle_store_hours_inquiry(order)
+
+        assert "temporarily closed" in result.message.lower()
+        assert "East Brunswick" in result.message
+        assert "7:00 AM" in result.message
 
     def test_store_hours_no_info(self):
         """Test store hours when not configured."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
 
         sm = OrderStateMachine()
-        sm._store_info = {}
+        sm.store_info_handler.set_context(OrderContext(store_info={}))
 
         order = OrderTask()
         result = sm.store_info_handler.handle_store_hours_inquiry(order)
 
         # Should have some fallback message
         assert result.message is not None
+        assert "hours" in result.message.lower()
+
+    def test_store_hours_all_same(self):
+        """Test Tier 1: all stores have identical hours → single-line answer."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
+
+        same_hours = {"monday": [{"open": "07:00", "close": "21:00"}]}
+        sm = OrderStateMachine()
+        sm.store_info_handler.set_context(OrderContext(store_info={
+            "all_stores": [
+                {
+                    "store_id": "s1", "name": "Store A",
+                    "hours": same_hours, "hours_display": "Mon 7:00 AM - 9:00 PM",
+                    "status": "open",
+                },
+                {
+                    "store_id": "s2", "name": "Store B",
+                    "hours": same_hours, "hours_display": "Mon 7:00 AM - 9:00 PM",
+                    "status": "open",
+                },
+            ],
+        }))
+
+        order = OrderTask()
+        result = sm.store_info_handler.handle_store_hours_inquiry(order)
+
+        assert "all our locations" in result.message.lower()
+        assert "7:00 AM" in result.message
+
+    def test_store_hours_vary_no_preferred(self):
+        """Test Tier 3: hours vary, no preferred store → inline list."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
+
+        sm = OrderStateMachine()
+        sm.store_info_handler.set_context(OrderContext(store_info={
+            "all_stores": [
+                {
+                    "store_id": "s1", "name": "Zucker's - East Brunswick",
+                    "hours": {"monday": [{"open": "07:00", "close": "21:00"}]},
+                    "hours_display": "Mon 7:00 AM - 9:00 PM",
+                    "status": "open",
+                },
+                {
+                    "store_id": "s2", "name": "Zucker's - Downtown",
+                    "hours": {"monday": [{"open": "06:00", "close": "22:00"}]},
+                    "hours_display": "Mon 6:00 AM - 10:00 PM",
+                    "status": "open",
+                },
+            ],
+        }))
+
+        order = OrderTask()
+        result = sm.store_info_handler.handle_store_hours_inquiry(order)
+
+        assert "vary by location" in result.message.lower()
+        assert "East Brunswick" in result.message
+        assert "Downtown" in result.message
+        assert "7:00 AM - 9:00 PM" in result.message
+        assert "6:00 AM - 10:00 PM" in result.message
+
+    def test_store_hours_pagination(self):
+        """Test Tier 3 with >5 stores triggers pagination."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
+
+        stores = []
+        for i in range(7):
+            stores.append({
+                "store_id": f"s{i}", "name": f"Store {i}",
+                "hours": {"monday": [{"open": f"{7 + i:02d}:00", "close": "21:00"}]},
+                "hours_display": f"Mon {7 + i}:00 AM - 9:00 PM",
+                "status": "open",
+            })
+
+        sm = OrderStateMachine()
+        sm.store_info_handler.set_context(OrderContext(store_info={
+            "all_stores": stores,
+        }))
+
+        order = OrderTask()
+        result = sm.store_info_handler.handle_store_hours_inquiry(order)
+
+        # Should show first 5 stores
+        assert "Store 0" in result.message
+        assert "Store 4" in result.message
+        # Should NOT show stores beyond page 1
+        assert "Store 5" not in result.message
+        # Pagination state set
+        assert order.pending_store_hours_inquiry is True
+        assert order.pending_store_hours_page == 1
+        # Quick reply for more
+        assert result.quick_replies is not None
+        assert any("More" in qr["label"] for qr in result.quick_replies)
+
+    def test_store_hours_show_more(self):
+        """Test pagination follow-up advances to next page."""
+        from orderbot.tasks.state_machine import OrderStateMachine
+        from orderbot.tasks.models import OrderTask
+        from orderbot.tasks.context import OrderContext
+
+        stores = []
+        for i in range(7):
+            stores.append({
+                "store_id": f"s{i}", "name": f"Store {i}",
+                "hours": {"monday": [{"open": f"{7 + i:02d}:00", "close": "21:00"}]},
+                "hours_display": f"Mon {7 + i}:00 AM - 9:00 PM",
+                "status": "open",
+            })
+
+        sm = OrderStateMachine()
+        sm.store_info_handler.set_context(OrderContext(store_info={
+            "all_stores": stores,
+        }))
+
+        order = OrderTask()
+        # First page
+        result1 = sm.store_info_handler.handle_store_hours_inquiry(order)
+        assert order.pending_store_hours_inquiry is True
+
+        # Show more
+        result2 = sm.store_info_handler.handle_store_hours_followup("more", order)
+        assert result2 is not None
+        assert "Store 5" in result2.message
+        assert "Store 6" in result2.message
+        # Last page — no more pagination
+        assert order.pending_store_hours_inquiry is False
+        assert "Can I help you with an order?" in result2.message
 
     def test_store_location_inquiry(self):
         """Test store location inquiry."""

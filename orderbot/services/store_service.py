@@ -161,6 +161,7 @@ def build_store_info(
                 store_info["timezone"] = timezone_str
                 store_info["is_open"] = store_open
                 store_info["hours_config"] = hours_config
+                store_info["status"] = store.status  # "open" or "closed"
                 if not store_open:
                     store_info["next_open_time"] = get_next_open_time_display(hours_config, timezone_str)
                 else:
@@ -177,6 +178,9 @@ def build_store_info(
                 "city": s.city,
                 "state": s.state,
                 "phone": s.phone,
+                "hours": s.hours,
+                "hours_display": format_hours_display(s.hours),
+                "status": s.status,
             }
             for s in all_stores
         ]

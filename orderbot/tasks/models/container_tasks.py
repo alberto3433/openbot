@@ -58,6 +58,8 @@ _CLEARABLE_PENDING_FIELDS: tuple[tuple[str, object], ...] = (
     ("pending_scheduling", False),
     ("pending_store_change", False),
     ("pending_store_page", 0),
+    ("pending_store_hours_inquiry", False),
+    ("pending_store_hours_page", 0),
 )
 
 
@@ -342,6 +344,11 @@ class OrderTask(BaseTask):
 
     # Pagination page for store list (0-indexed, advances on "show more")
     pending_store_page: int = 0
+
+    # Pending store hours inquiry state
+    # Set when bot shows paginated store hours list, so "show more" advances pages
+    pending_store_hours_inquiry: bool = False
+    pending_store_hours_page: int = 0
 
     # Phase to return to after a customer info edit (name/phone/email change).
     # Set when the user clicks "change my name" etc. mid-order, so that after

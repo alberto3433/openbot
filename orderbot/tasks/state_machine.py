@@ -386,6 +386,12 @@ class OrderStateMachine:
                 order.add_message("assistant", store_result.message)
                 return store_result
 
+        if order.pending_store_hours_inquiry:
+            hours_result = self.store_info_handler.handle_store_hours_followup(user_input, order)
+            if hours_result:
+                order.add_message("assistant", hours_result.message)
+                return hours_result
+
         if order.pending_scheduling:
             order.pending_scheduling = False
             scheduling_result = self._handle_scheduling_expression(user_input, order)

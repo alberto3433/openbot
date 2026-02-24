@@ -62,36 +62,127 @@ class StoreInfoHandler(MenuDataMixin):
         self._store_info = ctx.store_info
 
     def handle_store_hours_inquiry(self, order: OrderTask) -> StateMachineResult:
-        """Handle inquiry about store hours.
+        """Handle inquiry about store hours using three-tier logic.
 
-        Uses store_info from the process() call to get hours.
-        If store_info is not available (no store context), asks the user which store.
+        Tier 1: All stores have identical hours → single-line answer.
+        Tier 2: Preferred store selected → show that store's hours directly.
+        Tier 3: Hours vary, no preferred store → paginated inline list.
+
+        Store status awareness:
+        - Tier 2: If the selected store is temporarily closed, say so.
+        - Tier 3: Only shows open stores (all_stores is pre-filtered).
         """
-        store_info = self._store_info or {}
-        hours = store_info.get("hours")
-        store_name = store_info.get("name")
+        from .parsers.constants import DEFAULT_PAGINATION_SIZE
 
-        if hours:
-            # We have hours info - return it
-            if store_name:
-                message = f"Store hours for our {store_name} location are {hours}. Can I help you with an order?"
+        store_info = self._store_info or {}
+        hours_display = store_info.get("hours")
+        store_name = store_info.get("name")
+        store_status = store_info.get("status")
+        all_stores = store_info.get("all_stores", [])
+
+        # --- Tier 2: Preferred store selected with hours ---
+        if hours_display and store_name:
+            if store_status == "closed":
+                message = (
+                    f"Our {store_name} location is temporarily closed. "
+                    f"Normal hours are {hours_display}. Can I help you with anything else?"
+                )
             else:
-                message = f"Our store hours are {hours}. Can I help you with an order?"
+                message = f"Our {store_name} location is open {hours_display}. Can I help you with an order?"
             return StateMachineResult(message=message, order=order)
 
-        # No hours info available
-        if store_name:
-            # We know the store but don't have hours configured
+        # --- Gather stores that have hours data ---
+        stores_with_hours = [s for s in all_stores if s.get("hours_display")]
+
+        if not stores_with_hours:
+            # No hours data available for any store
+            if store_name:
+                return StateMachineResult(
+                    message=f"I don't have the hours for {store_name} right now. Is there anything else I can help you with?",
+                    order=order,
+                )
             return StateMachineResult(
-                message=f"I don't have the hours for {store_name} right now. Is there anything else I can help you with?",
+                message="I don't have store hours available right now. Is there anything else I can help you with?",
                 order=order,
             )
 
-        # No store context at all - we can't determine which store
-        return StateMachineResult(
-            message="Which location would you like the hours for?",
-            order=order,
-        )
+        # --- Tier 1: All stores have identical hours ---
+        if self._all_stores_same_hours(stores_with_hours):
+            hours_text = stores_with_hours[0]["hours_display"]
+            message = f"All our locations are open {hours_text}. Can I help you with an order?"
+            return StateMachineResult(message=message, order=order)
+
+        # --- Tier 3: Hours vary, no preferred store → paginated list ---
+        return self._build_store_hours_page(stores_with_hours, 0, order)
+
+    def handle_store_hours_followup(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle follow-up input during store hours pagination.
+
+        Returns a result for "show more" / "more" inputs to advance pagination.
+        Returns None for unrelated input (clears pending state, falls through).
+        """
+        text_lower = user_input.strip().lower()
+        is_more = text_lower in ("show more", "more", "more locations", "what else", "what else?")
+
+        if not is_more:
+            # Not a pagination request — clear pending state and fall through
+            order.pending_store_hours_inquiry = False
+            order.pending_store_hours_page = 0
+            return None
+
+        store_info = self._store_info or {}
+        all_stores = store_info.get("all_stores", [])
+        stores_with_hours = [s for s in all_stores if s.get("hours_display")]
+
+        page = order.pending_store_hours_page
+        return self._build_store_hours_page(stores_with_hours, page, order)
+
+    @staticmethod
+    def _all_stores_same_hours(stores: list[dict]) -> bool:
+        """Check if all stores have identical raw hours JSONB dicts."""
+        if len(stores) <= 1:
+            return True
+        first_hours = stores[0].get("hours")
+        return all(s.get("hours") == first_hours for s in stores[1:])
+
+    def _build_store_hours_page(
+        self, stores: list[dict], page: int, order: OrderTask,
+    ) -> StateMachineResult:
+        """Build a paginated bullet list of store hours.
+
+        Each line shows: "- StoreName: Mon-Fri 7:00 AM - 9:00 PM"
+        Sets pending state for "show more" follow-up.
+        """
+        from .parsers.constants import DEFAULT_PAGINATION_SIZE
+
+        page_size = DEFAULT_PAGINATION_SIZE
+        start = page * page_size
+        end = start + page_size
+        page_stores = stores[start:end]
+        has_more = end < len(stores)
+
+        lines = ["Our hours vary by location:"]
+        for s in page_stores:
+            raw_name = s.get("name", "")
+            short_name = raw_name.split(" - ")[-1] if " - " in raw_name else raw_name
+            hours_text = s.get("hours_display", "hours not available")
+            lines.append(f"- {short_name}: {hours_text}")
+
+        message = "\n".join(lines)
+        if not has_more:
+            message += "\nCan I help you with an order?"
+
+        # Set pagination state
+        order.pending_store_hours_inquiry = has_more
+        order.pending_store_hours_page = page + 1
+
+        qr = None
+        if has_more:
+            qr = [{"label": "More locations", "value": "more"}]
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def handle_store_location_inquiry(self, order: OrderTask) -> StateMachineResult:
         """Handle inquiry about store location/address.

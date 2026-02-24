@@ -113,6 +113,7 @@ from .routes import (
     admin_overall_categories_router,
     public_stores_router,
     public_company_router,
+    public_menu_router,
     stripe_webhook_router,
     tts_router,
     vapi_router,
@@ -395,6 +396,7 @@ api_v1_router.include_router(admin_component_slots_router)
 api_v1_router.include_router(admin_overall_categories_router)
 api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
+api_v1_router.include_router(public_menu_router)
 api_v1_router.include_router(tts_router)
 api_v1_router.include_router(vapi_router)
 

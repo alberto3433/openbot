@@ -87,7 +87,10 @@ def _filter_duplicate_instructions(
         # If item_word is already captured as a selection, skip this instruction
         # Also check suffix match (e.g., "cheese" matches "blueberry_cream_cheese")
         # Also filter if item_word matches the item name itself (e.g., "coffee" for "Hot Coffee")
-        if item_word in captured_slugs or any(s.endswith(f"_{item_word}") for s in captured_slugs):
+        item_word_slug = item_word.replace(" ", "_")
+        if (item_word_slug in captured_slugs
+                or any(s.endswith(f"_{item_word_slug}") for s in captured_slugs)
+                or any(s.startswith(f"{item_word_slug}_") for s in captured_slugs)):
             logger.debug("Filtering duplicate instruction '%s' - already captured as selection", instr)
             continue
         if item_name_words and any(
@@ -150,7 +153,11 @@ def _attach_position_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -
             if not display_name:
                 display_name = sel.slug.replace("_", " ").title()
 
-            sel.display_name = f"{display_name} ({normalized_form})"
+            qualifier_tag = f"({normalized_form})"
+            if qualifier_tag not in display_name:
+                sel.display_name = f"{display_name} {qualifier_tag}"
+            else:
+                sel.display_name = display_name
 
             # Remove redundant special instructions whose base word is part
             # of the matched slug (e.g., "cheese on the side" where "cheese"
@@ -227,7 +234,11 @@ def _attach_amount_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -> 
             if not display_name:
                 display_name = sel.slug.replace("_", " ").title()
 
-            sel.display_name = f"{display_name} ({normalized_form})"
+            qualifier_tag = f"({normalized_form})"
+            if qualifier_tag not in display_name:
+                sel.display_name = f"{display_name} {qualifier_tag}"
+            else:
+                sel.display_name = display_name
 
             # Remove redundant special instructions whose base word is part
             # of the matched slug (e.g., "extra milk" where "milk" is in slug_parts)
@@ -241,7 +252,8 @@ def _attach_amount_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -> 
                         if base_word.startswith(prefix):
                             base_word = base_word[len(prefix):].strip()
                             break
-                    if base_word in slug_parts:
+                    base_words = base_word.split()
+                    if base_words and all(w in slug_parts for w in base_words):
                         logger.debug(
                             "Removing redundant instruction '%s' - covered by '%s'",
                             instr, sel.display_name,

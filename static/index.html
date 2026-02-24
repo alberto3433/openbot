@@ -1463,6 +1463,88 @@
       width: 18px;
       height: 18px;
     }
+
+    /* =====================================================
+       Menu Drawer (slide-over panel)
+       ===================================================== */
+    .menu-drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .menu-drawer-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .menu-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 480px;
+      max-width: 100vw;
+      z-index: 201;
+      background: var(--bg-secondary);
+      border-left: 1px solid var(--border-light);
+      box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .menu-drawer.open {
+      transform: translateX(0);
+    }
+
+    .menu-drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-light);
+      background: var(--header-bg);
+      flex-shrink: 0;
+    }
+
+    .menu-drawer-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .menu-drawer-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 8px;
+      background: var(--bg-tertiary);
+      color: var(--icon-primary);
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .menu-drawer-close:hover {
+      background: var(--border-light);
+    }
+
+    .menu-drawer-frame {
+      flex: 1;
+      width: 100%;
+      border: none;
+    }
+
+    @media (max-width: 600px) {
+      .menu-drawer {
+        width: 100vw;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1473,6 +1555,10 @@
     </div>
     <div class="header-right">
       <span class="header-subtitle">Demo Web Chat</span>
+      <a class="theme-toggle" id="menu-link" href="#" title="View full menu" onclick="event.preventDefault(); openMenuDrawer();">
+        <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+        <span>Menu</span>
+      </a>
       <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
         <span class="icon" id="theme-icon"></span>
         <span id="theme-text">Light</span>
@@ -1774,6 +1860,14 @@
     let currentStoreId = null;
     let typingIndicatorEl = null;
 
+    function updateMenuLink() {
+      var link = document.getElementById('menu-link');
+      if (!link) return;
+      var href = '/static/menu.html';
+      if (currentStoreId) href += '?store=' + encodeURIComponent(currentStoreId);
+      link.href = href;
+    }
+
     // Analytics
     let sessionStartTime = null;
     let messageCount = 0;
@@ -1925,7 +2019,12 @@
       var target = e.target.closest(".quick-reply-inline");
       if (target && !target.classList.contains("disabled")) {
         if (target.dataset.url) {
-          window.open(target.dataset.url, '_blank', 'noopener,noreferrer');
+          // Open menu links in the drawer; other URLs in a new tab
+          if (target.dataset.url.indexOf('menu.html') !== -1) {
+            openMenuDrawer();
+          } else {
+            window.open(target.dataset.url, '_blank', 'noopener,noreferrer');
+          }
         } else {
           sendMessage(target.dataset.value);
         }
@@ -1974,6 +2073,7 @@
         if (storeId) {
           params.append("store_id", storeId);
           currentStoreId = storeId;
+          updateMenuLink();
         }
         if (params.toString()) url += "?" + params.toString();
 
@@ -2865,6 +2965,7 @@
       // Update currentStoreId if store changed
       if (state.store && state.store.store_id) {
         currentStoreId = state.store.store_id;
+        updateMenuLink();
       }
 
       if (!hasItems) {
@@ -3030,6 +3131,70 @@
     };
 
     renderOrderPanel(orderState);
+  </script>
+
+  <!-- Menu Drawer -->
+  <div class="menu-drawer-backdrop" id="menu-drawer-backdrop"></div>
+  <div class="menu-drawer" id="menu-drawer">
+    <div class="menu-drawer-header">
+      <span class="menu-drawer-title">Menu</span>
+      <button class="menu-drawer-close" id="menu-drawer-close" title="Close menu">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <iframe class="menu-drawer-frame" id="menu-drawer-frame" title="Menu"></iframe>
+  </div>
+
+  <script>
+  (function() {
+    var backdrop = document.getElementById('menu-drawer-backdrop');
+    var drawer = document.getElementById('menu-drawer');
+    var frame = document.getElementById('menu-drawer-frame');
+    var closeBtn = document.getElementById('menu-drawer-close');
+
+    // Render the lucide icon in the close button
+    if (window.lucide) lucide.createIcons();
+
+    function openMenuDrawer() {
+      var src = '/static/menu.html?embedded=1';
+      if (currentStoreId) src += '&store=' + encodeURIComponent(currentStoreId);
+      frame.src = src;
+      backdrop.classList.add('active');
+      drawer.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeMenuDrawer() {
+      backdrop.classList.remove('active');
+      drawer.classList.remove('open');
+      document.body.style.overflow = '';
+      // Clear iframe after transition to free memory
+      setTimeout(function() {
+        if (!drawer.classList.contains('open')) {
+          frame.src = 'about:blank';
+        }
+      }, 350);
+    }
+
+    closeBtn.addEventListener('click', closeMenuDrawer);
+    backdrop.addEventListener('click', closeMenuDrawer);
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && drawer.classList.contains('open')) {
+        closeMenuDrawer();
+      }
+    });
+
+    // Listen for click-to-add messages from the menu iframe
+    window.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'add-to-order' && e.data.itemName) {
+        sendMessage("I'd like a " + e.data.itemName);
+      }
+    });
+
+    // Expose globally so other handlers can use it
+    window.openMenuDrawer = openMenuDrawer;
+    window.closeMenuDrawer = closeMenuDrawer;
+  })();
   </script>
 </body>
 </html>

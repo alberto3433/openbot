@@ -99,7 +99,7 @@ from .admin_unrecognized_options import admin_unrecognized_option_suggestions_ro
 from .admin_unrecognized_ingredients import admin_unrecognized_ingredient_suggestions_router
 from .admin_component_slots import admin_component_slots_router
 from .admin_overall_categories import admin_overall_categories_router
-from .public import public_stores_router, public_company_router
+from .public import public_stores_router, public_company_router, public_menu_router
 from .stripe_webhook import stripe_webhook_router
 from .tts import tts_router
 from .voice_vapi import vapi_router
@@ -132,6 +132,7 @@ __all__ = [
     "admin_overall_categories_router",
     "public_stores_router",
     "public_company_router",
+    "public_menu_router",
     "stripe_webhook_router",
     "tts_router",
     "vapi_router",

@@ -84,7 +84,14 @@ class ConfigFallbackInterceptor:
         # Guard: only try if input starts with an article, quantity word, or ordering phrase.
         if not is_valid_answer and isinstance(item, MenuItemTask):
             stripped = user_input.strip()
-            if re.match(r'^(?:a(?:n)?\s+|(?:\d+|two|three|four|five|six)\s+|(?:can|could)\s+i\s+(?:get|have)\s+)', stripped, re.IGNORECASE):
+            if re.match(
+                r"^(?:a(?:n)?\s+|(?:\d+|two|three|four|five|six)\s+"
+                r"|(?:can|could)\s+i\s+(?:get|have)\s+"
+                r"|i(?:'?d)?\s*(?:like|want|need)\s+(?:to\s+(?:get|have|add|order)\s+)?"
+                r"|(?:i'?ll|let\s+me)\s+(?:have|get|take)\s+"
+                r"|(?:give|get)\s+me\s+)",
+                stripped, re.IGNORECASE,
+            ):
                 # Don't treat as a new menu item if the non-quantity part is a known
                 # modifier — it's likely an answer to the pending question.
                 # Strip ordering prefix first (e.g., "can I have butter?" -> "butter"),

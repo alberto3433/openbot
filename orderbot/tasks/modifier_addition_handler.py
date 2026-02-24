@@ -284,6 +284,15 @@ class ModifierAdditionHandler:
                         item = matched_item
                         explicit_target = True
                 if modifier_text:
+                    from .parsers import parse_open_input_deterministic
+                    parsed = parse_open_input_deterministic(modifier_text)
+                    if parsed and parsed.parsed_items:
+                        logger.debug(
+                            "ADD_DURING_CONFIG: Desire pattern text '%s' matches a menu item, "
+                            "skipping modifier path",
+                            modifier_text,
+                        )
+                        return (None, item, False)
                     logger.debug(
                         "ADD_DURING_CONFIG: Matched desire pattern, modifier='%s'",
                         modifier_text,

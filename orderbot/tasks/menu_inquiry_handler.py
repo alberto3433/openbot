@@ -185,6 +185,7 @@ class MenuInquiryHandler(BaseHandler):
                 # Build quick replies for inline clickable text
                 # Clicking a category sends a natural question like "What sandwiches do you have?"
                 qr = [{"label": name, "value": f"What {name.lower()} do you have?"} for name in shown_names]
+                qr.append({"label": "selection", "value": "", "url": "/static/menu.html"})
                 if has_more:
                     qr.append({"label": "more", "value": "what else?"})
 

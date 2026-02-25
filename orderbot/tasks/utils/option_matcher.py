@@ -315,7 +315,8 @@ class OptionMatcher(MatchPhasesMixin, NumberedListMatchMixin, OptionMatchStaticM
         tokens = self.normalizer.tokenize_multi_input(user_input)
 
         # Stopwords to ignore when reporting unmatched
-        stopwords = {"and", "with", "some", "a", "the", "please", "also", "too", "extra"}
+        # Includes action verbs (add, put) users say when specifying modifiers
+        stopwords = {"and", "with", "some", "a", "the", "please", "also", "too", "extra", "add", "put"}
 
         # Build set of matched identifiers for checking
         matched_identifiers: set[str] = set()

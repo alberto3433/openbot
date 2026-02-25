@@ -2151,6 +2151,7 @@
       try {
         const payload = { session_id: sessionId, message: text };
         if (opts && opts.itemId) payload.item_id = opts.itemId;
+        if (opts && opts.addItem) payload.add_item = true;
         const resp = await fetch("/api/v1/chat/message", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2191,6 +2192,7 @@
       try {
         const payload = { session_id: sessionId, message: text };
         if (opts && opts.itemId) payload.item_id = opts.itemId;
+        if (opts && opts.addItem) payload.add_item = true;
         const resp = await fetch("/api/v1/chat/message/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3156,6 +3158,19 @@
     if (window.lucide) lucide.createIcons();
 
     function openMenuDrawer() {
+      // Dismiss the welcome overlay and start session if still visible
+      var overlay = document.getElementById("welcome-overlay");
+      if (overlay && !overlay.classList.contains("fade-out")) {
+        overlay.classList.add("fade-out");
+        setTimeout(function() { overlay.remove(); }, 400);
+        if (!sessionId) {
+          var params = new URLSearchParams(window.location.search);
+          var callerId = params.get("caller_id") || null;
+          var storeParam = params.get("store") || params.get("store_id") || null;
+          if (storeParam && !STORE_NAMES[storeParam]) storeParam = null;
+          startSession(callerId, storeParam);
+        }
+      }
       var src = '/static/menu.html?embedded=1';
       if (currentStoreId) src += '&store=' + encodeURIComponent(currentStoreId);
       frame.src = src;
@@ -3187,7 +3202,7 @@
     // Listen for click-to-add messages from the menu iframe
     window.addEventListener('message', function(e) {
       if (e.data && e.data.type === 'add-to-order' && e.data.itemName) {
-        sendMessage("I'd like a " + e.data.itemName);
+        sendMessage("I'd like a " + e.data.itemName, { addItem: true });
       }
     });
 

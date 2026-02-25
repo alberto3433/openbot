@@ -49,6 +49,7 @@ def chat_message(
             user_message=req.message,
             session_id=req.session_id,
             item_id=req.item_id,
+            add_item=req.add_item,
         ))
 
         processed_actions = [
@@ -116,6 +117,7 @@ def chat_message_stream(
                 caller_id=session_caller_id,
                 store_id=session_store_id,
                 item_id=req.item_id,
+                add_item=req.add_item,
                 session=session,
             ))
 

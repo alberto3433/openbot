@@ -48,6 +48,7 @@ class ProcessingContext:
     caller_id: str | None = None
     store_id: str | None = None
     item_id: str | None = None
+    add_item: bool = False
 
     # Pre-loaded session (optional - if not provided, will be loaded)
     session: dict[str, Any] | None = None
@@ -148,6 +149,7 @@ class MessageProcessor:
             returning_customer=returning_customer,
             db_session=self.db,
             item_id=ctx.item_id,
+            add_item=ctx.add_item,
         )
 
         # 4b. Handle store change signal from state machine

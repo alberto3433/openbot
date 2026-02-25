@@ -307,9 +307,11 @@ class TakingItemsHandler(MenuDataMixin):
             return result
 
         # Check for early patterns (before LLM parsing) - delegates to EarlyPatternHandler
-        result = self._early_pattern_handler.handle_all_early_patterns(user_input, order)
-        if result:
-            return result
+        # Skip when add_item flag is set (user clicked a menu item) — always treat as new item
+        if not getattr(order, '_add_item_flag', False):
+            result = self._early_pattern_handler.handle_all_early_patterns(user_input, order)
+            if result:
+                return result
 
         # Check for standalone cancel/abandon phrases: "I changed my mind", "never mind",
         # "forget it", "cancel", etc. During TAKING_ITEMS these clear the entire order.

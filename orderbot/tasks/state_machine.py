@@ -45,6 +45,7 @@ from .parsers import (
     STORE_CHANGE_PATTERN,
 )
 from .utils.text import normalize_text
+from .parsers.deterministic.text_cleaning import _collapse_repeated_words
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +424,7 @@ class OrderStateMachine:
         store_info: dict | None = None,
         db_session=None,
         item_id: str | None = None,
+        add_item: bool = False,
     ) -> StateMachineResult:
         """
         Process user input through the state machine.
@@ -438,7 +440,13 @@ class OrderStateMachine:
         Returns:
             StateMachineResult with response message and updated order
         """
+        # Collapse stuttered words (e.g., "no no changes" → "no changes")
+        user_input = _collapse_repeated_words(user_input)
+
         order = self._initialize_order(order, returning_customer, store_info, db_session)
+
+        # Store add_item flag on order for dispatch routing
+        order._add_item_flag = add_item
 
         # ID-based removal: bypass parsing entirely when item_id is provided
         id_result = self._handle_id_removal(item_id, user_input, order)
@@ -542,6 +550,9 @@ class OrderStateMachine:
     ) -> StateMachineResult:
         """Route to the appropriate handler based on current phase."""
         if order.is_configuring_item():
+            if getattr(order, '_add_item_flag', False):
+                # Menu item click during config: route to taking_items to add the new item
+                return self._handle_taking_items(user_input, order)
             return self._handle_configuring_item(user_input, order)
 
         handler = self._phase_dispatch.get(order.phase)

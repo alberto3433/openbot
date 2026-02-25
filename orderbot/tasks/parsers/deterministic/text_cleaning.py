@@ -21,6 +21,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _collapse_repeated_words(text: str) -> str:
+    """Collapse consecutive repeated words (stutters).
+
+    In chat and speech, people don't intentionally repeat words for meaning.
+    Repeated words are stutters, not double negatives or emphasis.
+
+    Examples:
+        "no no changes" → "no changes"
+        "yes yes" → "yes"
+        "the the classic" → "the classic"
+
+    Args:
+        text: User input text.
+
+    Returns:
+        Text with consecutive duplicate words collapsed.
+    """
+    words = text.split()
+    if len(words) <= 1:
+        return text
+    result = [words[0]]
+    for word in words[1:]:
+        if word.lower() != result[-1].lower():
+            result.append(word)
+    return " ".join(result)
+
 
 def _extract_replacement_item(match: re.Match) -> str | None:
     """Extract the replacement item text from a REPLACE_ITEM_PATTERN match.

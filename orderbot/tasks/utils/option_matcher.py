@@ -17,6 +17,9 @@ import re
 from dataclasses import dataclass, field
 
 from orderbot.cache import menu_cache
+from orderbot.tasks.shared_constants import (
+    ARTICLES, CONNECTORS, POLITENESS_WORDS, ACTION_VERB_STOPWORDS,
+)
 from .input_normalizer import InputNormalizer
 from .option_match_phases import MatchPhasesMixin
 from .option_match_numbered import NumberedListMatchMixin
@@ -315,8 +318,10 @@ class OptionMatcher(MatchPhasesMixin, NumberedListMatchMixin, OptionMatchStaticM
         tokens = self.normalizer.tokenize_multi_input(user_input)
 
         # Stopwords to ignore when reporting unmatched
-        # Includes action verbs (add, put) users say when specifying modifiers
-        stopwords = {"and", "with", "some", "a", "the", "please", "also", "too", "extra", "add", "put"}
+        stopwords = (
+            ARTICLES | CONNECTORS | POLITENESS_WORDS | ACTION_VERB_STOPWORDS
+            | {"also", "too", "extra"}
+        )
 
         # Build set of matched identifiers for checking
         matched_identifiers: set[str] = set()

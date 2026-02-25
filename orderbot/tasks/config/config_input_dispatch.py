@@ -53,6 +53,10 @@ class ConfigInputDispatch:
         if disambiguation_result:
             return disambiguation_result
 
+        # Save original before stripping so boolean handler can try it first
+        # (e.g., "sure why not" — "sure" is affirmative but gets stripped as filler)
+        original_input = user_input
+
         # Strip conversational fillers and ordering prefixes from the input
         # e.g., "wait, make that a large" -> "large", "can I have butter?" -> "butter"
         user_input = strip_conversational_fillers(user_input)
@@ -130,6 +134,8 @@ class ConfigInputDispatch:
 
         handler = input_type_handlers.get(input_type)
         if handler:
+            if input_type == "boolean":
+                return handler(user_input, item, order, attr, original_input=original_input)
             if input_type == "quantity":
                 return handler(user_input, item, order, attr, options)
             return handler(user_input, item, order, attr)
@@ -228,7 +234,8 @@ class ConfigInputDispatch:
         return None
 
     def _handle_boolean_input(
-        self, user_input: str, item: MenuItemTask, order: OrderTask, attr: dict
+        self, user_input: str, item: MenuItemTask, order: OrderTask, attr: dict,
+        *, original_input: str | None = None
     ) -> StateMachineResult:
         """Handle yes/no input for boolean attributes.
 
@@ -237,7 +244,18 @@ class ConfigInputDispatch:
         """
         attr_slug = attr["slug"]
 
-        # Use the boolean parser to parse the input
+        # Try original (unstripped) input first to preserve affirmative words
+        # like "sure" that get stripped as hesitation fillers.
+        # "sure why not" → stripped to "why not" (wrong), but original parses as True.
+        if original_input and original_input != user_input:
+            pre_result = self._parent._boolean_parser.parse(original_input, attr)
+            if pre_result.value is not None:
+                item[attr_slug] = pre_result.value
+                self._parent._selection_extractor.extract_and_apply_selections(user_input, item)
+                self._parent.capture_attributes_from_input(user_input, item, skip_attribute=attr_slug)
+                return self._parent._question_flow._advance_to_next_question(item, order, attr)
+
+        # Use the boolean parser to parse the (stripped) input
         result = self._parent._boolean_parser.parse(user_input, attr)
 
         if result.value is None:

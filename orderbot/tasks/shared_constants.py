@@ -68,6 +68,9 @@ LEADING_ARTICLE_RE = _re.compile(r'^(?:a|an|the)\s+', _re.IGNORECASE)
 # Strip anywhere in input
 POLITENESS_WORDS = frozenset({'please', 'thanks', 'thank you', 'thx'})
 
+# Action verbs users say when specifying modifiers (e.g., "add some bacon")
+ACTION_VERB_STOPWORDS = frozenset({"add", "put"})
+
 # =============================================================================
 # Basic Skip Words
 # =============================================================================

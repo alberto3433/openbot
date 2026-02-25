@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Callable
 
 from orderbot.cache import menu_cache
 
+from ...shared_constants import ARTICLES, ACTION_VERB_STOPWORDS
 from ...schemas import StateMachineResult
 from ...parsers.quantity_utils import (
     extract_leading_quantity,
@@ -244,7 +245,7 @@ class IngredientFallbackHandler:
         item_type_attrs = menu_cache.get_item_type_attributes(item.menu_item_type)
 
         for word in words:
-            if word in QUANTITY_MODIFIER_WORDS:
+            if word in QUANTITY_MODIFIER_WORDS or word in ARTICLES or word in ACTION_VERB_STOPWORDS:
                 continue
 
             # Check if word matches an attribute category slug
@@ -327,8 +328,8 @@ class IngredientFallbackHandler:
             unmatched: List to append unmatched words to
         """
         for word in words:
-            # Skip quantity modifier words - don't report them as "not found"
-            if word in QUANTITY_MODIFIER_WORDS:
+            # Skip quantity modifier words and stopwords - don't report them as "not found"
+            if word in QUANTITY_MODIFIER_WORDS or word in ARTICLES or word in ACTION_VERB_STOPWORDS:
                 continue
 
             quantity, search_term = extract_leading_quantity(word)

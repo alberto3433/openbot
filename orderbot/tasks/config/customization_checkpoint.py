@@ -25,6 +25,7 @@ from ..parsers.quantity_utils import (
 from .attribute_resolver import get_mandatory_attributes
 from .config_input_dispatch import _filter_options_by_category
 from .flows import IngredientFallbackHandler
+from ..shared_constants import ORDERING_PREFIX_RE, LEADING_ARTICLE_RE
 from ..parsers.intent_patterns import ORDERING_LANGUAGE_PATTERN
 from ..utils.text import normalize_text
 
@@ -191,18 +192,19 @@ class CustomizationCheckpointHandler:
         Returns:
             StateMachineResult with next question or completion message
         """
-        # Strip "make it" prefix - users often say "make it 3 eggs" to customize
+        # Strip ordering prefixes ("add", "make it", "I'd like", "can I get", etc.)
         user_lower = normalize_text(user_input)
-        if user_lower.startswith("make it "):
-            user_input = user_input[8:]  # len("make it ") == 8
-            user_lower = user_lower[8:]
-        # Also strip leading articles (a/an) - "make it an onion bagel" → "onion bagel"
-        if user_lower.startswith("an "):
-            user_input = user_input[3:]
-            user_lower = user_lower[3:]
-        elif user_lower.startswith("a "):
-            user_input = user_input[2:]
-            user_lower = user_lower[2:]
+        prefix_match = ORDERING_PREFIX_RE.match(user_lower)
+        if prefix_match:
+            prefix_len = prefix_match.end()
+            user_input = user_input[prefix_len:]
+            user_lower = user_lower[prefix_len:]
+        # Also strip leading articles (a/an/the)
+        article_match = LEADING_ARTICLE_RE.match(user_lower)
+        if article_match:
+            art_len = article_match.end()
+            user_input = user_input[art_len:]
+            user_lower = user_lower[art_len:]
         item_type = item.menu_item_type
 
         # Check for "more X" / "extra X" patterns FIRST - before direct option matching

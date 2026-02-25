@@ -17,7 +17,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from orderbot.cache import menu_cache
-from orderbot.cache.base import pluralize
+from orderbot.cache.base import pluralize, singularize
 
 from .models import OrderTask
 from .pending_fields import PendingField
@@ -126,6 +126,52 @@ class MenuInquiryHandler(BaseHandler):
 
         return format_english_list(item_list), has_more, raw_names
 
+    def _format_attribute_options_list(
+        self,
+        option_names: list[str],
+        display_name: str,
+        category_slug: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Format a global attribute or modifier category options list with pagination.
+
+        Args:
+            option_names: Sorted list of option display names.
+            display_name: Human-readable category name (e.g., "Condiments").
+            category_slug: Slug for pagination state tracking.
+            order: Current order state.
+
+        Returns:
+            StateMachineResult with formatted message and quick replies.
+        """
+        if len(option_names) <= DEFAULT_PAGINATION_SIZE:
+            items_str = format_english_list(option_names)
+            order.clear_menu_pagination()
+            batch = option_names
+        else:
+            batch = option_names[:DEFAULT_PAGINATION_SIZE]
+            items_str = format_english_list(batch)
+            remaining = len(option_names) - DEFAULT_PAGINATION_SIZE
+            order.set_menu_pagination(category_slug, DEFAULT_PAGINATION_SIZE, len(option_names))
+
+        qr = [{"label": name, "value": name} for name in batch]
+
+        if len(option_names) > DEFAULT_PAGINATION_SIZE:
+            remaining = len(option_names) - DEFAULT_PAGINATION_SIZE
+            items_str += f", and {remaining} more"
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+            message = (
+                f"For {display_name.lower()}, we have {items_str} — "
+                f"would you like one of these, or want to hear more?"
+            )
+        else:
+            message = (
+                f"For {display_name.lower()}, we have {items_str}. "
+                f"Would you like any of these?"
+            )
+
+        return StateMachineResult(message=message, order=order, quick_replies=qr)
+
     def handle_more_menu_items(self, order: OrderTask, category: str | None = None) -> StateMachineResult:
         """Handle 'show more' menu requests.
 
@@ -204,6 +250,37 @@ class MenuInquiryHandler(BaseHandler):
         items, lookup_type = self._get_items_for_category(menu_query_type)
 
         if not items:
+            # Fallback 1: check if query matches a global attribute (e.g., "condiments")
+            attr_slug = singularize(normalize_text(menu_query_type))
+            global_options = menu_cache.get_global_attribute_options(attr_slug)
+            if global_options:
+                option_names = sorted([
+                    opt.get("display_name", opt.get("slug", ""))
+                    for opt in global_options
+                    if opt.get("is_available", True)
+                ])
+                if option_names:
+                    attr_display = menu_cache.get_attribute_display_name(attr_slug)
+                    return self._format_attribute_options_list(
+                        option_names, attr_display, attr_slug, order
+                    )
+
+            # Fallback 2: check modifier categories by alias
+            modifier_slug = menu_cache.get_modifier_category_by_alias(menu_query_type)
+            if modifier_slug:
+                modifier_items = menu_cache.get_modifier_category_items(modifier_slug)
+                if modifier_items:
+                    items_list = sorted(modifier_items)
+                    cat_info = menu_cache.get_modifier_categories_for_inquiry().get(
+                        modifier_slug, {}
+                    )
+                    display_name = cat_info.get(
+                        "display_name", modifier_slug.replace("_", " ").title()
+                    )
+                    return self._format_attribute_options_list(
+                        items_list, display_name, modifier_slug, order
+                    )
+
             # Try to suggest what we do have using high-level display groups
             display_names = self.menu_data.get("item_type_display_names", {}) if self.menu_data else {}
             type_display = get_item_type_display_name(menu_query_type, display_names)

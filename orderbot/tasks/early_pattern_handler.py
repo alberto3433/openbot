@@ -347,6 +347,19 @@ class EarlyPatternHandler:
         removed_category = match_category_removal_pattern(input_lower, last_item.menu_item_type)
         if removed_category:
             if remove_modifiers_by_category(last_item, removed_category):
+                # Check if there's also an "add" operation in the input
+                add_match = re.search(r'\badd\b', input_lower)
+                if add_match:
+                    add_portion = input_lower[add_match.start():]
+                    add_change = add_modifiers_from_input(last_item, add_portion)
+                    if add_change:
+                        updated_summary = recalculate_and_summarize(last_item, self.pricing)
+                        return StateMachineResult(
+                            message=sure_updated_anything_else(updated_summary),
+                            order=order,
+                        )
+
+                # Removal only (no add, or add didn't match anything)
                 updated_summary = recalculate_and_summarize(last_item, self.pricing)
                 category_display = menu_cache.get_ingredient_category_display_name(removed_category)
                 return StateMachineResult(

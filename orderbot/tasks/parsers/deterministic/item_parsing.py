@@ -24,18 +24,15 @@ from orderbot.cache import menu_cache
 
 from ...schemas import (
     OpenInputResponse,
-    Selection,
     ParsedItemEntry,
 )
 from ..constants import (
     WORD_TO_NUM,
-    get_items_with_defaults_aliases,
 )
 from .extraction import (
     _extract_quantity,
     _extract_by_pound_info,
 )
-from ..quantity_utils import extract_quantity_for_pattern
 
 # Import from specialized modules
 from .item_building import build_parsed_item
@@ -171,7 +168,7 @@ def _parse_item_generic(
     text: str,
     item_type: str | None = None,
     item_name: str | None = None
-) -> ParsedItemEntry | None:
+) -> list[ParsedItemEntry] | None:
     """Parse any item type using database configuration.
 
     This is a generic parser that uses database-driven attribute and modifier
@@ -180,6 +177,10 @@ def _parse_item_generic(
 
     Also handles by-pound items (e.g., "quarter pound of cream cheese").
 
+    Delegates to _extract_and_build_configurable_item for attribute extraction,
+    modifier extraction, and item building — keeping a single source of truth
+    for per-item parsing logic.
+
     Args:
         text: User input text
         item_type: Detected item type slug
@@ -187,15 +188,15 @@ def _parse_item_generic(
         item_name: Matched menu item name (if any)
 
     Returns:
-        ParsedItemEntry with extracted attributes and modifiers, or None if
-        unable to parse
+        List of ParsedItemEntry (may be >1 for partial modifier splits),
+        or None if unable to parse
     """
     text_lower = text.lower()
 
     # Check for by-pound pattern first
     by_pound_result = _parse_by_pound_item(text, text_lower)
     if by_pound_result:
-        return by_pound_result
+        return [by_pound_result]
 
     # Auto-detect item type if not provided
     if not item_type:
@@ -210,16 +211,13 @@ def _parse_item_generic(
     # resolve to a specific menu item (e.g., 'Hot Latte') based on context in the text.
     # Always try resolution when we have an item_type, as the text may contain
     # disambiguating context (like "hot" vs "iced") that _match_menu_item_name_for_type can use.
+    # Use _with_span variant to capture the alias span for modifier exclusion
+    # (e.g., "bacon egg and cheese" alias span prevents "bacon" from being extracted as modifier)
+    resolved_item_span: tuple[int, int] | None = None
     if item_type:
-        resolved_name = _match_menu_item_name_for_type(text, item_type)
+        resolved_name, resolved_item_span = _match_menu_item_name_for_type_with_span(text, item_type)
         if resolved_name:
             item_name = resolved_name
-        else:
-            # No specific menu item matched from text — try type default
-            # e.g., "early gray tea" with type "tea" → "Hot Tea"
-            default_name = _get_default_menu_item_for_type(item_type)
-            if default_name:
-                item_name = default_name
 
     # Extract quantity from text
     quantity = 1
@@ -234,74 +232,37 @@ def _parse_item_generic(
             if quantity > 1:
                 item_qty_span = (qty_match.start(1), qty_match.end(1))
 
-    # Compute the span of the matched menu item name in the text so we can exclude it
-    # from modifier extraction. Without this, words within composite item names
-    # (e.g., "kalamata olive" in "Kalamata Olive Feta Cream Cheese Sandwich") get falsely
-    # extracted as modifiers/selections, causing incorrect pricing.
-    # NOTE: We only exclude the item name span from MODIFIER extraction, not attribute
-    # extraction. Short item names like "Bagel" may overlap with attribute option triggers
-    # (e.g., "bagel" -> bread type), so excluding from attributes would break detection.
+    # Only pass the alias span as matched_item_span when it's a compound alias
+    # (where the matched text differs from the canonical item name). This is needed
+    # to prevent words in compound aliases (e.g., "bacon" in "bacon egg and cheese")
+    # from being extracted as modifiers or attributes.
+    # We do NOT pass canonical name spans (e.g., "bagel" at pos 14) because short
+    # names overlap with compound attribute option patterns (e.g., "everything bagel"
+    # as bread type), and _extract_and_build_configurable_item excludes matched_item_span
+    # from attribute extraction too, which would break detection.
     matched_item_span: tuple[int, int] | None = None
-    if item_name:
-        item_name_lower = item_name.lower()
-        pos = text_lower.find(item_name_lower)
-        if pos != -1:
-            matched_item_span = (pos, pos + len(item_name_lower))
+    if resolved_item_span and item_name:
+        span_text = text_lower[resolved_item_span[0]:resolved_item_span[1]]
+        # If the span text doesn't match the canonical name, it's a compound alias
+        if span_text.rstrip('s') != item_name.lower().rstrip('s'):
+            matched_item_span = resolved_item_span
 
-    # Extract all attributes for this item type using database config
-    # This handles all attribute types (single_select, multi_select, boolean)
-    # including combined attributes like milk_sweetener_syrup
-    # Pass item_qty_span as exclude_span to prevent the item quantity word
-    # (e.g., "two" in "two large iced lattes") from being re-consumed as
-    # an attribute-level quantity (which would make size="2 Larges" instead of "Large")
-    from .pipeline import get_pipeline
-    from .result_types import TextSpan
-    exclude_spans_for_attrs = None
-    if item_qty_span:
-        exclude_spans_for_attrs = [TextSpan(start=item_qty_span[0], end=item_qty_span[1])]
-    attr_result = get_pipeline().extract_attributes(text, item_type, exclude_spans=exclude_spans_for_attrs)
-    attr_matched_spans = [(s.start, s.end) for s in attr_result.matched_spans]
-
-    # Extract food modifiers (proteins, spreads, toppings, etc.)
-    # Beverage modifiers (sweeteners, syrups, milk) are handled via attr_result
-    # Pass exclude_spans to avoid double-extraction of text already matched as attributes
-    # Also include matched_item_span to prevent extracting ingredients from the item name
-    modifier_exclude_spans = list(attr_matched_spans)
-    if matched_item_span:
-        modifier_exclude_spans.append(matched_item_span)
-    food_modifiers = get_pipeline().extract_modifiers_raw(text_lower, item_type, exclude_spans=modifier_exclude_spans)
-
-    # Check if this item has default ingredients (used for populating defaults)
-    has_defaults = False
-    if item_name:
-        items_with_defaults = get_items_with_defaults_aliases()
-        # Check if the menu item name matches any item with default ingredients
-        name_lower = item_name.lower()
-        if name_lower in items_with_defaults or item_name in items_with_defaults.values():
-            has_defaults = True
-
-    # Build food modifiers list with category from database
-    # Extract quantity for each modifier (e.g., "extra bacon" -> quantity=2)
-    modifier_selections: list[Selection] = []
-    for mod in food_modifiers:
-        category = menu_cache.get_ingredient_category(mod)
-        mod_quantity = extract_quantity_for_pattern(text_lower, mod)
-        modifier_selections.append(Selection(
-            slug=mod, category=category, quantity=mod_quantity
-        ))
-
-    # Extract item-level special instructions (e.g., "room for cream", "extra hot")
-    special_instructions = get_pipeline().extract_special_instructions(text).instructions
-
-    return build_parsed_item(
-        item_type=item_type,
-        item_name=item_name,
+    # Delegate to _extract_and_build_configurable_item for attribute/modifier extraction
+    # and item building. This is the single source of truth for per-item parsing.
+    response = _extract_and_build_configurable_item(
+        text=text,
+        text_lower=text_lower,
+        detected_item_type=item_type,
+        matched_item_name=item_name,
+        matched_item_span=matched_item_span,
+        inferred_attr_values={},
         quantity=quantity,
-        attr_result=attr_result,
-        modifiers=modifier_selections,
-        original_text=text,
-        special_instructions=special_instructions,
+        item_qty_span=item_qty_span,
     )
+
+    if response and response.parsed_items:
+        return response.parsed_items
+    return None
 
 
 # =============================================================================

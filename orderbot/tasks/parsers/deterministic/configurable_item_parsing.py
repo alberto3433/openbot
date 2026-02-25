@@ -351,7 +351,11 @@ def _extract_and_build_configurable_item(
     # These are ingredients not handled via attribute_values (which handles items that
     # overlap with attribute options like bread types, egg styles, etc.)
     # Pass exclude_spans to avoid double-extraction of text already matched as attributes
-    food_modifiers = get_pipeline().extract_modifiers_raw(text_lower, detected_item_type, exclude_spans=attr_matched_spans)
+    # or as part of the matched menu item name (e.g., "bacon" in "bacon egg and cheese")
+    modifier_exclude_spans = list(attr_matched_spans) if attr_matched_spans else []
+    if matched_item_span:
+        modifier_exclude_spans.append(matched_item_span)
+    food_modifiers = get_pipeline().extract_modifiers_raw(text_lower, detected_item_type, exclude_spans=modifier_exclude_spans)
     modifier_selections: list[Selection] = []
     for mod in food_modifiers:
         category = menu_cache.get_ingredient_category(mod)

@@ -339,18 +339,20 @@ def _build_items_from_tokens(
         item_name = _derive_item_name_from_token(token)
 
         # Use the generic parser with detected item type and resolved name
-        parsed_item = _parse_item_generic(
+        # Returns a list (may be >1 for partial modifier splits)
+        parsed_result = _parse_item_generic(
             text=token.original,
             item_type=token.item_type,
             item_name=item_name,
         )
 
-        if parsed_item:
-            # Apply quantity from token if detected
-            if token.quantity and token.quantity > 1:
-                parsed_item.quantity = token.quantity
-            parsed_items.append(parsed_item)
-            logger.debug("Multi-item: parsed '%s' -> %s", token.original[:40], parsed_item.item_type)
+        if parsed_result:
+            # Apply quantity from token only when result is a single item
+            # (partial modifier splits already have correct quantities)
+            if token.quantity and token.quantity > 1 and len(parsed_result) == 1:
+                parsed_result[0].quantity = token.quantity
+            parsed_items.extend(parsed_result)
+            logger.debug("Multi-item: parsed '%s' -> %s", token.original[:40], parsed_result[0].item_type)
         else:
             # Fallback: try full deterministic parser
             # Note: import here to avoid circular imports

@@ -263,18 +263,21 @@ def validate_scheduled_time(
     if requested_time < now - timedelta(minutes=5):
         return False, "That time has already passed. Could you pick a later time?"
 
-    # Check: not too far ahead
-    max_future = now + timedelta(days=max_days)
-    if requested_time > max_future:
-        return False, f"We can only schedule orders up to {max_days} days ahead."
-
-    # Check: store is open at that time
+    # Check: closed day (more specific than "too far ahead")
     if hours_config is not None:
         weekday = requested_time.weekday()
         ranges = hours_config.get(weekday)
         if ranges is None:
             day_name = _WEEKDAY_NAMES[weekday]
             return False, f"We're closed on {day_name}s. Would you like to pick another time?"
+
+    # Check: not too far ahead
+    max_future = now + timedelta(days=max_days)
+    if requested_time > max_future:
+        return False, f"We can only schedule orders up to {max_days} days ahead."
+
+    # Check: store is open at that time (hours within an open day)
+    if hours_config is not None:
 
         req_time = requested_time.time()
         if not any(open_t <= req_time < close_t for open_t, close_t in ranges):

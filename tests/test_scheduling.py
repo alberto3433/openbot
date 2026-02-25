@@ -191,7 +191,10 @@ class TestValidateScheduledTime:
 
     def test_too_far_ahead_rejected(self, weekday_hours):
         tz = ZoneInfo("America/New_York")
+        # Pick a far-future date that lands on an open weekday (Mon-Fri)
         far_future = datetime.now(tz) + timedelta(days=10)
+        while far_future.weekday() >= 5:  # skip Sat/Sun
+            far_future += timedelta(days=1)
         is_valid, error = validate_scheduled_time(far_future, weekday_hours, "America/New_York")
         assert is_valid is False
         assert "3 days" in error

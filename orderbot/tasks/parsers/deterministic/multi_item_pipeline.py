@@ -136,14 +136,20 @@ def _is_with_modifier_chain(text_lower: str, text: str) -> bool:
             if after_and.startswith(art):
                 after_and = after_and[len(art):]
                 break
+        # Strip leading amount qualifier words (e.g., "little", "extra", "bit of")
+        after_qualifiers = _strip_leading_qualifiers(after_and)
+        # Check if the remaining text is a known modifier/ingredient
+        if after_qualifiers and menu_cache.is_known_modifier(after_qualifiers):
+            logger.debug(
+                "Multi-item: skipping split - 'and a [qualifier] [modifier]' pattern: '%s'",
+                text[:60],
+            )
+            return True
         # Check if this contains an item type trigger
         has_item, _, _ = _has_item_indicator(after_and)
         if has_item:
             # It's "with X and a [item]" - this is multi-item, not modifier chain
             logger.debug("Multi-item: proceeding - 'and a [item]' pattern detected: '%s'", text[:60])
-            return False
-        else:
-            # After article there's no item - might still be modifier chain
             return False
     else:
         # No article after "and" - check if it's a modifier chain
@@ -160,6 +166,27 @@ def _is_with_modifier_chain(text_lower: str, text: str) -> bool:
                 return True
 
     return False
+
+
+def _strip_leading_qualifiers(text: str) -> str:
+    """Strip leading amount qualifier words from text.
+
+    Removes qualifier prefixes like "little", "extra", "bit of" so that
+    the remaining text can be checked as a modifier/ingredient.
+
+    Args:
+        text: Text to strip (lowercase, already article-stripped).
+
+    Returns:
+        Text with leading qualifiers removed.
+    """
+    qualifier_patterns = menu_cache.get_qualifier_patterns()
+    for pattern in qualifier_patterns:
+        prefix = pattern + " "
+        if text.startswith(prefix):
+            text = text[len(prefix):].strip()
+            break
+    return text
 
 
 def _all_tokens_are_modifiers(tokens: list["Token"], text: str) -> bool:

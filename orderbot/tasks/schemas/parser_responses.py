@@ -515,6 +515,12 @@ class OpenInputResponse(BaseModel):
         description="If user mentions 'pickup order' or 'delivery order' upfront, capture that here"
     )
 
+    # Unsupported dining options (to go / for here / dine in)
+    unsupported_dining_option: str | None = Field(
+        default=None,
+        description="Dining option phrase detected but not supported (e.g., 'to go', 'for here')"
+    )
+
     # Modify existing item in cart (e.g., "can I have scallion cream cheese on the cinnamon raisin bagel")
     modify_existing_item: bool = Field(
         default=False,

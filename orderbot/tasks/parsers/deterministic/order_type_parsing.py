@@ -74,6 +74,46 @@ def _strip_order_type_phrase(text: str) -> str:
     return result.strip()
 
 
+# Patterns for unsupported dining options (to go / for here / dine in)
+DINING_OPTION_PATTERNS: dict[str, re.Pattern] = {
+    "to go": re.compile(r"(?<!good\s)\bto[\s-]go\b", re.IGNORECASE),
+    "for here": re.compile(r"\bfor\s+here\b", re.IGNORECASE),
+    "dine in": re.compile(r"\b(?:dine|eat)[\s-]?in\b", re.IGNORECASE),
+}
+
+
+def _extract_dining_option(text: str) -> str | None:
+    """Extract unsupported dining option phrase from text.
+
+    Args:
+        text: User input text
+
+    Returns:
+        The matched phrase (e.g., "to go", "for here") or None
+    """
+    for label, pattern in DINING_OPTION_PATTERNS.items():
+        if pattern.search(text):
+            return label
+    return None
+
+
+def _strip_dining_option_phrase(text: str) -> str:
+    """Remove dining option phrases from text to continue parsing remaining content.
+
+    Args:
+        text: User input text
+
+    Returns:
+        Text with dining option phrases removed
+    """
+    result = text
+    for pattern in DINING_OPTION_PATTERNS.values():
+        result = pattern.sub("", result)
+    # Clean up leftover whitespace
+    result = re.sub(r"\s{2,}", " ", result).strip()
+    return result
+
+
 def _add_order_type_to_response(
     response: OpenInputResponse | None,
     order_type: Literal["pickup", "delivery"] | None

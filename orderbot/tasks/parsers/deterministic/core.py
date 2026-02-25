@@ -27,7 +27,12 @@ from .item_parsing import (
 from .tokenization import _parse_multi_item_order
 from .inline_spec_parsing import _is_inline_attribute_spec_pattern
 from .meta_parsing import _is_only_filler, _try_parse_greeting_or_meta
-from .order_type_parsing import _extract_order_type, _strip_order_type_phrase
+from .order_type_parsing import (
+    _extract_order_type,
+    _strip_order_type_phrase,
+    _extract_dining_option,
+    _strip_dining_option_phrase,
+)
 from .another_item_parsing import _try_parse_another_item
 from .inquiry_dispatch import _try_parse_inquiry
 from .quantity_change_parsing import _try_parse_quantity_change
@@ -111,6 +116,16 @@ def parse_open_input_deterministic(
         # Continue parsing with cleaned text, will add order_type at the end
         text = text_for_items
 
+    # Check for unsupported dining options (to go / for here / dine in)
+    dining_option = _extract_dining_option(text)
+    if dining_option:
+        logger.debug("Deterministic parse: dining option '%s' detected", dining_option)
+        text = _strip_dining_option_phrase(text)
+
+        # If nothing meaningful left, return just the dining option signal
+        if not text.strip() or _is_only_filler(text):
+            return OpenInputResponse(unsupported_dining_option=dining_option)
+
     # Check for all inquiry types (price, dietary, menu, store, modifier, etc.)
     inquiry_result = _try_parse_inquiry(text, ctx)
     if inquiry_result:
@@ -153,7 +168,13 @@ def parse_open_input_deterministic(
     # Check for new item orders (split-qty, multi-item, configurable, direct, simple)
     new_items_result = _try_parse_new_items(text, order_type)
     if new_items_result:
+        if dining_option:
+            new_items_result.unsupported_dining_option = dining_option
         return new_items_result
+
+    # If dining option was detected but no items parsed, return the signal alone
+    if dining_option:
+        return OpenInputResponse(unsupported_dining_option=dining_option)
 
     # Can't parse deterministically - fall back to LLM
     logger.debug("Deterministic parse: falling back to LLM for '%s'", text[:50])
@@ -194,14 +215,14 @@ def _merge_multiline_results(
             continue
         if result.parsed_items:
             all_items.extend(result.parsed_items)
-        elif require_all_produce_items:
+        elif require_all_produce_items and not result.done_ordering:
             return None  # A segment produced no items — don't trust this split
         if result.order_type and not order_type:
             order_type = result.order_type
         if result.done_ordering:
             done_ordering = True
 
-    if all_items:
+    if all_items or done_ordering:
         return OpenInputResponse(
             parsed_items=all_items,
             order_type=order_type,
@@ -270,6 +291,19 @@ def parse_open_input(
     # Strip greetings/fillers early so ALL paths get clean text
     user_input = strip_conversational_fillers(raw_text)
 
+    # Strip unsupported dining options (to go / for here / dine in) early
+    # so they don't interfere with multi-item tokenization
+    dining_option = _extract_dining_option(user_input)
+    if dining_option:
+        logger.debug("parse_open_input: dining option '%s' detected", dining_option)
+        user_input = _strip_dining_option_phrase(user_input)
+
+    def _tag_dining(resp: OpenInputResponse) -> OpenInputResponse:
+        """Attach detected dining option to the response."""
+        if dining_option:
+            resp.unsupported_dining_option = dining_option
+        return resp
+
     # 3. Comma boundaries (weak — commas also separate modifiers within one item,
     #    so only use the split if every segment independently produces items)
     comma_segments = [s.strip() for s in user_input.split(', ') if s.strip()]
@@ -278,7 +312,7 @@ def parse_open_input(
             comma_segments, ctx=ctx, require_all_produce_items=True,
         )
         if merged is not None:
-            return merged
+            return _tag_dining(merged)
 
     # Check for "make it N [item]" quantity pattern BEFORE replacement patterns
     # e.g., "make it two bagels" should duplicate the configured bagel, not replace it
@@ -382,12 +416,12 @@ def parse_open_input(
         split_qty_result = _parse_split_quantity_items(parse_input)
         if split_qty_result is not None:
             logger.info("Parsed split-quantity order: %s", user_input[:50])
-            return split_qty_result
+            return _tag_dining(split_qty_result)
 
         result = _parse_multi_item_order(parse_input)
         if result is not None:
             logger.info("Parsed multi-item order deterministically: %s", user_input[:50])
-            return result
+            return _tag_dining(result)
         # Fall through to configurable item if multi-item parse fails
         logger.info("Multi-item parse failed, trying configurable item: %s", user_input[:50])
 
@@ -397,7 +431,7 @@ def parse_open_input(
         result = _parse_configurable_item(user_input)
         if result is not None:
             logger.info("Parsed configurable item: %s", user_input[:50])
-            return result
+            return _tag_dining(result)
 
     # Try deterministic parsing for single-item orders
     result = parse_open_input_deterministic(
@@ -406,7 +440,11 @@ def parse_open_input(
     )
     if result is not None:
         logger.info("Parsed deterministically: %s", user_input[:50])
-        return result
+        return _tag_dining(result)
+
+    # If dining option was detected but nothing could be parsed, return signal
+    if dining_option:
+        return OpenInputResponse(unsupported_dining_option=dining_option)
 
     # No LLM fallback - return unclear response
     logger.info("Unable to parse deterministically, returning unclear: %s", user_input[:50])

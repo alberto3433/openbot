@@ -18,6 +18,7 @@ from ..intent_patterns import REPLACE_ITEM_PATTERN
 from .pipeline import get_pipeline
 from .result_types import TextSpan
 from .item_parsing import build_parsed_item, _parse_configurable_item, _parse_split_quantity_items
+from .qualifier_attachment import _filter_duplicate_instructions, _attach_position_qualifiers, _attach_amount_qualifiers
 from .simple_item_parsing import _parse_simple_item_deterministic
 from .modification_parsing import (
     _extract_menu_item_modifications,
@@ -31,6 +32,11 @@ from .order_type_parsing import _add_order_type_to_response
 from ...utils.text import normalize_text
 
 logger = logging.getLogger(__name__)
+
+
+class _EmptyAttrResult:
+    """Minimal stand-in for AttributeExtractionResult when no attributes were extracted."""
+    values: dict = {}  # noqa: RUF012
 
 
 def _try_parse_modification(text: str) -> OpenInputResponse | None:
@@ -141,6 +147,12 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
         text_lower, menu_item, menu_item_span, item_type_for_detection
     )
 
+    # Extract special instructions (e.g., "extra basil mayo", "light red onions")
+    special_instructions = get_pipeline().extract_special_instructions(text).instructions
+    special_instructions = _filter_duplicate_instructions(
+        special_instructions, attr_result or _EmptyAttrResult(), mod_list, menu_item,
+    )
+
     parsed_items = [
         build_parsed_item(
             item_type=item_type_for_mods or "menu_item",
@@ -150,9 +162,16 @@ def _parse_direct_menu_item(text: str) -> OpenInputResponse | None:
             attr_result=attr_result,
             modifiers=mod_list,
             inapplicable_attributes=inapplicable_attrs,
+            special_instructions=special_instructions,
         )
         for _ in range(qty)
     ]
+
+    # Attach qualifiers to selections (e.g., "(Extra)" tag on display_name)
+    for pi in parsed_items:
+        _attach_position_qualifiers(pi, text_lower)
+        _attach_amount_qualifiers(pi, text_lower)
+
     return OpenInputResponse(parsed_items=parsed_items)
 
 

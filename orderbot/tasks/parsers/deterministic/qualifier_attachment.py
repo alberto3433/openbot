@@ -70,9 +70,11 @@ def _filter_duplicate_instructions(
         # Extract the item part from instruction (e.g., "extra shot" -> "shot")
         instr_lower = instr.lower()
         item_word = instr_lower
+        has_qualifier = False
         for prefix in ["extra ", "light ", "no ", "heavy "]:
             if instr_lower.startswith(prefix):
                 item_word = instr_lower[len(prefix):].strip()
+                has_qualifier = True
                 break
         # Check if suffix is a position qualifier (e.g., "on the side") and remove
         # These are loaded from the database via modifier_qualifiers table
@@ -82,7 +84,14 @@ def _filter_duplicate_instructions(
                 suffix = f" {pattern}"
                 if item_word.endswith(suffix):
                     item_word = item_word[:-len(suffix)].strip()
+                    has_qualifier = True
                     break
+
+        # Qualified instructions carry preparation info (e.g., "extra basil mayo",
+        # "light red onions") — always keep them for per-item display
+        if has_qualifier:
+            filtered_instructions.append(instr)
+            continue
 
         # If item_word is already captured as a selection, skip this instruction
         # Also check suffix match (e.g., "cheese" matches "blueberry_cream_cheese")
@@ -93,6 +102,13 @@ def _filter_duplicate_instructions(
                 or any(s.startswith(f"{item_word_slug}_") for s in captured_slugs)):
             logger.debug("Filtering duplicate instruction '%s' - already captured as selection", instr)
             continue
+        # Resolve via ingredient alias lookup (e.g., "half and half" -> slug "half_n_half")
+        # Handles cases where the alias text differs from the DB slug
+        if menu_cache.is_known_modifier(item_word):
+            matches = menu_cache.find_matching_ingredients(item_word)
+            if any(m.get("slug", "").lower() in captured_slugs for m in matches):
+                logger.debug("Filtering duplicate instruction '%s' - resolved to captured ingredient", instr)
+                continue
         if item_name_words and any(
             w in item_name_words for w in item_word.split() if len(w) >= 3
         ):
@@ -131,6 +147,9 @@ def _attach_position_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -
         # For each selection, check if "{slug_as_words} {qualifier}" appears in text
         for sel in parsed_item.selections:
             slug_words = sel.slug.replace("_", " ")
+            # Skip if the qualifier word is part of the selection's own name
+            if re.search(rf'\b{re.escape(pattern)}\b', slug_words):
+                continue
             words = slug_words.split()
             # Try full slug, then progressively shorter suffixes
             # e.g., "whole milk" -> try "whole milk", then "milk"
@@ -158,24 +177,6 @@ def _attach_position_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -
                 sel.display_name = f"{display_name} {qualifier_tag}"
             else:
                 sel.display_name = display_name
-
-            # Remove redundant special instructions whose base word is part
-            # of the matched slug (e.g., "cheese on the side" where "cheese"
-            # is a component of "blueberry_cream_cheese")
-            slug_parts = sel.slug.lower().split("_")
-            kept = []
-            for instr in parsed_item.special_instructions:
-                instr_lower = instr.lower()
-                if pattern in instr_lower:
-                    base_word = instr_lower.replace(pattern, "").strip()
-                    if base_word in slug_parts:
-                        logger.debug(
-                            "Removing redundant instruction '%s' - covered by '%s'",
-                            instr, sel.display_name,
-                        )
-                        continue
-                kept.append(instr)
-            parsed_item.special_instructions = kept
 
             logger.debug(
                 "Attached qualifier '%s' to selection '%s' -> '%s'",
@@ -212,6 +213,10 @@ def _attach_amount_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -> 
 
         for sel in parsed_item.selections:
             slug_words = sel.slug.replace("_", " ")
+            # Skip if the qualifier word is part of the selection's own name
+            # e.g., "half" qualifier should not attach to "half_n_half" selection
+            if re.search(rf'\b{re.escape(pattern)}\b', slug_words):
+                continue
             words = slug_words.split()
             matched = False
             for i in range(len(words)):
@@ -239,28 +244,6 @@ def _attach_amount_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -> 
                 sel.display_name = f"{display_name} {qualifier_tag}"
             else:
                 sel.display_name = display_name
-
-            # Remove redundant special instructions whose base word is part
-            # of the matched slug (e.g., "extra milk" where "milk" is in slug_parts)
-            slug_parts = sel.slug.lower().split("_")
-            kept = []
-            for instr in parsed_item.special_instructions:
-                instr_lower = instr.lower()
-                if normalized_form in instr_lower or pattern in instr_lower:
-                    base_word = instr_lower
-                    for prefix in [f"{normalized_form} ", f"{pattern} "]:
-                        if base_word.startswith(prefix):
-                            base_word = base_word[len(prefix):].strip()
-                            break
-                    base_words = base_word.split()
-                    if base_words and all(w in slug_parts for w in base_words):
-                        logger.debug(
-                            "Removing redundant instruction '%s' - covered by '%s'",
-                            instr, sel.display_name,
-                        )
-                        continue
-                kept.append(instr)
-            parsed_item.special_instructions = kept
 
             logger.debug(
                 "Attached amount qualifier '%s' to selection '%s' -> '%s'",

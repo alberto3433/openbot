@@ -40,26 +40,17 @@ Related Modules:
 """
 
 import logging
-from typing import Any
+import types
+from typing import Any, get_args, get_origin, Union
 
 from pydantic import BaseModel
+from pydantic_core import PydanticUndefined
 
 from .models import (
     TaskStatus,
     OrderTask,
 )
-from .models.pending_states import (
-    PendingAttrDisambiguation,
-    PendingChangeClarification,
-    PendingDietaryFollowup,
-    PendingDuplicateSelection,
-    PendingIngredientSearch,
-    PendingIngredientSuggestion,
-    PendingOrderHistory,
-    PendingSameThingClarification,
-    PendingSwitchItem,
-    PendingUnmatchedPagination,
-)
+from .models.container_tasks import _get_field_default
 from .item_converters import _unified_converter
 from .pricing import PricingEngine
 from ..schemas.enums import OrderStatus
@@ -72,52 +63,41 @@ logger = logging.getLogger(__name__)
 # Flow State Helpers
 # -----------------------------------------------------------------------------
 
-# Single source of truth for all flow state fields serialized to/from
-# state_machine_state. Each entry is (field_name, default_value, pydantic_class).
-# The optional third element is a Pydantic model class for dict→model coercion
-# on restore (after JSON round-trip). Adding a new field here automatically
-# handles both serialize and restore — no separate mapping needed.
-# Note: first_pending_item_id is a computed property — do NOT include it here.
-_FLOW_STATE_FIELDS: list[tuple[str, object, type | None]] = [
-    ("phase", "greeting", None),
-    ("pending_item_ids", [], None),
-    ("pending_field", None, None),
-    ("last_bot_message", None, None),
-    ("pending_config_queue", [], None),
-    ("pending_item_modifiers", {}, None),
-    ("pending_item_options", [], None),
-    ("pending_item_quantity", 1, None),
-    ("menu_query_pagination", None, None),
-    ("config_options_page", 0, None),
-    ("multi_item_config_names", [], None),
-    ("pending_duplicate_selection", None, PendingDuplicateSelection),
-    ("pending_same_thing_clarification", None, PendingSameThingClarification),
-    ("pending_suggested_item", None, None),
-    ("pending_attr_disambiguation", None, PendingAttrDisambiguation),
-    ("pending_modifier_quantity", None, None),
-    ("pending_modifier_is_additive", False, None),
-    ("pending_modifier_target_item_index", None, None),
-    ("pending_parsed_items", [], None),
-    ("pending_dietary_followup", None, PendingDietaryFollowup),
-    ("pending_quantity_addition", None, None),
-    ("pending_order_history", None, PendingOrderHistory),
-    ("pending_reorder_items", None, None),
-    ("pending_reorder_offer_items", None, None),
-    # Previously missing fields — were silently lost on session restore
-    ("unknown_item_request", None, None),
-    ("pending_change_clarification", None, PendingChangeClarification),
-    ("pending_ingredient_suggestion", None, PendingIngredientSuggestion),
-    ("pending_ingredient_to_apply", None, None),
-    ("pending_switch_item", None, PendingSwitchItem),
-    ("pending_replace_item_id", None, None),
-    ("pending_ingredient_search", None, PendingIngredientSearch),
-    ("pending_unmatched_pagination", None, PendingUnmatchedPagination),
-    ("return_to_phase", None, None),
-    ("pending_store_change", False, None),
-    ("pending_store_page", 0, None),
-    ("store_confirmed", False, None),
-    ("pending_store_order_text", None, None),
-]
+def _get_flow_state_fields() -> frozenset[str]:
+    """Derive the set of flow-state field names from OrderTask.model_fields.
+
+    Flow-state fields = all OrderTask fields MINUS structural fields.
+    This is auto-derived so adding a new field to OrderTask automatically
+    includes it in serialization — no manual list to keep in sync.
+    """
+    return frozenset(OrderTask.model_fields) - OrderTask._STRUCTURAL_FIELDS
+
+
+def _extract_pydantic_class(annotation: Any) -> type[BaseModel] | None:
+    """Extract a Pydantic BaseModel subclass from a type annotation.
+
+    Handles ``X | None`` (UnionType) and plain ``X`` annotations.
+    Returns None if the annotation isn't a BaseModel subclass.
+    """
+    origin = get_origin(annotation)
+    if origin is Union or origin is types.UnionType:
+        for arg in get_args(annotation):
+            if isinstance(arg, type) and issubclass(arg, BaseModel):
+                return arg
+    elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    return None
+
+
+# Pre-compute flow state metadata at import time for O(1) access
+_FLOW_STATE_FIELD_NAMES: frozenset[str] = _get_flow_state_fields()
+
+# Map field_name -> (default_value_or_factory, pydantic_model_class_or_None)
+_FLOW_STATE_META: dict[str, tuple[Any, type[BaseModel] | None]] = {}
+for _fname in _FLOW_STATE_FIELD_NAMES:
+    _finfo = OrderTask.model_fields[_fname]
+    _pydantic_cls = _extract_pydantic_class(_finfo.annotation)
+    _FLOW_STATE_META[_fname] = (_finfo, _pydantic_cls)
 
 
 def _calculate_subtotal(order: OrderTask) -> float:
@@ -138,11 +118,15 @@ def _calculate_subtotal(order: OrderTask) -> float:
 def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
     """Restore flow state fields from state_machine_state dict to OrderTask.
 
+    Fields are auto-derived from OrderTask.model_fields, so adding a new
+    field to OrderTask automatically includes it here.
+
     Args:
         sm_state: The state_machine_state dict from order_dict
         order: The OrderTask to populate
     """
-    for field_name, default, model_cls in _FLOW_STATE_FIELDS:
+    for field_name, (field_info, model_cls) in _FLOW_STATE_META.items():
+        default = _get_field_default(field_info)
         value = sm_state.get(field_name, default)
         # Coerce raw dicts back to Pydantic models after JSON round-trip
         if model_cls and isinstance(value, dict):
@@ -153,6 +137,8 @@ def _restore_flow_state(sm_state: dict, order: OrderTask) -> None:
 def _build_flow_state_dict(order: OrderTask) -> dict:
     """Build state_machine_state dict from OrderTask flow state fields.
 
+    Fields are auto-derived from OrderTask.model_fields.
+
     Args:
         order: The OrderTask to serialize
 
@@ -160,7 +146,7 @@ def _build_flow_state_dict(order: OrderTask) -> dict:
         Dict containing all flow state fields
     """
     result = {}
-    for field_name, _, _ in _FLOW_STATE_FIELDS:
+    for field_name in _FLOW_STATE_FIELD_NAMES:
         value = getattr(order, field_name)
         # Convert Pydantic models to dicts for JSON serialization
         if isinstance(value, BaseModel):
@@ -269,10 +255,6 @@ def dict_to_order_task(order_dict: dict[str, Any], session_id: str | None = None
     if order_dict.get("db_order_id"):
         order.db_order_id = order_dict["db_order_id"]
 
-    # Restore order-level special instructions
-    if order_dict.get("special_instructions"):
-        order.special_instructions = order_dict["special_instructions"]
-
     _restore_customer_info(order_dict, order)
     _restore_order_type(order_dict, order)
     _restore_items(order_dict, order)
@@ -304,6 +286,24 @@ def _serialize_items(order: OrderTask, pricing: PricingEngine | None) -> list[di
             continue
         items.append(_unified_converter.to_dict(item, pricing))
     return items
+
+
+def _aggregate_special_instructions(items_list: list[dict]) -> str | None:
+    """Aggregate per-item special instructions for DB/POS compatibility.
+
+    Args:
+        items_list: Serialized item dicts (already converted via to_dict).
+
+    Returns:
+        Combined string like "Item A: instr1; instr2 | Item B: instr3", or None.
+    """
+    all_instructions = []
+    for item_dict in items_list:
+        item_instrs = item_dict.get("special_instructions", [])
+        if item_instrs:
+            item_name = item_dict.get("display_name") or item_dict.get("menu_item_name", "")
+            all_instructions.append(f"{item_name}: {'; '.join(item_instrs)}")
+    return " | ".join(all_instructions) if all_instructions else None
 
 
 def _build_checkout_state(
@@ -438,7 +438,7 @@ def order_task_to_dict(
             "email": order.customer_info.email,
             "pickup_time": order.delivery_method.pickup_time,
         },
-        "special_instructions": order.special_instructions,
+        "special_instructions": _aggregate_special_instructions(items),
     }
 
     # Preserve database order ID if present
@@ -461,15 +461,19 @@ def order_task_to_dict(
     pickup_time = order.delivery_method.pickup_time
     order_dict["scheduling"] = _build_scheduling_dict(pickup_time, store_info)
 
-    # Store info for frontend badge
+    # Store info for frontend badge (cached to avoid rebuilding on every call)
     if store_info:
-        raw_name = store_info.get("name", "")
-        short = raw_name.split(" - ")[-1] if " - " in raw_name else raw_name
-        order_dict["store"] = {
-            "store_id": store_info.get("store_id"),
-            "name": raw_name,
-            "short_name": short,
-        }
+        cached_badge = store_info.get("_frontend_badge")
+        if cached_badge is None:
+            raw_name = store_info.get("name", "")
+            short = raw_name.split(" - ")[-1] if " - " in raw_name else raw_name
+            cached_badge = {
+                "store_id": store_info.get("store_id"),
+                "name": raw_name,
+                "short_name": short,
+            }
+            store_info["_frontend_badge"] = cached_badge
+        order_dict["store"] = cached_badge
 
     # Preserve conversation history
     order_dict["task_orchestrator_state"] = {

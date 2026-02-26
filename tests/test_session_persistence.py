@@ -12,6 +12,7 @@ from orderbot.services.session import (
     get_or_create_session,
     save_session,
     SESSION_CACHE,
+    _session_msg_counts,
     _cleanup_expired_sessions,
 )
 
@@ -43,8 +44,9 @@ def _cleanup_test_sessions(session):
 @pytest.fixture
 def db_session():
     """Create a PostgreSQL database session for testing with cleanup."""
-    # Clear cache before test
+    # Clear caches before test
     SESSION_CACHE.clear()
+    _session_msg_counts.clear()
 
     if not TEST_DATABASE_URL:
         pytest.skip("TEST_DATABASE_URL or DATABASE_URL required for this test")
@@ -59,8 +61,9 @@ def db_session():
     finally:
         _cleanup_test_sessions(session)
         session.close()
-        # Clear the cache after each test
+        # Clear caches after each test
         SESSION_CACHE.clear()
+        _session_msg_counts.clear()
 
 
 class TestSessionPersistence:
@@ -94,7 +97,7 @@ class TestSessionPersistence:
         }
         save_session(db_session, session_id, initial_data)
 
-        # Update session
+        # Update session (force_db=True to bypass write debouncing for test)
         updated_data = {
             "history": [
                 {"role": "assistant", "content": "Hello!"},
@@ -102,7 +105,7 @@ class TestSessionPersistence:
             ],
             "order": {"status": "collecting_items", "items": [{"name": "Turkey Club"}]},
         }
-        save_session(db_session, session_id, updated_data)
+        save_session(db_session, session_id, updated_data, force_db=True)
 
         # Verify only one record exists and it's updated
         records = db_session.query(ChatSession).filter_by(session_id=session_id).all()

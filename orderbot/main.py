@@ -68,6 +68,7 @@ from contextlib import asynccontextmanager, contextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -280,6 +281,7 @@ class AdminStaticProtectionMiddleware(BaseHTTPMiddleware):
 # Add middleware (order matters - last added is first executed)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(AdminStaticProtectionMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=500)  # Compress responses >= 500 bytes
 
 # Rate limit exception handler
 app.state.limiter = limiter

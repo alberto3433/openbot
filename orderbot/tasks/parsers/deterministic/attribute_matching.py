@@ -420,6 +420,22 @@ def _apply_reverse_matching(
     return ambiguous_selections
 
 
+# Pre-compiled patterns for unavailable size terms
+_unavailable_size_pattern_cache: list[tuple[str, str, re.Pattern]] | None = None
+
+
+def _get_unavailable_size_patterns() -> list[tuple[str, str, re.Pattern]]:
+    """Get pre-compiled patterns for unavailable size terms, caching on first access."""
+    global _unavailable_size_pattern_cache
+    if _unavailable_size_pattern_cache is None:
+        terms = menu_cache.get_unavailable_size_terms()
+        _unavailable_size_pattern_cache = [
+            (term, display, re.compile(rf'\b{re.escape(term)}\b', re.IGNORECASE))
+            for term, display in terms.items()
+        ]
+    return _unavailable_size_pattern_cache
+
+
 def _detect_unrecognized_size_terms(
     input_lower: str,
     attributes: dict[str, dict],
@@ -442,12 +458,8 @@ def _detect_unrecognized_size_terms(
     if "size" not in attributes or "size" in result or has_size_unavailable:
         return
 
-    # Get unavailable size terms from database
-    unavailable_size_terms = menu_cache.get_unavailable_size_terms()
-
-    for term, display in unavailable_size_terms.items():
-        # Word boundary match
-        pattern = re.compile(rf'\b{re.escape(term)}\b', re.IGNORECASE)
+    # Get unavailable size terms from database (with pre-compiled patterns)
+    for term, display, pattern in _get_unavailable_size_patterns():
         if pattern.search(input_lower):
             # Check if this term is NOT a known size option for this item
             known_slugs = {opt.get("slug", "").lower() for opt in attributes["size"].get("options", [])}

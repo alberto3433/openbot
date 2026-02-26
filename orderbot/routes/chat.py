@@ -50,11 +50,11 @@ def _generate_greeting(
         if returning_customer and returning_customer.get("name"):
             return (
                 f"Hi {returning_customer['name']}! We're currently closed but we reopen {next_open_time}. "
-                f"Would you like to place an order for pickup then?"
+                f"Would you like to place an order for pickup or delivery then?"
             )
         return (
             f"Hi! We're currently closed but we reopen {next_open_time}. "
-            f"Would you like to place an order for pickup then?"
+            f"Would you like to place an order for pickup or delivery then?"
         )
     if returning_customer and returning_customer.get("name"):
         return f"Hi {returning_customer['name']}, welcome to {store_name}! Would you like to repeat your last order or place a new pickup or delivery order?"
@@ -106,8 +106,8 @@ def _build_greeting_quick_replies(
     """Build quick-reply buttons for the greeting message."""
     if not store_is_open and next_open_time:
         return [
-            {"label": "Order for then", "value": "yes, order for then"},
-            {"label": "When do you open?", "value": "when do you open"},
+            {"label": "pickup", "value": "pickup"},
+            {"label": "delivery", "value": "delivery"},
         ]
     pickup_delivery_qr = [
         {"label": "pickup", "value": "pickup"},
@@ -240,10 +240,13 @@ def chat_restore_session(
     store_id = session.get("store_id")
     store_info = build_store_info(db, store_id) if store_id else None
 
+    from .chat_messages import _strip_internal_state
+    order_state = _strip_internal_state(session.get("order", {}))
+
     return ChatRestoreResponse(
         session_id=session_id,
         history=session.get("history", []),
-        order_state=session.get("order", {}),
+        order_state=order_state,
         store_id=store_id,
         customer_id=session.get("customer_id"),
         store_info=store_info,

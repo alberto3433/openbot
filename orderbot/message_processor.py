@@ -182,9 +182,12 @@ class MessageProcessor:
                 # Persist preferred store on the customer record
                 self._update_preferred_store(session, new_store_id)
 
-        # 5. Update history
+        # 5. Update history (capped to last N messages to bound serialization cost)
         history.append({"role": "user", "content": ctx.user_message})
         history.append({"role": "assistant", "content": reply})
+        _MAX_HISTORY_MESSAGES = 40  # 20 exchanges (user + assistant each)
+        if len(history) > _MAX_HISTORY_MESSAGES:
+            history[:] = history[-_MAX_HISTORY_MESSAGES:]
 
         # 6. Extract customer info for persistence
         customer_name = updated_order_state.get("customer", {}).get("name")

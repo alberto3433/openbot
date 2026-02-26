@@ -1019,6 +1019,24 @@
       font-weight: 600;
     }
 
+    /* Per-item special instructions */
+    .order-item-instructions {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+    .order-item-instructions-label {
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+    .order-item-instructions-text {
+      color: var(--text-tertiary);
+      font-style: italic;
+      padding-left: 8px;
+    }
+
     /* Order Totals */
     .order-totals {
       font-size: 14px;
@@ -1872,6 +1890,7 @@
     let sessionStartTime = null;
     let messageCount = 0;
     let orderState = { status: "pending", items: [], total_price: 0 };
+    let _lastOrderItemsHash = "";  // Tracks items hash to skip redundant DOM rebuilds
     let lastBotMessage = null;
     let lastUserMessage = null;
     let orderConfirmed = false;
@@ -2646,6 +2665,7 @@
       messagesEl.innerHTML = "";
       messageCount = 0;
       orderState = { status: "pending", items: [], total_price: 0 };
+      _lastOrderItemsHash = "";
       lastBotMessage = null;
       lastUserMessage = null;
       orderConfirmed = false;
@@ -2902,6 +2922,12 @@
           html += `</div>`;
         }
 
+        // Per-item special instructions
+        if (item.special_instructions && item.special_instructions.length > 0) {
+          const instrText = item.special_instructions.join('; ');
+          html += `<div class="order-item-instructions"><span class="order-item-instructions-label">Special Instructions</span><span class="order-item-instructions-text">${instrText}</span></div>`;
+        }
+
         // Item total line: only shown when there are upcharges
         if (item.item_total != null) {
           html += `<div class="order-item-total"><span class="order-item-total-label">Item Total</span><span class="order-item-total-price">${formatCurrency(item.item_total * qty)}</span></div>`;
@@ -2973,16 +2999,22 @@
       if (!hasItems) {
         mobileCartSummary.textContent = "Cart empty";
         mobileCartTotal.textContent = "$0.00";
+        _lastOrderItemsHash = "";
         return;
       }
 
-      // Clear pending removal timers before re-rendering
-      clearPendingRemovals();
+      // Hash items to detect changes — skip DOM rebuild when items haven't changed
       const isConfirmed = state.status === "confirmed";
-      orderItemsList.innerHTML = "";
-      items.forEach(item => orderItemsList.appendChild(renderOrderItem(item, isConfirmed)));
-      if (!isConfirmed && typeof lucide !== 'undefined') {
-        lucide.createIcons({ nodes: [orderItemsList] });
+      const itemsHash = JSON.stringify(items) + "|" + isConfirmed;
+      if (itemsHash !== _lastOrderItemsHash) {
+        _lastOrderItemsHash = itemsHash;
+        // Clear pending removal timers before re-rendering
+        clearPendingRemovals();
+        orderItemsList.innerHTML = "";
+        items.forEach(item => orderItemsList.appendChild(renderOrderItem(item, isConfirmed)));
+        if (!isConfirmed && typeof lucide !== 'undefined') {
+          lucide.createIcons({ nodes: [orderItemsList] });
+        }
       }
 
       const checkout = state.checkout_state || {};
@@ -3024,17 +3056,15 @@
         orderCustomer.style.display = "none";
       }
 
-      // Display order-level special instructions
-      if (state.special_instructions) {
-        orderSpecialInstructions.style.display = "block";
-        orderSpecialInstructionsText.textContent = state.special_instructions;
-      } else {
-        orderSpecialInstructions.style.display = "none";
-      }
+      // Special instructions are now displayed per-item; hide order-level section
+      orderSpecialInstructions.style.display = "none";
 
       mobileCartSummary.textContent = `${items.length} item${items.length !== 1 ? "s" : ""}`;
       mobileCartTotal.textContent = formatCurrency(total);
-      syncMobileExpandedContent();
+      // Only sync mobile expanded content when the panel is actually visible
+      if (mobileExpanded) {
+        syncMobileExpandedContent();
+      }
     }
 
     function syncMobileExpandedContent() {
@@ -3044,6 +3074,7 @@
 
     function expandMobilePanel() {
       mobileExpanded = true;
+      syncMobileExpandedContent();  // Sync content on open
       orderPanelExpanded.classList.add("active");
       orderPanelOverlay.classList.add("active");
       document.body.style.overflow = "hidden";

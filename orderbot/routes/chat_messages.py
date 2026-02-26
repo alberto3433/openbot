@@ -31,6 +31,18 @@ from .chat import chat_router
 
 logger = logging.getLogger(__name__)
 
+# Keys in order_state that are only needed for backend persistence,
+# not for the frontend.  Stripping them reduces response payload size
+# significantly on long conversations.
+_INTERNAL_STATE_KEYS = frozenset({"task_orchestrator_state", "state_machine_state"})
+
+
+def _strip_internal_state(order_state: dict) -> dict:
+    """Return a shallow copy of order_state without backend-only keys."""
+    if not order_state:
+        return order_state
+    return {k: v for k, v in order_state.items() if k not in _INTERNAL_STATE_KEYS}
+
 
 @chat_router.post("/message", response_model=ChatMessageResponse)
 @limiter.limit(get_rate_limit_chat)
@@ -57,9 +69,11 @@ def chat_message(
             for a in result.actions
         ]
 
+        frontend_state = _strip_internal_state(result.order_state)
+
         return ChatMessageResponse(
             reply=result.reply,
-            order_state=result.order_state,
+            order_state=frontend_state,
             actions=processed_actions,
             quick_replies=result.quick_replies,
             payment_url=result.payment_url,
@@ -135,10 +149,12 @@ def chat_message_stream(
                 for a in result.actions
             ]
 
+            frontend_state = _strip_internal_state(result.order_state)
+
             final_event = {
                 'done': True,
                 'reply': result.reply,
-                'order_state': result.order_state,
+                'order_state': frontend_state,
                 'actions': processed_actions,
             }
             if result.quick_replies:

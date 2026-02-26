@@ -33,6 +33,20 @@ __all__ = ["ExtractionPipeline", "get_pipeline"]
 # Module-level singleton for shared access
 _shared_pipeline: "ExtractionPipeline | None" = None
 
+# Pre-compiled trigger patterns: {item_type: [(trigger, compiled_pattern), ...]}
+_trigger_pattern_cache: dict[str, list[tuple[str, re.Pattern]]] = {}
+
+
+def _get_trigger_patterns(item_type: str) -> list[tuple[str, re.Pattern]]:
+    """Get pre-compiled trigger patterns for an item type, caching on first access."""
+    if item_type not in _trigger_pattern_cache:
+        triggers = menu_cache.get_item_type_triggers(item_type)
+        _trigger_pattern_cache[item_type] = [
+            (trigger, re.compile(rf'\b{re.escape(trigger.lower())}\b', re.IGNORECASE))
+            for trigger in triggers
+        ]
+    return _trigger_pattern_cache[item_type]
+
 
 def get_pipeline() -> "ExtractionPipeline":
     """Get the shared ExtractionPipeline instance.
@@ -136,14 +150,12 @@ class ExtractionPipeline:
         item_type = _detect_item_type(text)
 
         if item_type:
-            # Get the trigger word that matched
-            triggers = menu_cache.get_item_type_triggers(item_type)
+            # Get the trigger word that matched (uses pre-compiled patterns)
             trigger_word = None
             span = None
             text_lower = text.lower()
 
-            for trigger in triggers:
-                pattern = re.compile(rf'\b{re.escape(trigger.lower())}\b', re.IGNORECASE)
+            for trigger, pattern in _get_trigger_patterns(item_type):
                 match = pattern.search(text_lower)
                 if match:
                     trigger_word = trigger

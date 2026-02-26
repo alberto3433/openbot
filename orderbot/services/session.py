@@ -103,6 +103,11 @@ logger = logging.getLogger(__name__)
 SESSION_CACHE: dict[str, dict[str, Any]] = {}
 _cache_lock = threading.Lock()
 
+# Tracks message count per session for DB write debouncing.
+# DB writes happen every _DB_WRITE_INTERVAL messages (or on confirmed orders).
+_session_msg_counts: dict[str, int] = {}
+_DB_WRITE_INTERVAL = 3
+
 
 # =============================================================================
 # Cache Maintenance Functions
@@ -246,32 +251,33 @@ def get_or_create_session(db: Session, session_id: str) -> dict[str, Any] | None
     return None
 
 
-def save_session(db: Session, session_id: str, session_data: dict[str, Any]) -> None:
+def save_session(
+    db: Session,
+    session_id: str,
+    session_data: dict[str, Any],
+    force_db: bool = False,
+) -> None:
     """
-    Save session data to both cache and database.
+    Save session data to cache and periodically to database.
 
-    Implements the write path of the write-through cache:
-    1. Update in-memory cache with new data and timestamp
-    2. Upsert to database (update if exists, insert if new)
-    3. Commit database transaction
+    Implements a debounced write-through cache:
+    1. Always updates the in-memory cache immediately
+    2. Writes to DB every _DB_WRITE_INTERVAL messages, on new sessions,
+       or on confirmed orders (force_db=True)
 
     Args:
         db: SQLAlchemy database session for persistence
         session_id: UUID string identifying the chat session
         session_data: Dict containing session state to persist
+        force_db: Force immediate DB write (e.g., on order confirmation)
 
     Side Effects:
         - Updates or creates cache entry
         - May evict old sessions if cache is full
-        - Commits database transaction
+        - Conditionally commits database transaction
         - Marks JSON columns as modified for SQLAlchemy change detection
-
-    Note:
-        Uses flag_modified() to ensure SQLAlchemy detects changes to mutable
-        JSON columns. Without this, in-place mutations like list.append()
-        would not be persisted to the database.
     """
-    # Update cache
+    # Update cache (always)
     with _cache_lock:
         # Evict if needed before adding new entry
         if len(SESSION_CACHE) >= SESSION_MAX_CACHE_SIZE and session_id not in SESSION_CACHE:
@@ -282,27 +288,74 @@ def save_session(db: Session, session_id: str, session_data: dict[str, Any]) -> 
             "last_access": time.time(),
         }
 
-    # Persist to database (upsert pattern)
-    db_session = db.query(ChatSession).filter(
+    # Debounce DB writes: increment counter, write every Nth message.
+    # The in-memory cache always has the latest data, so reads are
+    # unaffected.  We still persist periodically and on key events.
+    order_status = session_data.get("order", {}).get("status")
+    is_confirmed = order_status == "confirmed"
+
+    _session_msg_counts[session_id] = _session_msg_counts.get(session_id, 0) + 1
+    msg_count = _session_msg_counts[session_id]
+
+    should_write_db = (
+        force_db
+        or is_confirmed
+        or msg_count % _DB_WRITE_INTERVAL == 0    # Periodic flush
+    )
+
+    # Always persist to DB via upsert — the _persist function handles both
+    # INSERT (new session) and UPDATE (existing session).  We only skip the
+    # write for mid-conversation UPDATE calls that can be deferred.
+    db_session_row = db.query(ChatSession).filter(
         ChatSession.session_id == session_id
     ).first()
+    if db_session_row is None:
+        # New session: must write to DB
+        should_write_db = True
 
-    if db_session:
+    if not should_write_db:
+        return
+
+    # Persist to database (upsert pattern)
+    _persist_session_to_db(db, session_id, session_data, db_session_row=db_session_row)
+
+
+def _persist_session_to_db(
+    db: Session,
+    session_id: str,
+    session_data: dict[str, Any],
+    db_session_row: ChatSession | None = None,
+) -> None:
+    """Write session data to PostgreSQL (upsert pattern).
+
+    Args:
+        db: SQLAlchemy database session.
+        session_id: UUID string identifying the chat session.
+        session_data: Dict containing session state to persist.
+        db_session_row: Optional pre-fetched ChatSession row to avoid a
+            redundant SELECT when the caller already queried for it.
+    """
+    if db_session_row is None:
+        db_session_row = db.query(ChatSession).filter(
+            ChatSession.session_id == session_id
+        ).first()
+
+    if db_session_row:
         # Update existing session
-        db_session.history = session_data.get("history", [])
-        db_session.order_state = session_data.get("order", {})
-        db_session.menu_version_sent = session_data.get("menu_version")
-        db_session.store_id = session_data.get("store_id")
-        db_session.caller_id = session_data.get("caller_id")
-        db_session.customer_id = session_data.get("customer_id")
+        db_session_row.history = session_data.get("history", [])
+        db_session_row.order_state = session_data.get("order", {})
+        db_session_row.menu_version_sent = session_data.get("menu_version")
+        db_session_row.store_id = session_data.get("store_id")
+        db_session_row.caller_id = session_data.get("caller_id")
+        db_session_row.customer_id = session_data.get("customer_id")
 
         # Force SQLAlchemy to detect changes to mutable JSON columns
         # Without this, in-place mutations (like list.append()) are not detected
-        flag_modified(db_session, "history")
-        flag_modified(db_session, "order_state")
+        flag_modified(db_session_row, "history")
+        flag_modified(db_session_row, "order_state")
     else:
         # Create new session
-        db_session = ChatSession(
+        new_row = ChatSession(
             session_id=session_id,
             history=session_data.get("history", []),
             order_state=session_data.get("order", {}),
@@ -311,7 +364,7 @@ def save_session(db: Session, session_id: str, session_data: dict[str, Any]) -> 
             caller_id=session_data.get("caller_id"),
             customer_id=session_data.get("customer_id"),
         )
-        db.add(db_session)
+        db.add(new_row)
 
     db.commit()
 

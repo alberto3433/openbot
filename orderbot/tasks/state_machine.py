@@ -333,6 +333,16 @@ class OrderStateMachine:
 
         return ctx
 
+    # Standard pending-state dispatchers. Each entry maps (field_name, handler_getter).
+    # The loop checks the field, calls the handler, records the message, and returns.
+    _PENDING_DISPATCHERS: list[tuple[str, str, str]] = [
+        ("pending_order_history", "order_history_handler", "handle_order_history_selection"),
+        ("pending_reorder_items", "order_history_handler", "handle_reorder_item_selection"),
+        ("pending_reorder_offer_items", "order_history_handler", "handle_reorder_offer_response"),
+        ("pending_change_clarification", "config_helper_handler", "handle_change_clarification_response"),
+        ("pending_store_hours_inquiry", "store_info_handler", "handle_store_hours_followup"),
+    ]
+
     def _dispatch_pending_states(
         self, user_input: str, order: OrderTask,
     ) -> StateMachineResult | None:
@@ -341,80 +351,62 @@ class OrderStateMachine:
         Returns a result if a pending state handled the input, None to
         fall through to normal processing.
         """
-        if order.pending_order_history:
-            result = self.order_history_handler.handle_order_history_selection(
-                user_input, order
-            )
-            if result:
-                order.add_message("assistant", result.message)
-                return result
+        for field_name, handler_attr, method_name in self._PENDING_DISPATCHERS:
+            if getattr(order, field_name):
+                handler = getattr(self, handler_attr)
+                result = getattr(handler, method_name)(user_input, order)
+                if result:
+                    order.add_message("assistant", result.message)
+                    return result
 
-        if order.pending_reorder_items:
-            result = self.order_history_handler.handle_reorder_item_selection(
-                user_input, order
-            )
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-
-        if order.pending_reorder_offer_items:
-            result = self.order_history_handler.handle_reorder_offer_response(
-                user_input, order
-            )
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-
-        if order.pending_change_clarification:
-            result = self.config_helper_handler.handle_change_clarification_response(
-                user_input, order
-            )
-            if result:
-                order.add_message("assistant", result.message)
-                return result
-            # If no result, the response wasn't understood - fall through to normal processing
-
+        # Special case: store change with replay logic
         if order.pending_store_change:
-            store_result = self.store_and_scheduling_handler.handle_store_selection(user_input, order)
-            if store_result:
-                order.add_message("assistant", store_result.message)
-                # After first-time store confirmation, replay the saved item order
-                if order.store_confirmed and order.pending_store_order_text:
-                    saved_text = order.pending_store_order_text
-                    order.pending_store_order_text = None
-                    logger.info("Replaying saved order text after store selection: '%s'", saved_text)
-                    replay_result = self.taking_items_handler.handle_taking_items(saved_text, order)
-                    order.add_message("assistant", replay_result.message)
-                    # Combine the store confirmation and item processing messages
-                    combined_msg = f"{store_result.message}\n\n{replay_result.message}"
-                    return StateMachineResult(
-                        message=combined_msg,
-                        order=replay_result.order,
-                        quick_replies=replay_result.quick_replies,
-                    )
-                return store_result
+            return self._handle_pending_store_change(user_input, order)
 
-        if order.pending_store_hours_inquiry:
-            hours_result = self.store_info_handler.handle_store_hours_followup(user_input, order)
-            if hours_result:
-                order.add_message("assistant", hours_result.message)
-                return hours_result
-
+        # Special case: scheduling with fallback hint
         if order.pending_scheduling:
-            order.pending_scheduling = False
-            scheduling_result = self.store_and_scheduling_handler.handle_scheduling_expression(user_input, order)
-            if scheduling_result:
-                order.add_message("assistant", scheduling_result.message)
-                return scheduling_result
-            # Input wasn't a valid time expression -- give a hint
-            hint = (
-                "I didn't catch that. You can say something like "
-                '"3pm", "in 30 minutes", or "tomorrow at noon".'
-            )
-            order.add_message("assistant", hint)
-            return StateMachineResult(message=hint, order=order)
+            return self._handle_pending_scheduling(user_input, order)
 
         return None
+
+    def _handle_pending_store_change(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle pending store change with order-text replay after confirmation."""
+        store_result = self.store_and_scheduling_handler.handle_store_selection(user_input, order)
+        if not store_result:
+            return None
+        order.add_message("assistant", store_result.message)
+        # After first-time store confirmation, replay the saved item order
+        if order.store_confirmed and order.pending_store_order_text:
+            saved_text = order.pending_store_order_text
+            order.pending_store_order_text = None
+            logger.info("Replaying saved order text after store selection: '%s'", saved_text)
+            replay_result = self.taking_items_handler.handle_taking_items(saved_text, order)
+            order.add_message("assistant", replay_result.message)
+            combined_msg = f"{store_result.message}\n\n{replay_result.message}"
+            return StateMachineResult(
+                message=combined_msg,
+                order=replay_result.order,
+                quick_replies=replay_result.quick_replies,
+            )
+        return store_result
+
+    def _handle_pending_scheduling(
+        self, user_input: str, order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle pending scheduling with fallback hint on invalid input."""
+        order.pending_scheduling = False
+        scheduling_result = self.store_and_scheduling_handler.handle_scheduling_expression(user_input, order)
+        if scheduling_result:
+            order.add_message("assistant", scheduling_result.message)
+            return scheduling_result
+        hint = (
+            "I didn't catch that. You can say something like "
+            '"3pm", "in 30 minutes", or "tomorrow at noon".'
+        )
+        order.add_message("assistant", hint)
+        return StateMachineResult(message=hint, order=order)
 
     def process(
         self,
@@ -526,14 +518,7 @@ class OrderStateMachine:
     def _derive_phase(self, order: OrderTask) -> None:
         """Derive the current phase from OrderTask state via orchestrator."""
         # Don't overwrite checkout phases that are explicitly set by handlers
-        phases_to_preserve = {
-            OrderPhase.CHECKOUT_DELIVERY.value,
-            OrderPhase.CHECKOUT_NAME.value,
-            OrderPhase.CHECKOUT_EMAIL.value,
-            OrderPhase.CHECKOUT_PHONE.value,
-            OrderPhase.CHECKOUT_CONFIRM.value,
-            OrderPhase.CHECKOUT_PAYMENT_METHOD.value,
-        }
+        phases_to_preserve = {p.value for p in OrderPhase if p.value.startswith("checkout_")}
         # CRITICAL: Don't transition from TAKING_ITEMS at the start of processing!
         # We need to parse the user's input first to see if they're adding more items.
         # The ITEMS slot being "complete" (all items configured) doesn't mean the user
@@ -686,8 +671,8 @@ class OrderStateMachine:
             return StateMachineResult(message=msg, order=order)
 
         # Time/scheduling expressions (e.g., "pickup at 3pm") -- only when
-        # input doesn't look like an item order
-        if not _looks_like_new_order_attempt(user_input):
+        # input doesn't look like an item order and we're not configuring an item
+        if not _looks_like_new_order_attempt(user_input) and not order.is_configuring_item():
             result = self.store_and_scheduling_handler.handle_scheduling_expression(user_input, order)
             if result:
                 order.add_message("assistant", result.message)

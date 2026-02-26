@@ -148,9 +148,9 @@ class ConfigSelectionHandler:
                 logger.warning("Failed to reconstruct ParsedItemEntry: %s", e)
                 continue
 
-            # Process through taking_items_handler._add_parsed_item
+            # Process through parsed_item_processor
             items_before_count = len(order.items.items)
-            order, summary, disambiguation_result = self._taking_items_handler._add_parsed_item(
+            order, summary, disambiguation_result = self._taking_items_handler.parsed_item_processor.add_parsed_item(
                 parsed_item, order
             )
 

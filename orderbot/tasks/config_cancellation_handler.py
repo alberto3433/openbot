@@ -6,6 +6,7 @@ Extracted from config_helper_handler.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask
@@ -77,6 +78,13 @@ class ConfigCancellationHandler:
             logger.info("Start over during config: '%s'", user_input_stripped)
             return self._handle_start_over(order)
 
+        # Handle compound "remove X add Y" during config
+        compound_result = self._try_compound_remove_add(
+            user_input_stripped, current_item, order
+        )
+        if compound_result:
+            return compound_result
+
         # Extract cancel target description
         cancel_desc = self._extract_cancel_description(user_input_stripped)
         if not cancel_desc:
@@ -131,6 +139,64 @@ class ConfigCancellationHandler:
 
         # Fall through: find and remove matching items
         return self._find_and_remove_matching_items(cancel_desc, current_item, order)
+
+    # ---- Compound remove + add ----
+
+    _COMPOUND_REMOVE_ADD = re.compile(
+        r"^remove\s+(.+?)\s+add\s+(.+)$", re.IGNORECASE
+    )
+
+    def _try_compound_remove_add(
+        self,
+        user_input: str,
+        current_item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Handle 'remove X add Y' as a single compound operation during config."""
+        m = self._COMPOUND_REMOVE_ADD.match(user_input)
+        if not m:
+            return None
+
+        remove_part = m.group(1).strip()
+        add_part = m.group(2).strip()
+        logger.info(
+            "Compound remove+add during config: remove='%s', add='%s'",
+            remove_part, add_part,
+        )
+
+        # Process the removal through the normal cancel flow
+        removal_input = f"remove {remove_part}"
+        removal_result = self.check_cancellation_during_config(
+            removal_input, current_item, order
+        )
+        if not removal_result:
+            return None
+
+        # Process the add portion
+        from .modifier_input_handler import add_modifiers_from_input
+        from .utils.pricing_utils import safe_recalculate_price
+
+        add_input = f"add {add_part}"
+        add_change = add_modifiers_from_input(current_item, add_input)
+        if add_change:
+            safe_recalculate_price(
+                self.pricing, current_item,
+                "after compound add during config",
+            )
+            updated_summary = current_item.get_summary()
+            question = self._operations._get_current_config_question(order, current_item)
+            msg = f"Sure, I've updated your {current_item.menu_item_name} to {updated_summary}."
+            if question:
+                msg = f"{msg} {question}"
+            return StateMachineResult(message=msg, order=order)
+        else:
+            logger.debug(
+                "Compound remove+add during config: add portion '%s' did not match any modifier",
+                add_part,
+            )
+
+        # Removal succeeded but add didn't match - return the removal result
+        return removal_result
 
     # ---- Thin delegation wrappers for backward compatibility ----
 

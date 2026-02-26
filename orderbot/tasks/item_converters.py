@@ -80,6 +80,20 @@ NO_SLUG = "no"
 """Canonical slug for boolean False values."""
 
 
+# Dict-only structural keys: present in serialized dicts but not as MenuItemTask model fields.
+# These must be excluded when scanning dicts for attribute_values during deserialization.
+_DICT_ONLY_STRUCTURAL_KEYS = frozenset({
+    "modifiers", "free_details", "base_price", "line_total",
+    "item_config", "attribute_values", "item_modifiers", "item_total",
+    "display_name",
+})
+
+# Auto-derived: all model fields + dict-only keys = complete structural key set.
+# Adding a new field to MenuItemTask automatically excludes it from being treated
+# as an attribute value during deserialization.
+_STRUCTURAL_KEYS = frozenset(MenuItemTask.model_fields.keys()) | _DICT_ONLY_STRUCTURAL_KEYS
+
+
 class UnifiedItemConverter:
     """
     Unified data-driven converter for all item types.
@@ -154,22 +168,10 @@ class UnifiedItemConverter:
                         attribute_values[price_key] = item_config[price_key]
 
         # Data-driven: restore any additional fields from item_dict/item_config
-        # that aren't already in attribute_values (no hardcoded field list)
-        structural_keys = {
-            "id", "status", "quantity", "unit_price", "item_type", "menu_item_type",
-            "menu_item_name", "menu_item_id", "modifications", "removed_ingredients",
-            "modifiers", "free_details", "base_price",
-            "line_total", "item_config", "attribute_values", "customization_offered",
-            "display_name", "item_modifiers",  # item_modifiers handled separately
-            "special_instructions",  # Handled separately, not an attribute
-            "item_total",  # Computed field, not a configurable attribute
-            # Bundle fields - stored separately, not attributes
-            "bundle_id", "bundle_parent_item_id", "bundle_slot",
-            "bundle_price_rule", "bundle_included_price",
-        }
+        # that aren't already in attribute_values (auto-derived structural key set)
         for source in (item_dict, item_config):
             for key, value in source.items():
-                if key in attribute_values or key in structural_keys:
+                if key in attribute_values or key in _STRUCTURAL_KEYS:
                     continue
                 # Skip metadata suffix keys (handled with their parent)
                 if key.endswith(PRICE_SUFFIXES):
@@ -409,12 +411,6 @@ class UnifiedItemConverter:
         # Add modifications (free, no price lookup needed)
         for mod in item.modifications:
             modifiers.append({"name": mod, "price": 0})
-
-        # Add special instructions (e.g., "room for cream", "extra hot") - free, shown in cart
-        for instruction in item.special_instructions:
-            # Format for display: title case
-            display_instruction = instruction.title() if instruction else instruction
-            modifiers.append({"name": display_instruction, "price": 0})
 
         # Process selections from the unified selections field
         item_modifiers = item.selections or []

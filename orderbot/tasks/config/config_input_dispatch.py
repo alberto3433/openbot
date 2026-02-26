@@ -247,16 +247,15 @@ class ConfigInputDispatch:
         # Try original (unstripped) input first to preserve affirmative words
         # like "sure" that get stripped as hesitation fillers.
         # "sure why not" → stripped to "why not" (wrong), but original parses as True.
+        result = None
         if original_input and original_input != user_input:
             pre_result = self._parent._boolean_parser.parse(original_input, attr)
             if pre_result.value is not None:
-                item[attr_slug] = pre_result.value
-                self._parent._selection_extractor.extract_and_apply_selections(user_input, item)
-                self._parent.capture_attributes_from_input(user_input, item, skip_attribute=attr_slug)
-                return self._parent._question_flow._advance_to_next_question(item, order, attr)
+                result = pre_result
 
-        # Use the boolean parser to parse the (stripped) input
-        result = self._parent._boolean_parser.parse(user_input, attr)
+        # Fall back to stripped input
+        if result is None:
+            result = self._parent._boolean_parser.parse(user_input, attr)
 
         if result.value is None:
             # Couldn't parse, ask again

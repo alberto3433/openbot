@@ -45,7 +45,7 @@ class QuantityInputHandler:
         Args:
             ctx: ConfigHandlerContext with shared dependencies.
         """
-        self._advance_to_next_question = ctx.advance_to_next_question
+        self._ctx = ctx
 
     def handle_quantity_input(
         self,
@@ -83,7 +83,7 @@ class QuantityInputHandler:
         available_options = [opt for opt in options if opt.get("is_available", True)]
         if not available_options:
             logger.warning("No available options for quantity attribute %s", attr_slug)
-            return self._advance_to_next_question(item, order, attr, None)
+            return self._ctx.advance_to_next_question(item, order, attr, None)
 
         unit_option = available_options[0]
         unit_price = unit_option.get("price") or unit_option.get("price_modifier") or 0.0
@@ -118,7 +118,7 @@ class QuantityInputHandler:
             # For quantity attributes, "none" means 0 (not None/declined)
             # This distinguishes "no extra shots" (0) from unanswered
             item[attr_slug] = 0
-            return self._advance_to_next_question(item, order, attr, None)
+            return self._ctx.advance_to_next_question(item, order, attr, None)
 
         # Check for affirmative responses (quantity=1)
         # Also treat "extra" or "extra <anything>" as affirmative (e.g., "extra shot" = 1 shot)
@@ -139,7 +139,7 @@ class QuantityInputHandler:
 
         # Validate quantity
         if quantity < 1:
-            return self._advance_to_next_question(item, order, attr, None)
+            return self._ctx.advance_to_next_question(item, order, attr, None)
         if quantity > max_qty:
             return StateMachineResult(
                 message=f"Sorry, the maximum is {max_qty}. How many would you like?",
@@ -173,4 +173,4 @@ class QuantityInputHandler:
         else:
             ack_text = unit_name
 
-        return self._advance_to_next_question(item, order, attr, ack_text)
+        return self._ctx.advance_to_next_question(item, order, attr, ack_text)

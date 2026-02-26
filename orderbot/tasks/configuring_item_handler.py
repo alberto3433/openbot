@@ -163,13 +163,13 @@ class ConfiguringItemHandler:
         }
         if self._taking_items_handler:
             _dispatch.update({
-                PendingField.DUPLICATE_SELECTION: self._taking_items_handler.handle_duplicate_selection,
-                PendingField.SAME_THING_CLARIFICATION: self._taking_items_handler.handle_same_thing_clarification,
-                PendingField.CONFIRM_SUGGESTED_ITEM: self._taking_items_handler.handle_confirm_suggested_item,
-                PendingField.CONFIRM_INGREDIENT_SUGGESTION: self._taking_items_handler.handle_confirm_ingredient_suggestion,
-                PendingField.CONFIRM_DIETARY_FOLLOWUP: self._taking_items_handler.handle_confirm_dietary_followup,
-                PendingField.QUANTITY_ADDITION_SELECTION: self._taking_items_handler.handle_quantity_addition_selection,
-                PendingField.CATEGORY_INQUIRY: self._taking_items_handler._handle_category_inquiry_response,
+                PendingField.DUPLICATE_SELECTION: self._taking_items_handler.duplicate_handler.handle_duplicate_selection,
+                PendingField.SAME_THING_CLARIFICATION: self._taking_items_handler.duplicate_handler.handle_same_thing_clarification,
+                PendingField.CONFIRM_SUGGESTED_ITEM: self._taking_items_handler.suggested_item_handler.handle_confirm_suggested_item,
+                PendingField.CONFIRM_INGREDIENT_SUGGESTION: self._taking_items_handler.suggested_item_handler.handle_confirm_ingredient_suggestion,
+                PendingField.CONFIRM_DIETARY_FOLLOWUP: self._taking_items_handler.suggested_item_handler.handle_confirm_dietary_followup,
+                PendingField.QUANTITY_ADDITION_SELECTION: self._taking_items_handler.early_pattern_handler.handle_quantity_addition_disambiguation,
+                PendingField.CATEGORY_INQUIRY: self._taking_items_handler.ingredient_search_handler.handle_category_inquiry_response,
             })
         handler = _dispatch.get(order.pending_field)
         if handler:

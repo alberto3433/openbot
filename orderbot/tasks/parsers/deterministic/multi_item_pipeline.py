@@ -220,6 +220,17 @@ def _all_tokens_are_modifiers(tokens: list["Token"], text: str) -> bool:
     return False
 
 
+def _strip_position_qualifiers(text: str) -> str:
+    """Strip trailing position qualifier phrases (e.g. 'on the side') from text."""
+    for qp in menu_cache.get_qualifier_patterns():
+        qual_info = menu_cache.get_qualifier_info(qp)
+        if qual_info and qual_info.get("category") == "position":
+            if text.endswith(" " + qp):
+                text = text[: -(len(qp) + 1)].strip()
+                break
+    return text
+
+
 def _other_tokens_are_potential_modifiers(tokens: list["Token"], text: str) -> bool:
     """Check if all tokens after the first are potential modifiers for the first item.
 
@@ -288,6 +299,9 @@ def _other_tokens_are_potential_modifiers(tokens: list["Token"], text: str) -> b
     first_type = tokens[0].item_type
     if other_tokens:
         for t in other_tokens:
+            # Strip trailing position qualifiers (e.g. "on the side") before
+            # modifier checks — mirrors _has_item_indicator() in item_indicator.py.
+            token_text_clean = _strip_position_qualifiers(t.original.lower().strip())
             # A token classified as a different item type that isn't also a known
             # modifier/ingredient cannot be a modifier for the first item.
             # e.g., "earl gray" classified as tea in "bagel and earl gray" is a
@@ -297,10 +311,10 @@ def _other_tokens_are_potential_modifiers(tokens: list["Token"], text: str) -> b
                 and t.item_type
                 and first_type
                 and t.item_type != first_type
-                and not menu_cache.is_known_modifier(t.original.lower().strip())
+                and not menu_cache.is_known_modifier(token_text_clean)
             ):
                 return False
-            if not _is_potential_modifier(t.original):
+            if not _is_potential_modifier(token_text_clean):
                 return False
         logger.debug("Multi-item: skipping split - item with modifier-like parts: '%s'", text[:60])
         return True

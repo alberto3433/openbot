@@ -288,6 +288,10 @@ def parse_open_input(
         if merged is not None:
             return merged
 
+    # Strip noise phrases (politeness/conditional) before fillers so multi-item
+    # tokenization sees clean text (e.g., "...please if you don't mind" -> "...please")
+    raw_text = _strip_noise_phrases(raw_text)
+
     # Strip greetings/fillers early so ALL paths get clean text
     user_input = strip_conversational_fillers(raw_text)
 

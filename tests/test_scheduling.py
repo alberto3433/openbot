@@ -642,3 +642,33 @@ class TestPendingSchedulingState:
         result = sm.process("three thirty pm", order)
         assert "scheduled" in result.message.lower() or "3:30" in result.message
         assert order.pending_scheduling is False
+
+
+# =============================================================================
+# Test False-Positive Scheduling Prevention
+# =============================================================================
+
+class TestSchedulingFalsePositives:
+    """Inputs that must NOT be interpreted as scheduling expressions."""
+
+    def test_no_false_positive_for_that_one(self):
+        """'no that's it for that one' must not parse as a time."""
+        result = parse_time_expression("no that's it for that one")
+        assert result is None
+
+    def test_no_false_positive_for_here(self):
+        """'for here' must not parse as a time."""
+        result = parse_time_expression("for here")
+        assert result is None
+
+    def test_schedule_for_bare_time(self):
+        """'schedule for 3' should still parse (scheduling context present)."""
+        result = parse_time_expression("schedule for 3")
+        assert result is not None
+        assert result.time_value.hour == 15
+
+    def test_pickup_for_bare_time(self):
+        """'pickup for 3' should still parse (scheduling context present)."""
+        result = parse_time_expression("pickup for 3")
+        assert result is not None
+        assert result.time_value.hour == 15

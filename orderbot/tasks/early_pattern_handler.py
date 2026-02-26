@@ -352,6 +352,8 @@ class EarlyPatternHandler:
                 if add_match:
                     add_portion = input_lower[add_match.start():]
                     add_change = add_modifiers_from_input(last_item, add_portion)
+                    if not add_change:
+                        logger.debug("Compound remove+add: add portion '%s' did not match any modifier", add_portion)
                     if add_change:
                         updated_summary = recalculate_and_summarize(last_item, self.pricing)
                         return StateMachineResult(

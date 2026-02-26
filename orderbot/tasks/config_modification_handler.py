@@ -121,6 +121,14 @@ class ConfigModificationHandler:
         )
         modifier_lower = modifier.lower()
 
+        # 0. Check if modifier text refers to a different item type — prefer full item
+        # replacement (with attribute extraction) over attribute-only changes.
+        # Example: "cinnamon raisin bagel instead" while configuring a Bialy → replace
+        # the Bialy with a Bagel (type "bagel") with bread=cinnamon_raisin pre-filled.
+        result = self._try_cross_type_replacement(modifier, item, order)
+        if result:
+            return result
+
         # 1. Check if current item has an attribute option matching this modifier
         result = self._try_match_attribute_option(modifier_lower, item, order, quantity=quantity)
         if result:
@@ -520,6 +528,64 @@ class ConfigModificationHandler:
                 quantity=item.quantity,
                 pending_field=PendingField.ITEM_SELECTION,
             )
+
+    def _try_cross_type_replacement(
+        self,
+        modifier: str,
+        item: MenuItemTask,
+        order: OrderTask,
+    ) -> StateMachineResult | None:
+        """Check if modifier text refers to a different item type and replace if so.
+
+        Uses the deterministic parser to see if the modifier parses as an item
+        of a different type than the current item. If so, removes the current
+        item and delegates to taking_items_handler for full replacement with
+        attribute extraction.
+
+        Example: "cinnamon raisin bagel instead" while configuring a Bialy →
+        parser detects item_type="bagel" (≠ "bialy"), replaces the Bialy via
+        taking_items_handler which adds a Bagel with bread=cinnamon_raisin.
+        """
+        if not self._taking_items_handler:
+            return None
+
+        # Clean trailing "instead" and leading articles
+        cleaned = re.sub(r'\s+instead\s*$', '', modifier.strip(), flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r'^(?:a|an|the)\s+', '', cleaned, flags=re.IGNORECASE).strip()
+        if not cleaned:
+            return None
+
+        # Use the deterministic parser to check if this text resolves to an item
+        from .parsers.deterministic import parse_open_input
+        parsed = parse_open_input(cleaned)
+        if not parsed or not parsed.parsed_items:
+            return None
+
+        # Only handle single-item parses to avoid ambiguity
+        if len(parsed.parsed_items) != 1:
+            return None
+
+        parsed_item = parsed.parsed_items[0]
+        parsed_type = parsed_item.item_type
+
+        # Require a concrete menu item match (item_name set), not just a type
+        # keyword guess. Without this, bare attribute values like "everything"
+        # would be misinterpreted as items (e.g., type="fish").
+        if not getattr(parsed_item, "item_name", None):
+            return None
+
+        if not parsed_type or parsed_type == item.menu_item_type:
+            return None
+
+        logger.info(
+            "CAN_YOU_MAKE_IT: '%s' parses as type=%s (≠ %s), replacing via full parser",
+            cleaned, parsed_type, item.menu_item_type,
+        )
+        from .handler_utils import remove_item_from_order
+        remove_item_from_order(order, item)
+        order.clear_pending()
+        order.multi_item_config_names = []
+        return self._taking_items_handler.handle_taking_items(cleaned, order)
 
     # ─── Group 2: Confirm Item Switch ────────────────────────────────
 

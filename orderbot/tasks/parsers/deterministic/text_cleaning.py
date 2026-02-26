@@ -38,14 +38,19 @@ def _collapse_repeated_words(text: str) -> str:
     Returns:
         Text with consecutive duplicate words collapsed.
     """
-    words = text.split()
-    if len(words) <= 1:
-        return text
-    result = [words[0]]
-    for word in words[1:]:
-        if word.lower() != result[-1].lower():
-            result.append(word)
-    return " ".join(result)
+    lines = text.split('\n')
+    collapsed_lines = []
+    for line in lines:
+        words = line.split()
+        if len(words) <= 1:
+            collapsed_lines.append(line)
+            continue
+        result = [words[0]]
+        for word in words[1:]:
+            if word.lower() != result[-1].lower():
+                result.append(word)
+        collapsed_lines.append(" ".join(result))
+    return "\n".join(collapsed_lines)
 
 
 def _extract_replacement_item(match: re.Match) -> str | None:
@@ -148,8 +153,28 @@ def _strip_noise_phrases(text: str) -> str:
     # Also strip "if you have it/that", "if that's available", "if possible", etc.
     text = re.sub(
         r'\s+if\s+(?:you\s+have\s+(?:it|that|any|some)'
-        r'|that(?:\'s|\s+is)\s+(?:available|okay|ok|fine|possible)'
+        r'|that(?:\'s|\s+is)\s+(?:available|okay|ok|fine|possible|alright|all\s+right|cool)'
+        r'|that\s+works'
+        r'|it(?:\'s|\s+is)\s+not\s+too\s+much\s+trouble'
+        r'|that(?:\'s|\s+is)\s+not\s+too\s+much\s+trouble'
         r'|possible'
+        r'|you\s+don(?:\'t|\s+not)\s+mind(?:\s+me\s+asking)?'
+        r'|you\s+wouldn(?:\'t|\s+not)\s+mind'
+        r'|you\s+could'
+        r'|you\s+would'
+        r'|you\s+can'
+        r')\s*$',
+        '', text, flags=re.IGNORECASE
+    ).strip()
+
+    # Strip trailing pleasantries that don't affect item identification
+    text = re.sub(
+        r',?\s+(?:when(?:ever)?\s+you(?:\s+get\s+a\s+chance|(?:\'re|\s+are)\s+ready)'
+        r'|no\s+rush'
+        r'|that\s+would\s+be\s+(?:great|nice)'
+        r'|that(?:\'d|\s+would)\s+be\s+(?:great|nice)'
+        r'|i(?:\'d|\s+would)\s+appreciate\s+it'
+        r'|much\s+appreciated'
         r')\s*$',
         '', text, flags=re.IGNORECASE
     ).strip()

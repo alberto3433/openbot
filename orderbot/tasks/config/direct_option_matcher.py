@@ -51,11 +51,9 @@ class DirectOptionMatcher:
             option_matcher: OptionMatcher instance for matching logic.
                 Defaults to ctx.option_matcher if not provided.
         """
+        self._ctx = ctx
         self._option_matcher = ctx.option_matcher or option_matcher
         self._orchestrator = OptionMatchingOrchestrator(option_matcher=self._option_matcher)
-        self._extract_qualifier = ctx.extract_qualifier_for_option
-        self._match_option = ctx.option_matcher.match_single if ctx.option_matcher else None
-        self._ask_more_customizations = ctx.ask_more_customizations
 
     def try_direct_option_match(
         self,
@@ -255,7 +253,7 @@ class DirectOptionMatcher:
                             continue
 
                         opt_name = opt["display_name"]
-                        qualifier = self._extract_qualifier(token_clean, opt_name)
+                        qualifier = self._ctx.extract_qualifier_for_option(token_clean, opt_name)
                         opt_quantity = extract_quantity_for_pattern(
                             user_lower, opt_name.lower()
                         )
@@ -285,12 +283,12 @@ class DirectOptionMatcher:
 
                 else:
                     # single_select
-                    matched_opt, _ = self._match_option(match_input, options)
+                    matched_opt, _ = self._option_matcher.match_single(match_input, options)
                     if not matched_opt:
                         continue
 
                     opt_name = matched_opt["display_name"]
-                    qualifier = self._extract_qualifier(token_clean, opt_name)
+                    qualifier = self._ctx.extract_qualifier_for_option(token_clean, opt_name)
 
                     display_name = (
                         f"{opt_name} ({qualifier})" if qualifier else opt_name
@@ -313,7 +311,7 @@ class DirectOptionMatcher:
                 display_parts, item.id
             )
             display_text = ", ".join(display_parts)
-            return self._ask_more_customizations(
+            return self._ctx.ask_more_customizations(
                 item, order, f"{display_text} added"
             )
 
@@ -395,7 +393,7 @@ class DirectOptionMatcher:
                         existing_mod["quantity"] = opt_quantity
                         # Update display name with quantity prefix so to_dict()
                         # recognizes it and doesn't re-pluralize
-                        qualifier = self._extract_qualifier(user_input, opt_name)
+                        qualifier = self._ctx.extract_qualifier_for_option(user_input, opt_name)
                         display_name = f"{opt_name} ({qualifier})" if qualifier else opt_name
                         display = f"{opt_quantity} {display_name}" if opt_quantity > 1 else display_name
                         existing_mod["display_name"] = display
@@ -404,14 +402,14 @@ class DirectOptionMatcher:
             # If all matched options were handled as quantity updates, return early
             if display_parts:
                 display_text = ", ".join(display_parts)
-                return self._ask_more_customizations(item, order, f"Changed to {display_text}")
+                return self._ctx.ask_more_customizations(item, order, f"Changed to {display_text}")
 
         for opt in matched:
             if opt["slug"] in existing_slugs:
                 continue  # Skip already added
 
             opt_name = opt["display_name"]
-            qualifier = self._extract_qualifier(user_input, opt_name)
+            qualifier = self._ctx.extract_qualifier_for_option(user_input, opt_name)
             # Extract quantity for this specific option
             opt_quantity = extract_quantity_for_pattern(user_lower, opt_name.lower())
             if opt_quantity == 1:
@@ -446,14 +444,14 @@ class DirectOptionMatcher:
                     attr_slug, matched[0]["slug"], item.id
                 )
                 display_text = ", ".join(display_parts)
-                return self._ask_more_customizations(item, order, f"Changed to {display_text}")
+                return self._ctx.ask_more_customizations(item, order, f"Changed to {display_text}")
             else:
                 logger.info(
                     "Direct option match: added %s to %s (item %s)",
                     [opt["slug"] for opt in matched], attr_slug, item.id
                 )
                 display_text = ", ".join(display_parts)
-                return self._ask_more_customizations(item, order, f"{display_text} added")
+                return self._ctx.ask_more_customizations(item, order, f"{display_text} added")
 
         return None
 
@@ -468,10 +466,10 @@ class DirectOptionMatcher:
         order: "OrderTask",
     ) -> StateMachineResult | None:
         """Handle single-select option matching."""
-        matched_opt, _ = self._match_option(user_clean, options)
+        matched_opt, _ = self._option_matcher.match_single(user_clean, options)
         if matched_opt:
             opt_name = matched_opt["display_name"]
-            qualifier = self._extract_qualifier(user_input, opt_name)
+            qualifier = self._ctx.extract_qualifier_for_option(user_input, opt_name)
             opt_price = OptionMatcher.get_option_price(matched_opt)
 
             # Check if this attribute modifies an existing ingredient
@@ -540,7 +538,7 @@ class DirectOptionMatcher:
                         "Updated modifier %s quantity: %d -> %d (base=%d, via %s=%s, upcharge=$%.2f)",
                         modifies_slug, base_quantity, new_quantity, base_quantity, attr_slug, matched_opt["slug"], total_upcharge
                     )
-                    return self._ask_more_customizations(item, order, f"{display}")
+                    return self._ctx.ask_more_customizations(item, order, f"{display}")
 
             # Default behavior for non-ingredient-modifying attributes
             # Build display name with qualifier if present
@@ -566,7 +564,7 @@ class DirectOptionMatcher:
             )
 
             # Check for remaining options and re-offer or complete
-            return self._ask_more_customizations(item, order, f"{display_name} added")
+            return self._ctx.ask_more_customizations(item, order, f"{display_name} added")
 
         # Try numeric matching for options with numeric slugs (e.g., shots: "1", "2", "3")
         numeric_slugs = {opt["slug"] for opt in options if opt["slug"].isdigit()}
@@ -588,7 +586,7 @@ class DirectOptionMatcher:
                             attr_slug, opt["slug"], user_input
                         )
                         # Check for remaining options and re-offer or complete
-                        return self._ask_more_customizations(item, order, f"{display_name} added")
+                        return self._ctx.ask_more_customizations(item, order, f"{display_name} added")
 
         return None
 

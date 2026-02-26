@@ -48,11 +48,7 @@ class ConfigDisambiguationHandler:
         Args:
             ctx: ConfigHandlerContext with shared dependencies.
         """
-        self._get_item_type_attributes = ctx.get_item_type_attributes
-        self._format_display_list = ctx.format_display_list
-        self._extract_qualifier_for_option = ctx.extract_qualifier_for_option
-        self._advance_to_next_question = ctx.advance_to_next_question
-        self._get_next_question = ctx.get_next_question
+        self._ctx = ctx
 
     @staticmethod
     def _is_show_more_request(user_input: str) -> bool:
@@ -131,7 +127,7 @@ class ConfigDisambiguationHandler:
         if not item or not isinstance(item, MenuItemTask):
             logger.warning("Disambiguation item not found: %s", item_id)
             order.pending_attr_disambiguation = None
-            return self._get_next_question(order)
+            return self._ctx.get_next_question(order)
 
         # Try to resolve the selection
         selected = self.resolve_disambiguation(user_input, options)
@@ -154,7 +150,7 @@ class ConfigDisambiguationHandler:
 
         # Get the attribute info
         item_type = item.menu_item_type
-        attrs = self._get_item_type_attributes(item_type)
+        attrs = self._ctx.get_item_type_attributes(item_type)
         attr = attrs.get(attr_slug, {})
 
         # Re-extract quantity from user's clarification input (not stored value)
@@ -187,7 +183,7 @@ class ConfigDisambiguationHandler:
         # Use stored qualifier from original input as fallback
         # (e.g., user said "a little syrup", then answered "Vanilla Syrup" without qualifier)
         stored_qualifier = stored_modifiers.pop("_qualifier", None)
-        qualifier = self._extract_qualifier_for_option(user_input, selected["display_name"])
+        qualifier = self._ctx.extract_qualifier_for_option(user_input, selected["display_name"])
         if not qualifier:
             qualifier = stored_qualifier
 
@@ -235,7 +231,7 @@ class ConfigDisambiguationHandler:
             user_input, selected["display_name"], attr_slug, stored_modifiers
         )
 
-        return self._advance_to_next_question(item, order, attr, ack_text)
+        return self._ctx.advance_to_next_question(item, order, attr, ack_text)
 
     def apply_stored_modifiers(self, item: "MenuItemTask", modifiers: dict) -> None:
         """

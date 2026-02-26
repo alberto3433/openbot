@@ -7,10 +7,11 @@ Contains ItemsTask (container for order items) and OrderTask (root task).
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING
+from typing import Any, ClassVar, TYPE_CHECKING
 import uuid
 
 from pydantic import Field
+from pydantic_core import PydanticUndefined
 
 from .base import BaseTask, TaskStatus
 from .order_flow import (
@@ -35,33 +36,6 @@ from .pending_states import (
 
 if TYPE_CHECKING:
     from orderbot.tasks.schemas import OrderPhase
-
-
-# Fields reset by clear_pending(). Each entry is (field_name, default) where
-# default is either a plain value (None, 0) or a callable (list, dict) for
-# mutable defaults.
-_CLEARABLE_PENDING_FIELDS: tuple[tuple[str, object], ...] = (
-    ("pending_item_ids", list),
-    ("pending_field", None),
-    ("config_options_page", 0),
-    ("config_options_category_filter", None),
-    ("pending_suggested_item", None),
-    ("pending_switch_item", None),
-    ("pending_replace_item_id", None),
-    ("pending_item_modifiers", dict),
-    ("pending_attr_disambiguation", None),
-    ("pending_unmatched_pagination", None),
-    ("pending_order_history", None),
-    ("pending_reorder_items", None),
-    ("pending_reorder_offer_items", None),
-    ("pending_dietary_followup", None),
-    ("pending_quantity_addition", None),
-    ("pending_scheduling", False),
-    ("pending_store_change", False),
-    ("pending_store_page", 0),
-    ("pending_store_hours_inquiry", False),
-    ("pending_store_hours_page", 0),
-)
 
 
 class ItemsTask(BaseTask):
@@ -202,6 +176,15 @@ class ItemsTask(BaseTask):
 
         return removed
 
+def _get_field_default(field_info: Any) -> Any:
+    """Get the default value for a Pydantic field, calling default_factory if needed."""
+    if field_info.default_factory is not None:
+        return field_info.default_factory()
+    if field_info.default is not PydanticUndefined:
+        return field_info.default
+    return None
+
+
 class OrderTask(BaseTask):
     """Root task representing the entire order."""
 
@@ -214,9 +197,6 @@ class OrderTask(BaseTask):
     customer_info: CustomerInfoTask = Field(default_factory=CustomerInfoTask)
     checkout: CheckoutTask = Field(default_factory=CheckoutTask)
     payment: PaymentTask = Field(default_factory=PaymentTask)
-
-    # Order-level special instructions (extracted once per message, not per-item)
-    special_instructions: str | None = None
 
     # Conversation tracking
     conversation_history: list[dict] = Field(default_factory=list)
@@ -371,6 +351,34 @@ class OrderTask(BaseTask):
     # the field is re-collected the order returns to the original phase.
     return_to_phase: str | None = None
 
+    # -------------------------------------------------------------------------
+    # Field classification (ClassVars — not Pydantic model fields)
+    # -------------------------------------------------------------------------
+
+    # Fields that are NOT flow state — these are structural parts of OrderTask
+    # and are serialized/restored by dedicated helpers in the adapter.
+    # Everything else on OrderTask (minus BaseTask fields and transient fields)
+    # is auto-detected as flow state for serialization.
+    _STRUCTURAL_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "id", "status", "created_at", "completed_at",  # BaseTask
+        "session_id", "db_order_id",
+        "delivery_method", "items", "customer_info", "checkout", "payment",
+        "conversation_history",
+        "last_add_error",  # transient (exclude=True)
+    })
+
+    # Fields that persist across clear_pending() — work queues that outlive
+    # individual configuration interactions.
+    _PERSIST_PENDING_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "pending_config_queue",
+        "pending_parsed_items",
+        "pending_store_order_text",
+    })
+
+    # Auto-derived after class definition: all pending_*/config_* model fields
+    # minus the persist set. See module-level code below the class.
+    _CLEARABLE_FIELDS: ClassVar[frozenset[str]]
+
     @property
     def first_pending_item_id(self) -> str | None:
         """Get the first pending item ID, or None if the queue is empty."""
@@ -388,9 +396,14 @@ class OrderTask(BaseTask):
         return len(self.pending_item_ids) > 0 and self.pending_field is not None
 
     def clear_pending(self):
-        """Clear pending item/field when done configuring."""
-        for field_name, default_factory in _CLEARABLE_PENDING_FIELDS:
-            setattr(self, field_name, default_factory() if callable(default_factory) else default_factory)
+        """Clear pending item/field when done configuring.
+
+        Resets all fields in _CLEARABLE_FIELDS to their Pydantic defaults.
+        Defaults are derived from model_fields, so adding a new clearable
+        field only requires adding its name to _CLEARABLE_FIELDS.
+        """
+        for field_name in self._CLEARABLE_FIELDS:
+            setattr(self, field_name, _get_field_default(self.model_fields[field_name]))
 
     def set_phase(self, phase: "OrderPhase") -> None:
         """Set the order phase from an OrderPhase enum.
@@ -528,3 +541,29 @@ class OrderTask(BaseTask):
             "checkout": f"{status_emoji(self.checkout)} Checkout",
             "payment": f"{status_emoji(self.payment)} Payment",
         }
+
+
+# -------------------------------------------------------------------------
+# Auto-derive _CLEARABLE_FIELDS from model fields at load time
+# -------------------------------------------------------------------------
+OrderTask._CLEARABLE_FIELDS = frozenset(
+    name for name in OrderTask.model_fields
+    if (name.startswith("pending_") or name.startswith("config_"))
+    and name not in OrderTask._PERSIST_PENDING_FIELDS
+)
+
+# -------------------------------------------------------------------------
+# Load-time validation: catch misconfigured field sets immediately
+# -------------------------------------------------------------------------
+for _name in OrderTask._PERSIST_PENDING_FIELDS:
+    if _name not in OrderTask.model_fields:
+        raise RuntimeError(
+            f"_PERSIST_PENDING_FIELDS contains '{_name}' which is not a field on OrderTask. "
+            "Remove it from _PERSIST_PENDING_FIELDS or add it as a field."
+        )
+for _name in OrderTask._STRUCTURAL_FIELDS:
+    if _name not in OrderTask.model_fields:
+        raise RuntimeError(
+            f"_STRUCTURAL_FIELDS contains '{_name}' which is not a field on OrderTask. "
+            "Remove it from _STRUCTURAL_FIELDS or add it as a field."
+        )

@@ -43,7 +43,7 @@ class OptionsInquiryHandler:
         Args:
             ctx: ConfigHandlerContext with shared dependencies.
         """
-        self._get_optional_attributes = ctx.get_optional_attributes
+        self._ctx = ctx
 
     def is_options_inquiry(self, user_input: str, topic: str | None = None) -> bool:
         """Check if user is asking about available options.
@@ -214,7 +214,7 @@ class OptionsInquiryHandler:
         Returns:
             The different attribute config dict if found, None otherwise.
         """
-        if not self._get_optional_attributes:
+        if not self._ctx.get_optional_attributes:
             return None
 
         input_lower = normalize_text(user_input)
@@ -228,7 +228,7 @@ class OptionsInquiryHandler:
         ]
 
         # Get all optional attributes for this item type
-        all_attrs = self._get_optional_attributes(item_type)
+        all_attrs = self._ctx.get_optional_attributes(item_type)
 
         for pattern in patterns:
             match = re.search(pattern, input_lower)

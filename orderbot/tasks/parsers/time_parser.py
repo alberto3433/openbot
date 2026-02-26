@@ -119,9 +119,9 @@ _DAY_PERIOD_RE = re.compile(
     re.IGNORECASE,
 )
 
-# "pickup at 3pm", "for 3pm", "pickup for tomorrow"
+# "pickup at 3pm", "schedule for 3pm", "pickup for tomorrow"
 _SCHEDULING_CONTEXT_RE = re.compile(
-    r"\b(?:pick\s*up|schedule|scheduled|for)\s+",
+    r"\b(?:pick\s*up|schedule|scheduled)\s+",
     re.IGNORECASE,
 )
 

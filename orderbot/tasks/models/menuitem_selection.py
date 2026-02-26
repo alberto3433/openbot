@@ -168,6 +168,9 @@ class SelectionManagementMixin:
                 # This handles the case where pre_filled adds with qty=1, then
                 # extracted_selections tries to add with the actual qty
                 if quantity > 1 and existing.get("quantity", 1) == 1:
+                    # Track original default quantity for pricing before updating
+                    if existing.get("is_default") and "_base_quantity" not in existing:
+                        existing["_base_quantity"] = existing.get("quantity", 1)
                     existing["quantity"] = quantity
                 if display_name and existing.get("display_name") != display_name:
                     existing["display_name"] = display_name

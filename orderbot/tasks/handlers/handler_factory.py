@@ -44,6 +44,24 @@ class HandlerFactory:
         self._callbacks = callbacks
         self._handlers: dict[str, Any] = {}
 
+    # Each tuple is (handler_key, attribute_name) or (handler_key.sub_attr, attribute_name)
+    # for nested lookups. Validated after wiring to fail fast on missing references.
+    _REQUIRED_WIRINGS: list[tuple[str, str]] = [
+        ("menu_pagination", "menu_inquiry_handler"),
+        ("config_cancellation", "config_helper_handler"),
+        ("checkout", "order_utils_handler"),
+        ("checkout", "_handle_taking_items_with_parsed"),
+        ("configuring_item", "taking_items_handler"),
+        ("config_selection", "taking_items_handler"),
+        ("config_modification", "taking_items_handler"),
+        ("bundle_modification", "taking_items_handler"),
+        ("modifier_addition", "taking_items_handler"),
+        ("item_adder", "menu_item_handler"),
+        ("checkout_utils", "_configure_next_incomplete_item"),
+        ("menu_item", "process_pending_parsed_items"),
+        ("taking_items.duplicate_handler", "order_history_handler"),
+    ]
+
     def build_all(self) -> dict[str, Any]:
         """Build all handlers in dependency order.
 
@@ -56,6 +74,7 @@ class HandlerFactory:
         self._build_phase_4_config()
         self._build_phase_5_top_level()
         self._wire_cross_references()
+        self._validate_wiring()
 
         return self._handlers
 
@@ -249,40 +268,42 @@ class HandlerFactory:
         )
 
         # Wire order_history_handler to taking_items' duplicate_handler
-        self._handlers["taking_items"]._duplicate_handler.order_history_handler = (
+        self._handlers["taking_items"].duplicate_handler.order_history_handler = (
             self._handlers["order_history"]
         )
+
+    def _validate_wiring(self) -> None:
+        """Validate all cross-handler references are non-None.
+
+        Called at the end of build_all() to fail fast at startup if any
+        wiring is missed, rather than surfacing as AttributeError during
+        a user conversation.
+        """
+        for handler_path, attr_name in self._REQUIRED_WIRINGS:
+            # Resolve dotted handler path (e.g., "taking_items.duplicate_handler")
+            parts = handler_path.split(".")
+            obj = self._handlers[parts[0]]
+            for part in parts[1:]:
+                obj = getattr(obj, part)
+            value = getattr(obj, attr_name, None)
+            if value is None:
+                raise RuntimeError(
+                    f"Handler wiring failed: {handler_path}.{attr_name} is None. "
+                    f"Check _wire_cross_references() in HandlerFactory."
+                )
 
     def get_context_handlers(self) -> list[str]:
         """Get names of handlers that need context distribution.
 
-        Returns:
-            List of handler names that have set_context method.
+        Auto-detected: returns handlers that have a set_context method
+        (from ContextMixin).
         """
-        return [
-            "checkout",
-            "store_info",
-            "store_and_scheduling",
-            "order_utils",
-            "checkout_utils",
-            "taking_items",
-            "item_adder",
-            "order_history",
-        ]
+        return [name for name in self._handlers if hasattr(self._handlers[name], 'set_context')]
 
     def get_menu_data_handlers(self) -> list[str]:
         """Get names of handlers that need menu_data updates.
 
-        Returns:
-            List of handler names that have menu_data property.
+        Auto-detected: returns handlers that have a menu_data property
+        (from MenuDataMixin).
         """
-        return [
-            "store_info",
-            "recommendation",
-            "menu_options_inquiry",
-            "menu_inquiry",
-            "menu_pagination",
-            "item_lookup",
-            "item_adder",
-            "taking_items",
-        ]
+        return [name for name in self._handlers if hasattr(self._handlers[name], 'menu_data')]

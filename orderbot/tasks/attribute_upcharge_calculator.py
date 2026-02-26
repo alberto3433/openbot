@@ -183,9 +183,12 @@ class AttributeUpchargeCalculator:
                             continue
                         # else: user asked for extra → fall through to charge for extras
 
-                # Look up upcharge from DB - single source of truth
+                # Non-default additions in multi-select get full price, not premium.
+                # included_categories discount is for replacements of default ingredients
+                # (e.g., swapping cheddar for swiss), not new additions (e.g., adding bacon).
+                lookup_cats = included_categories if is_default else None
                 upcharge = self._pricing.lookup_attribute_option_upcharge(
-                    item_type, attr_slug, item_val, included_categories
+                    item_type, attr_slug, item_val, lookup_cats
                 )
                 if upcharge > 0:
                     total += upcharge * effective_quantity
@@ -240,6 +243,8 @@ class AttributeUpchargeCalculator:
             None
         )
         quantity = matching_modifier.get("quantity", 1) if matching_modifier else 1
+        base_quantity = matching_modifier.get("_base_quantity", 0) if matching_modifier else 0
+        effective_quantity = max(0, quantity - base_quantity) if base_quantity > 0 else quantity
 
         # Default ingredients in included categories are always free.
         # Check BEFORE upcharge lookup so premium calculations don't accidentally
@@ -254,10 +259,14 @@ class AttributeUpchargeCalculator:
             if not option_category and matching_modifier:
                 option_category = matching_modifier.get("ingredient_category")
             if option_category and option_category in included_categories:
-                priced_slugs.add(attr_value_normalized)
-                if matching_modifier:
-                    matching_modifier["price"] = 0.0
-                return 0.0, priced_slugs
+                base_quantity = matching_modifier.get("_base_quantity", 0) if matching_modifier else 0
+                if base_quantity == 0:
+                    # Pure default, no user modification → entirely free
+                    priced_slugs.add(attr_value_normalized)
+                    if matching_modifier:
+                        matching_modifier["price"] = 0.0
+                    return 0.0, priced_slugs
+                # else: user asked for extra → fall through to charge for extras
 
         # Always look up price from DB - this is the single source of truth
         upcharge = self._pricing.lookup_attribute_option_upcharge(
@@ -274,7 +283,7 @@ class AttributeUpchargeCalculator:
             # Update the modifier's price for display purposes
             if matching_modifier:
                 matching_modifier["price"] = upcharge
-            return upcharge * quantity, priced_slugs
+            return upcharge * effective_quantity, priced_slugs
 
         # Check if category is included (no charge).
         # If the item's base price already includes this ingredient category,
@@ -296,4 +305,4 @@ class AttributeUpchargeCalculator:
         # Update the modifier's price for display purposes
         if matching_modifier:
             matching_modifier["price"] = price
-        return price * quantity, priced_slugs
+        return price * effective_quantity, priced_slugs

@@ -518,6 +518,7 @@ class TakingItemsHandler(MenuDataMixin):
                     result = StateMachineResult(
                         message=f"{note} {result.message}",
                         order=result.order,
+                        quick_replies=result.quick_replies,
                     )
                 return result
 

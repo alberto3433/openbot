@@ -1124,6 +1124,39 @@ class TestMultiItemOrders:
         assert coffee_qty >= 1 or any("coffee" in result.message.lower() for _ in [1]), \
             f"Should have coffees or mention them. Got qty={coffee_qty}"
 
+    def test_multiline_input_parses_each_line_as_separate_item(self):
+        """
+        Test: User enters multiple items on separate lines (Shift+Enter).
+
+        Scenario:
+        - User submits: "large coffee\\nplain bagel toasted"
+        - Expected: Both items are added to the order (coffee + bagel)
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+
+        sm = OrderStateMachine()
+        result = sm.process("large coffee\nplain bagel toasted", order)
+
+        assert result.message is not None
+
+        all_items = result.order.items.get_active_items()
+        item_names = [i.menu_item_name.lower() for i in all_items if i.menu_item_name]
+
+        # Should have at least 2 items (coffee + bagel)
+        assert len(all_items) >= 2, (
+            f"Multi-line input should produce 2+ items, got {len(all_items)}: {item_names}. "
+            f"Message: {result.message}"
+        )
+
+        # Should have a coffee
+        has_coffee = any(i.has_attribute('size') for i in all_items)
+        assert has_coffee, f"Should have a coffee item. Items: {item_names}"
+
+        # Should have a bagel
+        has_bagel = any(i.has_attribute('bread') for i in all_items)
+        assert has_bagel, f"Should have a bagel item. Items: {item_names}"
+
     def test_add_item_during_config_no_prefix(self):
         """User says 'a latte' during config — should queue latte and re-ask config question."""
         order = OrderTask()
@@ -1147,3 +1180,95 @@ class TestMultiItemOrders:
         # Should still be configuring the sandwich (re-ask bread question)
         assert order.pending_field is not None, \
             f"Should still be configuring. Message: {result.message}"
+
+    def test_sandwich_with_modifiers_and_on_the_side(self):
+        """
+        Test: 'on the side' qualifier doesn't cause multi-item misparsing.
+
+        Scenario:
+        - User says: "jalapeno honey cream cheese sandwich scooped with chicken
+          sausage and breakfast potato latke on the side"
+        - Expected: Single sandwich item (not split into Cheddar Cheese + "on the side")
+        - The trailing "on the side" qualifier must not break modifier detection
+          in the multi-item pipeline.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        result = sm.process(
+            "jalapeno honey cream cheese sandwich scooped with chicken sausage "
+            "and breakfast potato latke on the side",
+            order,
+        )
+        order = result.order
+
+        items = order.items.get_active_items()
+        item_names = [i.menu_item_name for i in items]
+
+        # Should be a single sandwich, not multiple misparsed items
+        assert len(items) == 1, (
+            f"Should have 1 sandwich item, got {len(items)}: {item_names}"
+        )
+
+        # The item should be the Jalapeno Honey Cream Cheese Sandwich
+        assert "jalapeno" in item_names[0].lower() or "jalapeño" in item_names[0].lower(), (
+            f"Item should be Jalapeno Honey CC Sandwich, got: {item_names[0]}"
+        )
+
+        # Should NOT have created a "Cheddar Cheese" or "on the side" item
+        for name in item_names:
+            assert "cheddar" not in name.lower(), (
+                f"Should not have Cheddar Cheese item, got: {item_names}"
+            )
+
+
+class TestCrossTypeItemReplacement:
+    """Tests for replacing an item with a different item type during config."""
+
+    def test_bialy_to_cinnamon_raisin_bagel_replaces_item(self):
+        """
+        Test: User orders a Bialy, then says "make it a cinnamon raisin bagel instead".
+
+        Expected: The Bialy is removed and replaced with a Bagel (type="bagel")
+        with bread=cinnamon_raisin_bagel. The order should NOT still contain
+        a Bialy with a bread attribute override.
+        """
+        order = OrderTask()
+        order.phase = OrderPhase.TAKING_ITEMS.value
+        sm = OrderStateMachine()
+
+        # Step 1: Add a bialy — this should transition to CONFIGURING_ITEM
+        result = sm.process("bialy", order)
+        order = result.order
+
+        # Verify we're configuring the bialy
+        active = order.items.get_active_items()
+        assert len(active) == 1, f"Should have 1 item, got {len(active)}"
+        assert active[0].menu_item_type == "bialy", (
+            f"Item should be bialy type, got: {active[0].menu_item_type}"
+        )
+
+        # Step 2: Say "make it a cinnamon raisin bagel instead"
+        result = sm.process("make it a cinnamon raisin bagel instead", order)
+        order = result.order
+
+        # Verify the bialy is GONE and we now have a bagel
+        active = order.items.get_active_items()
+        item_types = [i.menu_item_type for i in active]
+        item_names = [i.menu_item_name for i in active]
+
+        assert "bialy" not in item_types, (
+            f"Bialy should be gone but found types: {item_types}, names: {item_names}"
+        )
+        assert any(t == "bagel" for t in item_types), (
+            f"Should have a bagel item, got types: {item_types}, names: {item_names}"
+        )
+
+        # Verify the bagel has cinnamon_raisin bread attribute
+        bagel = next(i for i in active if i.menu_item_type == "bagel")
+        bread = bagel.get("bread") or bagel.attribute_values.get("bread")
+        assert bread is not None and "cinnamon" in bread.lower(), (
+            f"Bagel should have cinnamon raisin bread, got bread={bread}. "
+            f"Attributes: {bagel.attribute_values}"
+        )

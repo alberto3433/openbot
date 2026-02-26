@@ -63,24 +63,12 @@ class CustomizationCheckpointHandler:
             ctx: ConfigHandlerContext with shared dependencies.
         """
         self._options_inquiry_handler = options_inquiry_handler
-        self._option_matcher = ctx.option_matcher
-        self._recalculate_item_price = ctx.recalculate_item_price
-        self._get_unanswered_optional = ctx.get_unanswered_optional
-        self._get_optional_attributes = ctx.get_optional_attributes
-        self._format_display_list = ctx.format_display_list
-        self._match_attribute_from_input = ctx.match_attribute_from_input
-        self._extract_quantity_from_input = ctx.extract_quantity_from_input
-        self._ask_disambiguation_for_options = ctx.ask_disambiguation_for_options
-        self._ask_customization_checkpoint = ctx.ask_customization_checkpoint
-        self._ask_optional_attribute = ctx.ask_optional_attribute
-        self._try_direct_option_match = ctx.try_direct_option_match
-        self._get_next_question = ctx.get_next_question
-        self._process_pending_parsed_items_callback = ctx.process_pending_parsed_items
+        self._ctx = ctx
 
         # Initialize the ingredient fallback handler
         self._ingredient_fallback_handler = IngredientFallbackHandler(
-            recalculate_item_price=self._recalculate_item_price,
-            ask_customization_checkpoint=self._ask_customization_checkpoint,
+            recalculate_item_price=ctx.recalculate_item_price,
+            ask_customization_checkpoint=ctx.ask_customization_checkpoint,
         )
 
     def _handle_more_existing_selection(
@@ -130,10 +118,10 @@ class CustomizationCheckpointHandler:
         display_name = existing_sel.get("display_name", remainder.replace("_", " ").title())
 
         # Recalculate price
-        self._recalculate_item_price(item)
+        self._ctx.recalculate_item_price(item)
 
         display_text = f"{display_name} x{new_qty}"
-        return self._ask_customization_checkpoint(item, order, display_text)
+        return self._ctx.ask_customization_checkpoint(item, order, display_text)
 
     def _check_new_item_at_checkpoint(
         self, user_lower: str, item: "MenuItemTask", order: "OrderTask"
@@ -239,10 +227,10 @@ class CustomizationCheckpointHandler:
                     )
             return self._handle_declining(item, order)
 
-        unanswered = self._get_unanswered_optional(item, item_type)
+        unanswered = self._ctx.get_unanswered_optional(item, item_type)
 
         # Get all optional attributes for direct option matching
-        all_optional = self._get_optional_attributes(item_type)
+        all_optional = self._ctx.get_optional_attributes(item_type)
 
         # Check for options inquiry about ANY attribute (mandatory or optional)
         # e.g., "what spreads do you have?" even if user already answered "no" to spreads
@@ -268,7 +256,7 @@ class CustomizationCheckpointHandler:
         if any(user_lower == p or user_lower.startswith(p + " ") for p in yes_patterns):
             # If just "yes", list the options
             if user_lower in yes_patterns:
-                options_list = self._format_display_list(unanswered)
+                options_list = self._ctx.format_display_list(unanswered)
                 order.pending_field = PendingField.CUSTOMIZATION_SELECTION
                 # Build quick replies for inline clickable text
                 qr = [{"label": a["display_name"], "value": a["display_name"]} for a in unanswered]
@@ -297,20 +285,20 @@ class CustomizationCheckpointHandler:
         # IMPORTANT: Direct option matching MUST happen BEFORE attribute name matching!
         # Otherwise "blueberry cream cheese" matches "cheese" (attribute category) as a substring
         # and asks "What kind of cheese?" instead of setting the spread.
-        result = self._try_direct_option_match(user_input, all_optional, item, order)
+        result = self._ctx.try_direct_option_match(user_input, all_optional, item, order)
         if result:
             return result
 
         # If no optional match, try mandatory attributes for "make it X" style changes
         # e.g., "make it an onion bagel" to change bread type
         all_mandatory = get_mandatory_attributes(item_type)
-        result = self._try_direct_option_match(user_input, all_mandatory, item, order)
+        result = self._ctx.try_direct_option_match(user_input, all_mandatory, item, order)
         if result:
             return result
 
         # Try to match specific attribute(s) from input (e.g., "cheese" -> ask "What kind of cheese?")
         # This comes AFTER direct option matching to avoid substring matches on attribute names
-        matched_attrs = self._match_attribute_from_input(user_input, unanswered)
+        matched_attrs = self._ctx.match_attribute_from_input(user_input, unanswered)
 
         if matched_attrs:
             return self._handle_matched_attribute(
@@ -324,7 +312,7 @@ class CustomizationCheckpointHandler:
             return result
 
         # Couldn't match - inform user we don't have what they asked for
-        options_list = self._format_display_list(unanswered)
+        options_list = self._ctx.format_display_list(unanswered)
         # Build quick replies for inline clickable text
         qr = [{"label": a["display_name"], "value": a["display_name"]} for a in unanswered]
         return StateMachineResult(
@@ -396,7 +384,7 @@ class CustomizationCheckpointHandler:
             StateMachineResult with completion or next item message
         """
         # Recalculate price and complete
-        self._recalculate_item_price(item)
+        self._ctx.recalculate_item_price(item)
         item.mark_complete()
         order.clear_pending()
 
@@ -408,14 +396,14 @@ class CustomizationCheckpointHandler:
         # This handles the case where disambiguation was triggered and remaining items
         # in the order were stored (e.g., "bagel and latte" - latte is stored while
         # we disambiguate and configure bagel)
-        if self._process_pending_parsed_items_callback:
-            pending_result = self._process_pending_parsed_items_callback(order)
+        if self._ctx.process_pending_parsed_items:
+            pending_result = self._ctx.process_pending_parsed_items(order)
             if pending_result:
                 return pending_result
 
         # Check if there are more items to configure (e.g., coffee added with bagel)
-        if self._get_next_question:
-            next_result = self._get_next_question(order)
+        if self._ctx.get_next_question:
+            next_result = self._ctx.get_next_question(order)
             # If there's another item to configure, return that
             if next_result and next_result.order.pending_field:
                 return next_result
@@ -488,7 +476,7 @@ class CustomizationCheckpointHandler:
 
         # Extract quantity and use remaining text for option matching
         # e.g., "2 egg whites" → quantity=2, remaining="egg whites"
-        quantity, remaining_text = self._extract_quantity_from_input(user_input)
+        quantity, remaining_text = self._ctx.extract_quantity_from_input(user_input)
 
         if options:
             result = self._try_match_option_value(
@@ -501,7 +489,7 @@ class CustomizationCheckpointHandler:
         # Store quantity so it can be applied when user answers
         if quantity > 1:
             order.pending_modifier_quantity = quantity
-        return self._ask_optional_attribute(item, order, attr)
+        return self._ctx.ask_optional_attribute(item, order, attr)
 
     def _handle_boolean_attribute(
         self,
@@ -530,16 +518,16 @@ class CustomizationCheckpointHandler:
         item[attr_slug] = not is_negated
 
         # Recalculate price and check if more to configure
-        self._recalculate_item_price(item)
-        remaining = self._get_unanswered_optional(item, item_type)
+        self._ctx.recalculate_item_price(item)
+        remaining = self._ctx.get_unanswered_optional(item, item_type)
         if remaining:
-            return self._ask_customization_checkpoint(item, order, None)
+            return self._ctx.ask_customization_checkpoint(item, order, None)
 
         # No more optional attributes - complete the item
         item.mark_complete()
         order.clear_pending()
-        if self._get_next_question:
-            next_result = self._get_next_question(order)
+        if self._ctx.get_next_question:
+            next_result = self._ctx.get_next_question(order)
             if next_result and next_result.order.pending_field:
                 return next_result
         order.set_phase(OrderPhase.TAKING_ITEMS)
@@ -580,13 +568,13 @@ class CustomizationCheckpointHandler:
 
         if input_type == "multi_select":
             # Use disambiguation-aware matching for multi-select
-            matched_opts, disambiguation = self._option_matcher.match_multiple_with_disambiguation(
+            matched_opts, disambiguation = self._ctx.option_matcher.match_multiple_with_disambiguation(
                 user_clean, options
             )
 
             if disambiguation:
                 # Single ambiguous term matches multiple options - ask user to clarify
-                return self._ask_disambiguation_for_options(
+                return self._ctx.ask_disambiguation_for_options(
                     item, order, attr, disambiguation, remaining_text
                 )
 
@@ -609,10 +597,10 @@ class CustomizationCheckpointHandler:
                     display = f"{opt_quantity} {opt_name}" if opt_quantity > 1 else opt_name
                     display_parts.append(display)
                 display_text = ", ".join(display_parts)
-                return self._ask_customization_checkpoint(item, order, f"{display_text} added")
+                return self._ctx.ask_customization_checkpoint(item, order, f"{display_text} added")
         else:
             # single_select
-            matched_opt, _ = self._option_matcher.match_single(user_clean, options)
+            matched_opt, _ = self._ctx.option_matcher.match_single(user_clean, options)
             if matched_opt:
                 opt_name = matched_opt["display_name"]
                 opt_price = matched_opt.get("price") or matched_opt.get("price_modifier") or 0
@@ -622,7 +610,7 @@ class CustomizationCheckpointHandler:
                     display_name=opt_name,
                 )
                 display = f"{quantity} {opt_name}" if quantity > 1 else opt_name
-                return self._ask_customization_checkpoint(item, order, f"{display} added")
+                return self._ctx.ask_customization_checkpoint(item, order, f"{display} added")
 
         return None
 

@@ -1,38 +1,36 @@
-# Plan: Rollback Attribute-Context Type Switch Changes
+# Fix: "Change item" during config should replace menu item, not just attribute
 
-## Analysis
+## Problem
 
-Comparing the committed version (`HEAD`) against the working copy of `menu_item_matching.py`, there are **4 distinct changes** in the diff (226 lines added, 6 removed):
+When configuring a Bialy and user says "make it a cinnamon raisin bagel instead", the system:
+- **Current**: Changes the `bread` attribute from "bialy" to "cinnamon_raisin_bagel" (via `handle_can_you_make_it`)
+- **Expected**: Replaces the Bialy with a Cinnamon Raisin Bagel (new menu item with correct price, type, defaults)
 
-### Change 1: `_try_attribute_context_type_switch` function + call site — ROLLBACK
-- **What**: The entire new function (~160 lines) + 8-line call block in `_resolve_item_type_and_menu_item`
-- **Part of the feature**: YES — this IS the attribute-context type switch (Tier 1 + Tier 2)
-- **Action**: **ROLLBACK** — delete the function and remove the call
+## Root Cause
 
-### Change 2: Trigger-outside-span check in `_find_different_type_menu_item` — KEEP
-- **What**: Added ~40 lines that check if the detected type's trigger words exist OUTSIDE a matched menu item span. Prevents false positives like "One Applewood Chicken Sausage" triggering `egg_sandwich` because "sausage" trigger only appears inside the menu item name span.
-- **Part of the feature?**: NO — this is in `_find_different_type_menu_item` (step 4), independent improvement
-- **Action**: **KEEP**
+In `handle_can_you_make_it` (config_modification_handler.py):
+1. `parse_can_you_make_it` extracts modifier "cinnamon raisin bagel instead"
+2. `find_attr_option_match` fuzzy-matches "cinnamon_raisin_bagel" as a bread attribute option
+3. Attribute change is applied → Bialy stays with wrong bread attribute
+4. Item replacement steps never reached
 
-### Change 3: Modifier filtering improvement in `_find_different_type_menu_item` — KEEP
-- **What**: Changed modifier check from `any(is_known_modifier(w) for w in split)` to content-word filtering with `all()`. Prevents "Side of Onion" from being blocked because "onion" is a modifier.
-- **Part of the feature?**: NO — independent fix in same function
-- **Action**: **KEEP**
+Key challenge: "Cinnamon Raisin Bagel" is NOT a menu item — "Bagel" is the menu item and "cinnamon_raisin_bagel" is a bread attribute option. `lookup_menu_items` also fails due to 50% similarity threshold ("bagel" is only 23% of "cinnamon raisin bagel").
 
-### Change 4: `_get_default_menu_item_for_type` disambiguation fix — KEEP
-- **What**: Changed from returning the first match to only returning when exactly one item name ends with the type display name.
-- **Part of the feature?**: NO — independent disambiguation fix
-- **Action**: **KEEP**
+## Fix
 
-## Rollback Steps
+**File**: `orderbot/tasks/config_modification_handler.py`
 
-- [ ] **Step 1**: Remove the call to `_try_attribute_context_type_switch` from `_resolve_item_type_and_menu_item` (delete the 8-line block at step 5, restore the direct return)
-- [ ] **Step 2**: Delete the entire `_try_attribute_context_type_switch` function definition
-- [ ] **Step 3**: Run parsing tests — verify no regressions
-- [ ] **Step 4**: Run full test suite — verify everything passes
+Added `_try_cross_type_replacement` as step 0 in `handle_can_you_make_it`, before attribute matching. Uses the deterministic parser (`parse_open_input`) to check if the cleaned modifier text parses as an item of a different type. If so, removes the current item and delegates to `taking_items_handler` for full parsing with attribute extraction.
 
-## Scope
+Guards:
+- Requires parser to find a concrete menu item (`item_name` not None) — prevents false positives like "everything" being misinterpreted
+- Only triggers for single-item parses of a different item type
 
-- **Only file affected**: `orderbot/tasks/parsers/deterministic/menu_item_matching.py`
-- **No cache files affected** — the cache methods used by the function (`get_all_attribute_option_words`, `get_item_types_with_attribute`, etc.) are also used elsewhere and will remain
-- **No other parser files affected**
+### Checklist
+
+- [x] Add cross-type replacement check before attribute change in `handle_can_you_make_it`
+- [x] Use `parse_open_input` (not `lookup_menu_items`) to detect item type from compound names
+- [x] Guard against false positives (bare attribute values like "everything", "plain")
+- [x] Test: "make it a cinnamon raisin bagel" during Bialy config → switches item
+- [x] Test: "make it everything" during bagel config → still changes attribute (no false positive)
+- [x] Full test suite passes (2049 passed, 1 pre-existing failure unrelated)

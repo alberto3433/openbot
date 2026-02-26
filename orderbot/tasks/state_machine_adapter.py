@@ -57,6 +57,11 @@ from .adapter import (
 
 logger = logging.getLogger(__name__)
 
+_ANYTHING_ELSE_QUICK_REPLIES = [
+    {"label": "Yes", "value": "show menu", "url": "/static/menu.html"},
+    {"label": "No", "value": "no"},
+]
+
 
 # -----------------------------------------------------------------------------
 # State Machine Wrapper
@@ -166,7 +171,20 @@ def process_message_with_state_machine(
         result.is_complete,
     )
 
+    result = _inject_anything_else_quick_replies(result)
     return result.message, updated_dict, actions, result.quick_replies
+
+
+def _inject_anything_else_quick_replies(result: StateMachineResult) -> StateMachineResult:
+    """Append 'Yes? No?' quick-reply buttons to messages ending with 'Anything else?'."""
+    if result.quick_replies:
+        return result
+    msg = result.message.rstrip()
+    if not msg.endswith("Anything else?"):
+        return result
+    result.message = msg[:-len("Anything else?")] + "Anything else? Yes? No?"
+    result.quick_replies = _ANYTHING_ELSE_QUICK_REPLIES
+    return result
 
 
 def _infer_actions_from_result(

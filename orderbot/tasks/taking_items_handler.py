@@ -433,6 +433,21 @@ class TakingItemsHandler(MenuDataMixin):
         if parsed.done_ordering:
             return self.checkout_utils_handler.transition_to_checkout(order)
 
+        # Check if user specified order type upfront (e.g., "I'd like to place a pickup order")
+        # Must run early, before item search handlers interpret "pickup order" as an item.
+        if parsed.order_type:
+            order.delivery_method.order_type = parsed.order_type
+            logger.info("Order type set from upfront mention: %s", parsed.order_type)
+            order_type_display = "pickup" if parsed.order_type == "pickup" else "delivery"
+            has_items = bool(parsed.parsed_items)
+            if not has_items:
+                return StateMachineResult(
+                    message=f"Great, I'll set this up for {order_type_display}. What can I get for you? Do you want to see the menu?",
+                    order=order,
+                    quick_replies=[{"label": "menu", "value": "show menu", "url": "/static/menu.html"}],
+                )
+            # If they also ordered items, continue processing below
+
         # Handle cart item reference duplication ("more chips", "another bag of chips")
         # This must run BEFORE wants_more_menu_items to catch cart references first
         result = self.duplicate_handler.handle_duplicate_by_reference(parsed, order)
@@ -505,22 +520,6 @@ class TakingItemsHandler(MenuDataMixin):
         )
         if result:
             return result
-
-        # Check if user specified order type upfront (e.g., "I'd like to place a pickup order")
-        if parsed.order_type:
-            order.delivery_method.order_type = parsed.order_type
-            logger.info("Order type set from upfront mention: %s", parsed.order_type)
-            order_type_display = "pickup" if parsed.order_type == "pickup" else "delivery"
-            # Check if they also ordered items in the same message
-            has_items = bool(parsed.parsed_items)
-            if not has_items:
-                # Just the order type, no items yet - acknowledge and ask what they want
-                return StateMachineResult(
-                    message=f"Great, I'll set this up for {order_type_display}. What can I get for you? Do you want to see the menu?",
-                    order=order,
-                    quick_replies=[{"label": "menu", "value": "show menu", "url": "/static/menu.html"}],
-                )
-            # If they also ordered items, continue processing below
 
         # Capture unsupported dining option for acknowledgment
         dining_option = parsed.unsupported_dining_option

@@ -222,8 +222,10 @@ def _attach_amount_qualifiers(parsed_item: ParsedItemEntry, text_lower: str) -> 
             for i in range(len(words)):
                 suffix = " ".join(words[i:])
                 # Amount qualifiers come BEFORE the modifier: "extra milk", "lots of milk"
-                # Allow optional filler words between qualifier and modifier
-                combined = rf'\b{re.escape(pattern)}\s+(?:\w+\s+)*?{re.escape(suffix)}\b'
+                # Allow optional filler words between qualifier and modifier,
+                # but stop at item boundaries ("and", commas) to prevent bleeding
+                # across conjunctions (e.g., "extra jelly and roast beef")
+                combined = rf'\b{re.escape(pattern)}\s+(?:(?!(?:\band\b|,))\w+\s+)*?{re.escape(suffix)}\b'
                 if re.search(combined, text_lower):
                     matched = True
                     break

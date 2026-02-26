@@ -5,7 +5,7 @@ TIME: 2025-12-30 14:42:35
 
 CONVERSATION:
 ----------------------------------------------------------------------
-BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+BOT:    Hi, welcome to Borough Bagels - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: western omelette
 BOT:    Would you like a bagel or fruit salad with your Western Omelette?

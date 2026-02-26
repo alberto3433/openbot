@@ -2,7 +2,7 @@
 Add Missing Menu Items to Database
 ===================================
 This script adds all missing menu items identified in the menu discrepancy report.
-Prices are based on current 2024/2025 Zucker's pricing from MenuPages/Grubhub.
+Prices are based on current 2024/2025 Borough Bagels pricing from MenuPages/Grubhub.
 """
 
 from dotenv import load_dotenv

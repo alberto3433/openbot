@@ -63,11 +63,11 @@ import random
 # Orders, inventory (86'd items), and analytics are tracked per-store.
 
 # Default store IDs used when no specific store is requested
-# These are Zucker's NYC locations used as defaults
+# These are Borough Bagels NYC locations used as defaults
 DEFAULT_STORE_IDS: list[str] = [
-    "zuckers_tribeca",
-    "zuckers_grandcentral",
-    "zuckers_bryantpark",
+    "borough_tribeca",
+    "borough_grandcentral",
+    "borough_bryantpark",
 ]
 
 def get_random_store_id() -> str:
@@ -173,7 +173,7 @@ STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 # Base URL of the application (used for Stripe success/cancel redirect URLs)
-# Example: "https://order.zuckersbagels.com" or "http://localhost:8000" for dev
+# Example: "https://order.boroughbagels.com" or "http://localhost:8000" for dev
 BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
 
 # =============================================================================

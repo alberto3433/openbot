@@ -1,5 +1,5 @@
 """
-Add Zucker's Omelette modifiers to the database.
+Add Borough Bagels Omelette modifiers to the database.
 
 This script adds:
 - Omelette item type with is_configurable=True
@@ -201,7 +201,7 @@ def populate_omelette_modifiers(db: Session):
         max_selections=5,
         display_order=4,
     )
-    # Based on Zucker's signature omelettes and available fillings
+    # Based on Borough Bagels signature omelettes and available fillings
     filling_options = [
         # Cheese options
         ("american_cheese", "American Cheese", 0.0, True),
@@ -256,7 +256,7 @@ def populate_omelette_modifiers(db: Session):
 
 
 def main():
-    print("Adding Zucker's Omelette modifiers...")
+    print("Adding Borough Bagels Omelette modifiers...")
     print(f"Database: {os.getenv('DATABASE_URL', 'Not set')[:50]}...")
 
     db = SessionLocal()

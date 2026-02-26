@@ -23,7 +23,7 @@
       "WebSearch",
       "WebFetch(domain:docs.vapi.ai)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:www.zuckersbagels.com)"
+      "WebFetch(domain:www.boroughbagels.com)"
     ]
   },
   "hooks": {

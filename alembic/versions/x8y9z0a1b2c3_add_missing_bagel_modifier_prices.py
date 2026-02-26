@@ -12,7 +12,7 @@ This migration adds pricing for bagel modifiers that were missing from attribute
 - Red Pepper (topping) - $0.50
 - Lettuce (topping) - $0.00
 
-Prices sourced from Zucker's Bagels menu (https://www.menuxp.com/zuckers-bagels-menu)
+Prices sourced from Borough Bagels menu (https://www.menuxp.com/borough-bagels-menu)
 """
 
 from typing import Sequence, Union

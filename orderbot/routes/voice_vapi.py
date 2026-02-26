@@ -115,7 +115,7 @@ def _parse_vapi_request(data: dict) -> tuple[list, bool, dict, str, str]:
 
     store_id = data.get("metadata", {}).get("store_id")
     if not store_id:
-        store_id = "zuckers_tribeca"
+        store_id = "borough_tribeca"
         logger.info("Defaulting VAPI call to Tribeca store")
 
     return messages, stream, call_info, phone_number, store_id
@@ -395,7 +395,7 @@ async def vapi_webhook(
 
         # Get company/store info for greeting
         company = get_company(db)
-        store_name = company.name if company else "Zucker's Bagels"
+        store_name = company.name if company else "Borough Bagels"
         bot_name = company.bot_persona_name if company else "Zara"
 
         # Generate personalized greeting

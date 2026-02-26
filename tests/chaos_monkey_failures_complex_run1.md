@@ -53,7 +53,7 @@ Bot: Got it, for the Whole Wheat Bagel. Which jelly? Strawberry Jelly or Grape J
 - Complex order: Chipotle Cream Cheese Sandwich
 - Complex order: Chipotle Cream Cheese Sandwich
 - Complex order: Tuna Salad Sandwich
-- Complex order: The Max Zucker
+- Complex order: The Max Borough
 - Complex order: Tofu Spread Sandwich
 - Complex order: Lemon Blueberry Cream Cheese Sandwich
 - Complex order: The Health Nut Omelette

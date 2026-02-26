@@ -8,7 +8,7 @@ FAILED: 6/30
 Results:
   [PASS] The Classic Speed Menu -> 51_the_classic.txt
   [PASS] The Traditional -> 52_the_traditional.txt
-  [PASS] The Max Zucker -> 53_max_zucker.txt
+  [PASS] The Max Borough -> 53_max_borough.txt
   [PASS] The Chelsea Club -> 54_chelsea_club.txt
   [PASS] The Flatiron Traditional -> 55_flatiron.txt
   [PASS] Two Plain Bagels -> 56_two_bagels.txt

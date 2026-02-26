@@ -95,7 +95,7 @@ class OrderModificationHandler:
             order.set_phase(OrderPhase.CHECKOUT_CONFIRM)
             summary = self._message_builder.build_order_summary(order)
             return StateMachineResult(
-                message=f"Changed to pickup. {summary} Does that look right?",
+                message=f"Changed to pickup. {summary} Does that look right? Anything else?",
                 order=order,
             )
 

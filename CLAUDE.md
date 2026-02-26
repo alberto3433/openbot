@@ -19,7 +19,7 @@
 
 ## Project Overview
 
-This is an AI-powered ordering chatbot for a bagel shop (Zucker's Bagels). The system handles natural language order processing with full customization.
+This is an AI-powered ordering chatbot for a bagel shop (Borough Bagels). The system handles natural language order processing with full customization.
 
 See @README.md for project overview
 See @docs/architecture.md for system architecture

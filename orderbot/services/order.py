@@ -305,8 +305,8 @@ def build_email_kwargs_from_order(db: Session, order: Order) -> dict:
     from .store_service import get_company
     from ..db.models import Store
 
-    # Prefer specific Store.name (e.g., "Zucker's - East Brunswick")
-    # over Company.name (e.g., "Zucker's Bagels")
+    # Prefer specific Store.name (e.g., "Borough Bagels - East Brunswick")
+    # over Company.name (e.g., "Borough Bagels")
     store_name = None
     if order.store_id:
         store = db.query(Store).filter(Store.store_id == order.store_id).first()

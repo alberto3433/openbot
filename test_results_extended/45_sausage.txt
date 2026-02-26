@@ -5,7 +5,7 @@ TIME: 2025-12-30 17:09:38
 
 CONVERSATION:
 ----------------------------------------------------------------------
-BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+BOT:    Hi, welcome to Borough Bagels - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: side of sausage
 BOT:    I've added Side of Sausage to your order. Anything else?

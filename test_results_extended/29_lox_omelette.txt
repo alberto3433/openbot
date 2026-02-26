@@ -5,7 +5,7 @@ TIME: 2025-12-30 17:01:20
 
 CONVERSATION:
 ----------------------------------------------------------------------
-BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+BOT:    Hi, welcome to Borough Bagels - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: lox and onion omelette
 BOT:    I'm sorry, we don't have Lox and Onion Omelette. Would you like to hear what bagels we have?

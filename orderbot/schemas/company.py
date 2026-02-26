@@ -76,7 +76,7 @@ class CompanyOut(OrmModel):
 
     Attributes:
         id: Database primary key
-        name: Company/brand name (e.g., "Zucker's Bagels")
+        name: Company/brand name (e.g., "Borough Bagels")
         bot_persona_name: Name the chatbot uses (e.g., "Ziggy")
         tagline: Company tagline/slogan
         headquarters_address: Corporate address
@@ -194,8 +194,8 @@ class CompanyUpdate(BaseModel):
         # Update contact info
         {
             "corporate_phone": "212-555-0000",
-            "corporate_email": "hello@zuckers.com",
-            "website": "https://zuckersbagels.com"
+            "corporate_email": "hello@boroughbagels.com",
+            "website": "https://boroughbagels.com"
         }
 
         # Update payment methods

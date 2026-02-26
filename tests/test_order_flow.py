@@ -40,7 +40,7 @@ class TestGreetingHandler:
             result = sm._handle_greeting("hello", order)
 
             assert "welcome" in result.message.lower()
-            assert "zucker" in result.message.lower()
+            assert "borough" in result.message.lower()
 
     def test_unclear_input_returns_welcome(self):
         """Test that unclear input returns welcome message."""

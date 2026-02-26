@@ -85,7 +85,7 @@ App Runner doesn't include a database. Choose one of these options:
 
 5. **Environment variables:**
    ```
-   DATABASE_URL=postgresql://user:password@host:5432/zuckers_db
+   DATABASE_URL=postgresql://user:password@host:5432/borough_db
    VAPI_API_KEY=your-vapi-key
    OPENAI_API_KEY=your-openai-key
    # Add other env vars from your .env file

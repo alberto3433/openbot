@@ -386,13 +386,13 @@ class TestStoreInfoInquiries:
         sm.store_info_handler.set_context(OrderContext(store_info={
             "all_stores": [
                 {
-                    "store_id": "s1", "name": "Zucker's - East Brunswick",
+                    "store_id": "s1", "name": "Borough - East Brunswick",
                     "hours": {"monday": [{"open": "07:00", "close": "21:00"}]},
                     "hours_display": "Mon 7:00 AM - 9:00 PM",
                     "status": "open",
                 },
                 {
-                    "store_id": "s2", "name": "Zucker's - Downtown",
+                    "store_id": "s2", "name": "Borough - Downtown",
                     "hours": {"monday": [{"open": "06:00", "close": "22:00"}]},
                     "hours_display": "Mon 6:00 AM - 10:00 PM",
                     "status": "open",
@@ -978,7 +978,7 @@ class TestItemDescriptionInquiry:
         assert "corned beef" in result.message.lower() or "pastrami" in result.message.lower()
 
     def test_traditional_sandwich_description(self):
-        """Test the traditional (zucker's) sandwich description."""
+        """Test the traditional (borough) sandwich description."""
         from orderbot.tasks.state_machine import OrderStateMachine
         from orderbot.tasks.models import OrderTask
 

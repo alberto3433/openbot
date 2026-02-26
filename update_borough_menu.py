@@ -1,5 +1,5 @@
 """
-Update Zucker's menu from CSV file.
+Update Borough Bagels menu from CSV file.
 Handles items with Small/Large variants by creating configurable item types.
 
 Requires DATABASE_URL environment variable to be set to a PostgreSQL connection URL.
@@ -21,7 +21,7 @@ DB_URL = os.environ.get("DATABASE_URL")
 if not DB_URL:
     raise ValueError("DATABASE_URL environment variable is required")
 
-CSV_PATH = r"C:\Users\alber\Downloads\zuckers_menu_items_complete_v3.csv"
+CSV_PATH = r"C:\Users\alber\Downloads\borough_menu_items_complete_v3.csv"
 
 
 def parse_csv(csv_path):
@@ -151,7 +151,7 @@ def clear_existing_menu(session):
 
 
 def create_item_types(session):
-    """Create item types for Zucker's menu."""
+    """Create item types for Borough Bagels menu."""
     item_types = {}
 
     # Create a configurable "sized_beverage" type for drinks with Small/Large options
@@ -298,7 +298,7 @@ def add_menu_items(session, size_items, regular_items, item_types):
 
 
 def main():
-    print("Updating Zucker's menu from CSV...")
+    print("Updating Borough Bagels menu from CSV...")
     print(f"CSV file: {CSV_PATH}\n")
 
     # Parse CSV
@@ -333,7 +333,7 @@ def main():
         add_menu_items(session, size_items, regular_items, item_types)
 
         print("\n" + "="*50)
-        print("Zucker's menu updated successfully!")
+        print("Borough Bagels menu updated successfully!")
         print("="*50)
 
     except Exception as e:

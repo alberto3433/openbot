@@ -49,7 +49,7 @@ class TestGetSodaTypes:
         """get_item_names('soda') should not include items not in the database."""
         from orderbot.cache import menu_cache
         soda_types = menu_cache.get_item_names("soda")
-        # These are not in the Zucker's menu
+        # These are not in the Borough menu
         assert "pepsi" not in soda_types
         assert "mountain dew" not in soda_types
         assert "fanta" not in soda_types

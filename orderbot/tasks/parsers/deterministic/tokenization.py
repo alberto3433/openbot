@@ -14,7 +14,10 @@ import logging
 
 from orderbot.cache import menu_cache
 
-from ..quantity_utils import extract_leading_quantity as _extract_leading_quantity
+from ..quantity_utils import (
+    extract_leading_quantity as _extract_leading_quantity,
+    strip_quantity_modifier_prefix,
+)
 from ...utils.text import normalize_text
 
 from .item_indicator import (
@@ -230,14 +233,17 @@ def _reattach_boolean_attributes(parts: list[str]) -> list[str]:
 
 
 def _try_split_on_with_article(text_lower: str) -> list["Token"] | None:
-    """Try to split on a second 'with [article] [item]' that introduces a new item.
+    """Try to split on 'with [article] [item]' that introduces a new item.
 
     Handles patterns where two items are connected by "with" instead of "and":
       "onion bagel with cream cheese toasted with an earl gray tea"
       -> ["onion bagel with cream cheese toasted", "earl gray tea"]
 
-    Only splits when a second (or later) 'with' is followed by an article
-    (a/an/the) and the text after the article is a recognized menu item.
+    Two modes:
+    1. Article mode: 'with' followed by a/an/the + recognized item.
+    2. No-article mode: 'with' followed by a recognized menu item that is
+       NOT a known modifier (e.g., "rb prime with side of sausage").
+
     The first part must also contain a recognized item.
 
     Returns list of tokens if split succeeded, None otherwise.
@@ -272,7 +278,64 @@ def _try_split_on_with_article(text_lower: str) -> list["Token"] | None:
                 break
 
         if not article_len:
-            continue
+            # No article — still split if the after-with text is a recognized
+            # menu item and NOT a known modifier.  Handles patterns like
+            # "rb prime with side of sausage" where "side of sausage" is a
+            # menu item without an article prefix.
+            has_next_na, next_type_na, next_resolved_na = _has_item_indicator(after_with)
+            if not has_next_na:
+                continue
+
+            # Check if after-with text IS or STARTS WITH a known modifier.
+            # Also strip leading quantity modifiers ("extra", "double", etc.)
+            # so that "extra cream cheese" → "cream cheese" is recognized.
+            # Prefix check handles "cream cheese toasted" where only the
+            # beginning is a modifier.
+            stripped_na = strip_quantity_modifier_prefix(after_with)
+            words_na = stripped_na.split()
+            modifier_found = menu_cache.is_known_modifier(stripped_na)
+            if not modifier_found:
+                for i in range(len(words_na) - 1, 0, -1):
+                    candidate = " ".join(words_na[:i])
+                    if menu_cache.is_known_modifier(candidate):
+                        modifier_found = True
+                        break
+            if modifier_found:
+                logger.debug(
+                    "Skipping 'with [item]' split - modifier detected: '%s'",
+                    after_with[:40],
+                )
+                continue
+
+            first_part = text_lower[:pos].strip()
+            has_first_na, first_type_na, first_resolved_na = _has_item_indicator(first_part)
+            if not has_first_na:
+                continue
+
+            qty1, _ = _extract_leading_quantity(first_part)
+            qty2, _ = _extract_leading_quantity(after_with)
+
+            logger.info(
+                "Split on 'with [item]' (no article): '%s' + '%s'",
+                first_part[:40], after_with[:40],
+            )
+
+            return [
+                Token(
+                    original=first_part,
+                    token_type="item",
+                    quantity=qty1 or 1,
+                    item_type=first_type_na,
+                    resolved_name=first_resolved_na,
+                ),
+                Token(
+                    original=after_with,
+                    token_type="item",
+                    quantity=qty2 or 1,
+                    item_type=next_type_na,
+                    resolved_name=next_resolved_na,
+                ),
+            ]
 
         after_article = after_with[article_len:].strip()
         if not after_article:

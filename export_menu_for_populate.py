@@ -1,5 +1,5 @@
 """
-Export current menu items from the database to update populate_zuckers_menu.py.
+Export current menu items from the database to update populate_borough_menu.py.
 
 This script reads all menu items from the Neon database and outputs them
 in the format needed for the populate script.

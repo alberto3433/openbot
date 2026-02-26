@@ -13,7 +13,7 @@ Usage:
     python run_tenant.py sammys
 
     # Run with custom port
-    python run_tenant.py zuckers --port 8006
+    python run_tenant.py borough --port 8006
 
     # Run with reload for development
     python run_tenant.py sammys --reload

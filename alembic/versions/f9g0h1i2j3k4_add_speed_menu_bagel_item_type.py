@@ -24,7 +24,7 @@ SPEED_MENU_BAGEL_ITEMS = [
     'The Avocado Toast',
     'The Chelsea Club',
     'The Flatiron Traditional',
-    'The Max Zucker',
+    'The Max Borough',
     'The Old School Tuna Sandwich',
     'The Traditional',
 ]

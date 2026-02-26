@@ -52,17 +52,17 @@ SPEED_MENU_ALIASES = {
         "egg and ham and cheese, egg ham cheese"
     ),
 
-    # The Zucker's Traditional - nova, cream cheese, capers, onion
-    "The Zucker's Traditional": (
-        "the traditional, traditional, the zucker's traditional, "
-        "zucker's traditional, zuckers traditional, the zuckers traditional"
+    # The Borough Traditional - nova, cream cheese, capers, onion
+    "The Borough Traditional": (
+        "the traditional, traditional, the borough traditional, "
+        "borough traditional, borough traditional, the borough traditional"
     ),
 
     # The Leo - nova, cream cheese, tomato, onion, capers, scrambled eggs
     "The Leo": "the leo, leo",
 
-    # The Max Zucker - eggs, pastrami, swiss, mustard
-    "The Max Zucker": "the max zucker, max zucker",
+    # The Max Borough - eggs, pastrami, swiss, mustard
+    "The Max Borough": "the max borough, max borough",
 
     # The Avocado Toast
     "The Avocado Toast": "the avocado toast, avocado toast",

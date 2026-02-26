@@ -42,7 +42,7 @@ DEFAULT_ATTRS = {
     'is_vegetarian': False,
     'is_gluten_free': True,  # Most items are GF except bread/bagels
     'is_dairy_free': True,
-    'is_kosher': True,  # Zucker's is kosher
+    'is_kosher': True,  # Borough Bagels is kosher
     'contains_eggs': False,
     'contains_fish': False,
     'contains_sesame': False,

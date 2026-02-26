@@ -399,9 +399,9 @@ def build_company_info(db: Session) -> dict[str, Any]:
     Returns:
         Dict with company contact information.
         Example: {
-            "corporate_email": "zuckersbagelsnyc@gmail.com",
+            "corporate_email": "hello@boroughbagels.com",
             "corporate_phone": "212-555-0000",
-            "instagram_handle": "@zuckersbagels",
+            "instagram_handle": "@boroughbagels",
             "feedback_form_url": "https://survey.example.com/feedback"
         }
     """

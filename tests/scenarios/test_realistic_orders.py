@@ -1,8 +1,8 @@
 """
-Realistic Order Scenarios for Zucker's Bagels.
+Realistic Order Scenarios for Borough Bagels.
 
 These 25 tests simulate common real-world ordering patterns that customers
-would use at Zucker's. They are designed to be somewhat challenging but realistic.
+would use at Borough. They are designed to be somewhat challenging but realistic.
 
 To run these tests:
     pytest tests/scenarios/test_realistic_orders.py -v
@@ -17,7 +17,7 @@ from orderbot.tasks.schemas import OrderPhase
 
 class TestRealisticOrderScenarios:
     """
-    25 realistic ordering scenarios at Zucker's Bagels.
+    25 realistic ordering scenarios at Borough Bagels.
 
     These tests simulate common customer ordering patterns including:
     - Multi-item orders

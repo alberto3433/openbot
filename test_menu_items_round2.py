@@ -11,7 +11,7 @@ import os
 from datetime import datetime
 
 BASE_URL = 'http://localhost:8000'
-STORE_ID = 'zuckers_tribeca'
+STORE_ID = 'borough_tribeca'
 OUTPUT_DIR = 'test_results_round2'
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -235,10 +235,10 @@ TEST_CASES = [
         ]
     },
     {
-        'name': 'The Max Zucker',
-        'filename': '53_max_zucker.txt',
+        'name': 'The Max Borough',
+        'filename': '53_max_borough.txt',
         'messages': [
-            'max zucker sandwich',
+            'max borough sandwich',
             'toasted please',
             'thats all',
             'pickup',
@@ -247,7 +247,7 @@ TEST_CASES = [
             'text'
         ],
         'expected_items': [
-            {'name': 'Max Zucker', 'type': 'signature_item'}
+            {'name': 'Max Borough', 'type': 'signature_item'}
         ]
     },
     {

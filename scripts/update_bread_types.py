@@ -1,5 +1,5 @@
 """
-Update bread/bagel types based on Zucker's menu image.
+Update bread/bagel types based on Borough Bagels menu image.
 
 This script:
 1. Adds missing bread/bagel ingredients to ingredients table

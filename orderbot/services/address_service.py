@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 
 # User agent (required by Nominatim TOS)
-USER_AGENT = "ZuckersOrderBot/1.0 (delivery address validation)"
+USER_AGENT = "BoroughOrderBot/1.0 (delivery address validation)"
 
 # Request timeout in seconds
 REQUEST_TIMEOUT = HTTP_REQUEST_TIMEOUT

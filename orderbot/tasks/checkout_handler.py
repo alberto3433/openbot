@@ -241,7 +241,7 @@ class CheckoutHandler(BaseStateHandler):
         # Phone already known — go to confirmation
         summary = self.message_builder.build_order_summary(order)
         return StateMachineResult(
-            message=f"{summary}\n\nDoes that look right?",
+            message=f"{summary}\n\nDoes that look right? Anything else?",
             order=order,
             quick_replies=CONFIRM_QUICK_REPLIES,
         )
@@ -275,7 +275,7 @@ class CheckoutHandler(BaseStateHandler):
         # After phone, go to confirmation
         summary = self.message_builder.build_order_summary(order)
         return StateMachineResult(
-            message=f"{summary}\n\nDoes that look right?",
+            message=f"{summary}\n\nDoes that look right? Anything else?",
             order=order,
             quick_replies=CONFIRM_QUICK_REPLIES,
         )
@@ -351,7 +351,7 @@ class CheckoutHandler(BaseStateHandler):
         summary = self.message_builder.build_order_summary(order)
 
         return StateMachineResult(
-            message=f"Sure, that's {target_qty} total.\n\n{summary}\n\nDoes that look right?",
+            message=f"Sure, that's {target_qty} total.\n\n{summary}\n\nDoes that look right? Anything else?",
             order=order,
             quick_replies=CONFIRM_QUICK_REPLIES,
         )
@@ -412,7 +412,7 @@ class CheckoutHandler(BaseStateHandler):
                     summary = self.message_builder.build_order_summary(result.order)
                     logger.info("CONFIRMATION: Built summary, items count = %d", len(result.order.items.items))
                     return StateMachineResult(
-                        message=f"{summary}\n\nDoes that look right?",
+                        message=f"{summary}\n\nDoes that look right? Anything else?",
                         order=result.order,
                         quick_replies=CONFIRM_QUICK_REPLIES,
                     )
@@ -478,7 +478,7 @@ class CheckoutHandler(BaseStateHandler):
 
         # "Pay in store" patterns
         in_store_patterns = [
-            "in store", "in-store", "in person", "at the store",
+            "in store", "in-store", "in the store", "in person", "at the store",
             "at pickup", "at the counter", "when i get there",
             "pay later", "pay there", "pay when",
         ]

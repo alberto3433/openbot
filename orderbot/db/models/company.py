@@ -98,7 +98,7 @@ class Company(Base):
     website = Column(String, nullable=True)
 
     # Social media & feedbackt
-    instagram_handle = Column(String, nullable=True)  # e.g., "@zuckersbagels"
+    instagram_handle = Column(String, nullable=True)  # e.g., "@boroughbagels"
     feedback_form_url = Column(String, nullable=True)  # URL to customer feedback form
 
     # Branding

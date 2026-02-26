@@ -56,7 +56,7 @@ User: Everything Bagel
 - Complex order: The Flatiron Traditional
 - Complex order: Kalamata Olive Feta Cream Cheese Sandwich
 - Complex order: The Latke BEC
-- Complex order: The Max Zucker
+- Complex order: The Max Borough
 - Complex order: Plain Cream Cheese Sandwich
 
 ## Item Recognition (8 failures, 1 distinct patterns)

@@ -25,7 +25,7 @@ depends_on = None
 
 # Dietary defaults by item type slug
 # Key rationale:
-# - is_kosher = TRUE for all (Zucker's is kosher certified)
+# - is_kosher = TRUE for all (Borough Bagels is kosher certified)
 # - Espresso/coffee drinks: Vegetarian but not vegan (default has dairy milk)
 # - Plain espresso: Vegan (no milk in default config)
 # - Pastries: Assume contain eggs/butter (not vegan, not dairy-free, not gluten-free)

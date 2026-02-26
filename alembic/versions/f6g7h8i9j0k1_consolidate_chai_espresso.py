@@ -17,8 +17,8 @@ Pricing analysis:
 - Triple Espresso: $4.50 estimated (+$1.00 over single)
 
 Sources:
-- Zucker's Bagels SinglePlatform menu: http://places.singleplatform.com/the-zuckers-bagels-and-smoked-fish/menu
-- MenuXP: https://www.menuxp.com/zuckers-bagels-menu
+- Borough Bagels SinglePlatform menu: http://places.singleplatform.com/the-borough-bagels-and-smoked-fish/menu
+- MenuXP: https://www.menuxp.com/borough-bagels-menu
 """
 
 from typing import Sequence, Union

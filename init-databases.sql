@@ -3,9 +3,9 @@
 
 CREATE DATABASE sammys_db;
 CREATE DATABASE tonys_db;
-CREATE DATABASE zuckers_db;
+CREATE DATABASE borough_db;
 
 -- Grant privileges
 GRANT ALL PRIVILEGES ON DATABASE sammys_db TO orderbot;
 GRANT ALL PRIVILEGES ON DATABASE tonys_db TO orderbot;
-GRANT ALL PRIVILEGES ON DATABASE zuckers_db TO orderbot;
+GRANT ALL PRIVILEGES ON DATABASE borough_db TO orderbot;

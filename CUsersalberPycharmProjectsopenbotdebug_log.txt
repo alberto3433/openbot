@@ -1,0 +1,63 @@
+orderbot.cache.loaders.core - Loading menu data cache...
+orderbot.cache.provider - Bulk loaded all tables in 3.09s: 25 global_attrs, 41 item_types, 308 menu_items, 206 ingredients
+orderbot.cache.loaders.menu_items - Loaded 465 known menu items with 465 alias mappings (from bulk)
+orderbot.cache.loaders.menu_items - Loaded 272 aliases for items with default ingredients (from bulk)
+orderbot.cache.loaders.ingredients - Loaded 315 modifier aliases (from bulk)
+orderbot.cache.loaders.menu_items - Loaded 0 side item aliases (from bulk)
+orderbot.cache.loaders.item_type_config - Loaded 75 category keywords, 41 item type displays (from bulk)
+orderbot.cache.loaders.patterns - Loaded 0 abbreviations (from bulk)
+orderbot.cache.loaders.item_type_config - Loaded item type fields for 41 item types (from bulk)
+orderbot.cache.loaders.patterns - Loaded response patterns (from bulk): 7 types
+orderbot.cache.loaders.ingredients - Loaded 53 modifier qualifiers (from bulk)
+orderbot.cache.loaders.item_type_global_attrs - Loaded global attribute options (from bulk) for 25 attributes, 11 modifier categories
+orderbot.cache.loaders.item_type_global_attrs - Loaded 0 global attribute aliases (from bulk)
+orderbot.cache.loaders.item_type_config - Loaded item type metadata (from bulk): 41 modifier_categories, 657 keywords
+orderbot.cache.provider - Building menu index (this may take a moment)...
+orderbot.cache.provider - Menu index built in 1.9 seconds with 206 total items
+orderbot.cache.loaders.menu_items - Built prefix index: 124 prefixes, 285 total items
+orderbot.cache.loaders.patterns - Loaded 17 compound phrases (from bulk)
+orderbot.cache.loaders.item_type_config - Loaded item type triggers (from bulk): {'bagel_package': 20, 'flagel': 2, 'bialy': 2, 'breakfast': 8, 'juice': 18, 'water': 14, 'smoothie': 6, 'kombucha': 4, 'energy_drink': 14, 'bottled_tea': 21, 'other_bottled': 10, 'snack': 2, 'beverage': 2, 'side': 47, 'healthy_sandwich': 10, 'espresso_based_beverage': 28, 'coffee_based_beverage': 13, 'espresso': 5, 'tea': 5, 'soda': 46, 'iced_tea': 3, 'chai_drink': 7, 'cocoa_based_beverage': 6, 'chips': 23, 'candy': 10, 'bagel': 4, 'egg_sandwich': 53, 'fish_sandwich': 50, 'spread_sandwich': 92, 'deli_sandwich': 53, 'cheese_sandwich': 32, 'omelette': 38, 'pastry': 58, 'fruit_salad': 4, 'soup': 8, 'salad': 9, 'fish': 28, 'cheese': 14, 'cold_cut': 15, 'spread': 28, 'flatz': 2}
+orderbot.cache.loaders.item_type_config - Loaded 25 configurable item type slugs (from bulk): {'tea', 'espresso_based_beverage', 'spread', 'coffee_based_beverage', 'cocoa_based_beverage', 'healthy_sandwich', 'espresso', 'spread_sandwich', 'fish_sandwich', 'cold_cut', 'flagel', 'bagel', 'flatz', 'deli_sandwich', 'bagel_package', 'omelette', 'iced_tea', 'egg_sandwich', 'cheese_sandwich', 'chai_drink', 'fish', 'bialy', 'salad', 'cheese', 'fruit_salad'}
+orderbot.cache.loaders.menu_items - Loaded 157 items with required_match_phrases (from bulk)
+orderbot.cache.loaders.menu_items - Loaded items by unit_type (from bulk): {'each': 263, 'pack': 5, 'dozen': 1, 'by_weight': 39}
+orderbot.cache.loaders.menu_items - Loaded generic item names (from bulk) for 39 item types
+orderbot.cache.loaders.ingredients - Loaded generic ingredients (from bulk) for 11 categories
+orderbot.cache.loaders.ingredients - Loaded ingredients for 18 item types (from bulk via global attributes)
+orderbot.cache.loaders.ingredients - Loaded ingredient category metadata (from bulk): 11 configs, 1 name-forming
+orderbot.cache.loaders.ingredients - Loaded modifier categories (from bulk): 11 categories, 22 aliases
+orderbot.cache.loaders.menu_items - Loaded default ingredients for 107 menu items (from bulk)
+orderbot.cache.loaders.menu_items - Loaded dietary data for 547 menu items (from bulk): {'is_vegan': 87, 'is_vegetarian': 203, 'is_gluten_free': 109, 'is_dairy_free': 125, 'is_kosher': 245, 'eggs_free': 117, 'fish_free': 141, 'sesame_free': 138, 'nuts_free': 150}
+orderbot.cache.loaders.item_type_components - Loaded component slots for 1 item types: ['omelette']
+orderbot.cache.loaders.item_type_global_attrs - Loaded priced attributes (from bulk) for 18 item types
+orderbot.cache.loaders.menu_items - Pre-loaded 302 resolved item prices (from bulk)
+orderbot.cache.loaders.ingredients - Loaded price contexts (from bulk) for 282 ingredients
+orderbot.cache.loaders.item_type_global_attrs - Pre-loaded attributes for 41 item types (from bulk), 24 attr->type mappings
+orderbot.cache.loaders.item_type_global_attrs - Built option alias -> item type mapping with 40 entries
+orderbot.cache.loaders.item_type_suggestions - Loaded 5 option skip rules from bulk: {'black': ['milk_sweetener_syrup'], 'shot': ['decaf'], 'true': ['shots'], 'fruit_salad': ['bagel'], 'assorted': ['package_contents']}
+orderbot.cache.loaders.item_type_suggestions - Loaded unrecognized option suggestions: 1 attributes, 16 total patterns
+orderbot.cache.loaders.item_type_suggestions - Loaded unrecognized ingredient suggestions: 11 patterns
+orderbot.cache.loaders.item_type_suggestions - Loaded 23 menu display groups: ['juice', 'breads', 'sandwiches', 'water', 'smoothie', 'omelettes', 'drinks', 'kombucha', 'energy_drink', 'pastries', 'sides', 'bottled_tea', 'other_bottled', 'food_by_pound', 'breakfast', 'snacks', 'soda', 'coffee', 'tea', 'hot_chocolate', 'bottled_drinks', 'chips', 'candy']
+orderbot.cache.loaders.item_type_suggestions - Item types by display group: {'breads': 5, 'breakfast': 1, 'juice': 1, 'water': 1, 'smoothie': 1, 'kombucha': 1, 'energy_drink': 1, 'bottled_tea': 1, 'other_bottled': 1, 'snacks': 1, 'bottled_drinks': 1, 'sides': 4, 'sandwiches': 6, 'coffee': 3, 'tea': 3, 'soda': 1, 'hot_chocolate': 1, 'chips': 1, 'candy': 1, 'omelettes': 1, 'pastries': 1, 'food_by_pound': 4}
+orderbot.cache.loaders.item_type_suggestions - Loaded 96 display group aliases, 14 parent-child relationships
+orderbot.cache.provider - Loaded 16 attribute inquiry keywords
+orderbot.cache.base - Built keyword indices: 318 menu keywords
+orderbot.cache.loaders.menu_items - Loaded recommendation search data (from bulk): 547 items, 363 keywords
+orderbot.cache.loaders.core - Menu data cache loaded: 465 menu_items, 0 signature_item_aliases, 0 abbreviations, 39 item_types, 11 ingredient_categories, 308 unit_type_items
+orderbot.tasks.parsers.deterministic.core - Potential multi-item detected, trying multi-item parse: tofu spread sandwich scooped with extra basil mayo
+orderbot.tasks.parsers.deterministic.multi_item_pipeline - Multi-item: skipping split - 'and a [qualifier] [modifier]' pattern: 'tofu spread sandwich scooped with extra basil mayo and a lit'
+orderbot.tasks.parsers.deterministic.core - Multi-item parse failed, trying configurable item: tofu spread sandwich scooped with extra basil mayo
+orderbot.tasks.parsers.deterministic.core - Trying configurable item pattern: tofu spread sandwich scooped with extra basil mayo
+orderbot.tasks.parsers.deterministic.configurable_item_parsing - CONFIGURABLE_ITEM: excluded by required_match_phrases: 'tofu spread sandwich scooped with extra basil mayo'
+orderbot.tasks.parsers.deterministic.multi_item_pipeline - Multi-item: skipping split - 'and a [qualifier] [modifier]' pattern: 'tofu spread sandwich scooped with extra basil mayo and a lit'
+orderbot.tasks.parsers.deterministic.configurable_item_parsing - CONFIGURABLE_ITEM: excluded by required_match_phrases: 'tofu spread sandwich scooped with extra basil mayo'
+orderbot.tasks.parsers.deterministic.extraction - Extracted boolean attribute: scooped = True
+orderbot.tasks.parsers.deterministic.attribute_matching - CHECKING CANDIDATE: slug=red_onion, attr=toppings, is_available=True, option_keys=['slug', 'display_name', 'price_modifier', 'is_default', 'is_available', 'aliases', 'must_match', 'ingredient_category', 'ingredient_subcategory', 'forward_to_attribute']
+orderbot.tasks.parsers.deterministic.attribute_matching - Extracted attribute value: 'red onion' -> 'red_onion' (qty=1, attr=toppings)
+orderbot.tasks.parsers.deterministic.attribute_matching - CHECKING CANDIDATE: slug=basil_mayo, attr=condiments, is_available=True, option_keys=['slug', 'display_name', 'price_modifier', 'is_default', 'is_available', 'aliases', 'must_match', 'ingredient_category', 'ingredient_subcategory', 'forward_to_attribute']
+orderbot.tasks.parsers.deterministic.attribute_matching - Extracted attribute value: 'basil mayo' -> 'basil_mayo' (qty=2, attr=condiments)
+orderbot.tasks.parsers.deterministic.attribute_matching - Extracted attribute values for spread_sandwich: {'scooped': True, 'toppings': [{'slug': 'red_onion', 'display_name': 'Red Onion', 'quantity': 1, 'price': 0.75, 'category': None}], 'condiments': [{'slug': 'basil_mayo', 'display_name': 'Basil Mayo', 'quantity': 2, 'price': 0.55, 'category': None}]}
+orderbot.tasks.parsers.deterministic.modification_parsing - Extracted modifications from 'tofu spread sandwich scooped with extra basil mayo' for item_type 'spread_sandwich': {'additions': [], 'removals': []}
+orderbot.tasks.parsers.deterministic.item_resolution - DETERMINISTIC MENU ITEM: matched 'tofu spread sandwich scooped with extra basil mayo' -> Tofu Spread Sandwich (qty=1, attrs=['scooped', 'toppings', 'condiments'], mods={'additions': [], 'removals': []})
+orderbot.tasks.parsers.deterministic.core - Parsed deterministically: tofu spread sandwich scooped with extra basil mayo
+== RESULT ==
+Special instructions: []

@@ -1,15 +1,15 @@
 {
   "tenants": {
-    "zuckers": {
-      "name": "Zucker's Bagels",
-      "slug": "zuckers",
+    "borough": {
+      "name": "Borough Bagels",
+      "slug": "borough",
       "port": 8006,
-      "domains": ["localhost:8006", "zuckers.localhost"],
+      "domains": ["localhost:8006", "borough.localhost"],
       "company_settings": {
         "bot_persona_name": "Zara",
         "tagline": "NYC's Favorite Bagels!"
       }
     }
   },
-  "default_tenant": "zuckers"
+  "default_tenant": "borough"
 }

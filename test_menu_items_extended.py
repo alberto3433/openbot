@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 
 BASE_URL = 'http://localhost:8000'
-STORE_ID = 'zuckers_tribeca'
+STORE_ID = 'borough_tribeca'
 OUTPUT_DIR = 'test_results_extended'
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)

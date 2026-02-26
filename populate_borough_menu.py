@@ -1,5 +1,5 @@
 """
-Populate Zucker's Bagels menu items in the database.
+Populate Borough Bagels menu items in the database.
 
 This script adds essential bagel items to the database including:
 - Bagel types
@@ -105,32 +105,32 @@ def get_or_create_item_type_attribute(db: Session, item_type_id: int, slug: str,
 
 
 def ensure_company_and_stores(db: Session):
-    """Ensure Zucker's company and stores exist."""
+    """Ensure Borough Bagels company and stores exist."""
     company = db.query(Company).first()
     if not company:
         company = Company(
-            name="Zucker's Bagels",
+            name="Borough Bagels",
             bot_persona_name="Zara",
             tagline="NYC's Favorite Bagels!",
-            website="https://www.zuckersbagels.com",
+            website="https://www.boroughbagels.com",
         )
         db.add(company)
         db.commit()
-        print("Created Zucker's company record")
-    elif company.name != "Zucker's Bagels":
-        company.name = "Zucker's Bagels"
+        print("Created Borough Bagels company record")
+    elif company.name != "Borough Bagels":
+        company.name = "Borough Bagels"
         company.bot_persona_name = "Zara"
         company.tagline = "NYC's Favorite Bagels!"
         db.commit()
-        print("Updated company to Zucker's Bagels")
+        print("Updated company to Borough Bagels")
 
     # Check for stores
     store_count = db.query(Store).count()
     if store_count == 0:
         stores = [
-            {"store_id": "zuckers_tribeca", "name": "Zucker's - Tribeca", "address": "143 Chambers Street", "city": "New York", "state": "NY", "zip_code": "10007", "phone": "(212) 608-5844"},
-            {"store_id": "zuckers_uws", "name": "Zucker's - Upper West Side", "address": "273 Columbus Ave", "city": "New York", "state": "NY", "zip_code": "10023", "phone": "(212) 712-2227"},
-            {"store_id": "zuckers_grandcentral", "name": "Zucker's - Grand Central", "address": "370 Lexington Ave", "city": "New York", "state": "NY", "zip_code": "10017", "phone": "(212) 867-5151"},
+            {"store_id": "borough_tribeca", "name": "Borough Bagels - Tribeca", "address": "143 Chambers Street", "city": "New York", "state": "NY", "zip_code": "10007", "phone": "(212) 608-5844"},
+            {"store_id": "borough_uws", "name": "Borough Bagels - Upper West Side", "address": "273 Columbus Ave", "city": "New York", "state": "NY", "zip_code": "10023", "phone": "(212) 712-2227"},
+            {"store_id": "borough_grandcentral", "name": "Borough Bagels - Grand Central", "address": "370 Lexington Ave", "city": "New York", "state": "NY", "zip_code": "10017", "phone": "(212) 867-5151"},
         ]
         for s in stores:
             db.add(Store(**s))
@@ -359,8 +359,8 @@ def ensure_item_types(db: Session):
 def ensure_bread_ingredients(db: Session):
     """Ensure bagel bread types exist as ingredients.
 
-    Based on Zucker's Bagels official menu: https://www.zuckersbagels.com/menu/
-    Prices based on Zucker's online ordering and delivery platforms.
+    Based on Borough Bagels official menu: https://www.boroughbagels.com/menu/
+    Prices based on Borough Bagels online ordering and delivery platforms.
     """
     # (name, price) - Regular bagels are $2.20, specialty/gluten-free are $3.00
     bagel_types = [
@@ -400,9 +400,9 @@ def ensure_bread_ingredients(db: Session):
 def ensure_schmear_ingredients(db: Session):
     """Ensure cream cheese schmears exist as ingredients.
 
-    Based on Zucker's Bagels official menu: https://www.zuckersbagels.com/menu/
+    Based on Borough Bagels official menu: https://www.boroughbagels.com/menu/
     """
-    # Cream cheese flavors from Zucker's menu (category="cheese")
+    # Cream cheese flavors from Borough Bagels menu (category="cheese")
     cream_cheeses = [
         # Regular cream cheeses
         ("Plain Cream Cheese", 3.00),
@@ -663,7 +663,7 @@ def ensure_egg_sandwich_type_attributes(db: Session, egg_sandwich_type: ItemType
 
 
 def populate_menu_items(db: Session):
-    """Populate the menu with Zucker's items.
+    """Populate the menu with Borough Bagels items.
 
     Data exported from Neon production database - 271 unique items.
     """
@@ -850,8 +850,8 @@ def populate_menu_items(db: Session):
         {"name": "Sturgeon Sandwich", "category": "fish_sandwich", "base_price": 29.95, "is_signature": False, "item_type_id": fish_sandwich_type.id if fish_sandwich_type else None, "default_config": {"fish": "Lake Sturgeon"}},
         {"name": "The Alton Brown", "category": "fish_sandwich", "base_price": 21.95, "is_signature": True, "item_type_id": fish_sandwich_type.id if fish_sandwich_type else None, "description": "Smoked Trout with Plain Cream Cheese, Avocado Horseradish, and Tobiko", "default_config": {"fish": "Smoked Trout", "spread": "Plain Cream Cheese", "extras": ["Avocado Horseradish", "Tobiko"]}, "aliases": "the alton brown, alton brown"},
         {"name": "The Flatiron", "category": "fish_sandwich", "base_price": 19.95, "is_signature": True, "item_type_id": fish_sandwich_type.id if fish_sandwich_type else None, "description": "Everything-seeded Salmon with Scallion Cream Cheese and Fresh Avocado", "default_config": {"fish": "Everything Seeded Salmon", "spread": "Scallion Cream Cheese", "extras": ["Avocado"]}, "aliases": "the flatiron, flatiron, the flatiron traditional, flatiron traditional"},
-        {"name": "The Max Zucker", "category": "fish_sandwich", "base_price": 17.95, "is_signature": True, "item_type_id": fish_sandwich_type.id if fish_sandwich_type else None, "description": "Smoked Whitefish Salad with Beefsteak Tomatoes and Red Onions", "default_config": {"fish": "Whitefish Salad", "extras": ["Tomato", "Red Onion"]}, "aliases": "the max zucker, max zucker"},
-        {"name": "The Zucker's Traditional", "category": "fish_sandwich", "base_price": 18.95, "is_signature": True, "item_type_id": fish_sandwich_type.id if fish_sandwich_type else None, "description": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers", "default_config": {"fish": "Nova Scotia Salmon", "spread": "Plain Cream Cheese", "extras": ["Tomato", "Red Onion", "Capers"]}, "aliases": "the traditional, traditional, the zucker's traditional, zucker's traditional, zuckers traditional, the zuckers traditional"},
+        {"name": "The Max Borough", "category": "fish_sandwich", "base_price": 17.95, "is_signature": True, "item_type_id": fish_sandwich_type.id if fish_sandwich_type else None, "description": "Smoked Whitefish Salad with Beefsteak Tomatoes and Red Onions", "default_config": {"fish": "Whitefish Salad", "extras": ["Tomato", "Red Onion"]}, "aliases": "the max borough, max borough"},
+        {"name": "The Borough Traditional", "category": "fish_sandwich", "base_price": 18.95, "is_signature": True, "item_type_id": fish_sandwich_type.id if fish_sandwich_type else None, "description": "Nova Scotia Salmon, Plain Cream Cheese, Beefsteak Tomatoes, Red Onions, and Capers", "default_config": {"fish": "Nova Scotia Salmon", "spread": "Plain Cream Cheese", "extras": ["Tomato", "Red Onion", "Capers"]}, "aliases": "the traditional, traditional, the borough traditional, borough traditional"},
 
         # === OMELETTE ===
         {"name": "Bacon and Cheddar Omelette", "category": "omelette", "base_price": 13.50, "is_signature": False, "item_type_id": omelette_type.id if omelette_type else None, "default_config": {"protein": "Applewood Smoked Bacon", "cheese": "Cheddar", "includes_side_choice": True, "side_options": ["bagel", "fruit_salad"]}, "aliases": "bacon and cheddar omelette, bacon cheddar omelette"},
@@ -1025,7 +1025,7 @@ def populate_menu_items(db: Session):
 
 
 def main():
-    print("Populating Zucker's Bagels menu...")
+    print("Populating Borough Bagels menu...")
     print(f"Database: {os.getenv('DATABASE_URL', 'Not set')[:50]}...")
 
     db = SessionLocal()

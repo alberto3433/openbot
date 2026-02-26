@@ -200,26 +200,18 @@
     .sidebar-logo {
       width: 110px;
       height: auto;
-      mix-blend-mode: multiply;
     }
 
-    /* For dark mode: invert logo and use screen blend to make black transparent */
-    [data-theme="dark"] .sidebar-logo {
-      filter: invert(1);
-      mix-blend-mode: screen;
-    }
+    .logo-light { display: block; }
+    .logo-dark { display: none; }
+    [data-theme="dark"] .logo-light { display: none; }
+    [data-theme="dark"] .logo-dark { display: block; }
 
     /* Mobile header logo - hidden on desktop */
     .header-logo-mobile {
       display: none;
       height: 28px;
       width: auto;
-      mix-blend-mode: multiply;
-    }
-
-    [data-theme="dark"] .header-logo-mobile {
-      filter: invert(1);
-      mix-blend-mode: screen;
     }
 
     .header-right {
@@ -750,12 +742,6 @@
     .welcome-logo {
       width: 120px;
       height: auto;
-      mix-blend-mode: multiply;
-    }
-
-    [data-theme="dark"] .welcome-logo {
-      filter: invert(1);
-      mix-blend-mode: screen;
     }
 
     .welcome-title {
@@ -1569,7 +1555,8 @@
   <div class="app-header">
     <div class="header-left">
       <!-- Logo shown in header on mobile only -->
-      <img src="/static/images/logo-light.png" alt="Borough Bagels" class="header-logo-mobile">
+      <img src="/static/images/logo-light.png" alt="Borough Bagels" class="header-logo-mobile logo-light">
+      <img src="/static/images/logo-dark.png" alt="Borough Bagels" class="header-logo-mobile logo-dark">
     </div>
     <div class="header-right">
       <span class="header-subtitle">Demo Web Chat</span>
@@ -1587,13 +1574,15 @@
   <div class="main-layout">
     <!-- Logo Sidebar -->
     <div class="logo-sidebar">
-      <img src="/static/images/logo-light.png" alt="Borough Bagels" class="sidebar-logo">
+      <img src="/static/images/logo-light.png" alt="Borough Bagels" class="sidebar-logo logo-light">
+      <img src="/static/images/logo-dark.png" alt="Borough Bagels" class="sidebar-logo logo-dark">
     </div>
     <div class="chat-container">
       <!-- Welcome Overlay -->
       <div class="welcome-overlay" id="welcome-overlay" style="display:none;">
         <div class="welcome-overlay-content">
-          <img src="/static/images/logo-light.png" alt="" class="welcome-logo">
+          <img src="/static/images/logo-light.png" alt="" class="welcome-logo logo-light">
+          <img src="/static/images/logo-dark.png" alt="" class="welcome-logo logo-dark">
           <div class="welcome-title" id="welcome-title">Welcome</div>
           <button class="welcome-start-btn" aria-label="Start order">
             <svg viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>

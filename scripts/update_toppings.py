@@ -1,5 +1,5 @@
 """
-Update toppings/condiments based on Zucker's Extra Toppings menu.
+Update toppings/condiments based on Borough Bagels Extra Toppings menu.
 
 This script:
 1. Adds missing ingredients

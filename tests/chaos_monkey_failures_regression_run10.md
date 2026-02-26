@@ -76,7 +76,7 @@ Bot treats "And also a X", "Can I also get a X" as config answers instead of add
 **Test:** `test_failure_tricky_20260215_171432_0c5c270b.py`
 
 **How to reproduce in UI:**
-1. Say: **"I'd like a The Max Zucker"**
+1. Say: **"I'd like a The Max Borough"**
 2. Bot: "What kind of bread?"
 3. Say: **"And also a Belly Lox Sandwich"**
 4. **BUG:** Bot says "Sorry, we don't have And also a Belly Lox Sandwich."

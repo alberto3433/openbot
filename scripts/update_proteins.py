@@ -1,5 +1,5 @@
 """
-Consolidate and update protein attributes based on Zucker's Extra Protein menu.
+Consolidate and update protein attributes based on Borough Bagels Extra Protein menu.
 
 This script:
 1. Renames protein/extra_proteins to extra_protein with display "Extra Protein"

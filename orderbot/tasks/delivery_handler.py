@@ -259,7 +259,7 @@ class DeliveryHandler(BaseHandler):
             if self._message_builder:
                 summary = self._message_builder.build_order_summary(order)
                 return StateMachineResult(
-                    message=f"{summary}\n\nDoes that look right?",
+                    message=f"{summary}\n\nDoes that look right? Anything else?",
                     order=order,
                     quick_replies=CONFIRM_QUICK_REPLIES,
                 )

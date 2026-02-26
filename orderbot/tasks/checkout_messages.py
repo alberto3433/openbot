@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .models import MenuItemTask
 
-CONFIRM_QUICK_REPLIES = [{"label": "right", "value": "yes"}]
+CONFIRM_QUICK_REPLIES = [
+    {"label": "right", "value": "yes"},
+    {"label": "else", "value": "show menu", "url": "/static/menu.html"},
+]
 
 
 class CheckoutMessages:
@@ -20,7 +23,7 @@ class CheckoutMessages:
     ANYTHING_ELSE = "Anything else?"
     PICKUP_OR_DELIVERY = "Is this for pickup or delivery?"
     NAME = "Can I get a name for the order?"
-    CONFIRM = "Does that look right?"
+    CONFIRM = "Does that look right? Anything else?"
     PAYMENT_METHOD = "Can I get a phone number or email to send the order confirmation?"
     PHONE = "What's the best phone number to reach you?"
     EMAIL = "What's your email address?"

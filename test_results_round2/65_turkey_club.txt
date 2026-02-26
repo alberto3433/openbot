@@ -5,7 +5,7 @@ TIME: 2025-12-30 14:44:34
 
 CONVERSATION:
 ----------------------------------------------------------------------
-BOT:    Hi, welcome to Zucker's - Tribeca! Would you like to try one of our speed menu bagels or build your own?
+BOT:    Hi, welcome to Borough Bagels - Tribeca! Would you like to try one of our speed menu bagels or build your own?
 
 TESTER: turkey club
 BOT:    Got it, Turkey Club. Anything else?

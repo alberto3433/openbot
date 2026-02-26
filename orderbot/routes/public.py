@@ -38,7 +38,7 @@ Usage:
     # Get company info for branding
     GET /company
     {
-        "name": "Zucker's Bagels",
+        "name": "Borough Bagels",
         "bot_persona_name": "Ziggy",
         ...
     }

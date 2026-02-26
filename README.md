@@ -40,7 +40,7 @@ Then run migrations and populate the menu:
 
 ```
 alembic upgrade head
-python populate_zuckers_menu.py
+python populate_borough_menu.py
 ```
 
 ## 🧪 Running Tests

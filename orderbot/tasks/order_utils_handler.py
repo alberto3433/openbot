@@ -132,7 +132,7 @@ class OrderUtilsHandler:
             logger.info("QUANTITY_CHANGE: Already have %d items, target is %d", current_count, target_quantity)
             summary = self._build_order_summary(order) if self._build_order_summary else ""
             return StateMachineResult(
-                message=f"You already have {current_count} in your order.\n\n{summary}\n\nDoes that look right?",
+                message=f"You already have {current_count} in your order.\n\n{summary}\n\nDoes that look right? Anything else?",
                 order=order,
                 quick_replies=CONFIRM_QUICK_REPLIES,
             )
@@ -163,7 +163,7 @@ class OrderUtilsHandler:
         summary = self._build_order_summary(order) if self._build_order_summary else ""
         item_display = template_item.get_summary()
         return StateMachineResult(
-            message=f"Got it, {target_quantity} {item_display}.\n\n{summary}\n\nDoes that look right?",
+            message=f"Got it, {target_quantity} {item_display}.\n\n{summary}\n\nDoes that look right? Anything else?",
             order=order,
             quick_replies=CONFIRM_QUICK_REPLIES,
         )
@@ -178,11 +178,11 @@ class OrderUtilsHandler:
 
         # Format response
         if taxes.total > 0:
-            message = f"Your subtotal is ${subtotal:.2f}. With tax, that comes to ${total_with_tax:.2f}. Does that look right?"
+            message = f"Your subtotal is ${subtotal:.2f}. With tax, that comes to ${total_with_tax:.2f}. Does that look right? Anything else?"
             quick_replies = CONFIRM_QUICK_REPLIES
         else:
             # No tax configured - just show the subtotal
-            message = f"Your total is ${subtotal:.2f}. Does that look right?"
+            message = f"Your total is ${subtotal:.2f}. Does that look right? Anything else?"
             quick_replies = CONFIRM_QUICK_REPLIES
 
         logger.info("TAX_QUESTION: subtotal=%.2f, city_tax=%.2f, state_tax=%.2f, total=%.2f",

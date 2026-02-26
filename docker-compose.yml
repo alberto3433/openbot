@@ -28,8 +28,8 @@ services:
     ports:
       - "8006:8006"
     environment:
-      # Default to Zucker's database - change to sammys_db or tonys_db as needed
-      DATABASE_URL: postgresql://orderbot:orderbot123@postgres:5432/${COMPANY_DB:-zuckers_db}
+      # Default to Borough database - change to sammys_db or tonys_db as needed
+      DATABASE_URL: postgresql://orderbot:orderbot123@postgres:5432/${COMPANY_DB:-borough_db}
     env_file:
       - .env
     depends_on:

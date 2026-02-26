@@ -1,4 +1,4 @@
-# Test Orders for Zucker's Bot
+# Test Orders for Borough Bot
 
 Use these scenarios to test the bot via voice (VAPI) or web chat.
 

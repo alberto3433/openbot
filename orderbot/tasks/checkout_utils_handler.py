@@ -274,7 +274,7 @@ class CheckoutUtilsHandler:
                        order.customer_info.name, order.delivery_method.order_type)
             summary = self.build_order_summary(order)
             return StateMachineResult(
-                message=f"{summary}\n\nDoes that look right?",
+                message=f"{summary}\n\nDoes that look right? Anything else?",
                 order=order,
                 quick_replies=CONFIRM_QUICK_REPLIES,
             )

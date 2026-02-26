@@ -21,6 +21,7 @@ from .item_parsing import (
     _find_trigger_matches,
 )
 from .item_type_detection import _HIGH_COVERAGE_THRESHOLD, _try_option_alias_fallback
+from .menu_item_matching import _match_item_with_defaults
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +325,14 @@ def _has_item_indicator(text: str) -> tuple[bool, str | None, str | None]:
     result = _try_menu_item_alias_match(text_for_matching, text_singularized, text_lower)
     if result[0]:
         return result
+
+    # Strategy 1.5: Check items with default ingredients (signature items)
+    # Items like "The Leo", "The Classic BEC" have aliases (e.g., "leo") that should
+    # take priority over trigger-based detection. Without this, "leo with cheddar cheese"
+    # falls through to trigger matching which finds "cheese" -> cheese item type.
+    matched_type, matched_name, _ = _match_item_with_defaults(text_for_matching)
+    if matched_type:
+        return True, matched_type, matched_name
 
     # Strategy 2: Word boundary match (for ambiguous cases like "the classic")
     result = _try_word_boundary_match(text_for_matching)

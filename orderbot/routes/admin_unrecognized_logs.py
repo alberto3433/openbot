@@ -21,6 +21,7 @@ from datetime import timedelta
 from ..utils.datetime_helpers import utc_now
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
@@ -87,36 +88,42 @@ def get_log_stats(
     """Get statistics for unrecognized item logs."""
     cutoff = utc_now() - timedelta(days=days)
 
-    logs = db.query(UnrecognizedMenuItemLog).filter(
-        UnrecognizedMenuItemLog.created_at >= cutoff
-    ).all()
+    Log = UnrecognizedMenuItemLog
+    date_filter = Log.created_at >= cutoff
 
-    total = len(logs)
+    # Total count
+    total = db.query(func.count(Log.id)).filter(date_filter).scalar()
 
-    # Group by fallback level
-    by_fallback: dict[str, int] = {}
-    for log in logs:
-        by_fallback[log.fallback_level] = by_fallback.get(log.fallback_level, 0) + 1
+    # Count by fallback level (1 query)
+    fallback_rows = db.query(
+        Log.fallback_level, func.count(Log.id),
+    ).filter(date_filter).group_by(Log.fallback_level).all()
+    by_fallback: dict[str, int] = dict(fallback_rows)
 
-    # Group by inferred category
-    by_category: dict[str, int] = {}
-    for log in logs:
-        cat = log.inferred_category or "(none)"
-        by_category[cat] = by_category.get(cat, 0) + 1
+    # Count by inferred category (1 query)
+    category_rows = db.query(
+        func.coalesce(Log.inferred_category, "(none)"),
+        func.count(Log.id),
+    ).filter(date_filter).group_by(Log.inferred_category).all()
+    by_category: dict[str, int] = dict(category_rows)
 
-    # Top unrecognized items (most frequent normalized inputs)
-    input_counts: dict[str, int] = {}
-    for log in logs:
-        input_counts[log.normalized_input] = input_counts.get(log.normalized_input, 0) + 1
+    # Top unrecognized inputs (1 query with LIMIT)
+    top_rows = db.query(
+        Log.normalized_input,
+        func.count(Log.id).label("cnt"),
+    ).filter(
+        date_filter,
+    ).group_by(
+        Log.normalized_input,
+    ).order_by(
+        func.count(Log.id).desc(),
+    ).limit(20).all()
+    top_unrecognized = [{"input": row[0], "count": row[1]} for row in top_rows]
 
-    top_unrecognized = sorted(
-        [{"input": k, "count": v} for k, v in input_counts.items()],
-        key=lambda x: x["count"],
-        reverse=True
-    )[:20]
-
-    # Recent entries
-    recent = sorted(logs, key=lambda x: x.created_at, reverse=True)[:10]
+    # Recent entries (1 query with LIMIT)
+    recent = db.query(Log).filter(
+        date_filter,
+    ).order_by(Log.created_at.desc()).limit(10).all()
 
     return UnrecognizedMenuItemLogStats(
         total_requests=total,

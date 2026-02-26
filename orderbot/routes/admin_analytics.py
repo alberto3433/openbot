@@ -62,7 +62,7 @@ from ..utils.datetime_helpers import utc_now
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import and_, case, func
 from sqlalchemy.orm import Session
 
 from ..auth import verify_admin_credentials
@@ -165,76 +165,93 @@ def get_summary(
     """
     cutoff = utc_now() - timedelta(days=days)
 
-    # Base query for the time period
-    query = db.query(SessionAnalytics).filter(SessionAnalytics.ended_at >= cutoff)
-
-    # Counts by status
-    total_sessions = query.count()
-    completed_sessions = query.filter(SessionAnalytics.status == "completed").count()
-    abandoned_sessions = query.filter(SessionAnalytics.status == "abandoned").count()
-    abandoned_with_items = query.filter(
-        SessionAnalytics.status == "abandoned",
-        SessionAnalytics.had_items_in_cart == True
-    ).count()
-
-    # Revenue calculations
-    completed_query = query.filter(SessionAnalytics.status == "completed")
-    total_revenue = db.query(func.sum(SessionAnalytics.cart_total)).filter(
-        SessionAnalytics.ended_at >= cutoff,
-        SessionAnalytics.status == "completed"
-    ).scalar() or 0.0
-
-    total_lost_revenue = db.query(func.sum(SessionAnalytics.cart_total)).filter(
-        SessionAnalytics.ended_at >= cutoff,
-        SessionAnalytics.status == "abandoned",
-        SessionAnalytics.had_items_in_cart == True
-    ).scalar() or 0.0
-
-    # Average session duration
-    avg_duration = db.query(func.avg(SessionAnalytics.session_duration_seconds)).filter(
-        SessionAnalytics.ended_at >= cutoff,
-        SessionAnalytics.session_duration_seconds.isnot(None)
-    ).scalar()
-
-    # Completion rate
-    completion_rate = (completed_sessions / total_sessions * 100) if total_sessions > 0 else 0.0
-
-    # Abandonment by reason
-    reason_counts = db.query(
-        SessionAnalytics.reason,
-        func.count(SessionAnalytics.id)
+    # Single query for all summary metrics (replaces 7 separate queries)
+    summary_row = db.query(
+        func.count(SessionAnalytics.id).label("total"),
+        func.count(case(
+            (SessionAnalytics.status == "completed", SessionAnalytics.id),
+        )).label("completed"),
+        func.count(case(
+            (SessionAnalytics.status == "abandoned", SessionAnalytics.id),
+        )).label("abandoned"),
+        func.count(case(
+            (and_(
+                SessionAnalytics.status == "abandoned",
+                SessionAnalytics.had_items_in_cart == True,
+            ), SessionAnalytics.id),
+        )).label("abandoned_with_items"),
+        func.coalesce(func.sum(case(
+            (SessionAnalytics.status == "completed", SessionAnalytics.cart_total),
+            else_=0,
+        )), 0).label("revenue"),
+        func.coalesce(func.sum(case(
+            (and_(
+                SessionAnalytics.status == "abandoned",
+                SessionAnalytics.had_items_in_cart == True,
+            ), SessionAnalytics.cart_total),
+            else_=0,
+        )), 0).label("lost_revenue"),
+        func.avg(SessionAnalytics.session_duration_seconds).label("avg_duration"),
     ).filter(
         SessionAnalytics.ended_at >= cutoff,
-        SessionAnalytics.status == "abandoned"
+    ).first()
+
+    total_sessions = summary_row.total
+    completed_sessions = summary_row.completed
+    abandoned_sessions = summary_row.abandoned
+    abandoned_with_items = summary_row.abandoned_with_items
+    total_revenue = float(summary_row.revenue)
+    total_lost_revenue = float(summary_row.lost_revenue)
+    avg_duration = summary_row.avg_duration
+
+    completion_rate = (completed_sessions / total_sessions * 100) if total_sessions > 0 else 0.0
+
+    # Abandonment by reason (already a single GROUP BY query — no change needed)
+    reason_counts = db.query(
+        SessionAnalytics.reason,
+        func.count(SessionAnalytics.id),
+    ).filter(
+        SessionAnalytics.ended_at >= cutoff,
+        SessionAnalytics.status == "abandoned",
     ).group_by(SessionAnalytics.reason).all()
 
     abandonment_by_reason: dict[str, int] = {
         reason or "unknown": count for reason, count in reason_counts
     }
 
-    # Recent trend (last 7 days)
+    # 7-day trend: single GROUP BY query (replaces 14 per-day COUNT queries)
+    seven_days_ago = datetime.combine(
+        utc_now().date() - timedelta(days=6), datetime.min.time(),
+    )
+    trend_rows = db.query(
+        func.date(SessionAnalytics.ended_at).label("day"),
+        SessionAnalytics.status,
+        func.count(SessionAnalytics.id).label("cnt"),
+    ).filter(
+        SessionAnalytics.ended_at >= seven_days_ago,
+    ).group_by(
+        func.date(SessionAnalytics.ended_at),
+        SessionAnalytics.status,
+    ).all()
+
+    # Build lookup from query results, fill missing days with zeros
+    trend_lookup: dict[str, dict[str, int]] = {}
+    for row in trend_rows:
+        day_str = row.day.isoformat() if hasattr(row.day, "isoformat") else str(row.day)
+        if day_str not in trend_lookup:
+            trend_lookup[day_str] = {"completed": 0, "abandoned": 0}
+        if row.status in ("completed", "abandoned"):
+            trend_lookup[day_str][row.status] = row.cnt
+
     recent_trend: list[dict[str, Any]] = []
     for i in range(6, -1, -1):
         day = utc_now().date() - timedelta(days=i)
-        day_start = datetime.combine(day, datetime.min.time())
-        day_end = datetime.combine(day, datetime.max.time())
-
-        completed = db.query(SessionAnalytics).filter(
-            SessionAnalytics.ended_at >= day_start,
-            SessionAnalytics.ended_at <= day_end,
-            SessionAnalytics.status == "completed"
-        ).count()
-
-        abandoned = db.query(SessionAnalytics).filter(
-            SessionAnalytics.ended_at >= day_start,
-            SessionAnalytics.ended_at <= day_end,
-            SessionAnalytics.status == "abandoned"
-        ).count()
-
+        day_str = day.isoformat()
+        counts = trend_lookup.get(day_str, {"completed": 0, "abandoned": 0})
         recent_trend.append({
-            "date": day.isoformat(),
-            "completed": completed,
-            "abandoned": abandoned,
+            "date": day_str,
+            "completed": counts["completed"],
+            "abandoned": counts["abandoned"],
         })
 
     return AnalyticsSummary(
@@ -242,8 +259,8 @@ def get_summary(
         completed_sessions=completed_sessions,
         abandoned_sessions=abandoned_sessions,
         abandoned_with_items=abandoned_with_items,
-        total_revenue=float(total_revenue),
-        total_lost_revenue=float(total_lost_revenue),
+        total_revenue=total_revenue,
+        total_lost_revenue=total_lost_revenue,
         avg_session_duration=float(avg_duration) if avg_duration else None,
         completion_rate=round(completion_rate, 1),
         abandonment_by_reason=abandonment_by_reason,

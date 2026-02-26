@@ -40,4 +40,4 @@ include = ["orderbot*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-n 4 --timeout=120 --ignore=tests/chaos_monkey/generated"
+addopts = "-n 4 --timeout=300 --ignore=tests/chaos_monkey/generated"

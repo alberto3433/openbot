@@ -283,7 +283,7 @@ class TakingItemsHandler(MenuDataMixin):
                 )
             # Phase will be derived as TAKING_ITEMS by orchestrator on next turn
             return StateMachineResult(
-                message="Hi! Welcome to Zucker's. What can I get for you today?",
+                message="Hi! Welcome to Borough Bagels. What can I get for you today?",
                 order=order,
             )
 
@@ -512,8 +512,9 @@ class TakingItemsHandler(MenuDataMixin):
             if not has_items:
                 # Just the order type, no items yet - acknowledge and ask what they want
                 return StateMachineResult(
-                    message=f"Great, I'll set this up for {order_type_display}. What can I get for you?",
+                    message=f"Great, I'll set this up for {order_type_display}. What can I get for you? Do you want to see the menu?",
                     order=order,
+                    quick_replies=[{"label": "menu", "value": "show menu", "url": "/static/menu.html"}],
                 )
             # If they also ordered items, continue processing below
 

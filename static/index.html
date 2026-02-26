@@ -2,7 +2,7 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <title>Zucker's Order Bot</title>
+  <title>Borough Bagels Order Bot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,7 +14,7 @@
        Theme System - CSS Custom Properties
        ===================================================== */
     :root {
-      /* Brand Colors - Zucker's warm palette */
+      /* Brand Colors - Borough Bagels warm palette */
       --brand-primary: #D4754E;
       --brand-primary-hover: #C46842;
       --brand-secondary: #8B5A2B;
@@ -1569,7 +1569,7 @@
   <div class="app-header">
     <div class="header-left">
       <!-- Logo shown in header on mobile only -->
-      <img src="/static/images/logo-light.png" alt="Zucker's Bagels" class="header-logo-mobile">
+      <img src="/static/images/logo-light.png" alt="Borough Bagels" class="header-logo-mobile">
     </div>
     <div class="header-right">
       <span class="header-subtitle">Demo Web Chat</span>
@@ -1587,7 +1587,7 @@
   <div class="main-layout">
     <!-- Logo Sidebar -->
     <div class="logo-sidebar">
-      <img src="/static/images/logo-light.png" alt="Zucker's Bagels" class="sidebar-logo">
+      <img src="/static/images/logo-light.png" alt="Borough Bagels" class="sidebar-logo">
     </div>
     <div class="chat-container">
       <!-- Welcome Overlay -->
@@ -1832,7 +1832,7 @@
     }
 
     let companyInfo = {
-      name: "Zucker's Bagels",
+      name: "Borough Bagels",
       bot_persona_name: "Zack",
       primary_item_type: "Bagel"
     };
@@ -3234,6 +3234,13 @@
     window.addEventListener('message', function(e) {
       if (e.data && e.data.type === 'add-to-order' && e.data.itemName) {
         sendMessage("I'd like a " + e.data.itemName, { addItem: true });
+        // On mobile (drawer covers full screen), close drawer so user sees the conversation
+        // but preserve the iframe so reopening is instant with scroll position intact
+        if (drawer.classList.contains('open') && window.matchMedia('(max-width: 600px)').matches) {
+          backdrop.classList.remove('active');
+          drawer.classList.remove('open');
+          document.body.style.overflow = '';
+        }
       }
     });
 

@@ -79,6 +79,7 @@ cache strategy.
 """
 
 import logging
+import os
 import random
 import threading
 import time
@@ -106,7 +107,7 @@ _cache_lock = threading.Lock()
 # Tracks message count per session for DB write debouncing.
 # DB writes happen every _DB_WRITE_INTERVAL messages (or on confirmed orders).
 _session_msg_counts: dict[str, int] = {}
-_DB_WRITE_INTERVAL = 3
+_DB_WRITE_INTERVAL = int(os.getenv("SESSION_DB_WRITE_INTERVAL", "3"))
 
 
 # =============================================================================

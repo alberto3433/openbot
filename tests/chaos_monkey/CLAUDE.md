@@ -17,9 +17,9 @@ The chaos monkey generates random scenarios and runs them against a live API ser
 
 ### Prerequisites
 
-1. Start the dev server with rate limiting disabled:
+1. Start the dev server with rate limiting disabled and session DB writes on every message:
    ```bash
-   python -c "import os; os.environ['RATE_LIMIT_ENABLED'] = 'false'; import uvicorn; uvicorn.run('orderbot.main:app', host='127.0.0.1', port=8000, reload=False)"
+   python -c "import os; os.environ['RATE_LIMIT_ENABLED'] = 'false'; os.environ['SESSION_DB_WRITE_INTERVAL'] = '1'; import uvicorn; uvicorn.run('orderbot.main:app', host='127.0.0.1', port=8000, reload=False)"
    ```
 
 2. On Windows, `set VAR=value && command` does NOT reliably propagate env vars. Use the Python wrapper above.

@@ -31,7 +31,16 @@ def pluralize_display_name(display_name: str) -> str:
     if not display_name:
         return display_name
 
-    words = display_name.split()
+    # Strip trailing parenthetical qualifier like "(extra)", "(on the side)"
+    import re
+    qualifier_match = re.search(r'\s+(\([^)]+\))$', display_name)
+    qualifier_suffix = ""
+    base_name = display_name
+    if qualifier_match:
+        qualifier_suffix = " " + qualifier_match.group(1)
+        base_name = display_name[:qualifier_match.start()]
+
+    words = base_name.split()
     if not words:
         return display_name
 
@@ -49,7 +58,7 @@ def pluralize_display_name(display_name: str) -> str:
     if last_word[0].isupper():
         words[-1] = words[-1].capitalize()
 
-    return ' '.join(words)
+    return ' '.join(words) + qualifier_suffix
 
 
 def is_name_forming_category(category: str, ingredient_slug: str | None = None) -> bool:

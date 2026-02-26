@@ -64,6 +64,26 @@ class AttributeQueryMixin:
         return False
 
     @ensure_cache_loaded
+    def is_listen_only_for_item_type(self, item_type_slug: str, attr_slug: str) -> bool:
+        """Check if an attribute is listen_only for a specific item type.
+
+        Args:
+            item_type_slug: The item type slug
+            attr_slug: The attribute slug
+
+        Returns:
+            True if the attribute is listen_only for this item type.
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        attrs = self.get_item_type_attributes(item_type_slug)
+        attr_config = attrs.get(attr_slug)
+        if not attr_config:
+            return False
+        return attr_config.get("listen_only", False)
+
+    @ensure_cache_loaded
     def get_attribute_input_type(self, item_type_slug: str, attribute_slug: str) -> str | None:
         """Get the input type for a specific attribute.
 

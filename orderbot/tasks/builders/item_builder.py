@@ -20,6 +20,7 @@ from ..default_ingredients import (
     populate_default_ingredients,
     filter_redundant_default_selections,
 )
+from ..models.pending_states import PendingDefaultExtraClarification
 from .item_context import ItemBuildContext
 
 if TYPE_CHECKING:
@@ -174,28 +175,60 @@ class ItemBuilder:
     def apply_pre_filled_attributes(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
         """Apply pre-filled attributes to the item.
 
+        For listen_only attributes (identity attributes like cheese on a cheese sandwich),
+        user-mentioned values are ADDED alongside defaults rather than replacing them.
+        This ensures "pepper jack cheese sandwich with cheddar" charges for the added
+        cheddar instead of treating it as a free swap.
+
         Args:
             item: The menu item to configure.
             ctx: The build context.
         """
         if ctx.pre_filled_attributes:
             for attr_name, attr_value in ctx.pre_filled_attributes.items():
+                # For listen_only attributes, add alongside existing defaults
+                # instead of replacing them (addition, not swap)
+                if (
+                    ctx.item_type
+                    and isinstance(attr_value, str)
+                    and menu_cache.is_listen_only_for_item_type(ctx.item_type, attr_name)
+                ):
+                    existing_defaults = [
+                        sel for sel in item.selections
+                        if sel.get("category") == attr_name and sel.get("is_default")
+                    ]
+                    has_different_default = any(
+                        sel.get("slug") != attr_value for sel in existing_defaults
+                    )
+                    if has_different_default:
+                        item.add_selection(slug=attr_value, category=attr_name)
+                        continue
+
                 item[attr_name] = attr_value
 
     def apply_extracted_selections(self, item: MenuItemTask, ctx: ItemBuildContext) -> None:
         """Apply extracted selections to the item.
 
         These replace/add to defaults, filtering out redundant selections.
+        Flagged defaults (user-mentioned ingredients that match defaults) are
+        stored for "Would you like extra?" clarification.
 
         Args:
             item: The menu item to configure.
             ctx: The build context.
         """
         if ctx.extracted_selections and self._config_handler:
-            filtered_selections = filter_redundant_default_selections(
+            filtered_selections, flagged_defaults = filter_redundant_default_selections(
                 item, ctx.extracted_selections
             )
             self._config_handler._apply_selections(item, filtered_selections)
+            # Store flagged defaults for clarification questions
+            if flagged_defaults:
+                ctx.order.pending_default_extra_clarification = PendingDefaultExtraClarification(
+                    item_id=item.id,
+                    item_name=item.menu_item_name or "",
+                    candidates=flagged_defaults,
+                )
 
     def apply_pending_ingredient(
         self,

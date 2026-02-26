@@ -3199,7 +3199,7 @@
           startSession(callerId, storeParam);
         }
       }
-      var src = '/static/menu.html?embedded=1';
+      var src = '/static/menu.html?embedded=1&_t=' + Date.now();
       if (currentStoreId) src += '&store=' + encodeURIComponent(currentStoreId);
       frame.src = src;
       backdrop.classList.add('active');

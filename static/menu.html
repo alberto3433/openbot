@@ -436,6 +436,118 @@
     .badge-allergen { background: var(--bg-tertiary); color: var(--text-tertiary); }
 
     /* =====================================================
+       Search Bar
+       ===================================================== */
+    .search-bar-wrapper {
+      background: var(--bg-primary);
+      padding: 12px 24px 16px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .search-bar {
+      position: relative;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      color: var(--text-tertiary);
+      pointer-events: none;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 10px 40px 10px 40px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-light);
+      border-radius: 20px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .search-input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    .search-input:focus {
+      border-color: var(--brand-primary);
+      box-shadow: 0 0 0 2px rgba(212, 117, 78, 0.15);
+    }
+
+    .search-clear {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: var(--text-tertiary);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: background 0.15s, color 0.15s;
+      padding: 0;
+    }
+
+    .search-clear:hover {
+      background: var(--border-light);
+      color: var(--text-primary);
+    }
+
+    .search-clear.visible {
+      display: flex;
+    }
+
+    .search-no-results {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--text-secondary);
+      display: none;
+    }
+
+    .search-no-results .icon {
+      margin-bottom: 12px;
+      color: var(--text-tertiary);
+    }
+
+    .search-no-results h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .search-no-results p {
+      font-size: 13px;
+      color: var(--text-tertiary);
+    }
+
+    @media (max-width: 639px) {
+      .search-bar-wrapper {
+        padding: 10px 16px 12px;
+      }
+
+      .search-input {
+        font-size: 13px;
+        padding: 9px 36px 9px 36px;
+      }
+    }
+
+    /* =====================================================
        Skeleton Loading
        ===================================================== */
     .skeleton-grid {
@@ -567,10 +679,32 @@
     <p class="hero-tagline" id="hero-tagline"></p>
   </section>
 
+  <!-- Search Bar -->
+  <div class="search-bar-wrapper" id="search-bar-wrapper" style="display:none;">
+    <div class="search-bar">
+      <span class="search-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </span>
+      <input type="text" class="search-input" id="search-input" placeholder="Search menu..." autocomplete="off" />
+      <button class="search-clear" id="search-clear" title="Clear search">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+
   <!-- Category Tabs -->
   <nav class="category-tabs-wrapper" id="tabs-wrapper" style="display:none;">
     <div class="category-tabs" id="category-tabs"></div>
   </nav>
+
+  <!-- Search No Results (hidden by default) -->
+  <div class="search-no-results" id="search-no-results">
+    <div class="icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+    </div>
+    <h3>No items found</h3>
+    <p>Try a different search term</p>
+  </div>
 
   <!-- Menu Content -->
   <main class="menu-content" id="menu-content">
@@ -601,6 +735,7 @@
   if (isEmbedded) {
     var hdr = document.querySelector('.page-header');
     if (hdr) hdr.style.display = 'none';
+    document.body.classList.add('embedded');
   }
 
   // =========================================================================
@@ -805,6 +940,11 @@
     content.innerHTML = sectionsHTML;
     tabsWrapper.style.display = '';
 
+    // Show search bar now that menu is loaded
+    document.getElementById('search-bar-wrapper').style.display = '';
+    // Reset search state on menu reload
+    clearSearch();
+
     // Update store subtitle
     if (data.store_name) {
       document.getElementById('header-title').textContent = 'Menu \u2014 ' + data.store_name;
@@ -866,6 +1006,119 @@
       if (el) observer.observe(el);
     });
   }
+
+  // =========================================================================
+  // Search / Filter
+  // =========================================================================
+  var searchInput = document.getElementById('search-input');
+  var searchClearBtn = document.getElementById('search-clear');
+  var searchNoResults = document.getElementById('search-no-results');
+  var isSearchActive = false;
+
+  function getSearchableText(item) {
+    var parts = [item.name || ''];
+    if (item.description) parts.push(item.description);
+    if (item.is_vegan) parts.push('vegan');
+    if (item.is_vegetarian) parts.push('vegetarian');
+    if (item.is_gluten_free) parts.push('gluten free gluten-free');
+    if (item.is_dairy_free) parts.push('dairy free dairy-free');
+    if (item.is_kosher) parts.push('kosher');
+    return parts.join(' ').toLowerCase();
+  }
+
+  function filterMenu(query) {
+    var words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+
+    if (words.length === 0) {
+      restoreFullMenu();
+      return;
+    }
+
+    isSearchActive = true;
+
+    // Hide category tabs during search
+    document.getElementById('tabs-wrapper').style.display = 'none';
+
+    // Collect matching items across all display groups
+    var matchingItems = [];
+    if (menuData && menuData.categories) {
+      menuData.categories.forEach(function(cat) {
+        cat.display_groups.forEach(function(group) {
+          group.items.forEach(function(item) {
+            var text = getSearchableText(item);
+            var allMatch = words.every(function(w) { return text.indexOf(w) !== -1; });
+            if (allMatch) matchingItems.push(item);
+          });
+        });
+      });
+    }
+
+    var content = document.getElementById('menu-content');
+
+    if (matchingItems.length === 0) {
+      content.innerHTML = '';
+      searchNoResults.style.display = '';
+      return;
+    }
+
+    searchNoResults.style.display = 'none';
+
+    // Render matching items as a flat grid (no section headers)
+    var cardsHTML = '';
+    matchingItems.forEach(function(item) {
+      var classes = 'menu-card';
+      if (isEmbedded) classes += ' clickable';
+      if (item.is_signature) classes += ' signature';
+      if (!item.is_available) classes += ' unavailable';
+
+      var badges = renderBadges(item);
+
+      cardsHTML += '<div class="' + classes + '">';
+      cardsHTML += '<div class="card-header">';
+      cardsHTML += '<span class="card-name">' + escapeHTML(item.name) + '</span>';
+      cardsHTML += '<span class="card-price">' + renderPriceHTML(item.size_prices) + '</span>';
+      cardsHTML += '</div>';
+      if (item.description) {
+        cardsHTML += '<div class="card-description">' + escapeHTML(item.description) + '</div>';
+      }
+      cardsHTML += '<span class="unavailable-label">Currently Unavailable</span>';
+      if (badges) {
+        cardsHTML += '<div class="card-badges">' + badges + '</div>';
+      }
+      cardsHTML += '</div>';
+    });
+
+    content.innerHTML = '<div class="card-grid" style="padding-top:16px;">' + cardsHTML + '</div>';
+  }
+
+  function restoreFullMenu() {
+    if (!isSearchActive) return;
+    isSearchActive = false;
+    searchNoResults.style.display = 'none';
+
+    if (menuData) {
+      renderMenu(menuData);
+    }
+  }
+
+  function clearSearch() {
+    searchInput.value = '';
+    searchClearBtn.classList.remove('visible');
+    if (isSearchActive) {
+      restoreFullMenu();
+    }
+  }
+
+  searchInput.addEventListener('input', function() {
+    var val = searchInput.value;
+    searchClearBtn.classList.toggle('visible', val.length > 0);
+    filterMenu(val);
+  });
+
+  searchClearBtn.addEventListener('click', function() {
+    clearSearch();
+    searchInput.focus();
+  });
 
   // =========================================================================
   // Load Menu
@@ -941,6 +1194,11 @@
       // Brief "added" feedback
       card.classList.add('added');
       setTimeout(function() { card.classList.remove('added'); }, 1200);
+
+      // Clear search after adding an item so user can browse again
+      if (isSearchActive) {
+        clearSearch();
+      }
     });
   }
 

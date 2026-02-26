@@ -326,6 +326,15 @@ class TakingItemsHandler(MenuDataMixin):
         if result:
             return result
 
+        # When no items in cart and user gives an affirmative response
+        # (e.g., "sure" to "Do you want to see the menu?"), show the menu
+        if not order.items.get_active_items() and menu_cache.is_affirmative(user_input):
+            return StateMachineResult(
+                message="Here's our menu! Let me know what catches your eye.",
+                order=order,
+                quick_replies=[{"label": "menu", "value": "show menu", "url": "/static/menu.html"}],
+            )
+
         # When items are in the cart and user gives a negative response
         # to "Anything else?", treat it as done ordering.
         # Handles: "no", "nope", "no nothing else", "nah I'm good", etc.

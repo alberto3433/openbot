@@ -63,7 +63,7 @@ def _strip_order_type_phrase(text: str) -> str:
     result = text
     # Remove common order type phrases
     result = re.sub(
-        r"(?:i(?:'d| would) like to )?(?:place\s+)?(?:a\s+)?(?:pick[\s-]?up|delivery)\s+order",
+        r"(?:i(?:'d| would) like to )?(?:do\s+|place\s+|make\s+|get\s+)?(?:a\s+)?(?:pick[\s-]?up|delivery)\s+order",
         "", result, flags=re.IGNORECASE
     )
     result = re.sub(r"(?:for|is\s+for)\s+(?:pick[\s-]?up|delivery)", "", result, flags=re.IGNORECASE)

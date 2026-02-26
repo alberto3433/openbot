@@ -455,6 +455,10 @@ def parse_open_input(
     if dining_option:
         return OpenInputResponse(unsupported_dining_option=dining_option)
 
+    # If order type was detected but remaining text couldn't be parsed, return with order_type
+    if order_type:
+        return OpenInputResponse(order_type=order_type)
+
     # No LLM fallback - return unclear response
     logger.info("Unable to parse deterministically, returning unclear: %s", user_input[:50])
     return OpenInputResponse(unclear=True)

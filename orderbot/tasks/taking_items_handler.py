@@ -271,6 +271,10 @@ class TakingItemsHandler(MenuDataMixin):
                 order=order,
             )
 
+        # Check for order type even when greeting/unclear (e.g., "I'd like to do a pickup order")
+        if parsed.order_type:
+            return self.handle_taking_items_with_parsed(parsed, order, None, user_input)
+
         if parsed.is_greeting or parsed.unclear:
             # Check if user selected a delivery method (e.g., from greeting quick reply)
             from .parsers.validators import parse_delivery_choice_deterministic

@@ -58,6 +58,7 @@ from .pending_states import (
     PendingIngredientSearch,
     PendingDietaryFollowup,
     PendingOrderHistory,
+    PendingDefaultExtraClarification,
 )
 
 __all__ = [
@@ -82,6 +83,8 @@ __all__ = [
     "CustomerInfoTask",
     "CheckoutTask",
     "PaymentTask",
+    # Pending states
+    "PendingDefaultExtraClarification",
     # Container tasks
     "ItemsTask",
     "OrderTask",

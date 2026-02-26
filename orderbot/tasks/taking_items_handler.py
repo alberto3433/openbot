@@ -56,7 +56,13 @@ logger = logging.getLogger(__name__)
 # Pattern to strip a leading negative word + optional punctuation from user input
 # e.g., "no nothing else" -> "nothing else", "nah, I'm good" -> "I'm good"
 _LEADING_NEGATIVE_RE = re.compile(
-    r"^(?:no|nah|nope|naw)[,.\s]+",
+    r"^(?:no|nah|nope|naw|no thanks|no thank you|not really)[,.\s]+",
+    re.IGNORECASE,
+)
+
+
+_DONT_WANT_DONE_RE = re.compile(
+    r"(?:i\s+)?don'?t\s+(?:want|need)\s+(?:anything|nothing|any\s*more)\s*(?:else|more)?",
     re.IGNORECASE,
 )
 
@@ -65,7 +71,8 @@ def _is_negative_done(text: str) -> bool:
     """Check if user input is a negative response meaning 'done ordering'.
 
     Handles direct done signals ("that's it"), negative responses ("no", "nope"),
-    and combinations like "no nothing else", "nah I'm good", "no that's it".
+    combinations like "no nothing else", "nah I'm good", "no that's it",
+    and negation phrases like "I don't want anything else".
 
     Args:
         text: Raw user input.
@@ -80,6 +87,10 @@ def _is_negative_done(text: str) -> bool:
     # e.g., "no nothing else" -> "nothing else" (matches done pattern)
     remainder = _LEADING_NEGATIVE_RE.sub("", text.strip())
     if remainder and remainder != text.strip() and menu_cache.is_done(remainder):
+        return True
+
+    # Check for "I don't want anything else" style negation
+    if _DONT_WANT_DONE_RE.search(text):
         return True
 
     return False

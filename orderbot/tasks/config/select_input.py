@@ -228,6 +228,18 @@ class SelectInputHandler:
                 item[attr_slug] = None
                 return advance_callback(item, order, attr)
 
+            # Check negation patterns targeting the attribute name
+            # e.g., "I don't want a spread", "don't need any spread"
+            attr_display = attr.get("display_name", "").lower()
+            if attr_display:
+                negation_skip = re.search(
+                    rf"don'?t\s+(?:want|need|like)\s+(?:a\s+|an\s+|any\s+|the\s+)?{re.escape(attr_display)}",
+                    user_lower,
+                )
+                if negation_skip:
+                    item[attr_slug] = None
+                    return advance_callback(item, order, attr)
+
         # Check if user input matches an unavailable option FIRST
         # e.g., "medium" when only small/large are available
         # Use exact_only=True to avoid partial matches (e.g., "large" matching "Extra Large")

@@ -16,7 +16,7 @@ from .models import OrderTask
 from .models.pending_states import PendingIngredientSuggestion
 from .pending_fields import PendingField
 from .schemas import StateMachineResult
-from .response_utils import is_affirmative
+from .response_utils import is_affirmative, is_negative
 from .utils.text import format_english_list, normalize_text
 
 if TYPE_CHECKING:
@@ -127,11 +127,10 @@ class SuggestedItemHandler:
         order.pending_ingredient_suggestion = None
         order.pending_field = None
 
-        # Check if user explicitly declined
-        user_lower = normalize_text(user_input)
-        is_negative = user_lower in ("no", "nope", "nah", "no thanks", "never mind", "nevermind")
+        # Check if user explicitly declined (DB-driven negation check)
+        declined = is_negative(user_input)
 
-        if is_negative:
+        if declined:
             logger.info(
                 "User declined ingredient suggestion for '%s', processing without ingredient: '%s'",
                 ingredient, user_input

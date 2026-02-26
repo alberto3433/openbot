@@ -36,6 +36,7 @@ class PendingField(str, Enum):
     QUANTITY_ADDITION_SELECTION = "quantity_addition_selection"
     AMBIGUOUS_SELECTION = "ambiguous_selection"
     REORDER_OFFER_CONFIRMATION = "reorder_offer_confirmation"
+    CONFIRM_DEFAULT_EXTRA = "confirm_default_extra"
 
 
 # PendingField values that indicate an item configuration is in progress.
@@ -50,4 +51,5 @@ CONFIGURING_PENDING_FIELDS: frozenset[PendingField] = frozenset({
     PendingField.CONFIRM_INGREDIENT_SUGGESTION,
     PendingField.CONFIRM_DIETARY_FOLLOWUP,
     PendingField.QUANTITY_ADDITION_SELECTION,
+    PendingField.CONFIRM_DEFAULT_EXTRA,
 })

@@ -76,3 +76,14 @@ class PendingDietaryFollowup(BaseModel):
 class PendingOrderHistory(BaseModel):
     """State for order history selection (e.g., 'what did I order before?')."""
     orders: list[dict]
+
+
+class PendingDefaultExtraClarification(BaseModel):
+    """Queue of default ingredients to ask user about extra quantity.
+
+    When user says "Chelsea Club with bacon" and bacon is already a default,
+    the system asks "Would you like extra bacon?" one at a time.
+    """
+    item_id: str
+    item_name: str
+    candidates: list[dict]  # [{slug, display_name, category}]

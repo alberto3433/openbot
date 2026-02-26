@@ -207,6 +207,10 @@ class CustomizationCheckpointHandler:
         is_declining = (
             any(user_lower == p or user_lower.startswith(p) for p in no_patterns)
             or menu_cache.is_done(user_lower)
+            or bool(re.search(
+                r"don'?t\s+(?:want|need)\s+(?:any\s+)?(?:more|anything|changes|extras|customization)",
+                user_lower,
+            ))
         )
         if is_declining:
             # Check for compound response like "no but can I get two large coffees"

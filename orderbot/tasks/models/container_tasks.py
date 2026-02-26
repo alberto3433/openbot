@@ -32,6 +32,7 @@ from .pending_states import (
     PendingIngredientSearch,
     PendingDietaryFollowup,
     PendingOrderHistory,
+    PendingDefaultExtraClarification,
 )
 
 if TYPE_CHECKING:
@@ -234,6 +235,8 @@ class OrderTask(BaseTask):
     pending_item_quantity: int = Field(default=1)
 
     pending_change_clarification: PendingChangeClarification | None = None
+
+    pending_default_extra_clarification: PendingDefaultExtraClarification | None = None
 
     pending_duplicate_selection: PendingDuplicateSelection | None = None
 

@@ -84,6 +84,8 @@ HESITATION_FILLERS = MID_SENTENCE_HESITATION_FILLERS | frozenset({
     # Conversational fillers
     "actually", "never mind", "nevermind", "oh", "wait",
     "well", "so", "ok", "okay", "hey", "like", "sorry",
+    # Retraction / topic-change fillers
+    "on second thought", "you know what",
     # Informal affirmative/negative
     "yeah", "yep", "yup", "nah", "nope", "sure", "alright", "right",
     # Discourse markers

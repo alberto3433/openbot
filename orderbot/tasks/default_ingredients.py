@@ -86,7 +86,7 @@ def populate_default_ingredients(
 def filter_redundant_default_selections(
     item: "MenuItemTask",
     selections: list["Selection"],
-) -> list["Selection"]:
+) -> tuple[list["Selection"], list[dict]]:
     """Filter out selections that are redundant with default ingredients.
 
     When parsing "egg sandwich with eggs over easy", the parser extracts both
@@ -97,43 +97,56 @@ def filter_redundant_default_selections(
     - The slug (or its singular form) matches a default ingredient slug
     - AND quantity == 1 (explicit "extra eggs" or "2 eggs" should still add)
 
+    Flagged defaults are selections that match a default with quantity==1.
+    These are candidates for "Would you like extra?" clarification.
+
     Args:
         item: The MenuItemTask with default ingredients already populated
         selections: List of extracted selections to filter
 
     Returns:
-        Filtered list of selections with redundant defaults removed
+        Tuple of (filtered_selections, flagged_defaults) where flagged_defaults
+        is a list of dicts with slug, display_name, and category.
     """
     if not selections:
-        return selections
+        return selections, []
 
-    # Get default ingredient slugs from item's modifiers
-    default_slugs = set()
+    # Build lookup: slug -> default modifier dict
+    default_mods: dict[str, dict] = {}
     for mod in item.selections:
         if mod.get("is_default"):
-            default_slugs.add(mod.get("slug", "").lower())
+            default_mods[mod.get("slug", "").lower()] = mod
 
-    if not default_slugs:
-        return selections
+    if not default_mods:
+        return selections, []
 
     filtered = []
+    flagged_defaults: list[dict] = []
     for sel in selections:
         slug_lower = sel.slug.lower()
         singular_slug = singularize(slug_lower)
 
         # Check if this selection matches a default (exact or singular form)
-        matches_default = (
-            slug_lower in default_slugs or
-            singular_slug in default_slugs
-        )
+        matched_slug = None
+        if slug_lower in default_mods:
+            matched_slug = slug_lower
+        elif singular_slug in default_mods:
+            matched_slug = singular_slug
 
         # Keep selection if it doesn't match defaults OR has explicit quantity > 1
-        if not matches_default or sel.quantity > 1:
+        if not matched_slug or sel.quantity > 1:
             filtered.append(sel)
         else:
+            # Flag this default for "would you like extra?" clarification
+            default_mod = default_mods[matched_slug]
+            flagged_defaults.append({
+                "slug": default_mod.get("slug", matched_slug),
+                "display_name": default_mod.get("display_name", sel.slug),
+                "category": default_mod.get("ingredient_category", sel.category or ""),
+            })
             logger.debug(
-                "Filtered redundant selection '%s' - matches default ingredient",
+                "Flagged redundant selection '%s' for extra clarification",
                 sel.slug
             )
 
-    return filtered
+    return filtered, flagged_defaults

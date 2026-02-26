@@ -161,7 +161,10 @@ def _detect_negated_attributes(
 
         # Match patterns like "no spread", "without spread", "skip spread"
         for name in names_to_check:
-            negation_pattern = rf'\b(?:no|without|skip)\s+{re.escape(name)}\b'
+            negation_pattern = (
+                rf'\b(?:no|without|skip)\s+{re.escape(name)}\b'
+                rf"|don'?t\s+(?:want|need|like)\s+(?:(?:any|the|some)\s+)?{re.escape(name)}\b"
+            )
             if re.search(negation_pattern, input_lower, re.IGNORECASE):
                 # Set to None for ALL attribute types when explicitly negated.
                 # This follows the codebase convention where None triggers the
@@ -206,7 +209,12 @@ def _extract_boolean_attrs(
             display_name = attr_config.get("display_name", attr_slug).lower()
             # Check for negative patterns FIRST (before positive check)
             # This prevents "not toasted" from matching just "toasted"
-            if re.search(rf'\b(?:not\s+{re.escape(display_name)}|un{re.escape(display_name)}|no\s+{re.escape(display_name)})\b', input_lower):
+            negation_re = (
+                rf"\b(?:not\s+{re.escape(display_name)}|un{re.escape(display_name)}"
+                rf"|no\s+{re.escape(display_name)})\b"
+                rf"|don'?t\s+(?:want|need|like)\s+(?:it\s+|that\s+)?{re.escape(display_name)}\b"
+            )
+            if re.search(negation_re, input_lower):
                 result[attr_slug] = False
                 logger.debug("Extracted boolean attribute: %s = False", attr_slug)
             elif re.search(rf'\b{re.escape(display_name)}\b', input_lower):

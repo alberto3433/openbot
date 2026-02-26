@@ -53,6 +53,7 @@ from .models import (
 from .models.container_tasks import _get_field_default
 from .item_converters import _unified_converter
 from .pricing import PricingEngine
+from .utils.text import format_pickup_time_display
 from ..schemas.enums import OrderStatus
 from ..services.tax_utils import calculate_order_total
 
@@ -358,26 +359,10 @@ def _build_scheduling_dict(
     pickup_time_display = None
 
     if is_scheduled and pickup_time:
-        try:
-            from datetime import datetime
-            from zoneinfo import ZoneInfo
-            tz_str = store_info.get("timezone", "America/New_York")
-            tz = ZoneInfo(tz_str)
-            dt = datetime.fromisoformat(pickup_time)
-            now = datetime.now(tz)
-            days_ahead = (dt.date() - now.date()).days
-            try:
-                time_str = dt.strftime("%-I:%M %p")
-            except ValueError:
-                time_str = dt.strftime("%I:%M %p").lstrip("0")
-            if days_ahead == 0:
-                pickup_time_display = f"Today at {time_str}"
-            elif days_ahead == 1:
-                pickup_time_display = f"Tomorrow at {time_str}"
-            else:
-                pickup_time_display = f"{dt.strftime('%A')} at {time_str}"
-        except (ValueError, TypeError):
-            pickup_time_display = pickup_time
+        tz_str = store_info.get("timezone", "America/New_York")
+        raw = format_pickup_time_display(pickup_time, timezone=tz_str)
+        # Capitalize for frontend display ("today" -> "Today")
+        pickup_time_display = raw[0].upper() + raw[1:] if raw else raw
 
     return {
         "pickup_time": pickup_time,

@@ -13,6 +13,7 @@ from ..cache.base import pluralize
 from .checkout_messages import CheckoutMessages
 from .models import OrderTask
 from .schemas import OrderPhase
+from .utils.text import format_pickup_time_display
 
 
 class MessageBuilder:
@@ -92,24 +93,7 @@ class MessageBuilder:
     @staticmethod
     def _format_pickup_time_display(pickup_time_iso: str) -> str | None:
         """Format an ISO-8601 pickup time string for display in messages."""
-        try:
-            from datetime import datetime
-            from zoneinfo import ZoneInfo
-            dt = datetime.fromisoformat(pickup_time_iso)
-            now = datetime.now(dt.tzinfo or ZoneInfo("America/New_York"))
-            days_ahead = (dt.date() - now.date()).days
-            try:
-                time_str = dt.strftime("%-I:%M %p")
-            except ValueError:
-                time_str = dt.strftime("%I:%M %p").lstrip("0")
-            if days_ahead == 0:
-                return f"today at {time_str}"
-            elif days_ahead == 1:
-                return f"tomorrow at {time_str}"
-            else:
-                return f"{dt.strftime('%A')} at {time_str}"
-        except (ValueError, TypeError):
-            return pickup_time_iso
+        return format_pickup_time_display(pickup_time_iso)
 
     def get_delivery_question(
         self,

@@ -110,13 +110,28 @@ def _filter_duplicate_modifications(
     filtered = []
     for add in additions:
         mod_slug = add.get("slug", "").lower()
-        # Resolve to canonical ingredient slug
+        # Check 1: Resolve to canonical ingredient slug for exact match
         canonical_slug = pattern_to_slug.get(mod_slug, mod_slug)
         if canonical_slug in extracted_option_slugs:
             logger.debug(
                 "Filtered duplicate modification '%s' (canonical: %s) - already an attribute option",
                 mod_slug, canonical_slug,
             )
+            continue
+        # Check 2: Component-word subset match
+        # e.g. "nova" words are a subset of "tofu_nova_cream_cheese" → filter out
+        mod_words = set(mod_slug.replace("-", "_").split("_"))
+        is_subset = False
+        for opt_slug in extracted_option_slugs:
+            opt_words = set(opt_slug.replace("-", "_").split("_"))
+            if mod_words and mod_words < opt_words:  # proper subset
+                logger.debug(
+                    "Filtered modification '%s' - words %s are a subset of attribute option '%s'",
+                    mod_slug, mod_words, opt_slug,
+                )
+                is_subset = True
+                break
+        if is_subset:
             continue
         filtered.append(add)
 

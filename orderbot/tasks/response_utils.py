@@ -149,6 +149,12 @@ _MOVE_ON_PHRASES = frozenset({
     "neither",
     "next",
     "pass",
+    "i'll pass",
+    "not today",
+    "not right now",
+    "not for me",
+    "i'm fine",
+    "i'm okay",
 })
 
 

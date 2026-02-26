@@ -166,6 +166,12 @@ class AttributeUpchargeCalculator:
                 # don't accidentally charge defaults (e.g., corned beef on The Reuben).
                 # Exception: if user asked for extra (effective_quantity > 0), charge for extras.
                 is_default = matching_modifier.get("is_default", False) if matching_modifier else False
+                logger.info(
+                    "LIST_ATTR_PRICING: attr=%s val=%s qty=%d base_qty=%d eff_qty=%d "
+                    "is_default=%s modifier=%s included_cats=%s",
+                    attr_slug, item_val, quantity, base_quantity, effective_quantity,
+                    is_default, matching_modifier, included_categories
+                )
                 if is_default and included_categories:
                     option_category = self._pricing._get_option_ingredient_category(
                         item_type, attr_slug, item_val
@@ -186,7 +192,7 @@ class AttributeUpchargeCalculator:
                 # Non-default additions in multi-select get full price, not premium.
                 # included_categories discount is for replacements of default ingredients
                 # (e.g., swapping cheddar for swiss), not new additions (e.g., adding bacon).
-                lookup_cats = included_categories if is_default else None
+                lookup_cats = included_categories if (is_default and base_quantity == 0) else None
                 upcharge = self._pricing.lookup_attribute_option_upcharge(
                     item_type, attr_slug, item_val, lookup_cats
                 )
@@ -194,13 +200,18 @@ class AttributeUpchargeCalculator:
                     total += upcharge * effective_quantity
                     priced_slugs.add(item_val_normalized)
                     if matching_modifier:
-                        matching_modifier["price"] = upcharge
+                        # Set display price so adapter's price×quantity gives correct total
+                        matching_modifier["price"] = (
+                            upcharge * effective_quantity / quantity if quantity > 0 else 0.0
+                        )
                 else:
                     price = self._pricing.lookup_modifier_price(item_val, item_type)
                     total += price * effective_quantity
                     priced_slugs.add(item_val_normalized)
                     if matching_modifier:
-                        matching_modifier["price"] = price
+                        matching_modifier["price"] = (
+                            price * effective_quantity / quantity if quantity > 0 else 0.0
+                        )
 
             elif isinstance(item_val, dict):
                 slug, qty = extract_modifier_slug_and_quantity(item_val)
@@ -246,10 +257,18 @@ class AttributeUpchargeCalculator:
         base_quantity = matching_modifier.get("_base_quantity", 0) if matching_modifier else 0
         effective_quantity = max(0, quantity - base_quantity) if base_quantity > 0 else quantity
 
+        # Debug: trace all pricing decision inputs
+        is_default = matching_modifier.get("is_default", False) if matching_modifier else False
+        logger.info(
+            "STRING_ATTR_PRICING: attr=%s val=%s qty=%d base_qty=%d eff_qty=%d "
+            "is_default=%s modifier=%s included_cats=%s",
+            attr_slug, attr_value, quantity, base_quantity, effective_quantity,
+            is_default, matching_modifier, included_categories
+        )
+
         # Default ingredients in included categories are always free.
         # Check BEFORE upcharge lookup so premium calculations don't accidentally
         # charge defaults (e.g., spinach on The Lexington).
-        is_default = matching_modifier.get("is_default", False) if matching_modifier else False
         if is_default and included_categories:
             option_category = self._pricing._get_option_ingredient_category(
                 item_type, attr_slug, attr_value
@@ -269,20 +288,25 @@ class AttributeUpchargeCalculator:
                 # else: user asked for extra → fall through to charge for extras
 
         # Always look up price from DB - this is the single source of truth
+        lookup_cats = None if base_quantity > 0 else included_categories
         upcharge = self._pricing.lookup_attribute_option_upcharge(
-            item_type, attr_slug, attr_value, included_categories
+            item_type, attr_slug, attr_value, lookup_cats
         )
-        logger.debug(
-            "recalc: %s=%s upcharge=%.2f (included_categories=%s)",
-            attr_slug, attr_value, upcharge, included_categories
+        logger.info(
+            "STRING_ATTR_UPCHARGE: attr=%s val=%s upcharge=%.2f lookup_cats=%s "
+            "base_qty=%d eff_qty=%d",
+            attr_slug, attr_value, upcharge, lookup_cats, base_quantity,
+            effective_quantity
         )
 
         if upcharge > 0:
             # Mark as priced using normalized slug
             priced_slugs.add(attr_value_normalized)
-            # Update the modifier's price for display purposes
+            # Set display price so adapter's price×quantity gives correct total
             if matching_modifier:
-                matching_modifier["price"] = upcharge
+                matching_modifier["price"] = (
+                    upcharge * effective_quantity / quantity if quantity > 0 else 0.0
+                )
             return upcharge * effective_quantity, priced_slugs
 
         # Check if category is included (no charge).
@@ -291,18 +315,46 @@ class AttributeUpchargeCalculator:
         option_category = self._pricing._get_option_ingredient_category(
             item_type, attr_slug, attr_value
         )
-        if option_category and option_category in included_categories:
-            # This is a default ingredient in an included category - no charge
+        logger.info(
+            "STRING_ATTR_FALLBACK: attr=%s val=%s option_category=%s "
+            "in_included=%s base_qty=%d",
+            attr_slug, attr_value, option_category,
+            option_category in included_categories if option_category else False,
+            base_quantity
+        )
+        if option_category and option_category in included_categories and base_quantity == 0:
+            if quantity <= 1:
+                # Simple replacement in included category - no charge
+                priced_slugs.add(attr_value_normalized)
+                if matching_modifier:
+                    matching_modifier["price"] = 0.0
+                return 0.0, priced_slugs
+            # quantity > 1: 1 unit free (replacement slot), extras at full price
+            extra_qty = quantity - 1
+            full_price = self._pricing.lookup_attribute_option_upcharge(
+                item_type, attr_slug, attr_value, None
+            )
+            if full_price <= 0:
+                full_price = self._pricing.lookup_modifier_price(attr_value, item_type)
+            logger.info(
+                "STRING_ATTR_EXTRA: attr=%s val=%s extra_qty=%d full_price=%.2f",
+                attr_slug, attr_value, extra_qty, full_price
+            )
             priced_slugs.add(attr_value_normalized)
             if matching_modifier:
-                matching_modifier["price"] = 0.0
-            return 0.0, priced_slugs
+                # Set display price so adapter's price×quantity gives correct total
+                matching_modifier["price"] = (
+                    full_price * extra_qty / quantity if quantity > 0 else 0.0
+                )
+            return full_price * extra_qty, priced_slugs
 
         # Not an included category - try modifier price lookup from DB
         price = self._pricing.lookup_modifier_price(attr_value, item_type)
         # Always mark as priced (even if price is 0) to prevent double-counting
         priced_slugs.add(attr_value_normalized)
-        # Update the modifier's price for display purposes
+        # Set display price so adapter's price×quantity gives correct total
         if matching_modifier:
-            matching_modifier["price"] = price
+            matching_modifier["price"] = (
+                price * effective_quantity / quantity if quantity > 0 else 0.0
+            )
         return price * effective_quantity, priced_slugs

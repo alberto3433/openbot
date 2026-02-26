@@ -38,6 +38,7 @@ ORDERING_PREFIXES = frozenset({
     "i want", "i'd like", "i would like", "i need", "i'll have", "i'll take",
     "can i get", "can i have", "could i get", "could i have",
     "give me", "gimme", "get me", "make it", "let's go with", "let's do",
+    "could you add", "would you add", "hook me up with", "throw in",
     "just", "some",
 })
 
@@ -51,7 +52,9 @@ ORDERING_PREFIX_RE = _re.compile(
     r"i\s+want\s+|i\s+would\s+like\s+|i'?d\s+like\s+|i\s+need\s+|"
     r"i'?ll\s+have\s+|i\s+will\s+have\s+|i'?ll\s+take\s+|"
     r"can\s+i\s+(?:get|have)\s+|could\s+i\s+(?:get|have)\s+|"
+    r"(?:could|would)\s+you\s+add\s+|"
     r"give\s+me\s+|gimme\s+|get\s+me\s+|make\s+it\s+|"
+    r"hook\s+me\s+up\s+with\s+|throw\s+in\s+|"
     r"let'?s\s+(?:go\s+with|do)\s+|let\s+me\s+(?:get|have)\s+|"
     r"add\s+"
     r')',

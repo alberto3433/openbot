@@ -261,7 +261,6 @@ def menu_cache_loaded(tmp_path_factory):
                 set_global_menu_data(menu_data)
                 return menu_cache
             except OperationalError as e:
-                db.close()
                 engine.dispose()
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s

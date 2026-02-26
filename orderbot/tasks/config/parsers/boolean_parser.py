@@ -3,8 +3,9 @@ Boolean Input Parser.
 
 Parses user responses to yes/no boolean questions using a chain of strategies:
 1. False aliases (e.g., "not toasted") - checked first since they contain true patterns
-2. True aliases (e.g., "toasted", "toast")
-3. Negation patterns (e.g., "not X", "unX")
+2. Negation patterns (e.g., "not X", "don't want it X") - before true aliases
+   since "I don't want it scooped" contains "scooped" which is a true alias
+3. True aliases (e.g., "toasted", "toast")
 4. Yes/No patterns from database
 5. Attribute name implicit yes
 
@@ -12,6 +13,7 @@ This follows a chain-of-responsibility pattern where each strategy is tried
 in order until one succeeds.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -66,13 +68,14 @@ class BooleanParser:
         if result.value is not None:
             return result
 
-        # Strategy 2: Check true aliases
-        result = self._check_true_aliases(user_lower, true_aliases)
+        # Strategy 2: Check negation patterns before true aliases
+        # (since "I don't want it scooped" contains "scooped" which is a true alias)
+        result = self._check_negation_pattern(user_lower, attr_name)
         if result.value is not None:
             return result
 
-        # Strategy 3: Check negation patterns
-        result = self._check_negation_pattern(user_lower, attr_name)
+        # Strategy 3: Check true aliases
+        result = self._check_true_aliases(user_lower, true_aliases)
         if result.value is not None:
             return result
 
@@ -167,7 +170,12 @@ class BooleanParser:
         if not attr_name:
             return BooleanParseResult(value=None)
 
-        if f"not {attr_name}" in user_lower or f"un{attr_name}" in user_lower:
+        negation_pattern = (
+            rf"\bnot\s+{re.escape(attr_name)}\b"
+            rf"|un{re.escape(attr_name)}\b"
+            rf"|don'?t\s+(?:want|need|like)\s+(?:it\s+|that\s+)?{re.escape(attr_name)}\b"
+        )
+        if re.search(negation_pattern, user_lower):
             return BooleanParseResult(value=False, matched_by="negation_pattern")
 
         return BooleanParseResult(value=None)

@@ -147,6 +147,15 @@ class ItemLookupHandler(MenuDataMixin):
                 logger.info("No text matches for '%s', using %d of %d items of type '%s' (after required_match_phrases filter)",
                            item_name, len(matching_items), len(all_type_items), item_type_filter)
 
+                # If filtering reduced many items to just 1, it's a weak match
+                # (the survivor is just the least restrictive item, not what the user asked for)
+                if len(matching_items) == 1 and len(all_type_items) > 1:
+                    logger.info(
+                        "WEAK_FALLBACK: filtered %d -> 1 for type '%s', not auto-selecting",
+                        len(all_type_items), item_type_filter,
+                    )
+                    matching_items = []
+
         # Step 2: Handle results
         if len(matching_items) == 1:
             # Single match - return it directly

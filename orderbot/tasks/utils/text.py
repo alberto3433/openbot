@@ -3,6 +3,8 @@ Text formatting utilities for human-readable output.
 """
 
 import re
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from orderbot.cache.base import normalize_text  # noqa: F401 — canonical def in cache/base, re-exported here
 
@@ -355,3 +357,38 @@ def extract_question_phrase(question_text: str) -> str | None:
         return m.group(1).strip()
     m = _HOW_QUESTION_RE.search(question_text)
     return m.group(1).strip() if m else None
+
+
+def format_pickup_time_display(
+    pickup_time_iso: str,
+    timezone: str = "America/New_York",
+) -> str | None:
+    """Format an ISO-8601 pickup time string for human-readable display.
+
+    Returns lowercase relative time like "today at 3:00 PM", "tomorrow at 10:30 AM",
+    or a weekday like "Monday at 2:00 PM".
+
+    Args:
+        pickup_time_iso: ISO-8601 datetime string to format.
+        timezone: IANA timezone name for determining "today" vs "tomorrow".
+
+    Returns:
+        Formatted display string (lowercase), or the raw input on parse failure.
+        None is never returned when a non-empty string is passed.
+    """
+    try:
+        dt = datetime.fromisoformat(pickup_time_iso)
+        now = datetime.now(dt.tzinfo or ZoneInfo(timezone))
+        days_ahead = (dt.date() - now.date()).days
+        try:
+            time_str = dt.strftime("%-I:%M %p")
+        except ValueError:
+            time_str = dt.strftime("%I:%M %p").lstrip("0")
+        if days_ahead == 0:
+            return f"today at {time_str}"
+        elif days_ahead == 1:
+            return f"tomorrow at {time_str}"
+        else:
+            return f"{dt.strftime('%A')} at {time_str}"
+    except (ValueError, TypeError):
+        return pickup_time_iso

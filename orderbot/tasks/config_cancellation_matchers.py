@@ -188,6 +188,16 @@ def _should_defer_to_attribute_handler(
     If so, this is a decline/skip ("no cheese" during cheese config means
     "I don't want cheese"), not an item removal. Returns True to defer.
     """
+    from .pending_fields import PendingField
+
+    # At customization checkpoint, negative responses mean "decline customization",
+    # not "cancel an item" — always defer to the checkpoint handler
+    if order.pending_field in (
+        PendingField.CUSTOMIZATION_CHECKPOINT,
+        PendingField.CUSTOMIZATION_SELECTION,
+    ):
+        return True
+
     _, pending_attr_slug = parse_pending_field(order.pending_field)
     if not pending_attr_slug:
         return False
@@ -196,9 +206,11 @@ def _should_defer_to_attribute_handler(
     # Check if cancel_desc words overlap with the slug's word components
     # (e.g., "shots" matches "espresso_shots" via the "shots" component)
     attr_slug_parts = set(pending_attr_slug.split("_"))
+    cancel_desc_words = set(cancel_desc.split())
     if (pending_attr_slug in cancel_variants
             or cancel_desc == pending_attr_slug
-            or set(cancel_variants) & attr_slug_parts):
+            or set(cancel_variants) & attr_slug_parts
+            or cancel_desc_words & attr_slug_parts):
         logger.info(
             "Cancel during config: '%s' matches pending attribute '%s' - "
             "deferring to attribute handler",

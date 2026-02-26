@@ -295,6 +295,11 @@ def parse_open_input(
     # Strip greetings/fillers early so ALL paths get clean text
     user_input = strip_conversational_fillers(raw_text)
 
+    # Strip filler "like" (e.g., "peanut butter like sandwich") but preserve verb "like"
+    # Verb "like" is preceded by: pronoun "i", contraction "'d", auxiliary "would/could/should", "'ll"
+    user_input = re.sub(r"(?<!'d )(?<!ld )(?<!ll )(?<!i )\blike\b\s*", ' ', user_input, flags=re.IGNORECASE)
+    user_input = re.sub(r'\s+', ' ', user_input).strip()
+
     # Strip unsupported dining options (to go / for here / dine in) early
     # so they don't interfere with multi-item tokenization
     dining_option = _extract_dining_option(user_input)

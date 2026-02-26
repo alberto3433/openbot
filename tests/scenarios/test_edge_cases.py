@@ -11,6 +11,37 @@ import pytest
 from orderbot.tasks.schemas import OrderPhase
 
 
+class TestModifierAttributeOverlap:
+    """Tests for modifiers that overlap with attribute option names."""
+
+    def test_nova_spread_does_not_add_nova_meat(self, order_and_sm):
+        """'nova tofu spread' should not extract 'nova' as a $6.00 meat modifier.
+
+        The word 'nova' in 'nova tofu spread' is part of the spread name
+        (tofu_nova_cream_cheese), not a request for nova lox.
+        """
+        order, sm = order_and_sm
+
+        result = sm.process(
+            "nova cream cheese sandwich with nova tofu spread", order
+        )
+
+        items = result.order.items.get_active_items()
+        assert len(items) >= 1, "Should have at least 1 item"
+
+        item = items[0]
+        # Check that no $6.00 nova/lox meat modifier was added
+        modifications = item.attribute_values.get("modifications", {})
+        additions = modifications.get("additions", [])
+        nova_mods = [
+            a for a in additions
+            if a.get("slug", "") in ("nova", "nova_scotia_salmon", "lox")
+        ]
+        assert nova_mods == [], (
+            f"Should not have nova/lox meat modifier, but found: {nova_mods}"
+        )
+
+
 class TestAmbiguousLanguage:
     """Tests for ambiguous or unclear customer language."""
 
@@ -238,6 +269,113 @@ class TestNegativeLanguage:
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
+        assert items[0].attribute_values.get("toasted") is False, "Should NOT be toasted"
+
+    def test_dont_want_it_during_config(self, order_and_sm):
+        """'I don't want it scooped' during scooped config question."""
+        order, sm = order_and_sm
+
+        # First: order bagel with toasted=no to advance past toasted question
+        result = sm.process("Everything bagel, I don't want it toasted", order)
+        order = result.order
+
+        # Should now be asking about scooped
+        assert "scooped" in (order.pending_field or ""), (
+            f"Expected pending_field to contain 'scooped', got '{order.pending_field}'"
+        )
+
+        # Answer with "I don't want it scooped"
+        result = sm.process("I don't want it scooped", order)
+        order = result.order
+
+        items = order.items.get_active_items()
+        assert len(items) >= 1, "Should still have the bagel"
+        assert items[0].attribute_values.get("scooped") is False, (
+            "Should set scooped=False, not treat as cancellation"
+        )
+
+    def test_dont_want_a_spread_during_config(self, order_and_sm):
+        """'I don't want a spread' during spread config question."""
+        order, sm = order_and_sm
+
+        # Order bagel and skip through to spread question
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+
+        # Should now be asking about spread
+        assert "spread" in (order.pending_field or ""), (
+            f"Expected pending_field to contain 'spread', got '{order.pending_field}'"
+        )
+
+        # Answer with "I don't want a spread"
+        result = sm.process("I don't want a spread", order)
+        order = result.order
+
+        items = order.items.get_active_items()
+        assert len(items) >= 1, "Should still have the bagel"
+        # Spread should be None (skipped), not disambiguating between options
+        assert items[0].attribute_values.get("spread") is None, (
+            "Should skip spread, not trigger disambiguation"
+        )
+        # Should have moved past the spread question
+        assert "spread" not in (order.pending_field or ""), (
+            f"Should have moved past spread, but pending_field is '{order.pending_field}'"
+        )
+
+    def test_dont_want_any_more_changes_at_checkpoint(self, order_and_sm):
+        """'I don't want any more changes' at customization checkpoint."""
+        order, sm = order_and_sm
+
+        # Order bagel and skip through mandatory questions to reach checkpoint
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+
+        # Skip spread
+        result = sm.process("no", order)
+        order = result.order
+
+        # Should now be at customization checkpoint
+        assert order.pending_field == "customization_checkpoint", (
+            f"Expected customization_checkpoint, got '{order.pending_field}'"
+        )
+
+        # Answer with "I don't want any more changes"
+        result = sm.process("I don't want any more changes", order)
+        order = result.order
+
+        # Should have completed the item and moved on
+        items = order.items.get_active_items()
+        assert len(items) >= 1, "Should still have the bagel"
+        assert "couldn't find" not in (result.message or "").lower(), (
+            f"Should not show error, got: {result.message}"
+        )
+
+    def test_dont_want_anything_else_done_ordering(self, order_and_sm):
+        """'I don't want anything else' at taking_items should proceed to checkout."""
+        order, sm = order_and_sm
+
+        # Order a simple bagel and complete configuration
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+        result = sm.process("no", order)  # skip spread
+        order = result.order
+        result = sm.process("no", order)  # decline customization
+        order = result.order
+
+        # Should be in taking_items phase now ("Anything else?")
+        phase = order.phase.value if hasattr(order.phase, 'value') else str(order.phase)
+        assert phase == "taking_items", (
+            f"Expected taking_items phase, got '{phase}'"
+        )
+
+        # Say "I don't want anything else"
+        result = sm.process("I don't want anything else", order)
+        order = result.order
+
+        # Should have moved to checkout, not shown the menu
+        assert "great selection" not in (result.message or "").lower(), (
+            f"Should not show menu, got: {result.message}"
+        )
 
     def test_nothing_on_it(self, order_and_sm):
         """'Nothing on it' request."""
@@ -274,6 +412,197 @@ class TestNegativeLanguage:
 
         items = result.order.items.get_active_items()
         assert len(items) >= 1, "Should have at least 1 item"
+
+
+    def test_ill_pass_at_spread_question(self, order_and_sm):
+        """'I'll pass' as decline at spread configuration question."""
+        order, sm = order_and_sm
+
+        # Order bagel and skip through to spread question
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+
+        # Should now be asking about spread
+        assert "spread" in (order.pending_field or ""), (
+            f"Expected pending_field to contain 'spread', got '{order.pending_field}'"
+        )
+
+        # Decline with "I'll pass"
+        result = sm.process("I'll pass", order)
+        order = result.order
+
+        items = order.items.get_active_items()
+        assert len(items) >= 1, "Should still have the bagel"
+        # Should have moved past the spread question
+        assert "spread" not in (order.pending_field or ""), (
+            f"Should have moved past spread, but pending_field is '{order.pending_field}'"
+        )
+
+    def test_not_today_as_decline(self, order_and_sm):
+        """'Not today' as decline at optional configuration question."""
+        order, sm = order_and_sm
+
+        # Order bagel and skip through to spread question
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+
+        assert "spread" in (order.pending_field or ""), (
+            f"Expected pending_field to contain 'spread', got '{order.pending_field}'"
+        )
+
+        # Decline with "not today"
+        result = sm.process("Not today", order)
+        order = result.order
+
+        items = order.items.get_active_items()
+        assert len(items) >= 1, "Should still have the bagel"
+        assert "spread" not in (order.pending_field or ""), (
+            f"Should have moved past spread, but pending_field is '{order.pending_field}'"
+        )
+
+    def test_im_fine_as_decline_at_checkpoint(self, order_and_sm):
+        """'I'm fine' as decline at customization checkpoint."""
+        order, sm = order_and_sm
+
+        # Order bagel and skip through mandatory questions to reach checkpoint
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+
+        # Skip spread
+        result = sm.process("no", order)
+        order = result.order
+
+        # Should now be at customization checkpoint
+        assert order.pending_field == "customization_checkpoint", (
+            f"Expected customization_checkpoint, got '{order.pending_field}'"
+        )
+
+        # Decline with "I'm fine"
+        result = sm.process("I'm fine", order)
+        order = result.order
+
+        items = order.items.get_active_items()
+        assert len(items) >= 1, "Should still have the bagel"
+        assert "couldn't find" not in (result.message or "").lower(), (
+            f"Should not show error, got: {result.message}"
+        )
+
+    def test_no_thanks_just_the_bagel_done_ordering(self, order_and_sm):
+        """'No thanks, just the bagel' at taking_items should proceed to checkout."""
+        order, sm = order_and_sm
+
+        # Order a simple bagel and complete configuration
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+        result = sm.process("no", order)  # skip spread
+        order = result.order
+        result = sm.process("no", order)  # decline customization
+        order = result.order
+
+        # Should be in taking_items phase now ("Anything else?")
+        phase = order.phase.value if hasattr(order.phase, 'value') else str(order.phase)
+        assert phase == "taking_items", (
+            f"Expected taking_items phase, got '{phase}'"
+        )
+
+        # Say "No thanks, just the bagel"
+        result = sm.process("No thanks, just the bagel", order)
+        order = result.order
+
+        # Should have moved to checkout, not shown the menu
+        phase = order.phase.value if hasattr(order.phase, 'value') else str(order.phase)
+        assert phase != "taking_items", (
+            f"Should have moved past taking_items to checkout, but phase is '{phase}'"
+        )
+
+    def test_dont_want_any_more_done_ordering(self, order_and_sm):
+        """'I don't want any more' at taking_items should proceed to checkout."""
+        order, sm = order_and_sm
+
+        # Order a simple bagel and complete configuration
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+        result = sm.process("no", order)  # skip spread
+        order = result.order
+        result = sm.process("no", order)  # decline customization
+        order = result.order
+
+        # Should be in taking_items phase now
+        phase = order.phase.value if hasattr(order.phase, 'value') else str(order.phase)
+        assert phase == "taking_items", (
+            f"Expected taking_items phase, got '{phase}'"
+        )
+
+        # Say "I don't want any more"
+        result = sm.process("I don't want any more", order)
+        order = result.order
+
+        phase = order.phase.value if hasattr(order.phase, 'value') else str(order.phase)
+        assert phase != "taking_items", (
+            f"Should have moved past taking_items, but phase is '{phase}'"
+        )
+
+
+class TestAffirmativeLanguage:
+    """Tests for affirmative phrasing and confirmations."""
+
+    def test_go_ahead_as_affirmative_at_checkpoint(self, order_and_sm):
+        """'Go ahead' as affirmative at customization checkpoint should move on."""
+        order, sm = order_and_sm
+
+        # Order bagel and skip through to checkpoint
+        result = sm.process("Everything bagel not toasted not scooped", order)
+        order = result.order
+        result = sm.process("no", order)  # skip spread
+        order = result.order
+
+        # Should be at customization checkpoint
+        assert order.pending_field == "customization_checkpoint", (
+            f"Expected customization_checkpoint, got '{order.pending_field}'"
+        )
+
+        # "Go ahead" should be treated as decline (move on without changes)
+        # or as affirmative depending on the question — at checkpoint it means "done"
+        result = sm.process("Go ahead", order)
+        order = result.order
+
+        # Should have moved past the checkpoint
+        assert order.pending_field != "customization_checkpoint", (
+            f"Should have moved past checkpoint, but pending_field is '{order.pending_field}'"
+        )
+
+
+class TestOrderingPrefixes:
+    """Tests for ordering prefix phrases."""
+
+    def test_could_you_add_modifier(self, order_and_sm):
+        """'Could you add bacon' should be recognized as an ordering request."""
+        order, sm = order_and_sm
+
+        result = sm.process("Everything bagel toasted", order)
+        order = result.order
+
+        # Skip through config to get back to taking items
+        # Add bacon during config or taking_items
+        result = sm.process("Could you add cream cheese", order)
+
+        assert result.message is not None, "Should have a response"
+        # Should not say "I didn't catch that"
+        assert "didn't catch" not in (result.message or "").lower(), (
+            f"Should recognize 'could you add', got: {result.message}"
+        )
+
+    def test_throw_in_item(self, order_and_sm):
+        """'Throw in a cookie' should be recognized as an ordering request."""
+        order, sm = order_and_sm
+
+        result = sm.process("Throw in a chocolate chip cookie", order)
+
+        # Should either find the item or ask for clarification
+        assert result.message is not None, "Should have a response"
+        assert "didn't catch" not in (result.message or "").lower(), (
+            f"Should recognize 'throw in', got: {result.message}"
+        )
 
 
 class TestTyposAndMisspellings:

@@ -11,6 +11,7 @@ Extracted from handler.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from ..utils.text import normalize_text
@@ -132,7 +133,11 @@ def _capture_boolean_attribute(
     # Fall back to display_name check
     if not matched:
         attr_name = attr["display_name"].lower()
-        if f"not {attr_name}" in user_lower:
+        negation_pattern = (
+            rf"\bnot\s+{re.escape(attr_name)}\b"
+            rf"|don'?t\s+(?:want|need|like)\s+(?:it\s+|that\s+)?{re.escape(attr_name)}\b"
+        )
+        if re.search(negation_pattern, user_lower):
             item[attr_slug] = False
             logger.info("Captured %s=False from display name", attr_slug)
         elif attr_name in user_lower:

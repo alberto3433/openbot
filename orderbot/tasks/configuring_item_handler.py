@@ -160,6 +160,7 @@ class ConfiguringItemHandler:
             PendingField.MODIFIER_SELECTION: self.config_selection_handler.handle_modifier_selection,
             PendingField.AMBIGUOUS_SELECTION: self._handle_ambiguous_selection_response,
             PendingField.CONFIRM_ITEM_SWITCH: self.config_modification_handler.handle_confirm_item_switch,
+            PendingField.CONFIRM_DEFAULT_EXTRA: self._handle_default_extra_response,
         }
         if self._taking_items_handler:
             _dispatch.update({
@@ -345,6 +346,71 @@ class ConfiguringItemHandler:
             order=order,
             quick_replies=qr,
         )
+
+    def _handle_default_extra_response(
+        self, user_input: str, order: OrderTask
+    ) -> StateMachineResult:
+        """Handle yes/no response to 'do you want extra [default ingredient]?'"""
+        from orderbot.tasks.config.parsers.boolean_parser import BooleanParser
+
+        clarification = order.pending_default_extra_clarification
+        if not clarification or not clarification.candidates:
+            order.pending_default_extra_clarification = None
+            order.clear_pending()
+            return self.checkout_utils_handler.get_next_question(order)
+
+        item = order.items.get_item_by_id(clarification.item_id)
+        candidate = clarification.candidates[0]
+
+        # Parse yes/no
+        parser = BooleanParser()
+        result = parser.parse(user_input, {"display_name": candidate["display_name"]})
+
+        if result.value is None:
+            # Couldn't parse — re-ask
+            return StateMachineResult(
+                message=f"Sorry, I didn't catch that. Would you like extra {candidate['display_name'].lower()}?",
+                order=order,
+                quick_replies=[
+                    {"label": "Yes", "value": "yes"},
+                    {"label": "No", "value": "no"},
+                ],
+            )
+
+        if result.value and isinstance(item, MenuItemTask):
+            # User wants extra — bump quantity to 2, set _base_quantity=1
+            for mod in item.selections:
+                if mod.get("slug") == candidate["slug"] and mod.get("is_default"):
+                    mod["quantity"] = mod.get("quantity", 1) + 1
+                    mod["_base_quantity"] = mod.get("_base_quantity", 0) or 1
+                    break
+            # Recalculate price
+            if self.menu_item_handler and self.menu_item_handler.pricing:
+                self.menu_item_handler.pricing.recalculate_item_price(item)
+
+        # Pop the processed candidate
+        clarification.candidates.pop(0)
+
+        # If more candidates, ask next
+        if clarification.candidates:
+            next_candidate = clarification.candidates[0]
+            msg = (
+                f"The {clarification.item_name} already comes with "
+                f"{next_candidate['display_name']}. Would you like extra?"
+            )
+            order.pending_field = PendingField.CONFIRM_DEFAULT_EXTRA
+            order.pending_item_ids = [clarification.item_id]
+            return StateMachineResult(message=msg, order=order, quick_replies=[
+                {"label": "Yes", "value": "yes"},
+                {"label": "No", "value": "no"},
+            ])
+
+        # All done — clear and proceed to normal config
+        order.pending_default_extra_clarification = None
+        order.clear_pending()
+        if isinstance(item, MenuItemTask) and self.menu_item_handler:
+            return self.menu_item_handler.get_first_question(item, order)
+        return self.checkout_utils_handler.get_next_question(order)
 
     def _check_config_interceptors(
         self, user_input: str, item, order: OrderTask

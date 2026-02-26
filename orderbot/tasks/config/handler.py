@@ -307,6 +307,23 @@ class MenuItemConfigHandler(BaseHandler):
         if ambig_result:
             return ambig_result
 
+        # Check for pending default extra clarifications
+        # (e.g., "Chelsea Club with bacon" when bacon is already a default)
+        clarification = order.pending_default_extra_clarification
+        if clarification and clarification.item_id == item.id and clarification.candidates:
+            candidate = clarification.candidates[0]
+            msg = (
+                f"The {clarification.item_name} already comes with "
+                f"{candidate['display_name']}. Would you like extra?"
+            )
+            from ..pending_fields import PendingField
+            order.pending_field = PendingField.CONFIRM_DEFAULT_EXTRA
+            order.pending_item_ids = [item.id]
+            return StateMachineResult(message=msg, order=order, quick_replies=[
+                {"label": "Yes", "value": "yes"},
+                {"label": "No", "value": "no"},
+            ])
+
         # Find first unanswered mandatory attribute
         unanswered = get_unanswered_mandatory(item, item_type)
         if not unanswered:

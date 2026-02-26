@@ -24,6 +24,27 @@ from .schemas import StateMachineResult, OrderPhase
 from .utils import OptionMatcher
 from .utils.disambiguation_utils import format_options_list
 
+
+def _slug_to_display_name(name: str) -> str:
+    """Convert a slug-style name to a human-readable display name.
+
+    If the name contains underscores (indicating a slug like 'cheese_sandwich'),
+    attempts to look up the display name from the menu cache. Falls back to
+    replacing underscores with spaces and title-casing.
+
+    Regular user input (no underscores) is returned as-is.
+    """
+    if "_" not in name:
+        return name
+    try:
+        from orderbot.cache import menu_cache
+        display = menu_cache.get_item_type_display_name(name)
+        if display and display != name:
+            return display
+    except Exception:
+        pass
+    return name.replace("_", " ").title()
+
 logger = logging.getLogger(__name__)
 
 # Shared OptionMatcher instance for disambiguation
@@ -166,7 +187,7 @@ class DisambiguationHandler:
         # Build quick replies for inline clickable text
         qr = [{"label": m.get("name", ""), "value": m.get("name", "")} for m in matching_items[:self.MAX_OPTIONS] if m.get("name")]
         return StateMachineResult(
-            message=f"We have a few options for {item_name}:\n{options_str}\nWhich would you like?",
+            message=f"We have a few options for {_slug_to_display_name(item_name)}:\n{options_str}\nWhich would you like?",
             order=order,
             quick_replies=qr,
         )

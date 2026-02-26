@@ -132,17 +132,19 @@ class OrderItemBuilder:
                 try:
                     base_price = self._pricing.lookup_base_price(canonical_name)
                 except ValueError:
-                    # Price lookup failed for user's text — try any known menu item
-                    # of this type. E.g., "early gray tea" (type=tea) → look up "Hot Tea"
+                    # Only fall back to a known menu item when there's exactly one
+                    # item of this type (e.g., "earl grey tea" → the sole "Hot Tea").
+                    # With multiple items, silently picking the first one is wrong
+                    # (e.g., "mocha" should NOT become "Seasonal Matcha Latte").
                     if self._menu_lookup:
-                        for name in menu_cache.get_item_names(item_type):
-                            fallback_data = self._menu_lookup(name)
+                        type_names = list(menu_cache.get_item_names(item_type))
+                        if len(type_names) == 1:
+                            fallback_data = self._menu_lookup(type_names[0])
                             if fallback_data:
                                 canonical_name = fallback_data.get("name", canonical_name)
                                 base_price = fallback_data.get("base_price", 0)
                                 menu_item_id = fallback_data.get("id")
                                 size_category_slug = fallback_data.get("size_category_slug")
-                                break
                     if base_price == 0.0:
                         logger.debug(
                             "No base price found for '%s' (item_type=%s), will price during config",

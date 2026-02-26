@@ -218,6 +218,21 @@ def _parse_item_generic(
         resolved_name, resolved_item_span = _match_menu_item_name_for_type_with_span(text, item_type)
         if resolved_name:
             item_name = resolved_name
+        elif item_name:
+            # Derived item_name couldn't resolve to a specific menu item.
+            # If none of its words are a trigger for ANY item type, it's
+            # likely not a real menu term (e.g., "mocha") and should be
+            # reset so the downstream guard can reject it properly.
+            # We check all types (not just the detected one) because the
+            # tokenizer may classify a token under a related but different
+            # type (e.g., "bagel" → bagel_package instead of bagel).
+            all_triggers = menu_cache.get_item_type_triggers()
+            all_trigger_words: set[str] = set()
+            for trigger_set in all_triggers.values():
+                all_trigger_words.update(t.lower() for t in trigger_set)
+            name_words = set(item_name.lower().split())
+            if not name_words & all_trigger_words:
+                item_name = None
 
     # Extract quantity from text
     quantity = 1

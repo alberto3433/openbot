@@ -541,9 +541,11 @@ class UnrecognizedItemHandler:
             group_names = [g["display_name"] for g in display_groups][:4]
             group_list = format_english_list(group_names, conjunction="and")
             qr = [{"label": name, "value": name} for name in group_names]
+            qr.append({"label": "our menu", "value": "show menu", "url": "/static/menu.html"})
             return (
                 f"I'm sorry, we don't have {clean_name}. "
-                f"We do have {group_list} though - would any of those interest you?",
+                f"We do have {group_list} though - would any of those interest you? "
+                f"Would you like to see our menu?",
                 qr,
             )
         else:

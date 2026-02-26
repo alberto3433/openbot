@@ -1624,7 +1624,6 @@
         <textarea
           id="chat-input"
           autocomplete="off"
-          autofocus
           rows="1"
           placeholder="Connecting..."
           disabled
@@ -1806,6 +1805,7 @@
     const inputEl = document.getElementById("chat-input");
     let STORE_NAMES = {};
     const USE_STREAMING = true;
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 1024);
     let appVersion = "...";
 
     async function loadAppVersion() {
@@ -2036,7 +2036,7 @@
         } else {
           sendMessage(target.dataset.value);
         }
-        document.getElementById("chat-input").focus();
+        if (!isMobile) document.getElementById("chat-input").focus();
       }
     });
 
@@ -2132,7 +2132,12 @@
         // Enable input now that session is ready
         inputEl.disabled = false;
         inputEl.placeholder = "Type your message...";
-        inputEl.focus();
+        if (isMobile) {
+          inputEl.blur();
+          document.activeElement?.blur();
+        } else {
+          inputEl.focus();
+        }
         document.getElementById("mic-btn").disabled = false;
         document.getElementById("send-btn").disabled = false;
       } catch (err) {
@@ -2347,7 +2352,10 @@
           overlay.classList.add("fade-out");
           audioEnabled = true;
           await startSession(callerIdParam || null, storeId);
-          setTimeout(() => overlay.remove(), 400);
+          setTimeout(() => {
+            overlay.remove();
+            if (isMobile) { inputEl.blur(); document.activeElement?.blur(); }
+          }, 400);
         }, { once: true });
       } else {
         headerEl.textContent = "No stores available";

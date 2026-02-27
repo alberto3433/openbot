@@ -298,66 +298,53 @@ class EarlyPatternHandler:
             re.search(pattern, input_lower) for pattern in ADD_MODIFIER_PATTERNS
         )
 
+        # Compute last_item and accepts_modifiers once for all branches below
+        last_item = get_last_item(active_items) if active_items else None
+        accepts_modifiers = (
+            is_configurable_menu_item(last_item)
+            and menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
+        ) if last_item else False
+
         # Check if this is a pure modifier input for the last item (data-driven)
         is_pure_modifier_input = False
         has_item_modifier = False
         item_modifier_patterns: set[str] = set()
 
-        if active_items:
-            last_item = get_last_item(active_items)
-            if is_configurable_menu_item(last_item):
-                # Get modifier patterns for this specific item type (data-driven)
-                item_modifier_patterns = get_all_modifier_patterns_for_item(last_item.menu_item_type)
-                has_item_modifier = any(mod in input_lower for mod in item_modifier_patterns)
+        if last_item and is_configurable_menu_item(last_item):
+            # Get modifier patterns for this specific item type (data-driven)
+            item_modifier_patterns = get_all_modifier_patterns_for_item(last_item.menu_item_type)
+            has_item_modifier = any(mod in input_lower for mod in item_modifier_patterns)
 
         logger.info(
             "EARLY_MOD_DETECT: has_item_modifier=%s, active_items=%d",
             has_item_modifier, len(active_items)
         )
 
-        if has_item_modifier and active_items:
-            last_item = get_last_item(active_items)
-            # Check if item accepts input modifiers (data-driven)
-            accepts_modifiers = (
-                isinstance(last_item, MenuItemTask) and
-                last_item.menu_item_type and
-                menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
-            )
+        if has_item_modifier and accepts_modifiers:
             logger.info("EARLY_MOD_DETECT: accepts_modifiers=%s", accepts_modifiers)
-            if accepts_modifiers:
-                # Check if input is ONLY a modifier (no other item keywords)
-                # Strip qualifier phrases first so "on the side" doesn't match "side" as an item
-                input_for_keyword_check = input_lower
-                for qp in menu_cache.get_qualifier_patterns():
-                    input_for_keyword_check = re.sub(
-                        rf'\b{re.escape(qp)}\b', '', input_for_keyword_check
-                    ).strip()
-                item_keywords = menu_cache.get_item_keywords()
-                non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
-                has_other_item = any(
-                    re.search(rf'\b{re.escape(kw)}\b', input_for_keyword_check)
-                    for kw in non_modifier_keywords
-                )
-                logger.info("EARLY_MOD_DETECT: has_other_item=%s", has_other_item)
-                if not has_other_item:
-                    is_pure_modifier_input = True
-                    logger.info("EARLY_MOD_DETECT: Setting is_pure_modifier_input=True")
+            # Check if input is ONLY a modifier (no other item keywords)
+            # Strip qualifier phrases first so "on the side" doesn't match "side" as an item
+            input_for_keyword_check = input_lower
+            for qp in menu_cache.get_qualifier_patterns():
+                input_for_keyword_check = re.sub(
+                    rf'\b{re.escape(qp)}\b', '', input_for_keyword_check
+                ).strip()
+            item_keywords = menu_cache.get_item_keywords()
+            non_modifier_keywords = {kw for kw in item_keywords if kw not in item_modifier_patterns}
+            has_other_item = any(
+                re.search(rf'\b{re.escape(kw)}\b', input_for_keyword_check)
+                for kw in non_modifier_keywords
+            )
+            logger.info("EARLY_MOD_DETECT: has_other_item=%s", has_other_item)
+            if not has_other_item:
+                is_pure_modifier_input = True
+                logger.info("EARLY_MOD_DETECT: Setting is_pure_modifier_input=True")
 
         # If it's an "add modifier" pattern OR pure modifier input, modify the last item
         if not (is_add_modifier_request or is_pure_modifier_input):
             return None
 
-        if not has_item_modifier or not active_items:
-            return None
-
-        last_item = get_last_item(active_items)
-        # Check if item accepts input modifiers (data-driven)
-        accepts_modifiers = (
-            is_configurable_menu_item(last_item) and
-            menu_cache.item_accepts_input_modifiers(last_item.menu_item_type)
-        )
-
-        if not accepts_modifiers:
+        if not has_item_modifier or not accepts_modifiers:
             return None
 
         # Check for category-level modifier removal first

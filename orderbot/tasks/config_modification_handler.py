@@ -329,6 +329,56 @@ class ConfigModificationHandler:
             )
         return None
 
+    def _replace_or_disambiguate(
+        self,
+        matches: list[dict],
+        item: MenuItemTask,
+        order: OrderTask,
+        disambig_name: str,
+        log_prefix: str,
+    ) -> StateMachineResult | None:
+        """Replace item with a single match, or start disambiguation for multiple.
+
+        Args:
+            matches: List of matching menu item dicts.
+            item: The current item being configured.
+            order: The current order state.
+            disambig_name: Name to use for disambiguation display.
+            log_prefix: Prefix for log messages.
+
+        Returns:
+            StateMachineResult if replacement or disambiguation started, None if no matches.
+        """
+        if len(matches) == 1:
+            match_item = matches[0]
+            logger.info(
+                "%s: Found item '%s', replacing '%s'",
+                log_prefix, match_item.get("name"), item.menu_item_name,
+            )
+            from .handler_utils import remove_item_from_order
+            remove_item_from_order(order, item)
+            order.clear_pending()
+            order.multi_item_config_names = []
+            return self.item_adder_handler.add_menu_item(
+                match_item.get("name", "item"),
+                order=order,
+                quantity=item.quantity,
+            )
+        elif len(matches) > 1:
+            logger.info(
+                "%s: Found %d items for '%s', starting disambiguation",
+                log_prefix, len(matches), disambig_name,
+            )
+            order.pending_replace_item_id = item.id
+            return self.item_adder_handler.disambiguation_handler.start_disambiguation(
+                item_name=disambig_name,
+                matching_items=matches,
+                order=order,
+                quantity=item.quantity,
+                pending_field=PendingField.ITEM_SELECTION,
+            )
+        return None
+
     def _try_replace_with_same_type_item(
         self,
         modifier: str,
@@ -340,37 +390,9 @@ class ConfigModificationHandler:
             return None
 
         same_type_matches = self._find_same_type_menu_items(modifier, item)
-        if len(same_type_matches) == 1:
-            match_item = same_type_matches[0]
-            logger.info(
-                "CAN_YOU_MAKE_IT: Found same-type item '%s', replacing '%s'",
-                match_item.get("name"), item.menu_item_name
-            )
-            from .handler_utils import remove_item_from_order
-            remove_item_from_order(order, item)
-            order.clear_pending()
-            # Clear stale multi-item config names from the replaced item's add flow
-            order.multi_item_config_names = []
-            return self.item_adder_handler.add_menu_item(
-                match_item.get("name", "item"),
-                order=order,
-                quantity=item.quantity,
-            )
-        elif len(same_type_matches) > 1:
-            logger.info(
-                "CAN_YOU_MAKE_IT: Found %d same-type items for '%s', starting disambiguation",
-                len(same_type_matches), modifier
-            )
-            order.pending_replace_item_id = item.id
-            return self.item_adder_handler.disambiguation_handler.start_disambiguation(
-                item_name=modifier,
-                matching_items=same_type_matches,
-                order=order,
-                quantity=item.quantity,
-                pending_field=PendingField.ITEM_SELECTION,
-            )
-
-        return None
+        return self._replace_or_disambiguate(
+            same_type_matches, item, order, disambig_name=modifier, log_prefix="CAN_YOU_MAKE_IT",
+        )
 
     def _try_match_ingredient(
         self,
@@ -499,35 +521,9 @@ class ConfigModificationHandler:
         if not matches:
             return None
 
-        if len(matches) == 1:
-            match_item = matches[0]
-            logger.info(
-                "CROSS_TYPE_REPLACE: Replacing '%s' with '%s'",
-                item.menu_item_name, match_item.get("name"),
-            )
-            from .handler_utils import remove_item_from_order
-            remove_item_from_order(order, item)
-            order.clear_pending()
-            # Clear stale multi-item config names from the replaced item's add flow
-            order.multi_item_config_names = []
-            return self.item_adder_handler.add_menu_item(
-                match_item.get("name", "item"),
-                order=order,
-                quantity=item.quantity,
-            )
-        else:
-            logger.info(
-                "CROSS_TYPE_REPLACE: Found %d items for '%s', starting disambiguation",
-                len(matches), cleaned,
-            )
-            order.pending_replace_item_id = item.id
-            return self.item_adder_handler.disambiguation_handler.start_disambiguation(
-                item_name=cleaned,
-                matching_items=matches,
-                order=order,
-                quantity=item.quantity,
-                pending_field=PendingField.ITEM_SELECTION,
-            )
+        return self._replace_or_disambiguate(
+            matches, item, order, disambig_name=cleaned, log_prefix="CROSS_TYPE_REPLACE",
+        )
 
     def _try_cross_type_replacement(
         self,

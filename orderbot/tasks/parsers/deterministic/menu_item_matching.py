@@ -29,6 +29,31 @@ from .item_type_detection import (
 logger = logging.getLogger(__name__)
 
 
+def _search_aliases_in_text(
+    text: str,
+    sorted_aliases: list[str],
+    alias_map: dict[str, str],
+) -> tuple[str, str, tuple[int, int]] | None:
+    """Search for item-with-defaults aliases in text, return first match.
+
+    Args:
+        text: Text to search within (lowercased).
+        sorted_aliases: Alias strings sorted by length (longest first).
+        alias_map: Mapping from alias to canonical menu item name.
+
+    Returns:
+        (item_type, item_name, span) if found, None otherwise.
+    """
+    for alias in sorted_aliases:
+        match = re.search(rf'\b{re.escape(alias)}(?:e?s)?\b', text)
+        if match:
+            matched_item_name = alias_map[alias]
+            matched_item_type = menu_cache.get_item_type_for_menu_item(matched_item_name)
+            if matched_item_type:
+                return matched_item_type, matched_item_name, (match.start(), match.end())
+    return None
+
+
 def _match_item_with_defaults(
     text_lower: str,
 ) -> tuple[str | None, str | None, tuple[int, int] | None]:
@@ -38,26 +63,40 @@ def _match_item_with_defaults(
     cases like "The Classic BEC on a wheat bagel" from matching "bagel" item type
     due to the "bagel" trigger word.
 
+    Uses a two-phase search when "with" is present in the text:
+    - Phase 1: Search only text BEFORE "with" (the head/item zone)
+    - Phase 2: Search full text (fallback)
+
+    This prevents modifier text after "with" from hijacking the item match.
+    E.g., "the mulberry with extra baked salmon salad" matches "The Mulberry",
+    not "Baked Salmon Salad Sandwich".
+
     Args:
         text_lower: Lowercased user input text
 
     Returns:
         (matched_item_type, matched_item_name, matched_item_span) or (None, None, None)
     """
-    items_with_defaults_aliases = get_items_with_defaults_aliases()
-    # Sort aliases by length (longest first) for most specific match
-    sorted_aliases = sorted(items_with_defaults_aliases.keys(), key=len, reverse=True)
-    for alias in sorted_aliases:
-        # Allow optional plural suffix (s, es) to match "classic becs" with alias "classic bec"
-        match = re.search(rf'\b{re.escape(alias)}(?:e?s)?\b', text_lower)
-        if match:
-            matched_item_name = items_with_defaults_aliases[alias]
-            matched_item_span = (match.start(), match.end())
-            # Look up the item type for this item
-            matched_item_type = menu_cache.get_item_type_for_menu_item(matched_item_name)
-            if matched_item_type:
-                logger.info("CONFIGURABLE_ITEM: item with defaults '%s' detected -> type '%s'", matched_item_name, matched_item_type)
-                return matched_item_type, matched_item_name, matched_item_span
+    alias_map = get_items_with_defaults_aliases()
+    sorted_aliases = sorted(alias_map.keys(), key=len, reverse=True)
+
+    with_pos = text_lower.find(" with ")
+
+    # Phase 1: If "with" present, prefer matches BEFORE "with" (head position)
+    if with_pos != -1:
+        result = _search_aliases_in_text(text_lower[:with_pos], sorted_aliases, alias_map)
+        if result:
+            matched_item_type, matched_item_name, matched_item_span = result
+            logger.info("CONFIGURABLE_ITEM: item with defaults '%s' detected (before 'with') -> type '%s'", matched_item_name, matched_item_type)
+            return matched_item_type, matched_item_name, matched_item_span
+
+    # Phase 2: Search full text (fallback when no "with", or nothing found before it)
+    result = _search_aliases_in_text(text_lower, sorted_aliases, alias_map)
+    if result:
+        matched_item_type, matched_item_name, matched_item_span = result
+        logger.info("CONFIGURABLE_ITEM: item with defaults '%s' detected -> type '%s'", matched_item_name, matched_item_type)
+        return matched_item_type, matched_item_name, matched_item_span
+
     return None, None, None
 
 

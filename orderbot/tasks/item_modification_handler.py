@@ -261,6 +261,11 @@ class ItemModificationHandler:
         # Check for multiple matching ingredients (disambiguation)
         matches = menu_cache.find_matching_ingredients(base_modifier)
 
+        # Extract quantity once - all branches use the same immutable args
+        quantity = extract_modifier_quantity(
+            quantity_from_modifier, raw_user_input, base_modifier, modifier_lower
+        )
+
         if len(matches) == 0:
             # Fall back to category lookup for generic modifiers
             category = modifier_to_category.get(base_modifier)
@@ -270,11 +275,6 @@ class ItemModificationHandler:
                     modifier,
                 )
                 return None
-
-            # Extract quantity - prefer quantity from modifier prefix
-            quantity = extract_modifier_quantity(
-                quantity_from_modifier, raw_user_input, base_modifier, modifier_lower
-            )
 
             modifier_slug = modifier_lower.replace(" ", "_")
             target_item.add_selection(
@@ -305,10 +305,6 @@ class ItemModificationHandler:
                     order=order,
                 )
 
-            quantity = extract_modifier_quantity(
-                quantity_from_modifier, raw_user_input, base_modifier, modifier_lower
-            )
-
             target_item.add_selection(
                 slug=match["slug"],
                 category=match["category"],
@@ -328,9 +324,6 @@ class ItemModificationHandler:
             # Store context for when disambiguation resolves
             target_item_index = order.items.items.index(target_item)
             order.pending_modifier_target_item_index = target_item_index
-            quantity = extract_modifier_quantity(
-                quantity_from_modifier, raw_user_input, base_modifier, modifier_lower
-            )
             order.pending_modifier_quantity = quantity
 
             # Use existing disambiguation handler

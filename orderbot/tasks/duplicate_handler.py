@@ -100,6 +100,32 @@ class DuplicateHandler:
             self._returning_customer = ctx.returning_customer
             self._set_repeat_info_callback = ctx.set_repeat_info_callback
 
+    def _setup_duplicate_disambiguation(
+        self,
+        order: "OrderTask",
+        active_items: list,
+        count: int,
+        all_option_text: str = "all the items in your order",
+    ) -> str:
+        """Set up pending state for duplicate disambiguation and return the question.
+
+        Args:
+            order: The current order task.
+            active_items: List of active items to build options from.
+            count: How many copies to duplicate.
+            all_option_text: Text for the "all" option in the question.
+
+        Returns:
+            The disambiguation question string.
+        """
+        item_options = build_item_options_list(active_items)
+        order.pending_duplicate_selection = PendingDuplicateSelection(
+            count=count,
+            items=item_options,
+        )
+        order.pending_field = PendingField.DUPLICATE_SELECTION
+        return build_item_selection_question(item_options, all_option_text)
+
     def handle_duplicate_selection(
         self,
         user_input: str,
@@ -209,11 +235,7 @@ class DuplicateHandler:
         order.clear_pending()
 
         # Find the actual item by ID
-        item_to_duplicate = None
-        for item in order.items.get_active_items():
-            if item.id == matched_item["id"]:
-                item_to_duplicate = item
-                break
+        item_to_duplicate = order.items.get_active_item_by_id(matched_item["id"])
 
         if not item_to_duplicate:
             return StateMachineResult(
@@ -304,13 +326,9 @@ class DuplicateHandler:
                 )
             else:
                 # Multiple items - ask which one
-                item_options = build_item_options_list(active_items)
-                order.pending_duplicate_selection = PendingDuplicateSelection(
-                    count=1,
-                    items=item_options,
+                question = self._setup_duplicate_disambiguation(
+                    order, active_items, count=1, all_option_text="all the items",
                 )
-                order.pending_field = PendingField.DUPLICATE_SELECTION
-                question = build_item_selection_question(item_options, "all the items")
                 return StateMachineResult(
                     message=question,
                     order=order,
@@ -324,11 +342,7 @@ class DuplicateHandler:
             order.clear_pending()
 
             # Find the actual item by ID
-            item_to_duplicate = None
-            for item in order.items.get_active_items():
-                if item.id == matched_item["id"]:
-                    item_to_duplicate = item
-                    break
+            item_to_duplicate = order.items.get_active_item_by_id(matched_item["id"])
 
             if item_to_duplicate:
                 item_name = item_to_duplicate.get_summary()
@@ -394,19 +408,7 @@ class DuplicateHandler:
 
         # Multiple different items in cart - ask which one to duplicate
         else:
-            # Build the clarifying question: "Another [last], another [second-to-last], ... or all items?"
-            item_options = build_item_options_list(active_items)
-
-            # Store pending state
-            order.pending_duplicate_selection = PendingDuplicateSelection(
-                count=added_count,
-                items=item_options,
-            )
-            order.pending_field = PendingField.DUPLICATE_SELECTION
-
-            # Build the question text
-            question = build_item_selection_question(item_options)
-
+            question = self._setup_duplicate_disambiguation(order, active_items, count=added_count)
             logger.info("Asking for duplicate clarification with %d items", len(active_items))
             return StateMachineResult(
                 message=question,
@@ -568,13 +570,7 @@ class DuplicateHandler:
                 )
             else:
                 # Multiple items - ask which one to duplicate
-                item_options = build_item_options_list(active_items)
-                order.pending_duplicate_selection = PendingDuplicateSelection(
-                    count=1,
-                    items=item_options,
-                )
-                order.pending_field = PendingField.DUPLICATE_SELECTION
-                question = build_item_selection_question(item_options)
+                question = self._setup_duplicate_disambiguation(order, active_items, count=1)
                 logger.info("'Same thing' with %d cart items: asking which to duplicate", len(active_items))
                 return StateMachineResult(
                     message=question,

@@ -215,26 +215,6 @@ class PricingEngine(MenuDataMixin):
         """
         return self.variant_calculator.lookup_size_price(menu_item_name, size_name)
 
-    def lookup_size_upcharge(
-        self,
-        menu_item_name: str,
-        size_name: str,
-    ) -> float:
-        """Calculate the upcharge for a size relative to the smallest/base size.
-
-        For sized items (coffee, deli), the smallest size (by display_order) is
-        considered the base. This returns the difference between the selected
-        size and the base size.
-
-        Args:
-            menu_item_name: Name of the menu item
-            size_name: The selected size name (e.g., "large")
-
-        Returns:
-            Upcharge amount (0.0 if this is the base size or not a sized item)
-        """
-        return self.variant_calculator.lookup_size_upcharge(menu_item_name, size_name)
-
     def get_default_variant_for_item(
         self,
         menu_item_name: str,
@@ -339,75 +319,6 @@ class PricingEngine(MenuDataMixin):
         """
         return self.attribute_lookup.lookup_attribute_option_upcharge_for_item(
             menu_item_name, item_type, attr_slug, option_value
-        )
-
-    def _get_options_for_attribute(
-        self,
-        item_type: str,
-        attr_slug: str,
-        context: str,
-    ) -> list[dict]:
-        """Return the options list for a specific attribute on an item type.
-
-        Args:
-            item_type: Item type slug (e.g., "sandwich")
-            attr_slug: Attribute slug (e.g., "bread", "cheese")
-            context: Description for error messages
-
-        Returns:
-            List of option dicts for the matching attribute, or empty list
-        """
-        return self.attribute_lookup._get_options_for_attribute(
-            item_type, attr_slug, context
-        )
-
-    def _get_option_ingredient_category(
-        self,
-        item_type: str,
-        attr_slug: str,
-        option_value: str,
-    ) -> str | None:
-        """Get the ingredient_category for an attribute option.
-
-        Used to determine if an option belongs to a category that's already
-        included in the menu item's base price.
-
-        Args:
-            item_type: Item type slug
-            attr_slug: Attribute slug
-            option_value: Selected option value
-
-        Returns:
-            The ingredient category string (e.g., "cheese") or None if not found
-        """
-        return self.attribute_lookup._get_option_ingredient_category(
-            item_type, attr_slug, option_value
-        )
-
-    def _get_min_option_price_for_attribute(
-        self,
-        item_type: str,
-        attr_slug: str,
-        ingredient_category: str,
-    ) -> float:
-        """Get the minimum price_modifier among available options in the same
-        ingredient category for a given attribute.
-
-        Used to compute the premium when a category is included in the base price.
-        For example, if bread options are $0 (regular) and $1.85 (GF), the minimum
-        is $0, so ordering GF still carries a $1.85 premium even when bread is
-        included.
-
-        Args:
-            item_type: Item type slug (e.g., "sandwich")
-            attr_slug: Attribute slug (e.g., "bread")
-            ingredient_category: The ingredient category to filter by (e.g., "bread")
-
-        Returns:
-            The minimum price_modifier among matching options, or 0.0 if none found
-        """
-        return self.attribute_lookup._get_min_option_price_for_attribute(
-            item_type, attr_slug, ingredient_category
         )
 
     # =========================================================================

@@ -354,6 +354,10 @@ class OrderTask(BaseTask):
     # the field is re-collected the order returns to the original phase.
     return_to_phase: str | None = None
 
+    # Saved pending config state for customer info edits mid-configuration.
+    # Stores pending_field and pending_item_ids so configuration can resume.
+    return_to_config: dict | None = None
+
     # -------------------------------------------------------------------------
     # Field classification (ClassVars — not Pydantic model fields)
     # -------------------------------------------------------------------------

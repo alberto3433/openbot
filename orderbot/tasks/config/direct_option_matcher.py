@@ -171,6 +171,45 @@ class DirectOptionMatcher:
             expanded.append(token)
         return expanded
 
+    def _add_option_with_display(
+        self,
+        opt: dict,
+        attr_slug: str,
+        item: "MenuItemTask",
+        qualifier_source: str,
+        user_lower: str,
+    ) -> str:
+        """Build display name for an option, add it to the item, and return the display string.
+
+        Extracts qualifier, resolves quantity (with slug fallback), builds the
+        display name, and calls add_selection.
+
+        Args:
+            opt: The matched option dict.
+            attr_slug: Attribute slug to add the selection to.
+            item: The menu item being configured.
+            qualifier_source: Text to extract qualifier from (token or user input).
+            user_lower: Full user input lowercased (for quantity extraction).
+
+        Returns:
+            Display string for acknowledgement message.
+        """
+        opt_name = opt["display_name"]
+        qualifier = self._ctx.extract_qualifier_for_option(qualifier_source, opt_name)
+        opt_quantity = extract_quantity_for_pattern(user_lower, opt_name.lower())
+        if opt_quantity == 1:
+            opt_quantity = extract_quantity_for_pattern(
+                user_lower, opt["slug"].replace("_", " ")
+            )
+
+        display_name = f"{opt_name} ({qualifier})" if qualifier else opt_name
+        display = f"{opt_quantity} {display_name}" if opt_quantity > 1 else display_name
+
+        item.add_selection(
+            opt["slug"], attr_slug, quantity=opt_quantity, display_name=display_name,
+        )
+        return display
+
     def _match_token_to_multi_select(
         self,
         token_clean: str,
@@ -215,22 +254,10 @@ class DirectOptionMatcher:
         for opt in matched:
             if opt["slug"] in existing_slugs:
                 continue
-
-            opt_name = opt["display_name"]
-            qualifier = self._ctx.extract_qualifier_for_option(token_clean, opt_name)
-            opt_quantity = extract_quantity_for_pattern(user_lower, opt_name.lower())
-            if opt_quantity == 1:
-                opt_quantity = extract_quantity_for_pattern(
-                    user_lower, opt["slug"].replace("_", " ")
-                )
-
-            display_name = f"{opt_name} ({qualifier})" if qualifier else opt_name
-            display = f"{opt_quantity} {display_name}" if opt_quantity > 1 else display_name
-            display_parts.append(display)
-
-            item.add_selection(
-                opt["slug"], attr_slug, quantity=opt_quantity, display_name=display_name,
+            display = self._add_option_with_display(
+                opt, attr_slug, item, qualifier_source=token_clean, user_lower=user_lower,
             )
+            display_parts.append(display)
 
         return display_parts, None
 
@@ -449,35 +476,10 @@ class DirectOptionMatcher:
         for opt in matched:
             if opt["slug"] in existing_slugs:
                 continue  # Skip already added
-
-            opt_name = opt["display_name"]
-            qualifier = self._ctx.extract_qualifier_for_option(user_input, opt_name)
-            # Extract quantity for this specific option
-            opt_quantity = extract_quantity_for_pattern(user_lower, opt_name.lower())
-            if opt_quantity == 1:
-                opt_quantity = extract_quantity_for_pattern(user_lower, opt["slug"].replace("_", " "))
-
-            # Build display name with qualifier if present
-            if qualifier:
-                display_name_with_qualifier = f"{opt_name} ({qualifier})"
-            else:
-                display_name_with_qualifier = opt_name
-
-            # Build display for ack message (may include quantity prefix)
-            if opt_quantity > 1:
-                display = f"{opt_quantity} {display_name_with_qualifier}"
-            else:
-                display = display_name_with_qualifier
-
-            display_parts.append(display)
-
-            # Add selection using unified API (with qualifier in display_name)
-            item.add_selection(
-                opt["slug"],
-                attr_slug,
-                quantity=opt_quantity,
-                display_name=display_name_with_qualifier,
+            display = self._add_option_with_display(
+                opt, attr_slug, item, qualifier_source=user_input, user_lower=user_lower,
             )
+            display_parts.append(display)
 
         if display_parts:
             if is_replacement:

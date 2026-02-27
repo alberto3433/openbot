@@ -90,11 +90,11 @@ class AttributePricingLookup:
             # Check inclusion BEFORE returning price — if the menu item already
             # includes an ingredient in this category, the upcharge is waived.
             if included_ingredient_categories and price > 0:
-                option_category = self._get_option_ingredient_category(
+                option_category = self.get_option_ingredient_category(
                     item_type, attr_slug, option_value
                 )
                 if option_category and option_category in included_ingredient_categories:
-                    min_price = self._get_min_option_price_for_attribute(
+                    min_price = self.get_min_option_price_for_attribute(
                         item_type, attr_slug, option_category
                     )
                     premium = max(0.0, price - min_price)
@@ -148,7 +148,7 @@ class AttributePricingLookup:
             item_type, attr_slug, option_value, included_categories
         )
 
-    def _get_options_for_attribute(
+    def get_options_for_attribute(
         self,
         item_type: str,
         attr_slug: str,
@@ -172,7 +172,7 @@ class AttributePricingLookup:
                 return attr.get("options", [])
         return []
 
-    def _get_option_ingredient_category(
+    def get_option_ingredient_category(
         self,
         item_type: str,
         attr_slug: str,
@@ -194,7 +194,7 @@ class AttributePricingLookup:
         normalized = normalize_to_slug(option_value)
         option_lower = normalize_text(option_value)
 
-        for opt in self._get_options_for_attribute(
+        for opt in self.get_options_for_attribute(
             item_type, attr_slug, f"get ingredient category for '{option_value}'"
         ):
             if OptionMatcher.matches_value(opt, normalized, option_lower):
@@ -202,7 +202,7 @@ class AttributePricingLookup:
 
         return None
 
-    def _get_min_option_price_for_attribute(
+    def get_min_option_price_for_attribute(
         self,
         item_type: str,
         attr_slug: str,
@@ -226,7 +226,7 @@ class AttributePricingLookup:
         """
         min_price: float | None = None
 
-        for opt in self._get_options_for_attribute(
+        for opt in self.get_options_for_attribute(
             item_type, attr_slug, f"get min option price for '{attr_slug}'"
         ):
             if not isinstance(opt, dict):

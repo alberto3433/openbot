@@ -183,6 +183,14 @@ class OrderModificationHandler:
         if not getattr(order.customer_info, attr):
             return None
 
+        # Save config state if we're interrupting item configuration
+        if order.is_configuring_item():
+            order.return_to_config = {
+                "pending_field": order.pending_field,
+                "pending_item_ids": list(order.pending_item_ids),
+            }
+            order.clear_pending()
+
         # Save current phase so checkout handlers can restore it after re-collection
         order.return_to_phase = order.phase
         setattr(order.customer_info, attr, None)

@@ -131,11 +131,10 @@ class CheckoutHandler(BaseStateHandler):
     def _restore_phase_if_editing(
         self, order: OrderTask, field_label: str = "info"
     ) -> StateMachineResult | None:
-        """If the user was editing a customer info field mid-order, restore to TAKING_ITEMS.
+        """If the user was editing a customer info field mid-order, restore previous phase.
 
-        After a customer info edit (e.g. "change my phone"), always return to the
-        item-ordering phase so the user can keep adding items naturally. The checkout
-        flow will resume once they say they're done.
+        If the edit interrupted item configuration, restores the pending config state
+        and re-asks the configuration question. Otherwise, returns to TAKING_ITEMS.
 
         Args:
             order: The current order task.
@@ -148,13 +147,56 @@ class CheckoutHandler(BaseStateHandler):
         if not order.return_to_phase:
             return None
 
+        saved_config = order.return_to_config
+        saved_phase = order.return_to_phase
         order.return_to_phase = None
+        order.return_to_config = None
         order.checkout.order_reviewed = False
+
+        if saved_config and saved_config.get("pending_field"):
+            # Resume item configuration
+            order.pending_field = saved_config["pending_field"]
+            order.pending_item_ids = saved_config["pending_item_ids"]
+            order.set_phase(OrderPhase(saved_phase))
+
+            # Look up the question text to re-ask
+            question = self._get_config_question(order.pending_field)
+            suffix = f" {question}" if question else ""
+            return StateMachineResult(
+                message=f"Got it, {field_label} updated.{suffix}",
+                order=order,
+            )
+
         order.set_phase(OrderPhase.TAKING_ITEMS)
         return StateMachineResult(
             message=f"Got it, {field_label} updated. Anything else?",
             order=order,
         )
+
+    @staticmethod
+    def _get_config_question(pending_field: str) -> str | None:
+        """Look up the question text for a pending configuration field.
+
+        Args:
+            pending_field: The pending field string (e.g., "fish_sandwich:bread")
+
+        Returns:
+            The question text from the menu cache, or None if not found.
+        """
+        from orderbot.tasks.models import parse_pending_field
+        from orderbot.cache import menu_cache
+
+        item_type, attr_slug = parse_pending_field(pending_field)
+        if not item_type or not attr_slug:
+            return None
+        try:
+            attributes = menu_cache.get_item_type_attributes(item_type)
+        except Exception:
+            return None
+        attr_config = attributes.get(attr_slug)
+        if not attr_config:
+            return None
+        return attr_config.get("question_text")
 
     def handle_name(
         self,
@@ -203,31 +245,68 @@ class CheckoutHandler(BaseStateHandler):
             logger.info("%s validation failed for '%s': %s", contact_type.capitalize(), value, error)
         return validated, error
 
-    def handle_email(self, user_input: str, order: OrderTask) -> StateMachineResult:
-        """Handle email address collection."""
-        parsed = parse_email(user_input, model=self.model)
-        parsed_value = getattr(parsed, "email", None)
+    def _collect_contact_field(
+        self,
+        user_input: str,
+        order: OrderTask,
+        parse_fn: Callable,
+        field_name: str,
+        retry_msg: str,
+        validate_fn: Callable,
+        edit_label: str,
+    ) -> StateMachineResult | str:
+        """Shared logic for collecting and validating a contact field.
+
+        Parses input, validates, sets the field on customer_info, and handles
+        restore-if-editing. Returns either a StateMachineResult (on failure or
+        edit-restore) or the validated string value (on success).
+
+        Args:
+            user_input: Raw user input.
+            order: Current order state.
+            parse_fn: Parser function (e.g., parse_email).
+            field_name: Attribute name on customer_info (e.g., "email", "phone").
+            retry_msg: Message to show if parsing fails.
+            validate_fn: Validation function (e.g., validate_email_address).
+            edit_label: Label for restore message (e.g., "email", "phone number").
+
+        Returns:
+            StateMachineResult if parse/validation failed or editing was restored,
+            or the validated string value on success.
+        """
+        parsed = parse_fn(user_input, model=self.model)
+        parsed_value = getattr(parsed, field_name, None)
 
         if not parsed_value:
-            return StateMachineResult(
-                message=CheckoutMessages.EMAIL_RETRY,
-                order=order,
-            )
+            return StateMachineResult(message=retry_msg, order=order)
 
         validated_value, error = self._validate_contact(
-            parsed_value, validate_email_address, "email",
+            parsed_value, validate_fn, field_name,
         )
         if error:
             return StateMachineResult(message=error, order=order)
 
-        order.customer_info.email = validated_value
+        setattr(order.customer_info, field_name, validated_value)
 
-        restore = self._restore_phase_if_editing(order, "email")
+        restore = self._restore_phase_if_editing(order, edit_label)
         if restore:
             return restore
 
         if self._transition_to_next_slot:
             self._transition_to_next_slot(order)
+
+        return validated_value
+
+    def handle_email(self, user_input: str, order: OrderTask) -> StateMachineResult:
+        """Handle email address collection."""
+        result = self._collect_contact_field(
+            user_input, order,
+            parse_fn=parse_email, field_name="email",
+            retry_msg=CheckoutMessages.EMAIL_RETRY,
+            validate_fn=validate_email_address, edit_label="email",
+        )
+        if isinstance(result, StateMachineResult):
+            return result
 
         # Orchestrator will determine next phase (phone if needed, or confirm)
         orchestrator = SlotOrchestrator(order)
@@ -249,29 +328,14 @@ class CheckoutHandler(BaseStateHandler):
 
     def handle_phone(self, user_input: str, order: OrderTask) -> StateMachineResult:
         """Handle phone number collection."""
-        parsed = parse_phone(user_input, model=self.model)
-        parsed_value = getattr(parsed, "phone", None)
-
-        if not parsed_value:
-            return StateMachineResult(
-                message=CheckoutMessages.PHONE_RETRY,
-                order=order,
-            )
-
-        validated_value, error = self._validate_contact(
-            parsed_value, validate_phone_number, "phone",
+        result = self._collect_contact_field(
+            user_input, order,
+            parse_fn=parse_phone, field_name="phone",
+            retry_msg=CheckoutMessages.PHONE_RETRY,
+            validate_fn=validate_phone_number, edit_label="phone number",
         )
-        if error:
-            return StateMachineResult(message=error, order=order)
-
-        order.customer_info.phone = validated_value
-
-        restore = self._restore_phase_if_editing(order, "phone number")
-        if restore:
-            return restore
-
-        if self._transition_to_next_slot:
-            self._transition_to_next_slot(order)
+        if isinstance(result, StateMachineResult):
+            return result
 
         # After phone, go to confirmation
         summary = self.message_builder.build_order_summary(order)

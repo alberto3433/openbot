@@ -8,6 +8,10 @@ Endpoints:
 ----------
 - POST /chat/message: Send a message (synchronous response)
 - POST /chat/message/stream: Send a message (streaming response)
+
+Both endpoints use _build_processing_context() to ensure identical session
+setup.  If you need to change how sessions are loaded or what context is
+passed to the MessageProcessor, update that single helper.
 """
 
 import json
@@ -45,6 +49,41 @@ def _strip_internal_state(order_state: dict) -> dict:
     return {k: v for k, v in order_state.items() if k not in _INTERNAL_STATE_KEYS}
 
 
+def _build_processing_context(
+    db: Session,
+    req: ChatMessageRequest,
+) -> tuple["ProcessingContext", dict | None]:
+    """Build a ProcessingContext with full session data.
+
+    Shared by both the sync and streaming endpoints so they always pass
+    identical parameters to the MessageProcessor.
+
+    Returns:
+        (ProcessingContext, session_dict) — session_dict is None when the
+        session ID is unknown.
+    """
+    from ..message_processor import ProcessingContext
+
+    session = get_or_create_session(db, req.session_id)
+    if session is None:
+        return ProcessingContext(
+            user_message=req.message,
+            session_id=req.session_id,
+            item_id=req.item_id,
+            add_item=req.add_item,
+        ), None
+
+    return ProcessingContext(
+        user_message=req.message,
+        session_id=req.session_id,
+        caller_id=session.get("caller_id"),
+        store_id=session.get("store_id"),
+        item_id=req.item_id,
+        add_item=req.add_item,
+        session=session,
+    ), session
+
+
 @chat_router.post("/message", response_model=ChatMessageResponse)
 @limiter.limit(get_rate_limit_chat)
 def chat_message(
@@ -53,17 +92,13 @@ def chat_message(
     db: Session = Depends(get_db),
 ) -> ChatMessageResponse:
     """Send a message to the chat bot and receive a response with order updates."""
-    from ..message_processor import MessageProcessor, ProcessingContext
+    from ..message_processor import MessageProcessor
 
     logger.info("Processing chat message for session: %s", req.session_id[:8])
     try:
+        ctx, session = _build_processing_context(db, req)
         processor = MessageProcessor(db)
-        result = processor.process(ProcessingContext(
-            user_message=req.message,
-            session_id=req.session_id,
-            item_id=req.item_id,
-            add_item=req.add_item,
-        ))
+        result = processor.process(ctx)
 
         processed_actions = [
             ActionOut(intent=a.get("intent", "unknown"), slots=a.get("slots", {}))
@@ -104,20 +139,20 @@ def chat_message_stream(
 
     Uses Server-Sent Events (SSE) to stream the response as it's generated.
     """
-    from ..message_processor import MessageProcessor, ProcessingContext
+    from ..message_processor import MessageProcessor
     from ..db import SessionLocal
 
-    session = get_or_create_session(db, req.session_id)
+    ctx, session = _build_processing_context(db, req)
     if session is None:
         def error_stream():
             yield f"data: {json.dumps({'error': 'Invalid session_id'})}\n\n"
         return StreamingResponse(error_stream(), media_type="text/event-stream")
 
-    session_store_id = session.get("store_id")
-    session_caller_id = session.get("caller_id")
+    # Capture values the generator needs before the request-scoped db closes.
+    session_store_id = ctx.store_id
+    session_caller_id = ctx.caller_id
 
     def generate_stream():
-        nonlocal session
         # The streaming generator runs in a background thread after the
         # request-scoped ``db`` session has been closed, so it needs its
         # own independent database session.
@@ -176,6 +211,9 @@ def chat_message_stream(
         finally:
             stream_db.rollback()
             stream_db.close()
+
+    # Need ProcessingContext import for the generator closure
+    from ..message_processor import ProcessingContext
 
     return StreamingResponse(
         generate_stream(),

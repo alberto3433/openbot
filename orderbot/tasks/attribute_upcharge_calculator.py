@@ -173,7 +173,7 @@ class AttributeUpchargeCalculator:
                     is_default, matching_modifier, included_categories
                 )
                 if is_default and included_categories:
-                    option_category = self._pricing._get_option_ingredient_category(
+                    option_category = self._pricing.attribute_lookup.get_option_ingredient_category(
                         item_type, attr_slug, item_val
                     )
                     # Fall back to the modifier's stored ingredient_category when
@@ -270,7 +270,7 @@ class AttributeUpchargeCalculator:
         # Check BEFORE upcharge lookup so premium calculations don't accidentally
         # charge defaults (e.g., spinach on The Lexington).
         if is_default and included_categories:
-            option_category = self._pricing._get_option_ingredient_category(
+            option_category = self._pricing.attribute_lookup.get_option_ingredient_category(
                 item_type, attr_slug, attr_value
             )
             # Fall back to the modifier's stored ingredient_category when
@@ -312,7 +312,7 @@ class AttributeUpchargeCalculator:
         # Check if category is included (no charge).
         # If the item's base price already includes this ingredient category,
         # any option in that category is free (user is just picking their preference).
-        option_category = self._pricing._get_option_ingredient_category(
+        option_category = self._pricing.attribute_lookup.get_option_ingredient_category(
             item_type, attr_slug, attr_value
         )
         logger.info(

@@ -326,12 +326,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # =============================================================================
 
 @app.get("/", include_in_schema=False)
-def root(request: Request) -> RedirectResponse:
-    """Redirect root to static index page, preserving query parameters."""
-    url = "/static/index.html"
-    if request.query_params:
-        url += f"?{request.query_params}"
-    return RedirectResponse(url=url)
+def root() -> FileResponse:
+    """Serve the main index page directly at the root URL."""
+    return FileResponse("static/index.html", media_type="text/html")
 
 
 @app.get("/health", tags=["Health"])

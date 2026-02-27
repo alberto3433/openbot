@@ -117,6 +117,7 @@ from .routes import (
     public_menu_router,
     stripe_webhook_router,
     tts_router,
+    stt_router,
     vapi_router,
 )
 from fastapi import APIRouter
@@ -397,6 +398,7 @@ api_v1_router.include_router(public_stores_router)
 api_v1_router.include_router(public_company_router)
 api_v1_router.include_router(public_menu_router)
 api_v1_router.include_router(tts_router)
+api_v1_router.include_router(stt_router)
 api_v1_router.include_router(vapi_router)
 
 # Toast POS admin routes (under /api/v1/admin/toast)

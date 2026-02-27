@@ -102,6 +102,7 @@ from .admin_overall_categories import admin_overall_categories_router
 from .public import public_stores_router, public_company_router, public_menu_router
 from .stripe_webhook import stripe_webhook_router
 from .tts import tts_router
+from .stt import stt_router
 from .voice_vapi import vapi_router
 
 __all__ = [
@@ -135,5 +136,6 @@ __all__ = [
     "public_menu_router",
     "stripe_webhook_router",
     "tts_router",
+    "stt_router",
     "vapi_router",
 ]

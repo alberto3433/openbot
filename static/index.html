@@ -2719,13 +2719,25 @@
     };
 
     // =====================================================
-    // Speech Recognition
+    // Speech Recognition (Web Speech API + Backend STT fallback)
     // =====================================================
     const micBtn = document.getElementById("mic-btn");
     const micStatus = document.getElementById("mic-status");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
     let isListening = false;
+
+    // Capability detection
+    const hasWebSpeechAPI = !!SpeechRecognition;
+    const hasMediaRecorder = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+    const voiceMode = hasWebSpeechAPI ? "web-speech" : hasMediaRecorder ? "backend-stt" : null;
+
+    // Backend STT state
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let mediaStream = null;
+    let recordingTimer = null;
+    const MAX_RECORDING_SECS = 30;
 
     function setMicStatus(message, type = "") {
       micStatus.textContent = message;
@@ -2740,24 +2752,29 @@
       }
     }
 
-    if (!SpeechRecognition) {
-      micBtn.disabled = true;
-      micBtn.title = "Not supported";
-      setMicStatus("Voice input not supported", "error");
-    } else {
+    function setMicListeningUI() {
+      isListening = true;
+      micBtn.classList.add("listening");
+      micBtn.textContent = "\uD83D\uDD34";
+      setMicStatus("Listening...", "listening");
+      if (typeof stopSpeaking === "function") stopSpeaking();
+    }
+
+    function resetMicUI() {
+      isListening = false;
+      micBtn.classList.remove("listening");
+      micBtn.textContent = "\uD83C\uDFA4";
+    }
+
+    // --- Web Speech API path (Chrome/Edge) ---
+    if (hasWebSpeechAPI) {
       recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = "en-US";
       recognition.maxAlternatives = 1;
 
-      recognition.onstart = () => {
-        isListening = true;
-        micBtn.classList.add("listening");
-        micBtn.textContent = "🔴";
-        setMicStatus("Listening...", "listening");
-        if (typeof stopSpeaking === "function") stopSpeaking();
-      };
+      recognition.onstart = () => setMicListeningUI();
 
       recognition.onresult = (event) => {
         let finalTranscript = "";
@@ -2775,9 +2792,7 @@
       };
 
       recognition.onend = () => {
-        isListening = false;
-        micBtn.classList.remove("listening");
-        micBtn.textContent = "🎤";
+        resetMicUI();
         const text = inputEl.value.trim();
         if (text) {
           setMicStatus("Sending...", "");
@@ -2792,9 +2807,7 @@
       };
 
       recognition.onerror = (event) => {
-        isListening = false;
-        micBtn.classList.remove("listening");
-        micBtn.textContent = "🎤";
+        resetMicUI();
         let errorMessage = "Voice error";
         switch (event.error) {
           case "no-speech": errorMessage = "No speech detected"; break;
@@ -2805,21 +2818,140 @@
         }
         if (errorMessage) setMicStatus(errorMessage, "error");
       };
+    }
 
+    // --- Backend STT path (Firefox/Safari via MediaRecorder) ---
+    function getRecorderMimeType() {
+      const types = ["audio/webm", "audio/ogg", "audio/mp4"];
+      for (const t of types) {
+        if (MediaRecorder.isTypeSupported(t)) return t;
+      }
+      return "";
+    }
+
+    async function startBackendSTT() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        const msg = err.name === "NotAllowedError" ? "Mic access denied" : "No microphone";
+        setMicStatus(msg, "error");
+        return;
+      }
+
+      const mimeType = getRecorderMimeType();
+      if (!mimeType) {
+        setMicStatus("No supported audio format", "error");
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+        return;
+      }
+
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        clearTimeout(recordingTimer);
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+        resetMicUI();
+
+        if (audioChunks.length === 0) {
+          setMicStatus("No speech detected", "");
+          return;
+        }
+
+        const blob = new Blob(audioChunks, { type: mimeType });
+        audioChunks = [];
+        await transcribeAudio(blob);
+      };
+
+      mediaRecorder.onerror = () => {
+        clearTimeout(recordingTimer);
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(t => t.stop());
+          mediaStream = null;
+        }
+        resetMicUI();
+        setMicStatus("Recording error", "error");
+      };
+
+      mediaRecorder.start();
+      setMicListeningUI();
+
+      // Auto-stop after MAX_RECORDING_SECS
+      recordingTimer = setTimeout(() => {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+      }, MAX_RECORDING_SECS * 1000);
+    }
+
+    function stopBackendSTT() {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+      }
+    }
+
+    async function transcribeAudio(blob) {
+      setMicStatus("Transcribing...", "listening");
+      try {
+        const form = new FormData();
+        form.append("audio", blob, "audio." + (blob.type.split("/")[1] || "webm"));
+        const resp = await fetch("/api/v1/stt/transcribe", { method: "POST", body: form });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || "Transcription failed");
+        }
+        const { text } = await resp.json();
+        if (text && text.trim()) {
+          inputEl.value = text.trim();
+          setMicStatus("Sending...", "");
+          setTimeout(() => {
+            inputEl.value = "";
+            sendMessage(text.trim());
+            setMicStatus("");
+          }, 300);
+        } else {
+          setMicStatus("No speech detected", "");
+        }
+      } catch (err) {
+        setMicStatus(err.message || "Transcription failed", "error");
+      }
+    }
+
+    // --- Unified mic button setup ---
+    if (!voiceMode) {
+      micBtn.disabled = true;
+      micBtn.title = "Not supported";
+      setMicStatus("Voice input not supported", "error");
+    } else {
       micBtn.addEventListener("click", () => {
         if (!connected || !sessionId) {
           setMicStatus("Start session first", "error");
           return;
         }
         if (isListening) {
-          recognition.stop();
+          if (voiceMode === "web-speech") {
+            recognition.stop();
+          } else {
+            stopBackendSTT();
+          }
           setMicStatus("Stopped", "");
         } else {
-          try {
+          if (voiceMode === "web-speech") {
+            try {
+              inputEl.value = "";
+              recognition.start();
+            } catch (err) {
+              setMicStatus("Failed to start", "error");
+            }
+          } else {
             inputEl.value = "";
-            recognition.start();
-          } catch (err) {
-            setMicStatus("Failed to start", "error");
+            startBackendSTT();
           }
         }
       });

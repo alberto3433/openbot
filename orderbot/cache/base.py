@@ -289,6 +289,8 @@ class BaseCacheMixin:
         # Items with required match phrases - for exclusion logic during parsing
         # Maps item_name (lowercase) -> required_match_phrases string
         self._items_with_required_phrases: dict[str, str] = {}
+        # Maps item_name (lowercase) -> item_type_slug (for skipping exclusion on configurable types)
+        self._required_phrase_item_types: dict[str, str] = {}
 
         # Menu items by unit type - for filtering by how items are sold
         self._by_unit_type_items: dict[str, set[str]] = {}  # unit_type -> set of item names (lowercase)

@@ -227,6 +227,11 @@ class ParsingQueryMixin:
 
         for item_name, phrases in self._items_with_required_phrases.items():
             if item_name in text_lower:
+                # Skip exclusion for configurable item types — they should be
+                # parsed by the configurable item parser, not blocked by exclusion
+                item_type = self._required_phrase_item_types.get(item_name)
+                if item_type and item_type in self._configurable_item_type_slugs:
+                    continue
                 # Check if required phrases are present
                 for phrase in phrases.split(","):
                     phrase = normalize_text(phrase)

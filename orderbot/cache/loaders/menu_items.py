@@ -195,12 +195,16 @@ class MenuItemLoaderMixin:
         menu_items = bulk_data["menu_items"]
 
         items_with_phrases: dict[str, str] = {}
+        phrase_item_types: dict[str, str] = {}
 
         for item in menu_items:
             if item.required_match_phrases:
                 items_with_phrases[item.name.lower()] = item.required_match_phrases
+                if item.item_type:
+                    phrase_item_types[item.name.lower()] = item.item_type.slug
 
         self._items_with_required_phrases = items_with_phrases
+        self._required_phrase_item_types = phrase_item_types
         logger.debug(
             "Loaded %d items with required_match_phrases (from bulk)",
             len(items_with_phrases)

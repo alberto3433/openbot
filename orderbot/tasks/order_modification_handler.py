@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # Compiled pattern for customer info change requests
 _CUSTOMER_INFO_CHANGE_RE = re.compile(
     r'\b(?:change|update|edit)\s+(?:my\s+)?'
-    r'(name|phone(?:\s+number)?|email(?:\s+address)?)\b',
+    r'(name|phone(?:\s+number)?|email(?:\s+address)?|address)\b',
     re.IGNORECASE,
 )
 
@@ -172,6 +172,7 @@ class OrderModificationHandler:
             "name": ("name", OrderPhase.CHECKOUT_NAME, "Sure! What name should I put on the order?"),
             "phone": ("phone", OrderPhase.CHECKOUT_PHONE, CheckoutMessages.PHONE),
             "email": ("email", OrderPhase.CHECKOUT_EMAIL, CheckoutMessages.EMAIL),
+            "address": ("address", OrderPhase.CHECKOUT_DELIVERY, CheckoutMessages.DELIVERY_ADDRESS),
         }
 
         # Normalize "phone number" -> "phone", "email address" -> "email"
@@ -180,8 +181,6 @@ class OrderModificationHandler:
             return None
 
         attr, phase, msg = field_map[key]
-        if not getattr(order.customer_info, attr):
-            return None
 
         # Save config state if we're interrupting item configuration
         if order.is_configuring_item():
@@ -193,7 +192,14 @@ class OrderModificationHandler:
 
         # Save current phase so checkout handlers can restore it after re-collection
         order.return_to_phase = order.phase
-        setattr(order.customer_info, attr, None)
+
+        # Clear the relevant field
+        if attr == "address":
+            from .models.order_flow import AddressTask
+            order.delivery_method.address = AddressTask()
+        else:
+            setattr(order.customer_info, attr, None)
+
         order.checkout.order_reviewed = False
         order.set_phase(phase)
         return StateMachineResult(message=msg, order=order)

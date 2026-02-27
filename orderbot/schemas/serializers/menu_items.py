@@ -26,15 +26,16 @@ def serialize_menu_item(
     Returns:
         MenuItemOut schema
     """
-    # Get size prices
+    # Get size prices (load once to avoid repeated lazy-load queries)
+    size_prices_orm = list(item.size_prices) if item.size_prices else []
     size_prices = []
-    if item.size_prices:
-        for sp in item.size_prices:
-            size_prices.append(SizePriceOut(
-                size_id=sp.size_id,
-                size_name=sp.size.name if sp.size else "Unknown",
-                price=float(sp.price),
-            ))
+    for sp in size_prices_orm:
+        size_prices.append(SizePriceOut(
+            size_id=sp.size_id,
+            size_name=sp.size.name if sp.size else "Unknown",
+            price=float(sp.price),
+        ))
+    base_price = min((float(sp.price) for sp in size_prices_orm), default=0.0)
 
     # Get ingredients (skip for list endpoints to avoid N+1 queries)
     ingredients = []
@@ -55,7 +56,7 @@ def serialize_menu_item(
         name=item.name,
         description=item.description,
         is_signature=item.is_signature,
-        base_price=float(item.base_price),
+        base_price=base_price,
         available_qty=item.available_qty,
         item_type_id=item.item_type_id,
         aliases=item.aliases,

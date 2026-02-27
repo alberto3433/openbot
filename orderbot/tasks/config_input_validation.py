@@ -297,6 +297,8 @@ def is_off_topic_request(user_input: str, pending_field: str | None = None) -> b
             "what are the choices",
             "what can i choose",
             "what can i get",
+            "what's available",
+            "what is available",
         ]
         if any(pattern in input_lower for pattern in generic_option_patterns):
             return False  # Let them ask about options

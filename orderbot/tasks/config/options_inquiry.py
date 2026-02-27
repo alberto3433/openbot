@@ -75,6 +75,8 @@ class OptionsInquiryHandler:
             "what are the choices",
             "what can i choose",
             "what can i get",
+            "what's available",
+            "what is available",
             "show me",
         ]
         if any(phrase in input_lower for phrase in inquiry_phrases):

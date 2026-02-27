@@ -3185,6 +3185,18 @@
     // Render the lucide icon in the close button
     if (window.lucide) lucide.createIcons();
 
+    // Preload menu iframe in background so opening is instant
+    var menuLoaded = false;
+    function preloadMenu() {
+      if (menuLoaded) return;
+      var src = '/static/menu.html?embedded=1';
+      if (currentStoreId) src += '&store=' + encodeURIComponent(currentStoreId);
+      frame.src = src;
+      menuLoaded = true;
+    }
+    // Start preloading after a short delay to prioritize chat UI
+    setTimeout(preloadMenu, 1000);
+
     function openMenuDrawer() {
       // Dismiss the welcome overlay and start session if still visible
       var overlay = document.getElementById("welcome-overlay");
@@ -3199,9 +3211,8 @@
           startSession(callerId, storeParam);
         }
       }
-      var src = '/static/menu.html?embedded=1&_t=' + Date.now();
-      if (currentStoreId) src += '&store=' + encodeURIComponent(currentStoreId);
-      frame.src = src;
+      // Ensure menu is loaded (no-op if already preloaded)
+      preloadMenu();
       backdrop.classList.add('active');
       drawer.classList.add('open');
       document.body.style.overflow = 'hidden';
@@ -3211,12 +3222,6 @@
       backdrop.classList.remove('active');
       drawer.classList.remove('open');
       document.body.style.overflow = '';
-      // Clear iframe after transition to free memory
-      setTimeout(function() {
-        if (!drawer.classList.contains('open')) {
-          frame.src = 'about:blank';
-        }
-      }, 350);
     }
 
     closeBtn.addEventListener('click', closeMenuDrawer);

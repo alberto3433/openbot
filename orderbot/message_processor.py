@@ -351,9 +351,10 @@ class MessageProcessor:
                 self.db, name=name, phone=phone, email=email,
                 delivery_address=delivery_address,
             )
-            if customer and not session.get("customer_id"):
+            if customer:
                 session["customer_id"] = customer.id
                 order_state["customer_id"] = customer.id
+                self.db.commit()
                 logger.info("Synced customer #%d early (before confirmation)", customer.id)
         except SQLAlchemyError:
             logger.exception("Failed to sync customer record early")

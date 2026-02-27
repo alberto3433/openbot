@@ -102,12 +102,20 @@ logger = logging.getLogger(__name__)
 # {session_id: {"data": {...session_data...}, "last_access": timestamp}}
 
 SESSION_CACHE: dict[str, dict[str, Any]] = {}
-_cache_lock = threading.Lock()
+_cache_lock = threading.RLock()
 
 # Tracks message count per session for DB write debouncing.
 # DB writes happen every _DB_WRITE_INTERVAL messages (or on confirmed orders).
 _session_msg_counts: dict[str, int] = {}
 _DB_WRITE_INTERVAL = int(os.getenv("SESSION_DB_WRITE_INTERVAL", "3"))
+
+# Tracks which session IDs are known to exist in the database, so
+# save_session() can skip a SELECT query when the debounce logic would
+# skip the write anyway.  Populated by get_or_create_session() (DB hit)
+# and save_session() (after a successful persist).  After a server restart
+# this set is empty, which causes save_session() to treat the session as
+# new and write it — safe fallback.
+_sessions_in_db: set[str] = set()
 
 
 # =============================================================================
@@ -225,6 +233,7 @@ def get_or_create_session(db: Session, session_id: str) -> dict[str, Any] | None
     ).first()
 
     if db_session:
+        _sessions_in_db.add(session_id)
         # Restore session data from database
         session_data = {
             "history": db_session.history or [],
@@ -298,27 +307,30 @@ def save_session(
     _session_msg_counts[session_id] = _session_msg_counts.get(session_id, 0) + 1
     msg_count = _session_msg_counts[session_id]
 
+    # Use the in-memory tracking set to decide if this session needs an
+    # initial INSERT without hitting the database.
+    is_known_in_db = session_id in _sessions_in_db
+
     should_write_db = (
         force_db
         or is_confirmed
-        or msg_count % _DB_WRITE_INTERVAL == 0    # Periodic flush
+        or not is_known_in_db                      # New session must be written
+        or msg_count % _DB_WRITE_INTERVAL == 0     # Periodic flush
     )
 
-    # Always persist to DB via upsert — the _persist function handles both
-    # INSERT (new session) and UPDATE (existing session).  We only skip the
-    # write for mid-conversation UPDATE calls that can be deferred.
-    db_session_row = db.query(ChatSession).filter(
-        ChatSession.session_id == session_id
-    ).first()
-    if db_session_row is None:
-        # New session: must write to DB
-        should_write_db = True
-
     if not should_write_db:
-        return
+        return  # Skip DB entirely — no SELECT, no write
+
+    # Only query DB for the existing row when we actually need to write
+    db_session_row = None
+    if is_known_in_db:
+        db_session_row = db.query(ChatSession).filter(
+            ChatSession.session_id == session_id
+        ).first()
 
     # Persist to database (upsert pattern)
     _persist_session_to_db(db, session_id, session_data, db_session_row=db_session_row)
+    _sessions_in_db.add(session_id)
 
 
 def _persist_session_to_db(

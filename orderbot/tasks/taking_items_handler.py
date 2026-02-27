@@ -26,6 +26,7 @@ from .pending_fields import PendingField
 from .schemas import (
     StateMachineResult,
     Selection,
+    OpenInputResponse,
     ParsedItem,
     ParsedItemEntry,
 )
@@ -65,6 +66,27 @@ _DONT_WANT_DONE_RE = re.compile(
     r"(?:i\s+)?don'?t\s+(?:want|need)\s+(?:anything|nothing|any\s*more)\s*(?:else|more)?",
     re.IGNORECASE,
 )
+
+
+def _extract_first_item_selections(
+    parsed: OpenInputResponse,
+    context: str,
+) -> list[Selection] | None:
+    """Extract selections from the first parsed item, if any.
+
+    Args:
+        parsed: Parsed open input response.
+        context: Label for the log message (e.g., "greeting", "input").
+
+    Returns:
+        List of Selection objects, or None.
+    """
+    if parsed.parsed_items and parsed.parsed_items[0].selections:
+        selections = list(parsed.parsed_items[0].selections)
+        if selections:
+            logger.info("Selections from %s: %s", context, selections)
+            return selections
+    return None
 
 
 def _is_negative_done(text: str) -> bool:
@@ -292,12 +314,7 @@ class TakingItemsHandler(MenuDataMixin):
             )
 
         # User might have ordered something directly - pass the already parsed result
-        # Selections are already extracted in the parsed items during parsing
-        extracted_selections: list[Selection] | None = None
-        if parsed.parsed_items and parsed.parsed_items[0].selections:
-            extracted_selections = list(parsed.parsed_items[0].selections)
-            if extracted_selections:
-                logger.info("Selections from greeting input: %s", extracted_selections)
+        extracted_selections = _extract_first_item_selections(parsed, "greeting input")
 
         # Phase is derived from orchestrator, no need to set explicitly
         return self.handle_taking_items_with_parsed(parsed, order, extracted_selections, user_input)
@@ -349,12 +366,7 @@ class TakingItemsHandler(MenuDataMixin):
             ingredient_to_items=self._ingredient_to_items,
         )
 
-        # Selections are already extracted in the parsed items during parsing
-        extracted_selections: list[Selection] | None = None
-        if parsed.parsed_items and parsed.parsed_items[0].selections:
-            extracted_selections = list(parsed.parsed_items[0].selections)
-            if extracted_selections:
-                logger.info("Selections from input: %s", extracted_selections)
+        extracted_selections = _extract_first_item_selections(parsed, "input")
 
         return self.handle_taking_items_with_parsed(parsed, order, extracted_selections, user_input)
 

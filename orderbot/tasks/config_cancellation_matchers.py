@@ -185,7 +185,7 @@ def _extract_cancel_description(user_input_stripped: str) -> str | None:
 _EXPLICIT_REMOVAL_RE = re.compile(
     r"^(?:"
     r"(?:can|could|would)\s+you\s+)?(?:"
-    r"remove|delete|cancel|clear|scratch|hold|without"
+    r"remove|delete|cancel|clear|scratch|hold|without|drop"
     r"|take\s+(?:off|out)"
     r"|please\s+(?:remove|delete|cancel|take\s+(?:off|out))"
     r")\b",
@@ -239,6 +239,12 @@ def _should_defer_to_attribute_handler(
             cancel_desc, pending_attr_slug,
         )
         return True
+
+    # Explicit removal verbs ("remove the ham", "drop the cheese") indicate the
+    # user wants to undo an already-set modifier, not decline an attribute option.
+    # Only defer for implicit patterns like "no X".
+    if _has_explicit_removal_intent(user_input):
+        return False
 
     # Check if cancel_desc is a known attribute option for the CURRENT item type.
     # e.g., "black" is a valid coffee_based_beverage option — defer to attribute handler

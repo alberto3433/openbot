@@ -65,6 +65,7 @@ class TestExecutor:
         self.request_delay = config.request_delay_seconds
         self.verifier = ResponseVerifier()
         self.client = httpx.Client(timeout=30.0)
+        self._last_send_error: str | None = None
 
     def close(self) -> None:
         """Close the HTTP client."""
@@ -120,7 +121,7 @@ class TestExecutor:
 
                 if response is None:
                     turn.passed = False
-                    turn.failure_reason = "Failed to send message"
+                    turn.failure_reason = f"Failed to send message ({self._last_send_error})"
                     break
 
                 # Verify the response
@@ -165,7 +166,7 @@ class TestExecutor:
                     )
                     if response is None:
                         auto_turn.passed = False
-                        auto_turn.failure_reason = "Failed to send reactive answer"
+                        auto_turn.failure_reason = f"Failed to send reactive answer ({self._last_send_error})"
                         auto_turn.failure_category = FailureCategory.SYSTEM_ERROR
                         scenario.turns.append(auto_turn)
                         break
@@ -230,6 +231,7 @@ class TestExecutor:
         Returns:
             API response dict or None if failed.
         """
+        self._last_send_error = None
         try:
             response = self.client.post(
                 f"{self.base_url}/api/v1/chat/message",
@@ -243,13 +245,17 @@ class TestExecutor:
         except httpx.HTTPStatusError as e:
             detail = ""
             try:
-                detail = f" - {e.response.json().get('detail', '')}"
+                detail = e.response.json().get("detail", "")
             except Exception:
                 pass
-            logger.error("HTTP error sending message: %s%s", e, detail)
-            time.sleep(self.request_delay)  # Also delay on error
+            self._last_send_error = f"HTTP {e.response.status_code}"
+            if detail:
+                self._last_send_error += f": {detail}"
+            logger.error("HTTP error sending message: %s - %s", e, self._last_send_error)
+            time.sleep(self.request_delay)
             return None
         except Exception as e:
+            self._last_send_error = str(e)
             logger.error("Error sending message: %s", e)
             time.sleep(self.request_delay)
             return None

@@ -95,44 +95,6 @@ class VariantPricingCalculator:
         # No size specified and multiple sizes - return None to trigger disambiguation
         return None, None
 
-    def lookup_size_upcharge(
-        self,
-        menu_item_name: str,
-        size_name: str,
-    ) -> float:
-        """Calculate the upcharge for a size relative to the smallest/base size.
-
-        For sized items (coffee, deli), the smallest size (by display_order) is
-        considered the base. This returns the difference between the selected
-        size and the base size.
-
-        Args:
-            menu_item_name: Name of the menu item
-            size_name: The selected size name (e.g., "large")
-
-        Returns:
-            Upcharge amount (0.0 if this is the base size or not a sized item)
-        """
-        menu_item = self._pricing._resolve_menu_item(menu_item_name)
-        if not menu_item:
-            return 0.0
-
-        size_prices = menu_item.get("size_prices")
-        if not size_prices or len(size_prices) <= 1:
-            return 0.0
-
-        # Sort by display_order to find the base (smallest) size
-        sorted_sizes = sorted(size_prices, key=lambda sp: sp.get("display_order", 999))
-        base_price = sorted_sizes[0]["price"]
-
-        # Find the selected size price
-        size_lower = normalize_text(size_name)
-        for sp in size_prices:
-            if sp["size_name"] and sp["size_name"].lower() == size_lower:
-                return sp["price"] - base_price
-
-        return 0.0
-
     def get_default_variant_for_item(
         self,
         menu_item_name: str,

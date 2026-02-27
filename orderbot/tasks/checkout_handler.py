@@ -159,12 +159,13 @@ class CheckoutHandler(BaseStateHandler):
             order.pending_item_ids = saved_config["pending_item_ids"]
             order.set_phase(OrderPhase(saved_phase))
 
-            # Look up the question text to re-ask
-            question = self._get_config_question(order.pending_field)
+            # Look up the question text and quick replies to re-ask
+            question, qr = self._get_config_question(order.pending_field)
             suffix = f" {question}" if question else ""
             return StateMachineResult(
                 message=f"Got it, {field_label} updated.{suffix}",
                 order=order,
+                quick_replies=qr,
             )
 
         order.set_phase(OrderPhase.TAKING_ITEMS)
@@ -174,29 +175,39 @@ class CheckoutHandler(BaseStateHandler):
         )
 
     @staticmethod
-    def _get_config_question(pending_field: str) -> str | None:
-        """Look up the question text for a pending configuration field.
+    def _get_config_question(
+        pending_field: str,
+    ) -> tuple[str | None, list[dict[str, str]] | None]:
+        """Look up the question text and quick replies for a pending configuration field.
 
         Args:
             pending_field: The pending field string (e.g., "fish_sandwich:bread")
 
         Returns:
-            The question text from the menu cache, or None if not found.
+            Tuple of (question_text, quick_replies). Both None if lookup fails.
         """
         from orderbot.tasks.models import parse_pending_field
         from orderbot.cache import menu_cache
+        from orderbot.tasks.config.quick_reply_builder import QuickReplyBuilder
 
         item_type, attr_slug = parse_pending_field(pending_field)
         if not item_type or not attr_slug:
-            return None
+            return None, None
         try:
             attributes = menu_cache.get_item_type_attributes(item_type)
         except Exception:
-            return None
+            return None, None
         attr_config = attributes.get(attr_slug)
         if not attr_config:
-            return None
-        return attr_config.get("question_text")
+            return None, None
+
+        question_text = attr_config.get("question_text")
+        qr, question_suffix, _ = QuickReplyBuilder().build(
+            attr_config, question_text or "", item_type,
+        )
+        if question_suffix and question_text:
+            question_text += question_suffix
+        return question_text, qr
 
     def handle_name(
         self,
@@ -297,6 +308,26 @@ class CheckoutHandler(BaseStateHandler):
 
         return validated_value
 
+    def _build_confirmation_response(
+        self, order: OrderTask, prefix: str = "",
+    ) -> StateMachineResult:
+        """Build a confirmation StateMachineResult with the order summary.
+
+        Args:
+            order: The order to summarize.
+            prefix: Optional text prepended before the summary (e.g., "Sure, that's 3 total.").
+
+        Returns:
+            StateMachineResult with summary + "Does that look right?" prompt.
+        """
+        summary = self.message_builder.build_order_summary(order)
+        prefix_part = f"{prefix}\n\n" if prefix else ""
+        return StateMachineResult(
+            message=f"{prefix_part}{summary}\n\nDoes that look right? Anything else?",
+            order=order,
+            quick_replies=CONFIRM_QUICK_REPLIES,
+        )
+
     def handle_email(self, user_input: str, order: OrderTask) -> StateMachineResult:
         """Handle email address collection."""
         result = self._collect_contact_field(
@@ -318,13 +349,7 @@ class CheckoutHandler(BaseStateHandler):
                 order=order,
             )
 
-        # Phone already known — go to confirmation
-        summary = self.message_builder.build_order_summary(order)
-        return StateMachineResult(
-            message=f"{summary}\n\nDoes that look right? Anything else?",
-            order=order,
-            quick_replies=CONFIRM_QUICK_REPLIES,
-        )
+        return self._build_confirmation_response(order)
 
     def handle_phone(self, user_input: str, order: OrderTask) -> StateMachineResult:
         """Handle phone number collection."""
@@ -337,13 +362,7 @@ class CheckoutHandler(BaseStateHandler):
         if isinstance(result, StateMachineResult):
             return result
 
-        # After phone, go to confirmation
-        summary = self.message_builder.build_order_summary(order)
-        return StateMachineResult(
-            message=f"{summary}\n\nDoes that look right? Anything else?",
-            order=order,
-            quick_replies=CONFIRM_QUICK_REPLIES,
-        )
+        return self._build_confirmation_response(order)
 
     # =========================================================================
     # Order Confirmation Methods (consolidated from confirmation_handler.py)
@@ -412,13 +431,8 @@ class CheckoutHandler(BaseStateHandler):
 
         target_qty, _, _ = result
 
-        # Return to confirmation with updated summary
-        summary = self.message_builder.build_order_summary(order)
-
-        return StateMachineResult(
-            message=f"Sure, that's {target_qty} total.\n\n{summary}\n\nDoes that look right? Anything else?",
-            order=order,
-            quick_replies=CONFIRM_QUICK_REPLIES,
+        return self._build_confirmation_response(
+            order, prefix=f"Sure, that's {target_qty} total.",
         )
 
     def _handle_wants_changes(
@@ -474,13 +488,8 @@ class CheckoutHandler(BaseStateHandler):
                     logger.info("CONFIRMATION: Item added, returning to confirmation (orchestrator says ORDER_CONFIRM)")
                     if self._transition_to_next_slot:
                         self._transition_to_next_slot(result.order)
-                    summary = self.message_builder.build_order_summary(result.order)
                     logger.info("CONFIRMATION: Built summary, items count = %d", len(result.order.items.items))
-                    return StateMachineResult(
-                        message=f"{summary}\n\nDoes that look right? Anything else?",
-                        order=result.order,
-                        quick_replies=CONFIRM_QUICK_REPLIES,
-                    )
+                    return self._build_confirmation_response(result.order)
 
                 return result
 

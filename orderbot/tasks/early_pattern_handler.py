@@ -29,9 +29,9 @@ from .parsers.intent_patterns import strip_conversational_fillers
 from .handler_utils import (
     is_configurable_menu_item,
     get_last_item,
-    duplicate_last_item_to_qty,
     recalculate_and_summarize,
 )
+from .quantity_management import duplicate_last_item_to_qty
 from .modifier_input_handler import (
     get_all_modifier_patterns_for_item,
     add_modifiers_from_input,
@@ -81,6 +81,43 @@ def _parse_quantity(num_str: str) -> int | None:
     return BASIC_WORD_TO_NUM.get(num_str)
 
 
+def _apply_qualifier_to_matching_selection(
+    selections: list[dict],
+    base_name: str,
+    qualifier_text: str,
+) -> bool:
+    """Apply a qualifier to the first selection matching base_name.
+
+    Searches by slug (underscores replaced with spaces) or display_name.
+    Skips if the qualifier is already present on the selection.
+
+    Args:
+        selections: The item's current selections list.
+        base_name: Modifier name to match against (e.g., "ketchup").
+        qualifier_text: Qualifier to append (e.g., "on the side").
+
+    Returns:
+        True if a selection was updated, False otherwise.
+    """
+    for sel in selections:
+        sel_slug = sel.get("slug", "").replace("_", " ")
+        sel_display = sel.get("display_name", "")
+
+        if (base_name.lower() == sel_slug.lower()
+                or base_name.lower() == sel_display.lower()):
+            original_display = sel_display or base_name
+            if f"({qualifier_text})" not in original_display:
+                sel["display_name"] = f"{original_display} ({qualifier_text})"
+                logger.info(
+                    "Applied qualifier '%s' to selection '%s' -> '%s'",
+                    qualifier_text, original_display, sel["display_name"],
+                )
+                return True
+            break
+
+    return False
+
+
 def apply_qualifier_to_selection(item: MenuItemTask, input_lower: str) -> bool:
     """Apply qualifier phrases (e.g., "on the side") to existing selections.
 
@@ -100,23 +137,19 @@ def apply_qualifier_to_selection(item: MenuItemTask, input_lower: str) -> bool:
     if not item.selections or not item.menu_item_type:
         return False
 
-    # Get modifier patterns for this item type to pass to qualifier extraction
     modifier_patterns = get_all_modifier_patterns_for_item(item.menu_item_type)
     if not modifier_patterns:
         return False
 
-    # Extract modifiers with their qualifiers from the input
     formatted_mods, _conflicts = extract_modifiers_with_qualifiers(input_lower, modifier_patterns)
     if not formatted_mods:
         return False
 
     updated = False
     for formatted in formatted_mods:
-        # Only process entries that have a qualifier (contain parentheses)
         if "(" not in formatted or ")" not in formatted:
             continue
 
-        # Parse "ModifierName (qualifier)" format
         paren_start = formatted.index("(")
         base_name = formatted[:paren_start].strip()
         qualifier_text = formatted[paren_start + 1:formatted.rindex(")")].strip()
@@ -124,24 +157,8 @@ def apply_qualifier_to_selection(item: MenuItemTask, input_lower: str) -> bool:
         if not qualifier_text:
             continue
 
-        # Find matching selection by slug or display_name
-        for sel in item.selections:
-            sel_slug = sel.get("slug", "").replace("_", " ")
-            sel_display = sel.get("display_name", "")
-
-            if (base_name.lower() == sel_slug.lower()
-                    or base_name.lower() == sel_display.lower()):
-                # Update display_name to include qualifier
-                original_display = sel_display or base_name
-                # Don't double-add qualifier if already present
-                if f"({qualifier_text})" not in original_display:
-                    sel["display_name"] = f"{original_display} ({qualifier_text})"
-                    updated = True
-                    logger.info(
-                        "Applied qualifier '%s' to selection '%s' -> '%s'",
-                        qualifier_text, original_display, sel["display_name"],
-                    )
-                break
+        if _apply_qualifier_to_matching_selection(item.selections, base_name, qualifier_text):
+            updated = True
 
     return updated
 

@@ -18,12 +18,11 @@ from .models import OrderTask
 from .schemas import OrderPhase, StateMachineResult
 from .checkout_messages import CheckoutMessages
 from .parsers.quantity_utils import extract_make_it_n_target
-from .handler_utils import (
-    get_last_item,
+from .handler_utils import get_last_item, build_removal_response
+from .quantity_management import (
     duplicate_last_item_to_qty,
     handle_make_it_one,
     handle_already_at_target,
-    build_removal_response,
 )
 
 if TYPE_CHECKING:

@@ -39,7 +39,8 @@ from .parsers.validators import (
     parse_confirmation_deterministic,
 )
 from .handler_config import BaseStateHandler
-from .handler_utils import get_last_item, duplicate_last_item_to_qty
+from .handler_utils import get_last_item
+from .quantity_management import duplicate_last_item_to_qty
 from .utils.text import normalize_text
 from .delivery_handler import DeliveryHandler
 from .repeat_order_handler import RepeatOrderHandler

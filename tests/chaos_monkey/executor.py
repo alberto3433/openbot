@@ -241,7 +241,12 @@ class TestExecutor:
             time.sleep(self.request_delay)
             return result
         except httpx.HTTPStatusError as e:
-            logger.error("HTTP error sending message: %s", e)
+            detail = ""
+            try:
+                detail = f" - {e.response.json().get('detail', '')}"
+            except Exception:
+                pass
+            logger.error("HTTP error sending message: %s%s", e, detail)
             time.sleep(self.request_delay)  # Also delay on error
             return None
         except Exception as e:

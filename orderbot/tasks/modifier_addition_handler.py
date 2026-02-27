@@ -142,7 +142,7 @@ class ModifierAdditionHandler:
         order: OrderTask,
     ) -> MenuItemTask | None:
         """Find an order item matching a target description flexibly."""
-        from .handler_utils import find_matching_item
+        from .item_matching import find_matching_item
         return find_matching_item(normalize_text(suffix), order.items.items)
 
     def _find_item_accepting_modifier(

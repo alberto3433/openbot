@@ -40,6 +40,48 @@ from .utils.pricing_utils import safe_recalculate_price
 logger = logging.getLogger(__name__)
 
 
+def _build_attribute_keyword_map() -> dict[str, str]:
+    """Build a mapping from target keywords to attribute slugs.
+
+    Queries the menu cache for:
+    1. Attribute display names and slugs across all item types
+    2. Global attribute aliases (e.g., "cream cheese" -> "spread")
+
+    Returns:
+        Dict mapping lowercase keywords to attribute slugs.
+        Empty dict if menu cache is not loaded.
+    """
+    result: dict[str, str] = {}
+
+    # Step 1: Collect attribute display names and slugs from all item types
+    try:
+        item_type_slugs = menu_cache.get_all_item_type_slugs()
+    except MenuDataNotLoadedError:
+        logger.warning("Menu cache not loaded when building target attribute map")
+        return result
+
+    for item_type_slug in item_type_slugs:
+        try:
+            attrs = menu_cache.get_item_type_attributes(item_type_slug)
+        except MenuDataNotLoadedError:
+            logger.debug("Menu cache not loaded when getting attributes for %s", item_type_slug)
+            continue
+
+        for attr_slug, attr_info in attrs.items():
+            display_name = attr_info.get("display_name", "").lower()
+            if display_name:
+                result[display_name] = attr_slug
+            result[attr_slug.replace("_", " ")] = attr_slug
+
+    # Step 2: Add global attribute aliases (e.g., "cream cheese" -> "spread")
+    try:
+        result.update(menu_cache.get_all_global_attribute_aliases())
+    except MenuDataNotLoadedError:
+        logger.debug("Menu cache not loaded when getting global attribute aliases")
+
+    return result
+
+
 @dataclass
 class ChangeRequest:
     """Represents a parsed change request from user input."""
@@ -96,34 +138,7 @@ class ModifierChangeHandler(BaseHandler):
         No hardcoded mappings - all data comes from the database.
         """
         if self._target_attr_map is None:
-            # Build mapping from attribute display names and slugs
-            self._target_attr_map = {}
-
-            # Get all item type slugs and their attributes
-            try:
-                for item_type_slug in menu_cache.get_all_item_type_slugs():
-                    try:
-                        attrs = menu_cache.get_item_type_attributes(item_type_slug)
-                        for attr_slug, attr_info in attrs.items():
-                            # Map display name to attribute slug
-                            display_name = attr_info.get("display_name", "").lower()
-                            if display_name:
-                                self._target_attr_map[display_name] = attr_slug
-                            # Also map slug itself (replace underscores with spaces)
-                            self._target_attr_map[attr_slug.replace("_", " ")] = attr_slug
-                    except MenuDataNotLoadedError:
-                        logger.debug("Menu cache not loaded when getting attributes for %s", item_type_slug)
-                        continue
-            except MenuDataNotLoadedError:
-                logger.warning("Menu cache not loaded when building target attribute map")
-
-            # Add global attribute aliases from the database
-            # (e.g., "cream cheese" -> "spread")
-            try:
-                db_aliases = menu_cache.get_all_global_attribute_aliases()
-                self._target_attr_map.update(db_aliases)
-            except MenuDataNotLoadedError:
-                logger.debug("Menu cache not loaded when getting global attribute aliases")
+            self._target_attr_map = _build_attribute_keyword_map()
 
         return self._target_attr_map
 

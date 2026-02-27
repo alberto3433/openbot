@@ -24,7 +24,8 @@ from .checkout_messages import (
     item_not_customizable,
     modifier_not_available_for_item,
 )
-from .handler_utils import get_last_item, recalculate_and_summarize, find_matching_item
+from .handler_utils import get_last_item, recalculate_and_summarize
+from .item_matching import find_matching_item
 from .config_flow_utils import LAST_ITEM_PRONOUNS
 
 if TYPE_CHECKING:

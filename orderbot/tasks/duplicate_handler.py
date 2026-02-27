@@ -35,9 +35,9 @@ from .handler_utils import (
     build_item_options_list,
     build_item_selection_question,
     check_has_active_items,
-    match_item_from_options,
     get_last_item,
 )
+from .item_matching import match_item_from_options
 from .parsers.inquiry_patterns import (
     MODIFICATION_EXTRACTOR,
     REORDER_ITEM_PATTERNS,

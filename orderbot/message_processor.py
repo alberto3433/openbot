@@ -31,7 +31,12 @@ from .services.store_service import build_store_info, get_company
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["MessageProcessor", "ProcessingContext", "ProcessingResult"]
+__all__ = ["MessageProcessor", "ProcessingContext", "ProcessingResult", "SessionNotFoundError"]
+
+
+class SessionNotFoundError(ValueError):
+    """Raised when a chat session cannot be found by ID."""
+    pass
 
 
 # -----------------------------------------------------------------------------
@@ -114,7 +119,7 @@ class MessageProcessor:
         # 1. Load or create session
         session = ctx.session or self._get_or_create_session(ctx.session_id)
         if session is None:
-            raise ValueError(f"Session not found: {ctx.session_id}")
+            raise SessionNotFoundError(f"Session not found: {ctx.session_id}")
 
         # Extract session data
         history = session.get("history", [])

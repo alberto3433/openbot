@@ -171,6 +171,106 @@ class DirectOptionMatcher:
             expanded.append(token)
         return expanded
 
+    def _match_token_to_multi_select(
+        self,
+        token_clean: str,
+        match_input: str,
+        attr: dict,
+        item: "MenuItemTask",
+        order: "OrderTask",
+        user_lower: str,
+        existing_slugs: set[str],
+    ) -> tuple[list[str], StateMachineResult | None]:
+        """Try matching a token against a multi_select attribute.
+
+        Args:
+            token_clean: Cleaned token text (for qualifier extraction).
+            match_input: Token with quantity prefixes stripped (for matching).
+            attr: The attribute dict to match against.
+            item: The menu item being configured.
+            order: The order task.
+            user_lower: Full user input lowercased (for quantity extraction).
+            existing_slugs: Slugs already selected for this attribute.
+
+        Returns:
+            Tuple of (display_parts, disambiguation_result).
+            disambiguation_result is set if ambiguous; display_parts lists added items.
+        """
+        attr_slug = attr["slug"]
+        options = attr.get("options", [])
+
+        matched, disambiguation = (
+            self._option_matcher.match_multiple_with_disambiguation(match_input, options)
+        )
+
+        if disambiguation:
+            return [], self._ask_disambiguation_for_options(
+                item, order, attr, disambiguation, token_clean
+            )
+
+        if not matched:
+            return [], None
+
+        display_parts: list[str] = []
+        for opt in matched:
+            if opt["slug"] in existing_slugs:
+                continue
+
+            opt_name = opt["display_name"]
+            qualifier = self._ctx.extract_qualifier_for_option(token_clean, opt_name)
+            opt_quantity = extract_quantity_for_pattern(user_lower, opt_name.lower())
+            if opt_quantity == 1:
+                opt_quantity = extract_quantity_for_pattern(
+                    user_lower, opt["slug"].replace("_", " ")
+                )
+
+            display_name = f"{opt_name} ({qualifier})" if qualifier else opt_name
+            display = f"{opt_quantity} {display_name}" if opt_quantity > 1 else display_name
+            display_parts.append(display)
+
+            item.add_selection(
+                opt["slug"], attr_slug, quantity=opt_quantity, display_name=display_name,
+            )
+
+        return display_parts, None
+
+    def _match_token_to_single_select(
+        self,
+        token_clean: str,
+        match_input: str,
+        attr: dict,
+        item: "MenuItemTask",
+    ) -> str | None:
+        """Try matching a token against a single_select attribute.
+
+        Args:
+            token_clean: Cleaned token text (for qualifier extraction).
+            match_input: Token with quantity prefixes stripped (for matching).
+            attr: The attribute dict to match against.
+            item: The menu item being configured.
+
+        Returns:
+            Display name string if matched and applied, None otherwise.
+        """
+        attr_slug = attr["slug"]
+        options = attr.get("options", [])
+
+        matched_opt, _ = self._option_matcher.match_single(match_input, options)
+        if not matched_opt:
+            return None
+
+        opt_name = matched_opt["display_name"]
+        qualifier = self._ctx.extract_qualifier_for_option(token_clean, opt_name)
+
+        display_name = f"{opt_name} ({qualifier})" if qualifier else opt_name
+
+        item.remove_selection(attr_slug)
+        item.add_selection(
+            matched_opt["slug"], attr_slug, quantity=1, display_name=display_name,
+        )
+
+        return display_name
+
     def _handle_multi_token_direct_match(
         self,
         user_input: str,
@@ -222,88 +322,30 @@ class DirectOptionMatcher:
                 key=lambda a: 0 if a.get("input_type") == "multi_select" else 1,
             )
             for attr in sorted_attrs:
-                attr_slug = attr["slug"]
-                options = attr.get("options", [])
-                if not options:
+                if not attr.get("options"):
                     continue
 
                 input_type = attr.get("input_type", "single_select")
 
                 if input_type == "multi_select":
-                    matched, disambiguation = (
-                        self._option_matcher.match_multiple_with_disambiguation(
-                            match_input, options
-                        )
-                    )
-
-                    if disambiguation:
-                        # Ambiguous token — ask user to clarify before continuing
-                        return self._ask_disambiguation_for_options(
-                            item, order, attr, disambiguation, token_clean
-                        )
-
-                    if not matched:
-                        continue
-
-                    existing_selections = item.get_selections(attr_slug)
+                    existing_selections = item.get_selections(attr["slug"])
                     existing_slugs = {sel.get("slug") for sel in existing_selections}
 
-                    for opt in matched:
-                        if opt["slug"] in existing_slugs:
-                            continue
-
-                        opt_name = opt["display_name"]
-                        qualifier = self._ctx.extract_qualifier_for_option(token_clean, opt_name)
-                        opt_quantity = extract_quantity_for_pattern(
-                            user_lower, opt_name.lower()
-                        )
-                        if opt_quantity == 1:
-                            opt_quantity = extract_quantity_for_pattern(
-                                user_lower, opt["slug"].replace("_", " ")
-                            )
-
-                        display_name = (
-                            f"{opt_name} ({qualifier})" if qualifier else opt_name
-                        )
-                        display = (
-                            f"{opt_quantity} {display_name}"
-                            if opt_quantity > 1
-                            else display_name
-                        )
-                        display_parts.append(display)
-
-                        item.add_selection(
-                            opt["slug"],
-                            attr_slug,
-                            quantity=opt_quantity,
-                            display_name=display_name,
-                        )
-
-                    break  # Token matched in this attribute, move to next token
-
+                    parts, disambiguation_result = self._match_token_to_multi_select(
+                        token_clean, match_input, attr, item, order, user_lower, existing_slugs,
+                    )
+                    if disambiguation_result:
+                        return disambiguation_result
+                    if parts:
+                        display_parts.extend(parts)
+                        break  # Token matched in this attribute, move to next token
                 else:
-                    # single_select
-                    matched_opt, _ = self._option_matcher.match_single(match_input, options)
-                    if not matched_opt:
-                        continue
-
-                    opt_name = matched_opt["display_name"]
-                    qualifier = self._ctx.extract_qualifier_for_option(token_clean, opt_name)
-
-                    display_name = (
-                        f"{opt_name} ({qualifier})" if qualifier else opt_name
+                    display_name = self._match_token_to_single_select(
+                        token_clean, match_input, attr, item,
                     )
-                    display_parts.append(display_name)
-
-                    item.remove_selection(attr_slug)
-                    item.add_selection(
-                        matched_opt["slug"],
-                        attr_slug,
-                        quantity=1,
-                        display_name=display_name,
-                    )
-
-                    break  # Token matched, move to next token
+                    if display_name:
+                        display_parts.append(display_name)
+                        break  # Token matched, move to next token
 
         if display_parts:
             logger.info(

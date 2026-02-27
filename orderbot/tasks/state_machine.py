@@ -333,6 +333,20 @@ class OrderStateMachine:
 
         return ctx
 
+    def _record_result(
+        self, order: OrderTask, result: StateMachineResult | None,
+    ) -> StateMachineResult | None:
+        """Record an assistant message if result is truthy, then return it.
+
+        Centralizes the common pattern of:
+            if result:
+                order.add_message("assistant", result.message)
+            return result
+        """
+        if result:
+            order.add_message("assistant", result.message)
+        return result
+
     # Standard pending-state dispatchers. Each entry maps (field_name, handler_getter).
     # The loop checks the field, calls the handler, records the message, and returns.
     _PENDING_DISPATCHERS: list[tuple[str, str, str]] = [
@@ -354,9 +368,10 @@ class OrderStateMachine:
         for field_name, handler_attr, method_name in self._PENDING_DISPATCHERS:
             if getattr(order, field_name):
                 handler = getattr(self, handler_attr)
-                result = getattr(handler, method_name)(user_input, order)
+                result = self._record_result(
+                    order, getattr(handler, method_name)(user_input, order)
+                )
                 if result:
-                    order.add_message("assistant", result.message)
                     return result
 
         # Special case: store change with replay logic
@@ -583,9 +598,7 @@ class OrderStateMachine:
         if not ORDER_STATUS_PATTERN.search(user_input):
             return None
         logger.info("ORDER STATUS: User asked for order status")
-        result = self.order_utils_handler.handle_order_status(order)
-        order.add_message("assistant", result.message)
-        return result
+        return self._record_result(order, self.order_utils_handler.handle_order_status(order))
 
     def _check_order_history_inquiry(
         self, user_input: str, order: OrderTask,
@@ -593,10 +606,7 @@ class OrderStateMachine:
         if not self.order_history_handler.is_order_history_inquiry(user_input):
             return None
         logger.info("ORDER HISTORY: User asked for order history")
-        result = self.order_history_handler.handle_order_history_inquiry(order)
-        if result:
-            order.add_message("assistant", result.message)
-        return result
+        return self._record_result(order, self.order_history_handler.handle_order_history_inquiry(order))
 
     def _check_view_last_order(
         self, user_input: str, order: OrderTask,
@@ -604,19 +614,13 @@ class OrderStateMachine:
         if not self.order_history_handler.is_view_last_order(user_input):
             return None
         logger.info("ORDER HISTORY: User asked for last order details")
-        result = self.order_history_handler.handle_view_last_order(order)
-        if result:
-            order.add_message("assistant", result.message)
-        return result
+        return self._record_result(order, self.order_history_handler.handle_view_last_order(order))
 
     def _check_make_it_n_pattern(
         self, user_input: str, order: OrderTask,
     ) -> StateMachineResult | None:
         """Must precede modifier change to avoid 'make that two' being parsed as a modifier."""
-        result = self.order_modification_handler.handle_make_it_n(user_input, order)
-        if result:
-            order.add_message("assistant", result.message)
-        return result
+        return self._record_result(order, self.order_modification_handler.handle_make_it_n(user_input, order))
 
     def _check_store_change_pattern(
         self, user_input: str, order: OrderTask,
@@ -633,20 +637,18 @@ class OrderStateMachine:
         """Must precede modifier change to avoid 'delivery' being treated as a modifier."""
         if not order.delivery_method.order_type:
             return None
-        result = self.order_modification_handler.handle_order_type_change(user_input, order)
-        if result:
-            order.add_message("assistant", result.message)
-        return result
+        return self._record_result(
+            order, self.order_modification_handler.handle_order_type_change(user_input, order)
+        )
 
     def _check_modifier_change_pattern(
         self, user_input: str, order: OrderTask,
     ) -> StateMachineResult | None:
         if order.items.get_item_count() == 0 or order.is_configuring_item():
             return None
-        result = self.config_helper_handler.handle_modifier_change_request(user_input, order)
-        if result:
-            order.add_message("assistant", result.message)
-        return result
+        return self._record_result(
+            order, self.config_helper_handler.handle_modifier_change_request(user_input, order)
+        )
 
     def _check_scheduling_patterns(
         self, user_input: str, order: OrderTask,
@@ -673,9 +675,10 @@ class OrderStateMachine:
         # Time/scheduling expressions (e.g., "pickup at 3pm") -- only when
         # input doesn't look like an item order and we're not configuring an item
         if not _looks_like_new_order_attempt(user_input) and not order.is_configuring_item():
-            result = self.store_and_scheduling_handler.handle_scheduling_expression(user_input, order)
+            result = self._record_result(
+                order, self.store_and_scheduling_handler.handle_scheduling_expression(user_input, order)
+            )
             if result:
-                order.add_message("assistant", result.message)
                 return result
 
         return None
@@ -683,10 +686,9 @@ class OrderStateMachine:
     def _check_customer_info_change_pattern(
         self, user_input: str, order: OrderTask,
     ) -> StateMachineResult | None:
-        result = self.order_modification_handler.handle_customer_info_change(user_input, order)
-        if result:
-            order.add_message("assistant", result.message)
-        return result
+        return self._record_result(
+            order, self.order_modification_handler.handle_customer_info_change(user_input, order)
+        )
 
     def _log_slot_comparison(self, order: OrderTask) -> None:
         """Delegate to slot orchestration handler."""

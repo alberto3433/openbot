@@ -35,6 +35,34 @@ logger = logging.getLogger(__name__)
 # Use OptionMatcher.matches_value() and OptionMatcher.normalize_option()
 
 
+def _matches_attribute_filter(
+    attr: dict,
+    target_attr_slug: str | None,
+    modifier_type_hint: str | None,
+) -> bool:
+    """Check whether an attribute passes the target/type-hint filters.
+
+    Args:
+        attr: Attribute dict with a "slug" key.
+        target_attr_slug: If set, only this slug passes.
+        modifier_type_hint: If set, the attribute must relate to this type.
+
+    Returns:
+        True if the attribute should be searched, False to skip it.
+    """
+    attr_slug = attr.get("slug", "")
+
+    if target_attr_slug and attr_slug != target_attr_slug:
+        return False
+
+    if modifier_type_hint:
+        if modifier_type_hint not in attr_slug and attr_slug != modifier_type_hint:
+            if not menu_cache.attribute_contains_modifier_category(attr_slug, modifier_type_hint):
+                return False
+
+    return True
+
+
 def _lookup_option_price_in_attributes(
     attributes: list[dict],
     normalized_value: str,
@@ -76,29 +104,15 @@ def _lookup_option_price_in_attributes(
         for attr in attributes:
             if not isinstance(attr, dict):
                 continue
-
-            attr_slug = attr.get("slug", "")
-
-            # Filter by target attribute if specified
-            if target_attr_slug and attr_slug != target_attr_slug:
+            if not _matches_attribute_filter(attr, target_attr_slug, modifier_type_hint):
                 continue
 
-            # Filter by modifier type hint if specified
-            if modifier_type_hint:
-                if modifier_type_hint not in attr_slug and attr_slug != modifier_type_hint:
-                    # Also check if attribute contains options with this modifier category
-                    if not menu_cache.attribute_contains_modifier_category(attr_slug, modifier_type_hint):
-                        continue
-
-            options = attr.get("options", [])
-            for opt in options:
+            for opt in attr.get("options", []):
                 if not isinstance(opt, dict):
                     continue
-
                 if OptionMatcher.matches_value(opt, normalized_value, raw_value_lower, exact_only=exact_only):
-                    # Use consolidated price extraction utility
                     price = OptionMatcher.get_option_price(opt)
-                    return price, attr_slug
+                    return price, attr.get("slug", "")
 
     return None, None
 

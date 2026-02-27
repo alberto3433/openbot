@@ -26,6 +26,7 @@ from ..schemas.chat import (
     ChatMessageResponse,
     ActionOut,
 )
+from ..message_processor import SessionNotFoundError as _SessionNotFoundError
 from ..services.session import get_or_create_session
 from .chat import chat_router
 
@@ -80,9 +81,9 @@ def chat_message(
             customer_id=result.order_state.get("customer_id"),
         )
 
-    except ValueError as e:
+    except _SessionNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except (KeyError, TypeError, AttributeError, SQLAlchemyError) as e:
+    except (ValueError, KeyError, TypeError, AttributeError, SQLAlchemyError) as e:
         logger.error("MessageProcessor failed: %s", str(e), exc_info=True)
         return ChatMessageResponse(
             reply="I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",

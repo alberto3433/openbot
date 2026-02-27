@@ -11,6 +11,7 @@ This module is order-state aware, adjusting responses based on cart contents.
 """
 
 import logging
+from collections.abc import Callable
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -207,30 +208,18 @@ class UnrecognizedItemHandler:
                     return self._extract_suggestion_data(suggestion)
 
             # Try prefix match (for both forms)
-            suggestions = self._db_session.query(UnrecognizedMenuItemSuggestion).filter(
-                UnrecognizedMenuItemSuggestion.is_active == True,
-                UnrecognizedMenuItemSuggestion.match_type == "prefix",
-            ).all()
-
-            for s in suggestions:
-                for form in forms_to_try:
-                    if form.startswith(s.input_pattern):
-                        s.hit_count += 1
-                        self._db_session.commit()
-                        return self._extract_suggestion_data(s)
+            result = self._find_suggestion_by_predicate(
+                "prefix", forms_to_try, lambda form, pat: form.startswith(pat)
+            )
+            if result:
+                return result
 
             # Try contains match (for both forms)
-            suggestions = self._db_session.query(UnrecognizedMenuItemSuggestion).filter(
-                UnrecognizedMenuItemSuggestion.is_active == True,
-                UnrecognizedMenuItemSuggestion.match_type == "contains",
-            ).all()
-
-            for s in suggestions:
-                for form in forms_to_try:
-                    if s.input_pattern in form:
-                        s.hit_count += 1
-                        self._db_session.commit()
-                        return self._extract_suggestion_data(s)
+            result = self._find_suggestion_by_predicate(
+                "contains", forms_to_try, lambda form, pat: pat in form
+            )
+            if result:
+                return result
 
         except (SQLAlchemyError, KeyError, ValueError, AttributeError) as e:
             logger.warning("Failed to query curated suggestions: %s", e)
@@ -238,6 +227,38 @@ class UnrecognizedItemHandler:
                 self._db_session.rollback()
             except SQLAlchemyError:
                 pass
+
+        return None
+
+    def _find_suggestion_by_predicate(
+        self,
+        match_type: str,
+        forms_to_try: list[str],
+        predicate: Callable[[str, str], bool],
+    ) -> dict | None:
+        """Query suggestions of a given match_type and return the first hit.
+
+        Args:
+            match_type: The match_type to filter by (e.g., "prefix", "contains").
+            forms_to_try: Input forms to test against each suggestion's pattern.
+            predicate: A function(form, input_pattern) -> bool that tests a match.
+
+        Returns:
+            Suggestion data dict if a match is found, None otherwise.
+        """
+        from orderbot.db.models import UnrecognizedMenuItemSuggestion
+
+        suggestions = self._db_session.query(UnrecognizedMenuItemSuggestion).filter(
+            UnrecognizedMenuItemSuggestion.is_active == True,
+            UnrecognizedMenuItemSuggestion.match_type == match_type,
+        ).all()
+
+        for s in suggestions:
+            for form in forms_to_try:
+                if predicate(form, s.input_pattern):
+                    s.hit_count += 1
+                    self._db_session.commit()
+                    return self._extract_suggestion_data(s)
 
         return None
 

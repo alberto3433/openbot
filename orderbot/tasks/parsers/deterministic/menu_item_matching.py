@@ -61,6 +61,46 @@ def _match_item_with_defaults(
     return None, None, None
 
 
+def _has_trigger_outside_span(
+    text: str,
+    match_start: int,
+    match_end: int,
+    triggers: list[str],
+) -> bool:
+    """Check whether any of the type's triggers exist outside the matched menu item span.
+
+    If no single-word trigger is found outside the span, falls back to checking
+    multi-word triggers against the full text (since they may straddle the span boundary).
+
+    Args:
+        text: Full lowercased input text.
+        match_start: Start index of the menu item match span.
+        match_end: End index of the menu item match span.
+        triggers: Trigger strings for the detected item type.
+
+    Returns:
+        True if a trigger is confirmed outside the span, False otherwise.
+    """
+    text_outside = text[:match_start] + " " + text[match_end:]
+    if any(
+        re.search(rf'\b{re.escape(t.lower())}\b', text_outside)
+        for t in triggers
+    ):
+        return True
+
+    # No trigger found outside — check if a multi-word trigger matches the full text.
+    # Multi-word triggers like "bagel package" can span both inside and outside the
+    # menu item match, so checking only outside the span misses them.
+    if any(
+        re.search(rf'\b{re.escape(t.lower())}\b', text)
+        for t in triggers
+        if ' ' in t
+    ):
+        return True
+
+    return False
+
+
 def _find_different_type_menu_item(
     text: str,
     text_cleaned_lower: str,
@@ -111,25 +151,10 @@ def _find_different_type_menu_item(
             # e.g., "One Applewood Chicken Sausage" — "sausage" trigger is inside the match span,
             # so the egg_sandwich detection was a false positive; switch to the side item type.
             triggers_for_detected = menu_cache.get_item_type_triggers(detected_item_type)
-            text_outside = text_cleaned_lower[:match.start()] + " " + text_cleaned_lower[match.end():]
-            trigger_outside = any(
-                re.search(rf'\b{re.escape(t.lower())}\b', text_outside)
-                for t in triggers_for_detected
-            )
 
-            if not trigger_outside:
-                # Before switching, check if any multi-word trigger for the detected
-                # type matches the FULL text. Multi-word triggers like "bagel package"
-                # span both inside and outside the menu item match, so checking
-                # only outside the span misses them.
-                trigger_matches_full = any(
-                    re.search(rf'\b{re.escape(t.lower())}\b', text_cleaned_lower)
-                    for t in triggers_for_detected
-                    if ' ' in t
-                )
-                if trigger_matches_full:
-                    continue
-
+            if not _has_trigger_outside_span(
+                text_cleaned_lower, match.start(), match.end(), triggers_for_detected
+            ):
                 # Trigger only existed within the menu item name — switch types
                 if item_type in configurable_slugs:
                     logger.info(
@@ -146,11 +171,21 @@ def _find_different_type_menu_item(
                     )
                     return None
 
+            # Trigger found outside match span. Check if the matched menu item
+            # name is part of a multi-word trigger for the detected type.
+            # If so, the detected type legitimately "owns" this word — don't switch.
+            # e.g., "bagel" in "bagel package" trigger → don't switch from bagel_package.
+            item_in_detected_trigger = any(
+                re.search(rf'\b{re.escape(item_name_lower)}\b', t.lower())
+                for t in triggers_for_detected
+                if ' ' in t
+            )
+            if item_in_detected_trigger:
+                continue
+
             # Don't switch types if the matching menu item name is a known modifier
             # e.g., "muenster cheese" in "muenster cheese omelette" should be treated
             # as a modifier for omelette, not a type switch to "cheese"
-            # Use all() with content-word filtering so multi-word item names like
-            # "Side of Onion" aren't blocked just because "onion" is a modifier
             _filler_words = {'a', 'an', 'the', 'of', 'and', 'or', 'with', 'for'}
             content_words = [w for w in item_name_lower.split() if w not in _filler_words]
             all_words_are_modifiers = (

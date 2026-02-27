@@ -373,21 +373,15 @@ class SingleSelectHandler:
             # Multiple options - ask which one
             attr_name = attr["display_name"].lower()
             available = [opt["display_name"] for opt in available_opts]
-            if available and len(available) <= DEFAULT_PAGINATION_SIZE:
-                options_str = format_english_list(available, conjunction="or")
-                qr = [{"label": name, "value": name} for name in available]
+            if available:
+                page_names, qr, has_more = self._build_paginated_option_replies(available)
+                options_str = format_english_list(page_names, conjunction="or" if not has_more else "and")
+                if has_more:
+                    message = f"Sure! We have {options_str}, and more — which {attr_name} would you like?"
+                else:
+                    message = f"Sure! Which {attr_name} would you like? {options_str}"
                 return StateMachineResult(
-                    message=f"Sure! Which {attr_name} would you like? {options_str}",
-                    order=order,
-                    quick_replies=qr,
-                )
-            elif available:
-                first_page = available[:DEFAULT_PAGINATION_SIZE]
-                options_str = format_english_list(first_page)
-                qr = [{"label": name, "value": name} for name in first_page]
-                qr.append({"label": "more", "value": "what else?"})
-                return StateMachineResult(
-                    message=f"Sure! We have {options_str}, and more — which {attr_name} would you like?",
+                    message=message,
                     order=order,
                     quick_replies=qr,
                 )
@@ -399,24 +393,42 @@ class SingleSelectHandler:
         qr = None
         if not available:
             message = f"Sorry, we don't have {user_input} and there are no {attr_name} options available."
-        elif len(available) <= DEFAULT_PAGINATION_SIZE:
-            # Show all options
-            names = [opt["display_name"] for opt in available]
-            options_str = format_english_list(names, conjunction="or")
-            message = f"Sorry, we don't have {user_input}. We have {options_str}."
-            qr = [{"label": name, "value": name} for name in names]
         else:
-            # Show first page with pagination
-            first_page = available[:DEFAULT_PAGINATION_SIZE]
-            names = [opt["display_name"] for opt in first_page]
-            options_str = format_english_list(names, conjunction="and")
-            message = f"Sorry, we don't have {user_input}. We have {options_str}, and more — do you want one of these or do you want to hear more options?"
-            # Set pagination state so "yes" / "more options" works on next turn
-            order.config_options_page = 1
-            qr = [{"label": name, "value": name} for name in names]
-            qr.append({"label": "more", "value": "what else?"})
+            names = [opt["display_name"] for opt in available]
+            page_names, qr, has_more = self._build_paginated_option_replies(names)
+            options_str = format_english_list(page_names, conjunction="or" if not has_more else "and")
+            if has_more:
+                message = f"Sorry, we don't have {user_input}. We have {options_str}, and more — do you want one of these or do you want to hear more options?"
+                # Set pagination state so "yes" / "more options" works on next turn
+                order.config_options_page = 1
+            else:
+                message = f"Sorry, we don't have {user_input}. We have {options_str}."
 
         return StateMachineResult(message=message, order=order, quick_replies=qr)
+
+    @staticmethod
+    def _build_paginated_option_replies(
+        names: list[str],
+    ) -> tuple[list[str], list[dict], bool]:
+        """Build a (possibly paginated) list of quick-reply options.
+
+        If the number of names fits within DEFAULT_PAGINATION_SIZE, returns all
+        names. Otherwise, returns the first page with a "more" button appended.
+
+        Args:
+            names: Display names of available options.
+
+        Returns:
+            Tuple of (page_names, quick_replies, has_more).
+        """
+        if len(names) <= DEFAULT_PAGINATION_SIZE:
+            qr = [{"label": name, "value": name} for name in names]
+            return names, qr, False
+
+        first_page = names[:DEFAULT_PAGINATION_SIZE]
+        qr = [{"label": name, "value": name} for name in first_page]
+        qr.append({"label": "more", "value": "what else?"})
+        return first_page, qr, True
 
     def _check_partial_match(
         self,

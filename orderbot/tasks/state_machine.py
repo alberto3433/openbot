@@ -213,6 +213,7 @@ class OrderStateMachine:
             OrderPhase.CHECKOUT_PHONE.value: self.checkout_handler.handle_phone,
             OrderPhase.CHECKOUT_CONFIRM.value: self.checkout_handler.handle_confirmation,
             OrderPhase.CHECKOUT_PAYMENT_METHOD.value: self.checkout_handler.handle_payment_choice,
+            OrderPhase.COMPLETE.value: self._handle_taking_items,
         }
 
     # Handler accessors via registry

@@ -567,6 +567,7 @@ class CheckoutHandler(BaseStateHandler):
 
         if is_in_store and not is_online:
             order.payment.method = "card_in_store"
+            order.set_phase(OrderPhase.COMPLETE)
             return StateMachineResult(
                 message=f"Your order number is {order.checkout.short_order_number}. "
                        f"Thank you, {order.customer_info.name}!",
@@ -576,6 +577,7 @@ class CheckoutHandler(BaseStateHandler):
 
         if is_online and not is_in_store:
             order.payment.method = "card_link"
+            order.set_phase(OrderPhase.COMPLETE)
             return StateMachineResult(
                 message=f"Your order number is {order.checkout.short_order_number}. "
                        f"Thank you, {order.customer_info.name}!",

@@ -1705,6 +1705,11 @@ orderbot/tasks/taking_items_handler.py:
     context: all
     reason: "Legacy code - TODO: refactor to data-driven"
 
+orderbot/routes/stt.py:
+  - term: large
+    context: all
+    reason: "Generic English word in 'Audio file too large' error message, not a food term"
+
 orderbot/services/tts.py:
   - term: nova
     context: all

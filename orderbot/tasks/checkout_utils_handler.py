@@ -11,7 +11,7 @@ Extracted from state_machine.py for better separation of concerns.
 import logging
 from typing import Callable, TYPE_CHECKING
 
-from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending_field
+from .models import OrderTask, MenuItemTask, TaskStatus, parse_pending_field
 from .schemas import OrderPhase, StateMachineResult
 from .utils.text import format_english_list, name_with_prefix
 from .checkout_messages import got_it_anything_else, CheckoutMessages, CONFIRM_QUICK_REPLIES
@@ -157,11 +157,7 @@ class CheckoutUtilsHandler:
                         item_id[:8] if item_id else None, item_name, pending_field)
 
             # Find the target item and check if it still needs configuration
-            target_item = None
-            for item in order.items.items:
-                if item.id == item_id:
-                    target_item = item
-                    break
+            target_item = order.items.get_item_by_id(item_id)
 
             # Defensive check: skip if item is already complete
             if target_item and target_item.status == TaskStatus.COMPLETE:
@@ -312,13 +308,6 @@ class CheckoutUtilsHandler:
             return "Is this for delivery again, or pickup?"
         else:
             return "Is this for pickup or delivery?"
-
-    def get_item_by_id(self, order: OrderTask, item_id: str) -> ItemTask | None:
-        """Find an item by its ID."""
-        for item in order.items.items:
-            if item.id == item_id:
-                return item
-        return None
 
     def build_order_summary(self, order: OrderTask) -> str:
         """Build order summary string with consolidated identical items and total.

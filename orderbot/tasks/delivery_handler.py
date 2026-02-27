@@ -6,6 +6,7 @@ extracted from checkout_handler.py for better separation of concerns.
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from .checkout_messages import CheckoutMessages, CONFIRM_QUICK_REPLIES
@@ -93,6 +94,13 @@ class DeliveryHandler(BaseHandler):
         if parsed.choice == "unclear":
             # Check if we're waiting for an address (delivery selected but no address yet)
             if order.delivery_method.order_type == "delivery" and not order.delivery_method.address.street:
+                # Strip "change" preamble if present (e.g., "change it to 372 Canal St")
+                cleaned = re.sub(
+                    r'^(?:change\s+(?:it\s+)?(?:the\s+address\s+)?to\s+)',
+                    '', user_input, flags=re.IGNORECASE,
+                ).strip()
+                if cleaned != user_input:
+                    parsed = parse_delivery_choice_deterministic(cleaned)
                 # Try to extract address from input
                 if parsed.address:
                     # Complete and validate the delivery address

@@ -10,6 +10,7 @@ is interpreted in the context of that item - no new items can be created.
 """
 
 import logging
+import re
 
 from .models import (
     OrderTask,
@@ -59,6 +60,17 @@ slot_logger = logging.getLogger(__name__ + ".slot_comparison")
 # Note: Parsing functions have been moved to:
 # - parsers/deterministic.py (regex-based parsing)
 # - parsers/llm_parsers.py (LLM-based parsing)
+
+_ADDRESS_PATTERN = re.compile(
+    r'\d+\s+\w+.*(street|st\b|ave\b|avenue|road|rd\b|drive|dr\b|blvd|lane|ln\b|way\b|place|pl\b|court|ct\b)',
+    re.IGNORECASE,
+)
+
+
+def _looks_like_address(text: str) -> bool:
+    """Return True if *text* contains something that looks like a street address."""
+    return bool(_ADDRESS_PATTERN.search(text))
+
 
 def _looks_like_new_order_attempt(user_input: str) -> bool:
     """
@@ -645,6 +657,10 @@ class OrderStateMachine:
         self, user_input: str, order: OrderTask,
     ) -> StateMachineResult | None:
         if order.items.get_item_count() == 0 or order.is_configuring_item():
+            return None
+        # Don't intercept address input during delivery phase
+        if (order.phase == OrderPhase.CHECKOUT_DELIVERY.value
+                and _looks_like_address(user_input)):
             return None
         return self._record_result(
             order, self.config_helper_handler.handle_modifier_change_request(user_input, order)

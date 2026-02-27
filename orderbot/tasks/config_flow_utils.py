@@ -14,6 +14,7 @@ from .schemas import StateMachineResult
 from .pending_fields import PendingField
 from .utils.pricing_utils import safe_recalculate_price
 from orderbot.cache import menu_cache
+from orderbot.constants import MAX_DISAMBIGUATION_OPTIONS
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -156,15 +157,20 @@ def start_modifier_disambiguation(
     order.pending_field = PendingField.MODIFIER_SELECTION
     order.pending_modifier_target_item_index = order.items.items.index(item)
 
+    shown = matches[:MAX_DISAMBIGUATION_OPTIONS]
     option_lines = []
-    for i, match in enumerate(matches[:6], 1):
+    for i, match in enumerate(shown, 1):
         price_str = ""
         if match.get("base_price", 0) > 0:
             price_str = f" (+${match['base_price']:.2f})"
         option_lines.append(f"{i}. {match['name']}{price_str}")
 
+    remaining = len(matches) - len(shown)
+    if remaining > 0:
+        option_lines.append(f"...and {remaining} more")
+
     options_str = "\n".join(option_lines)
-    qr = [{"label": m["name"], "value": m["name"]} for m in matches[:6] if m.get("name")]
+    qr = [{"label": m["name"], "value": m["name"]} for m in shown if m.get("name")]
     return StateMachineResult(
         message=f"Which {new_value} would you like?\n{options_str}",
         order=order,

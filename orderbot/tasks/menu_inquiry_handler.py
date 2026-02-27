@@ -172,6 +172,58 @@ class MenuInquiryHandler(BaseHandler):
 
         return StateMachineResult(message=message, order=order, quick_replies=qr)
 
+    def _format_sub_groups_response(
+        self,
+        child_groups: list[dict],
+        parent_slug: str,
+        order: OrderTask,
+    ) -> StateMachineResult:
+        """Format a response listing sub-groups instead of individual items.
+
+        When a display group has children (e.g., "drinks" -> Coffee, Tea, Soda),
+        show the sub-group names so the user can drill down.
+
+        Args:
+            child_groups: List of child display group dicts (from cache).
+            parent_slug: The parent display group slug (e.g., "drinks").
+            order: Current order state.
+
+        Returns:
+            StateMachineResult with sub-group listing and quick replies.
+        """
+        group_names = [g["display_name"] for g in child_groups]
+
+        if len(group_names) <= DEFAULT_PAGINATION_SIZE:
+            names_str = format_english_list(group_names)
+            batch = group_names
+            order.clear_menu_pagination()
+        else:
+            batch = group_names[:DEFAULT_PAGINATION_SIZE]
+            remaining = len(group_names) - DEFAULT_PAGINATION_SIZE
+            names_str = ", ".join(batch) + f", and {remaining} more"
+            order.menu_query_pagination = {
+                "type": "display_group_subgroups",
+                "parent_slug": parent_slug,
+                "items": group_names,
+                "offset": DEFAULT_PAGINATION_SIZE,
+            }
+
+        parent_display = parent_slug.replace("_", " ")
+
+        qr = [
+            {"label": name, "value": f"What {name.lower()} do you have?"}
+            for name in batch
+        ]
+        if len(group_names) > DEFAULT_PAGINATION_SIZE:
+            remaining = len(group_names) - DEFAULT_PAGINATION_SIZE
+            qr.append({"label": f"{remaining} more", "value": "what else?"})
+
+        return StateMachineResult(
+            message=f"For {parent_display}, we have {names_str}. Which type are you interested in?",
+            order=order,
+            quick_replies=qr,
+        )
+
     def handle_more_menu_items(self, order: OrderTask, category: str | None = None) -> StateMachineResult:
         """Handle 'show more' menu requests.
 
@@ -309,6 +361,12 @@ class MenuInquiryHandler(BaseHandler):
                 order=order,
             )
 
+        # Before listing items flat, check if the lookup_type has sub-groups
+        # e.g., "drinks" has children Coffee, Tea, Soda, etc.
+        child_groups = menu_cache.get_child_display_groups(lookup_type)
+        if child_groups and not show_prices:
+            return self._format_sub_groups_response(child_groups, lookup_type, order)
+
         # Format the items list using helper method
         # Use lookup_type (canonical item type slug) for display, not menu_query_type (user input)
         # This avoids double-pluralization (e.g., "teas" -> "teass")
@@ -369,6 +427,13 @@ class MenuInquiryHandler(BaseHandler):
         # First, check if this matches a display group (or alias like "pastry" -> "desserts_pastries")
         display_group = menu_cache.get_display_group_by_slug(category_slug)
         if display_group:
+            # Check for child sub-groups before listing items flat
+            child_groups = menu_cache.get_child_display_groups(display_group["slug"])
+            if child_groups:
+                return self._format_sub_groups_response(
+                    child_groups, display_group["slug"], order
+                )
+
             item_type_slugs = menu_cache.get_item_types_in_display_group(display_group["slug"])
             if item_type_slugs:
                 # Collect items from all item types in this display group

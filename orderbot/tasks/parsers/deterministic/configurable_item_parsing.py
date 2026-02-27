@@ -106,6 +106,17 @@ def _should_defer_to_multi_item_parser(text_lower: str, text: str) -> bool:
         parts = text_lower.split(" and ", 1)
         if len(parts) == 2:
             left_part, right_part = parts
+
+            # Before checking triggers, see if the right side is just a modifier/ingredient.
+            # e.g. "chai tea with sugar and vanilla chai" - "vanilla chai" is a syrup, not a
+            # second chai item. Strip trailing politeness words before checking.
+            right_stripped = right_part.strip()
+            for pw in ("please", "thanks", "thank you", "pls", "thx"):
+                if right_stripped.endswith(pw):
+                    right_stripped = right_stripped[: -len(pw)].strip()
+                    break
+            right_is_modifier = menu_cache.is_known_modifier(right_stripped)
+
             # Check if the same configurable item type trigger appears in both parts
             configurable_slugs = menu_cache.get_configurable_item_type_slugs()
             for item_type_slug in configurable_slugs:
@@ -120,6 +131,16 @@ def _should_defer_to_multi_item_parser(text_lower: str, text: str) -> bool:
                     left_match = re.search(trigger_pattern, left_part)
                     right_match = re.search(trigger_pattern, right_part)
                     if left_match and right_match:
+                        # If the right side is a known modifier that happens to contain
+                        # the trigger word, this is NOT a multi-item order.
+                        # e.g. trigger "chai" in "vanilla chai" (a syrup ingredient)
+                        if right_is_modifier:
+                            logger.debug(
+                                "CONFIGURABLE_ITEM: trigger '%s' in both parts but right part '%s' is a known modifier, "
+                                "NOT deferring to multi-item parser: '%s'",
+                                trigger, right_stripped, text[:50]
+                            )
+                            continue
                         logger.debug(
                             "CONFIGURABLE_ITEM: skipping multi-item pattern (trigger '%s' appears before and after 'and'), "
                             "delegating to multi-item parser: '%s'",

@@ -8,7 +8,7 @@ from orderbot.cache import menu_cache
 
 from .models import OrderTask
 from .schemas import StateMachineResult
-from .utils.text import format_english_list, format_paginated_list
+from .utils.text import format_english_list, format_paginated_list, name_with_prefix
 from .parsers.constants import DEFAULT_PAGINATION_SIZE
 from .models.pending_states import PendingIngredientSearch
 from .pending_fields import PendingField
@@ -343,7 +343,7 @@ class AvailabilityOperations:
         if len(matches) == 1:
             item_name = matches[0].get("name", "that item")
             desc = matches[0].get("description", "")
-            msg = f"For items with {ingredient_term}, we have the {item_name}"
+            msg = f"For items with {ingredient_term}, we have {name_with_prefix('the', item_name)}"
             if desc:
                 msg += f" ({desc})"
             msg += ". Would you like one?"

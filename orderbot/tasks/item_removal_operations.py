@@ -74,11 +74,16 @@ class ItemRemovalOperations:
         for variant in cancel_variants:
             category_mapping = menu_cache.get_category_keyword_mapping(variant)
             if category_mapping and category_mapping.get("lookup_type") == "item_type":
+                # Before skipping, check if any active item has a modifier matching
+                # this term. E.g. "cheese" is an item_type, but if the cart has a
+                # sandwich with cheese as a modifier, prefer modifier removal.
+                if find_modifier_on_any_item(active_items, parsed.cancel_item):
+                    break  # Don't skip — let modifier removal proceed below
                 logger.info(
                     "Cancellation: '%s' matches item type '%s' - skipping modifier removal",
                     parsed.cancel_item, category_mapping.get("slug")
                 )
-                return None  # Skip modifier removal, let item removal handle it
+                return None  # No modifier match — skip modifier removal
 
         # Check if cancel term matches a cart item's menu_item_name — if so, skip modifier
         # removal. Prevents "Remove the Ham Egg and Cheese Sandwich" from stripping "ham"

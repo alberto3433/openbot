@@ -26,7 +26,7 @@ from .config_side_choice_handler import SIDE_CHOICE_ATTR_SLUG
 from .config_priority_interceptor import ConfigPriorityInterceptor
 from .config_modification_interceptor import ConfigModificationInterceptor
 from .config_fallback_interceptor import ConfigFallbackInterceptor
-from .utils.text import format_english_list, normalize_text
+from .utils.text import format_english_list, normalize_text, name_with_prefix
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -395,7 +395,7 @@ class ConfiguringItemHandler:
         if clarification.candidates:
             next_candidate = clarification.candidates[0]
             msg = (
-                f"The {clarification.item_name} already comes with "
+                f"{name_with_prefix('The', clarification.item_name)} already comes with "
                 f"{next_candidate['display_name']}. Would you like extra?"
             )
             order.pending_field = PendingField.CONFIRM_DEFAULT_EXTRA

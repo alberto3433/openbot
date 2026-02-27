@@ -27,7 +27,7 @@ from .config_input_dispatch import _filter_options_by_category
 from .flows import IngredientFallbackHandler
 from ..shared_constants import ORDERING_PREFIX_RE, LEADING_ARTICLE_RE
 from ..parsers.intent_patterns import ORDERING_LANGUAGE_PATTERN
-from ..utils.text import normalize_text
+from ..utils.text import normalize_text, name_with_prefix
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
@@ -162,7 +162,7 @@ class CustomizationCheckpointHandler:
                     continue
                 item_name = item.get_display_name()
                 return StateMachineResult(
-                    message=f"Let's finish configuring the {item_name} first. Any more changes?",
+                    message=f"Let's finish configuring {name_with_prefix('the', item_name)} first. Any more changes?",
                     order=order,
                 )
         return None

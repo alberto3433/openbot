@@ -25,6 +25,7 @@ from .config_cancellation_matchers import (
     _cancel_matches_item_or_type,
 )
 from .config_cancellation_operations import ConfigCancellationOperations
+from .utils.text import name_with_prefix
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -185,7 +186,7 @@ class ConfigCancellationHandler:
             )
             updated_summary = current_item.get_summary()
             question = self._operations._get_current_config_question(order, current_item)
-            msg = f"Sure, I've updated your {current_item.menu_item_name} to {updated_summary}."
+            msg = f"Sure, I've updated {name_with_prefix('your', current_item.menu_item_name)} to {updated_summary}."
             if question:
                 msg = f"{msg} {question}"
             return StateMachineResult(message=msg, order=order)

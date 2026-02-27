@@ -9,9 +9,9 @@ from ..normalization import strip_ordering_prefix
 from ..parsers import strip_conversational_fillers
 from ..schemas import StateMachineResult
 from ..utils import OptionMatcher
-from ..utils.text import normalize_text
+from ..utils.text import normalize_text, name_with_prefix
 from ..parsers.inquiry_patterns import ITEM_DESCRIPTION_PATTERNS
-from ..response_utils import is_affirmative
+from ..response_utils import is_affirmative, is_keep_default_response
 
 if TYPE_CHECKING:
     from .handler import MenuItemConfigHandler
@@ -65,6 +65,24 @@ class ConfigInputDispatch:
         # NOTE: milk_sweetener_syrup now uses the standard multi_select flow
         # which includes partial matching (e.g., "syrup" lists all syrup options)
 
+        # Check for "keep default" / "no change" responses before option matching.
+        # For signature items with defaults (e.g., bread type), users may say
+        # "no change" or "leave as is" meaning "keep the default value."
+        if is_keep_default_response(user_input) or is_keep_default_response(original_input):
+            selections = item.get_selections(attr_slug)
+            defaults = [s for s in selections if isinstance(s, dict) and s.get("is_default")]
+            if defaults:
+                for sel in defaults:
+                    sel["_confirmed"] = True
+                default_name = defaults[0].get("display_name", attr_slug)
+                attrs_lookup = menu_cache.get_item_type_attributes(item.menu_item_type)
+                attr_for_advance = attrs_lookup.get(attr_slug)
+                if attr_for_advance:
+                    return self._parent._question_flow._advance_to_next_question(
+                        item, order, attr_for_advance, default_name
+                    )
+            # No defaults to keep — fall through to normal processing
+
         item_type = item.menu_item_type
         attrs = menu_cache.get_item_type_attributes(item_type)
         attr = attrs.get(attr_slug)
@@ -106,7 +124,7 @@ class ConfigInputDispatch:
                 result = self._parent._options_inquiry_handler.handle_options_inquiry(
                     item, order, attr, filtered, is_show_more=False
                 )
-                result.message = f"Let's complete the {item_name}. {result.message}"
+                result.message = f"Let's complete {name_with_prefix('the', item_name)}. {result.message}"
                 return result
 
         # Check if user is asking about a DIFFERENT attribute's options

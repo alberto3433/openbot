@@ -7,6 +7,8 @@ Import from here instead of hardcoding strings in handlers.
 
 from typing import TYPE_CHECKING
 
+from .utils.text import name_with_prefix
+
 if TYPE_CHECKING:
     from .models import MenuItemTask
 
@@ -63,7 +65,7 @@ def ok_removed_anything_else(item_name: str) -> str:
     Returns:
         Formatted response string
     """
-    return f"OK, I've removed the {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
+    return f"OK, I've removed {name_with_prefix('the', item_name)}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
 def sure_updated_anything_else(item_summary: str) -> str:
@@ -75,7 +77,7 @@ def sure_updated_anything_else(item_summary: str) -> str:
     Returns:
         Formatted response string
     """
-    return f"Sure, I've updated your {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
+    return f"Sure, I've updated {name_with_prefix('your', item_summary)}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
 def changed_to_anything_else(item_summary: str) -> str:
@@ -103,7 +105,7 @@ def item_added_anything_else(count: int, item_name: str) -> str:
         Formatted response string
     """
     if count == 1:
-        return f"I've added another {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
+        return f"I've added {name_with_prefix('another', item_name)}. {CheckoutMessages.ANYTHING_ELSE}"
     return f"I've added {count} more {item_name}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
@@ -118,7 +120,7 @@ def sure_added_to_anything_else(item_summary: str) -> str:
     Returns:
         Formatted response string
     """
-    return f"Sure, I've added that to your {item_summary}. {CheckoutMessages.ANYTHING_ELSE}"
+    return f"Sure, I've added that to {name_with_prefix('your', item_summary)}. {CheckoutMessages.ANYTHING_ELSE}"
 
 
 def sure_removed_anything_else(removed_name: str, item_summary: str | None = None) -> str:
@@ -237,7 +239,7 @@ def item_not_found_would_you_like_to_add(item_desc: str) -> str:
     Returns:
         Formatted message offering to add the item
     """
-    return f"I couldn't find a {item_desc} in your order. Would you like to add one?"
+    return f"I couldn't find {name_with_prefix('a', item_desc)} in your order. Would you like to add one?"
 
 
 # =============================================================================
@@ -253,7 +255,7 @@ def item_not_customizable(item_name: str) -> str:
     Returns:
         Formatted rejection message
     """
-    return f"Sorry, the {item_name} can't be customized. Anything else?"
+    return f"Sorry, {name_with_prefix('the', item_name)} can't be customized. Anything else?"
 
 
 def modifier_not_available_for_item(modifier_name: str, item_name: str) -> str:
@@ -266,7 +268,7 @@ def modifier_not_available_for_item(modifier_name: str, item_name: str) -> str:
     Returns:
         Formatted rejection message
     """
-    return f"Sorry, {modifier_name} isn't available for the {item_name}. Anything else?"
+    return f"Sorry, {modifier_name} isn't available for {name_with_prefix('the', item_name)}. Anything else?"
 
 
 def build_inapplicable_note(item: "MenuItemTask") -> str | None:

@@ -246,6 +246,53 @@ def format_numbered_list(
     return "\n".join(lines)
 
 
+_LEADING_ARTICLE_RE = re.compile(r'^(the|a|an)\s+', re.IGNORECASE)
+_POSSESSIVES = {"your", "my", "our", "his", "her", "their", "its"}
+
+
+def name_with_prefix(prefix: str, name: str) -> str:
+    """Combine a prefix like 'your' or 'the' with an item name, avoiding article doubling.
+
+    Prevents awkward text like "your The Alton Brown" or "the The Classic BEC".
+
+    Rules:
+    - Possessives (your/my/etc.) + "The X" -> "your X" (strip article)
+    - Articles (the/a/an) + "The X" -> "The X" (use item's own article)
+    - Other (another/this/etc.) + "The X" -> "another X" (strip article)
+    - No leading article in name -> "prefix name" unchanged
+
+    Args:
+        prefix: The prefix word(s) to prepend (e.g. "your", "the", "another").
+        name: The item name which may start with an article.
+
+    Returns:
+        Combined string with natural article handling.
+
+    Examples:
+        >>> name_with_prefix("your", "The Alton Brown")
+        'your Alton Brown'
+        >>> name_with_prefix("the", "The Classic BEC")
+        'The Classic BEC'
+        >>> name_with_prefix("another", "The Classic BEC")
+        'another Classic BEC'
+        >>> name_with_prefix("your", "Plain Bagel")
+        'your Plain Bagel'
+    """
+    m = _LEADING_ARTICLE_RE.match(name)
+    if not m:
+        return f"{prefix} {name}"
+
+    name_without_article = name[m.end():]
+    prefix_lower = prefix.strip().lower().split()[-1]  # last word of prefix
+
+    # "the" + "The X" -> just use item's own article form
+    if prefix_lower in ("the", "a", "an"):
+        return name
+
+    # possessives and everything else: strip the article
+    return f"{prefix} {name_without_article}"
+
+
 def strip_leading_article(text: str) -> str:
     """Remove leading 'the ' from text if present.
 

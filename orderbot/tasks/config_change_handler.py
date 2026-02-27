@@ -16,7 +16,7 @@ from .models.pending_states import PendingChangeClarification
 from .schemas import StateMachineResult
 from .handler_utils import get_last_item
 from orderbot.cache import menu_cache
-from .utils.text import normalize_text
+from .utils.text import normalize_text, name_with_prefix
 from .pending_fields import UNKNOWN_ATTRIBUTE_SLUG
 
 if TYPE_CHECKING:
@@ -218,7 +218,7 @@ class ConfigChangeHandler:
                     last_item = get_last_item(active_items)
                     item_name = last_item.menu_item_name if last_item else "that item"
                     return StateMachineResult(
-                        message=f"I'm not sure how to change the {item_name} that way. Could you tell me what you'd like instead?",
+                        message=f"I'm not sure how to change {name_with_prefix('the', item_name)} that way. Could you tell me what you'd like instead?",
                         order=order,
                     )
             if not active_items:

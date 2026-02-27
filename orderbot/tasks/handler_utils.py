@@ -14,7 +14,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from .utils.pricing_utils import safe_recalculate_price
-from .utils.text import normalize_text
+from .utils.text import normalize_text, name_with_prefix
 
 if TYPE_CHECKING:
     from .models import OrderTask, MenuItemTask
@@ -87,7 +87,7 @@ def build_item_selection_question(
     Returns:
         Formatted question string with first letter capitalized
     """
-    question_parts = [f"another {opt['summary']}" for opt in item_options]
+    question_parts = [name_with_prefix("another", opt['summary']) for opt in item_options]
     question = ", ".join(question_parts) + f", or {all_option_text}?"
     # Capitalize first letter
     return question[0].upper() + question[1:]

@@ -143,6 +143,7 @@ class DeliveryHandler(BaseHandler):
                         message=f"Deliver to {saved_address}?",
                         order=order,
                         quick_replies=[
+                            {"label": saved_address, "value": "yes"},
                             {"label": "Yes", "value": "yes"},
                             {"label": "No", "value": "no"},
                         ],

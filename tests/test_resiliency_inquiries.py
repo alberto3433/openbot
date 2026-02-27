@@ -277,12 +277,13 @@ class TestMenuInquiries:
 
         Scenario:
         - User says: "what kind of drinks do you have?"
-        - Expected: System lists drink items (same as "what drinks do you have")
+        - Expected: System lists drink sub-groups (Coffee, Tea, Soda, etc.)
+        - NOT individual drink items flat
         - NOT attribute options (like bread types)
         - NOT generic "various options" response
 
-        This tests that "what kind of X" with non-configurable item types
-        is treated as a menu query, not an attribute inquiry.
+        This tests that "what kind of X" with sub-groups shows sub-group names
+        so the user can drill down, rather than listing 68 items flat.
         """
         order = OrderTask()
         order.phase = OrderPhase.TAKING_ITEMS.value
@@ -295,9 +296,9 @@ class TestMenuInquiries:
 
         message_lower = result.message.lower()
 
-        # Should list actual drink items (same as "what drinks do you have")
-        lists_drinks = any(word in message_lower for word in [
-            "coffee", "latte", "tea", "juice", "soda", "espresso"
+        # Should list drink sub-group names (Coffee, Tea, Soda, etc.)
+        lists_sub_groups = any(word in message_lower for word in [
+            "coffee", "tea", "soda", "hot chocolate", "bottled drinks"
         ])
 
         # Should NOT return bread/bagel options (wrong attribute resolution)
@@ -306,8 +307,8 @@ class TestMenuInquiries:
         # Should NOT be generic "various options" response
         is_generic = "various" in message_lower and "options" in message_lower
 
-        assert lists_drinks, \
-            f"Should list drink items. Message: {result.message}"
+        assert lists_sub_groups, \
+            f"Should list drink sub-groups. Message: {result.message}"
         assert not returns_bread, \
             f"Should NOT return bread options. Message: {result.message}"
         assert not is_generic, \

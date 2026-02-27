@@ -13,7 +13,7 @@ from typing import Callable, TYPE_CHECKING
 
 from .models import OrderTask, MenuItemTask, ItemTask, TaskStatus, parse_pending_field
 from .schemas import OrderPhase, StateMachineResult
-from .utils.text import format_english_list
+from .utils.text import format_english_list, name_with_prefix
 from .checkout_messages import got_it_anything_else, CheckoutMessages, CONFIRM_QUICK_REPLIES
 from ..cache import menu_cache
 
@@ -95,21 +95,22 @@ class CheckoutUtilsHandler:
             db_question = menu_cache.get_question_for_field(item_type_slug, attr_name)
 
         # Build abbreviated question
+        item_prefixed = name_with_prefix("the", item_name)
         if db_question:
             # Format as abbreviated: "And the {item} - {question}"
             q_lower = db_question.lower()
             if q_lower.startswith("would you like"):
                 # "Would you like it toasted?" -> "And the X - would you like it toasted?"
-                return f"And the {item_name} - {db_question[0].lower()}{db_question[1:]}"
+                return f"And {item_prefixed} - {db_question[0].lower()}{db_question[1:]}"
             elif q_lower.startswith("what"):
                 # "What size?" -> "And what size for the X?"
-                return f"And {db_question[0].lower()}{db_question[1:].rstrip('?')} for the {item_name}?"
+                return f"And {db_question[0].lower()}{db_question[1:].rstrip('?')} for {item_prefixed}?"
             else:
                 # Generic format
-                return f"And the {item_name} - {db_question}"
+                return f"And {item_prefixed} - {db_question}"
 
         # Fallback to generic question if not in database
-        return f"And the {item_name}?"
+        return f"And {item_prefixed}?"
 
     def get_next_question(
         self,

@@ -18,7 +18,7 @@ from .models.pending_states import PendingIngredientSearch
 from .pending_fields import PendingField
 from .schemas import StateMachineResult
 from .response_utils import is_affirmative
-from .utils.text import format_english_list, normalize_text
+from .utils.text import format_english_list, normalize_text, name_with_prefix
 from .order_detection import (
     looks_like_order_attempt,
     extract_order_item_name,
@@ -82,7 +82,7 @@ class IngredientSearchHandler:
             item = matches[0]
             item_name = item.get("name", "that item")
             desc = item.get("description", "")
-            msg = f"For {ingredient}, we have the {item_name}"
+            msg = f"For {ingredient}, we have {name_with_prefix('the', item_name)}"
             if desc:
                 msg += f" ({desc})"
             msg += ". Would you like one?"

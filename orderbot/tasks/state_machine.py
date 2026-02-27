@@ -44,7 +44,7 @@ from .parsers import (
     # Order management patterns
     STORE_CHANGE_PATTERN,
 )
-from .utils.text import normalize_text
+from .utils.text import normalize_text, name_with_prefix
 from .parsers.deterministic.text_cleaning import _collapse_repeated_words
 
 logger = logging.getLogger(__name__)
@@ -134,7 +134,7 @@ def _check_redirect_to_pending_item(
     if _looks_like_new_order_attempt(user_input):
         item_desc = _get_pending_item_description(item)
         return StateMachineResult(
-            message=f"Let's finish up your {item_desc} first. {question}",
+            message=f"Let's finish up {name_with_prefix('your', item_desc)} first. {question}",
             order=order,
         )
     return None

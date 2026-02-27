@@ -20,6 +20,7 @@ from orderbot.cache.base import get_singular_plural_variants, singularize
 from orderbot.exceptions import MenuDataNotLoadedError
 from .checkout_messages import ok_removed_anything_else, item_not_found_in_order
 from .utils.pricing_utils import safe_recalculate_price
+from .utils.text import name_with_prefix
 from .config_cancellation_matchers import (
     _extract_modifier_and_item_reference,
     _get_removable_modifiers,
@@ -220,10 +221,11 @@ class ConfigCancellationOperations:
                                 "Removed '%s' from '%s' via 'X on Y' pattern",
                                 removed_name, target_item.menu_item_name
                             )
+                            item_with_prefix = name_with_prefix("your", target_item.menu_item_name)
                             return self._config_removal_response(
-                                f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}.",
+                                f"OK, I've removed the {removed_name} from {item_with_prefix}.",
                                 order, current_item,
-                                f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. Anything else?",
+                                f"OK, I've removed the {removed_name} from {item_with_prefix}. Anything else?",
                             )
                 except MenuDataNotLoadedError:
                     pass  # Fall through to try default ingredient removal
@@ -239,10 +241,11 @@ class ConfigCancellationOperations:
                             "Removed default ingredient '%s' from '%s' via 'X on Y' pattern",
                             removed_name, target_item.menu_item_name
                         )
+                        item_with_prefix = name_with_prefix("your", target_item.menu_item_name)
                         return self._config_removal_response(
-                            f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}.",
+                            f"OK, I've removed the {removed_name} from {item_with_prefix}.",
                             order, current_item,
-                            f"OK, I've removed the {removed_name} from your {target_item.menu_item_name}. Anything else?",
+                            f"OK, I've removed the {removed_name} from {item_with_prefix}. Anything else?",
                         )
             # If pattern matched but no item found or no modifier found, fall through to existing logic
 
@@ -316,7 +319,7 @@ class ConfigCancellationOperations:
                         updated_summary = current_item.get_summary()
                         return self._config_removal_response(
                             removal_result.message, order, current_item,
-                            f"{removal_result.message} Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
+                            f"{removal_result.message} {name_with_prefix('Your', current_item.menu_item_name)} is now {updated_summary}. Anything else?",
                         )
             except MenuDataNotLoadedError:
                 # Menu cache not loaded - fall back to checking removable modifiers set
@@ -354,7 +357,7 @@ class ConfigCancellationOperations:
                         return self._config_removal_response(
                             f"OK, I've removed the {removed_modifier_name}.",
                             order, current_item,
-                            f"OK, I've removed the {removed_modifier_name}. Your {current_item.menu_item_name} is now {updated_summary}. Anything else?",
+                            f"OK, I've removed the {removed_modifier_name}. {name_with_prefix('Your', current_item.menu_item_name)} is now {updated_summary}. Anything else?",
                         )
 
         return None

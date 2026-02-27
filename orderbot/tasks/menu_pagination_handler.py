@@ -102,6 +102,10 @@ class MenuPaginationHandler(MenuDataMixin):
         if pagination.get("type") == "dietary_items":
             return self._content._handle_more_dietary_items(order, pagination)
 
+        # Handle display_group_subgroups pagination (from "what drinks?" with sub-groups)
+        if pagination.get("type") == "display_group_subgroups":
+            return self._content._handle_more_display_group_subgroups(order, pagination)
+
         # Handle display_group_items pagination (from "can I get a sandwich?" response)
         if pagination.get("type") == "display_group_items":
             return self._content._handle_more_display_group_items(order, pagination)

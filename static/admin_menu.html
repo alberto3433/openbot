@@ -1435,10 +1435,12 @@
       }
     }
 
-    // Initialize: load all data in parallel for faster page load
+    // Initialize: load item types and size categories first (needed for rendering),
+    // then load menu items which triggers renderList()
     // Note: ingredients are lazy-loaded when Ingredients tab is clicked
     async function init() {
-      await Promise.all([loadItemTypes(), loadSizeCategories(), loadMenuItems()]);
+      await Promise.all([loadItemTypes(), loadSizeCategories()]);
+      await loadMenuItems();
 
       // Setup tab event listeners
       document.querySelectorAll('.detail-tab').forEach(tab => {

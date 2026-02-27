@@ -17,6 +17,7 @@ from .parsers.validators import parse_side_choice_deterministic as parse_side_ch
 from .parsers.deterministic import get_pipeline
 from .handler_config import BaseHandler
 from orderbot.cache import menu_cache
+from .utils.text import name_with_prefix
 
 if TYPE_CHECKING:
     from .handler_config import HandlerConfig
@@ -65,7 +66,7 @@ class ConfigSideChoiceHandler(BaseHandler):
 
         Returns (valid_answers, valid_options, slot_options_by_slug, question_text).
         """
-        question_text = f"Would you like a side with your {item_name}?"
+        question_text = f"Would you like a side with {name_with_prefix('your', item_name)}?"
         valid_answers: set[str] = set()
         valid_options: list[dict] = []
         slot_options_by_slug: dict[str, dict] = {}
@@ -284,7 +285,7 @@ class ConfigSideChoiceHandler(BaseHandler):
 
         if parsed.unclear or not parsed.value:
             return StateMachineResult(
-                message=f"{question_text.replace(' with it?', '')} with your {item.menu_item_name}?",
+                message=f"{question_text.replace(' with it?', '')} with {name_with_prefix('your', item.menu_item_name)}?",
                 order=order,
             )
 

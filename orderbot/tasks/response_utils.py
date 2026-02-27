@@ -14,6 +14,7 @@ __all__ = [
     "is_negative",
     "is_skip_response",
     "is_move_on_response",
+    "is_keep_default_response",
     "has_trailing_done_signal",
     "get_affirmative_patterns",
     "get_negative_patterns",
@@ -176,6 +177,44 @@ def is_move_on_response(user_input: str) -> bool:
     if is_negative(user_lower):
         return True
     return False
+
+
+_KEEP_DEFAULT_PHRASES = frozenset({
+    "no change",
+    "no changes",
+    "leave it",
+    "leave it as is",
+    "leave as is",
+    "keep it",
+    "keep it as is",
+    "keep as is",
+    "as is",
+    "keep default",
+    "keep the default",
+    "don't change",
+    "dont change",
+    "don't change it",
+    "dont change it",
+    "same",
+    "the same",
+    "leave it alone",
+})
+
+
+def is_keep_default_response(user_input: str) -> bool:
+    """Check if user wants to keep the default value.
+
+    Detects phrases like "no change", "leave as is", "keep it", etc.
+    Semantically distinct from skip/negative — this means "keep the default",
+    not "I don't want this attribute."
+
+    Args:
+        user_input: The user's input text
+
+    Returns:
+        True if the input indicates keeping the default, False otherwise
+    """
+    return normalize_text(user_input) in _KEEP_DEFAULT_PHRASES
 
 
 def is_skip_response(user_input: str) -> bool:

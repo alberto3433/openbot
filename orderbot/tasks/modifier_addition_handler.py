@@ -18,7 +18,7 @@ from .parsers.quantity_utils import extract_leading_quantity
 from orderbot.cache import menu_cache
 from .utils.pricing_utils import safe_recalculate_price
 from .utils.option_matcher import OptionMatcher
-from .utils.text import normalize_text
+from .utils.text import normalize_text, name_with_prefix
 from .models.utilities import parse_pending_field
 from .config.attribute_resolver import get_unanswered_mandatory
 from .config_flow_utils import (
@@ -511,7 +511,7 @@ class ModifierAdditionHandler:
         modified_items.add(target_item.id)
         if target_item is not item or item is not original_config_item:
             added_names.append(
-                f"{match['name']} to your {target_item.get_display_name()}"
+                f"{match['name']} to {name_with_prefix('your', target_item.get_display_name())}"
             )
         else:
             added_names.append(match["name"])
@@ -664,7 +664,7 @@ class ModifierAdditionHandler:
                 label_names = [e["label"] for e in qr]
                 current_question = first_part + " " + "? ".join(label_names) + "?"
 
-        message = f"Got it, I've added {added_text}. Now, for your {current_item_name}, {current_question.lower()}"
+        message = f"Got it, I've added {added_text}. Now, for {name_with_prefix('your', current_item_name)}, {current_question.lower()}"
         return StateMachineResult(message=message, order=order, quick_replies=qr)
 
     def _build_qr_for_pending_field(

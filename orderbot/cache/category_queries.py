@@ -260,6 +260,34 @@ class CategoryQueryMixin:
         return None
 
     @ensure_cache_loaded
+    def get_child_display_groups(self, parent_slug: str) -> list[dict]:
+        """Get direct child display groups for a parent group.
+
+        Returns child groups ordered by display_order, or empty list if none.
+        Used to show sub-categories (e.g., "drinks" -> Coffee, Tea, Soda, ...).
+
+        Args:
+            parent_slug: The parent display group slug (e.g., "drinks")
+
+        Returns:
+            List of child group dicts ordered by display_order:
+            [{"slug": "coffee", "display_name": "Coffee", "display_order": 7}, ...]
+
+        Raises:
+            MenuDataNotLoadedError: If cache is not loaded
+        """
+        child_slugs = self._display_group_children.get(parent_slug, [])
+        if not child_slugs:
+            return []
+
+        child_slug_set = set(child_slugs)
+        children = [
+            g for g in self._menu_display_groups_ordered
+            if g["slug"] in child_slug_set
+        ]
+        return children
+
+    @ensure_cache_loaded
     def get_descendant_display_group_slugs(self, display_group_slug: str) -> list[str]:
         """Get all descendant display group slugs (children, grandchildren, etc.).
 

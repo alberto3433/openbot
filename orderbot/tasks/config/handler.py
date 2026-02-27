@@ -22,7 +22,7 @@ from ..schemas import StateMachineResult, OrderPhase
 from ..handler_config import BaseHandler
 from ..checkout_messages import got_it_anything_else
 from ..utils import OptionMatcher, InputNormalizer
-from ..utils.text import format_display_list, normalize_text
+from ..utils.text import format_display_list, normalize_text, name_with_prefix
 from .context import ConfigHandlerContext
 from .select_input import SelectInputHandler
 from .options_inquiry import OptionsInquiryHandler
@@ -313,7 +313,7 @@ class MenuItemConfigHandler(BaseHandler):
         if clarification and clarification.item_id == item.id and clarification.candidates:
             candidate = clarification.candidates[0]
             msg = (
-                f"The {clarification.item_name} already comes with "
+                f"{name_with_prefix('The', clarification.item_name)} already comes with "
                 f"{candidate['display_name']}. Would you like extra?"
             )
             from ..pending_fields import PendingField

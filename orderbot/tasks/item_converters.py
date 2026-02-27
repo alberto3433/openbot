@@ -214,6 +214,9 @@ class UnifiedItemConverter:
                 # Preserve _base_quantity for user-modified default ingredients
                 if mod.get("_base_quantity"):
                     selection["_base_quantity"] = mod["_base_quantity"]
+                # Preserve _confirmed for user-confirmed defaults (e.g., "no change")
+                if mod.get("_confirmed"):
+                    selection["_confirmed"] = True
                 selections.append(selection)
 
         # Add from attribute_values only if NOT already in stored_modifiers

@@ -180,6 +180,24 @@ def _extract_cancel_description(user_input_stripped: str) -> str | None:
     return cancel_desc
 
 
+# Matches user inputs with explicit removal verbs (not just "no X" which is a decline).
+# Used to distinguish "remove the cheese" (removal) from "no cheese" (decline) at checkpoints.
+_EXPLICIT_REMOVAL_RE = re.compile(
+    r"^(?:"
+    r"(?:can|could|would)\s+you\s+)?(?:"
+    r"remove|delete|cancel|clear|scratch|hold|without"
+    r"|take\s+(?:off|out)"
+    r"|please\s+(?:remove|delete|cancel|take\s+(?:off|out))"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _has_explicit_removal_intent(user_input: str) -> bool:
+    """Check if user input contains explicit removal verbs (not just 'no X')."""
+    return bool(_EXPLICIT_REMOVAL_RE.match(user_input.strip()))
+
+
 def _should_defer_to_attribute_handler(
     cancel_desc: str, order: "OrderTask", user_input: str = "",
 ) -> bool:
@@ -190,12 +208,16 @@ def _should_defer_to_attribute_handler(
     """
     from .pending_fields import PendingField
 
-    # At customization checkpoint, negative responses mean "decline customization",
-    # not "cancel an item" — always defer to the checkpoint handler
+    # At customization checkpoint, simple negative responses ("no cheese", "skip")
+    # mean "decline customization" — defer to the checkpoint handler.
+    # But explicit removal verbs ("remove the cheese", "take off the cheese")
+    # mean "undo an already-set attribute" — let the cancellation handler process it.
     if order.pending_field in (
         PendingField.CUSTOMIZATION_CHECKPOINT,
         PendingField.CUSTOMIZATION_SELECTION,
     ):
+        if _has_explicit_removal_intent(user_input):
+            return False
         return True
 
     _, pending_attr_slug = parse_pending_field(order.pending_field)

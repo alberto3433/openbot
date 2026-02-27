@@ -13,7 +13,7 @@ from orderbot.cache import menu_cache
 
 from ..models import OrderTask, MenuItemTask
 from ..schemas import StateMachineResult
-from ..utils.text import format_english_list
+from ..utils.text import format_english_list, name_with_prefix
 
 if TYPE_CHECKING:
     from ..utils import OptionMatcher, InputNormalizer
@@ -136,7 +136,7 @@ class PackageInputHandler:
                 item.menu_item_type, plural=True
             ).lower() if item.menu_item_type else "items"
             return StateMachineResult(
-                message=f"That's {parsed['total']} {unit_name_plural}, but the {item.menu_item_name} "
+                message=f"That's {parsed['total']} {unit_name_plural}, but {name_with_prefix('the', item.menu_item_name)} "
                         f"includes {pack_size}. Please tell me which {pack_size} {unit_name_plural} you'd like.",
                 order=order,
             )

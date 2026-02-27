@@ -23,6 +23,7 @@ from .parsers.inquiry_patterns import MORE_MENU_ITEMS_PATTERNS
 from .parsers.quantity_utils import extract_leading_quantity
 from .config_input_validation import detect_modifier_inquiry, is_off_topic_request
 from orderbot.cache import menu_cache
+from .utils.text import name_with_prefix
 
 if TYPE_CHECKING:
     from .modifier_addition_handler import ModifierAdditionHandler
@@ -119,9 +120,9 @@ class ConfigFallbackInterceptor:
             item_name = item.get_summary() if hasattr(item, 'get_summary') else "your item"
             current_question = self.config_helper_handler.get_current_config_question(order, item)
             if current_question:
-                msg = f"Let's finish with your {item_name} first. {current_question}"
+                msg = f"Let's finish with {name_with_prefix('your', item_name)} first. {current_question}"
             else:
-                msg = f"Let's finish with your {item_name} first."
+                msg = f"Let's finish with {name_with_prefix('your', item_name)} first."
             return StateMachineResult(message=msg, order=order)
 
         # Check for "show more" pagination requests (e.g., "what else?" after modifier inquiry)

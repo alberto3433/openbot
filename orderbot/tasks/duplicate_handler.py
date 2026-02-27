@@ -43,7 +43,7 @@ from .parsers.inquiry_patterns import (
     REORDER_ITEM_PATTERNS,
 )
 from .parsers.deterministic import DUPLICATE_ALL_PATTERN
-from .utils.text import normalize_text
+from .utils.text import normalize_text, name_with_prefix
 
 if TYPE_CHECKING:
     from .models import OrderTask
@@ -193,7 +193,7 @@ class DuplicateHandler:
 
         if not matched_item:
             # Didn't understand - repeat the question
-            question_parts = [f"another {opt['summary']}" for opt in items]
+            question_parts = [name_with_prefix("another", opt['summary']) for opt in items]
             question = ", ".join(question_parts) + ", or all the items in your order?"
             question = "I didn't catch that. " + question[0].upper() + question[1:]
             # Build quick replies from item summaries
@@ -342,7 +342,7 @@ class DuplicateHandler:
         # Didn't understand - repeat the question
         active_items = order.items.get_active_items()
         if len(active_items) == 1:
-            cart_option = f"another {active_items[0].get_summary()}"
+            cart_option = name_with_prefix("another", active_items[0].get_summary())
         else:
             cart_option = "duplicate something from your current order"
 
@@ -536,7 +536,7 @@ class DuplicateHandler:
 
             # Build the question
             if len(active_items) == 1:
-                cart_option = f"another {active_items[0].get_summary()}"
+                cart_option = name_with_prefix("another", active_items[0].get_summary())
             else:
                 cart_option = "duplicate something from your current order"
 

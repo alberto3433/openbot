@@ -312,6 +312,29 @@ class PaginationContentHandlers:
             done_message="We also have {items}. That's all we have. Would you like any of these?",
         )
 
+    def _handle_more_display_group_subgroups(
+        self,
+        order: OrderTask,
+        pagination: dict,
+    ) -> StateMachineResult:
+        """Handle 'show more' for display group sub-groups."""
+        items = pagination.get("items", [])
+        offset = pagination.get("offset", 0)
+        parent_slug = pagination.get("parent_slug", "items")
+
+        return self._paginate_and_respond(
+            order, items, offset,
+            pagination_base={
+                "type": "display_group_subgroups",
+                "parent_slug": parent_slug,
+                "items": items,
+            },
+            empty_message="That's all the types we have. Which are you interested in?",
+            more_message="We also have {items}. Which type are you interested in?",
+            done_message="We also have {items}. Which type are you interested in?",
+            qr_value_fn=lambda n: f"What {n.lower()} do you have?",
+        )
+
     def _handle_more_display_group_items(
         self,
         order: OrderTask,

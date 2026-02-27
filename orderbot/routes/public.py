@@ -193,45 +193,48 @@ def get_public_menu(
             key=lambda g: g.display_order,
         )
         for group in top_groups:
-            # Collect items from all item types in this group
+            # Collect items from this group then child groups (by display_order)
             group_items: list[PublicMenuItemOut] = []
-            for item_type in group.item_types:
-                for mi in items_by_type.get(item_type.id, []):
-                    # Build size prices sorted by display_order
-                    size_prices = sorted(
-                        [
-                            PublicSizePriceOut(
-                                size_name=sp.size.name if sp.size else "Default",
-                                price=sp.price,
-                                display_order=sp.size.display_order if sp.size else 0,
-                            )
-                            for sp in mi.size_prices
-                        ],
-                        key=lambda sp: sp.display_order,
-                    )
-                    group_items.append(PublicMenuItemOut(
-                        id=mi.id,
-                        name=mi.name,
-                        description=mi.description,
-                        is_signature=mi.is_signature,
-                        size_prices=size_prices,
-                        is_available=mi.id not in unavailable_item_ids,
-                        is_vegan=mi.is_vegan,
-                        is_vegetarian=mi.is_vegetarian,
-                        is_gluten_free=mi.is_gluten_free,
-                        is_dairy_free=mi.is_dairy_free,
-                        is_kosher=mi.is_kosher,
-                        contains_eggs=mi.contains_eggs,
-                        contains_fish=mi.contains_fish,
-                        contains_sesame=mi.contains_sesame,
-                        contains_nuts=mi.contains_nuts,
-                    ))
+            source_groups = [group] + sorted(group.children, key=lambda g: g.display_order)
+            for source in source_groups:
+                source_items: list[PublicMenuItemOut] = []
+                for item_type in source.item_types:
+                    for mi in items_by_type.get(item_type.id, []):
+                        # Build size prices sorted by display_order
+                        size_prices = sorted(
+                            [
+                                PublicSizePriceOut(
+                                    size_name=sp.size.name if sp.size else "Default",
+                                    price=sp.price,
+                                    display_order=sp.size.display_order if sp.size else 0,
+                                )
+                                for sp in mi.size_prices
+                            ],
+                            key=lambda sp: sp.display_order,
+                        )
+                        source_items.append(PublicMenuItemOut(
+                            id=mi.id,
+                            name=mi.name,
+                            description=mi.description,
+                            is_signature=mi.is_signature,
+                            size_prices=size_prices,
+                            is_available=mi.id not in unavailable_item_ids,
+                            is_vegan=mi.is_vegan,
+                            is_vegetarian=mi.is_vegetarian,
+                            is_gluten_free=mi.is_gluten_free,
+                            is_dairy_free=mi.is_dairy_free,
+                            is_kosher=mi.is_kosher,
+                            contains_eggs=mi.contains_eggs,
+                            contains_fish=mi.contains_fish,
+                            contains_sesame=mi.contains_sesame,
+                            contains_nuts=mi.contains_nuts,
+                        ))
+                # Sort within each source group: signature first, then alphabetical
+                source_items.sort(key=lambda i: (not i.is_signature, i.name))
+                group_items.extend(source_items)
 
             if not group_items:
                 continue
-
-            # Sort: signature first, then alphabetical
-            group_items.sort(key=lambda i: (not i.is_signature, i.name))
 
             groups_out.append(PublicDisplayGroupOut(
                 slug=group.slug,

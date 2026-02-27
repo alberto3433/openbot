@@ -26,6 +26,7 @@ from .parsers.intent_patterns import (
 from .parsers.constants import REPEAT_ORDER_PATTERNS
 from .parsers.quantity_utils import parse_make_it_n_quantity
 from .utils.pricing_utils import safe_recalculate_price
+from .utils.text import name_with_prefix
 
 if TYPE_CHECKING:
     from .config_helper_handler import ConfigHelperHandler
@@ -122,9 +123,9 @@ class ConfigPriorityInterceptor:
             item_name = item.get_display_name()
             current_question = self.config_helper_handler.get_current_config_question(order, item)
             if current_question:
-                message = f"Let's finish customizing the {item_name}. {current_question}"
+                message = f"Let's finish customizing {name_with_prefix('the', item_name)}. {current_question}"
             else:
-                message = f"Let's finish customizing the {item_name} first."
+                message = f"Let's finish customizing {name_with_prefix('the', item_name)} first."
             return StateMachineResult(message=message, order=order)
 
         return None

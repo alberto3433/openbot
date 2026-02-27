@@ -10,7 +10,7 @@ from ..pending_fields import PendingField
 from ..schemas import StateMachineResult, OrderPhase
 from ..parsers.constants import DEFAULT_PAGINATION_SIZE
 from ..checkout_messages import got_it_anything_else
-from ..utils.text import format_display_list
+from ..utils.text import format_display_list, name_with_prefix
 from .attribute_resolver import (
     get_unanswered_mandatory,
     get_unanswered_optional,
@@ -94,9 +94,9 @@ class ConfigQuestionFlow:
                     1
                 )
                 ordinal = MessageBuilder.get_ordinal(item_num)
-                item_desc = f"the {ordinal} {item.menu_item_name}"
+                item_desc = name_with_prefix(f"the {ordinal}", item.menu_item_name)
             else:
-                item_desc = f"your {item.menu_item_name}"
+                item_desc = name_with_prefix("your", item.menu_item_name)
 
             # Get unanswered mandatory attributes
             unanswered = get_unanswered_mandatory(item, item_type_slug)
@@ -508,7 +508,7 @@ class ConfigQuestionFlow:
         # Build the disambiguation question
         # Use the token (e.g., "syrup") in the question
         item_name = item.get_display_name()
-        question = f"Got it, for the {item_name}. Which {token}? {options_str}?"
+        question = f"Got it, for {name_with_prefix('the', item_name)}. Which {token}? {options_str}?"
 
         # Store state for handling the user's response
         # pending_field format: "item_type:attr_slug" so the router knows what attribute this is for

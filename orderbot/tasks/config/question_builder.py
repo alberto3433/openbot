@@ -16,7 +16,7 @@ from orderbot.cache.base import pluralize
 from ..models.pending_states import PendingUnmatchedPagination
 from ..models.utilities import is_name_forming_category
 from ..schemas import StateMachineResult
-from ..utils.text import format_english_list, number_to_word
+from ..utils.text import format_english_list, number_to_word, name_with_prefix
 
 if TYPE_CHECKING:
     from ..models import OrderTask, MenuItemTask
@@ -105,9 +105,9 @@ class QuestionBuilder:
 
         # Build the note
         if attr_slug == "size":
-            return f"Heads up, the {item_name} only comes in one size."
+            return f"Heads up, {name_with_prefix('the', item_name)} only comes in one size."
         else:
-            return f"Heads up, the {item_name} doesn't have {attr_display.lower()} options."
+            return f"Heads up, {name_with_prefix('the', item_name)} doesn't have {attr_display.lower()} options."
 
     def calculate_item_ordinal(
         self, item: "MenuItemTask", order: "OrderTask"
@@ -173,30 +173,30 @@ class QuestionBuilder:
             if multi_count <= 1:
                 return db_question
             elif has_duplicates:
-                return f"For the {ordinal} {item_ref}, {db_question[0].lower()}{db_question[1:]}"
+                return f"For {name_with_prefix(f'the {ordinal}', item_ref)}, {db_question[0].lower()}{db_question[1:]}"
             else:
-                return f"For the {item_ref}, {db_question[0].lower()}{db_question[1:]}"
+                return f"For {name_with_prefix('the', item_ref)}, {db_question[0].lower()}{db_question[1:]}"
 
         # Fallback to generic templates if no DB question
         if input_type == "boolean":
             if has_duplicates:
-                return f"For the {ordinal} {item_ref}, would you like it {attr_name}?"
+                return f"For {name_with_prefix(f'the {ordinal}', item_ref)}, would you like it {attr_name}?"
             elif multi_count > 1:
-                return f"For the {item_ref}, would you like it {attr_name}?"
+                return f"For {name_with_prefix('the', item_ref)}, would you like it {attr_name}?"
             else:
                 return f"Would you like it {attr_name}?"
         elif input_type == "quantity":
             if has_duplicates:
-                return f"For the {ordinal} {item_ref}, how many {attr_name} would you like?"
+                return f"For {name_with_prefix(f'the {ordinal}', item_ref)}, how many {attr_name} would you like?"
             elif multi_count > 1:
-                return f"For the {item_ref}, how many {attr_name} would you like?"
+                return f"For {name_with_prefix('the', item_ref)}, how many {attr_name} would you like?"
             else:
                 return f"How many {attr_name} would you like?"
         else:
             if has_duplicates:
-                return f"For the {ordinal} {item_ref}, what kind of {attr_name} would you like?"
+                return f"For {name_with_prefix(f'the {ordinal}', item_ref)}, what kind of {attr_name} would you like?"
             elif multi_count > 1:
-                return f"For the {item_ref}, what kind of {attr_name} would you like?"
+                return f"For {name_with_prefix('the', item_ref)}, what kind of {attr_name} would you like?"
             else:
                 return f"What kind of {attr_name} would you like?"
 
@@ -222,7 +222,7 @@ class QuestionBuilder:
             if item_num == 1 and has_duplicates:
                 # First item with duplicates: ordinal format with "Got it" prefix
                 # e.g. "Got it, for the first Bagel. What kind of bagel?"
-                item_desc = f"the {ordinal} {item_display}"
+                item_desc = name_with_prefix(f"the {ordinal}", item_display)
                 db_question = attr.get("question_text")
                 if db_question:
                     return f"Got it, for {item_desc}. {db_question}"
@@ -266,9 +266,9 @@ class QuestionBuilder:
             else:
                 # Subsequent items - build a replacement question
                 if has_duplicates:
-                    item_desc = f"the {ordinal} {item_display}"
+                    item_desc = name_with_prefix(f"the {ordinal}", item_display)
                 else:
-                    item_desc = f"the {item_display}"
+                    item_desc = name_with_prefix("the", item_display)
                 db_question = attr.get("question_text")
                 if db_question:
                     return f"For {item_desc}, {db_question[0].lower()}{db_question[1:]}"
@@ -315,7 +315,7 @@ class QuestionBuilder:
                 item_desc = f"{item_display} with {parts_str}"
             else:
                 item_desc = item_display
-            return f"Got it, for the {item_desc}. "
+            return f"Got it, for {name_with_prefix('the', item_desc)}. "
 
     def handle_unmatched_selection(
         self, item: "MenuItemTask", order: "OrderTask", attr: dict
